@@ -1,0 +1,21 @@
+{
+  "computationId": "cc0e8400-e29b-41d4-a716-446655440099",
+  "metrics": [
+    {
+      "metric": "Accuracy",
+      "output": "score",
+      "avg": 0.87,
+      "min": 0.45,
+      "max": 0.99,
+      "count": 150
+    },
+    {
+      "metric": "Relevance",
+      "output": "score",
+      "avg": 0.82,
+      "min": 0.30,
+      "max": 0.98,
+      "count": 148
+    }
+  ]
+}

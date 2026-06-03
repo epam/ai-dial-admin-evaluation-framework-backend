@@ -1,0 +1,23 @@
+---
+description: Ensure AGENTS.md is updated with any new rules, patterns, or changes in agent behavior.
+alwaysApply: true
+---
+
+# Keep AGENTS.md Updated
+
+Whenever a change in project requirements or new best practices are identified, you **must** update the `AGENTS.md` file to reflect these changes. This file is the single source of truth for all agents and team members.
+
+## When to Update
+
+- New coding patterns or conventions are established
+- Architecture decisions are made
+- New templates or code examples are created
+- Project structure changes
+- Best practices are refined
+
+## How to Update
+
+1. Locate the relevant section in `AGENTS.md`
+2. Add or modify the documentation clearly
+3. Include code examples where applicable
+4. Ensure consistency with existing documentation style

@@ -1,0 +1,47 @@
+{
+  "content": [
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+      "testRunName": "Benchmark Run v2",
+      "status": "COMPLETED",
+      "runConfig": {
+        "numberOfRuns": 3,
+        "testRunName": "Benchmark Run v2",
+        "execution": {
+          "concurrencyLevel": 5,
+          "requestTimeoutMs": 60000
+        }
+      },
+      "numberOfTestCases": 50,
+      "suiteSnapshot": null,
+      "startedAt": 1739750410000,
+      "completedAt": 1739751000000,
+      "errorMessage": null,
+      "errorDetails": null,
+      "createdAt": 1739750400000,
+      "updatedAt": 1739751000000
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440002",
+      "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+      "testRunName": "Run #1",
+      "status": "PENDING",
+      "runConfig": {
+        "numberOfRuns": 1
+      },
+      "numberOfTestCases": 50,
+      "suiteSnapshot": null,
+      "startedAt": null,
+      "completedAt": null,
+      "errorMessage": null,
+      "errorDetails": null,
+      "createdAt": 1739760000000,
+      "updatedAt": 1739760000000
+    }
+  ],
+  "page": 0,
+  "size": 100,
+  "totalElements": 2,
+  "totalPages": 1
+}

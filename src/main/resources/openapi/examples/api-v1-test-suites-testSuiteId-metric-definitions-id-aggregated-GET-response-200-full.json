@@ -1,0 +1,79 @@
+{
+  "id": "aa0e8400-e29b-41d4-a716-446655440000",
+  "testSuiteId": "bb0e8400-e29b-41d4-a716-446655440000",
+  "metricDeclarationId": "550e8400-e29b-41d4-a716-446655440000",
+  "metricDeclarationVersionId": "660e8400-e29b-41d4-a716-446655440001",
+  "name": "Accuracy Check",
+  "metricDeclarationName": "Accuracy",
+  "configBindings": [
+    {
+      "property": "threshold",
+      "source": {
+        "$type": "Constant",
+        "value": 0.8
+      }
+    }
+  ],
+  "inputBindings": [
+    {
+      "property": "reference",
+      "source": {
+        "$type": "TestCase",
+        "columnName": "expected_output"
+      }
+    },
+    {
+      "property": "response",
+      "source": {
+        "$type": "Response",
+        "columnName": "model_answer"
+      }
+    }
+  ],
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000,
+  "metricDeclaration": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "providerId": "test-provider",
+    "name": "Accuracy",
+    "description": "Percentage of correct predictions",
+    "createdAt": 1704067200000
+  },
+  "metricDeclarationVersion": {
+    "id": "660e8400-e29b-41d4-a716-446655440001",
+    "metricDeclarationId": "550e8400-e29b-41d4-a716-446655440000",
+    "schemaVersion": 1,
+    "configSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "threshold": {
+          "type": "number"
+        }
+      }
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "reference": {
+          "type": "string"
+        },
+        "response": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "score": {
+          "type": "number"
+        }
+      }
+    },
+    "description": "Percentage of correct predictions",
+    "createdAt": 1704067200000
+  }
+}

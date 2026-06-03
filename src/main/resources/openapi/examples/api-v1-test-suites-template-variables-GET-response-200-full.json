@@ -1,0 +1,50 @@
+[
+  {
+    "name": "model",
+    "sources": ["BODY"],
+    "hasDefault": false,
+    "defaultValue": null,
+    "binding": {
+      "templateVariable": "model",
+      "dataField": null,
+      "constantValue": "gpt-4"
+    },
+    "declaredType": null,
+    "effectiveType": "STRING",
+    "resolvedValue": "gpt-4"
+  },
+  {
+    "name": "prompt",
+    "sources": ["BODY"],
+    "hasDefault": false,
+    "defaultValue": null,
+    "binding": {
+      "templateVariable": "prompt",
+      "dataField": "promptField",
+      "constantValue": null
+    },
+    "declaredType": null,
+    "effectiveType": "STRING",
+    "resolvedValue": null
+  },
+  {
+    "name": "temperature",
+    "sources": ["BODY"],
+    "hasDefault": true,
+    "defaultValue": "0.7",
+    "binding": null,
+    "declaredType": null,
+    "effectiveType": "STRING",
+    "resolvedValue": "0.7"
+  },
+  {
+    "name": "doc",
+    "sources": ["BODY"],
+    "hasDefault": false,
+    "defaultValue": null,
+    "binding": null,
+    "declaredType": "FILE",
+    "effectiveType": "FILE",
+    "resolvedValue": null
+  }
+]

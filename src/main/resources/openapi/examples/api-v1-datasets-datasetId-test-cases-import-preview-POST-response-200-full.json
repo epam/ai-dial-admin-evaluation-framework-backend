@@ -1,0 +1,60 @@
+{
+  "detectedColumns": [
+    {
+      "headerName": "testCaseName",
+      "mappedTo": "testCaseName",
+      "fieldName": "testCaseName",
+      "inferredType": "STRING"
+    },
+    {
+      "headerName": "prompt",
+      "mappedTo": "data",
+      "fieldName": "prompt",
+      "inferredType": "STRING"
+    },
+    {
+      "headerName": "score",
+      "mappedTo": "data",
+      "fieldName": "score",
+      "inferredType": "INTEGER"
+    }
+  ],
+  "totalRows": 3,
+  "sampleRows": [
+    {
+      "testCaseName": "TC 1",
+      "data": {
+        "prompt": "Hello",
+        "score": 5
+      },
+      "valid": true
+    },
+    {
+      "testCaseName": "TC 2",
+      "data": {
+        "prompt": "World",
+        "score": 3
+      },
+      "valid": true
+    }
+  ],
+  "warnings": [
+    {
+      "rowNumber": 3,
+      "columnName": "testCaseName",
+      "message": "would be skipped \u2014 collides with existing test case 'TC 1'"
+    }
+  ],
+  "autoDetectedSchema": [
+    {
+      "name": "prompt",
+      "type": "STRING",
+      "required": false
+    },
+    {
+      "name": "score",
+      "type": "INTEGER",
+      "required": false
+    }
+  ]
+}

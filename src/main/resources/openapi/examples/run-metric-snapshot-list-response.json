@@ -1,0 +1,38 @@
+[
+  {
+    "id": "b10e8400-e29b-41d4-a716-446655440001",
+    "computationId": "cc0e8400-e29b-41d4-a716-446655440099",
+    "testSuiteRunId": "660e8400-e29b-41d4-a716-446655440001",
+    "tsmdId": "dd0e8400-e29b-41d4-a716-446655440050",
+    "tsmdName": "Accuracy Metric Definition",
+    "metricDeclarationId": "ee0e8400-e29b-41d4-a716-446655440060",
+    "metricDeclarationVersionId": "ff0e8400-e29b-41d4-a716-446655440070",
+    "configBindings": [{"parameterName": "temperature", "value": "0.7"}],
+    "inputBindings": [{"parameterName": "response", "sourcePath": "$.choices[0].message.content"}],
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "score": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "computedAtMs": 1739750500000
+  },
+  {
+    "id": "b20e8400-e29b-41d4-a716-446655440002",
+    "computationId": "cc0e8400-e29b-41d4-a716-446655440099",
+    "testSuiteRunId": "660e8400-e29b-41d4-a716-446655440001",
+    "tsmdId": "dd0e8400-e29b-41d4-a716-446655440051",
+    "tsmdName": "Relevance Metric Definition",
+    "metricDeclarationId": "ee0e8400-e29b-41d4-a716-446655440061",
+    "metricDeclarationVersionId": "ff0e8400-e29b-41d4-a716-446655440071",
+    "configBindings": [],
+    "inputBindings": [{"parameterName": "response", "sourcePath": "$.choices[0].message.content"}],
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "score": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "computedAtMs": 1739750500000
+  }
+]

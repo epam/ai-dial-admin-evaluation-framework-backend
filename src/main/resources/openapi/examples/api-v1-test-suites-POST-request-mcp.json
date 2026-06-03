@@ -1,0 +1,47 @@
+{
+  "name": "MCP Search Tool Suite",
+  "description": "Test suite for web search MCP tool",
+  "suiteType": "MCP_TOOL",
+  "mcpDeploymentRef": {
+    "id": "web-search-toolset",
+    "type": "dial-toolset",
+    "name": "Web Search Toolset",
+    "transport": "streamable-http"
+  },
+  "toolRef": {
+    "name": "search",
+    "description": "Search the web for information",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Search query"
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "Maximum results"
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  "argumentTemplate": {
+    "arguments": {
+      "query": "${{searchQuery}}",
+      "max_results": "${{maxResults:10}}"
+    }
+  },
+  "responseColumns": [
+    {
+      "name": "first_result",
+      "displayName": "First Result",
+      "expression": "content[0].text",
+      "type": "STRING"
+    }
+  ],
+  "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+  "disabledTestCaseIds": []
+}

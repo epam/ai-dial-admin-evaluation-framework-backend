@@ -1,0 +1,65 @@
+{
+  "suite": {
+    "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "name": "My Test Suite (Copy)",
+    "description": "Suite for endpoint smoke tests",
+    "suiteType": "DEPLOYMENT",
+    "deploymentRef": {
+      "id": "deploy-001",
+      "name": "Production",
+      "version": "1.0"
+    },
+    "endpointRef": {
+      "method": "POST",
+      "relativeUrlPattern": "/chat/completions",
+      "requestBodySchema": {
+        "contentType": "application/json",
+        "schema": {
+          "type": "object"
+        }
+      },
+      "responseBodySchema": {
+        "type": "object"
+      }
+    },
+    "responseColumns": [
+      {
+        "name": "answer",
+        "displayName": "Model Answer",
+        "expression": "choices[0].message.content",
+        "type": "STRING"
+      }
+    ],
+    "requestTemplate": {
+      "body": {
+        "contentType": "application/json",
+        "content": {
+          "messages": "${{messages}}",
+          "model": "${{model}}"
+        }
+      }
+    },
+    "inputBindings": [
+      {
+        "templateVariable": "messages",
+        "dataField": "messages"
+      },
+      {
+        "templateVariable": "model",
+        "constantValue": "gpt-4"
+      }
+    ],
+    "valid": true,
+    "validationWarnings": [],
+    "version": 0,
+    "createdBy": "user@example.com",
+    "createdAt": 1704153600000,
+    "updatedAt": 1704153600000,
+    "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+    "disabledTestCaseIds": []
+  },
+  "revalidationTask": {
+    "taskId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "status": "PENDING"
+  }
+}

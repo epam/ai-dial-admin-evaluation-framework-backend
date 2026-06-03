@@ -1,0 +1,68 @@
+package com.epam.aidial.evaluation.data.db.repository;
+
+import com.epam.aidial.evaluation.data.db.model.TestSuite;
+import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
+import com.epam.aidial.evaluation.data.db.model.pagination.Page;
+import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface TestSuiteRepository {
+
+    Page<TestSuite> findAll(PageRequest pageRequest);
+
+    Page<TestSuite> findAll(PageRequest pageRequest, boolean includeTotalCount);
+
+    Page<TestSuite> findAll(PageRequest pageRequest, List<FilterCondition> filters, boolean includeTotalCount);
+
+    Optional<TestSuite> findById(UUID id);
+
+    TestSuite save(TestSuite testSuite);
+
+    long count();
+
+    boolean deleteById(UUID id);
+
+    boolean existsById(UUID id);
+
+    // NOTE: currently called from tests only (MetaTestDataHelper.forceSuiteInvalid)
+    void updateIsValid(UUID id, boolean isValid);
+
+    /**
+     * Used by RevalidationService Phase 2 to write the (isValid, validationWarnings, updatedAt) tuple
+     * for a suite atomically. The caller passes {@code updatedAt} explicitly so the method is safe to
+     * invoke from contexts that do or do not have {@link com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext}
+     * initialised (e.g. programmatic transactions, tests).
+     */
+    void updateValidation(UUID id, boolean isValid, String validationWarningsJson, long updatedAt);
+
+    /**
+     * Returns every {@link TestSuite} whose {@code dataset_id} equals the supplied id.
+     * Used by {@code RevalidationService} Phase 2 for the dataset → suites fan-out.
+     */
+    List<TestSuite> findSuitesReferencingDataset(UUID datasetId);
+
+    /**
+     * Sets {@code test_suites.dataset_id = NULL} for every suite currently bound to the given
+     * dataset. Returns the number of rows updated. Used by the PRIVATE-dataset delete flow
+     * (both the direct dataset delete and the suite-triggered cascade) to detach suites
+     * before the dataset row is removed.
+     */
+    int unbindAllByDatasetId(UUID datasetId);
+
+    /**
+     * Counts suites whose {@code dataset_id} equals the supplied id. Used by the dataset
+     * visibility transition path to validate the PUBLIC→PRIVATE precondition (exactly 1
+     * bound suite) under the dataset row lock.
+     */
+    long countByDatasetId(UUID datasetId);
+
+    /**
+     * Inserts a new test suite using the caller-supplied UUID and timestamp.
+     * Unlike {@link #save(TestSuite)}, this method does NOT generate a new UUID or call
+     * {@link com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext}.
+     * The entity's {@code id} field must be non-null.
+     */
+    TestSuite createWithId(TestSuite testSuite, long timestamp);
+}

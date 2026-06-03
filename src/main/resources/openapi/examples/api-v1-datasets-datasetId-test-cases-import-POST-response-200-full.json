@@ -1,0 +1,18 @@
+{
+  "totalRows": 5,
+  "validCount": 3,
+  "invalidCount": 2,
+  "warnings": [
+    {
+      "rowNumber": 3,
+      "columnName": "prompt",
+      "message": "Field 'prompt' is required but missing"
+    },
+    {
+      "rowNumber": 5,
+      "columnName": "testCaseName",
+      "message": "would be skipped — collides with existing test case 'Hello world'"
+    }
+  ],
+  "skippedCount": 1
+}

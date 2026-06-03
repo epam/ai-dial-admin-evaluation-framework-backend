@@ -1,0 +1,17 @@
+{
+  "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+  "testSuiteRunId": "660e8400-e29b-41d4-a716-446655440001",
+  "results": [
+    {
+      "testCaseId": "770e8400-e29b-41d4-a716-446655440002",
+      "testCaseName": "test-case-1",
+      "runIndex": 0,
+      "testCaseData": {"prompt": "Hello"},
+      "executionInfo": {
+        "status": "SUCCESS",
+        "startedAt": 1739750400000,
+        "completedAt": 1739750401234
+      }
+    }
+  ]
+}

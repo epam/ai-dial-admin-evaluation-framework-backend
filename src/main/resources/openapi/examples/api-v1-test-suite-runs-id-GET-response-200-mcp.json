@@ -1,0 +1,41 @@
+{
+  "id": "770e8400-e29b-41d4-a716-446655440003",
+  "testSuiteId": "660e8400-e29b-41d4-a716-446655440010",
+  "testRunName": "MCP Tool Eval Run",
+  "status": "COMPLETED",
+  "runConfig": {
+    "numberOfRuns": 1,
+    "testRunName": "MCP Tool Eval Run"
+  },
+  "numberOfTestCases": 20,
+  "suiteSnapshot": {
+    "snapshotVersion": "1",
+    "suiteType": "MCP_TOOL",
+    "deploymentRef": null,
+    "endpointRef": null,
+    "requestTemplate": null,
+    "inputBindings": null,
+    "responseColumns": [],
+    "testCaseSchema": [
+      {"name": "query", "displayName": "Search Query", "type": "STRING", "required": true}
+    ],
+    "mcpDeploymentRef": {
+      "id": "my-search-toolset",
+      "transport": "STREAMABLE_HTTP"
+    },
+    "toolRef": {
+      "name": "search"
+    },
+    "argumentTemplate": {
+      "arguments": {
+        "query": "${{query}}"
+      }
+    }
+  },
+  "startedAt": 1739760010000,
+  "completedAt": 1739760200000,
+  "errorMessage": null,
+  "errorDetails": null,
+  "createdAt": 1739760000000,
+  "updatedAt": 1739760200000
+}

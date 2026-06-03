@@ -1,0 +1,31 @@
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "testCaseName": "Smoke test - happy path",
+    "data": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ],
+      "expected_status": 200
+    },
+    "valid": true,
+    "validationWarnings": [],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704153600000
+  },
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "testCaseName": "Edge case - empty input",
+    "data": {
+      "messages": [],
+      "expected_status": 400
+    },
+    "valid": true,
+    "validationWarnings": [],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704153600000
+  }
+]

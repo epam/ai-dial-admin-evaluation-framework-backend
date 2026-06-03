@@ -1,0 +1,26 @@
+---
+description: OpenSpec Implementation Scope
+alwaysApply: true
+---
+
+# OpenSpec Implementation Scope
+
+When working on an OpenSpec change (e.g., implementing tasks from `tasks.md`), you must follow strictly limited implementation iterations to ensure quality and manageability.
+
+## Implementation Limits
+
+1.  **Partial Implementation**: Do NOT implement the entire plan at once.
+2.  **Task Count Limit**: Do NOT implement more than **5 tasks** in a single iteration.
+3.  **Task Group Limit**: Do NOT implement more than **one group of tasks** (a single section in `tasks.md`) in a single iteration.
+
+## Exception
+
+You may bypass these limits **ONLY** if the user explicitly asks you to "do it all in one shot" or "implement everything at once".
+
+## Workflow
+
+1.  Read `tasks.md` to understand the full scope.
+2.  Select the next logical group of tasks (or the first < 5 tasks of the next group).
+3.  Announce which tasks you are working on.
+4.  Implement those tasks.
+5.  Stop and ask for confirmation/review before proceeding to the next group.

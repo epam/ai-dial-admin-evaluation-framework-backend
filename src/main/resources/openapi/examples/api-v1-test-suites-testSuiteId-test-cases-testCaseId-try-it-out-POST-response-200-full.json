@@ -1,0 +1,50 @@
+{
+  "resolvedRequest": {
+    "url": "/chat/completions",
+    "queryParams": [
+      { "key": "api-version", "value": "2024-02-01" }
+    ],
+    "headers": [
+      { "key": "X-Custom-Header", "value": "my-value" }
+    ],
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "model": "gpt-4",
+        "messages": [
+          { "role": "user", "content": "Tell me about AI" }
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1000
+      }
+    },
+    "warnings": []
+  },
+  "response": {
+    "statusCode": 200,
+    "body": {
+      "id": "chatcmpl-abc123",
+      "object": "chat.completion",
+      "created": 1700000000,
+      "model": "gpt-4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "AI, or Artificial Intelligence, is a branch of computer science..."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 15,
+        "completion_tokens": 42,
+        "total_tokens": 57
+      }
+    }
+  },
+  "durationMs": 3842,
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=..."
+}

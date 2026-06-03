@@ -1,0 +1,34 @@
+{
+  "content": [
+    {
+      "taskId": "7a1d2b3c-4e5f-6789-abcd-ef0123456789",
+      "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "COMPLETED",
+      "totalCases": 100,
+      "processedCases": 100,
+      "validCount": 98,
+      "invalidCount": 2,
+      "startedAt": 1704067200000,
+      "completedAt": 1704067260000,
+      "errorMessage": null,
+      "coercedCellCount": 42
+    },
+    {
+      "taskId": "8b2e3c4d-5f6a-789b-cdef-012345678901",
+      "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "RUNNING",
+      "totalCases": 250,
+      "processedCases": 120,
+      "validCount": 115,
+      "invalidCount": 5,
+      "startedAt": 1704153600000,
+      "completedAt": null,
+      "errorMessage": null,
+      "coercedCellCount": 17
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 2,
+  "totalPages": 1
+}

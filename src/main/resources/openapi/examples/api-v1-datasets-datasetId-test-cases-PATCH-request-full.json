@@ -1,0 +1,16 @@
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "testCaseName": "Renamed test case",
+    "data": {
+      "prompt": "Updated prompt"
+    }
+  },
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "data": {
+      "temperature": null,
+      "max_tokens": 100
+    }
+  }
+]

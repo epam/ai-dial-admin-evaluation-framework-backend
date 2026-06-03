@@ -1,0 +1,49 @@
+{
+  "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+  "testSuiteRunId": "660e8400-e29b-41d4-a716-446655440001",
+  "results": [
+    {
+      "testCaseId": "770e8400-e29b-41d4-a716-446655440002",
+      "testCaseName": "test-case-1",
+      "runIndex": 0,
+      "testCaseData": {"prompt": "Hello, world!", "category": "greeting"},
+      "requestBody": {"messages": [{"role": "user", "content": "Hello, world!"}]},
+      "responseBody": {"choices": [{"message": {"content": "Hi there!"}}]},
+      "responseStatusCode": 200,
+      "executionInfo": {
+        "status": "SUCCESS",
+        "startedAt": 1739750400000,
+        "completedAt": 1739750401234,
+        "traceId": "trace-abc-123",
+        "retryCount": 0
+      },
+      "extractedColumns": {
+        "answer": "Hi there!",
+        "total_tokens": 42
+      },
+      "extractionWarnings": []
+    },
+    {
+      "testCaseId": "880e8400-e29b-41d4-a716-446655440003",
+      "testCaseName": "test-case-2",
+      "runIndex": 0,
+      "testCaseData": {"prompt": "Error test", "category": "error-handling"},
+      "requestBody": {"messages": [{"role": "user", "content": "Error test"}]},
+      "responseBody": {"error": {"message": "Internal server error"}},
+      "responseStatusCode": 500,
+      "executionInfo": {
+        "status": "FAILED",
+        "startedAt": 1739750402000,
+        "completedAt": 1739750403456,
+        "traceId": "trace-def-456",
+        "retryCount": 2,
+        "logDetails": {
+          "retryAttempts": [
+            {"attemptIndex": 1, "statusCode": 500, "errorType": "HTTP_ERROR", "durationMs": 1200},
+            {"attemptIndex": 2, "statusCode": 500, "errorType": "HTTP_ERROR", "durationMs": 1500}
+          ]
+        }
+      }
+    }
+  ]
+}

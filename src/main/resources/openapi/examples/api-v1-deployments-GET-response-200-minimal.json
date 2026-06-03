@@ -1,0 +1,32 @@
+[
+  {
+    "$type": "dial-model",
+    "deploymentId": "gpt-5-mini-2025-08-07",
+    "displayName": "GPT-5 mini",
+    "version": "2025-08-07",
+    "description": null,
+    "owner": "organization-owner",
+    "createdAt": 1768856213216,
+    "updatedAt": 1768856213216,
+    "descriptionKeywords": null,
+    "inputAttachmentTypes": ["*/*"],
+    "capabilities": null,
+    "limits": null,
+    "pricing": null
+  },
+  {
+    "$type": "dial-application",
+    "deploymentId": "EntityExtractor",
+    "displayName": "Entity Extractor",
+    "version": null,
+    "description": "",
+    "owner": "organization-owner",
+    "createdAt": 1769192823293,
+    "updatedAt": 1769194293867,
+    "descriptionKeywords": [],
+    "inputAttachmentTypes": null,
+    "applicationTypeSchemaId": "https://dial-entity-extractor.aks.dev.dial.parts/",
+    "applicationProperties": {},
+    "routes": null
+  }
+]

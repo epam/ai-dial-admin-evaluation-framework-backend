@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-05-22T10:15:30Z",
+  "status": 409,
+  "error": "Conflict",
+  "errorCode": "INVALID_OPERATION",
+  "message": "Dataset 550e8400-e29b-41d4-a716-446655440000 cannot be deleted because it is referenced by 2 test suite(s): smoke-suite, regression-suite",
+  "path": "/api/v1/datasets/550e8400-e29b-41d4-a716-446655440000"
+}

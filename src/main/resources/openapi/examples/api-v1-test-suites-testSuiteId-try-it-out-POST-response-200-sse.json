@@ -1,0 +1,27 @@
+{
+  "resolvedRequest": {
+    "url": "/chat/completions",
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "messages": [{ "role": "user", "content": "What is the weather?" }]
+      }
+    },
+    "warnings": []
+  },
+  "response": {
+    "statusCode": 200,
+    "streaming": true,
+    "body": {
+      "events": [
+        { "event": "message", "data": { "status": "processing" } },
+        { "event": "result",  "data": { "output": "The weather is sunny.", "confidence": 0.95 } }
+      ]
+    },
+    "events": [
+      { "event": "message", "data": { "status": "processing" } },
+      { "event": "result",  "data": { "output": "The weather is sunny.", "confidence": 0.95 } }
+    ]
+  },
+  "durationMs": 1842
+}

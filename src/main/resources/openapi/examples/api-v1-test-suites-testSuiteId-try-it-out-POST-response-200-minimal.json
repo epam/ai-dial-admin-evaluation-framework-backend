@@ -1,0 +1,23 @@
+{
+  "resolvedRequest": {
+    "url": "/chat/completions",
+    "body": {
+      "prompt": "Hello"
+    },
+    "warnings": []
+  },
+  "response": {
+    "statusCode": 200,
+    "body": {
+      "id": "chatcmpl-xyz789",
+      "choices": [
+        {
+          "message": {
+            "content": "Hi there!"
+          }
+        }
+      ]
+    }
+  },
+  "durationMs": 987
+}

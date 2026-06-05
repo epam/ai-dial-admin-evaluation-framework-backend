@@ -160,4 +160,67 @@ class FileServiceCopyFilesTest {
         // testSuiteRepository.existsById should never be called for targetId validation
         verify(testSuiteRepository, never()).existsById(targetId);
     }
+
+    @Test
+    @DisplayName("copyFilesBetweenDatasets copies all files from source dataset folder to target dataset folder")
+    void copyFilesBetweenDatasets_copiesAllFiles_whenSourceHasFiles() {
+        String sourcePath = bucket + "/datasets/" + sourceId + "/";
+        DialFileMetadataDto file1 = DialFileMetadataDto.builder()
+                .name("data.csv")
+                .contentType("text/csv")
+                .build();
+        DialFileMetadataDto file2 = DialFileMetadataDto.builder()
+                .name("config.json")
+                .contentType("application/json")
+                .build();
+        when(dialFileClient.list(sourcePath)).thenReturn(List.of(file1, file2));
+        when(dialFileClient.download(sourcePath + "data.csv")).thenReturn(new byte[] {1, 2, 3});
+        when(dialFileClient.download(sourcePath + "config.json")).thenReturn(new byte[] {4, 5});
+
+        List<String> copied = fileService.copyFilesBetweenDatasets(sourceId, targetId);
+
+        assertThat(copied).containsExactlyInAnyOrder("data.csv", "config.json");
+        String targetPath = bucket + "/datasets/" + targetId + "/";
+        verify(dialFileClient).upload(eq(targetPath + "data.csv"), any(), eq("data.csv"), eq("text/csv"));
+        verify(dialFileClient).upload(eq(targetPath + "config.json"), any(), eq("config.json"), eq("application/json"));
+    }
+
+    @Test
+    @DisplayName("copyFilesBetweenDatasets skips a file and continues when its download fails")
+    void copyFilesBetweenDatasets_skipsFile_whenDownloadFails() {
+        String sourcePath = bucket + "/datasets/" + sourceId + "/";
+        DialFileMetadataDto goodFile = DialFileMetadataDto.builder()
+                .name("good.txt")
+                .contentType("text/plain")
+                .build();
+        DialFileMetadataDto badFile = DialFileMetadataDto.builder()
+                .name("missing.txt")
+                .contentType("text/plain")
+                .build();
+        when(dialFileClient.list(sourcePath)).thenReturn(List.of(goodFile, badFile));
+        when(dialFileClient.download(sourcePath + "good.txt")).thenReturn(new byte[] {7, 8});
+        when(dialFileClient.download(sourcePath + "missing.txt"))
+                .thenThrow(new DialCoreClientException(HttpStatusCode.valueOf(404), "Not found", "File not found"));
+
+        List<String> copied = fileService.copyFilesBetweenDatasets(sourceId, targetId);
+
+        assertThat(copied).containsExactly("good.txt");
+        String targetPath = bucket + "/datasets/" + targetId + "/";
+        verify(dialFileClient).upload(eq(targetPath + "good.txt"), any(), eq("good.txt"), eq("text/plain"));
+        verify(dialFileClient, never()).upload(eq(targetPath + "missing.txt"), any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("copyFilesBetweenDatasets returns empty list and does not throw when listing source fails")
+    void copyFilesBetweenDatasets_returnsEmptyList_whenListFails() {
+        String sourcePath = bucket + "/datasets/" + sourceId + "/";
+        when(dialFileClient.list(sourcePath))
+                .thenThrow(new DialCoreClientException(HttpStatusCode.valueOf(500), "Error", "Server error"));
+
+        List<String> copied = fileService.copyFilesBetweenDatasets(sourceId, targetId);
+
+        assertThat(copied).isEmpty();
+        verify(dialFileClient, never()).download(anyString());
+        verify(dialFileClient, never()).upload(anyString(), any(), anyString(), anyString());
+    }
 }

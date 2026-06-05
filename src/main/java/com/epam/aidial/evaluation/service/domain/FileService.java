@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import static java.util.Objects.requireNonNull;
+
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.client.dialcore.DialFileClient;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialFileMetadataDto;
@@ -144,6 +146,46 @@ public class FileService {
                         sourceId,
                         filename,
                         targetId,
+                        e.getMessage(),
+                        e);
+            }
+        }
+        return copied;
+    }
+
+    /**
+     * Copies all files from the source dataset folder to the target dataset folder.
+     * Skips files that are no longer accessible (logs warning, continues).
+     * Does NOT validate that the target dataset exists in DB — the target dataset may not yet be persisted.
+     *
+     * @return list of successfully copied filenames
+     */
+    public List<String> copyFilesBetweenDatasets(UUID sourceDatasetId, UUID targetDatasetId) {
+        List<String> copied = new ArrayList<>();
+        String sourceFolderPath = buildDatasetFolderPath(requireNonNull(sourceDatasetId));
+        String targetFolderPath = buildDatasetFolderPath(requireNonNull(targetDatasetId));
+        List<DialFileMetadataDto> files;
+        try {
+            files = dialFileClient.list(sourceFolderPath);
+        } catch (Exception e) {
+            log.warn("Failed to list DIAL files for source dataset {}: {}", sourceDatasetId, e.getMessage(), e);
+            return copied;
+        }
+        for (DialFileMetadataDto file : files) {
+            String filename = file.getName();
+            String sourcePath = sourceFolderPath + filename;
+            String targetPath = targetFolderPath + filename;
+            try {
+                byte[] bytes = dialFileClient.download(sourcePath);
+                String contentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
+                dialFileClient.upload(targetPath, new ByteArrayInputStream(bytes), filename, contentType);
+                copied.add(filename);
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to copy DIAL file {}/{} to dataset {}: {}",
+                        sourceDatasetId,
+                        filename,
+                        targetDatasetId,
                         e.getMessage(),
                         e);
             }

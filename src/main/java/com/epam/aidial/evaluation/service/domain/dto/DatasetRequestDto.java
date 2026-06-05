@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -19,7 +20,7 @@ import lombok.NoArgsConstructor;
 public class DatasetRequestDto {
 
     @NotBlank(message = "Name is required")
-    @Size(max = 263, message = "Name must be less than 263 characters")
+    @Size(max = ValidationConstants.MAX_DATASET_NAME_LENGTH, message = "Name must be less than 263 characters")
     @Schema(example = "My Dataset")
     private String name;
 

@@ -27,6 +27,10 @@ Binary file storage uses DIAL Core file storage API, accessed via a dedicated EF
 - Suite delete: DB-first via `TransactionTemplate`, then post-commit best-effort DIAL cleanup via `FileService.deleteAllBySuiteId`. If the suite was bound to a PRIVATE dataset that is cascade-deleted in the same transaction, `deleteAllByDatasetId` also runs post-commit.
 - Dataset delete (PUBLIC explicit / PRIVATE explicit): same post-commit pattern via `FileService.deleteAllByDatasetId`. PUBLIC datasets with dependents are blocked by FK RESTRICT, so files are never cleaned while a dataset is still referenced.
 
+**Copy operations** (used by suite clone): both run **before** the DB transaction (DIAL I/O is non-transactional) and are best-effort — an inaccessible source file is logged and skipped, never failing the clone.
+- `FileService.copyFilesBetweenSuites(sourceSuiteId, targetSuiteId)` — copies suite-scoped files for every clone.
+- `FileService.copyFilesBetweenDatasets(sourceDatasetId, targetDatasetId)` — copies dataset-scoped files; invoked (via `DatasetCloneService.copyDatasetFiles`) only when a PRIVATE-dataset suite is cloned and its dataset is cloned too. On clone failure, the partially-copied target folders are cleaned best-effort in the `finally` (`deleteAllBySuiteId` + `deleteAllByDatasetId` when auto-cloning).
+
 **Filename validation**: alphanumeric, `-`, `_`, `.`, ` `, `(`, `)`. Max 255 chars. Per-owner uniqueness and per-owner file-count cap (`max-files-per-suite`, `max-files-per-dataset`) enforced at upload time (check-then-upload — not strictly race-free; accepted for v1).
 
 **ZIP I/O**:

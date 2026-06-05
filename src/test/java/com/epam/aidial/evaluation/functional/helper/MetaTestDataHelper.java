@@ -97,6 +97,24 @@ public class MetaTestDataHelper {
     }
 
     /**
+     * Seeds a single test case with caller-supplied {@code name} and {@code data} JSON into the
+     * dataset and returns its generated id. Lets tests embed file references in {@code data} to
+     * exercise ref rewriting.
+     */
+    @Transactional("metaTransactionManager")
+    public UUID seedTestCaseInDataset(UUID datasetId, String name, String dataJson) {
+        TestCase tc = TestCase.builder()
+                .datasetId(datasetId)
+                .testCaseName(name)
+                .data(dataJson)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        testCaseRepository.save(tc);
+        return tc.getId();
+    }
+
+    /**
      * Creates a test suite bound to a freshly minted dataset. Convenience overload for tests that
      * don't care which dataset the suite uses.
      */

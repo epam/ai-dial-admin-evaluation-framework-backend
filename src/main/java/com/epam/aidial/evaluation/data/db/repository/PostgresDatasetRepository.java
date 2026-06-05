@@ -18,6 +18,7 @@ import com.epam.aidial.evaluation.data.db.repository.sql.SortWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.JSONB;
 import org.jooq.SortField;
+import org.jooq.impl.DSL;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -182,6 +184,13 @@ public class PostgresDatasetRepository implements DatasetRepository {
     @Override
     public boolean existsById(UUID id) {
         return dsl.fetchExists(DATASETS, DATASETS.ID.eq(id.toString()));
+    }
+
+    @Override
+    public boolean existsByNameIgnoreCase(String name) {
+        // Matches the uq_datasets_name unique index on LOWER(name) so the dedup pre-check
+        // sees the same collisions the index would enforce.
+        return dsl.fetchExists(DATASETS, DSL.lower(DATASETS.NAME).eq(name.toLowerCase(Locale.ROOT)));
     }
 
     @Override

@@ -176,6 +176,18 @@ When a test suite is deleted, the system SHALL first delete the suite from the d
 - **WHEN** some DIAL file deletions succeed but others fail during cascade cleanup
 - **THEN** the system SHALL log each failure at WARN level and continue deleting remaining files (best-effort, no rollback)
 
+### Requirement: Copy files between dataset folders
+The system SHALL provide a service operation `FileService.copyFilesBetweenDatasets(sourceDatasetId, targetDatasetId)` that copies every file from the source dataset's DIAL storage folder (`{bucket}/datasets/{sourceDatasetId}/`) to the target dataset's folder (`{bucket}/datasets/{targetDatasetId}/`). The operation mirrors the existing suite-to-suite copy: it SHALL be best-effort (skip and log inaccessible files, continue), SHALL NOT require the target dataset to exist in the database, and SHALL return the list of successfully copied filenames. It is intended to run before the database transaction during a dataset clone.
+
+#### Scenario: Dataset-scoped files are copied
+- **WHEN** the source dataset folder contains `a.csv` and `b.json` and `copyFilesBetweenDatasets(source, target)` is invoked
+- **THEN** after the call the target dataset folder SHALL contain `a.csv` and `b.json` with identical content
+- **AND** the operation SHALL return `["a.csv", "b.json"]`
+
+#### Scenario: Inaccessible file is skipped gracefully
+- **WHEN** a file in the source dataset folder cannot be downloaded
+- **THEN** system SHALL log a warning and continue copying the remaining files without throwing
+
 ### Requirement: File storage configuration
 The system SHALL support configurable properties for DIAL file storage. The API key is defined at the top-level `dial.*` namespace (shared across features); file-storage-specific properties use `dial.file-storage.*`.
 

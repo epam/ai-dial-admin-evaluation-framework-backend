@@ -5,7 +5,7 @@
 | Aspect | Value |
 |--------|-------|
 | Language | Java 25 |
-| Framework | Spring Boot 3.5.11 |
+| Framework | Spring Boot 3.5.14 |
 | Build | Gradle 9.5.1 |
 | Database | PostgreSQL (JDBC only, NO JPA) |
 | Security | OIDC/JWT multi-issuer |
@@ -80,6 +80,8 @@
 - When changing API endpoints or DTOs, update OpenAPI examples (`@Schema example`, `@ExampleObject`) to reflect the new contract.
 - When adding Flyway migrations that change schema, update `docs/database-schema.md`.
 - When adding a configuration property: add a row to `docs/configuration.md` with all six columns (`Property | Environment Variable | Default | Required | Applied when | Description`) in the same PR; see [configuration-docs spec](openspec/specs/configuration-docs/spec.md) for the full rule (column schema, four-term `Required` vocabulary, top-level grouping).
+- Prefer extracting separate methods with descriptive names to large enclosing methods with lots of commentary.
+- Use final for local variables that do not change.
 
 ### DON'T ❌
 - Don't use JPA/Hibernate - this is a JDBC-only project
@@ -123,7 +125,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Dual Datasource (Meta + Analytics)](docs/patterns/dual-datasource.md) | Required `@Qualifier`s for DSLContext / tx manager / conditionals — getting these wrong silently uses the wrong DB |
 | [CursorCodec & Keyset Pagination](docs/patterns/cursor-pagination.md) | Analytics layer; `LIMIT size+1` pattern + opaque Base64 cursor |
 | [SchemaTypeCoercer vs SchemaChangeCoercer](docs/patterns/schema-coercers.md) | Permissive (CSV import) vs strict (revalidation after schema-type change) — pick the right one |
-| [DIAL Core File Storage](docs/patterns/dial-file-storage.md) | `DialFileClient` + `DialFileRefResolver`; `@ef/suites/{suiteId}/{filename}` references |
+| [DIAL Core File Storage](docs/patterns/dial-file-storage.md) | `DialFileClient` + `DialFileRefResolver`; suite-scoped `@ef/suites/{suiteId}/{filename}` and dataset-scoped `@ef/datasets/{datasetId}/{filename}` references |
 | [RequestBodySerializerRegistry](docs/patterns/request-body-serializer-registry.md) | Strategy pattern for JSON / multipart / urlencoded request bodies |
 | [JSONB_NUMERIC Multi-Level Path Filtering](docs/patterns/jsonb-numeric-filtering.md) | Two-level JSONB filtering with parameterized path components |
 | [Typed SQL DSL (jOOQ)](docs/patterns/jooq-typed-sql-dsl.md) | Codegen pipeline, drift guard, DSLContext config, RecordMapper convention |

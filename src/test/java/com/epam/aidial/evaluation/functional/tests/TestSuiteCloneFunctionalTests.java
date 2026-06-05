@@ -7,10 +7,14 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.dialcore.DialFileClient;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialFileMetadataDto;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
+import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteMetricDefinition;
+import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRepository;
+import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
@@ -18,6 +22,7 @@ import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
@@ -30,6 +35,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteUpdateResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -38,9 +44,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 /**
  * Functional tests for POST /api/v1/test-suites/{id}/clone.
@@ -79,6 +91,12 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private DatasetRepository datasetRepository;
+
+    @Autowired
+    private TestSuiteRepository testSuiteRepository;
 
     private UUID newDatasetWithSchema(List<FieldDefinitionDto> schema) {
         try {
@@ -538,6 +556,230 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
         assertThat(testCaseRepository.countByDatasetId(overrideDatasetId)).isZero();
         // Source dataset is untouched
         assertThat(testCaseRepository.countByDatasetId(sourceDatasetId)).isEqualTo(sourceTestCasesBefore);
+    }
+
+    // -----------------------------------------------------------------------
+    // 15.8 — PRIVATE dataset auto-clone semantics
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "15.8 cloning a PRIVATE-dataset suite clones the dataset (new PRIVATE dataset, test cases copied with new "
+                    + "ids across a pagination boundary, disabledTestCaseIds remapped, dataset file copied + ref rewritten); source untouched")
+    void cloningPrivateDatasetSuiteClonesDataset() {
+        Dataset privateDs = metaTestDataHelper.createDataset(
+                "Private Src " + UUID.randomUUID(), promptSchemaJson(), DatasetVisibility.PRIVATE);
+        TestSuite source = metaTestDataHelper.createTestSuite("Private Suite " + UUID.randomUUID(), privateDs.getId());
+
+        // Seed 3 test cases (batch-size is 2 in tests → crosses a pagination boundary). One carries a
+        // dataset-scoped file reference in its data.
+        List<UUID> plainIds = metaTestDataHelper.seedManyTestCasesInDataset(privateDs.getId(), 2, true);
+        metaTestDataHelper.seedTestCaseInDataset(
+                privateDs.getId(), "ref-case", "{\"file\":\"@ef/datasets/" + privateDs.getId() + "/data.csv\"}");
+        UUID disabledSourceId = plainIds.get(0);
+        metaTestDataHelper.appendDisabledTestCaseIds(source.getId(), List.of(disabledSourceId));
+        uploadDatasetFile(privateDs.getId(), "data.csv", "col\n1");
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Private Clone " + UUID.randomUUID())
+                .build();
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(request),
+                TestSuiteUpdateResultDto.class);
+
+        // No 409 — the clone binds a fresh PRIVATE dataset, so the binding-guard trigger passes
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto cloned = response.getBody().getSuite();
+        UUID newDatasetId = cloned.getDatasetId();
+        assertThat(newDatasetId).isNotNull().isNotEqualTo(privateDs.getId());
+
+        // New dataset is PRIVATE
+        Dataset clonedDataset = datasetRepository.findById(newDatasetId).orElseThrow();
+        assertThat(clonedDataset.getVisibility()).isEqualTo(DatasetVisibility.PRIVATE);
+
+        // Source dataset untouched
+        assertThat(testCaseRepository.countByDatasetId(privateDs.getId())).isEqualTo(3);
+
+        // Cloned dataset has all 3 test cases copied with brand-new ids
+        List<TestCase> sourceCases = testCaseRepository.findBatchByDatasetId(privateDs.getId(), 0, 100);
+        List<TestCase> clonedCases = testCaseRepository.findBatchByDatasetId(newDatasetId, 0, 100);
+        assertThat(clonedCases).hasSize(3);
+        List<UUID> sourceIds = sourceCases.stream().map(TestCase::getId).toList();
+        assertThat(clonedCases).extracting(TestCase::getId).doesNotContainAnyElementsOf(sourceIds);
+
+        // @ef/datasets ref rewritten from source to new dataset id in the copied test case data
+        TestCase clonedRefCase = clonedCases.stream()
+                .filter(c -> "ref-case".equals(c.getTestCaseName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(clonedRefCase.getData())
+                .contains("@ef/datasets/" + newDatasetId + "/data.csv")
+                .doesNotContain(privateDs.getId().toString());
+
+        // disabledTestCaseIds remapped onto the cloned test case id (old id dropped)
+        String disabledSourceName = sourceCases.stream()
+                .filter(c -> c.getId().equals(disabledSourceId))
+                .map(TestCase::getTestCaseName)
+                .findFirst()
+                .orElseThrow();
+        UUID expectedDisabledCloneId = clonedCases.stream()
+                .filter(c -> disabledSourceName.equals(c.getTestCaseName()))
+                .map(TestCase::getId)
+                .findFirst()
+                .orElseThrow();
+        assertThat(cloned.getDisabledTestCaseIds())
+                .containsExactly(expectedDisabledCloneId)
+                .doesNotContain(disabledSourceId);
+
+        // Dataset-scoped file copied to the new dataset folder
+        assertThat(listDatasetFilenames(newDatasetId)).contains("data.csv");
+    }
+
+    @Test
+    @DisplayName(
+            "15.8 cloning a PUBLIC-dataset suite shares the dataset — no new dataset row, no test-case rows copied")
+    void cloningPublicDatasetSuiteSharesDataset() {
+        TestSuiteResponseDto source = createDeploymentSuite("Public Share Source " + UUID.randomUUID());
+        UUID sourceDatasetId = source.getDatasetId();
+        metaTestDataHelper.seedManyTestCasesInDataset(sourceDatasetId, 2, true);
+        long datasetsBefore = datasetRepository.count();
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Public Share Clone " + UUID.randomUUID())
+                .build();
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(request),
+                TestSuiteUpdateResultDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        // Clone shares the PUBLIC dataset — no auto-clone happened
+        assertThat(response.getBody().getSuite().getDatasetId()).isEqualTo(sourceDatasetId);
+        assertThat(datasetRepository.count()).isEqualTo(datasetsBefore);
+        // Source test cases untouched, no extra rows created anywhere
+        assertThat(testCaseRepository.countByDatasetId(sourceDatasetId)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("15.8 clone-name collision dedups: pre-existing '<name> (clone)' yields '<name> (clone 2)'")
+    void cloningPrivateDatasetDedupesCloneName() {
+        String baseName = "Dedup Ds " + UUID.randomUUID();
+        Dataset privateDs = metaTestDataHelper.createDataset(baseName, promptSchemaJson(), DatasetVisibility.PRIVATE);
+        TestSuite source = metaTestDataHelper.createTestSuite("Dedup Suite " + UUID.randomUUID(), privateDs.getId());
+        // Pre-create a PUBLIC dataset already named "<base> (clone)" to force the dedup suffix
+        metaTestDataHelper.createDataset(baseName + " (clone)", "[]");
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Dedup Clone Suite " + UUID.randomUUID())
+                .build();
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(request),
+                TestSuiteUpdateResultDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID newDatasetId = response.getBody().getSuite().getDatasetId();
+        Dataset clonedDataset = datasetRepository.findById(newDatasetId).orElseThrow();
+        assertThat(clonedDataset.getName()).isEqualTo(baseName + " (clone 2)");
+    }
+
+    @Test
+    @DisplayName(
+            "15.8 clone of a PRIVATE-dataset suite with a DIFFERENT datasetId is rejected with 409 (no silent rebind)")
+    void cloningPrivateDatasetSuiteWithDifferentDatasetIdReturns409() {
+        Dataset privateDs = metaTestDataHelper.createDataset(
+                "Private Rebind Src " + UUID.randomUUID(), promptSchemaJson(), DatasetVisibility.PRIVATE);
+        TestSuite source =
+                metaTestDataHelper.createTestSuite("Private Rebind Suite " + UUID.randomUUID(), privateDs.getId());
+        metaTestDataHelper.seedManyTestCasesInDataset(privateDs.getId(), 2, true);
+        // A different, existing dataset the client tries to redirect the clone to.
+        Dataset otherDs = metaTestDataHelper.createDataset("Other Public " + UUID.randomUUID(), promptSchemaJson());
+        long datasetsBefore = datasetRepository.count();
+        long suitesBefore = testSuiteRepository.count();
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Private Rebind Clone " + UUID.randomUUID())
+                .datasetId(otherDs.getId())
+                .build();
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("PRIVATE_DATASET_REBIND_FORBIDDEN");
+        // Nothing was created — no clone suite, no clone dataset, no copied test cases.
+        assertThat(testSuiteRepository.count()).isEqualTo(suitesBefore);
+        assertThat(datasetRepository.count()).isEqualTo(datasetsBefore);
+        assertThat(testCaseRepository.countByDatasetId(otherDs.getId())).isZero();
+        // Source PRIVATE dataset still bound only to the source suite (invariant preserved).
+        assertThat(testCaseRepository.countByDatasetId(privateDs.getId())).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName(
+            "15.8 clone of a PRIVATE-dataset suite passing the SAME datasetId clones the PRIVATE dataset (like omitting it)")
+    void cloningPrivateDatasetSuiteWithSameDatasetIdClonesIt() {
+        Dataset privateDs = metaTestDataHelper.createDataset(
+                "Private Same Src " + UUID.randomUUID(), promptSchemaJson(), DatasetVisibility.PRIVATE);
+        TestSuite source =
+                metaTestDataHelper.createTestSuite("Private Same Suite " + UUID.randomUUID(), privateDs.getId());
+        metaTestDataHelper.seedManyTestCasesInDataset(privateDs.getId(), 2, true);
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Private Same Clone " + UUID.randomUUID())
+                .datasetId(privateDs.getId())
+                .build();
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(request),
+                TestSuiteUpdateResultDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID newDatasetId = response.getBody().getSuite().getDatasetId();
+        // A fresh PRIVATE dataset was created (not the source) and the test cases were copied.
+        assertThat(newDatasetId).isNotNull().isNotEqualTo(privateDs.getId());
+        assertThat(datasetRepository.findById(newDatasetId).orElseThrow().getVisibility())
+                .isEqualTo(DatasetVisibility.PRIVATE);
+        assertThat(testCaseRepository.countByDatasetId(newDatasetId)).isEqualTo(2);
+        assertThat(testCaseRepository.countByDatasetId(privateDs.getId())).isEqualTo(2);
+    }
+
+    private String promptSchemaJson() {
+        try {
+            return objectMapper.writeValueAsString(List.of(FieldDefinitionDto.builder()
+                    .name("prompt")
+                    .type(SchemaFieldType.STRING)
+                    .required(false)
+                    .build()));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize prompt schema fixture", e);
+        }
+    }
+
+    private void uploadDatasetFile(UUID datasetId, String filename, String content) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        body.add("file", new ByteArrayResource(bytes) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        });
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        ResponseEntity<FileMetadataDto> r = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/files"), new HttpEntity<>(body, headers), FileMetadataDto.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+    }
+
+    private List<String> listDatasetFilenames(UUID datasetId) {
+        ResponseEntity<List<FileMetadataDto>> r = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/files"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return r.getBody().stream().map(FileMetadataDto::getFilename).toList();
     }
 
     private void createTestCase(UUID suiteId, String name, Map<String, Object> data) {

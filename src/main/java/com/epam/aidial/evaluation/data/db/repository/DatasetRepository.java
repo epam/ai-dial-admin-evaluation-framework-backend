@@ -35,6 +35,13 @@ public interface DatasetRepository {
 
     boolean existsById(UUID id);
 
+    /**
+     * Case-insensitive existence check on the dataset name, matching the
+     * {@code uq_datasets_name} unique index defined on {@code LOWER(name)}. Used by the
+     * dataset-clone name-dedup loop to pick a free {@code "<name> (clone N)"} name.
+     */
+    boolean existsByNameIgnoreCase(String name);
+
     void updateIsValid(UUID id, boolean isValid);
 
     /**

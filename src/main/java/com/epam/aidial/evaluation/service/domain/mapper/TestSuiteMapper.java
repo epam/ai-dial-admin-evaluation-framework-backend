@@ -19,6 +19,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -250,6 +251,29 @@ public class TestSuiteMapper {
             log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
             return List.of();
         }
+    }
+
+    /**
+     * Remaps the JSONB-encoded {@code disabledTestCaseIds} array through an old → new test-case id
+     * map, preserving the stored representation. Used by the suite-clone flow when the source's test
+     * cases are re-keyed into a cloned dataset. Reuses the existing
+     * {@link #deserializeDisabledIds(String)} / {@link #serializeDisabledIds(List)} round-trip — ids
+     * with no mapping are dropped defensively (a clone cannot disable a test case it does not own).
+     * Returns the input unchanged when there is nothing to remap (null/blank).
+     */
+    public String remapDisabledIds(String json, Map<UUID, UUID> idMap) {
+        List<UUID> oldIds = deserializeDisabledIds(json);
+        if (oldIds == null || oldIds.isEmpty()) {
+            return json;
+        }
+        List<UUID> newIds = new ArrayList<>(oldIds.size());
+        for (UUID oldId : oldIds) {
+            UUID newId = idMap.get(oldId);
+            if (newId != null) {
+                newIds.add(newId);
+            }
+        }
+        return serializeDisabledIds(newIds);
     }
 
     /**

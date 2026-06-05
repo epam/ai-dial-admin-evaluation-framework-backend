@@ -137,9 +137,19 @@ public class TestSuiteController {
     @PostMapping("/{id}/clone")
     @Operation(
             summary = "Clone a test suite",
-            description = "Creates a deep copy of a test suite including all test cases, TSMDs, and DIAL files. "
-                    + "Override fields are applied to the clone; null fields inherit from the source. "
-                    + "Always returns 201 with a revalidation task for the cloned suite.",
+            description = """
+                Creates a copy of a test suite's configuration, TSMDs, and suite-level DIAL files. \
+                By default the clone shares the source's dataset (test cases are owned by the dataset, \
+                not copied). When the source is bound to a PRIVATE dataset and no datasetId override is \
+                given, the dataset is also cloned — a new PRIVATE dataset with copied test cases (new ids) \
+                and dataset-scoped files — and the clone is bound to it. For a PUBLIC or unbound source, \
+                supplying datasetId rebinds the clone to that dataset without cloning. When the source is \
+                bound to a PRIVATE dataset the clone cannot be redirected: datasetId must be omitted or equal \
+                to the source's dataset id (both clone the PRIVATE dataset); a different datasetId returns 409 \
+                (PRIVATE_DATASET_REBIND_FORBIDDEN). \
+                Override fields are applied to the clone; null fields inherit from the source. Suite-level \
+                validation runs synchronously during the clone; no async revalidation is spawned, so the \
+                response's revalidationTask is always null. Returns 201.""",
             requestBody =
                     @RequestBody(
                             description = "Clone request with required name and optional overrides",
@@ -149,14 +159,17 @@ public class TestSuiteController {
                                             schema = @Schema(implementation = TestSuiteCloneRequestDto.class))))
     @ApiResponse(
             responseCode = "201",
-            description = "Test suite cloned successfully; async revalidation started",
+            description = "Test suite cloned successfully (synchronous validation only; revalidationTask is null)",
             content =
                     @Content(
                             mediaType = "application/json",
                             schema = @Schema(implementation = TestSuiteUpdateResultDto.class)))
     @ApiResponse(responseCode = "400", description = "Invalid request body")
-    @ApiResponse(responseCode = "404", description = "Source test suite not found")
-    @ApiResponse(responseCode = "409", description = "Test suite with the given name already exists")
+    @ApiResponse(responseCode = "404", description = "Source test suite or referenced dataset not found")
+    @ApiResponse(
+            responseCode = "409",
+            description = "Test suite name already exists, or datasetId redirects a PRIVATE-dataset clone to a "
+                    + "different dataset (PRIVATE_DATASET_REBIND_FORBIDDEN)")
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<TestSuiteUpdateResultDto> clone(
             @Parameter(description = "Source test suite ID") @PathVariable UUID id,

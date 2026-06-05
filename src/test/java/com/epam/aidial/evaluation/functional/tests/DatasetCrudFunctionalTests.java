@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
+import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
@@ -31,9 +32,24 @@ public abstract class DatasetCrudFunctionalTests extends BaseFunctionalTest {
     @Autowired
     private MetaTestDataHelper metaTestDataHelper;
 
+    @Autowired
+    private DatasetRepository datasetRepository;
+
     // -----------------------------------------------------------------------
     // create
     // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("existsByNameIgnoreCase matches a persisted dataset name regardless of case")
+    void existsByNameIgnoreCaseIsCaseInsensitive() {
+        String name = "Case-Probe-" + UUID.randomUUID();
+        metaTestDataHelper.createDataset(name);
+
+        assertThat(datasetRepository.existsByNameIgnoreCase(name)).isTrue();
+        assertThat(datasetRepository.existsByNameIgnoreCase(name.toUpperCase())).isTrue();
+        assertThat(datasetRepository.existsByNameIgnoreCase(name.toLowerCase())).isTrue();
+        assertThat(datasetRepository.existsByNameIgnoreCase(name + "-absent")).isFalse();
+    }
 
     @Test
     @DisplayName("POST /datasets returns 201 with persisted dataset and ETag header")

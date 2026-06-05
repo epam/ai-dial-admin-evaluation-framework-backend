@@ -11,6 +11,8 @@ public final class ValidationConstants {
     public static final int MAX_LIST_SORT_PARAMS = 32;
     /** Maximum number of fact fields in test cases definition. */
     public static final int MAX_FACT_FIELDS = 128;
+    /** Maximum length of a dataset name. Matches the {@code datasets.name VARCHAR(263)} column. */
+    public static final int MAX_DATASET_NAME_LENGTH = 263;
     /** Maximum number of columns in an EvalSummary CSV export request and in the planner's derived manifest. */
     public static final int MAX_EXPORT_COLUMNS = 512;
     /**

@@ -22,6 +22,7 @@ import com.epam.aidial.evaluation.data.db.model.TestSuiteMetricDefinition;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
@@ -62,6 +63,9 @@ class TestSuiteCloneServiceTest {
 
     @Mock
     private DatasetRepository datasetRepository;
+
+    @Mock
+    private DatasetCloneService datasetCloneService;
 
     @Mock
     private FileService fileService;
@@ -107,6 +111,7 @@ class TestSuiteCloneServiceTest {
                 testSuiteRepository,
                 tsmdRepository,
                 datasetRepository,
+                datasetCloneService,
                 fileService,
                 testSuiteMapper,
                 suiteValidationService,
@@ -283,6 +288,53 @@ class TestSuiteCloneServiceTest {
         assertThat(cloned.getId()).isNotEqualTo(tsmdWithRef.getId());
         // linked to new suite
         assertThat(cloned.getTestSuiteId()).isEqualTo(newId);
+    }
+
+    // -----------------------------------------------------------------------
+    // (f) Unbound source (datasetId == null) → validates against empty schema, no NPE
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("(f) cloning an unbound source validates against empty schema without calling DatasetSchemaProvider")
+    void clone_unboundSource_validatesAgainstEmptySchema_andNeverResolvesSchema() {
+        TestSuite source = buildSource();
+        source.setDatasetId(null);
+        UUID newId = UUID.randomUUID();
+        TestSuite newEntity = buildNewEntityWithId(source, newId);
+        newEntity.setDatasetId(null);
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+
+        TestSuiteRequestDto requestDto = TestSuiteRequestDto.builder()
+                .name(newEntity.getName())
+                .suiteType(newEntity.getSuiteType())
+                .datasetId(null)
+                .inputBindings(List.of())
+                .responseColumns(List.of())
+                .build();
+        when(testSuiteMapper.toRequestDto(newEntity)).thenReturn(requestDto);
+        when(endpointSchemaRefResolver.resolve(any())).thenAnswer(inv -> inv.getArgument(0));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = ArgumentCaptor.forClass(List.class);
+        when(suiteValidationService.validateSuite(any(TestSuiteRequestDto.class), isNull(), schemaCaptor.capture()))
+                .thenReturn(ValidationResult.builder()
+                        .valid(true)
+                        .warnings(List.of())
+                        .build());
+        when(warningsSerializer.serializeWarnings(anyList())).thenReturn("[]");
+        when(tsmdRepository.findBatchByTestSuiteId(any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(testSuiteMapper.toDto(newEntity))
+                .thenReturn(TestSuiteResponseDto.builder().build());
+
+        TestSuiteUpdateResultDto result = service.clone(sourceId, cloneRequestWithNameOnly(), null);
+
+        assertThat(result.getSuite()).isNotNull();
+        // No dataset bound → schema resolution is skipped entirely (the NPE source)
+        verify(datasetSchemaProvider, never()).getSchema(any());
+        // Validation still runs, against an empty schema
+        assertThat(schemaCaptor.getValue()).isEmpty();
     }
 
     // -----------------------------------------------------------------------

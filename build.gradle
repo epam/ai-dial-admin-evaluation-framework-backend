@@ -143,7 +143,6 @@ dependencies {
 
     // Schema & OpenAPI utilities
     implementation 'com.networknt:json-schema-validator:1.5.9'
-    implementation 'io.swagger.parser.v3:swagger-parser:2.1.41'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
 
     // MCP SDK (Model Context Protocol client)

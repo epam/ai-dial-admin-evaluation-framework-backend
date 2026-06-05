@@ -1,18 +1,23 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import static com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext.TRANSACTION_TIMESTAMP_KEY;
+
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.validation.RevalidationProperties;
+import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteMetricDefinition;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
-import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteUpdateResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
+import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
+import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationDetector;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
@@ -20,6 +25,7 @@ import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerial
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -46,6 +52,7 @@ public class TestSuiteCloneService {
     private final TestSuiteRepository testSuiteRepository;
     private final TestSuiteMetricDefinitionRepository testSuiteMetricDefinitionRepository;
     private final DatasetRepository datasetRepository;
+    private final DatasetCloneService datasetCloneService;
     private final FileService fileService;
     private final TestSuiteMapper testSuiteMapper;
     private final SuiteValidationService suiteValidationService;
@@ -61,6 +68,7 @@ public class TestSuiteCloneService {
             TestSuiteRepository testSuiteRepository,
             TestSuiteMetricDefinitionRepository testSuiteMetricDefinitionRepository,
             DatasetRepository datasetRepository,
+            DatasetCloneService datasetCloneService,
             FileService fileService,
             TestSuiteMapper testSuiteMapper,
             SuiteValidationService suiteValidationService,
@@ -74,6 +82,7 @@ public class TestSuiteCloneService {
         this.testSuiteRepository = testSuiteRepository;
         this.testSuiteMetricDefinitionRepository = testSuiteMetricDefinitionRepository;
         this.datasetRepository = datasetRepository;
+        this.datasetCloneService = datasetCloneService;
         this.fileService = fileService;
         this.testSuiteMapper = testSuiteMapper;
         this.suiteValidationService = suiteValidationService;
@@ -93,37 +102,70 @@ public class TestSuiteCloneService {
      */
     public TestSuiteUpdateResultDto clone(UUID sourceId, TestSuiteCloneRequestDto dto, Jwt jwt) {
         log.info("Cloning TestSuite {} to new suite with name '{}'", sourceId, dto.getName());
-
         // Step 1: Fetch source suite or 404
-        TestSuite source = testSuiteRepository
+        final TestSuite sourceSuite = testSuiteRepository
                 .findById(sourceId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found with id: " + sourceId));
 
-        // Step 1a: Validate optional datasetId override exists
-        if (dto.getDatasetId() != null && !datasetRepository.existsById(dto.getDatasetId())) {
-            throw new EntityNotFoundException("Dataset not found with id: " + dto.getDatasetId());
+        final UUID sourceDatasetId = sourceSuite.getDatasetId();
+        final Dataset sourceDataset = sourceDatasetId != null
+                ? datasetRepository.findById(sourceDatasetId).orElse(null)
+                : null;
+
+        final boolean clonePrivateDataset =
+                sourceDataset != null && sourceDataset.getVisibility() == DatasetVisibility.PRIVATE;
+
+        final UUID datasetIdOverride = dto.getDatasetId();
+
+        if (clonePrivateDataset && datasetIdOverride != null && !datasetIdOverride.equals(sourceDatasetId)) {
+            throw new DatasetVisibilityRuleException(
+                    DatasetVisibilityErrorCode.PRIVATE_DATASET_REBIND_FORBIDDEN,
+                    "Cannot rebind a clone to a different dataset when the source suite is bound to a PRIVATE "
+                            + "dataset. Omit datasetId (the PRIVATE dataset is cloned automatically) or pass the "
+                            + "source suite's dataset id.");
         }
 
-        // Step 2: Pre-generate new suite ID
-        UUID newId = UUID.randomUUID();
-        String createdBy = authorResolver.getCreatedBy(jwt);
+        if (datasetIdOverride != null && !datasetRepository.existsById(datasetIdOverride)) {
+            throw new EntityNotFoundException("Dataset for override not found by id: " + datasetIdOverride);
+        }
+
+        final UUID newSuiteId = UUID.randomUUID();
+        final String createdBy = authorResolver.getCreatedBy(jwt);
+
+        final UUID newDatasetId = clonePrivateDataset ? UUID.randomUUID() : null;
 
         // Step 3: Build new suite entity with overrides + suite-level file ref rewriting
-        TestSuite newSuiteEntity = testSuiteMapper.toCloneEntity(source, dto, newId, createdBy);
+        final TestSuite newSuiteEntity = testSuiteMapper.toCloneEntity(sourceSuite, dto, newSuiteId, createdBy);
+        if (clonePrivateDataset) {
+            newSuiteEntity.setDatasetId(newDatasetId);
+        }
 
         boolean cloneSucceeded = false;
         try {
-            // Step 4: Copy suite-level DIAL files (before DB transaction)
             fileService.copyFilesBetweenSuites(sourceId, newSuiteEntity.getId());
 
-            // Step 4a: Synchronous suite-level validation against the resolved dataset's schema
-            applySuiteValidation(newSuiteEntity);
+            if (clonePrivateDataset) {
+                datasetCloneService.copyDatasetFiles(sourceDataset.getId(), newDatasetId);
+            }
 
-            // Step 5: DB writes (suite + TSMDs only — test cases are owned by the dataset and shared)
-            long cloneTimestamp = clock.millis();
-            executeDbWrites(newSuiteEntity, sourceId, newSuiteEntity.getId(), cloneTimestamp);
+            /*
+             in case of private dataset - validate against existing source dataset, otherwise take id of
+             existing/re-assigned public dataset
+            */
+            final UUID datasetToValidateAgainst =
+                    clonePrivateDataset ? sourceDataset.getId() : newSuiteEntity.getDatasetId();
+            applySuiteValidation(newSuiteEntity, datasetToValidateAgainst);
 
-            // Step 6: Return result with revalidationTask=null (no async task spawned by clone)
+            final long cloneTimestamp = clock.millis();
+            executeDbWrites(
+                    newSuiteEntity,
+                    sourceId,
+                    newSuiteEntity.getId(),
+                    cloneTimestamp,
+                    clonePrivateDataset ? sourceDataset : null,
+                    newDatasetId,
+                    createdBy);
+
             cloneSucceeded = true;
             return TestSuiteUpdateResultDto.builder()
                     .suite(testSuiteMapper.toDto(newSuiteEntity))
@@ -135,15 +177,23 @@ public class TestSuiteCloneService {
             throw ex;
         } finally {
             if (!cloneSucceeded) {
+                // DB rows roll back with the transaction; only the non-transactional DIAL files copied
+                // before the transaction need explicit best-effort cleanup.
                 fileService.deleteAllBySuiteId(newSuiteEntity.getId());
+                if (clonePrivateDataset) {
+                    fileService.deleteAllByDatasetId(newDatasetId);
+                }
             }
         }
     }
 
     /**
-     * Applies synchronous suite-level validation against the resolved dataset's schema.
+     * Applies synchronous suite-level validation against the dataset schema identified by
+     * {@code schemaDatasetId}. When auto-cloning a PRIVATE dataset the cloned row does not exist yet,
+     * so the caller passes the source dataset id (the clone's schema is identical); otherwise this is
+     * the resolved/override dataset id bound to the suite.
      */
-    private void applySuiteValidation(TestSuite entity) {
+    private void applySuiteValidation(TestSuite entity, UUID schemaDatasetId) {
         TestSuiteRequestDto dto = testSuiteMapper.toRequestDto(entity);
 
         // Normalize nulls to empty lists (mirrors normalizeRequest() in TestSuiteService)
@@ -155,7 +205,8 @@ public class TestSuiteCloneService {
         }
         dto.setEndpointRef(endpointSchemaRefResolver.resolve(dto.getEndpointRef()));
 
-        List<FieldDefinitionDto> datasetSchema = datasetSchemaProvider.getSchema(entity.getDatasetId());
+        List<FieldDefinitionDto> datasetSchema =
+                schemaDatasetId != null ? datasetSchemaProvider.getSchema(schemaDatasetId) : List.of();
         ValidationResult result = suiteValidationService.validateSuite(dto, null, datasetSchema);
 
         entity.setValid(result.isValid());
@@ -168,19 +219,34 @@ public class TestSuiteCloneService {
      * no file-ref rewriting in test-case data). TSMD bindings still carry suite-scoped file refs
      * which are rewritten from source-suite paths to new-suite paths.
      */
-    private void executeDbWrites(TestSuite newSuiteEntity, UUID sourceId, UUID newId, long cloneTimestamp) {
+    private void executeDbWrites(
+            TestSuite newSuiteEntity,
+            UUID sourceId,
+            UUID newId,
+            long cloneTimestamp,
+            Dataset datasetToClone,
+            UUID newDatasetId,
+            String createdBy) {
         String sourcePrefix = "@ef/suites/" + sourceId + "/";
         String targetPrefix = "@ef/suites/" + newId + "/";
         int batchSize = revalidationProperties.getBatchSize();
 
         boolean timestampBound = false;
-        if (!TransactionSynchronizationManager.hasResource(TransactionTimestampContext.TRANSACTION_TIMESTAMP_KEY)) {
-            TransactionSynchronizationManager.bindResource(
-                    TransactionTimestampContext.TRANSACTION_TIMESTAMP_KEY, cloneTimestamp);
+        if (!TransactionSynchronizationManager.hasResource(TRANSACTION_TIMESTAMP_KEY)) {
+            TransactionSynchronizationManager.bindResource(TRANSACTION_TIMESTAMP_KEY, cloneTimestamp);
             timestampBound = true;
         }
         try {
             transactionTemplate.execute(status -> {
+                // 5pre: When auto-cloning, clone the dataset + its test cases first (joins this tx),
+                // then remap the inherited disabledTestCaseIds onto the new test-case ids.
+                if (datasetToClone != null) {
+                    Map<UUID, UUID> testCaseIdMap = datasetCloneService.cloneRowAndTestCases(
+                            datasetToClone, newDatasetId, createdBy, cloneTimestamp);
+                    newSuiteEntity.setDisabledTestCaseIds(
+                            testSuiteMapper.remapDisabledIds(newSuiteEntity.getDisabledTestCaseIds(), testCaseIdMap));
+                }
+
                 // 5a: Insert new suite
                 testSuiteRepository.createWithId(newSuiteEntity, cloneTimestamp);
 
@@ -216,8 +282,7 @@ public class TestSuiteCloneService {
             });
         } finally {
             if (timestampBound) {
-                TransactionSynchronizationManager.unbindResourceIfPossible(
-                        TransactionTimestampContext.TRANSACTION_TIMESTAMP_KEY);
+                TransactionSynchronizationManager.unbindResourceIfPossible(TRANSACTION_TIMESTAMP_KEY);
             }
         }
     }

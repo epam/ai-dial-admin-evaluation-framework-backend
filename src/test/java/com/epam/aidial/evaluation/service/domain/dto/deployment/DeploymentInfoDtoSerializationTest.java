@@ -2,10 +2,10 @@ package com.epam.aidial.evaluation.service.domain.dto.deployment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("DeploymentInfoDto JSON serialization")
 class DeploymentInfoDtoSerializationTest {
@@ -14,7 +14,7 @@ class DeploymentInfoDtoSerializationTest {
 
     @Test
     @DisplayName("DialModelInfoDto serializes with $type dial-model (kebab-case)")
-    void dialModelInfoDtoSerializesWithKebabCaseType() throws JsonProcessingException {
+    void dialModelInfoDtoSerializesWithKebabCaseType() throws JacksonException {
         DialModelInfoDto dto = DialModelInfoDto.builder()
                 .deploymentId("gpt-5")
                 .displayName("GPT-5")
@@ -28,7 +28,7 @@ class DeploymentInfoDtoSerializationTest {
 
     @Test
     @DisplayName("DialApplicationInfoDto serializes with $type dial-application (kebab-case)")
-    void dialApplicationInfoDtoSerializesWithKebabCaseType() throws JsonProcessingException {
+    void dialApplicationInfoDtoSerializesWithKebabCaseType() throws JacksonException {
         DialApplicationInfoDto dto = DialApplicationInfoDto.builder()
                 .deploymentId("EntityExtractor")
                 .displayName("Entity Extractor")
@@ -42,7 +42,7 @@ class DeploymentInfoDtoSerializationTest {
 
     @Test
     @DisplayName("round-trip deserializes to correct subtype by $type")
-    void roundTripDeserializesToCorrectSubtype() throws JsonProcessingException {
+    void roundTripDeserializesToCorrectSubtype() throws JacksonException {
         String modelJson = "{\"$type\":\"dial-model\",\"deploymentId\":\"m1\",\"displayName\":\"Model 1\"}";
         String appJson = "{\"$type\":\"dial-application\",\"deploymentId\":\"a1\",\"displayName\":\"App 1\"}";
 

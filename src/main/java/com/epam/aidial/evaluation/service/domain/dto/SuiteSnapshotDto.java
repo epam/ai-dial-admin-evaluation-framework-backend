@@ -7,20 +7,25 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.databind.annotation.JsonPOJOBuilder;
 
+/**
+ * Suite snapshot DTO. Jackson 3 deserializes via the Lombok builder so that {@code @Builder.Default}
+ * is honored for missing JSON fields (e.g. {@code snapshotVersion} defaults to {@link #CURRENT_VERSION}).
+ *
+ * <p>{@code @Jacksonized} cannot be used because both Jackson 2 and Jackson 3 are on the classpath
+ * (MCP SDK dependency), causing Lombok ambiguity errors. The {@code @JsonDeserialize(builder = ...)}
+ * + {@code @JsonPOJOBuilder} annotations replicate what {@code @Jacksonized} would generate.
+ */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonDeserialize(builder = SuiteSnapshotDto.SuiteSnapshotDtoBuilder.class)
 public class SuiteSnapshotDto {
 
-    /**
-     * Stored snapshot version. Defaults to {@link #CURRENT_VERSION} via {@link lombok.Builder.Default}
-     * so JSON missing the {@code snapshotVersion} field deserializes as the current version (treating
-     * the omission as a producer bug, not as a legacy v1 snapshot). Genuine legacy v1 snapshots set
-     * the field explicitly to {@code "1"} and are rejected by {@code resolveSnapshot}.
-     */
     @Builder.Default
     @Schema(description = "Snapshot schema version", example = "2")
     private String snapshotVersion = CURRENT_VERSION;
@@ -62,4 +67,7 @@ public class SuiteSnapshotDto {
     private ArgumentTemplateDto argumentTemplate;
 
     public static final String CURRENT_VERSION = "2";
+
+    @JsonPOJOBuilder(withPrefix = "")
+    public static class SuiteSnapshotDtoBuilder {}
 }

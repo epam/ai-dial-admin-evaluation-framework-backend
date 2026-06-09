@@ -6,13 +6,16 @@ spring:
     allow-bean-definition-overriding: true
   autoconfigure:
     exclude:
-      - org.springframework.boot.autoconfigure.jooq.JooqAutoConfiguration
+      - org.springframework.boot.jooq.autoconfigure.JooqAutoConfiguration
   flyway:
     enabled: false
   servlet:
     multipart:
       max-file-size: 50MB
       max-request-size: 55MB
+  threads:
+    virtual:
+      enabled: true
 
 # Auth configuration
 auth:

@@ -24,6 +24,7 @@ import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
+import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
@@ -32,9 +33,8 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionRe
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteUpdateResultDto;
+import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +53,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Functional tests for POST /api/v1/test-suites/{id}/clone.
@@ -103,7 +105,7 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
             String schemaJson = objectMapper.writeValueAsString(schema);
             Dataset dataset = metaTestDataHelper.createDataset("clone-" + UUID.randomUUID(), schemaJson);
             return dataset.getId();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
     }
@@ -312,6 +314,108 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName(
+            "8.2 vanilla clone preserves each source TSMD's validity verbatim (valid stays valid, invalid stays invalid)")
+    void shouldPreserveTsmdValidityVerbatimOnVanillaClone() {
+        TestSuiteResponseDto source = createDeploymentSuite("TSMD Validity Source " + UUID.randomUUID());
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "ValidM");
+        TestSuiteMetricDefinition toInvalidate = metaTestDataHelper.createTestSuiteMetricDefinition(
+                source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "InvalidM");
+        metaTestDataHelper.forceTsmdInvalid(
+                toInvalidate.getId(), "[{\"code\":\"REQUIRED\",\"message\":\"forced\",\"path\":\"$\"}]");
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("TSMD Validity Clone " + UUID.randomUUID())
+                .build();
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(request),
+                TestSuiteUpdateResultDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID clonedId = response.getBody().getSuite().getId();
+        List<TestSuiteMetricDefinitionResponseDto> clonedTsmds = listTsmds(clonedId);
+        assertThat(clonedTsmds).hasSize(2);
+
+        // No override → validity is copied verbatim, not recomputed
+        assertThat(tsmdByName(clonedTsmds, "ValidM").isValid()).isTrue();
+        TestSuiteMetricDefinitionResponseDto clonedInvalid = tsmdByName(clonedTsmds, "InvalidM");
+        assertThat(clonedInvalid.isValid()).isFalse();
+        assertThat(clonedInvalid.getValidationWarnings()).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("8.2 datasetId override recomputes cloned TSMD validity against the new dataset schema")
+    void shouldRecomputeTsmdValidityOnDatasetIdOverride() {
+        // createDeploymentSuite binds the source to a dataset whose schema has column "prompt".
+        TestSuiteResponseDto source = createDeploymentSuite("Recompute Source " + UUID.randomUUID());
+        // TestCase-bound config param referencing "prompt" → valid against the source dataset.
+        String configBindings =
+                "[{\"property\":\"weight\",\"source\":{\"$type\":\"TestCase\",\"columnName\":\"prompt\"}}]";
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "BoundM", configBindings, "[]");
+
+        // Override dataset lacks "prompt" → the TestCase reference becomes unresolved after rebind.
+        UUID overrideDatasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("other")
+                .type(SchemaFieldType.STRING)
+                .required(false)
+                .build()));
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Recompute Clone " + UUID.randomUUID())
+                .datasetId(overrideDatasetId)
+                .build();
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(request),
+                TestSuiteUpdateResultDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID clonedId = response.getBody().getSuite().getId();
+        TestSuiteMetricDefinitionResponseDto cloned = tsmdByName(listTsmds(clonedId), "BoundM");
+        // Recompute (not verbatim copy) flips it to invalid against the override schema
+        assertThat(cloned.isValid()).isFalse();
+        assertThat(cloned.getValidationWarnings())
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE);
+    }
+
+    @Test
+    @DisplayName("8.2 responseColumns override recomputes cloned TSMD validity, flipping a response-bound TSMD invalid")
+    void shouldRecomputeTsmdValidityOnResponseColumnsOverride() {
+        TestSuiteResponseDto source = createDeploymentSuite("Response Recompute Source " + UUID.randomUUID());
+        // Response-bound config param referencing column "answer". The TSMD is stored valid (helper default),
+        // so a verbatim copy would keep it valid — only a recompute against the override can flip it.
+        String configBindings =
+                "[{\"property\":\"weight\",\"source\":{\"$type\":\"Response\",\"columnName\":\"answer\"}}]";
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "ResponseBoundM", configBindings, "[]");
+
+        // Override responseColumns omit "answer" → the response reference becomes unresolved.
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Response Recompute Clone " + UUID.randomUUID())
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("other")
+                        .expression("$.other")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(request),
+                TestSuiteUpdateResultDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID clonedId = response.getBody().getSuite().getId();
+        TestSuiteMetricDefinitionResponseDto cloned = tsmdByName(listTsmds(clonedId), "ResponseBoundM");
+        // Recompute (not verbatim copy) flips it to invalid against the overridden response columns
+        assertThat(cloned.isValid()).isFalse();
+        assertThat(cloned.getValidationWarnings())
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE);
+    }
+
+    @Test
     @DisplayName("8.2 cloned suite has no evaluation runs")
     void clonedSuiteShouldHaveNoEvaluationRuns() {
         TestSuiteResponseDto source = createDeploymentSuite("No Runs Source " + UUID.randomUUID());
@@ -445,6 +549,14 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private static TestSuiteMetricDefinitionResponseDto tsmdByName(
+            List<TestSuiteMetricDefinitionResponseDto> tsmds, String name) {
+        return tsmds.stream()
+                .filter(t -> name.equals(t.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Cloned TSMD not found by name: " + name));
+    }
 
     private TestSuiteResponseDto createDeploymentSuite(String name) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
@@ -751,7 +863,7 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
                     .type(SchemaFieldType.STRING)
                     .required(false)
                     .build()));
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize prompt schema fixture", e);
         }
     }

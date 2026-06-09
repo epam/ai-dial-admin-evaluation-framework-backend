@@ -21,31 +21,49 @@ The validator SHALL apply the following rules to the **short format** file refer
 5. No path segment equals `..`
 6. No leading or trailing slash
 
-The `validate(ref, suiteId)` method performs both format and ownership validation in one call. Ownership validation is also exposed as a standalone method `validateOwnership(ref, suiteId)` for callers that need ownership-only checks. When `suiteId == null`, the ownership check is a no-op (create flow — suite UUID not yet assigned); when non-null, the `@ef` ref must start with `@ef/suites/{suiteId}/`.
+The validator SHALL expose ownership checks for two scopes:
 
-#### Scenario: Valid EF file reference passes format validation
-- **WHEN** `FileRefValidator.validate("@ef/suites/abc-123/data.csv", suiteId)` is called
+**Suite ownership** — `validateSuiteOwnership(ref, suiteId)`:
+- When `suiteId == null`, the check is a no-op (create flow — suite UUID not yet assigned).
+- When non-null AND the ref shape is `@ef/suites/{x}/...`, the ref SHALL start with `@ef/suites/{suiteId}/`.
+- Refs of any other shape (dataset, public) SHALL be passed through ownership-wise — only format validation applies.
+
+**Dataset ownership** — `validateDatasetOwnership(ref, datasetId)`:
+- When `datasetId == null`, the check is a no-op.
+- When non-null AND the ref shape is `@ef/datasets/{x}/...`, the ref SHALL start with `@ef/datasets/{datasetId}/`.
+- Refs of any other shape (including `@ef/suites/...` legacy refs) SHALL be passed through ownership-wise — only format validation applies.
+
+**Backward compatibility** — the legacy `validate(ref, suiteId)` overload SHALL be retained as a thin facade that delegates to `validateSuiteOwnership(ref, suiteId)`. Existing call sites continue to compile and behave identically; new code SHOULD prefer the explicit scope-named methods.
+
+For test-case `data` validation, callers SHALL invoke dataset ownership. For suite-level field validation (FormPartDto, typed constant bindings), callers SHALL invoke suite ownership.
+
+#### Scenario: Valid suite EF file reference passes format validation
+- **WHEN** `FileRefValidator.validateSuiteOwnership("@ef/suites/abc-123/data.csv", "abc-123")` is called
+- **THEN** it SHALL return no validation errors
+
+#### Scenario: Valid dataset EF file reference passes format validation
+- **WHEN** `FileRefValidator.validateDatasetOwnership("@ef/datasets/xyz-789/data.csv", "xyz-789")` is called
 - **THEN** it SHALL return no validation errors
 
 #### Scenario: Valid public file reference passes format validation
-- **WHEN** `FileRefValidator.validate("public/datasets/eval-data.csv", suiteId)` is called
-- **THEN** it SHALL return no validation errors
+- **WHEN** validation is called with `"public/datasets/eval-data.csv"`
+- **THEN** it SHALL return no validation errors regardless of ownership scope
 
-#### Scenario: Missing files/ prefix is now the correct format
+#### Scenario: Missing files/ prefix is the correct format
 - **WHEN** a file reference does not start with `files/`
-- **THEN** `FileRefValidator` SHALL accept it (the `files/` prefix is NOT part of the client format)
+- **THEN** `FileRefValidator` SHALL accept it
 
 #### Scenario: Disallowed prefix rejected
-- **WHEN** `FileRefValidator.validate("user-bucket/path/file.csv", suiteId)` is called
+- **WHEN** validation is called with `"user-bucket/path/file.csv"`
 - **THEN** it SHALL return a validation error indicating the prefix is not allowed
 
 #### Scenario: Path traversal rejected
-- **WHEN** `FileRefValidator.validate("public/../etc/passwd", suiteId)` is called
+- **WHEN** validation is called with `"public/../etc/passwd"`
 - **THEN** it SHALL return a validation error indicating `..` segments are not allowed
 
 #### Scenario: Invalid characters in path segment rejected
 - **WHEN** a file reference contains a segment with characters outside `[a-zA-Z0-9\-_. ()]` (e.g., `@ef/suites/abc/fi<le>.csv`)
-- **THEN** it SHALL return a validation error indicating invalid characters
+- **THEN** it SHALL return a validation error
 
 #### Scenario: Empty segment rejected
 - **WHEN** a file reference contains an empty segment (e.g., `public//file.csv`)
@@ -55,11 +73,31 @@ The `validate(ref, suiteId)` method performs both format and ownership validatio
 - **WHEN** a file reference is only a prefix with no path segments (e.g., `@ef/` or `public`)
 - **THEN** it SHALL return a validation error
 
+#### Scenario: Dataset-shaped ref mismatched dataset id — warns
+- **WHEN** `validateDatasetOwnership("@ef/datasets/{otherDatasetId}/data.csv", "{thisDatasetId}")` is called with different ids
+- **THEN** it SHALL return a validation error indicating the file reference points to a different dataset's files
+
+#### Scenario: Suite-shaped ref in test-case data — ownership pass-through
+- **WHEN** `validateDatasetOwnership("@ef/suites/{anySuiteId}/data.csv", "{datasetId}")` is called
+- **THEN** the ownership check SHALL pass (suite-shaped refs are legacy in test-case data and are not enforced against the dataset id)
+
+#### Scenario: Legacy validate(ref, suiteId) facade delegates to validateSuiteOwnership
+- **WHEN** `FileRefValidator.validate("@ef/suites/abc-123/data.csv", "abc-123")` is called
+- **THEN** it SHALL behave identically to `validateSuiteOwnership("@ef/suites/abc-123/data.csv", "abc-123")` (no validation errors)
+- **AND** when called with a mismatched suite id, it SHALL produce the same warning that `validateSuiteOwnership` would
+
+#### Scenario: Disallowed @ef segment produces format warning
+- **WHEN** a ref of the form `@ef/foo/bar.csv` is validated via any of `validate`, `validateSuiteOwnership`, or `validateDatasetOwnership`
+- **THEN** the validator SHALL add a validation warning indicating the segment after `@ef/` is not in the allowed set `{suites, datasets}`
+- **AND** the validator SHALL NOT throw
+
 ### Requirement: File ref validation at suite save time — FormPartDto
 
 Status: Implemented
 
 The system SHALL validate `FormPartDto.value` as a file reference when `FormPartDto.type == FILE` during test suite creation and update, **but only when the value is a literal file reference, not a template variable placeholder**. Validation SHALL occur in `SuiteValidationService` and SHALL produce a validation warning (not a hard error) for invalid literal values, consistent with the existing validation warning model.
+
+Suite-level field validation SHALL invoke `FileRefValidator.validateSuiteOwnership(ref, suiteId)`. Dataset-shaped refs (`@ef/datasets/...`) SHALL NOT appear in suite-level fields — if a FormPartDto FILE value is dataset-shaped, validation SHALL produce a warning indicating the wrong reference scope (suite-level fields require suite-shaped refs).
 
 When a FILE form part's value is a template variable placeholder (matches `${{...}}` syntax — e.g., `${{contract_file}}`, `${{attachment|file}}`, `${{doc:@ef/default.pdf}}`), the system SHALL skip `FileRefValidator` validation for that value. The actual file reference will be resolved at runtime via the binding chain. Constant-value bindings for `|file`-typed template variables are validated separately (see "File ref validation at suite save time — typed constant bindings" requirement).
 
@@ -69,6 +107,11 @@ The placeholder detection SHALL use the same `PLACEHOLDER_PATTERN` regex used by
 - **WHEN** a multipart request template contains a `FormPartDto` with `type = FILE` and `value = "@ef/suites/{suiteId}/report.pdf"`
 - **AND** the test suite is saved
 - **THEN** no validation warning SHALL be produced for that form part
+
+#### Scenario: Dataset-shaped file ref in FormPartDto constant value warns
+- **WHEN** a multipart request template contains a `FormPartDto` with `type = FILE` and `value = "@ef/datasets/{anyDatasetId}/report.pdf"`
+- **AND** the test suite is saved
+- **THEN** a validation warning SHALL be produced indicating that suite-level fields require suite-shaped refs
 
 #### Scenario: Invalid file ref in FormPartDto constant value warns
 - **WHEN** a multipart request template contains a `FormPartDto` with `type = FILE` and `value = "public/.."` (path traversal)
@@ -106,13 +149,19 @@ Status: Implemented
 
 The system SHALL validate `InputBindingDto.constantValue` as a file reference when the bound template variable carries a `|file` type hint (e.g., `${{attachment|file}}`). Validation SHALL occur in `SuiteValidationService` during binding validation pass and SHALL produce a validation warning for invalid values.
 
-**This validation SHALL apply to both DEPLOYMENT and MCP_TOOL suite types.** The shared binding validation helper extracts `declaredType` from template variables; when `declaredType == FILE` and the binding has `constantValue`, the value is validated via `FileRefValidator`.
+**This validation SHALL apply to both DEPLOYMENT and MCP_TOOL suite types.** The shared binding validation helper extracts `declaredType` from template variables; when `declaredType == FILE` and the binding has `constantValue`, the value is validated via `FileRefValidator.validateSuiteOwnership(constantValue, suiteId)`. Dataset-shaped constant binding values SHALL produce a warning indicating that suite-level fields require suite-shaped refs.
 
 #### Scenario: Valid file ref in constant binding for |file template variable accepted
 - **WHEN** a request template contains `${{dataset|file}}`
 - **AND** the binding for `dataset` has `constantValue = "public/shared/input.csv"`
 - **AND** the test suite is saved
 - **THEN** no validation warning SHALL be produced for that binding
+
+#### Scenario: Dataset-shaped file ref in constant binding warns
+- **WHEN** a request template contains `${{attachment|file}}`
+- **AND** the binding for `attachment` has `constantValue = "@ef/datasets/{anyDatasetId}/doc.pdf"`
+- **AND** the test suite is saved
+- **THEN** a validation warning SHALL be produced indicating that suite-level fields require suite-shaped refs
 
 #### Scenario: Invalid file ref in constant binding for |file template variable warns
 - **WHEN** a request template contains `${{attachment|file}}`
@@ -140,18 +189,26 @@ The system SHALL validate `InputBindingDto.constantValue` as a file reference wh
 
 Status: Implemented
 
-`TestCaseValidationService` SHALL delegate file reference format and ownership validation to `FileRefValidator`. The inline validation logic (`files/` prefix check, prefix whitelist check) SHALL be removed from `TestCaseValidationService` and replaced by a call to `FileRefValidator`.
+`TestCaseValidationService` SHALL delegate file reference format and ownership validation to `FileRefValidator`. For test-case `data` fields, the service SHALL invoke `validateDatasetOwnership(ref, datasetId)` — where `datasetId` is the test case's owning dataset id. Suite-shaped refs in `data` are tolerated (ownership pass-through) to preserve legacy values; dataset-shaped refs must match the owning dataset.
 
 A **blank string** (`""` or whitespace-only) in a FILE-typed schema field SHALL be treated as "not provided" — equivalent to `null` — and SHALL NOT be passed to `FileRefValidator`. The required-field check governs whether absence is valid; the file-ref format check governs whether a non-blank value is a valid reference.
 
 For **required** FILE-typed schema fields, the required-field check SHALL catch both `null` values and blank strings (`""` or whitespace-only), and SHALL produce a "field is missing" warning in both cases.
 
-#### Scenario: Valid short-format file ref in FILE schema field accepted
-- **WHEN** a test case has a FILE-typed schema field with value `@ef/suites/{suiteId}/data.csv`
+#### Scenario: Valid dataset-shaped ref in FILE schema field accepted
+- **WHEN** a test case has a FILE-typed schema field with value `@ef/datasets/{datasetId}/data.csv` and the test case belongs to that dataset
 - **THEN** no validation warning SHALL be produced for that field
 
+#### Scenario: Legacy suite-shaped ref in FILE schema field accepted
+- **WHEN** a test case has a FILE-typed schema field with value `@ef/suites/{anySuiteId}/data.csv`
+- **THEN** no validation warning SHALL be produced for that field (ownership pass-through on legacy shape)
+
+#### Scenario: Dataset-shaped ref pointing at another dataset warns
+- **WHEN** a test case has a FILE-typed schema field with value `@ef/datasets/{otherDatasetId}/data.csv` and the test case belongs to a different dataset
+- **THEN** a validation warning SHALL be produced
+
 #### Scenario: Old-format file ref in FILE schema field warns
-- **WHEN** a test case has a FILE-typed schema field with value `files/@ef/suites/{suiteId}/data.csv` (old format)
+- **WHEN** a test case has a FILE-typed schema field with value `files/@ef/datasets/{datasetId}/data.csv` (old format)
 - **THEN** a validation warning SHALL be produced (the `files/` prefix is not part of the allowed format)
 
 #### Scenario: Optional FILE field with null value — no warning
@@ -178,8 +235,8 @@ For **required** FILE-typed schema fields, the required-field check SHALL catch 
 - **WHEN** a test case has a required FILE-typed schema field and the data map contains `"   "` (whitespace-only string) for that field
 - **THEN** a "field is missing from data" validation warning SHALL be produced with code `REQUIRED` (`String.isBlank()` treats whitespace-only as absent)
 
-#### Scenario: Required FILE field with valid file ref — no warning
-- **WHEN** a test case has a required FILE-typed schema field with a valid `@ef/suites/{suiteId}/file.csv` value
+#### Scenario: Required FILE field with valid dataset-shaped ref — no warning
+- **WHEN** a test case has a required FILE-typed schema field with value `@ef/datasets/{datasetId}/file.csv`
 - **THEN** no validation warning SHALL be produced
 
 ### Requirement: Blank-string FILE detection in data-vs-binding check

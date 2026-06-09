@@ -14,9 +14,6 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +21,9 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
@@ -247,7 +247,7 @@ public class TestSuiteMapper {
                 }
             }
             return ids;
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
             return List.of();
         }
@@ -293,7 +293,7 @@ public class TestSuiteMapper {
                 }
             }
             return objectMapper.writeValueAsString(raw);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalStateException("Failed to serialize disabledTestCaseIds", ex);
         }
     }

@@ -26,9 +26,7 @@ import com.epam.aidial.evaluation.service.domain.exception.FilterValidationExcep
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.mapper.EvalSummaryMapper;
-import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 
 @Slf4j
 @Service
@@ -247,9 +246,7 @@ public class EvalSummaryService {
         if (!metricValues.isObject()) {
             throw new ValidationException("metricValues must be a JSON object for test case '" + testCaseName + "'");
         }
-        Iterator<Map.Entry<String, JsonNode>> metricFields = metricValues.fields();
-        while (metricFields.hasNext()) {
-            Map.Entry<String, JsonNode> metricEntry = metricFields.next();
+        for (Map.Entry<String, JsonNode> metricEntry : metricValues.properties()) {
             String metricName = metricEntry.getKey();
             JsonNode metricOutputs = metricEntry.getValue();
 
@@ -258,9 +255,7 @@ public class EvalSummaryService {
                         + testCaseName + "'");
             }
 
-            Iterator<Map.Entry<String, JsonNode>> outputFields = metricOutputs.fields();
-            while (outputFields.hasNext()) {
-                Map.Entry<String, JsonNode> outputEntry = outputFields.next();
+            for (Map.Entry<String, JsonNode> outputEntry : metricOutputs.properties()) {
                 JsonNode value = outputEntry.getValue();
                 if (!value.isNumber() && !value.isNull()) {
                     throw new ValidationException("metricValues['" + metricName + "']['" + outputEntry.getKey()

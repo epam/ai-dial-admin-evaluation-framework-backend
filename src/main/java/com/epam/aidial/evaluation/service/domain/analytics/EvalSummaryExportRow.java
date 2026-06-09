@@ -1,14 +1,13 @@
 package com.epam.aidial.evaluation.service.domain.analytics;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.Iterator;
 import java.util.Set;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Transient per-row working object wrapping a single {@link EvalSummary} for export.
@@ -138,9 +137,8 @@ final class EvalSummaryExportRow {
         if (perMetric == null || !perMetric.isObject() || schemaFieldKeys == null || schemaFieldKeys.isEmpty()) {
             return false;
         }
-        Iterator<String> it = perMetric.fieldNames();
-        while (it.hasNext()) {
-            if (schemaFieldKeys.contains(it.next())) {
+        for (String key : perMetric.propertyNames()) {
+            if (schemaFieldKeys.contains(key)) {
                 return true;
             }
         }
@@ -161,7 +159,7 @@ final class EvalSummaryExportRow {
         }
         try {
             return objectMapper.readTree(raw);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn(
                     "Failed to parse JSONB field '{}' on EvalSummary id={}: {}",
                     fieldName,

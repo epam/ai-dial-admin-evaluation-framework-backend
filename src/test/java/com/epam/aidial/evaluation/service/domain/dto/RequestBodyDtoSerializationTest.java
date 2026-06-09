@@ -3,14 +3,14 @@ package com.epam.aidial.evaluation.service.domain.dto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.exc.InvalidTypeIdException;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.exc.InvalidTypeIdException;
 
 @DisplayName("Polymorphic request body DTO serialization")
 class RequestBodyDtoSerializationTest {
@@ -23,7 +23,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("JsonRequestBodyDto round-trip preserves type and content")
-        void jsonRequestBodyDtoRoundTrip() throws JsonProcessingException {
+        void jsonRequestBodyDtoRoundTrip() throws JacksonException {
             JsonRequestBodyDto dto = JsonRequestBodyDto.builder()
                     .content(Map.of("prompt", "Hello", "temperature", 0.7))
                     .build();
@@ -41,7 +41,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("MultipartFormDataRequestBodyDto round-trip preserves type and content")
-        void multipartFormDataRequestBodyDtoRoundTrip() throws JsonProcessingException {
+        void multipartFormDataRequestBodyDtoRoundTrip() throws JacksonException {
             FormPartDto textPart = FormPartDto.builder()
                     .name("field1")
                     .type(FormPartType.TEXT)
@@ -75,7 +75,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("UrlEncodedFormRequestBodyDto round-trip preserves type and content")
-        void urlEncodedFormRequestBodyDtoRoundTrip() throws JsonProcessingException {
+        void urlEncodedFormRequestBodyDtoRoundTrip() throws JacksonException {
             KeyValueTemplateDto entry1 =
                     KeyValueTemplateDto.builder().key("username").value("admin").build();
             KeyValueTemplateDto entry2 = KeyValueTemplateDto.builder()
@@ -118,7 +118,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("JsonRequestBodySchemaDto round-trip preserves type and schema")
-        void jsonRequestBodySchemaDtoRoundTrip() throws JsonProcessingException {
+        void jsonRequestBodySchemaDtoRoundTrip() throws JacksonException {
             JsonRequestBodySchemaDto dto = JsonRequestBodySchemaDto.builder()
                     .schema(Map.of("type", "object", "required", List.of("prompt")))
                     .build();
@@ -135,7 +135,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("MultipartFormDataRequestBodySchemaDto round-trip preserves type and parts")
-        void multipartFormDataRequestBodySchemaDtoRoundTrip() throws JsonProcessingException {
+        void multipartFormDataRequestBodySchemaDtoRoundTrip() throws JacksonException {
             FormPartSchemaDto partSchema = FormPartSchemaDto.builder()
                     .name("document")
                     .type(FormPartType.FILE)
@@ -165,7 +165,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("UrlEncodedFormRequestBodySchemaDto round-trip preserves type and schema")
-        void urlEncodedFormRequestBodySchemaDtoRoundTrip() throws JsonProcessingException {
+        void urlEncodedFormRequestBodySchemaDtoRoundTrip() throws JacksonException {
             UrlEncodedFormRequestBodySchemaDto dto = UrlEncodedFormRequestBodySchemaDto.builder()
                     .schema(Map.of("type", "object"))
                     .build();
@@ -198,7 +198,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("ResolvedJsonBodyDto round-trip preserves type and content")
-        void resolvedJsonBodyDtoRoundTrip() throws JsonProcessingException {
+        void resolvedJsonBodyDtoRoundTrip() throws JacksonException {
             ResolvedJsonBodyDto dto = ResolvedJsonBodyDto.builder()
                     .content(Map.of("result", "success", "score", 42))
                     .build();
@@ -216,7 +216,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("ResolvedMultipartBodyDto round-trip preserves type and parts")
-        void resolvedMultipartBodyDtoRoundTrip() throws JsonProcessingException {
+        void resolvedMultipartBodyDtoRoundTrip() throws JacksonException {
             ResolvedFormPartDto part = ResolvedFormPartDto.builder()
                     .name("file")
                     .type(FormPartType.FILE)
@@ -242,7 +242,7 @@ class RequestBodyDtoSerializationTest {
 
         @Test
         @DisplayName("ResolvedUrlEncodedBodyDto round-trip preserves type and entries")
-        void resolvedUrlEncodedBodyDtoRoundTrip() throws JsonProcessingException {
+        void resolvedUrlEncodedBodyDtoRoundTrip() throws JacksonException {
             KeyValueTemplateDto entry =
                     KeyValueTemplateDto.builder().key("token").value("abc123").build();
             ResolvedUrlEncodedBodyDto dto =

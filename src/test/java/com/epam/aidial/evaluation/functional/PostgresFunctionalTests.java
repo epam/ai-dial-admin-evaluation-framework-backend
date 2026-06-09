@@ -89,9 +89,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
@@ -99,11 +99,13 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.NestedTestConfiguration;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureTestRestTemplate
 @TestPropertySource(
         properties = {
             "datasource.meta.vendor=POSTGRES",
@@ -117,9 +119,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
             "revalidation.batch-size=2"
         })
 @Import(PostgresFunctionalTestConfiguration.class)
+@NestedTestConfiguration(NestedTestConfiguration.EnclosingConfiguration.INHERIT)
 public class PostgresFunctionalTests extends FunctionalTests {
 
-    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17.4")
+    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17.4")
             .withInitScript("test/init-test-databases.sql")
             .withCommand("postgres", "-c", "max_connections=400");
 
@@ -243,7 +246,7 @@ public class PostgresFunctionalTests extends FunctionalTests {
         registry.add("postgres.analytics.datasource.schema", () -> "public");
     }
 
-    public static PostgreSQLContainer<?> getContainer() {
+    public static PostgreSQLContainer getContainer() {
         return POSTGRES;
     }
 
@@ -455,8 +458,8 @@ public class PostgresFunctionalTests extends FunctionalTests {
         @Autowired
         private TestRestTemplate restTemplate;
 
-        @LocalServerPort
-        private int port;
+        @Autowired
+        private org.springframework.core.env.Environment environment;
 
         @Autowired
         private MetricProviderSyncJob metricProviderSyncJob;
@@ -480,6 +483,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
             metricProviderSyncJob.runScheduledSync();
 
+            // Spring Boot 4: Retrieve local.server.port dynamically from Environment instead of @LocalServerPort
+            String portStr = environment.getProperty("local.server.port");
+            int port = portStr != null ? Integer.parseInt(portStr) : 8080;
             String url =
                     "http://localhost:" + port + "/api/v1/metric-declarations?page=0&size=20&includeTotalCount=true";
             ResponseEntity<PageResponseDto<MetricDeclarationResponseDto>> response =

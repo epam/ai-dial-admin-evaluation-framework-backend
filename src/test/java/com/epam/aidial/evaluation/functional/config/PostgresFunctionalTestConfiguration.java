@@ -19,7 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 @TestConfiguration
-@Import(FunctionalTestConfiguration.class)
+@Import({FunctionalTestConfiguration.class, TestRestTemplateConfiguration.class})
 public class PostgresFunctionalTestConfiguration {
 
     @Bean

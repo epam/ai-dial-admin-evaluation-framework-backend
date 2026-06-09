@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(
@@ -30,7 +30,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @Import(PostgresFunctionalTestConfiguration.class)
 public class DslContextSmokeTest {
 
-    private static final PostgreSQLContainer<?> POSTGRES = PostgresFunctionalTests.getContainer();
+    private static final PostgreSQLContainer POSTGRES = PostgresFunctionalTests.getContainer();
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {

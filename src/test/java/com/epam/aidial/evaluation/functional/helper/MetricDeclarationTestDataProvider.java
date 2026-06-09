@@ -124,6 +124,7 @@ public class MetricDeclarationTestDataProvider {
 
     /**
      * Inserts a single declaration without any version (for 404 "no versions" test).
+     * Idempotent: safe to call multiple times (ON CONFLICT DO NOTHING).
      */
     @Transactional("metaTransactionManager")
     public void insertSingleDeclarationWithoutVersion(String id, String providerId, String name) {
@@ -132,6 +133,7 @@ public class MetricDeclarationTestDataProvider {
                 """
                 INSERT INTO metric_declarations (id, provider_id, name, description, created_at_ms)
                 VALUES (:id, :providerId, :name, '', :createdAtMs)
+                ON CONFLICT (id) DO NOTHING
                 """,
                 new MapSqlParameterSource()
                         .addValue("id", id)

@@ -14,7 +14,6 @@ import com.epam.aidial.evaluation.data.db.model.MetricDeclaration;
 import com.epam.aidial.evaluation.data.db.model.MetricDeclarationVersion;
 import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationRepository;
 import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationVersionRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("MetricProviderSyncService")

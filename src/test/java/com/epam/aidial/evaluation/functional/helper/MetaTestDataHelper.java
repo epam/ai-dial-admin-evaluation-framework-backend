@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.functional.helper;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.DATASETS;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITES;
+import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_METRIC_DEFINITIONS;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
@@ -251,6 +252,11 @@ public class MetaTestDataHelper {
     @Transactional("metaTransactionManager")
     public void forceTsmdInvalid(UUID tsmdId, String warningsJson) {
         tsmdRepository.updateValidation(tsmdId, false, warningsJson);
+    }
+
+    @Transactional("metaTransactionManager")
+    public void clearTestSuiteMetricDefinitions() {
+        metaDsl.deleteFrom(TEST_SUITE_METRIC_DEFINITIONS).execute();
     }
 
     public long countMetricDefinitions(UUID testSuiteId) {

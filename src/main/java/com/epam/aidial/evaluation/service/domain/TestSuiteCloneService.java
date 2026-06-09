@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -51,6 +52,7 @@ public class TestSuiteCloneService {
 
     private final TestSuiteRepository testSuiteRepository;
     private final TestSuiteMetricDefinitionRepository testSuiteMetricDefinitionRepository;
+    private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final DatasetRepository datasetRepository;
     private final DatasetCloneService datasetCloneService;
     private final FileService fileService;
@@ -67,6 +69,7 @@ public class TestSuiteCloneService {
     public TestSuiteCloneService(
             TestSuiteRepository testSuiteRepository,
             TestSuiteMetricDefinitionRepository testSuiteMetricDefinitionRepository,
+            TestSuiteMetricDefinitionService testSuiteMetricDefinitionService,
             DatasetRepository datasetRepository,
             DatasetCloneService datasetCloneService,
             FileService fileService,
@@ -81,6 +84,7 @@ public class TestSuiteCloneService {
             ValidationWarningsSerializer warningsSerializer) {
         this.testSuiteRepository = testSuiteRepository;
         this.testSuiteMetricDefinitionRepository = testSuiteMetricDefinitionRepository;
+        this.testSuiteMetricDefinitionService = testSuiteMetricDefinitionService;
         this.datasetRepository = datasetRepository;
         this.datasetCloneService = datasetCloneService;
         this.fileService = fileService;
@@ -156,6 +160,9 @@ public class TestSuiteCloneService {
                     clonePrivateDataset ? sourceDataset.getId() : newSuiteEntity.getDatasetId();
             applySuiteValidation(newSuiteEntity, datasetToValidateAgainst);
 
+            final var tsmdRevalidation =
+                    decideOnTsmdRevalidation(dto, datasetIdOverride, sourceDatasetId, datasetToValidateAgainst);
+
             final long cloneTimestamp = clock.millis();
             executeDbWrites(
                     newSuiteEntity,
@@ -164,7 +171,8 @@ public class TestSuiteCloneService {
                     cloneTimestamp,
                     clonePrivateDataset ? sourceDataset : null,
                     newDatasetId,
-                    createdBy);
+                    createdBy,
+                    tsmdRevalidation);
 
             cloneSucceeded = true;
             return TestSuiteUpdateResultDto.builder()
@@ -185,6 +193,27 @@ public class TestSuiteCloneService {
                 }
             }
         }
+    }
+
+    private @NonNull TsmdRevalidationDecision decideOnTsmdRevalidation(
+            TestSuiteCloneRequestDto dto, UUID datasetIdOverride, UUID sourceDatasetId, UUID datasetToValidateAgainst) {
+        // TSMD revalidation is required only when an override can change a TSMD validation input:
+        // a differing datasetId (possibly different testCaseSchema) or a responseColumns override.
+        // Otherwise, every validation input matches the source and the source verdict is copied verbatim.
+        final boolean tsmdRevalidationRequired =
+                (datasetIdOverride != null && !datasetIdOverride.equals(sourceDatasetId))
+                        || dto.getResponseColumns() != null;
+
+        // Raw testCaseSchema JSON for the resolved dataset; needed only on the recompute path
+        // (revalidateAllForSuite consumes the raw String). The source dataset's schema is the
+        // clone's schema for a private auto-clone (copied verbatim).
+        final String tsmdRevalidationSchemaJson = tsmdRevalidationRequired && datasetToValidateAgainst != null
+                ? datasetRepository
+                        .findById(datasetToValidateAgainst)
+                        .map(Dataset::getTestCaseSchema)
+                        .orElse(null)
+                : null;
+        return new TsmdRevalidationDecision(tsmdRevalidationRequired, tsmdRevalidationSchemaJson);
     }
 
     /**
@@ -226,7 +255,8 @@ public class TestSuiteCloneService {
             long cloneTimestamp,
             Dataset datasetToClone,
             UUID newDatasetId,
-            String createdBy) {
+            String createdBy,
+            TsmdRevalidationDecision tsmdRevalidation) {
         String sourcePrefix = "@ef/suites/" + sourceId + "/";
         String targetPrefix = "@ef/suites/" + newId + "/";
         int batchSize = revalidationProperties.getBatchSize();
@@ -269,13 +299,18 @@ public class TestSuiteCloneService {
                                 .configBindings(rewriteRef(tsmd.getConfigBindings(), sourcePrefix, targetPrefix))
                                 .inputBindings(rewriteRef(tsmd.getInputBindings(), sourcePrefix, targetPrefix))
                                 .enabled(tsmd.isEnabled())
-                                .valid(false)
-                                .validationWarnings("[]")
+                                .valid(!tsmdRevalidation.required() && tsmd.isValid())
+                                .validationWarnings(tsmdRevalidation.required() ? "[]" : tsmd.getValidationWarnings())
                                 .build();
                         clonedTsmds.add(cloned);
                     }
                     testSuiteMetricDefinitionRepository.batchInsert(clonedTsmds, cloneTimestamp);
                     offset += sourceBatch.size();
+                }
+
+                if (tsmdRevalidation.required()) {
+                    testSuiteMetricDefinitionService.revalidateAllForSuite(
+                            newId, tsmdRevalidation.schema(), newSuiteEntity.getResponseColumns());
                 }
 
                 return null;
@@ -293,4 +328,6 @@ public class TestSuiteCloneService {
         }
         return value.replace(sourcePrefix, targetPrefix);
     }
+
+    private record TsmdRevalidationDecision(boolean required, String schema) {}
 }

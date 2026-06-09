@@ -17,8 +17,6 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -38,6 +36,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Functional tests for CSV import modes (OVERRIDE/APPEND/MERGE) and conflict strategies (FAIL/SKIP/OVERRIDE).
@@ -879,7 +879,7 @@ public abstract class CsvImportModeFunctionalTests extends BaseFunctionalTest {
                             .type(SchemaFieldType.STRING)
                             .required(true)
                             .build()));
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
         Dataset dataset = metaTestDataHelper.createDataset("csvmode-schema-" + UUID.randomUUID(), schemaJson);

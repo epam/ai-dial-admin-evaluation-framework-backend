@@ -12,14 +12,12 @@ import com.epam.aidial.evaluation.service.domain.dto.UrlEncodedFormRequestBodySc
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import com.networknt.schema.Error;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,6 +34,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Validates data against JSON Schema (Draft-07).
@@ -54,7 +54,8 @@ public class SchemaValidationService {
     private final ObjectMapper objectMapper;
     private final ValidationProperties validationProperties;
 
-    private static final JsonSchemaFactory SCHEMA_FACTORY = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
+    private static final SchemaRegistry SCHEMA_FACTORY =
+            SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_7);
 
     private static final String META_SCHEMA_RESOURCE = "schemas/json-schema-draft-07.json";
 
@@ -122,12 +123,12 @@ public class SchemaValidationService {
     private static final int CACHE_MAX_SIZE = 10_000;
     private static final int CACHE_EXPIRE_HOURS = 24;
 
-    private final Cache<String, JsonSchema> schemaCache = Caffeine.newBuilder()
+    private final Cache<String, Schema> schemaCache = Caffeine.newBuilder()
             .maximumSize(CACHE_MAX_SIZE)
             .expireAfterWrite(CACHE_EXPIRE_HOURS, TimeUnit.HOURS)
             .build();
 
-    private JsonSchema metaSchema;
+    private Schema metaSchema;
 
     @PostConstruct
     void loadMetaSchema() {
@@ -154,8 +155,8 @@ public class SchemaValidationService {
         JsonNode schemaNode = objectMapper.valueToTree(schema);
         JsonNode dataNode = objectMapper.valueToTree(data);
 
-        JsonSchema jsonSchema = SCHEMA_FACTORY.getSchema(schemaNode);
-        Set<ValidationMessage> messages = jsonSchema.validate(dataNode);
+        Schema jsonSchema = SCHEMA_FACTORY.getSchema(schemaNode);
+        List<Error> messages = jsonSchema.validate(dataNode);
 
         return toResult(messages);
     }
@@ -173,13 +174,13 @@ public class SchemaValidationService {
         }
 
         String cacheKey = cacheKey(datasetId, part);
-        JsonSchema jsonSchema = schemaCache.get(cacheKey, k -> {
+        Schema jsonSchema = schemaCache.get(cacheKey, k -> {
             JsonNode schemaNode = objectMapper.valueToTree(schema);
             return SCHEMA_FACTORY.getSchema(schemaNode);
         });
 
         JsonNode dataNode = objectMapper.valueToTree(data);
-        Set<ValidationMessage> messages = jsonSchema.validate(dataNode);
+        List<Error> messages = jsonSchema.validate(dataNode);
         return toResult(messages);
     }
 
@@ -313,7 +314,7 @@ public class SchemaValidationService {
         return datasetId.toString() + ":" + part;
     }
 
-    private ValidationResult toResult(Set<ValidationMessage> messages) {
+    private ValidationResult toResult(List<Error> messages) {
         List<ValidationWarningDto> warningDtos = messages.stream()
                 .map(SchemaValidationService::toValidationWarningDto)
                 .collect(Collectors.toCollection(ArrayList::new));
@@ -329,7 +330,7 @@ public class SchemaValidationService {
                 .build();
     }
 
-    private static ValidationWarningDto toValidationWarningDto(ValidationMessage m) {
+    private static ValidationWarningDto toValidationWarningDto(Error m) {
         String path = m.getInstanceLocation() != null ? m.getInstanceLocation().toString() : "$";
         if (path.isBlank()) {
             path = "$";
@@ -338,7 +339,7 @@ public class SchemaValidationService {
                 .fieldName(propertyFromPath(path))
                 .path(path)
                 .message(m.getMessage())
-                .code(typeToCode(m.getType()))
+                .code(typeToCode(m.getKeyword()))
                 .build();
     }
 
@@ -496,7 +497,7 @@ public class SchemaValidationService {
 
     private Optional<String> validateAgainstMetaSchema(Map<String, Object> schema) {
         JsonNode schemaNode = objectMapper.valueToTree(schema);
-        Set<ValidationMessage> errors = metaSchema.validate(schemaNode);
+        List<Error> errors = metaSchema.validate(schemaNode);
         if (errors != null && !errors.isEmpty()) {
             return Optional.of(errors.iterator().next().getMessage());
         }

@@ -27,9 +27,6 @@ import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -47,6 +44,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
@@ -241,7 +241,7 @@ public class TestSuiteEvaluationJob {
             String snapshotJson;
             try {
                 snapshotJson = objectMapper.writeValueAsString(snapshot);
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 throw new IllegalStateException("Failed to serialize suite snapshot", e);
             }
 
@@ -301,7 +301,7 @@ public class TestSuiteEvaluationJob {
                 }
             }
             return ids;
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
             return List.of();
         }
@@ -416,7 +416,7 @@ public class TestSuiteEvaluationJob {
                     throw new UnsupportedSnapshotVersionException("Unsupported snapshot version: " + version);
                 }
                 return snapshot;
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 throw new IllegalStateException("Failed to deserialize suite_snapshot for run " + run.getId(), e);
             }
         }
@@ -442,7 +442,7 @@ public class TestSuiteEvaluationJob {
         }
         try {
             return objectMapper.readValue(runConfigJson, RunConfigDto.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to parse runConfig for run {}: {}", runId, e.getMessage(), e);
             return RunConfigDto.builder().numberOfRuns(1).build();
         }
@@ -466,7 +466,7 @@ public class TestSuiteEvaluationJob {
                 .build();
         try {
             return objectMapper.writeValueAsString(dto);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             log.error("Failed to serialize error details", ex);
             return null;
         }

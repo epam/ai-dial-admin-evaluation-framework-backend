@@ -96,6 +96,17 @@ Once running, access:
 | Files | `/api/v1/test-suites/{suiteId}/files` | Suite file upload/download |
 | Health | `/api/v1/health` | Health, readiness, liveness |
 
+### Test Suites API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/test-suites` | Create a new test suite |
+| GET | `/api/v1/test-suites` | List all test suites (paginated) |
+| GET | `/api/v1/test-suites/{id}` | Get a test suite by ID |
+| PUT | `/api/v1/test-suites/{id}` | Update a test suite |
+| DELETE | `/api/v1/test-suites/{id}` | Delete a test suite |
+| POST | `/api/v1/test-suites/{id}/clone` | Clone a test suite |
+
 ## Configuration
 
 See [docs/configuration.md](docs/configuration.md) for detailed configuration options.

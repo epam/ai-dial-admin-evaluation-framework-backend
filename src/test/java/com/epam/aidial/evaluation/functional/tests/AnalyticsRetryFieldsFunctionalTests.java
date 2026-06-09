@@ -11,8 +11,6 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageRespons
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ExecutionInfoRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultResponseDto;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +21,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("Analytics Retry Fields Functional Tests")
 public abstract class AnalyticsRetryFieldsFunctionalTests extends BaseFunctionalTest {

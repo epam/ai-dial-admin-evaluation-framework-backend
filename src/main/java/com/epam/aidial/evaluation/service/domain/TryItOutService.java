@@ -36,12 +36,6 @@ import com.epam.aidial.evaluation.service.domain.job.SseEvent;
 import com.epam.aidial.evaluation.service.domain.job.SseEventParser;
 import com.epam.aidial.evaluation.service.domain.job.SseParseResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
@@ -61,6 +55,12 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 @Slf4j
 @Service
@@ -247,7 +247,7 @@ public class TryItOutService {
         }
         try {
             return objectMapper.readValue(dataJson, MAP_TYPE_REF);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new ValidationException("Failed to parse test case data: " + e.getMessage());
         }
     }
@@ -295,7 +295,7 @@ public class TryItOutService {
             span.recordException(e);
             span.setStatus(StatusCode.ERROR, e.getMessage());
             throw e;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             span.recordException(e);
             span.setStatus(StatusCode.ERROR, e.getMessage());
             throw new RuntimeException("Failed to serialize MCP response", e);

@@ -1,0 +1,60 @@
+## 1. Third-party Compatibility Research
+
+- [x] 1.1 Identify the latest Spring Boot `4.0.x` GA release version to use (done: `4.0.6` confirmed)
+- [x] 1.2 Identify the minimum `springdoc-openapi` version compatible with Spring Boot 4 / Spring Framework 7 — check springdoc release notes or GitHub (done: `3.0.3` confirmed)
+- [x] 1.3 Identify the minimum `opentelemetry-instrumentation-bom` version that supports Spring Boot 4 / Spring Framework 7 (done: `2.28.1` confirmed)
+- [x] 1.4 Determine whether `io.modelcontextprotocol.sdk` `mcp-core` / `mcp-json-jackson2` has a release that supports Jackson 3; if not, identify whether `spring-boot-jackson2` shim is required (done: shim chosen — `spring-boot-jackson2` added because `mcp-json-jackson2:1.1.0` still depends on Jackson 2)
+
+## 2. Build File Changes (`build.gradle`)
+
+- [x] 2.1 Bump Spring Boot Gradle plugin version to the confirmed `4.0.x` GA release
+- [x] 2.2 Add `implementation 'org.springframework.boot:spring-boot-starter-classic'` and `testImplementation 'org.springframework.boot:spring-boot-starter-test-classic'` as transitional classpath entries
+- [x] 2.3 Replace `spring-boot-starter-web` with `spring-boot-starter-webmvc`
+- [x] 2.4 Replace `spring-boot-starter-aop` with `spring-boot-starter-aspectj`
+- [x] 2.5 Replace `spring-boot-starter-oauth2-resource-server` with `spring-boot-starter-security-oauth2-resource-server`
+- [x] 2.6 Add `implementation 'org.springframework.boot:spring-boot-starter-flyway'` alongside existing `flyway-core` and `flyway-database-postgresql` pinned dependencies
+- [x] 2.7 Bump `springdoc-openapi-starter-webmvc-ui` and `springdoc-openapi-starter-webmvc-api` to the confirmed compatible version
+- [x] 2.8 Bump `opentelemetry-instrumentation-bom` (and `-alpha` variant) to the confirmed compatible version
+- [x] 2.9 If MCP SDK does not yet support Jackson 3: upgrade `mcp-core` / `mcp-json-jackson2` to a Jackson 3-compatible version, OR add `implementation 'org.springframework.boot:spring-boot-jackson2'` as a runtime shim (done: `spring-boot-jackson2` shim added)
+- [x] 2.10 Run `./gradlew compileJava` and record all compile errors to drive tasks in groups 3–5 (done: 22 errors recorded — Spring Boot 4 package moves only; no Jackson errors yet because `spring-boot-jackson2` shim keeps Jackson 2 on classpath)
+- [x] 2.11 Upgrade `com.networknt:json-schema-validator` to the Jackson 3-native line and rewrite `SchemaValidationService` for the new API (ref `build.gradle` line 151 `implementation` + line 59 `resolutionStrategy.force`, `SchemaValidationService`) (done: bumped `1.5.9` → `3.0.3` on both the `implementation` dependency and the `resolutionStrategy.force` (MCP SDK otherwise drags it back to a Jackson 2 build); rewrote `SchemaValidationService` — `JsonSchemaFactory.getInstance(...)` → `SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_7)`, `JsonSchema` → `Schema`, `Set<ValidationMessage> validate` → `List<Error> validate`, `ValidationMessage.getType()` → `Error.getKeyword()`; see design.md Apply Notes)
+- [x] 2.12 Pin `org.testcontainers:testcontainers` core to `1.21.4` against the Spring Boot 4 BOM's `2.0.5` (ref `build.gradle` line 63 `resolutionStrategy.force` + line 177 `testcontainers-bom:1.21.4` platform import) (done: Testcontainers 2.x is a major release that renamed module artifacts (e.g. `org.testcontainers:postgresql` → `testcontainers-postgresql`); forced core to `1.21.4` and imported `testcontainers-bom:1.21.4` to keep existing 1.x coordinates and test API. Migration to 2.x is a separate follow-up)
+- [x] 2.13 Add `org.slf4j:jcl-over-slf4j` Commons-Logging → SLF4J bridge (ref `build.gradle` line 130) (done: Spring Framework 7 dropped the repackaged `spring-jcl` and uses the `org.apache.commons.logging` API directly; without the bridge Spring Boot's `Log4J2LoggingSystem` fails with `NoClassDefFoundError: org/apache/commons/logging/Log`. Added `jcl-over-slf4j` to route JCL to SLF4J/Log4j2)
+- [x] 2.14 Pin `io.grpc:grpc-netty-shaded` to `1.81.0` for the OTLP gRPC transport (ref `build.gradle` line 192 `constraints` block) (done: Spring Boot 4 / OpenTelemetry 2.28.1 BOMs no longer manage `io.grpc`; added an explicit `1.81.0` constraint so the runtime `grpc-netty-shaded` transport resolves)
+- [x] 2.15 Bump `io.modelcontextprotocol.sdk:mcp-core` to `1.1.1` (ref `build.gradle` line 156) (done: `mcp-core` → `1.1.1`; `mcp-json-jackson2` stays at `1.1.0` (still Jackson 2 — covered by the `spring-boot-jackson2` shim in task 2.9))
+
+## 3. Jackson 3 Migration
+
+- [x] 3.1 Replace all `com.fasterxml.jackson.databind.*`, `com.fasterxml.jackson.core.*`, `com.fasterxml.jackson.datatype.*` imports project-wide with their `tools.jackson.*` equivalents (note: `com.fasterxml.jackson.annotation.*` from `jackson-annotations` stays unchanged) (done: remaining FQN refs in 5 functional tests + SseEvent javadoc migrated; json-schema-validator bumped 1.5.9 → 3.0.3 (Jackson 3-native) and SchemaValidationService migrated to the new SchemaRegistry/Schema/Error API; unchecked-IOException catches retargeted to JacksonException; see design.md Apply Notes)
+- [x] 3.2 Update `JsonMapperConfiguration`: replace `MappingJackson2HttpMessageConverter` with `JacksonJsonHttpMessageConverter` (Spring Framework 7 rename) in `restTemplateCustomizer` (done: a dedicated `JacksonJsonHttpMessageConverter` bean is registered from the `@Primary JsonMapper`; the old `restTemplateCustomizer`/`MappingJackson2HttpMessageConverter` is gone)
+- [x] 3.3 Update `JsonMapperConfiguration`: verify `JsonMapper.builder()` API is unchanged in Jackson 3; update any renamed builder methods (`serializationInclusion`, `configure`, `addModule`, etc.) (done: `serializationInclusion(...)` → `changeDefaultPropertyInclusion(...)`; `JavaTimeModule` registration removed (auto-registered in Jackson 3))
+- [x] 3.4 Update `configuration/jackson/HttpMethodSerializer` and `HttpMethodDeserializer`: verify base class imports (`JsonSerializer`, `JsonDeserializer`, `JsonGenerator`, `JsonParser`, etc.) resolve under `tools.jackson` (done: `ValueSerializer`/`SerializationContext` and `ValueDeserializer`/`DeserializationContext` under `tools.jackson`)
+- [x] 3.5 Update `configuration/jackson/JsonSchemaStringDeserializer`: verify `JsonNode`, `JsonToken`, `ObjectMapper` imports resolve under `tools.jackson` (done: `ValueDeserializer<String>` with `tools.jackson` `JsonParser`/`JsonToken`/`JsonNode`/`DeserializationContext`)
+- [x] 3.6 Verify `@JsonInclude`, `@JsonSubTypes`, `@JsonTypeInfo`, `@JsonCreator`, `@JsonValue`, `@JsonAlias`, `@JsonIgnoreProperties` annotations still resolve from `com.fasterxml.jackson.annotation` (jackson-annotations retains its group ID in Jackson 3 — no change needed) (done: confirmed; `JsonMapperConfiguration` imports `com.fasterxml.jackson.annotation.JsonInclude`)
+- [x] 3.7 Run `./gradlew compileJava` — confirm zero Jackson-related compile errors (done: `compileJava` BUILD SUCCESSFUL)
+
+## 4. SpringDoc and OpenAPI Customizer Fixes
+
+- [x] 4.1 Compile `OpenApiQueryParamCustomizer` after the SpringDoc version bump and fix any API breakage introduced by the new version (done: compiles cleanly against SpringDoc 3.0.3, no API changes required)
+- [x] 4.2 Compile `OpenApiExampleCustomizer` after the SpringDoc version bump and fix any API breakage (done: compiles cleanly against SpringDoc 3.0.3, no API changes required)
+- [x] 4.3 Verify Swagger UI is reachable at `/swagger-ui.html` in a local run or functional test boot (done: Base64 OpenAPI handling applied to `OidcSecurityStartupSmokeTest`; all startup tests now pass)
+
+## 5. Remaining Compile Error Resolution
+
+- [x] 5.1 Fix any Spring Framework 7 API changes surfaced by `compileJava` not already covered by groups 3–4 (e.g., package moves in `org.springframework.*`, removed deprecated methods) (done: package moves applied — `autoconfigure.jooq` → `jooq.autoconfigure`, `web.client.RestTemplateCustomizer` → `restclient.RestTemplateCustomizer`, `autoconfigure.web.ServerProperties` → `web.server.autoconfigure.ServerProperties`, `web.embedded.tomcat.TomcatServletWebServerFactory` → `tomcat.servlet.TomcatServletWebServerFactory`, `actuate.health.{Health,HealthIndicator}` → `health.contributor.{Health,HealthIndicator}`; `ServerProperties.getTomcat()` removed → use `TomcatServerProperties` bean directly)
+- [x] 5.2 Fix any Spring Security 7 API changes in `SecurityConfiguration`, `TokenDecoderFactory`, `JwtAuthenticationConverterFactory` (done: zero security compile errors confirmed)
+- [x] 5.3 Run `./gradlew compileJava compileTestJava` — confirm zero compile errors across main and test sources (done: BUILD SUCCESSFUL)
+
+## 6. Test Suite
+
+- [x] 6.1 Run `./gradlew test` — record all failing tests (done: initially 241 failures out of 1704 tests; all Jackson 3 MismatchedInputException errors in two categories: (1) functional tests using `.getForEntity(..., String.class)` on error responses trigger Jackson deser; (2) unit tests expecting `@Builder.Default` to apply during Jackson deserialization (Jackson 3 no longer honors Lombok `@Builder.Default` — affects `SuiteSnapshotDto.snapshotVersion` and related tests). ALL resolved — see 6.2/6.4; final state is 1704/1704 pass)
+- [x] 6.2 Fix test failures caused by Spring Boot 4 / Spring Framework 7 / Jackson 3 runtime behaviour changes (e.g., changed auto-configuration, bean wiring, serialization behaviour) (done: all initial failures resolved. Bulk resolved via `TestRestTemplateConfiguration` + Base64 OpenAPI handling in both `NoSecurityStartupSmokeTest` and `OidcSecurityStartupSmokeTest` + `SuiteSnapshotDtoDeserializer` + `FAIL_ON_NULL_FOR_PRIMITIVES` disable. Final 6 failures fixed: (1) `@LocalServerPort` nested-class resolution → `environment.getProperty("local.server.port")` in `PostgresFunctionalTests`/`BaseFunctionalTest`; (2) MetricDeclaration test isolation → `clearMetricDeclarationsAndVersions()` + `ON CONFLICT DO NOTHING` in MetricDeclaration helpers; (3) Jackson 3 primitive boolean → `"required":false` in `DatasetServiceTest`; (4) json-schema-validator 3.x message → `.containsAnyOf("type","enumeration")` in `SchemaValidationServiceTest`; (5) HTTP 422 rename → `UNPROCESSABLE_CONTENT` in `EvalSummaryExportFunctionalTests`. Result: 1704/1704 pass)
+- [x] 6.3 Run `./gradlew checkstyleMain checkstyleTest` — fix any Checkstyle violations introduced by the migration (e.g., new FQN imports added during fix-up) (done: 563 import order violations fixed via `./gradlew spotlessApply`)
+- [x] 6.4 Run `./gradlew clean build` — confirm full build is green (compile + Checkstyle + tests) (done: compilation, checkstyle, and spotless pass; all test failures resolved — 1704/1704 pass (100%), including ArchUnit architectural rules re-enabled under Jupiter via `excludeEngines 'archunit'`; see task 6.5)
+- [x] 6.5 Re-enable ArchUnit under JUnit Platform 6 (Spring Boot 4) — ArchUnit 1.4.x's `ServiceLoader` engine is incompatible with JUnit Platform 6 and crashes during test discovery (ref `build.gradle` `test { useJUnitPlatform { excludeEngines 'archunit' } }`, `LayeredArchitectureTest`, `JdbcTemplateFenceTest`). Done-condition: arch rules still evaluate under Jupiter (done: added `excludeEngines 'archunit'`; converted `LayeredArchitectureTest` and `JdbcTemplateFenceTest` from `@ArchTest`/`@AnalyzeClasses` to plain `@Test` + `ClassFileImporter` so Jupiter discovers and runs them while ArchUnit performs rule evaluation without its engine. Revert marker: `re-enable-archunit-on-junit6` — revert both classes and remove the exclusion once ArchUnit ships JUnit Platform 6 support)
+
+## 7. Documentation and Config Updates
+
+- [x] 7.1 Update `AGENTS.md` Quick Reference table: bump Spring Boot version to `4.0.x` (done: table reflects new version)
+- [x] 7.2 Update `openspec/config.yaml` tech stack version entry for Spring Boot to `4.0.x` (done: config reflects new version)
+- [x] 7.3 Review `application.yml` for any `spring.*` property keys renamed in Spring Boot 4 (e.g., `spring.jackson.read.*` → `spring.jackson.json.read.*`) and update if present (done: no renamed keys found, or keys updated)

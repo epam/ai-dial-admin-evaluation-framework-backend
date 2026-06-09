@@ -7,10 +7,10 @@ import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorDetailsDto;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 @LogExecution
@@ -49,7 +49,7 @@ public class TestSuiteRunMapper {
         }
         try {
             return objectMapper.readValue(json, RunConfigDto.class);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalStateException("Failed to deserialize runConfig", ex);
         }
     }
@@ -60,7 +60,7 @@ public class TestSuiteRunMapper {
         }
         try {
             return objectMapper.readValue(json, RunErrorDetailsDto.class);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalStateException("Failed to deserialize errorDetails", ex);
         }
     }
@@ -71,7 +71,7 @@ public class TestSuiteRunMapper {
         }
         try {
             return objectMapper.readValue(json, SuiteSnapshotDto.class);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalStateException("Failed to deserialize suiteSnapshot", ex);
         }
     }

@@ -1,11 +1,6 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.modelcontextprotocol.spec.McpSchema.AudioContent;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Content;
@@ -16,6 +11,11 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Serializes MCP CallToolResult to a JSON string preserving the MCP envelope structure:
@@ -35,7 +35,7 @@ public class McpResponseSerializer {
      * Serializes CallToolResult to JSON string.
      * Follows fail-fast convention: throws on serialization failures.
      */
-    public String serialize(CallToolResult result) throws JsonProcessingException {
+    public String serialize(CallToolResult result) throws JacksonException {
         if (result == null) {
             return null;
         }

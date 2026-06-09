@@ -39,9 +39,6 @@ import com.epam.aidial.evaluation.service.domain.job.SseEvent;
 import com.epam.aidial.evaluation.service.domain.job.SseEventParser;
 import com.epam.aidial.evaluation.service.domain.job.SseParseResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.opentelemetry.api.OpenTelemetry;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -67,6 +64,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.util.MultiValueMap;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("TryItOutService")
 @ExtendWith(MockitoExtension.class)

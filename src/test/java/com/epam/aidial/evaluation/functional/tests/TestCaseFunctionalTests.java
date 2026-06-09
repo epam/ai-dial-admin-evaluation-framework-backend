@@ -18,8 +18,6 @@ import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.URI;
@@ -45,6 +43,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestCase Functional Tests")
 public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
@@ -60,7 +60,7 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
             String schemaJson = objectMapper.writeValueAsString(schema);
             Dataset dataset = metaTestDataHelper.createDataset("tc-" + UUID.randomUUID(), schemaJson);
             return dataset.getId();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
     }

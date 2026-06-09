@@ -4,9 +4,9 @@ import com.epam.aidial.evaluation.configuration.properties.logging.LoggerConfigP
 import com.epam.aidial.evaluation.service.infrastructure.logger.ConfigUpdaterLoggerLevel;
 import com.epam.aidial.evaluation.service.infrastructure.logger.LoggerConfigSource;
 import com.epam.aidial.evaluation.service.infrastructure.logger.LoggerConfigSourceJsonFile;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class LoggerConfig {

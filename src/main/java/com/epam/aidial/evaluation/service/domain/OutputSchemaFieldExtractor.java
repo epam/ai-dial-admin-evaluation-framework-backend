@@ -1,15 +1,15 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Extracts output field names from a metric's output schema JSON string.
@@ -41,9 +41,9 @@ public class OutputSchemaFieldExtractor {
                 return Collections.emptyList();
             }
             List<String> names = new ArrayList<>();
-            properties.fieldNames().forEachRemaining(names::add);
+            properties.propertyNames().forEach(names::add);
             return names;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to parse output schema JSON, returning empty field list: {}", e.getMessage(), e);
             return Collections.emptyList();
         }

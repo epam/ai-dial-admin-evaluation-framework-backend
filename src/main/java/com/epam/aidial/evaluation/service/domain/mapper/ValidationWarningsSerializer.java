@@ -3,14 +3,14 @@ package com.epam.aidial.evaluation.service.domain.mapper;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ExtractionWarningDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Serializer for validation warnings and generic JSON maps.
@@ -49,7 +49,7 @@ public class ValidationWarningsSerializer {
         }
         try {
             return objectMapper.writeValueAsString(warnings);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to serialize validation warnings: {}", e.getMessage(), e);
             throw new IllegalStateException("Failed to serialize validation warnings", e);
         }
@@ -69,7 +69,7 @@ public class ValidationWarningsSerializer {
         try {
             List<ValidationWarningDto> result = objectMapper.readValue(json, WARNINGS_TYPE);
             return result != null ? result : List.of();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn(
                     "Failed to deserialize validation warnings, returning empty list. "
                             + "Data can be regenerated via revalidation. Error: {}",
@@ -93,7 +93,7 @@ public class ValidationWarningsSerializer {
         }
         try {
             return objectMapper.writeValueAsString(warnings);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to serialize extraction warnings: {}", e.getMessage(), e);
             throw new IllegalStateException("Failed to serialize extraction warnings", e);
         }
@@ -113,7 +113,7 @@ public class ValidationWarningsSerializer {
         try {
             List<ExtractionWarningDto> result = objectMapper.readValue(json, EXTRACTION_WARNINGS_TYPE);
             return result != null ? result : List.of();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to deserialize extraction warnings, returning empty list. Error: {}", e.getMessage(), e);
             return List.of();
         }
@@ -133,7 +133,7 @@ public class ValidationWarningsSerializer {
         }
         try {
             return objectMapper.writeValueAsString(map);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to serialize map: {}", e.getMessage(), e);
             throw new IllegalArgumentException("Failed to serialize map", e);
         }
@@ -156,7 +156,7 @@ public class ValidationWarningsSerializer {
         try {
             Map<String, Object> result = objectMapper.readValue(json, MAP_TYPE);
             return result != null ? result : Map.of();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to deserialize JSON map, returning empty: {}", e.getMessage(), e);
             return Map.of();
         }

@@ -2,21 +2,22 @@ package com.epam.aidial.evaluation.configuration;
 
 import com.epam.aidial.evaluation.configuration.jackson.HttpMethodDeserializer;
 import com.epam.aidial.evaluation.configuration.jackson.HttpMethodSerializer;
+import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.MapperFeature;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import org.springframework.boot.web.client.RestTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.ResolvableType;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.module.SimpleModule;
 
 @Configuration
+@LogExecution
 public class JsonMapperConfiguration {
 
     @Bean
@@ -25,12 +26,26 @@ public class JsonMapperConfiguration {
         return createJsonMapper();
     }
 
+    /**
+     * SpringDoc's {@code /v3/api-docs} endpoint returns the OpenAPI spec as a {@code byte[]}
+     * (already-serialized JSON) with {@code application/json} content type. Because this custom
+     * converter bean is placed at the front of the converter list, under Spring Framework 7 /
+     * Jackson 3 it intercepts that {@code byte[]} and serializes it as a Base64 JSON string,
+     * so Swagger UI receives garbage and cannot find the {@code openapi} version field.
+     * Declining {@code byte[]} here lets the default {@code ByteArrayHttpMessageConverter}
+     * (which supports {@code *}/{@code *}) write the bytes verbatim.
+     */
     @Bean
-    public RestTemplateCustomizer restTemplateCustomizer(JsonMapper objectMapper) {
-        return restTemplate -> restTemplate.getMessageConverters().stream()
-                .filter(MappingJackson2HttpMessageConverter.class::isInstance)
-                .map(MappingJackson2HttpMessageConverter.class::cast)
-                .forEach(c -> c.setObjectMapper(objectMapper));
+    public JacksonJsonHttpMessageConverter jacksonJsonHttpMessageConverter(JsonMapper objectMapper) {
+        return new JacksonJsonHttpMessageConverter(objectMapper) {
+            @Override
+            public boolean canWrite(ResolvableType targetType, Class<?> valueType, MediaType mediaType) {
+                if (byte[].class.equals(valueType)) {
+                    return false;
+                }
+                return super.canWrite(targetType, valueType, mediaType);
+            }
+        };
     }
 
     private static JsonMapper createJsonMapper() {
@@ -41,9 +56,9 @@ public class JsonMapperConfiguration {
         return JsonMapper.builder()
                 .enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-                .serializationInclusion(JsonInclude.Include.NON_NULL)
-                .addModule(new JavaTimeModule())
+                .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+                .changeDefaultPropertyInclusion(
+                        v -> JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.NON_NULL))
                 .addModule(httpMethodModule)
                 .build();
     }

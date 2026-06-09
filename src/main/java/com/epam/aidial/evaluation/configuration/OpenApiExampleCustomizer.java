@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.configuration;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.models.examples.Example;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.parameters.RequestBody;
@@ -13,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Loads OpenAPI request/response examples from classpath resources and injects them into the spec
@@ -104,7 +105,7 @@ public class OpenApiExampleCustomizer implements OpenApiCustomizer {
     private Object parseJson(String json) {
         try {
             return OBJECT_MAPPER.readValue(json, Object.class);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             log.warn("Invalid JSON in OpenAPI example: {}", e.getMessage(), e);
             return null;
         }

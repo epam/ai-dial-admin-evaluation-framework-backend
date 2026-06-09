@@ -25,9 +25,6 @@ import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViola
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -49,6 +46,9 @@ import org.apache.commons.csv.CSVRecord;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Service
@@ -533,7 +533,7 @@ public class CsvImportService {
     private String serializeSchema(List<FieldDefinitionDto> schema) {
         try {
             return objectMapper.writeValueAsString(schema);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize schema", e);
         }
     }
@@ -662,7 +662,7 @@ public class CsvImportService {
         }
         try {
             return objectMapper.readValue(dataJson, new TypeReference<>() {});
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to deserialize test case data for fixup: {}", e.getMessage(), e);
             return new LinkedHashMap<>();
         }
@@ -1026,7 +1026,7 @@ public class CsvImportService {
         }
         try {
             return objectMapper.readValue(raw.trim(), Object.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return null;
         }
     }
@@ -1042,7 +1042,7 @@ public class CsvImportService {
                 return parsed;
             }
             return null;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.debug("Cell starting with [ or {{ is not valid JSON, falling back to string: {}", trimmedRaw, e);
             return null;
         }
@@ -1072,7 +1072,7 @@ public class CsvImportService {
             try {
                 objectMapper.readValue(value, Object.class);
                 return SchemaFieldType.OBJECT;
-            } catch (JsonProcessingException ignored) {
+            } catch (JacksonException ignored) {
                 // not valid JSON object
             }
         }
@@ -1080,7 +1080,7 @@ public class CsvImportService {
             try {
                 objectMapper.readValue(value, Object.class);
                 return SchemaFieldType.ARRAY;
-            } catch (JsonProcessingException ignored) {
+            } catch (JacksonException ignored) {
                 // not valid JSON array
             }
         }

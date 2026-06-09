@@ -29,9 +29,6 @@ import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
@@ -53,6 +50,9 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Executes a single test case: resolves request from snapshot template/bindings + input row data,
@@ -307,7 +307,7 @@ public class EvaluationWorker {
             }
             root.set("retryAttempts", array);
             return objectMapper.writeValueAsString(root);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to serialize logDetails: {}", e.getMessage(), e);
             return null;
         }
@@ -563,7 +563,7 @@ public class EvaluationWorker {
                     null,
                     errorBody,
                     responseColumns);
-        } catch (JsonProcessingException | RuntimeException e) {
+        } catch (RuntimeException e) {
             long now = clock.millis();
             ExecutionStatus status = isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
             String errorBody = buildErrorEnvelope("MCP_INVOCATION_ERROR", e.getMessage());
@@ -598,7 +598,7 @@ public class EvaluationWorker {
         }
         try {
             return objectMapper.readValue(data, new TypeReference<Map<String, Object>>() {});
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to parse test case data: {}", e.getMessage(), e);
             return Map.of();
         }
@@ -839,7 +839,7 @@ public class EvaluationWorker {
         }
         try {
             return objectMapper.writeValueAsString(body);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return body.toString();
         }
     }
@@ -852,7 +852,7 @@ public class EvaluationWorker {
         String truncated = new String(bytes, 0, (int) maxBytes, StandardCharsets.UTF_8);
         try {
             return objectMapper.writeValueAsString(truncated);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return "\"<response truncated>\"";
         }
     }
@@ -865,7 +865,7 @@ public class EvaluationWorker {
             var root = objectMapper.createObjectNode();
             root.set("error", error);
             return objectMapper.writeValueAsString(root);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return "{\"error\":{\"code\":\"" + code + "\",\"message\":\"serialization failed\"}}";
         }
     }

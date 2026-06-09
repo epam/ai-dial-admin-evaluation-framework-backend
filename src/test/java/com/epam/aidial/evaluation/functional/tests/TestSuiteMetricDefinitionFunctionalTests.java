@@ -52,6 +52,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestSuiteMetricDefinition Controller Tests")
 public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunctionalTest {
@@ -1126,8 +1128,8 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
             String name, List<FieldDefinitionDto> testCaseSchema, List<ResponseColumnDefinitionDto> responseColumns) {
         String schemaJson;
         try {
-            schemaJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(testCaseSchema);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            schemaJson = new ObjectMapper().writeValueAsString(testCaseSchema);
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
         com.epam.aidial.evaluation.data.db.model.Dataset dataset =

@@ -34,7 +34,6 @@ import com.epam.aidial.evaluation.service.domain.mapper.DatasetMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
@@ -48,6 +47,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("DatasetService")
 @ExtendWith(MockitoExtension.class)
@@ -181,7 +181,7 @@ class DatasetServiceTest {
         Dataset existing = Dataset.builder()
                 .id(id)
                 .name("D")
-                .testCaseSchema("[{\"name\":\"old\",\"type\":\"STRING\"}]")
+                .testCaseSchema("[{\"name\":\"old\",\"type\":\"STRING\",\"required\":false}]")
                 .validationWarnings("[]")
                 .version(2L)
                 .build();

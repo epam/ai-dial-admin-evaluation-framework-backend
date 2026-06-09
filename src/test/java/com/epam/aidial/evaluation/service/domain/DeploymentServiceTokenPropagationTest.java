@@ -10,13 +10,13 @@ import com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolde
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapperImpl;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Tests that verify token is accessible when DeploymentService

@@ -9,8 +9,6 @@ import com.epam.aidial.evaluation.service.domain.dto.ParameterDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +16,8 @@ import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 @LogExecution
@@ -151,7 +151,7 @@ public class TestSuiteRequestValidator {
                 throw new ValidationException(fieldName + " exceeds maximum size of "
                         + validationProperties.getMaxTemplateSizeBytes() + " bytes");
             }
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new ValidationException(fieldName + ": failed to serialize for size check");
         }
     }

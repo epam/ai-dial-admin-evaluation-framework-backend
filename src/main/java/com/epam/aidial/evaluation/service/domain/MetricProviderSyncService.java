@@ -8,8 +8,6 @@ import com.epam.aidial.evaluation.data.db.model.MetricDeclaration;
 import com.epam.aidial.evaluation.data.db.model.MetricDeclarationVersion;
 import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationRepository;
 import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationVersionRepository;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Syncs metric declarations from a metric provider (GET /metrics) into the meta database.

@@ -10,8 +10,6 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteRespons
 import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ExecutionInfoRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultItemDto;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -22,6 +20,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("Analytics Result List Tests")
 public abstract class AnalyticsResultListFunctionalTests extends BaseFunctionalTest {

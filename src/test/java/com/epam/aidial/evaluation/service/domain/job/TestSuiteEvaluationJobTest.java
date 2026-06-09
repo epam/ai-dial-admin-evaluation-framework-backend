@@ -23,7 +23,6 @@ import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,6 +35,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestSuiteEvaluationJob")
 @ExtendWith(MockitoExtension.class)

@@ -12,9 +12,6 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchW
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryExportRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +24,9 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("Eval Summary Export Functional Tests")
 public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTest {
@@ -678,7 +678,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                 EvalSummaryExportRequestDto.builder().runId(legacyRun.getId()).build();
         ResponseEntity<String> response = restTemplate.postForEntity(exportUrl(), jsonEntity(request), String.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(response.getBody()).contains("SNAPSHOT_SUITE_MISSING");
     }
 
@@ -690,7 +690,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         ResponseEntity<String> response =
                 restTemplate.exchange(previewUrl(legacyRun.getId(), null), HttpMethod.GET, null, String.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(response.getBody()).contains("SNAPSHOT_SUITE_MISSING");
     }
 
@@ -710,7 +710,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                 .build();
         ResponseEntity<String> response = restTemplate.postForEntity(exportUrl(), jsonEntity(request), String.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(response.getBody()).contains("UNSUPPORTED_SNAPSHOT_VERSION");
     }
 

@@ -8,9 +8,6 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelListResponseD
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +19,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * HTTP client for DIAL Core API. Propagates the current user's token via

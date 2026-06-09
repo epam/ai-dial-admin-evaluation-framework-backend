@@ -14,14 +14,14 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteUpstreamDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapperImpl;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatusCode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("SchemaRouteExtractor")
 class SchemaRouteExtractorTest {

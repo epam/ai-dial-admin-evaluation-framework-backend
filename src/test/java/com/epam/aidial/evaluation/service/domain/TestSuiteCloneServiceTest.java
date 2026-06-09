@@ -16,6 +16,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.properties.validation.RevalidationProperties;
+import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteMetricDefinition;
@@ -60,6 +61,9 @@ class TestSuiteCloneServiceTest {
 
     @Mock
     private TestSuiteMetricDefinitionRepository tsmdRepository;
+
+    @Mock
+    private TestSuiteMetricDefinitionService tsmdService;
 
     @Mock
     private DatasetRepository datasetRepository;
@@ -110,6 +114,7 @@ class TestSuiteCloneServiceTest {
         service = new TestSuiteCloneService(
                 testSuiteRepository,
                 tsmdRepository,
+                tsmdService,
                 datasetRepository,
                 datasetCloneService,
                 fileService,
@@ -335,6 +340,174 @@ class TestSuiteCloneServiceTest {
         verify(datasetSchemaProvider, never()).getSchema(any());
         // Validation still runs, against an empty schema
         assertThat(schemaCaptor.getValue()).isEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // (g) Vanilla clone (no override) copies source TSMD validity verbatim, no recompute
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("(g) vanilla clone copies source TSMD valid/warnings verbatim and never recomputes")
+    void clone_vanilla_copiesTsmdValidityVerbatim_andDoesNotRevalidate() {
+        TestSuite source = buildSource();
+        UUID newId = UUID.randomUUID();
+        TestSuite newEntity = buildNewEntityWithId(source, newId);
+
+        TestSuiteMetricDefinition validTsmd = TestSuiteMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .testSuiteId(sourceId)
+                .metricDeclarationId(UUID.randomUUID())
+                .metricDeclarationVersionId(UUID.randomUUID())
+                .name("valid")
+                .enabled(true)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        TestSuiteMetricDefinition invalidTsmd = TestSuiteMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .testSuiteId(sourceId)
+                .metricDeclarationId(UUID.randomUUID())
+                .metricDeclarationVersionId(UUID.randomUUID())
+                .name("invalid")
+                .enabled(true)
+                .valid(false)
+                .validationWarnings("[{\"code\":\"REQUIRED\"}]")
+                .build();
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+        when(fileService.copyFilesBetweenSuites(any(), any())).thenReturn(List.of());
+        setUpValidationChain(newEntity);
+        when(tsmdRepository.findBatchByTestSuiteId(eq(sourceId), eq(0), anyInt()))
+                .thenReturn(List.of(validTsmd, invalidTsmd));
+        when(tsmdRepository.findBatchByTestSuiteId(eq(sourceId), eq(2), anyInt()))
+                .thenReturn(List.of());
+        when(testSuiteMapper.toDto(newEntity))
+                .thenReturn(TestSuiteResponseDto.builder().build());
+
+        service.clone(sourceId, cloneRequestWithNameOnly(), null);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestSuiteMetricDefinition>> tsmdCaptor = ArgumentCaptor.forClass(List.class);
+        verify(tsmdRepository).batchInsert(tsmdCaptor.capture(), anyLong());
+        List<TestSuiteMetricDefinition> inserted = tsmdCaptor.getValue();
+
+        TestSuiteMetricDefinition clonedValid = findByName(inserted, "valid");
+        assertThat(clonedValid.isValid()).isTrue();
+        assertThat(clonedValid.getValidationWarnings()).isEqualTo("[]");
+
+        TestSuiteMetricDefinition clonedInvalid = findByName(inserted, "invalid");
+        assertThat(clonedInvalid.isValid()).isFalse();
+        assertThat(clonedInvalid.getValidationWarnings()).isEqualTo("[{\"code\":\"REQUIRED\"}]");
+
+        // No override → no recompute
+        verify(tsmdService, never()).revalidateAllForSuite(any(), any(), any());
+    }
+
+    // -----------------------------------------------------------------------
+    // (h) datasetId override → recompute against the override dataset's schema
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("(h) datasetId override inserts placeholder-invalid TSMDs and recomputes against override schema")
+    void clone_datasetIdOverride_recomputesTsmdsAgainstOverrideSchema() {
+        UUID overrideDatasetId = UUID.randomUUID();
+        String overrideSchemaJson = "[{\"name\":\"col\",\"type\":\"STRING\"}]";
+
+        TestSuite source = buildSource();
+        UUID newId = UUID.randomUUID();
+        TestSuite newEntity = buildNewEntityWithId(source, newId);
+        newEntity.setDatasetId(overrideDatasetId);
+
+        TestSuiteMetricDefinition sourceTsmd = TestSuiteMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .testSuiteId(sourceId)
+                .metricDeclarationId(UUID.randomUUID())
+                .metricDeclarationVersionId(UUID.randomUUID())
+                .name("M1")
+                .enabled(true)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        // Source dataset lookup at the top of clone() must be stubbed explicitly so strict stubbing
+        // does not flag the override-id findById stub when findById is also called for the source id.
+        when(datasetRepository.findById(sourceDatasetId)).thenReturn(Optional.empty());
+        when(datasetRepository.existsById(overrideDatasetId)).thenReturn(true);
+        when(datasetRepository.findById(overrideDatasetId))
+                .thenReturn(Optional.of(Dataset.builder()
+                        .id(overrideDatasetId)
+                        .testCaseSchema(overrideSchemaJson)
+                        .build()));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+        when(fileService.copyFilesBetweenSuites(any(), any())).thenReturn(List.of());
+        setUpValidationChain(newEntity);
+        when(tsmdRepository.findBatchByTestSuiteId(eq(sourceId), eq(0), anyInt()))
+                .thenReturn(List.of(sourceTsmd));
+        when(tsmdRepository.findBatchByTestSuiteId(eq(sourceId), eq(1), anyInt()))
+                .thenReturn(List.of());
+        when(testSuiteMapper.toDto(newEntity))
+                .thenReturn(TestSuiteResponseDto.builder().build());
+
+        TestSuiteCloneRequestDto dto = TestSuiteCloneRequestDto.builder()
+                .name(cloneName)
+                .datasetId(overrideDatasetId)
+                .build();
+        service.clone(sourceId, dto, null);
+
+        // Inserted with deterministic invalid placeholder; recompute will fix it up
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestSuiteMetricDefinition>> tsmdCaptor = ArgumentCaptor.forClass(List.class);
+        verify(tsmdRepository).batchInsert(tsmdCaptor.capture(), anyLong());
+        assertThat(tsmdCaptor.getValue().get(0).isValid()).isFalse();
+
+        // Recompute runs after inserts against the override dataset's schema + the suite's response columns
+        verify(tsmdService).revalidateAllForSuite(newId, overrideSchemaJson, newEntity.getResponseColumns());
+    }
+
+    // -----------------------------------------------------------------------
+    // (i) responseColumns override → recompute even without a datasetId override
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("(i) responseColumns override recomputes TSMDs against the inherited dataset schema")
+    void clone_responseColumnsOverride_recomputesTsmds() {
+        String inheritedSchemaJson = "[{\"name\":\"q\",\"type\":\"STRING\"}]";
+
+        TestSuite source = buildSource();
+        UUID newId = UUID.randomUUID();
+        TestSuite newEntity = buildNewEntityWithId(source, newId);
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        // Source dataset resolves to a non-PRIVATE dataset, so no private-dataset auto-clone path
+        when(datasetRepository.findById(sourceDatasetId))
+                .thenReturn(Optional.of(Dataset.builder()
+                        .id(sourceDatasetId)
+                        .testCaseSchema(inheritedSchemaJson)
+                        .build()));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+        when(fileService.copyFilesBetweenSuites(any(), any())).thenReturn(List.of());
+        setUpValidationChain(newEntity);
+        when(tsmdRepository.findBatchByTestSuiteId(any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(testSuiteMapper.toDto(newEntity))
+                .thenReturn(TestSuiteResponseDto.builder().build());
+
+        // Non-null responseColumns override triggers TSMD revalidation
+        TestSuiteCloneRequestDto dto = TestSuiteCloneRequestDto.builder()
+                .name(cloneName)
+                .responseColumns(List.of())
+                .build();
+        service.clone(sourceId, dto, null);
+
+        verify(tsmdService).revalidateAllForSuite(newId, inheritedSchemaJson, newEntity.getResponseColumns());
+    }
+
+    private static TestSuiteMetricDefinition findByName(List<TestSuiteMetricDefinition> tsmds, String name) {
+        return tsmds.stream().filter(t -> name.equals(t.getName())).findFirst().orElseThrow();
     }
 
     // -----------------------------------------------------------------------

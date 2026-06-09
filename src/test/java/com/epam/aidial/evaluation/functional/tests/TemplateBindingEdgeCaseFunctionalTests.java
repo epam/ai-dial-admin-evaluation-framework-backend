@@ -20,8 +20,6 @@ import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,6 +29,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("Template-Binding Edge Case Functional Tests")
 public abstract class TemplateBindingEdgeCaseFunctionalTests extends BaseFunctionalTest {
@@ -473,7 +473,7 @@ public abstract class TemplateBindingEdgeCaseFunctionalTests extends BaseFunctio
             String schemaJson = objectMapper.writeValueAsString(schema);
             Dataset dataset = metaTestDataHelper.createDataset("tbedge-" + UUID.randomUUID(), schemaJson);
             return dataset.getId();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
     }

@@ -2,8 +2,6 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,6 +13,9 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Injectable component that parses SSE wire format into structured {@link SseEvent} records.
@@ -125,7 +126,7 @@ public class SseEventParser {
                 return rawData;
             }
             return node;
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             return rawData;
         }
     }

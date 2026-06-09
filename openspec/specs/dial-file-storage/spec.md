@@ -102,6 +102,8 @@ The system SHALL provide file management endpoints scoped to test suites. These 
 | `GET` | `/api/v1/test-suites/{suiteId}/files/{filename}` | Download file |
 | `DELETE` | `/api/v1/test-suites/{suiteId}/files/{filename}` | Delete file |
 
+A peer family of dataset-scoped endpoints (`/api/v1/datasets/{datasetId}/files`) is defined in the `dataset-file-storage` capability and follows identical semantics (multipart upload, streaming download, filename validation, size limits, per-folder count limit). Both families proxy through `DialFileClient` and the EF service API key.
+
 File identification uses filename (`{filename}`) since DIAL storage uses path-based addressing. **The `{filename}` path variable MUST use regex pattern `{filename:.+}`** in Spring MVC `@GetMapping`/`@DeleteMapping` annotations to prevent suffix pattern matching from truncating filenames at the last dot (e.g., `report.pdf` → `report`).
 
 #### Scenario: Upload file
@@ -197,15 +199,16 @@ The system SHALL support configurable properties for DIAL file storage. The API 
 | `dial.file-storage.bucket-alias` | `@ef` | Constant alias used in client-facing file paths |
 | `dial.file-storage.max-file-size-bytes` | `52428800` (50MB) | Maximum upload file size |
 | `dial.file-storage.max-files-per-suite` | `100` | Maximum files per test suite |
+| `dial.file-storage.max-files-per-dataset` | `100` | Maximum files per dataset (added with the `dataset-file-storage` capability) |
 | `dial.file-storage.connect-timeout-ms` | `5000` | Connection timeout for DIAL file API |
 | `dial.file-storage.read-timeout-ms` | `30000` | Read timeout for DIAL file API |
 
 #### Scenario: Default configuration
 - **WHEN** no explicit file storage limits are configured
-- **THEN** the system SHALL use 50MB max file size and 100 files per suite
+- **THEN** the system SHALL use 50MB max file size, 100 files per suite, and 100 files per dataset
 
 #### Scenario: Custom configuration
-- **WHEN** `dial.file-storage.max-file-size-bytes` and `dial.file-storage.max-files-per-suite` are configured
+- **WHEN** `dial.file-storage.max-file-size-bytes`, `dial.file-storage.max-files-per-suite`, and/or `dial.file-storage.max-files-per-dataset` are configured
 - **THEN** the system SHALL use the configured values
 
 #### Scenario: Missing API key

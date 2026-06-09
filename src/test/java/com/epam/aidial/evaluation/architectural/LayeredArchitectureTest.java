@@ -4,11 +4,10 @@ import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
 import com.epam.aidial.evaluation.Application;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
-import com.tngtech.archunit.junit.AnalyzeClasses;
-import com.tngtech.archunit.junit.ArchTest;
+import org.junit.jupiter.api.Test;
 
-@AnalyzeClasses(packagesOf = Application.class, importOptions = ImportOption.DoNotIncludeTests.class)
 public class LayeredArchitectureTest {
 
     private static final String WEB_PACKAGE = "com.epam.aidial.evaluation.web..";
@@ -16,8 +15,12 @@ public class LayeredArchitectureTest {
     private static final String DATA_PACKAGE = "com.epam.aidial.evaluation.data..";
     private static final String CONFIG_PACKAGE = "com.epam.aidial.evaluation.configuration..";
 
-    @ArchTest
-    public static void testLayeredArchitecture(JavaClasses classes) {
+    private static final JavaClasses CLASSES = new ClassFileImporter()
+            .withImportOption(new ImportOption.DoNotIncludeTests())
+            .importPackagesOf(Application.class);
+
+    @Test
+    void testLayeredArchitecture() {
         layeredArchitecture()
                 .consideringAllDependencies()
                 .layer("web")
@@ -34,6 +37,6 @@ public class LayeredArchitectureTest {
                 .mayOnlyBeAccessedByLayers("web", "configuration")
                 .whereLayer("data")
                 .mayOnlyBeAccessedByLayers("service", "configuration")
-                .check(classes);
+                .check(CLASSES);
     }
 }

@@ -17,7 +17,6 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.SpanBuilder;
 import java.math.BigDecimal;
@@ -36,6 +35,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("MetricEvaluationWorker")
 @ExtendWith(MockitoExtension.class)

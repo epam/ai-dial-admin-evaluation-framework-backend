@@ -3,9 +3,9 @@ package com.epam.aidial.evaluation.client.metricprovider;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsDescriptionDto;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("MetricsDescriptionDto deserialization")
 class MetricsDescriptionDtoDeserializationTest {

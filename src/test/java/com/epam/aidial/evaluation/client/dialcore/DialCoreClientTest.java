@@ -11,7 +11,6 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationListRes
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelListResponseDto;
 import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.RequestMatcher;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("DialCoreClient")
 class DialCoreClientTest {

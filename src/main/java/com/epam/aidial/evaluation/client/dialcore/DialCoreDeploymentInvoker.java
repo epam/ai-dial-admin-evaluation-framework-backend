@@ -2,8 +2,6 @@ package com.epam.aidial.evaluation.client.dialcore;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.SocketTimeoutException;
@@ -26,6 +24,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.util.UriUtils;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Invokes DIAL Core deployment endpoints (POST/GET/etc.) with a dedicated RestClient
@@ -191,7 +191,7 @@ public class DialCoreDeploymentInvoker {
         }
         try {
             return objectMapper.readValue(rawBody, Object.class);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             return rawBody;
         }
     }

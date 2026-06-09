@@ -9,9 +9,6 @@ import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -20,6 +17,9 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Service
@@ -192,9 +192,9 @@ public class MetricDefinitionValidationService {
                 return Collections.emptySet();
             }
             Set<String> names = new HashSet<>();
-            properties.fieldNames().forEachRemaining(names::add);
+            properties.propertyNames().forEach(names::add);
             return names;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to parse metric schema JSON, skipping property checks: {}", e.getMessage(), e);
             return Collections.emptySet();
         }
@@ -217,7 +217,7 @@ public class MetricDefinitionValidationService {
                 }
             });
             return names;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to parse metric schema required array: {}", e.getMessage(), e);
             return Collections.emptySet();
         }
@@ -240,7 +240,7 @@ public class MetricDefinitionValidationService {
                 }
             });
             return names;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to parse testCaseSchema JSON: {}", e.getMessage(), e);
             return Collections.emptySet();
         }
@@ -263,7 +263,7 @@ public class MetricDefinitionValidationService {
                 }
             });
             return names;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to parse responseColumns JSON: {}", e.getMessage(), e);
             return Collections.emptySet();
         }

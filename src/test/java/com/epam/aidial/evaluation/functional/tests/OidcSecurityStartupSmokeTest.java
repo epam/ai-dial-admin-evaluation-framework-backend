@@ -18,7 +18,12 @@ public abstract class OidcSecurityStartupSmokeTest extends BaseFunctionalTest {
     void shouldExposeOpenApiAndHealth() {
         ResponseEntity<String> openApi = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
         assertThat(openApi.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(openApi.getBody()).contains("\"openapi\"");
+
+        // SpringDoc returns the spec as byte[]; jacksonJsonHttpMessageConverter declines byte[]
+        // so ByteArrayHttpMessageConverter writes the raw JSON object verbatim (no Base64 wrap).
+        String body = openApi.getBody();
+        assertThat(body).isNotNull().startsWith("{");
+        assertThat(body).as("OpenAPI spec should contain openapi version field").contains("\"openapi\"");
 
         ResponseEntity<String> health = restTemplate.getForEntity(apiUrl("/health"), String.class);
         assertThat(health.getStatusCode()).isEqualTo(HttpStatus.OK);

@@ -6,8 +6,6 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDt
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricErrorDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,6 +13,8 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("MetricOutputMapper")
 class MetricOutputMapperTest {

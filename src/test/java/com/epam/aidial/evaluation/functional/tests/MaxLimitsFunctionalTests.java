@@ -16,8 +16,6 @@ import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +27,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("Max Limits Functional Tests (template size, bindings count, duplicate templateVariable)")
 public abstract class MaxLimitsFunctionalTests extends BaseFunctionalTest {
@@ -257,7 +257,7 @@ public abstract class MaxLimitsFunctionalTests extends BaseFunctionalTest {
             String schemaJson = objectMapper.writeValueAsString(schema);
             Dataset dataset = metaTestDataHelper.createDataset("limits-" + UUID.randomUUID(), schemaJson);
             return dataset.getId();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
     }

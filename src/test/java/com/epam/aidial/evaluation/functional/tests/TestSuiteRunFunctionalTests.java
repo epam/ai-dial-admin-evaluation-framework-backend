@@ -50,6 +50,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestSuiteRun Functional Tests")
 public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
@@ -73,7 +75,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     private MetricDeclarationTestDataProvider metricDeclarationTestDataProvider;
 
     @Autowired
-    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    private ObjectMapper objectMapper;
 
     private UUID newDatasetWithSchema(List<FieldDefinitionDto> schema) {
         try {
@@ -81,7 +83,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
             return metaTestDataHelper
                     .createDataset("run-" + UUID.randomUUID(), schemaJson)
                     .getId();
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
     }

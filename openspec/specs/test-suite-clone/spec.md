@@ -124,7 +124,14 @@ Overridable fields: `description`, `datasetId`, `deploymentRef`, `endpointRef`, 
 - **THEN** system SHALL ignore the unknown field (per Jackson default) OR respond with HTTP 400 if strict-binding validation is enabled; in either case the cloned suite SHALL NOT carry a `testCaseSchema` (the field does not exist on `TestSuite` after this change)
 
 ### Requirement: TSMD cloning
-The system SHALL clone all test suite metric definitions from the source suite into the new suite. Each cloned TSMD SHALL receive a new UUID, the new suite's ID as `testSuiteId`, and fresh timestamps. The `name`, `metricDeclarationId`, `metricDeclarationVersionId`, `enabled`, `configBindings`, and `inputBindings` fields SHALL be copied. `isValid` SHALL be set to `false`. Status: **Implemented**
+The system SHALL clone all test suite metric definitions from the source suite into the new suite. Each cloned TSMD SHALL receive a new UUID, the new suite's ID as `testSuiteId`, and fresh timestamps. The `name`, `metricDeclarationId`, `metricDeclarationVersionId`, `enabled`, `configBindings`, and `inputBindings` fields SHALL be copied.
+
+The cloned TSMD's `isValid` and `validationWarnings` SHALL be determined by whether **TSMD revalidation is required**:
+
+- **TSMD revalidation is required** when the clone request supplies a `datasetId` override that differs from the source suite's `datasetId`, OR supplies a `responseColumns` override. In this case the cloned TSMD's `isValid` and `validationWarnings` SHALL be recomputed synchronously, inside the clone transaction, against the resolved dataset's `testCaseSchema` and the cloned suite's `responseColumns`.
+- **TSMD revalidation is NOT required** when the clone request supplies neither a differing `datasetId` override nor a `responseColumns` override (including the private-dataset auto-clone, where the cloned dataset's `testCaseSchema` is copied verbatim). In this case every input to TSMD validation is identical to the source, and the cloned TSMD's `isValid` and `validationWarnings` SHALL be copied verbatim from the source TSMD.
+
+In both cases validation is synchronous and within the clone transaction; the clone SHALL NOT spawn an async `RevalidationTask` for TSMDs. Status: **Implemented**
 
 #### Scenario: TSMDs are deep-copied
 - **WHEN** source suite has 2 TSMDs
@@ -138,6 +145,26 @@ The system SHALL clone all test suite metric definitions from the source suite i
 - **WHEN** source suite has a TSMD whose `metricDeclarationId` no longer exists in `metric_declarations`
 - **THEN** that TSMD SHALL be silently excluded from the cloned suite (the INNER JOIN on `metric_declarations` excludes the orphaned row)
 - **AND** no error SHALL be thrown; remaining valid TSMDs are cloned normally
+
+#### Scenario: Validity is copied verbatim on a vanilla clone
+- **WHEN** client clones with `{"name": "Copy"}` only (no `datasetId` or `responseColumns` override) and a source TSMD has `isValid = true` with empty `validationWarnings`
+- **THEN** the corresponding cloned TSMD SHALL have `isValid = true` and the same `validationWarnings`, with no recompute performed
+
+#### Scenario: Invalid source TSMD validity is preserved on a vanilla clone
+- **WHEN** client clones with no `datasetId` or `responseColumns` override and a source TSMD has `isValid = false` with one or more `validationWarnings`
+- **THEN** the corresponding cloned TSMD SHALL have `isValid = false` and the same `validationWarnings` copied verbatim
+
+#### Scenario: Validity is copied verbatim on a private-dataset auto-clone
+- **WHEN** the source suite is bound to a PRIVATE dataset, the client supplies no `datasetId` override, and the dataset is auto-cloned with its `testCaseSchema` copied verbatim
+- **THEN** each cloned TSMD SHALL have its `isValid` and `validationWarnings` copied verbatim from the source TSMD (no recompute)
+
+#### Scenario: Validity is recomputed when datasetId is overridden
+- **WHEN** client clones with `{"name": "Copy", "datasetId": "<other-id>"}` where the supplied dataset's `testCaseSchema` differs such that a TSMD's test-case-bound parameter no longer resolves
+- **THEN** that cloned TSMD's `isValid` and `validationWarnings` SHALL reflect synchronous revalidation against the supplied dataset's schema, independent of the source TSMD's stored validity
+
+#### Scenario: Validity is recomputed when responseColumns is overridden
+- **WHEN** client clones with a `responseColumns` override that removes a column referenced by a TSMD's response-bound parameter
+- **THEN** that cloned TSMD's `isValid` SHALL be `false` with a corresponding unresolved-reference warning, reflecting synchronous revalidation against the overridden response columns
 
 ### Requirement: DIAL file cloning
 The system SHALL copy suite-level files from the source suite's DIAL storage folder (`{bucket}/suites/{sourceId}/`) to the cloned suite's folder (`{bucket}/suites/{newId}/`). File copy SHALL happen before the database transaction. Only files referenced by suite-level configuration (multipart bodies in `requestTemplate`, file references in `inputBindings`, TSMD-level `configBindings`/`inputBindings`) are within scope. Test-case-scoped files are NOT copied because test cases are not cloned — they remain in the shared dataset and continue to reference their existing paths.

@@ -6,7 +6,7 @@ context: |
 
   # Tech Stack
   - Java 25
-  - Spring Boot 3.5.11
+  - Spring Boot 4.0.6
   - Build: Gradle 9.5.1
   - Database: PostgreSQL via JDBC only (NO JPA/Hibernate)
   - Migrations: Flyway (src/main/resources/db/migration/POSTGRES/), naming: V{major}.{minor}__{Description}.sql

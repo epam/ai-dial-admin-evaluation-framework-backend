@@ -9,7 +9,6 @@ import com.epam.aidial.evaluation.service.domain.GrafanaLinkBuilder;
 import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorDetailsDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -18,6 +17,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestSuiteRunMapper")
 class TestSuiteRunMapperTest {

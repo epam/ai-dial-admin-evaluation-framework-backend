@@ -2,6 +2,9 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.functional.PostgresFunctionalTests;
+import com.epam.aidial.evaluation.functional.config.PostgresFunctionalTestConfiguration;
+import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
@@ -13,10 +16,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 
 @DisplayName("MetricDeclaration Controller Tests")
 public abstract class MetricDeclarationFunctionalTests extends BaseFunctionalTest {
@@ -177,7 +187,52 @@ public abstract class MetricDeclarationFunctionalTests extends BaseFunctionalTes
 
     @Nested
     @DisplayName("GET .../latest")
+    @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+    @AutoConfigureTestRestTemplate
+    @TestPropertySource(properties = {"dial.api-key=test-api-key", "config.rest.security.mode=none"})
+    @Import(PostgresFunctionalTestConfiguration.class)
     class GetLatestVersion {
+
+        // Spring Boot 4 doubly-nested classes need their own context and don't inherit
+        // the outer @DynamicPropertySource, so we re-register datasource properties here.
+        @DynamicPropertySource
+        static void configureProperties(DynamicPropertyRegistry registry) {
+            var container = PostgresFunctionalTests.getContainer();
+            registry.add("postgres.meta.datasource.url", container::getJdbcUrl);
+            registry.add("postgres.meta.datasource.driver-class-name", () -> "org.postgresql.Driver");
+            registry.add("postgres.meta.datasource.username", container::getUsername);
+            registry.add("postgres.meta.datasource.password", container::getPassword);
+            registry.add("postgres.meta.datasource.schema", () -> "public");
+            registry.add(
+                    "postgres.analytics.datasource.url",
+                    () -> container
+                            .getJdbcUrl()
+                            .replace("/" + container.getDatabaseName(), "/evaluation_analytics_db"));
+            registry.add("postgres.analytics.datasource.driver-class-name", () -> "org.postgresql.Driver");
+            registry.add("postgres.analytics.datasource.username", container::getUsername);
+            registry.add("postgres.analytics.datasource.password", container::getPassword);
+            registry.add("postgres.analytics.datasource.schema", () -> "public");
+        }
+
+        @Autowired
+        private TestRestTemplate restTemplate;
+
+        @Autowired
+        private MetaTestDataHelper metaTestDataHelper;
+
+        @Autowired
+        private MetricDeclarationTestDataProvider metricDeclarationTestDataProvider;
+
+        @BeforeEach
+        void setUp() {
+            // FunctionalTests.@AfterEach (restoreDb) doesn't run for this separate context,
+            // so we clean up manually. TSMDs from other test classes reference metric declarations
+            // via a non-cascading FK and must be cleared first.
+            metaTestDataHelper.clearTestSuiteMetricDefinitions();
+            metricDeclarationTestDataProvider.clearMetricDeclarationsAndVersions();
+            metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+            metricDeclarationTestDataProvider.insertSeedVersionForAccuracy();
+        }
 
         @Test
         @DisplayName("Returns latest version when declaration has versions")

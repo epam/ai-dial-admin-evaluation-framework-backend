@@ -37,8 +37,6 @@ import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.opentelemetry.api.OpenTelemetry;
@@ -63,6 +61,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("EvaluationWorker")
 @ExtendWith(MockitoExtension.class)
@@ -480,10 +480,10 @@ class EvaluationWorkerTest {
 
         // then
         HttpHeaders capturedHeaders = headersCaptor.getValue();
-        assertThat(capturedHeaders.containsKey("Authorization")).isFalse();
-        assertThat(capturedHeaders.containsKey("Host")).isFalse();
+        assertThat(capturedHeaders.containsHeader("Authorization")).isFalse();
+        assertThat(capturedHeaders.containsHeader("Host")).isFalse();
         assertThat(capturedHeaders.getFirst("X-Custom")).isEqualTo("allowed-value");
-        assertThat(capturedHeaders.containsKey("X-Correlation-Id")).isFalse();
+        assertThat(capturedHeaders.containsHeader("X-Correlation-Id")).isFalse();
     }
 
     // ------------------------------------------------------------------
@@ -605,8 +605,7 @@ class EvaluationWorkerTest {
                             .warnings(List.of())
                             .build());
             when(mcpToolInvoker.callTool(any(), any(), any(), any(), any())).thenReturn(callResult);
-            when(mcpResponseSerializer.serialize(callResult))
-                    .thenThrow(new JsonProcessingException("serialization error") {});
+            when(mcpResponseSerializer.serialize(callResult)).thenThrow(new JacksonException("serialization error") {});
             when(responseColumnExtractor.extract(anyList(), anyString()))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 

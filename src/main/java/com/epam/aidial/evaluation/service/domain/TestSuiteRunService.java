@@ -28,9 +28,6 @@ import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,6 +39,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Service
@@ -125,7 +125,7 @@ public class TestSuiteRunService {
         String runConfigJson;
         try {
             runConfigJson = objectMapper.writeValueAsString(config);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalStateException("Failed to serialize runConfig", ex);
         }
 
@@ -281,7 +281,7 @@ public class TestSuiteRunService {
                 }
             }
             return ids;
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
             return List.of();
         }

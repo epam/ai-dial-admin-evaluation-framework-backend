@@ -9,7 +9,6 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.util.Map;
@@ -24,6 +23,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("DialCoreDeploymentInvoker")
 class DialCoreDeploymentInvokerTest {

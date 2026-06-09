@@ -9,9 +9,6 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteRequest
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ExecutionInfoRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultItemDto;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +17,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("Analytics Result Batch Write Tests")
 public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunctionalTest {

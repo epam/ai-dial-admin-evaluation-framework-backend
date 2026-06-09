@@ -11,16 +11,16 @@ import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
@@ -127,7 +127,7 @@ public class JsonbMapper {
         }
         try {
             return objectMapper.readValue(json, MAP_TYPE);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalArgumentException("Failed to deserialize jsonSchema", ex);
         }
     }
@@ -143,7 +143,7 @@ public class JsonbMapper {
             JsonNode node = objectMapper.readTree(deploymentRefJson);
             JsonNode idNode = node.get("id");
             return idNode != null ? idNode.asText() : null;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to extract deploymentId: {}", e.getMessage(), e);
             return null;
         }
@@ -164,7 +164,7 @@ public class JsonbMapper {
                 return HttpMethod.valueOf(methodNode.asText().toUpperCase());
             }
             return HttpMethod.POST;
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Failed to extract HTTP method: {}", e.getMessage(), e);
             return HttpMethod.POST;
         }
@@ -176,7 +176,7 @@ public class JsonbMapper {
         }
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalArgumentException("Failed to serialize " + label, ex);
         }
     }
@@ -187,7 +187,7 @@ public class JsonbMapper {
         }
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalArgumentException("Failed to serialize " + label, ex);
         }
     }
@@ -198,7 +198,7 @@ public class JsonbMapper {
         }
         try {
             return objectMapper.readValue(json, type);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalArgumentException("Failed to deserialize " + label, ex);
         }
     }
@@ -210,7 +210,7 @@ public class JsonbMapper {
         try {
             List<T> result = objectMapper.readValue(json, type);
             return result != null ? result : List.of();
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new IllegalArgumentException("Failed to deserialize " + label, ex);
         }
     }

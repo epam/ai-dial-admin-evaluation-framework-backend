@@ -24,9 +24,6 @@ import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingE
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -46,6 +43,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Streams an {@link EvalSummary} export as CSV and produces a JSON preview of the column manifest
@@ -260,7 +260,7 @@ public class EvalSummaryExportService {
         SuiteSnapshotDto snapshot;
         try {
             snapshot = objectMapper.readValue(snapshotJson, SuiteSnapshotDto.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to deserialize suite_snapshot for run {}: {}", run.getId(), e.getMessage(), e);
             throw new IllegalStateException("Failed to deserialize suite_snapshot for run " + run.getId(), e);
         }
@@ -318,7 +318,7 @@ public class EvalSummaryExportService {
         if (value instanceof Map<?, ?> || value instanceof Collection<?>) {
             try {
                 return objectMapper.writeValueAsString(value);
-            } catch (JsonProcessingException e) {
+            } catch (JacksonException e) {
                 log.warn(
                         "Failed to serialize export cell value of type {}: {}",
                         value.getClass().getName(),

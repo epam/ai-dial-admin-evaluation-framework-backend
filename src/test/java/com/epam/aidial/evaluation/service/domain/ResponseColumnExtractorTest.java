@@ -11,10 +11,10 @@ import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ExtractionWarningDto;
 import com.epam.aidial.evaluation.service.domain.exception.TypeMismatchException;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class ResponseColumnExtractorTest {
 

@@ -1,15 +1,15 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.InputStream;
 import java.util.List;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Two-mode SSE response accumulator:
@@ -120,7 +120,7 @@ public class StreamingResponseAccumulator {
                 root.set("choices", objectMapper.createArrayNode().add(choice));
                 responseBody = objectMapper.writeValueAsString(root);
             }
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to assemble OpenAI streaming response: {}", e.getMessage(), e);
             executionStatus = ExecutionStatus.ERROR;
         }
@@ -142,7 +142,7 @@ public class StreamingResponseAccumulator {
             }
             envelope.set("events", eventsArray);
             responseBody = objectMapper.writeValueAsString(envelope);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.error("Failed to assemble structured SSE response: {}", e.getMessage(), e);
             executionStatus = ExecutionStatus.ERROR;
         }

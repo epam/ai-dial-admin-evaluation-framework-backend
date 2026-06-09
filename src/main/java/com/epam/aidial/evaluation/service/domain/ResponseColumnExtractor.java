@@ -4,15 +4,15 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ExtractionWarningDto;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Evaluates response column JSONata expressions against a JSON response body string
@@ -88,7 +88,7 @@ public class ResponseColumnExtractor {
         String extractedJson;
         try {
             extractedJson = objectMapper.writeValueAsString(extracted);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             log.error("Failed to serialize extracted columns: {}", ex.getMessage(), ex);
             throw new IllegalStateException("Failed to serialize extracted columns", ex);
         }

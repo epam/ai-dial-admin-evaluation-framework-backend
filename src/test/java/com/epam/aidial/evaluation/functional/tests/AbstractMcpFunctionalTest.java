@@ -17,8 +17,6 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,6 +24,8 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Shared base class for MCP functional tests — provides common fixture helpers
@@ -45,7 +45,7 @@ public abstract class AbstractMcpFunctionalTest extends BaseFunctionalTest {
             String schemaJson = objectMapper.writeValueAsString(schema);
             Dataset dataset = metaTestDataHelper.createDataset("mcp-" + UUID.randomUUID(), schemaJson);
             return dataset.getId();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
     }

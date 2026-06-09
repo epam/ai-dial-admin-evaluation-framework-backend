@@ -243,7 +243,7 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
                 .thenReturn(
                         List.of(new McpSchema.Tool("visualize", null, "Visualize molecule", null, null, null, null)));
 
-        URI uri = UriComponentsBuilder.fromHttpUrl(apiUrl("/deployments/tools"))
+        URI uri = UriComponentsBuilder.fromUriString(apiUrl("/deployments/tools"))
                 .queryParam("deploymentId", deploymentId)
                 .build()
                 .encode()

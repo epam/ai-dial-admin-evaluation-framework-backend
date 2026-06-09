@@ -4,14 +4,14 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.MetricErrorDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Maps metric evaluation results (per-TSMD) into metricValues and metricInfos ObjectNodes

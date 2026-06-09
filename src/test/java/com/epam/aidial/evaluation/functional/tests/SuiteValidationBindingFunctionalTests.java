@@ -22,8 +22,6 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,6 +31,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("Suite validation — binding cross-validation and placeholder handling")
 public abstract class SuiteValidationBindingFunctionalTests extends BaseFunctionalTest {
@@ -48,7 +48,7 @@ public abstract class SuiteValidationBindingFunctionalTests extends BaseFunction
             String schemaJson = objectMapper.writeValueAsString(schema);
             Dataset dataset = metaTestDataHelper.createDataset("svb-" + UUID.randomUUID(), schemaJson);
             return dataset.getId();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
     }

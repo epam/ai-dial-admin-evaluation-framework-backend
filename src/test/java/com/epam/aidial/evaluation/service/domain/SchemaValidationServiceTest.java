@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("SchemaValidationService")
 class SchemaValidationServiceTest {
@@ -119,7 +119,8 @@ class SchemaValidationServiceTest {
         var error = schemaValidationService.getSchemaValidationError(invalidTypeSchema);
 
         assertThat(error).isPresent();
-        assertThat(error.get()).contains("type");
+        // json-schema-validator 3.x error message format: "does not have a value in the enumeration [...]"
+        assertThat(error.get()).containsAnyOf("type", "enumeration");
     }
 
     @Test

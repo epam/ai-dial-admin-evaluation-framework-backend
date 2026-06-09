@@ -2,10 +2,10 @@ package com.epam.aidial.evaluation.service.domain.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("SuiteSnapshotDto")
 class SuiteSnapshotDtoTest {
@@ -14,7 +14,7 @@ class SuiteSnapshotDtoTest {
 
     @Test
     @DisplayName("JSON missing snapshotVersion deserializes with @Builder.Default CURRENT_VERSION")
-    void missingSnapshotVersionDefaultsToCurrent() throws JsonProcessingException {
+    void missingSnapshotVersionDefaultsToCurrent() throws JacksonException {
         String json = "{\"suiteType\":\"DEPLOYMENT\"}";
 
         SuiteSnapshotDto dto = objectMapper.readValue(json, SuiteSnapshotDto.class);

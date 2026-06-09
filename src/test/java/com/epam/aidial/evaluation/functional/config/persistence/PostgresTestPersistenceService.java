@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 public class PostgresTestPersistenceService implements TestPersistenceService {
 
@@ -32,7 +32,7 @@ public class PostgresTestPersistenceService implements TestPersistenceService {
 
     @Override
     public void dumpDb() {
-        PostgreSQLContainer<?> postgres = PostgresFunctionalTests.getContainer();
+        PostgreSQLContainer postgres = PostgresFunctionalTests.getContainer();
         runContainerCommand(
                 String.format(
                         "pg_dump -Ft -U %s -f %s %s", postgres.getUsername(), DUMP_FILE, postgres.getDatabaseName()),
@@ -43,7 +43,7 @@ public class PostgresTestPersistenceService implements TestPersistenceService {
     public void restoreDb() {
         self.dropAndCreatePublicSchema();
         cleanupAnalyticsTables();
-        PostgreSQLContainer<?> postgres = PostgresFunctionalTests.getContainer();
+        PostgreSQLContainer postgres = PostgresFunctionalTests.getContainer();
         runContainerCommand(
                 String.format(
                         "pg_restore -Ft -U %s -d %s %s", postgres.getUsername(), postgres.getDatabaseName(), DUMP_FILE),
@@ -68,7 +68,7 @@ public class PostgresTestPersistenceService implements TestPersistenceService {
     }
 
     private void runContainerCommand(String command, String description) {
-        PostgreSQLContainer<?> postgres = PostgresFunctionalTests.getContainer();
+        PostgreSQLContainer postgres = PostgresFunctionalTests.getContainer();
         try {
             var result = postgres.execInContainer("sh", "-c", command);
 

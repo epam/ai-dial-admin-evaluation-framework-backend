@@ -30,6 +30,11 @@ public class DatasetQueryService {
     private final DatasetRepository datasetRepository;
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
+    public Optional<Dataset> findById(UUID id) {
+        return datasetRepository.findById(id);
+    }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
     public boolean existsById(UUID id) {
         return datasetRepository.existsById(id);
     }

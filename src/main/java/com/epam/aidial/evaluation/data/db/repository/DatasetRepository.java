@@ -51,6 +51,14 @@ public interface DatasetRepository {
     void updateVisibility(UUID id, DatasetVisibility visibility, long updatedAt);
 
     /**
+     * Atomically updates {@code visibility}, {@code name}, and {@code description}, then bumps
+     * {@code version}. No optimistic-locking version check — callers must hold the
+     * {@code FOR UPDATE} row lock acquired via {@link #findByIdForUpdate(UUID)}.
+     */
+    void updateVisibilityAndMetadata(
+            UUID id, DatasetVisibility visibility, String name, String description, long updatedAt);
+
+    /**
      * Updates {@code test_case_schema} and bumps {@code version} without optimistic locking.
      * Used by CSV import to persist auto-detected or merged schemas.
      */

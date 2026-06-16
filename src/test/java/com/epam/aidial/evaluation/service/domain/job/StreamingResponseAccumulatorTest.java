@@ -21,8 +21,9 @@ class StreamingResponseAccumulatorTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     // Fixed clock at epoch 10 000 ms — used by SseEventParser inside the accumulator
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.ofEpochMilli(10_000), ZoneId.of("UTC"));
-    private static final long FAR_FUTURE_DEADLINE_MS = 610_000L; // > FIXED_CLOCK.millis()
-    private static final long PAST_DEADLINE_MS = 9_999L; // < FIXED_CLOCK.millis()
+    // Large timeouts so neither bound trips under the FIXED_CLOCK (now never advances).
+    private static final long LARGE_IDLE_TIMEOUT_MS = 600_000L;
+    private static final long LARGE_MAX_TOTAL_MS = 3_600_000L;
     private static final long LARGE_MAX_RESPONSE_SIZE = 10 * 1024 * 1024L;
 
     private final SseEventParser sseEventParser = new SseEventParser(OBJECT_MAPPER, FIXED_CLOCK);
@@ -92,13 +93,34 @@ class StreamingResponseAccumulatorTest {
         }
 
         @Test
-        @DisplayName("Should set TIMEOUT status when deadline is exceeded")
-        void accumulate_deadlineExceeded_setsTimeoutStatus() {
+        @DisplayName("Should propagate TIMEOUT status when the underlying parser hits the idle timeout")
+        void accumulate_idleTimeoutExceeded_setsTimeoutStatus() {
+            // Scripted reads: entry=0, chunk1=100, blank=200 (event #1 dispatched), chunk2=5000.
+            // idleTimeout=1000: the 200→5000 gap exceeds it, so parsing stops on the second chunk.
+            SseEventParser timedParser = new SseEventParser(OBJECT_MAPPER, new AdvancingClock(0, 100, 200, 5_000));
             StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
-                    sseEventParser, OBJECT_MAPPER, PAST_DEADLINE_MS, LARGE_MAX_RESPONSE_SIZE);
+                    timedParser, OBJECT_MAPPER, 1_000L, LARGE_MAX_TOTAL_MS, LARGE_MAX_RESPONSE_SIZE);
 
-            InputStream stream =
-                    buildSseStream("data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}", "data: [DONE]");
+            InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"content\":\" there\"}}]}");
+
+            accumulator.accumulate(stream);
+
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.TIMEOUT);
+        }
+
+        @Test
+        @DisplayName("Should propagate TIMEOUT status when the parser hits the max-total cap under continuous activity")
+        void accumulate_maxTotalCapExceeded_setsTimeoutStatus() {
+            // Gaps of 300ms (idle 10_000 never trips), but total crosses the 1000ms hard cap.
+            SseEventParser timedParser = new SseEventParser(OBJECT_MAPPER, new AdvancingClock(0, 300, 600, 900, 1_200));
+            StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
+                    timedParser, OBJECT_MAPPER, 10_000L, 1_000L, LARGE_MAX_RESPONSE_SIZE);
+
+            InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"content\":\" there\"}}]}");
 
             accumulator.accumulate(stream);
 
@@ -110,7 +132,7 @@ class StreamingResponseAccumulatorTest {
         void accumulate_sizeLimitExceeded_truncatesAndSetsError() {
             long smallSizeLimit = 5L;
             StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
-                    sseEventParser, OBJECT_MAPPER, FAR_FUTURE_DEADLINE_MS, smallSizeLimit);
+                    sseEventParser, OBJECT_MAPPER, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, smallSizeLimit);
 
             InputStream stream = buildSseStream(
                     "data: {\"choices\":[{\"delta\":{\"content\":\"Hello world this is a long response\"}}]}",
@@ -220,8 +242,8 @@ class StreamingResponseAccumulatorTest {
         @DisplayName("Should return ERROR and partial envelope when size limit is exceeded")
         void accumulate_sizeLimitExceededStructuredMode_returnsPartialEnvelope() throws Exception {
             long smallLimit = 20L;
-            StreamingResponseAccumulator accumulator =
-                    new StreamingResponseAccumulator(sseEventParser, OBJECT_MAPPER, FAR_FUTURE_DEADLINE_MS, smallLimit);
+            StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
+                    sseEventParser, OBJECT_MAPPER, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, smallLimit);
 
             InputStream stream = buildSseStream(
                     "data: {\"a\":1}", // small — fits
@@ -244,7 +266,7 @@ class StreamingResponseAccumulatorTest {
 
     private StreamingResponseAccumulator createAccumulator() {
         return new StreamingResponseAccumulator(
-                sseEventParser, OBJECT_MAPPER, FAR_FUTURE_DEADLINE_MS, LARGE_MAX_RESPONSE_SIZE);
+                sseEventParser, OBJECT_MAPPER, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_RESPONSE_SIZE);
     }
 
     /**

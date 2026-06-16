@@ -120,6 +120,7 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
                 .name(name)
                 .metricDeclarationId(SEED_ACCURACY_ID)
                 .metricDeclarationVersionId(SEED_ACCURACY_VERSION_ID)
+                .enabled(true)
                 .configBindings(List.of())
                 .inputBindings(List.of())
                 .build();
@@ -130,6 +131,7 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
                 .name(name)
                 .metricDeclarationId(SEED_LATENCY_ID)
                 .metricDeclarationVersionId(UUID.fromString(SEED_LATENCY_VERSION_ID))
+                .enabled(true)
                 .configBindings(List.of())
                 .inputBindings(List.of())
                 .build();

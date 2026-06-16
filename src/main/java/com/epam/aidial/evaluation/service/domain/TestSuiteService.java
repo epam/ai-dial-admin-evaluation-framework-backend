@@ -1,8 +1,11 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import static com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext.TRANSACTION_TIMESTAMP_KEY;
+
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.exception.InvalidFilterException;
 import com.epam.aidial.evaluation.data.db.exception.OptimisticLockException;
+import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -10,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
@@ -30,7 +34,9 @@ import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
+import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +47,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -55,6 +62,7 @@ public class TestSuiteService {
     private final TestSuiteRepository testSuiteRepository;
     private final DatasetQueryService datasetQueryService;
     private final DatasetCascadeService datasetCascadeService;
+    private final DatasetCloneService datasetCloneService;
     private final TestSuiteMapper testSuiteMapper;
     private final JsonbMapper jsonbMapper;
     private final AuthorResolver authorResolver;
@@ -63,6 +71,7 @@ public class TestSuiteService {
     private final DatasetSchemaProvider datasetSchemaProvider;
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final FileService fileService;
+    private final Clock clock;
 
     @Qualifier("metaTransactionManager")
     private final PlatformTransactionManager metaTransactionManager;
@@ -290,6 +299,94 @@ public class TestSuiteService {
     @Transactional(value = "metaTransactionManager", readOnly = true)
     public long countReferencingDataset(UUID datasetId) {
         return testSuiteRepository.countByDatasetId(datasetId);
+    }
+
+    /**
+     * Forks the suite's bound PUBLIC dataset into a new PRIVATE clone and rebinds the suite to it.
+     * Pre-TX: copies DIAL files for the new dataset folder.
+     * In-TX: clones the dataset row + test cases, remaps {@code disabledTestCaseIds}, rebinds suite.
+     * On failure: best-effort cleanup of any copied files.
+     */
+    public TestSuiteResponseDto detachDataset(UUID suiteId, DatasetDetachRequestDto dto, Jwt jwt) {
+        log.info("Detaching dataset from suite {}", suiteId);
+        TestSuite suite = testSuiteRepository
+                .findById(suiteId)
+                .orElseThrow(() -> new EntityNotFoundException("TestSuite not found with id: " + suiteId));
+
+        UUID sourceDatasetId = suite.getDatasetId();
+        if (sourceDatasetId == null) {
+            throw new DatasetVisibilityRuleException(
+                    DatasetVisibilityErrorCode.SUITE_HAS_NO_DATASET,
+                    "Suite " + suiteId + " has no bound dataset to detach from");
+        }
+
+        Dataset source = datasetQueryService
+                .findById(sourceDatasetId)
+                .orElseThrow(() -> new EntityNotFoundException("Dataset not found with id: " + sourceDatasetId));
+
+        if (source.getVisibility() != DatasetVisibility.PUBLIC) {
+            throw new DatasetVisibilityRuleException(
+                    DatasetVisibilityErrorCode.PRIVATE_DATASET_REBIND_FORBIDDEN,
+                    "Suite " + suiteId + " is already bound to a PRIVATE dataset — no detach needed");
+        }
+
+        final UUID newDatasetId = UUID.randomUUID();
+        final long timestamp = clock.millis();
+
+        datasetCloneService.copyDatasetFiles(sourceDatasetId, newDatasetId);
+        boolean txSucceeded = false;
+        try {
+            TransactionTemplate txTemplate = new TransactionTemplate(metaTransactionManager);
+            boolean timestampBound = false;
+            if (!TransactionSynchronizationManager.hasResource(TRANSACTION_TIMESTAMP_KEY)) {
+                TransactionSynchronizationManager.bindResource(TRANSACTION_TIMESTAMP_KEY, timestamp);
+                timestampBound = true;
+            }
+            try {
+                txTemplate.execute(status -> {
+                    performDetachTransaction(source, newDatasetId, dto, suiteId, suite, timestamp, jwt);
+                    return null;
+                });
+            } catch (DataIntegrityViolationException ex) {
+                UniqueConstraintViolationDetector.rethrowIfUniqueViolation(
+                        ex, "A dataset with name '" + dto.getName() + "' already exists", dto.getName());
+                throw ex;
+            } finally {
+                if (timestampBound) {
+                    TransactionSynchronizationManager.unbindResourceIfPossible(TRANSACTION_TIMESTAMP_KEY);
+                }
+            }
+            txSucceeded = true;
+        } finally {
+            if (!txSucceeded) {
+                fileService.deleteAllByDatasetId(newDatasetId);
+            }
+        }
+
+        return testSuiteMapper.toDto(suite);
+    }
+
+    private void performDetachTransaction(
+            Dataset source,
+            UUID newDatasetId,
+            DatasetDetachRequestDto dto,
+            UUID suiteId,
+            TestSuite suite,
+            long timestamp,
+            Jwt jwt) {
+        final String resolvedName =
+                dto.getName() != null ? dto.getName() : datasetCloneService.deriveCloneName(source.getName());
+        final String createdBy = authorResolver.getCreatedBy(jwt);
+        Map<UUID, UUID> tcIdMap =
+                datasetCloneService.cloneRowAndTestCases(source, newDatasetId, resolvedName, createdBy, timestamp);
+        String remappedDisabledIds = testSuiteMapper.remapDisabledIds(suite.getDisabledTestCaseIds(), tcIdMap);
+        testSuiteRepository.updateDatasetId(suiteId, newDatasetId, remappedDisabledIds, timestamp);
+        suite.setDatasetId(newDatasetId);
+        suite.setDisabledTestCaseIds(remappedDisabledIds);
+        // Mirror the version/timestamp bump applied by updateDatasetId so the returned
+        // DTO reflects the persisted row (the in-memory copy is what we map back).
+        suite.setVersion(suite.getVersion() == null ? 1L : suite.getVersion() + 1L);
+        suite.setUpdatedAt(timestamp);
     }
 
     /**

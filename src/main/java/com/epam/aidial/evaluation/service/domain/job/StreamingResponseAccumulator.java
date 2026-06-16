@@ -22,7 +22,7 @@ import tools.jackson.databind.node.ObjectNode;
  *       {@code {"events": [{event, data}, ...]}} envelope that JSONata expressions can navigate.</li>
  * </ol>
  *
- * <p>Delegates SSE wire format parsing (deadline, size limits, event dispatch) to
+ * <p>Delegates SSE wire format parsing (idle timeout, max-total cap, size limits, event dispatch) to
  * {@link SseEventParser}.
  */
 @Slf4j
@@ -30,7 +30,8 @@ public class StreamingResponseAccumulator {
 
     private final SseEventParser sseEventParser;
     private final ObjectMapper objectMapper;
-    private final long deadlineMs;
+    private final long idleTimeoutMs;
+    private final long maxTotalDurationMs;
     private final long maxResponseSizeBytes;
 
     @Getter
@@ -43,19 +44,25 @@ public class StreamingResponseAccumulator {
     private String truncationWarning;
 
     public StreamingResponseAccumulator(
-            SseEventParser sseEventParser, ObjectMapper objectMapper, long deadlineMs, long maxResponseSizeBytes) {
+            SseEventParser sseEventParser,
+            ObjectMapper objectMapper,
+            long idleTimeoutMs,
+            long maxTotalDurationMs,
+            long maxResponseSizeBytes) {
         this.sseEventParser = sseEventParser;
         this.objectMapper = objectMapper;
-        this.deadlineMs = deadlineMs;
+        this.idleTimeoutMs = idleTimeoutMs;
+        this.maxTotalDurationMs = maxTotalDurationMs;
         this.maxResponseSizeBytes = maxResponseSizeBytes;
     }
 
     /**
      * Accumulates SSE events from the input stream.
-     * Returns when stream ends, deadline is exceeded, or size limit is reached.
+     * Returns when stream ends, the idle timeout or max-total cap is exceeded, or size limit is reached.
      */
     public void accumulate(InputStream eventStream) {
-        SseParseResult result = sseEventParser.parse(eventStream, deadlineMs, maxResponseSizeBytes);
+        SseParseResult result =
+                sseEventParser.parse(eventStream, idleTimeoutMs, maxTotalDurationMs, maxResponseSizeBytes);
 
         if (result.status() != ExecutionStatus.SUCCESS) {
             this.executionStatus = result.status();

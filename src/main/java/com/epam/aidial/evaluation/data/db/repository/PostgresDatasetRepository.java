@@ -250,6 +250,19 @@ public class PostgresDatasetRepository implements DatasetRepository {
                 .execute();
     }
 
+    @Override
+    public void updateVisibilityAndMetadata(
+            UUID id, DatasetVisibility visibility, String name, String description, long updatedAt) {
+        dsl.update(DATASETS)
+                .set(DATASETS.VISIBILITY, visibility.getValue())
+                .set(DATASETS.NAME, name)
+                .set(DATASETS.DESCRIPTION, description)
+                .set(DATASETS.VERSION, DATASETS.VERSION.add(1))
+                .set(DATASETS.UPDATED_AT_MS, updatedAt)
+                .where(DATASETS.ID.eq(id.toString()))
+                .execute();
+    }
+
     private static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
     }

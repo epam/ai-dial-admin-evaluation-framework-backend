@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.client.mcp.McpInvocationException;
 import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
@@ -78,6 +79,7 @@ public class EvaluationWorker {
     private final McpResponseSerializer mcpResponseSerializer;
     private final Clock clock;
     private final SseEventParser sseEventParser;
+    private final SseEventProcessingProperties sseEventProcessingProperties;
 
     public TestCaseRunResult execute(
             TestCaseRunInput input,
@@ -630,10 +632,13 @@ public class EvaluationWorker {
             String responseBody;
 
             if (result.streaming()) {
-                // Streaming response
-                long deadlineMs = callStartMs + context.getRequestTimeoutMs();
+                // Streaming response: idle timeout = per-run request timeout; absolute cap = global property.
                 StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
-                        sseEventParser, objectMapper, deadlineMs, context.getMaxResponseSizeBytes());
+                        sseEventParser,
+                        objectMapper,
+                        context.getRequestTimeoutMs(),
+                        sseEventProcessingProperties.getMaxTotalDurationMs(),
+                        context.getMaxResponseSizeBytes());
                 accumulator.accumulate(result.eventStream());
 
                 responseBody = accumulator.getResponseBody();

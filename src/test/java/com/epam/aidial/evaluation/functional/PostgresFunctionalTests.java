@@ -25,6 +25,7 @@ import com.epam.aidial.evaluation.functional.tests.AnalyticsResultListFunctional
 import com.epam.aidial.evaluation.functional.tests.AnalyticsRetryFieldsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.CsvImportModeFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetCrudFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.DatasetDetachFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetFileFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetMigrationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetScopedTestCaseFunctionalTests;
@@ -255,6 +256,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class DatasetVisibilityTests extends DatasetVisibilityFunctionalTests {}
+
+    @Nested
+    class DatasetDetachTests extends DatasetDetachFunctionalTests {}
 
     @Nested
     class DatasetScopedTestCaseTests extends DatasetScopedTestCaseFunctionalTests {}

@@ -46,4 +46,25 @@ public class TemplateVariableController {
             @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId) {
         return templateVariableService.getTemplateVariables(testSuiteId);
     }
+
+    @GetMapping("/{testSuiteId}/test-cases/{testCaseId}/template-variables")
+    @Operation(
+            summary = "Get effective template variables for a test case",
+            description = "Returns template variables for the suite's template and bindings resolved against the "
+                    + "specified test case's data. Per-test-case template/binding overrides were removed when test "
+                    + "cases moved to datasets, so the suite is the single source of truth; the only difference from "
+                    + "the suite-level endpoint is that resolvedValue reflects the test case's data.")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Template variables retrieved successfully",
+            content =
+                    @Content(
+                            mediaType = "application/json",
+                            array = @ArraySchema(schema = @Schema(implementation = TemplateVariableDto.class))))
+    @ApiResponse(responseCode = "404", description = "Test suite or test case not found")
+    public List<TemplateVariableDto> getTestCaseTemplateVariables(
+            @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId,
+            @Parameter(description = "Test case ID") @PathVariable UUID testCaseId) {
+        return templateVariableService.getTestCaseTemplateVariables(testSuiteId, testCaseId);
+    }
 }

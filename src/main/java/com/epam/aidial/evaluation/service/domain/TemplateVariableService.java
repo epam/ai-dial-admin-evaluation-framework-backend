@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
@@ -27,6 +28,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Extracts template variables from a suite's requestTemplate, resolves bindings,
  * infers types (priority: declared > endpointRef schema > dataset testCaseSchema > STRING),
  * and populates resolved values. The test-case schema is sourced from the suite's referenced dataset.
+ *
+ * <p>The test-case entry point ({@link #getTestCaseTemplateVariables(UUID, UUID)}) additionally
+ * resolves each variable's {@code resolvedValue} against that test case's dataset-owned {@code data};
+ * it is otherwise identical to the suite-level {@link #getTemplateVariables(UUID)}.
  */
 @Service
 @LogExecution
@@ -39,6 +44,7 @@ public class TemplateVariableService {
     private final EndpointSchemaExtractor endpointSchemaExtractor;
     private final JsonbMapper jsonbMapper;
     private final TemplateVariableResolver templateVariableResolver;
+    private final TestCaseService testCaseService;
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
     public List<TemplateVariableDto> getTemplateVariables(UUID testSuiteId) {
@@ -62,6 +68,43 @@ public class TemplateVariableService {
         EndpointContractDto endpoint = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
 
         return resolveVariables(template, bindings, testCaseSchema, endpoint, null);
+    }
+
+    /**
+     * Returns template variables for a specific test case: the suite's template and bindings resolved
+     * against that test case's {@code data}. The test case is looked up dataset-scoped via the suite's
+     * {@code datasetId}; per-test-case overrides were removed when test cases moved to datasets, so the
+     * suite is the single source of truth and the only difference from {@link #getTemplateVariables(UUID)}
+     * is that {@code resolvedValue} is resolved from the test case's data.
+     */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<TemplateVariableDto> getTestCaseTemplateVariables(UUID testSuiteId, UUID testCaseId) {
+        TestSuite suite = testSuiteRepository
+                .findById(testSuiteId)
+                .orElseThrow(() -> new EntityNotFoundException("TestSuite not found: " + testSuiteId));
+
+        // An unbound suite (datasetId == null) owns no test cases — return 404. This guard is required:
+        // TestCaseService.getById delegates to findByIdAndDatasetId, which NPEs on a null datasetId.
+        if (suite.getDatasetId() == null) {
+            throw new EntityNotFoundException("TestCase not found: " + testCaseId);
+        }
+
+        TestCaseResponseDto testCase = testCaseService.getById(suite.getDatasetId(), testCaseId, false);
+        Map<String, Object> data = testCase.getData();
+
+        List<FieldDefinitionDto> testCaseSchema = datasetSchemaProvider.getSchema(suite.getDatasetId());
+
+        if (suite.getSuiteType() == SuiteType.MCP_TOOL) {
+            ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
+            List<InputBindingDto> bindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
+            return resolveMcpVariables(argumentTemplate, bindings, testCaseSchema, data);
+        }
+
+        RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
+        List<InputBindingDto> bindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
+        EndpointContractDto endpoint = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
+
+        return resolveVariables(template, bindings, testCaseSchema, endpoint, data);
     }
 
     /**

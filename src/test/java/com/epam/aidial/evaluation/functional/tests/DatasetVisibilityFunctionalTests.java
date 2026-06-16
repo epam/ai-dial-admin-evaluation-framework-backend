@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetVisibilityTransitionDto;
@@ -475,5 +476,177 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         return response.getBody();
+    }
+
+    // -----------------------------------------------------------------------
+    // POST /datasets/{id}/publish
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "POST /datasets/{id}/publish on PRIVATE dataset without metadata → visibility becomes PUBLIC, name preserved, version bumped")
+    void shouldPublishPrivateDatasetWithoutMetadataUpdate() {
+        Dataset dataset = metaTestDataHelper.createDataset(
+                "Publish-NoMeta-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+        long versionBefore = dataset.getVersion();
+
+        ResponseEntity<DatasetResponseDto> response =
+                postPublish(dataset.getId(), null, null, DatasetResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getVisibility()).isEqualTo(DatasetVisibility.PUBLIC);
+        assertThat(response.getBody().getName()).isEqualTo(dataset.getName());
+        assertThat(response.getBody().getVersion()).isGreaterThan(versionBefore);
+
+        Dataset persisted = datasetRepository.findById(dataset.getId()).orElseThrow();
+        assertThat(persisted.getVisibility()).isEqualTo(DatasetVisibility.PUBLIC);
+        assertThat(persisted.getName()).isEqualTo(dataset.getName());
+    }
+
+    @Test
+    @DisplayName(
+            "POST /datasets/{id}/publish on PRIVATE dataset with name and description → all three fields updated atomically, version bumped")
+    void shouldPublishPrivateDatasetWithNameAndDescription() {
+        Dataset dataset = metaTestDataHelper.createDataset(
+                "Publish-WithMeta-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+        long versionBefore = dataset.getVersion();
+        String newName = "Published-" + UUID.randomUUID();
+        String newDesc = "Published catalogue description";
+
+        ResponseEntity<DatasetResponseDto> response =
+                postPublish(dataset.getId(), newName, newDesc, DatasetResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getVisibility()).isEqualTo(DatasetVisibility.PUBLIC);
+        assertThat(response.getBody().getName()).isEqualTo(newName);
+        assertThat(response.getBody().getDescription()).isEqualTo(newDesc);
+        assertThat(response.getBody().getVersion()).isGreaterThan(versionBefore);
+
+        Dataset persisted = datasetRepository.findById(dataset.getId()).orElseThrow();
+        assertThat(persisted.getVisibility()).isEqualTo(DatasetVisibility.PUBLIC);
+        assertThat(persisted.getName()).isEqualTo(newName);
+        assertThat(persisted.getDescription()).isEqualTo(newDesc);
+    }
+
+    @Test
+    @DisplayName("POST /datasets/{id}/publish on already-PUBLIC dataset with empty body → no-op, version unchanged")
+    void shouldPublishAlreadyPublicDatasetIsNoOp() {
+        Dataset dataset =
+                metaTestDataHelper.createDataset("Publish-NoOp-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
+        long versionBefore = dataset.getVersion();
+
+        ResponseEntity<DatasetResponseDto> response =
+                postPublish(dataset.getId(), null, null, DatasetResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getVersion())
+                .as("no-op publish must not bump version")
+                .isEqualTo(versionBefore);
+    }
+
+    @Test
+    @DisplayName("POST /datasets/{id}/publish on already-PUBLIC dataset with new name → name updated, version bumped")
+    void shouldPublishAlreadyPublicDatasetWithNewNameUpdatesMetadata() {
+        Dataset dataset = metaTestDataHelper.createDataset(
+                "Publish-UpdateName-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
+        long versionBefore = dataset.getVersion();
+        String newName = "Renamed-" + UUID.randomUUID();
+
+        ResponseEntity<DatasetResponseDto> response =
+                postPublish(dataset.getId(), newName, null, DatasetResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getName()).isEqualTo(newName);
+        assertThat(response.getBody().getVisibility()).isEqualTo(DatasetVisibility.PUBLIC);
+        assertThat(response.getBody().getVersion()).isGreaterThan(versionBefore);
+    }
+
+    @Test
+    @DisplayName("POST /datasets/{id}/publish with duplicate name → 409 UNIQUE_CONSTRAINT_VIOLATION")
+    void shouldPublishWithDuplicateNameReturns409() {
+        String takenName = "Publish-Taken-" + UUID.randomUUID();
+        metaTestDataHelper.createDataset(takenName, "[]", DatasetVisibility.PUBLIC);
+        Dataset target = metaTestDataHelper.createDataset(
+                "Publish-Target-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+
+        ResponseEntity<String> response = postPublish(target.getId(), takenName, null, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("UNIQUE_CONSTRAINT_VIOLATION");
+    }
+
+    @Test
+    @DisplayName("POST /datasets/{id}/publish with unknown id → 404 NOT_FOUND")
+    void shouldPublishNonExistentDatasetReturns404() {
+        ResponseEntity<String> response = postPublish(UUID.randomUUID(), null, null, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).contains("NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("POST /datasets/{id}/publish with name exceeding 263 characters → 400 VALIDATION_ERROR")
+    void shouldPublishWithNameExceedingMaxLengthReturns400() {
+        Dataset dataset = metaTestDataHelper.createDataset(
+                "Publish-LongName-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+
+        ResponseEntity<String> response = postPublish(dataset.getId(), "a".repeat(264), null, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("VALIDATION_ERROR");
+    }
+
+    @Test
+    @DisplayName("POST /datasets/{id}/publish with description exceeding 2000 characters → 400 VALIDATION_ERROR")
+    void shouldPublishWithDescriptionExceedingMaxLengthReturns400() {
+        Dataset dataset = metaTestDataHelper.createDataset(
+                "Publish-LongDesc-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+
+        ResponseEntity<String> response = postPublish(dataset.getId(), null, "b".repeat(2001), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("VALIDATION_ERROR");
+    }
+
+    @Test
+    @DisplayName("POST /datasets/{id}/publish with blank name keeps current name")
+    void shouldPublishWithBlankNameKeepsCurrentName() {
+        final String originalName = "Publish-BlankName-" + UUID.randomUUID();
+        Dataset dataset = metaTestDataHelper.createDataset(originalName, "[]", DatasetVisibility.PRIVATE);
+
+        ResponseEntity<DatasetResponseDto> response = postPublish(dataset.getId(), "", null, DatasetResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getName()).isEqualTo(originalName);
+        assertThat(response.getBody().getVisibility()).isEqualTo(DatasetVisibility.PUBLIC);
+    }
+
+    @Test
+    @DisplayName("POST /datasets/{id}/publish with whitespace-only name keeps current name")
+    void shouldPublishWithWhitespaceNameKeepsCurrentName() {
+        final String originalName = "Publish-WhitespaceName-" + UUID.randomUUID();
+        Dataset dataset = metaTestDataHelper.createDataset(originalName, "[]", DatasetVisibility.PRIVATE);
+
+        ResponseEntity<DatasetResponseDto> response =
+                postPublish(dataset.getId(), "   ", null, DatasetResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getName()).isEqualTo(originalName);
+        assertThat(response.getBody().getVisibility()).isEqualTo(DatasetVisibility.PUBLIC);
+    }
+
+    private <T> ResponseEntity<T> postPublish(UUID datasetId, String name, String description, Class<T> responseType) {
+        DatasetPublishRequestDto body = DatasetPublishRequestDto.builder()
+                .name(name)
+                .description(description)
+                .build();
+        return restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/publish"), jsonEntity(body), responseType);
     }
 }

@@ -31,7 +31,11 @@ import tools.jackson.databind.ObjectMapper;
  *   <li>Event type resets to {@code "message"} after each blank-line-delimited event block.</li>
  * </ul>
  *
- * <p>Enforces deadline (via {@link Clock}) and byte-size limits.
+ * <p>Enforces two time bounds via the injected {@link Clock}: an <b>idle (inactivity) timeout</b>
+ * that resets on every line read (so an actively streaming connection never spuriously times out),
+ * and an absolute <b>max-total-duration cap</b> on the whole stream (so a connection that heartbeats
+ * forever still terminates). Crossing either bound stops parsing with {@code TIMEOUT}. Also enforces
+ * a byte-size limit on accumulated data.
  */
 @Slf4j
 @Component
@@ -41,6 +45,7 @@ public class SseEventParser {
 
     private static final String DONE_SENTINEL = "[DONE]";
     private static final String DEFAULT_EVENT_TYPE = "message";
+    private static final int BUFFER_SIZE = 1;
 
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -48,35 +53,47 @@ public class SseEventParser {
     /**
      * Parses the SSE stream into a list of structured events.
      *
-     * @param stream      raw SSE input stream
-     * @param deadlineMs  epoch-millisecond deadline; parsing stops with {@code TIMEOUT} if exceeded
-     * @param maxBytes    accumulated data byte limit; parsing stops with {@code ERROR} if exceeded
+     * @param stream             raw SSE input stream
+     * @param idleTimeoutMs      inactivity timeout in milliseconds; reset on every line read. If a line
+     *                           arrives more than this long after the previous one, parsing stops with
+     *                           {@code TIMEOUT}
+     * @param maxTotalDurationMs absolute cap in milliseconds on total parse duration regardless of
+     *                           activity; parsing stops with {@code TIMEOUT} once exceeded
+     * @param maxBytes           accumulated data byte limit; parsing stops with {@code ERROR} if exceeded
      * @return parsed result containing events, status, and optional truncation warning
      */
-    public SseParseResult parse(InputStream stream, long deadlineMs, long maxBytes) {
-        List<SseEvent> events = new ArrayList<>();
+    public SseParseResult parse(InputStream stream, long idleTimeoutMs, long maxTotalDurationMs, long maxBytes) {
+        final List<SseEvent> events = new ArrayList<>();
+        final long startMs = clock.millis();
+        final long hardDeadlineMs = startMs + maxTotalDurationMs;
+
+        long idleDeadlineMs = startMs + idleTimeoutMs;
         long accumulatedBytes = 0L;
         String currentEventType = DEFAULT_EVENT_TYPE;
         List<String> dataLines = new ArrayList<>();
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+        try (final var reader =
+                new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8), BUFFER_SIZE)) {
             String line;
             while ((line = reader.readLine()) != null) {
-                if (clock.millis() > deadlineMs) {
-                    log.debug("SSE parsing deadline exceeded after {} events", events.size());
+                final long now = clock.millis();
+                if (now > hardDeadlineMs || now > idleDeadlineMs) {
+                    log.warn("SSE parsing timed out after {} events", events.size());
                     return new SseParseResult(events, ExecutionStatus.TIMEOUT, null);
                 }
+                // Any line proves the stream is still alive — reset the idle deadline.
+                idleDeadlineMs = now + idleTimeoutMs;
 
                 if (line.isEmpty()) {
                     // Blank line: dispatch event if data lines were accumulated
                     if (!dataLines.isEmpty()) {
-                        String rawData = String.join("\n", dataLines);
-                        long dataBytes = rawData.getBytes(StandardCharsets.UTF_8).length;
+                        final String rawData = String.join("\n", dataLines);
+                        final long dataBytes = rawData.getBytes(StandardCharsets.UTF_8).length;
 
                         if (accumulatedBytes + dataBytes > maxBytes) {
                             String warning =
                                     "Response truncated: accumulated " + accumulatedBytes + " bytes, limit " + maxBytes;
-                            log.debug("SSE size limit exceeded after {} events", events.size());
+                            log.warn("SSE size limit exceeded after {} events", events.size());
                             return new SseParseResult(events, ExecutionStatus.ERROR, warning);
                         }
 
@@ -89,7 +106,7 @@ public class SseEventParser {
                     dataLines = new ArrayList<>();
 
                 } else if (line.startsWith("data:")) {
-                    String value = stripLeadingSpace(line.substring(5));
+                    final String value = stripLeadingSpace(line.substring(5));
                     if (DONE_SENTINEL.equals(value)) {
                         return new SseParseResult(events, ExecutionStatus.SUCCESS, null);
                     }
@@ -97,14 +114,13 @@ public class SseEventParser {
 
                 } else if (line.startsWith("event:")) {
                     currentEventType = stripLeadingSpace(line.substring(6));
-
                 } else if (line.startsWith(":") || line.startsWith("id:") || line.startsWith("retry:")) {
                     // Comment, id, and retry fields are ignored per SSE spec
                 }
                 // Unknown field names are ignored per SSE spec
             }
         } catch (IOException e) {
-            log.warn("SSE stream read error after {} events: {}", events.size(), e.getMessage(), e);
+            log.debug("SSE stream read error after {} events: {}", events.size(), e.getMessage(), e);
             return new SseParseResult(events, ExecutionStatus.ERROR, null);
         }
 

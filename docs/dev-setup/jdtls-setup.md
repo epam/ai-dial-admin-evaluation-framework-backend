@@ -33,8 +33,8 @@ python3 -c "import hashlib,os; print(f\"{os.environ['HOME']}/.cache/jdtls/jdtls-
 ```bash
 #!/bin/bash
 export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
-exec /home/siarhei_fedziukovich/.local/share/jdtls/bin/jdtls \
-  --jvm-arg="-javaagent:/home/siarhei_fedziukovich/.local/share/jdtls/lombok.jar" \
+exec "$HOME/.local/share/jdtls/bin/jdtls" \
+  --jvm-arg="-javaagent:$HOME/.local/share/jdtls/lombok.jar" \
   --jvm-arg="-Dosgi.locking=none" \
   "$@"
 ```

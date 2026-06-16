@@ -25,7 +25,7 @@
     "updatedAt": 1769194293867,
     "descriptionKeywords": [],
     "inputAttachmentTypes": null,
-    "applicationTypeSchemaId": "https://dial-entity-extractor.aks.dev.dial.parts/",
+    "applicationTypeSchemaId": "https://dial-entity-extractor.example.com/",
     "applicationProperties": {},
     "routes": null
   }

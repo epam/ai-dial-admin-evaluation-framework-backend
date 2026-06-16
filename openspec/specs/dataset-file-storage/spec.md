@@ -1,4 +1,4 @@
-# Dataset File Storage
+Dataset# Dataset File Storage
 
 ## Purpose
 This spec describes dataset-scoped file management for the Evaluation Framework. Covers the dataset-scoped file REST API (upload/list/download/delete) that proxies to DIAL Core via `DialFileClient`, best-effort cascade cleanup of EF-managed files on dataset delete, and the per-dataset file count configuration. It is the dataset peer of the suite-scoped `dial-file-storage` capability.

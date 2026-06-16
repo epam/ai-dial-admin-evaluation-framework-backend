@@ -3,7 +3,10 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.model.SuiteType;
+import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
@@ -11,6 +14,7 @@ import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
+import com.epam.aidial.evaluation.service.domain.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ParameterDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ParameterLocation;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
@@ -19,6 +23,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableSource;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -308,6 +313,205 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
         TemplateVariableDto plainVar = findVar(vars, "plain");
         assertThat(plainVar.getDeclaredType()).isNull();
         assertThat(plainVar.getEffectiveType()).isEqualTo(SchemaFieldType.STRING);
+    }
+
+    // --- Test-case-level template variable tests ---
+
+    @Test
+    @DisplayName("Should resolve data-field binding from test case data at test-case level")
+    void shouldResolveDataFieldBindingFromTestCaseData() {
+        SuiteTestCase fixture = createHttpSuiteWithTestCase("{\"promptField\":\"Hello there\"}");
+
+        List<TemplateVariableDto> vars = getTestCaseTemplateVariables(fixture.suiteId(), fixture.testCaseId());
+
+        assertThat(findVar(vars, "prompt").getResolvedValue()).isEqualTo("Hello there");
+    }
+
+    @Test
+    @DisplayName("Should resolve constant-value binding at test-case level")
+    void shouldResolveConstantValueBindingAtTestCaseLevel() {
+        SuiteTestCase fixture = createHttpSuiteWithTestCase("{\"promptField\":\"x\"}");
+
+        List<TemplateVariableDto> vars = getTestCaseTemplateVariables(fixture.suiteId(), fixture.testCaseId());
+
+        assertThat(findVar(vars, "model").getResolvedValue()).isEqualTo("gpt-4");
+    }
+
+    @Test
+    @DisplayName("Should fall back to template default when data field is missing at test-case level")
+    void shouldFallBackToTemplateDefaultWhenDataFieldMissing() {
+        // data omits extraField → fallbackVar (bound to extraField) falls back to the template default "fallback"
+        SuiteTestCase fixture = createHttpSuiteWithTestCase("{\"promptField\":\"x\"}");
+
+        List<TemplateVariableDto> vars = getTestCaseTemplateVariables(fixture.suiteId(), fixture.testCaseId());
+
+        assertThat(findVar(vars, "fallbackVar").getResolvedValue()).isEqualTo("fallback");
+    }
+
+    @Test
+    @DisplayName("Should preserve typed (Number/Boolean) resolvedValue from test case data at test-case level")
+    void shouldPreserveTypedResolvedValueFromTestCaseData() {
+        // Unquoted JSON literals → data holds a Number and a Boolean (not strings). resolvedValue must
+        // preserve the original type rather than stringify it. prompt is bound to promptField (the Number),
+        // fallbackVar is bound to extraField (the Boolean).
+        SuiteTestCase fixture = createHttpSuiteWithTestCase("{\"promptField\":0.7,\"extraField\":true}");
+
+        List<TemplateVariableDto> vars = getTestCaseTemplateVariables(fixture.suiteId(), fixture.testCaseId());
+
+        assertThat(findVar(vars, "prompt").getResolvedValue())
+                .isInstanceOf(Number.class)
+                .satisfies(v -> assertThat(((Number) v).doubleValue()).isEqualTo(0.7));
+        assertThat(findVar(vars, "fallbackVar").getResolvedValue()).isEqualTo(Boolean.TRUE);
+    }
+
+    @Test
+    @DisplayName("Should return 404 for non-existent test suite at test-case level")
+    void shouldReturn404ForNonExistentSuiteAtTestCaseLevel() {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                apiUrl("/test-suites/" + UUID.randomUUID() + "/test-cases/" + UUID.randomUUID()
+                        + "/template-variables"),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Should return 404 for non-existent test case")
+    void shouldReturn404ForNonExistentTestCase() {
+        SuiteTestCase fixture = createHttpSuiteWithTestCase("{\"promptField\":\"x\"}");
+
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                apiUrl("/test-suites/" + fixture.suiteId() + "/test-cases/" + UUID.randomUUID()
+                        + "/template-variables"),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Should return 404 (not 500) for an unbound suite at test-case level")
+    void shouldReturn404ForUnboundSuiteAtTestCaseLevel() {
+        // Suite with datasetId == null owns no test cases — the endpoint must 404, not NPE→500.
+        TestSuite unbound = metaTestDataHelper.createTestSuite("Unbound TV Suite " + UUID.randomUUID(), null);
+
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                apiUrl("/test-suites/" + unbound.getId() + "/test-cases/" + UUID.randomUUID() + "/template-variables"),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Should resolve MCP test-case template variables from argument template and data")
+    void shouldResolveMcpTestCaseTemplateVariables() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("userQuery")
+                .type(SchemaFieldType.STRING)
+                .required(true)
+                .build()));
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("MCP TV Suite " + UUID.randomUUID())
+                .description("MCP suite for test-case template variables")
+                .suiteType(SuiteType.MCP_TOOL)
+                .mcpDeploymentRef(McpDeploymentReferenceDto.builder()
+                        .id("my-toolset")
+                        .type("dial-toolset")
+                        .name("My Toolset")
+                        .build())
+                .toolRef(ToolReferenceDto.builder()
+                        .name("search")
+                        .description("Search tool")
+                        .inputSchema(Map.of("type", "object", "properties", Map.of("query", Map.of("type", "string"))))
+                        .build())
+                .argumentTemplate(ArgumentTemplateDto.builder()
+                        .arguments(Map.of("query", "${{userQuery}}"))
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("userQuery")
+                        .dataField("userQuery")
+                        .build()))
+                .datasetId(datasetId)
+                .build();
+        ResponseEntity<TestSuiteResponseDto> createResponse =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(createResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID suiteId = createResponse.getBody().getId();
+        UUID testCaseId = metaTestDataHelper.seedTestCaseInDataset(
+                datasetId, "mcp-tc-" + UUID.randomUUID(), "{\"userQuery\":\"What is AI?\"}");
+
+        List<TemplateVariableDto> vars = getTestCaseTemplateVariables(suiteId, testCaseId);
+
+        TemplateVariableDto userQuery = findVar(vars, "userQuery");
+        assertThat(userQuery.getResolvedValue()).isEqualTo("What is AI?");
+        assertThat(userQuery.getSources()).contains(TemplateVariableSource.ARGUMENT);
+    }
+
+    /** Identifiers for a suite plus a seeded test case in its dataset. */
+    private record SuiteTestCase(UUID suiteId, UUID testCaseId) {}
+
+    /**
+     * Creates an HTTP suite (constant-value, data-field, and default-fallback bindings) bound to a fresh
+     * dataset, seeds a test case with the supplied {@code dataJson}, and returns both ids. {@code dataJson}
+     * is a raw JSON String; use unquoted JSON literals for numeric/boolean fields to exercise typed-value
+     * resolution.
+     */
+    private SuiteTestCase createHttpSuiteWithTestCase(String dataJson) {
+        UUID datasetId = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder()
+                        .name("promptField")
+                        .type(SchemaFieldType.STRING)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("extraField")
+                        .type(SchemaFieldType.STRING)
+                        .build()));
+        RequestTemplateDto template = RequestTemplateDto.builder()
+                .urlTemplate("/v1/chat")
+                .body(JsonRequestBodyDto.builder()
+                        .content(Map.of(
+                                "model", "${{model}}",
+                                "prompt", "${{prompt}}",
+                                "extra", "${{fallbackVar:fallback}}"))
+                        .build())
+                .build();
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("TC TemplateVar Suite " + UUID.randomUUID())
+                .description("Suite for test-case template variables")
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(buildEndpoint())
+                .datasetId(datasetId)
+                .requestTemplate(template)
+                .inputBindings(List.of(
+                        InputBindingDto.builder()
+                                .templateVariable("model")
+                                .constantValue("gpt-4")
+                                .build(),
+                        InputBindingDto.builder()
+                                .templateVariable("prompt")
+                                .dataField("promptField")
+                                .build(),
+                        InputBindingDto.builder()
+                                .templateVariable("fallbackVar")
+                                .dataField("extraField")
+                                .build()))
+                .build();
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID suiteId = response.getBody().getId();
+        UUID testCaseId = metaTestDataHelper.seedTestCaseInDataset(datasetId, "tc-" + UUID.randomUUID(), dataJson);
+        return new SuiteTestCase(suiteId, testCaseId);
+    }
+
+    private List<TemplateVariableDto> getTestCaseTemplateVariables(UUID suiteId, UUID testCaseId) {
+        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + suiteId + "/test-cases/" + testCaseId + "/template-variables"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        return response.getBody();
     }
 
     private TestSuiteResponseDto createSuiteWithTypeHints() {

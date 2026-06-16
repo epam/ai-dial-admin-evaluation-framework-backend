@@ -287,6 +287,18 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
         return testSuite;
     }
 
+    @Override
+    public void updateDatasetId(UUID suiteId, UUID newDatasetId, String disabledTestCaseIds, long updatedAt) {
+        dsl.update(TEST_SUITES)
+                .set(TEST_SUITES.DATASET_ID, newDatasetId.toString())
+                .set(TEST_SUITES.DISABLED_TEST_CASE_IDS, toJsonb(disabledTestCaseIds))
+                .set(TEST_SUITES.VERSION, TEST_SUITES.VERSION.add(1))
+                .set(TEST_SUITES.UPDATED_AT_MS, updatedAt)
+                .where(TEST_SUITES.ID.eq(suiteId.toString()))
+                .execute();
+        log.debug("Rebound suite {} to dataset {}", suiteId, newDatasetId);
+    }
+
     private static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
     }

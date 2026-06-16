@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.service.domain.TestSuiteCloneService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteService;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -16,6 +17,7 @@ import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -178,6 +180,54 @@ public class TestSuiteController {
 
         TestSuiteUpdateResultDto result = testSuiteCloneService.clone(id, cloneRequestDto, jwt);
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+
+    @PostMapping("/{id}/detach-dataset")
+    @Operation(
+            summary = "Detach suite from its PUBLIC dataset",
+            description = """
+                Forks the suite's bound PUBLIC dataset into a new PRIVATE clone and rebinds the suite \
+                to the clone in a single atomic operation. The original PUBLIC dataset is left untouched. \
+                Test cases are copied with fresh IDs; the suite's disabledTestCaseIds are remapped \
+                to the new IDs. An optional `name` field sets the clone name; if omitted, the name is \
+                derived as "<source> (clone)". Returns 409 when the suite has no dataset bound, or when \
+                the bound dataset is already PRIVATE. Returns 200 with the updated TestSuiteResponseDto.""",
+            requestBody =
+                    @RequestBody(
+                            description = "Optional clone name; omit to derive automatically",
+                            content =
+                                    @Content(
+                                            mediaType = "application/json",
+                                            schema = @Schema(implementation = DatasetDetachRequestDto.class),
+                                            examples = {
+                                                @ExampleObject(
+                                                        name = "minimal",
+                                                        summary = "Derive name automatically",
+                                                        value = "{}"),
+                                                @ExampleObject(
+                                                        name = "with-name",
+                                                        summary = "Provide explicit clone name",
+                                                        value = "{\"name\": \"My Private Dataset\"}")
+                                            })))
+    @ApiResponse(
+            responseCode = "200",
+            description = "Dataset detached — suite is now bound to a new PRIVATE clone",
+            content =
+                    @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = TestSuiteResponseDto.class)))
+    @ApiResponse(responseCode = "404", description = "Test suite not found")
+    @ApiResponse(
+            responseCode = "409",
+            description = "Suite has no bound dataset (SUITE_HAS_NO_DATASET), or bound dataset is already PRIVATE "
+                    + "(PRIVATE_DATASET_REBIND_FORBIDDEN)")
+    public ResponseEntity<TestSuiteResponseDto> detachDataset(
+            @Parameter(description = "Test suite ID") @PathVariable UUID id,
+            @Valid @org.springframework.web.bind.annotation.RequestBody DatasetDetachRequestDto requestDto,
+            @AuthenticationPrincipal Jwt jwt) {
+
+        TestSuiteResponseDto result = testSuiteService.detachDataset(id, requestDto, jwt);
+        return ResponseEntity.ok().eTag(etag(result.getVersion())).body(result);
     }
 
     @PutMapping("/{id}")

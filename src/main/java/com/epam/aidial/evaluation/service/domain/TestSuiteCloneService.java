@@ -272,7 +272,11 @@ public class TestSuiteCloneService {
                 // then remap the inherited disabledTestCaseIds onto the new test-case ids.
                 if (datasetToClone != null) {
                     Map<UUID, UUID> testCaseIdMap = datasetCloneService.cloneRowAndTestCases(
-                            datasetToClone, newDatasetId, createdBy, cloneTimestamp);
+                            datasetToClone,
+                            newDatasetId,
+                            datasetCloneService.deriveCloneName(datasetToClone.getName()),
+                            createdBy,
+                            cloneTimestamp);
                     newSuiteEntity.setDisabledTestCaseIds(
                             testSuiteMapper.remapDisabledIds(newSuiteEntity.getDisabledTestCaseIds(), testCaseIdMap));
                 }

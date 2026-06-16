@@ -1,9 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -78,12 +76,11 @@ class DatasetCloneServiceTest {
     void cloneRowAndTestCasesInsertsPrivateDatasetCopyingState() {
         Dataset source = sourceDataset();
         when(revalidationProperties.getBatchSize()).thenReturn(50);
-        when(datasetRepository.existsByNameIgnoreCase(anyString())).thenReturn(false);
         when(testCaseRepository.findBatchByDatasetId(eq(source.getId()), eq(0), eq(50)))
                 .thenReturn(List.of());
 
         UUID newDatasetId = UUID.randomUUID();
-        datasetCloneService.cloneRowAndTestCases(source, newDatasetId, "cloner@example.com", 123L);
+        datasetCloneService.cloneRowAndTestCases(source, newDatasetId, "Src (clone)", "cloner@example.com", 123L);
 
         verify(datasetRepository).createWithId(datasetCaptor.capture(), eq(123L));
         Dataset inserted = datasetCaptor.getValue();
@@ -112,15 +109,14 @@ class DatasetCloneServiceTest {
                 .build();
 
         when(revalidationProperties.getBatchSize()).thenReturn(50);
-        lenient().when(datasetRepository.existsByNameIgnoreCase(anyString())).thenReturn(false);
         when(testCaseRepository.findBatchByDatasetId(eq(source.getId()), eq(0), eq(50)))
                 .thenReturn(List.of(sourceCase));
         when(testCaseRepository.findBatchByDatasetId(eq(source.getId()), eq(1), eq(50)))
                 .thenReturn(List.of());
 
         UUID newDatasetId = UUID.randomUUID();
-        Map<UUID, UUID> idMap =
-                datasetCloneService.cloneRowAndTestCases(source, newDatasetId, "cloner@example.com", 123L);
+        Map<UUID, UUID> idMap = datasetCloneService.cloneRowAndTestCases(
+                source, newDatasetId, "Src (clone)", "cloner@example.com", 123L);
 
         verify(testCaseRepository).batchInsert(testCasesCaptor.capture(), eq(123L));
         List<TestCase> inserted = testCasesCaptor.getValue();

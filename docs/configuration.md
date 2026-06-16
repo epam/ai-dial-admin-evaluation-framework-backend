@@ -37,6 +37,7 @@ This document is the operator-facing reference for every configurable property o
    - [Analytics Eval Summaries Batch Write](#69-analytics-eval-summaries-batch-write)
    - [Metric Providers](#610-metric-providers)
    - [Metric Evaluation](#611-metric-evaluation)
+   - [SSE Event Processing](#612-sse-event-processing)
 7. [Data Management](#7-data-management)
    - [Pagination](#71-pagination)
    - [CSV Export](#72-csv-export)
@@ -457,6 +458,16 @@ Configuration for the in-process metric evaluation phase of test suite runs. Aft
 | `metric-evaluation.retry.retry-delay-ms` | `METRIC_EVALUATION_RETRY_RETRY_DELAY_MS` | `1000` | No | - | Initial retry delay in milliseconds. |
 | `metric-evaluation.retry.retry-backoff-multiplier` | `METRIC_EVALUATION_RETRY_RETRY_BACKOFF_MULTIPLIER` | `2.0` | No | - | Exponential backoff multiplier. Must be ≥ 1.0. |
 | `metric-evaluation.retry.max-retry-delay-ms` | `METRIC_EVALUATION_RETRY_MAX_RETRY_DELAY_MS` | `60000` | No | - | Upper bound on retry delay in milliseconds. |
+
+---
+
+### 6.12 SSE Event Processing
+
+Global, path-agnostic cap for SSE stream parsing. The per-path idle (inactivity) timeout — `requestTimeoutMs` on the evaluation path and `dial.components.core.try-out.read-timeout-ms` on the Try It Out path — bounds gaps between lines; this absolute cap bounds the total stream duration so a server that heartbeats forever still terminates. Shared by both streaming paths.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `sse-event-processing.max-total-duration-ms` | `SSE_EVENT_PROCESSING_MAX_TOTAL_DURATION_MS` | `3600000` | No | - | Absolute maximum wall-clock time in milliseconds to spend parsing a single SSE stream, regardless of activity. Crossing it stops parsing with `TIMEOUT` and returns the events accumulated so far. Set high (default 1 hour) so it acts as a safety ceiling, not a working timeout. Minimum `1000`. |
 
 ---
 

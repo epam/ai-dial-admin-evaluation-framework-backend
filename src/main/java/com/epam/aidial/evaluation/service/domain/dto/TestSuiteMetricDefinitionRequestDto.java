@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -12,14 +13,25 @@ import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 @Data
 @Builder
-@NoArgsConstructor
 @AllArgsConstructor
 @Schema(description = "Request body for creating or updating a test suite metric definition")
 public class TestSuiteMetricDefinitionRequestDto {
+
+    /**
+     * Default constructor used by Jackson for request-body deserialization. {@code enabled} defaults to {@code true}
+     * here so that omitting it from the JSON body yields an enabled metric definition. The Lombok builder defaults
+     * {@code enabled} to {@code false}, so builder call-sites must set it explicitly.
+     *
+     * <p>{@code @JsonCreator} forces Jackson onto this no-arg + setter path; otherwise Jackson 3 binds via the
+     * all-args constructor, which would default the missing {@code enabled} primitive to {@code false}.
+     */
+    @JsonCreator
+    public TestSuiteMetricDefinitionRequestDto() {
+        this.enabled = true;
+    }
 
     @NotBlank(message = "Name is required")
     @Size(max = 255, message = "Name must be less than 255 characters")
@@ -39,9 +51,8 @@ public class TestSuiteMetricDefinitionRequestDto {
             example = "660e8400-e29b-41d4-a716-446655440001")
     private UUID metricDeclarationVersionId;
 
-    @Builder.Default
     @Schema(description = "Whether this metric definition is enabled for evaluation", example = "true")
-    private boolean enabled = true;
+    private boolean enabled;
 
     @Valid
     @Schema(description = "Bindings for metric config schema properties")

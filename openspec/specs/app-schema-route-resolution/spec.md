@@ -8,7 +8,7 @@ Resolves application routes inherited from an application type schema via DIAL C
 
 ### Requirement: Fetch application type schema from DIAL Core
 
-The system SHALL provide a method on `DialCoreClient` to fetch an application type schema from DIAL Core via `GET /v1/application_type_schemas/schema?id={schemaId}`. The schema ID is a URL (e.g., `https://dial-entity-extractor.aks.dev.dial.parts/`) and SHALL be URL-encoded when passed as a query parameter. The method SHALL return the schema as a `JsonNode`. The method SHALL use the same `RestClient`, retry logic, and token propagation as existing DIAL Core client methods.
+The system SHALL provide a method on `DialCoreClient` to fetch an application type schema from DIAL Core via `GET /v1/application_type_schemas/schema?id={schemaId}`. The schema ID is a URL (e.g., `https://dial-entity-extractor.example.com/`) and SHALL be URL-encoded when passed as a query parameter. The method SHALL return the schema as a `JsonNode`. The method SHALL use the same `RestClient`, retry logic, and token propagation as existing DIAL Core client methods.
 
 #### Scenario: Successful schema fetch
 

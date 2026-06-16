@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetUpdateResultDto;
@@ -31,11 +32,13 @@ import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -283,6 +286,45 @@ public class DatasetService {
                 .findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Dataset disappeared during transition: " + id));
         return datasetMapper.toDto(refreshed);
+    }
+
+    /**
+     * Publishes a dataset by transitioning it to {@code PUBLIC} and optionally updating its
+     * {@code name} and {@code description} in a single atomic write.
+     *
+     * <p>Acquires a row-level lock (via {@code findByIdForUpdate}) before reading and writing.
+     * When no field changes (visibility already {@code PUBLIC}, name and description unchanged)
+     * the call is a no-op and returns the current dataset without bumping {@code version}.
+     */
+    @Transactional("metaTransactionManager")
+    public DatasetResponseDto publish(UUID id, DatasetPublishRequestDto dto) {
+        log.info("Publishing Dataset {}", id);
+        Dataset dataset = datasetRepository
+                .findByIdForUpdate(id)
+                .orElseThrow(() -> new EntityNotFoundException("Dataset not found with id: " + id));
+
+        var effectiveName = StringUtils.isNotBlank(dto.getName()) ? dto.getName() : dataset.getName();
+        var effectiveDesc = dto.getDescription() != null ? dto.getDescription() : dataset.getDescription();
+        boolean alreadyPublic = dataset.getVisibility() == DatasetVisibility.PUBLIC;
+        boolean nameUnchanged = effectiveName.equals(dataset.getName());
+        boolean descUnchanged = Objects.equals(effectiveDesc, dataset.getDescription());
+
+        if (alreadyPublic && nameUnchanged && descUnchanged) {
+            return datasetMapper.toDto(dataset);
+        }
+
+        long now = transactionTimestampContext.getTimestamp();
+        try {
+            datasetRepository.updateVisibilityAndMetadata(
+                    id, DatasetVisibility.PUBLIC, effectiveName, effectiveDesc, now);
+        } catch (DataIntegrityViolationException ex) {
+            UniqueConstraintViolationDetector.rethrowIfUniqueViolation(
+                    ex, "A dataset with name '" + effectiveName + "' already exists", effectiveName);
+            throw ex;
+        }
+        return datasetMapper.toDto(datasetRepository
+                .findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Dataset disappeared during publish: " + id)));
     }
 
     private InvalidOperationException datasetInUseException(

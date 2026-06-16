@@ -69,7 +69,7 @@ public class DatasetCloneService {
     }
 
     /**
-     * Inserts the cloned dataset row (PRIVATE, name derived via {@link #deriveCloneName(String)},
+     * Inserts the cloned dataset row (PRIVATE, name set to the caller-supplied {@code name},
      * copying schema and validation state verbatim — no re-validation) and copies its test cases with
      * freshly generated ids, repointed {@code datasetId}, and {@code @ef/datasets/{source}/} →
      * {@code @ef/datasets/{new}/} rewrites in each test case's {@code data}. Joins the caller's active
@@ -79,10 +79,11 @@ public class DatasetCloneService {
      *     {@code disabledTestCaseIds}
      */
     @Transactional("metaTransactionManager")
-    public Map<UUID, UUID> cloneRowAndTestCases(Dataset source, UUID newDatasetId, String createdBy, long timestamp) {
+    public Map<UUID, UUID> cloneRowAndTestCases(
+            Dataset source, UUID newDatasetId, String name, String createdBy, long timestamp) {
         Dataset clone = Dataset.builder()
                 .id(newDatasetId)
-                .name(deriveCloneName(source.getName()))
+                .name(name)
                 .description(source.getDescription())
                 .testCaseSchema(source.getTestCaseSchema())
                 .valid(source.isValid())

@@ -1,0 +1,65 @@
+{
+  "id": "660e8400-e29b-41d4-a716-446655440001",
+  "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+  "testRunName": "Benchmark Run v2",
+  "status": "COMPLETED",
+  "runConfig": {
+    "numberOfRuns": 3,
+    "testRunName": "Benchmark Run v2",
+    "execution": {
+      "concurrencyLevel": 5,
+      "requestTimeoutMs": 60000,
+      "rateLimitRps": 10.0
+    },
+    "retry": {
+      "maxRetries": 2,
+      "retryDelayMs": 1000,
+      "retryBackoffMultiplier": 2.0
+    }
+  },
+  "numberOfTestCases": 50,
+  "suiteSnapshot": {
+    "snapshotVersion": "1",
+    "suiteType": "DEPLOYMENT",
+    "deploymentRef": {
+      "id": "gpt-35-turbo",
+      "name": "GPT-3.5 Turbo",
+      "version": "2024-02-01"
+    },
+    "endpointRef": {
+      "method": "POST",
+      "relativeUrlPattern": "/chat/completions",
+      "operationId": "createCompletion"
+    },
+    "requestTemplate": {
+      "urlTemplate": "/chat/completions",
+      "body": {
+        "contentType": "application/json",
+        "content": {
+          "model": "gpt-35-turbo",
+          "messages": [{"role": "user", "content": "${{question}}"}]
+        }
+      },
+      "headers": [{"key": "X-Custom-Header", "value": "evaluation"}]
+    },
+    "inputBindings": [
+      {"templateVariable": "question", "dataField": "question"}
+    ],
+    "responseColumns": [
+      {"name": "answer", "displayName": "Model Answer", "expression": "choices[0].message.content", "type": "STRING"},
+      {"name": "total_tokens", "displayName": "Total Tokens", "expression": "usage.total_tokens", "type": "NUMBER"}
+    ],
+    "testCaseSchema": [
+      {"name": "question", "displayName": "Question", "type": "STRING", "required": true}
+    ],
+    "mcpDeploymentRef": null,
+    "toolRef": null,
+    "argumentTemplate": null
+  },
+  "startedAt": 1739750410000,
+  "completedAt": 1739751000000,
+  "errorMessage": null,
+  "errorDetails": null,
+  "createdAt": 1739750400000,
+  "updatedAt": 1739751000000
+}

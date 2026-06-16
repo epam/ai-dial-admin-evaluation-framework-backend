@@ -1,0 +1,50 @@
+{
+  "content": [
+    {
+      "id": "a10e8400-e29b-41d4-a716-446655440001",
+      "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+      "testSuiteRunId": "660e8400-e29b-41d4-a716-446655440001",
+      "testCaseRunResultId": "770e8400-e29b-41d4-a716-446655440010",
+      "testCaseId": "880e8400-e29b-41d4-a716-446655440002",
+      "testCaseName": "greeting-test-case",
+      "runIndex": 0,
+      "computationId": "cc0e8400-e29b-41d4-a716-446655440099",
+      "testCaseData": {"prompt": "Hello, world!", "category": "greeting"},
+      "extractedColumns": {"answer": "Hi there!", "total_tokens": 42},
+      "executionStatus": "SUCCESS",
+      "execDurationMs": 1234,
+      "responseStatusCode": 200,
+      "metricValues": {
+        "Accuracy": {"score": 0.95},
+        "Relevance": {"score": 0.88}
+      },
+      "createdAt": 1739750399000,
+      "computedAt": 1739750500000,
+      "grafanaTraceUrl": "http://grafana:3000/explore?..."
+    },
+    {
+      "id": "a20e8400-e29b-41d4-a716-446655440002",
+      "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+      "testSuiteRunId": "660e8400-e29b-41d4-a716-446655440001",
+      "testCaseRunResultId": "770e8400-e29b-41d4-a716-446655440011",
+      "testCaseId": "880e8400-e29b-41d4-a716-446655440003",
+      "testCaseName": "error-handling-test-case",
+      "runIndex": 0,
+      "computationId": "cc0e8400-e29b-41d4-a716-446655440099",
+      "testCaseData": {"prompt": "Error test", "category": "error-handling"},
+      "executionStatus": "FAILED",
+      "execDurationMs": 2456,
+      "responseStatusCode": 500,
+      "metricValues": {
+        "Accuracy": {"score": null},
+        "Relevance": {"score": null}
+      },
+      "createdAt": 1739750399000,
+      "computedAt": 1739750500000,
+      "grafanaTraceUrl": "http://grafana:3000/explore?..."
+    }
+  ],
+  "size": 50,
+  "nextCursor": "eyJjcmVhdGVkQXQiOjE3Mzk3NTAzOTkwMDAsImlkIjoiYTIwZTg0MDAtZTI5Yi00MWQ0LWE3MTYtNDQ2NjU1NDQwMDAyIn0",
+  "hasMore": true
+}

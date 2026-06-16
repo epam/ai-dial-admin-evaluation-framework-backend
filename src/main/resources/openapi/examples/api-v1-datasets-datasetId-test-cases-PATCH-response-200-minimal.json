@@ -1,0 +1,12 @@
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "testCaseName": "Renamed test case",
+    "data": {
+      "prompt": "Hello"
+    },
+    "valid": true,
+    "createdAt": 1704067200000,
+    "updatedAt": 1704153600000
+  }
+]

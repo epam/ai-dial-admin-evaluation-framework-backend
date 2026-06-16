@@ -1,0 +1,54 @@
+[
+  {
+    "name": "search",
+    "description": "Search the web for information using natural language queries",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The search query"
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "Maximum number of results to return"
+        }
+      },
+      "required": ["query"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {"type": "string"},
+              "snippet": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "summarize",
+    "description": "Summarize a given text",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The text to summarize"
+        },
+        "max_length": {
+          "type": "integer",
+          "description": "Maximum summary length in characters"
+        }
+      },
+      "required": ["text"]
+    },
+    "outputSchema": null
+  }
+]

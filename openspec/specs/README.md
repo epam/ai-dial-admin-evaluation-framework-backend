@@ -1,0 +1,160 @@
+# OpenSpec Main Specifications
+
+This folder contains the **main (baseline) specifications** for the Evaluation Framework Backend.
+
+Changes are proposed and implemented via `openspec/changes/<change-name>/...` and can be synced back into these main specs.
+
+Coding standards and architectural conventions live in `openspec/config.yaml` (not in specs).
+
+## Spec Index
+
+### Core Domain
+
+Specs defining the primary business entities and their APIs.
+
+- **[datasets](datasets/spec.md)** — Implemented
+  Dataset CRUD — central owner of `testCaseSchema` and test cases. Carries `visibility` (PUBLIC / PRIVATE): PUBLIC datasets appear in the list endpoint and may be shared across suites; PRIVATE datasets are hidden from the list, bound to exactly one suite, and cascade-delete with it. Atomic create-and-bind for PRIVATE via `bindToSuiteId`; transitions go through `PATCH /api/v1/datasets/{id}/visibility`. Publish endpoint (`POST /api/v1/datasets/{id}/publish`) promotes a PRIVATE dataset to PUBLIC with optional name/description update in a single atomic operation (no-op when already PUBLIC with no changes). PL/pgSQL trigger `tg_test_suites_private_binding_guard` enforces single-binding for PRIVATE at the DB layer (P0001 → HTTP 409). Hosts schema-change revalidation (Phase 1 dataset-rooted, Phase 2 per-suite). Related: test-suites, test-cases, test-suite-runs.
+- **[test-suites](test-suites/spec.md)** — Implemented
+  TestSuite CRUD with suite type discriminator (DEPLOYMENT, MCP_TOOL). DEPLOYMENT suites: deploymentRef, endpointRef, requestTemplate, inputBindings. MCP_TOOL suites: mcpDeploymentRef, toolRef, argumentTemplate. Suite binds to a dataset via optional `datasetId` (suites with `datasetId=null` are "unbound" — retrievable and updatable but cannot run). Rebinding off a PRIVATE dataset is forbidden (409 PRIVATE_DATASET_REBIND_FORBIDDEN). Per-suite `disabledTestCaseIds` (JSONB array, capped at 10000) excludes specific dataset rows from runs. Related: datasets, request-template, test-cases, mcp-tool-invocation.
+- **[test-suite-clone](test-suite-clone/spec.md)** — Implemented
+  Clone endpoint (`POST /api/v1/test-suites/{id}/clone`) — deep-copies a test suite and its metric definitions (TSMDs) under a new name; cloned suite references the source's dataset by default (test cases are NOT duplicated — they belong to the dataset). Exception: cloning a suite bound to a PRIVATE dataset (no `datasetId` override) also clones the dataset — a new PRIVATE dataset with copied test cases (new ids), remapped `disabledTestCaseIds`, and copied dataset-scoped files; redirecting such a clone to a different dataset is forbidden (409 PRIVATE_DATASET_REBIND_FORBIDDEN). Optional overrides: description, deploymentRef, endpointRef, responseColumns, requestTemplate, inputBindings, mcpDeploymentRef, toolRef, argumentTemplate, datasetId, disabledTestCaseIds. suiteType is always inherited. File references in suite/TSMD JSONB rewritten to the new suite scope; post-clone validation is synchronous only.
+- **[detach-dataset](detach-dataset/spec.md)** — Implemented
+  Detach-dataset endpoint (`POST /api/v1/test-suites/{id}/detach-dataset`) — forks a suite's bound PUBLIC dataset into a new PRIVATE clone for exclusive use by that suite; the original PUBLIC dataset is preserved. Test cases are copied with fresh IDs and file-ref rewrites; `disabledTestCaseIds` are remapped. Optional `name` field in the request body; derived automatically when omitted. 409 when suite has no dataset (SUITE_HAS_NO_DATASET) or bound dataset is already PRIVATE (PRIVATE_DATASET_REBIND_FORBIDDEN).
+- **[test-cases](test-cases/spec.md)** — Implemented
+  TestCase CRUD, PATCH, CSV export/import, schema validation, re-validation. Test cases are dataset-scoped — endpoints live under `/api/v1/datasets/{datasetId}/test-cases/*`. Related: datasets, test-suites.
+- **[request-template](request-template/spec.md)** — Implemented
+  Request template system — `${{variable}}` and `${{variable|type}}` placeholder syntax with optional type hints, input bindings, template variable extraction (`declaredType`/`effectiveType`), resolved-request preview. Related: test-suites.
+- **[test-suite-metric-definitions](test-suite-metric-definitions/spec.md)** — Implemented
+  TSMD CRUD — materialized metric configurations within a test suite, polymorphic parameter bindings (TestCase, Response, Constant), client-supplied metric declaration version with ownership validation, `enabled` flag, `valid` / `validationWarnings` state. Related: test-suites, metrics-system, tsmd-validation.
+- **[tsmd-validation](tsmd-validation/spec.md)** — Implemented
+  TSMD soft validation — `MetricDefinitionValidationService` with 6 checks (INVALID_OUTPUT_SCHEMA for missing/malformed output schemas, UNRESOLVED_REFERENCE for TestCase/Response column refs, REQUIRED for missing/null-constant required properties, ADDITIONAL for unknown properties), synchronous auto-revalidation on suite schema update, manual revalidation endpoint side effect, `enabled` flag management.
+- **[aggregated-metric-definition](aggregated-metric-definition/spec.md)** — Implemented
+  Read-only aggregated endpoint returning a TSMD enriched with full metric declaration and version details (schemas) in a single response. Related: test-suite-metric-definitions, metrics-system.
+
+### Polymorphic Request Body
+
+- **[polymorphic-request-body](polymorphic-request-body/spec.md)** — Implemented
+  Polymorphic body type hierarchy for request templates (JSON, multipart/form-data, URL-encoded), endpoint schemas, resolved bodies, and pluggable RequestBodySerializer strategy.
+
+### DIAL File Storage
+
+- **[dial-file-storage](dial-file-storage/spec.md)** — Implemented
+  DIAL Core file storage integration — DialFileClient, EF service key/bucket management, file reference resolution (@ef alias → real bucket), file upload/download proxy, suite-scoped file lifecycle, streaming file retrieval, configurable size/count limits.
+- **[dataset-file-storage](dataset-file-storage/spec.md)** — Implemented
+  Dataset-scoped file management REST API mirroring the suite-scoped endpoints; files stored under `@ef/datasets/{datasetId}/`. Cascade cleanup on PUBLIC dataset delete and PRIVATE suite-cascade delete. Configurable `max-files-per-dataset`.
+- **[dial-file-ref](dial-file-ref/spec.md)** — Implemented
+  DIAL file reference model — short format (`@ef/...`, `public/...`), DialFileRefResolver for alias-to-bucket translation (`resolveToRealPath`) and DIAL payload embedding (`resolveToDialRef`), FILE-typed placeholder resolution in ResolvedRequestService, prefix whitelist validation, `buildDatasetEfRef` for dataset-shaped refs, cross-suite/dataset reference warnings.
+- **[file-ref-validation](file-ref-validation/spec.md)** — Implemented
+  Centralized file reference format and ownership validation via FileRefValidator — short-format rules, dual-ownership entry points (`validateSuiteOwnership` / `validateDatasetOwnership`), legacy suite-shaped refs in test-case data tolerated, delegation from SuiteValidationService / BindingValidator / TestCaseValidationService.
+- **[blob-storage](blob-storage/spec.md)** — Superseded (replaced by `dial-file-storage` + `dial-file-ref`)
+  Original PostgreSQL Large Objects implementation. All requirements removed; see `dial-file-storage` for the replacement.
+
+### Integration
+
+Specs for external service integrations.
+
+- **[dial-core-client](dial-core-client/spec.md)** — Implemented
+  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, JWT propagation, upstream error mapping, deployment invocation.
+- **[app-schema-route-resolution](app-schema-route-resolution/spec.md)** — Implemented
+  Application route resolution inherited from app type schemas via DIAL Core schema API, schema route DTOs, merge behavior.
+- **[mcp-tool-invocation](mcp-tool-invocation/spec.md)** — Implemented
+  MCP SDK client integration — McpToolInvoker (tool call execution, tool discovery via `tools/list`), McpRequestResolver (argument template resolution), McpResponseSerializer (CallToolResult → JSON), configurable timeouts, error mapping.
+- **[toolset-listing](toolset-listing/spec.md)** — Implemented
+  Toolset deployment type extension — ToolsetInfoDto, `type`/`interface` query param filtering on deployment listing, tool discovery endpoint (`GET /deployments/tools?deploymentId=&transport=`), InterfaceType enum, DeploymentType extended for toolsets.
+
+### Try It Out
+
+- **[try-it-out](try-it-out/spec.md)** — Implemented
+  Endpoints for sending a single resolved request to a DIAL Core deployment or MCP tool call and proxying the response. Covers test-case-based and variables-based modes for both HTTP and MCP suites, URL routing, timeout configuration, error proxying, type-aware validation rules, and SSE streaming response handling (`streaming=true`, `events` list, `{"events":[...]}` body envelope).
+
+### SSE Streaming
+
+- **[sse-event-parsing](sse-event-parsing/spec.md)** — Implemented
+  Injectable `SseEventParser` component for RFC-compliant SSE wire format parsing. Produces `SseParseResult` with typed `SseEvent` records (event type + JSON/string data), deadline enforcement via `Clock`, and byte-size limiting. Used by both the evaluation engine and TryItOut path.
+
+### Grafana Integration
+
+- **[grafana-deep-links](grafana-deep-links/spec.md)** — Implemented
+  Grafana Explore URL generation — configurable deep links in API responses for one-click navigation to Grafana Tempo traces. Per-trace URLs on execution results and try-it-out, run-scoped TraceQL URLs on test suite runs, per-test-case aggregate TraceQL URLs on eval summaries.
+
+### Cross-cutting Concerns
+
+Specs for behaviors that apply across multiple domain areas.
+
+- **[sorting](sorting/spec.md)** — Implemented
+  Multi-column sorting for list endpoints (whitelist, tie-breaker, SQL injection prevention).
+- **[entity-filtering](entity-filtering/spec.md)** — Implemented
+  Pagination and structured `filter` (whitelist, AND/`in` operators, HTTP 400 validation) on list endpoints.
+- **[security](security/spec.md)** — Implemented
+  OIDC/JWT multi-issuer authentication + configurable security modes.
+- **[openapi-examples](openapi-examples/spec.md)** — Implemented
+  OpenAPI request/response examples (minimal + full), resource-based JSON, OpenApiExampleCustomizer.
+- **[openapi-query-param-docs](openapi-query-param-docs/spec.md)** — Implemented
+  Auto-generated OpenAPI query parameter descriptions from FilterWhitelists, SortWhitelists, and PaginationProperties. Covers field-operator matrices, type hints, pagination defaults, and parameter examples.
+
+### Analytics
+
+Specs for the analytics datasource and result storage.
+
+- **[analytics-datasource](analytics-datasource/spec.md)** — Implemented
+  Dual datasource configuration — separate analytics DB alongside meta DB. Symmetric property paths (`datasource.meta.*` / `datasource.analytics.*`), qualified JdbcTemplate beans, separate Flyway migration path, startup validation.
+- **[analytics-eval-results](analytics-eval-results/spec.md)** — Implemented
+  Test case run result storage and retrieval. Batch write API (envelope with testSuiteId/testSuiteRunId, JDBC batch insert, idempotent), keyset-paginated read API with JSONB path filtering on `testCaseData`, append-only flat data model with `run_index` for multi-run suites.
+- **[eval-execution-engine](eval-execution-engine/spec.md)** — Implemented
+  In-process evaluation execution engine — virtual thread executor with semaphore-bounded concurrency, streaming SSE response handling (OpenAI delta collapse or `{"events":[...]}` envelope via `SseEventParser`), retry with exponential backoff, rate limiting, header blacklist, response size limiting, cancellation support. MCP suite support: suite type branching, McpRequestResolver → McpToolInvoker → McpResponseSerializer flow. Snapshot-driven execution: inputs read from `test_case_run_inputs` table (populated at snapshot phase); legacy runs fall back to live test case queries.
+- **[suite-run-snapshot](suite-run-snapshot/spec.md)** — Implemented
+  Suite snapshot phase — `SuiteSnapshotDto` (versioned, `@JsonIgnoreProperties(ignoreUnknown = true)`), `SuiteSnapshotBuilder` component, `test_case_run_inputs` table for per-run test case snapshots, `suite_snapshot` JSONB column on `test_suite_runs`, snapshot phase with `ISOLATION_REPEATABLE_READ` + retry on `40001` + idempotent cleanup, inconsistent-snapshot guard, two-tier column selection (list excludes `suite_snapshot`; detail includes it), daily retention cleanup job (`TestCaseRunInputsRetentionJob`) with configurable retention duration.
+- **[metrics-storage](metrics-storage/spec.md)** — Implemented
+  Eval summary storage layer — denormalized analytics table for metric-enriched test case results, run metric snapshots, computation versioning, JSONB metric filtering and aggregation.
+- **[metric-evaluation](metric-evaluation/spec.md)** — Implemented
+  In-process metric evaluation engine — Phase 2 of test suite run lifecycle. Evaluates configured TSMDs against test case results by calling metric provider `/evaluate` endpoints with resolved bindings, writes results as EvalSummary records. Provider-bounded concurrency, retry with exponential backoff, RunMetricSnapshot capture.
+- **[eval-summary-export](eval-summary-export/spec.md)** — Implemented
+  CSV export and JSON preview for eval summaries — `POST /api/v1/analytics/eval-summaries/export.csv` (streaming CSV) and `GET /api/v1/analytics/eval-summaries/export/preview` (typed array-of-arrays JSON for column discovery). Snapshot-driven column manifest (identity → timestamps → execution → `data:<field>` → `response:<column>` → `metric:<metric>:<field>` → `metricInfo:<metric>:<field>` → `metricError:<metric>` → `extractionWarnings` → bodies; `:` is the family-separator, dots inside identifiers are preserved verbatim), `requestBody`/`responseBody` opt-in via explicit `columns`, run-state guard (terminal runs only), run-scoping filter injection, per-page `TransactionTemplate` streaming. Related: metrics-storage, suite-run-snapshot.
+
+### Infrastructure
+
+Specs for database, observability, and operational concerns.
+
+- **[build-tooling](build-tooling/spec.md)** — Implemented
+  Gradle wrapper version pin (9.5+ on the 9.x line, `-bin` distribution), JDK 21 toolchain declaration, zero-deprecation-warning build invariant, jOOQ codegen output stability across wrapper bumps, and single-source-of-truth binding between wrapper, `AGENTS.md`, `openspec/config.yaml`, `.gitlab-ci.yml`, and `Dockerfile`.
+- **[typed-sql-dsl](typed-sql-dsl/spec.md)** — Implemented
+  jOOQ 3.20 typed DSL replacing NamedParameterJdbcTemplate across all repositories. Zonky EmbeddedPostgres codegen pipeline (`./gradlew generateJooq`), committed generated sources, schema-drift guard test, DSLContext beans with TransactionAwareDataSourceProxy and exception translation, RecordMapper pattern, FilterWhitelists/SortWhitelists with typed Field references, ArchUnit fence enforcing JdbcTemplate usage limits.
+- **[database-and-migrations](database-and-migrations/spec.md)** — Implemented
+  PostgreSQL JDBC + Flyway migration conventions.
+- **[observability-and-logging](observability-and-logging/spec.md)** — Implemented
+  Correlation IDs, request logging, dynamic log levels, OTel distributed tracing (W3C traceparent propagation, OTLP export, span attributes on eval and metric spans for Grafana Tempo navigation).
+- **[health](health/spec.md)** — Implemented
+  Health endpoint surface.
+- **[configuration-docs](configuration-docs/spec.md)** — Implemented
+  Structure, schema, and maintenance rules for `docs/configuration.md` — six-column property table schema, four-term `Required` vocabulary (`Yes`/`No`/`Conditional`/`Recommended`), nine top-level groups, `Applied when` expression grammar, and the rule that every configurable property has a documented row.
+
+### Testing
+
+Specs for functional test conventions and test infrastructure.
+
+- **[testing-conventions](testing-conventions/spec.md)** — Implemented
+  Rules for functional test setup: use `MetaTestDataHelper`/`AnalyticsTestDataHelper` for fixtures and cleanup, no raw SQL in test methods, back-door state via named helper methods only.
+
+### Architectural Conventions
+
+Formal versioned requirements for project-wide architectural rules. Quick-reference inline conventions live in [AGENTS.md](../../AGENTS.md); the authoritative layering principle lives in [openspec/config.yaml](../config.yaml).
+
+- **[best-practices](best-practices/spec.md)** — Implemented (phase 1)
+  Cross-domain access through services, not foreign repositories. A domain service injects only its own domain's repository; cross-domain reads and writes go through the owning domain's service. Phase 1 covers `DatasetService`; phases 2/3 extend the rule to ~13 other services flagged in the audit.
+
+### Vision / Planned
+
+Specs documented but not yet fully implemented.
+
+- **[metrics-system](metrics-system/spec.md)** — Partial
+  Metric declarations/versioning and metric results storage. Stub implemented: list metric declarations (paginated/sorted/filtered, seeded Accuracy/Latency/Relevance).
+- **[metric-provider-sync](metric-provider-sync/spec.md)** — Implemented
+  Scheduled sync of metric declarations and versions from external metric provider services via GET /metrics API.
+- **[response-columns](response-columns/spec.md)** — Implemented
+  User-defined response column definitions scoped to TestSuite. JSONata expressions to extract named values from response bodies, stored as JSONB, evaluated at run time. `FILE` type supported as a display hint for DIAL file reference columns.
+- **[test-suite-runs](test-suite-runs/spec.md)** — Implemented
+  Foundational infrastructure for async test suite execution: run lifecycle (PENDING→RUNNING→COMPLETED/FAILED/CANCELLED), CRUD with filtering/sorting/pagination, SSE status streaming, startup reconciliation, configurable concurrency limits. Uses in-process evaluation engine with virtual threads, streaming SSE support, retry/rate-limiting, and configurable execution settings. `numberOfTestCases` finalized at snapshot phase (not immutable at creation). `suiteSnapshot` field in API response (detail only; omitted from list).
+- **[evaluation-runs](evaluation-runs/spec.md)** — Planned
+  Running suites, storing run history and per-case results.
+- **[runner-and-jobs](runner-and-jobs/spec.md)** — Partial
+  In-process evaluation executor (implemented). Kubernetes job runner (planned).

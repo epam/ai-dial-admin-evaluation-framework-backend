@@ -1,0 +1,34 @@
+{
+  "content": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "testCaseName": "Smoke test",
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello"
+          }
+        ],
+        "expected_status": 200,
+        "response_time_ms": 150
+      },
+      "valid": false,
+      "validationWarnings": [
+        {
+          "source": "DATA",
+          "path": "$.expected_status",
+          "property": "expected_status",
+          "message": "expected type: Integer",
+          "code": "TYPE"
+        }
+      ],
+      "createdAt": 1704067200000,
+      "updatedAt": 1704067200000
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}

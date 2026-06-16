@@ -1,0 +1,27 @@
+{
+  "detectedColumns": [
+    {
+      "headerName": "testCaseName",
+      "mappedTo": "testCaseName",
+      "fieldName": "testCaseName",
+      "inferredType": "STRING"
+    },
+    {
+      "headerName": "prompt",
+      "mappedTo": "data",
+      "fieldName": "prompt",
+      "inferredType": "STRING"
+    }
+  ],
+  "totalRows": 2,
+  "sampleRows": [
+    {
+      "testCaseName": "TC 1",
+      "data": {
+        "prompt": "Hello"
+      },
+      "valid": true
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,29 @@
+{
+  "resolvedRequest": {
+    "url": "/chat/completions",
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "messages": [{ "role": "user", "content": "Classify this document." }]
+      }
+    },
+    "warnings": []
+  },
+  "response": {
+    "statusCode": 200,
+    "streaming": true,
+    "body": {
+      "events": [
+        { "event": "start",   "data": { "jobId": "job-123" } },
+        { "event": "message", "data": { "label": "finance", "score": 0.87 } },
+        { "event": "done",    "data": { "totalTokens": 42 } }
+      ]
+    },
+    "events": [
+      { "event": "start",   "data": { "jobId": "job-123" } },
+      { "event": "message", "data": { "label": "finance", "score": 0.87 } },
+      { "event": "done",    "data": { "totalTokens": 42 } }
+    ]
+  },
+  "durationMs": 2317
+}

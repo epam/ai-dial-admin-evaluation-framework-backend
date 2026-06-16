@@ -1,0 +1,15 @@
+{
+  "id": "aa0e8400-e29b-41d4-a716-446655440000",
+  "testSuiteId": "bb0e8400-e29b-41d4-a716-446655440000",
+  "metricDeclarationId": "550e8400-e29b-41d4-a716-446655440000",
+  "metricDeclarationVersionId": "660e8400-e29b-41d4-a716-446655440001",
+  "name": "Accuracy Check",
+  "metricDeclarationName": "Accuracy",
+  "enabled": true,
+  "valid": true,
+  "validationWarnings": [],
+  "configBindings": [],
+  "inputBindings": [],
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000
+}

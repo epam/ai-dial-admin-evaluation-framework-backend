@@ -1,0 +1,321 @@
+spring:
+  application:
+    name: ai-dial-admin-evaluation-framework-backend
+    version: "@project.version@"
+  main:
+    allow-bean-definition-overriding: true
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jooq.autoconfigure.JooqAutoConfiguration
+  flyway:
+    enabled: false
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+  threads:
+    virtual:
+      enabled: true
+
+# Auth configuration
+auth:
+  azure:
+    type: none
+
+# Datasource configuration
+datasource:
+  meta:
+    vendor: POSTGRES
+    auth:
+      type: basic
+  analytics:
+    vendor: POSTGRES
+    auth:
+      type: basic
+
+# DIAL Core client configuration
+dial:
+  api-key: ${DIAL_EF_API_KEY:}
+  components:
+    core:
+      base-url: ${DIAL_CORE_URL:http://localhost:8085}
+      connect-timeout-ms: ${DIAL_CORE_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${DIAL_CORE_READ_TIMEOUT_MS:30000}
+      retry:
+        max-attempts: ${DIAL_CORE_RETRY_MAX_ATTEMPTS:3}
+        delay-ms: ${DIAL_CORE_RETRY_DELAY_MS:1000}
+        multiplier: ${DIAL_CORE_RETRY_MULTIPLIER:2.0}
+      try-out:
+        read-timeout-ms: ${DIAL_CORE_TRY_OUT_READ_TIMEOUT_MS:3600000}
+  mcp:
+    connect-timeout-ms: ${DIAL_MCP_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${DIAL_MCP_READ_TIMEOUT_MS:120000}
+  file-storage:
+    bucket-alias: ${DIAL_FILE_STORAGE_BUCKET_ALIAS:@ef}
+    max-file-size-bytes: ${DIAL_FILE_STORAGE_MAX_FILE_SIZE_BYTES:52428800}  # 50MB
+    max-files-per-suite: ${DIAL_FILE_STORAGE_MAX_FILES_PER_SUITE:100}
+    max-files-per-dataset: ${DIAL_FILE_STORAGE_MAX_FILES_PER_DATASET:100}
+    connect-timeout-ms: ${DIAL_FILE_STORAGE_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${DIAL_FILE_STORAGE_READ_TIMEOUT_MS:30000}
+
+# Validation configuration
+validation:
+  max-warnings-per-case: 5
+  max-template-size-bytes: 65536  # 64KB
+  max-bindings-count: 64
+  revalidation:
+    batch-size: 500
+    timeout-minutes: 5
+
+# Security JWT claim
+security:
+  jwt:
+    user-claim: sub
+
+# Pagination configuration
+pagination:
+  default-size: 100
+  max-size: 1000
+
+# Test case configuration
+test-case:
+  batch:
+    max-items: 256
+  bulk:
+    max-operations: 512
+    max-ids-per-selector: 10000
+    max-item-operations: 500
+
+# Analytics results configuration
+analytics:
+  results:
+    batch:
+      max-items: 10000
+      max-request-size-bytes: 10485760  # 10MB
+  eval-summaries:
+    batch:
+      max-items: 10000
+      max-request-size-bytes: 10485760  # 10MB
+
+# Test suite run configuration
+test-suite-run:
+  executor:
+    core-pool-size: 5
+    max-pool-size: 10
+    queue-capacity: 50
+  sse:
+    timeout-minutes: 30
+    cleanup-interval-ms: 300000
+  execution:
+    default-concurrency-level: 1
+    max-concurrency-level: 50
+    default-request-timeout-ms: 30000
+    max-request-timeout-ms: 600000
+    result-batch-size: 100
+    max-response-size-bytes: 5242880  # 5MB
+    cancellation-grace-period-ms: 30000
+    header-blacklist:
+      - Authorization
+      - Host
+      - Content-Length
+      - Transfer-Encoding
+      - Connection
+      - traceparent
+      - tracestate
+  retry:
+    default-max-retries: 0
+    max-max-retries: 10
+    default-retry-delay-ms: 1000
+    max-retry-delay-ms: 60000
+    default-retry-backoff-multiplier: 2.0
+    max-retry-backoff-multiplier: 10.0
+  run-config:
+    max-number-of-runs: 64
+  run-inputs:
+    retention-days: 1
+  limits:
+    max-concurrent-runs-global: 20
+    max-concurrent-runs-per-suite: 5
+
+# Metric providers configuration (sync of metric declarations from external GET /metrics endpoints)
+metric-providers:
+  providers:
+    dial:
+      base-url: ${METRIC_PROVIDERS_DIAL_BASE_URL:http://localhost:8086}
+      connect-timeout-ms: 5000
+      read-timeout-ms: 150000
+  sync:
+    enabled: ${METRIC_PROVIDERS_SYNC_ENABLED:false}
+    cron: ${METRIC_PROVIDERS_SYNC_CRON:-}  # e.g. "0 */5 * * * *" for every 5 min; "-" or unset = no recurring
+    fixed-delay-ms: 0  # optional; used when cron is empty
+
+# Metric evaluation configuration (in-process metric evaluation phase of test suite runs)
+metric-evaluation:
+  default-concurrency-per-provider: 5
+  batch-size: 100
+  per-result-timeout-ms: ${METRIC_EVAL_PER_RESULT_TIMEOUT_MS:150000}
+  retry:
+    max-retries: 0
+    retry-delay-ms: 1000
+    retry-backoff-multiplier: 2.0
+    max-retry-delay-ms: 60000
+
+sse-event-processing:
+  max-total-duration-ms: ${SSE_EVENT_PROCESSING_MAX_TOTAL_DURATION_MS:3600000}  # 1 hour absolute cap
+
+# Blob storage configuration
+blob-storage:
+  max-file-size-bytes: ${BLOB_STORAGE_MAX_FILE_SIZE_BYTES:52428800}  # 50MB
+  max-files-per-suite: ${BLOB_STORAGE_MAX_FILES_PER_SUITE:100}
+
+# CSV configuration
+csv:
+  import:
+    max-file-size: 10MB
+    max-rows: 100000
+    batch-size: 1000
+  export:
+    page-size: 500
+
+postgres:
+  meta:
+    datasource:
+      url: jdbc:postgresql://localhost:5432/evaluation_db
+      connection-params: ""  # JDBC query params appended to url (e.g. reWriteBatchedInserts=true)
+      driver-class-name: org.postgresql.Driver
+      username: postgres
+      password: postgres  # Example value for local development. Override via environment variable in production.
+      schema: public
+  analytics:
+    datasource:
+      url: jdbc:postgresql://localhost:5432/evaluation_analytics_db
+      connection-params: reWriteBatchedInserts=true  # JDBC query params appended to url
+      driver-class-name: org.postgresql.Driver
+      username: postgres
+      password: postgres  # Example value for local development. Override via environment variable in production.
+      schema: public
+
+# Security configuration
+config:
+  rest:
+    security:
+      mode: oidc
+      disable-swagger-authorization: true
+      default:
+        allowedRoles: admin
+
+# Logger configuration
+logger:
+  configuration:
+    interval: 30
+    path: /app/log-config/logging.levels.json
+
+# Customizable trace interceptor (optional method entry/exit logging)
+app:
+  customizable-trace-interceptor:
+    enabled: ${CUSTOMIZABLE_TRACE_INTERCEPTOR_ENABLED:false}
+    messages:
+      ENTER: "Enter: $[methodName]($[arguments])"
+      EXIT: "Exit:  $[methodName]() in $[invocationTime]ms → $[returnValue]"
+      EXCEPTION: "Exception: $[methodName]() in $[invocationTime]ms"
+  trace-log-advisor:
+    expression: "@within(com.epam.aidial.evaluation.configuration.logging.LogExecution)"
+  grafana:
+    base-url: ${GRAFANA_BASE_URL:}
+    tempo-datasource-uid: ${GRAFANA_TEMPO_DATASOURCE_UID:tempo}
+    org-id: ${GRAFANA_ORG_ID:1}
+
+# Server configuration
+server:
+  port: 8080
+  tomcat:
+    accesslog:
+      enabled: true
+      pattern: "%{X-Correlation-Id}i %h %l %u %t \"%r\" %s %b %D"
+    max-http-post-size: 10485760  # 10MB Tomcat-level backstop
+
+# Actuator endpoints
+management:
+  server:
+    port: 9464
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  health:
+    db:
+      enabled: true
+    group:
+      readiness:
+        include: dialFileStorage,database,analyticsDatabase
+
+# OpenTelemetry SDK configuration
+otel:
+  sdk:
+    disabled: ${OTEL_SDK_DISABLED:true}
+  service:
+    name: ai-dial-evaluation-framework
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}
+      protocol: ${OTEL_EXPORTER_OTLP_PROTOCOL:http/protobuf}
+  logs:
+    exporter: ${OTEL_LOGS_EXPORTER:otlp}
+  traces:
+    exporter: ${OTEL_TRACES_EXPORTER:otlp}
+  metrics:
+    exporter: ${OTEL_METRICS_EXPORTER:otlp}
+
+# Logging configuration
+logging:
+  request-response:
+    enabled: false
+  level:
+    root: INFO
+    com.epam.aidial: INFO
+    org.springframework.security: INFO
+    org.flywaydb: INFO
+
+# OpenAPI configuration
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    operationsSorter: method
+
+---
+# Development profile
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+logging:
+  request-response:
+    enabled: true
+  level:
+    com.epam.aidial: TRACE
+    org.springframework.jdbc: DEBUG
+
+---
+# Test profile
+spring:
+  config:
+    activate:
+      on-profile: test
+
+config:
+  rest:
+    security:
+      mode: none
+
+logging:
+  level:
+    root: WARN
+    com.epam.aidial: DEBUG

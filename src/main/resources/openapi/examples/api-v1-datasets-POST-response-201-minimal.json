@@ -1,0 +1,27 @@
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "My Dataset",
+  "description": "Shared dataset for ingestion regression tests",
+  "visibility": "PUBLIC",
+  "testCaseSchema": [
+    {
+      "name": "question",
+      "displayName": "Question",
+      "type": "STRING",
+      "required": true,
+      "description": "The user question to send to the model"
+    },
+    {
+      "name": "expected_answer",
+      "displayName": "Expected Answer",
+      "type": "STRING",
+      "required": false
+    }
+  ],
+  "valid": true,
+  "validationWarnings": [],
+  "version": 1,
+  "createdBy": "maintainer@example.com",
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000
+}

@@ -1,0 +1,20 @@
+{
+  "name": "Suite-Owned Dataset",
+  "description": "PRIVATE dataset owned by a single test suite — atomic create-and-bind",
+  "visibility": "PRIVATE",
+  "bindToSuiteId": "11111111-1111-1111-1111-111111111111",
+  "testCaseSchema": [
+    {
+      "name": "question",
+      "displayName": "Question",
+      "type": "STRING",
+      "required": true
+    },
+    {
+      "name": "expected_answer",
+      "displayName": "Expected Answer",
+      "type": "STRING",
+      "required": false
+    }
+  ]
+}

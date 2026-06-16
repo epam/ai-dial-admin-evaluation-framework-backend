@@ -1,0 +1,23 @@
+---
+description: Enforce @LogExecution on Spring Components
+alwaysApply: true
+---
+
+# Enforce @LogExecution on Spring Components
+
+You **must** add the `@LogExecution` annotation to all Spring component classes to ensure consistent logging of method execution.
+
+## Applicability
+
+This rule applies to classes annotated with:
+- `@RestController`
+- `@Controller`
+- `@Service`
+- `@Repository`
+- `@Component`
+- `@Configuration`
+
+## Rule
+
+1.  **Always** add `@LogExecution` at the class level for any Spring-managed bean.
+2.  Ensure the import `com.epam.aidial.evaluation.configuration.logging.LogExecution` is present.

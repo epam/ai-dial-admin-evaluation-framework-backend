@@ -1,0 +1,13 @@
+{
+  "taskId": "7a1d2b3c-4e5f-6789-abcd-ef0123456789",
+  "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "COMPLETED",
+  "totalCases": 100,
+  "processedCases": 100,
+  "validCount": 98,
+  "invalidCount": 2,
+  "startedAt": 1704067200000,
+  "completedAt": 1704067260000,
+  "errorMessage": null,
+  "coercedCellCount": 42
+}

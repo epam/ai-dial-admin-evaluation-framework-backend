@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:17.4
+    container_name: evaluation-postgres
+    environment:
+      POSTGRES_DB: evaluation_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d evaluation_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: evaluation-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Meta datasource
+      POSTGRES_META_DATASOURCE_URL: jdbc:postgresql://postgres:5432/evaluation_db
+      POSTGRES_META_DATASOURCE_USERNAME: postgres
+      POSTGRES_META_DATASOURCE_PASSWORD: postgres
+      # Analytics datasource
+      POSTGRES_ANALYTICS_DATASOURCE_URL: jdbc:postgresql://postgres:5432/evaluation_analytics_db
+      POSTGRES_ANALYTICS_DATASOURCE_USERNAME: postgres
+      POSTGRES_ANALYTICS_DATASOURCE_PASSWORD: postgres
+      CONFIG_REST_SECURITY_MODE: none
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config:ro
+
+volumes:
+  postgres_data:

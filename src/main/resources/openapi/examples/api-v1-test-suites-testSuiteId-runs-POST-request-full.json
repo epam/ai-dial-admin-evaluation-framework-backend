@@ -1,0 +1,16 @@
+{
+  "runConfig": {
+    "numberOfRuns": 3,
+    "testRunName": "Benchmark Run v2",
+    "execution": {
+      "concurrencyLevel": 5,
+      "requestTimeoutMs": 60000,
+      "rateLimitRps": 10.0
+    },
+    "retry": {
+      "maxRetries": 2,
+      "retryDelayMs": 1000,
+      "retryBackoffMultiplier": 2.0
+    }
+  }
+}

@@ -1,0 +1,60 @@
+[
+  {
+    "$type": "dial-model",
+    "deploymentId": "gpt-5-mini-2025-08-07",
+    "displayName": "GPT-5 mini",
+    "version": "2025-08-07",
+    "description": "GPT-5 mini - powers real-time experiences for apps and agents.",
+    "owner": "organization-owner",
+    "createdAt": 1768856213216,
+    "updatedAt": 1768856213216,
+    "descriptionKeywords": ["Text Generation", "Continue Supported", "Image Recognition"],
+    "inputAttachmentTypes": ["*/*"],
+    "capabilities": {
+      "scaleTypes": ["standard"],
+      "completion": false,
+      "chatCompletion": true,
+      "embeddings": false,
+      "fineTune": false,
+      "inference": false
+    },
+    "limits": {
+      "maxTotalTokens": 128000,
+      "maxCompletionTokens": 4096
+    },
+    "pricing": {
+      "unit": "token",
+      "prompt": "0.15",
+      "completion": "0.60"
+    }
+  },
+  {
+    "$type": "dial-application",
+    "deploymentId": "EntityExtractor",
+    "displayName": "Entity Extractor",
+    "version": null,
+    "description": "",
+    "owner": "organization-owner",
+    "createdAt": 1769192823293,
+    "updatedAt": 1769194293867,
+    "descriptionKeywords": [],
+    "inputAttachmentTypes": null,
+    "applicationTypeSchemaId": "https://dial-entity-extractor.example.com/",
+    "applicationProperties": {},
+    "routes": null
+  },
+  {
+    "$type": "dial-toolset",
+    "deploymentId": "web-search-toolset",
+    "displayName": "Web Search Toolset",
+    "version": null,
+    "description": "MCP toolset for web search and summarization",
+    "owner": "organization-owner",
+    "createdAt": 1769300000000,
+    "updatedAt": 1769300000000,
+    "descriptionKeywords": ["search", "summarization"],
+    "inputAttachmentTypes": null,
+    "transport": "streamable-http",
+    "allowedTools": ["search", "summarize"]
+  }
+]

@@ -1,0 +1,59 @@
+{
+  "name": "My Test Suite",
+  "description": "Suite for endpoint smoke tests",
+  "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+  "disabledTestCaseIds": ["11111111-1111-1111-1111-111111111111"],
+  "deploymentRef": {
+    "id": "deploy-001",
+    "name": "Production Deployment",
+    "version": "1.0"
+  },
+  "endpointRef": {
+    "method": "POST",
+    "relativeUrlPattern": "/chat/completions",
+    "operationId": "createCompletion",
+    "parameters": [
+      {"name": "model", "in": "QUERY", "required": true, "schema": {"type": "string"}},
+      {"name": "temperature", "in": "QUERY", "required": false, "schema": {"type": "number"}}
+    ],
+    "requestBodySchema": {
+      "contentType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "messages": {"type": "array", "items": {"type": "object"}},
+          "model": {"type": "string"},
+          "temperature": {"type": "number"}
+        }
+      }
+    },
+    "responseBodySchema": {"type": "object", "properties": {"id": {"type": "string"}}}
+  },
+  "responseColumns": [
+    {
+      "name": "answer",
+      "displayName": "Model Answer",
+      "expression": "choices[0].message.content",
+      "type": "STRING"
+    },
+    {
+      "name": "total_tokens",
+      "displayName": "Total Tokens Used",
+      "expression": "usage.total_tokens",
+      "type": "NUMBER"
+    }
+  ],
+  "requestTemplate": {
+    "urlTemplate": "/chat/completions",
+    "body": {
+      "contentType": "application/json",
+      "content": {"messages": "${{messages}}", "model": "${{model}}", "temperature": "${{temperature:0.7}}"}
+    },
+    "queryParams": [{"key": "api-version", "value": "2024-01"}],
+    "headers": [{"key": "X-Custom", "value": "${{customHeader:default}}"}]
+  },
+  "inputBindings": [
+    {"templateVariable": "messages", "dataField": "messages"},
+    {"templateVariable": "model", "constantValue": "gpt-4"}
+  ]
+}

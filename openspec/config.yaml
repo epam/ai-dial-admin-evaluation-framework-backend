@@ -1,0 +1,310 @@
+# OpenSpec config — only schema, context (string), and rules (object) are processed.
+schema: spec-driven
+
+context: |
+  Project: AI DIAL Admin Evaluation Framework Backend
+
+  # Tech Stack
+  - Java 25
+  - Spring Boot 4.0.6
+  - Build: Gradle 9.5.1
+  - Database: PostgreSQL via JDBC only (NO JPA/Hibernate)
+  - Migrations: Flyway (src/main/resources/db/migration/POSTGRES/), naming: V{major}.{minor}__{Description}.sql
+  - Security: OIDC/JWT multi-issuer (configurable; can be disabled for local/tests)
+  - API docs: OpenAPI/Swagger UI (springdoc)
+  - Testing: JUnit 5 + Testcontainers (Postgres); run with `./gradlew test`
+
+  # Architecture — Layered
+
+  Packages and responsibilities:
+
+  1. web (com.epam.aidial.evaluation.web) — controllers, handlers, security
+     - Request/response handling and validation at API boundary
+     - OpenAPI annotations and examples
+     - HTTP-level error handling and security configuration
+
+  2. service (com.epam.aidial.evaluation.service) — domain + infrastructure services
+     - Business logic and domain rules
+     - Transaction management (@Transactional); TransactionTimestampContext provides consistent ms timestamps per tx
+     - Service orchestration and composition
+     - Specialized components for parsing/validation/conversion in service.domain.* subpackages
+
+  3. data (com.epam.aidial.evaluation.data.db) — repositories, RecordMappers, pagination
+     - SQL mapping and query building via jOOQ typed DSL (DSLContext), RecordMappers, WhereBuilder/OrderByBuilder/FilterWhitelists/SortWhitelists
+     - Data access and JDBC operations
+     - SQL field allowlisting (FilterWhitelists, SortWhitelists use typed Field<?> references from generated jOOQ tables)
+     - Pure data carrier models (NO parsing, validation, or business logic)
+     - Generated jOOQ sources in data.db.jooq.{meta,analytics} — regenerate with ./gradlew generateJooq after schema changes
+
+  4. client (com.epam.aidial.evaluation.client) — external service integrations
+     - HTTP clients, client-specific DTOs and error mapping
+
+  5. configuration (com.epam.aidial.evaluation.configuration) — Spring configuration
+     - Properties classes, datasource, security, Jackson, logging, encryption
+
+  6. constants (com.epam.aidial.evaluation.constants) — cross-cutting constants
+     - One constants class per bounded context (e.g., ValidationConstants, SecurityConstants)
+
+  7. utils (com.epam.aidial.evaluation.utils) — shared utilities
+
+  # Layering Principle (authoritative — all artifact rules defer to this)
+
+  Layer responsibilities are strict:
+  - web/service: request parsing, validation, OpenAPI annotations
+  - service.domain.*: specialized parsers/validators/converters as injectable @Component classes
+  - data.db: pure carriers + SQL mapping + repositories — NO parsing, NO validation, NO business logic
+  - SQL allowlisting/mapping belongs in repositories/builders, NEVER in service or web layer
+  - Specialized components (Parser, Validator, Converter) MUST be top-level injectable classes, NOT private/inner methods
+  - A domain service injects only its own domain's repository; cross-domain reads/writes go through the owning domain's service (e.g., DatasetService calls TestSuiteService.bindDataset, not TestSuiteRepository.save). Full requirement and scenarios in openspec/specs/best-practices/spec.md.
+
+  # Key Patterns
+  - Use @Transactional in service layer for transaction boundaries
+  - UUIDs stored as VARCHAR(36) in database
+  - Use Lombok (@Data/@Builder/@RequiredArgsConstructor/@Slf4j) for boilerplate reduction
+  - Use MapStruct for DTO-to-entity mapping (mappers in service.domain.mapper)
+  - Prefer established libraries (Apache Commons, Guava) over custom utilities
+  - Use specialized libraries for data formats (e.g., CSV processing)
+  - Prefer constructor injection over field injection
+  - Use file reference aliases (@ef, public prefixes) for cross-environment portability; DialFileRefResolver translates at runtime
+
+  # Naming Conventions
+  - DTOs: suffix Dto (e.g., TestSuiteRequestDto, TestSuiteResponseDto)
+  - Mappers: suffix Mapper (e.g., TestSuiteMapper)
+  - Repositories: suffix Repository (e.g., TestSuiteRepository)
+  - Services: suffix Service (e.g., TestSuiteService)
+  - Controllers: suffix Controller (e.g., TestSuiteController)
+  - RecordMappers: suffix RecordMapper (e.g., TestSuiteRecordMapper) — maps a jOOQ Record to a domain model
+  - Packages: lowercase, singular (model, service, web)
+  - Use `var` for local variables when type is obvious from context
+  - camelCase for variables and methods; UPPER_SNAKE_CASE for constants
+
+  # Code Style
+  - Google Java Style Guide enforced by Checkstyle (`./gradlew checkstyleMain checkstyleTest`)
+  - Max line length: 180 characters; indentation: 4 spaces
+  - Use imports and short names; never use fully qualified class names (FQNs) in method bodies, signatures, or annotation attributes (enforced by Checkstyle)
+  - Method parameter lists (declarations and call sites) MUST be either fully horizontal (all params on one line) or fully vertical (one param per line, aligned under the first or indented one continuation level) — never a mix of inline params with wrapped continuation lines that pack multiple params each. Default to horizontal when under 180 chars; switch the whole list to vertical otherwise.
+
+  # API Conventions
+  - Versioning: path-based — all endpoints under /api/v1/
+  - Pagination response: PageResponseDto<T> with fields: content, page (0-indexed), size, totalElements (nullable), totalPages (nullable). Uses @JsonInclude(NON_NULL).
+  - Error response: ErrorView with fields: path, method, status, code (ErrorCode enum), error, message, details (optional). Mapped via @RestControllerAdvice DefaultExceptionHandler.
+  - Standard ErrorCodes: VALIDATION_ERROR, NOT_FOUND, ACCESS_DENIED, VERSION_CONFLICT, UNIQUE_CONSTRAINT_VIOLATION
+
+  # Testing Conventions
+  - Functional tests extend BaseFunctionalTest (provides TestRestTemplate, baseUrl(), apiUrl(path), jsonEntity<T>(body))
+  - Functional tests use @SpringBootTest with Testcontainers (PostgreSQL)
+  - FunctionalTestConfiguration / PostgresFunctionalTestConfiguration for test wiring
+  - Test naming: shouldDoX() or shouldDoX_whenY() — BDD-style with "should" prefix
+  - Unit tests for parsers, validators, mappers; functional tests for API endpoints and persistence
+  - LayeredArchitectureTest enforces package dependency rules via ArchUnit
+
+  # Feature Surface
+  For detailed feature specs, requirements, and API contracts see: openspec/specs/README.md
+  Domain areas: TestSuites, TestCases, Metrics, Deployments, Sorting, Filtering,
+  Request Templates, Observability, Security, OpenAPI Examples, Analytics Results,
+  Eval Summaries (metric-enriched results), Run Metric Snapshots.
+  Infrastructure: Analytics Datasource (dual datasource — meta + analytics),
+  Typed SQL DSL (jOOQ 3.20 — all repositories use DSLContext; generated sources in data.db.jooq.{meta,analytics}; drift guard via JooqSchemaDriftTest),
+  DIAL File Storage (file upload/download proxy via DialFileClient, EF service key bucket management, alias-based file references).
+  Vision/planned: Evaluation Runs, Runner & Jobs.
+
+  # Design Documentation
+  - docs/design/entity-relationship-model.md
+  - docs/design/infrastructure-architecture.md
+  - docs/database-schema.md (must be updated when Flyway migrations change schema)
+  - docs/configuration.md (must be updated when config properties change)
+
+  # Glossary
+  - bounded context: A logical domain boundary (e.g., TestSuites, Metrics); each should have its own constants class
+  - task group: A section of related tasks in tasks.md, typically one layer or feature area
+  - delta sync: Synchronizing changes from a change's delta spec back to the main spec
+  - pure carrier: A data class with no business logic, parsing, or validation
+  - computation_id: UUID identifying a metric computation batch; used for append-only versioning without is_latest flags
+  - bucket alias: Constant client-facing identifier (e.g., @ef) that maps to a real DIAL Core bucket at runtime for cross-environment portability
+  - file reference: Short DIAL path format (e.g., @ef/suites/{suiteId}/filename, no files/ prefix) identifying a file location with prefix-based access control; DialFileRefResolver.resolveToRealPath() strips the alias for DialFileClient calls, resolveToDialRef() prepends files/ for embedding in DIAL request payloads
+
+  # Tooling
+  - Checkstyle: `./gradlew checkstyleMain checkstyleTest` (config: checkstyle/checkstyle.xml)
+  - Tests: `./gradlew test` (unit + Testcontainers integration in single suite; includes JooqSchemaDriftTest and JdbcTemplateFenceTest)
+  - Full build (includes tests + checkstyle): `./gradlew clean build`
+  - Docker: `docker build -t dial-eval-backend .`
+  - Flyway: auto-applied on application start; meta migrations in src/main/resources/db/migration/meta/POSTGRES/, analytics migrations in src/main/resources/db/migration/analytics/POSTGRES/
+  - jOOQ codegen: `./gradlew generateJooq` — boots Zonky EmbeddedPostgres, applies both migration sets, writes generated sources to src/main/java-generated/; run and commit after any schema migration change
+
+  # Code Examples — Good vs Bad
+
+  ## Error Handling
+  Good:
+    try {
+        var result = jsonMapper.readValue(json, TypeRef.class);
+        return result;
+    } catch (JsonProcessingException e) {
+        log.error("Failed to deserialize JSON: {}", json, e);  // exception as last param
+        throw new DataIntegrityException("Invalid JSON format", e);  // fail-fast
+    }
+
+  Bad:
+    catch (Exception e) { log.error("Error: {}", e.getMessage()); return null; }
+    // Too broad catch, missing exception object in log, silent null return
+
+  Bad:
+    log.warn("Executor error for run {}: {}", id, e.getMessage());
+    // when e.getMessage() is null, log reads "...: null" with NO stacktrace — invisible failure
+  Good:
+    log.warn("Executor error for run {}: {}", id, e.getMessage(), e);
+    // exception object as last vararg → SLF4J prints stacktrace. Enforced by LoggingConventionTest.
+
+  ## Method Parameter Lists
+  Good (horizontal — fits in 180 chars):
+    CursorPage<EvalSummary> findAllForExport(List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs, Cursor cursor, int size);
+
+  Good (vertical — one param per line, aligned):
+    CursorPage<EvalSummary> findAllForExport(List<FilterCondition> filters,
+                                             UUID computationId,
+                                             Long runCreatedAtMs,
+                                             Cursor cursor,
+                                             int size);
+
+  Bad (mixed — some params on signature line, rest wrapped with multiple per line):
+    CursorPage<EvalSummary> findAllForExport(List<FilterCondition> filters, UUID computationId,
+                                                  Long runCreatedAtMs, Cursor cursor, int size);
+    // Hurts scannability and produces noisy diffs when params are added/removed.
+
+  ## Layering
+  Good:
+    @RestController — injects parser component, calls parser.parse(param), passes result to service
+    @Service — receives parsed domain objects, delegates to repository
+    record DomainObject(String field, Direction dir) {} — pure carrier in data layer
+
+  Bad:
+    DomainObject.parse(token) in data model — wrong layer
+    "ORDER BY " + param in controller — SQL in web layer + injection risk
+
+  ## Constants
+  Good:
+    public final class ValidationConstants { public static final int MAX_NAME_LENGTH = 255; }
+    @Size(max = ValidationConstants.MAX_NAME_LENGTH) — single source of truth
+
+  Bad:
+    @Size(max = 255) scattered across multiple DTOs — duplicated magic numbers
+
+  ## Configuration Properties
+  Good: defaults in application.yml; Java class has only @Validated, @NotNull, @Min — no field initializers
+  Bad: private Integer defaultPageSize = 20; in Java — hidden from environment config
+
+  # Anti-Patterns to Avoid
+  - Magic numbers in validation annotations — use constants classes
+  - Parsing logic in .data.db package — extract to service.domain.* component
+  - Private parsing methods in services — extract to injectable component
+  - Silent exception swallowing — in every catch block, pass the caught exception as the LAST SLF4J argument so SLF4J renders the stacktrace; `e.getMessage()` alone is not enough (it can be null). Enforced by LoggingConventionTest.
+  - Catching generic Exception/Throwable — catch specific types
+  - Defaults in @ConfigurationProperties Java fields — define in application.yml
+  - Fully qualified class names in code — use imports
+  - SQL building in web or service layer — encapsulate in repository/builder
+  - StringBuilder/String concatenation for JSON — use Jackson ObjectNode/ObjectMapper
+  - Hardcoded external system parameters (org IDs, datasource UIDs) — make configurable
+  - Non-deterministic test assertions (if/else branches where only one executes) — use deterministic assertions or cover via unit tests
+  - Direct System.currentTimeMillis()/Instant.now()/new Date() in production code — inject Clock for testability
+  - Mixed method parameter layouts (some params on the signature line, others wrapped onto continuation lines with multiple params each) — use fully horizontal or fully vertical lists
+  - Using NamedParameterJdbcTemplate or JdbcTemplate in repositories — use jOOQ DSLContext (enforced by JdbcTemplateFenceTest ArchUnit rule; only configuration.datasource and service.infrastructure.health packages are exempt)
+  - SQL text blocks in repositories — use typed jOOQ DSL methods (insertInto, selectFrom, update, deleteFrom, fetchExists, fetchCount)
+  - Using JsonPathAccessor outside data.db.repository.sql — JSONB path resolution is encapsulated in WhereBuilder and analytics aggregation queries
+
+  # Config Maintenance Policy
+  #
+  # config.yaml documents HOW we build (conventions, architecture, constraints).
+  # specs/ documents WHAT we build (features, requirements, API contracts).
+  # Litmus test: "Does this change the rules, or does it follow them?"
+  #   Changes the rules → update config.yaml
+  #   Follows the rules  → update specs/ (and relevant docs)
+  #
+  # MUST update config.yaml when (rare — architecture/convention changes):
+  # - New architectural layer or top-level package introduced
+  # - New cross-cutting convention or pattern adopted project-wide
+  # - New anti-pattern identified that should be avoided going forward
+  # - Tech stack version bumped (Java, Spring Boot, Gradle)
+  # - New tooling command or build task introduced
+  # - New glossary term needed across multiple specs
+  # - New design document created
+  # - API-wide convention change (e.g., new error code, pagination format change)
+  # - Testing infrastructure change (new base class, new test pattern)
+  #
+  # MUST NOT update config.yaml when (frequent — feature work):
+  # - New API endpoint or controller (spec documents it; update specs/README.md)
+  # - New component within existing pattern — parser, validator, mapper, DTO, etc.
+  # - New constants class following existing convention
+  # - Bug fixes, refactoring within existing architecture
+  # - Individual Flyway migrations (docs/database-schema.md handles those)
+  # - Business logic details specific to one feature
+  # - Any change that follows patterns already described here
+  #
+  # Format: match the style of the section being updated. Examples:
+  #   Packages:      numbered list item with package + dash-separated responsibilities
+  #   Key Patterns:  "- Use/Prefer X for Y" one-liner
+  #   Glossary:      "- term: one-sentence definition"
+
+  # Spec Index Maintenance Policy (openspec/specs/README.md)
+  #
+  # specs/README.md is the navigable index of all spec folders.
+  # It must stay in sync with the specs/ directory — every folder appears, no phantoms.
+  #
+  # MUST update specs/README.md when:
+  # - New spec folder added to openspec/specs/
+  # - Spec status changes (Planned → Partial → Implemented)
+  # - Spec summary becomes materially inaccurate (major capabilities added/removed/renamed)
+  # - Spec is removed, renamed, or moved between categories
+  #
+  # MUST NOT update specs/README.md when:
+  # - Internal spec changes that don't affect the one-line summary (new scenarios, wording tweaks)
+  # - Bug fixes within an existing spec's scope
+  # - Changes only to config.yaml, docs, or non-spec artifacts
+  # - Adding/modifying change artifacts (proposals, designs, tasks in openspec/changes/)
+
+  # Reference Archived Changes
+  - openspec/changes/archive/2026-01-31-add-openapi-examples — well-documented API changes
+  - openspec/changes/archive/2026-01-28-refactor-multi-sort — clean layered refactoring
+
+  # NOTE: "global" is not a valid openspec artifact ID — openspec ignores it.
+  # Global coding rules live in AGENTS.md (Do's and Don'ts) where they are always loaded into agent context.
+
+rules:
+  proposal:
+    - 'Within the proposal sections, address where applicable: goals, non-goals, current state, API/data/security impact, risks, rollout plan, and test plan.'
+    - Explicitly call out which parts are "Implemented" vs "Planned/Vision" if mixing.
+    - If DB schema changes are required, include Flyway migration naming (V{major}.{minor}__{Description}.sql) and table/index considerations.
+    - If config changes are required, list properties and note that docs/configuration.md must be updated.
+    - Call out any new packages or major classes being introduced.
+
+  specs:
+    - Use requirements format compatible with delta sync conventions.
+    - 'Each requirement MUST start with "### Requirement: <name>".'
+    - 'Each scenario (if any) MUST start with "#### Scenario: <name>" and use WHEN/THEN bullets.'
+    - 'For each requirement, mark status as one of: Implemented | Planned.'
+    - Keep requirements testable and non-ambiguous; avoid large prose blocks.
+    - Include a short "Implementation notes" section linking to relevant code paths when Implemented.
+    - Query parameter parsing is API-boundary behavior; do not prescribe parsing inside .data.db models.
+    - 'Specs SHALL only contain functional requirements — ongoing system behaviors that persist across deployments. One-time operational concerns (Flyway data migrations, seed data scripts, deployment runbooks, data fixes) belong in tasks.md and design.md, but MUST NOT appear as requirements in specs. Litmus test: "Would this requirement still be meaningful if I deployed from scratch tomorrow?" If no, it is operational, not functional.'
+
+  design:
+    - Align with the layered architecture and JDBC-only rule defined in context.
+    - Prefer incremental, minimal changes; call out any introduced packages/classes explicitly.
+    - 'Include: Data model changes, API contract details, transaction boundaries, error handling approach, and component interaction flow.'
+    - Design specialized components for complex conversion/validation as injectable classes in service.domain.* to allow independent testing/mocking.
+
+  tasks:
+    - Write tasks as a checkbox list (- [ ]) with small, independently completable items.
+    - Each task references a specific file/package area and a clear done condition.
+    - 'Include required cross-cutting tasks when applicable: tests (unit + Testcontainers), migrations, Checkstyle, docs/configuration.md update, docs/database-schema.md update (if DB changes), and OpenAPI annotations.'
+    - When moving parsing/validation between layers, include a task to adjust unit tests accordingly.
+    - 'If the change introduces a new architectural layer, cross-cutting convention, or tooling, include a task: "- [ ] Update openspec/config.yaml per Config Maintenance Policy (done: relevant sections updated)". Do NOT include this task for feature work that follows existing patterns.'
+    - 'For feature work, include a task to update the relevant spec in openspec/specs/. If the change triggers specs/README.md update per the Spec Index Maintenance Policy (new spec folder, status change, or summary now inaccurate), include a task: "- [ ] Update openspec/specs/README.md per Spec Index Maintenance Policy (done: index reflects current specs)".'
+    - 'If the change introduces ANY of the following, include a task: "- [ ] Update AGENTS.md per AGENTS.md Maintenance guidelines (done: relevant sections reflect the change)" — triggers: new top-level package namespace (e.g., data.db.analytics.*), new bean qualifier convention (e.g., @Qualifier for datasource), new @Transactional qualifier pattern, new pagination strategy (cursor-based vs offset), new cross-cutting component pattern (e.g., CursorCodec, TokenPropagationHelper), updated code templates, or version bumps. Do NOT include this task for feature work that adds controllers/services/repos following already-documented patterns. See the "AGENTS.md Maintenance" section in AGENTS.md for what belongs there.'
+
+  archive:
+    - 'Before archiving, verify: all tasks completed, tests passing (`./gradlew clean build`), Checkstyle passing, docs updated.'
+    - If change includes Flyway migrations, verify docs/database-schema.md reflects new table structures, columns, indexes, and JSONB schemas.
+    - Ensure all implementation notes in specs point to code that actually exists.
+    - 'Delta spec sync: delta specs (openspec/changes/<name>/specs/) are FRAGMENTS containing only additions/modifications from a change — they are NOT complete specs. NEVER copy delta specs over main specs (openspec/specs/). Always use the /opsx:sync skill which performs intelligent merging. After sync, verify with `git diff` that main specs gained content and did not lose existing requirements.'
+    - 'specs/README.md auto-sync (ALWAYS perform, do not skip): List all folders under openspec/specs/. For each folder absent from README.md, add an entry with correct status (Implemented/Partial/Planned) and a one-sentence summary derived from the spec. Remove entries for folders that no longer exist. This is mechanical — do it inline, do not treat it as a separate task.'
+    - 'AGENTS.md review (ALWAYS perform, do not skip): Read AGENTS.md. Compare it against this change''s proposal, design, and tasks. If the change introduced new packages, unique patterns, cross-cutting conventions, or code templates not yet documented in AGENTS.md, update AGENTS.md now following the AGENTS.md Maintenance guidelines. Do not defer to a pre-existing task — if the task was missed, fix it here.'
+    - 'config.yaml context review: Read the Feature Surface, Key Patterns, Glossary, and Tooling sections of config.yaml context. If the change introduced new top-level packages, architectural layers, cross-cutting conventions, new tooling commands, or new glossary terms, update the relevant sections per the Config Maintenance Policy. If the change only adds features following existing patterns, skip this step.'

@@ -1,0 +1,98 @@
+---
+description: Exception Handling Best Practices
+alwaysApply: false
+---
+# Exception Handling Best Practices
+
+You **must** follow these exception handling guidelines to ensure code quality and debuggability.
+
+## Core Principle: Never Silently Swallow Exceptions
+
+Exceptions should **never** be silently ignored without a reasonable cause documented in code.
+
+## When Catching Exceptions
+
+### DO:
+1. **Log the full exception** - Pass the exception object as the last argument to SLF4J to include stacktrace
+2. **Document the rationale** - If returning a fallback value, explain why in a comment or Javadoc
+3. **Consider fail-fast** - For data integrity operations (serialization, critical saves), prefer throwing
+
+### DON'T:
+1. **Never use empty catch blocks** - Always handle or rethrow
+2. **Never catch Exception/Throwable** without specific reason - Catch specific exceptions
+3. **Never hide errors in production code** - At minimum log them
+4. **Never log only `e.getMessage()`** - Always include the full exception for stacktrace
+
+## Logging Exceptions Properly
+
+**Always pass the exception as the last argument** to SLF4J logging methods:
+
+```java
+// BAD: Only logs the message string, loses stacktrace and exception details
+log.error("Operation failed: {}", e.getMessage());
+
+// GOOD: Logs message AND full stacktrace
+log.error("Operation failed: {}", e.getMessage(), e);
+
+// ALSO GOOD: Simple message with full exception
+log.error("Operation failed", e);
+```
+
+The full exception includes:
+- **Stacktrace** - Essential for debugging where the error originated
+- **Exception type** - Helps identify the root cause
+- **Nested causes** - Chain of exceptions that led to the failure
+- **Exception-specific properties** - Some exceptions carry additional context
+
+## Pattern: Fail-Fast vs Graceful Degradation
+
+### Use Fail-Fast (throw exception) when:
+- **Serialization fails** - Data would be lost forever
+- **Critical business operations fail** - User should know immediately
+- **Configuration/startup errors** - Application should not start in broken state
+
+```java
+// GOOD: Fail-fast for serialization
+public String serialize(Object data) {
+    try {
+        return objectMapper.writeValueAsString(data);
+    } catch (JsonProcessingException e) {
+        log.error("Serialization failed: {}", e.getMessage(), e);
+        throw new IllegalStateException("Failed to serialize data", e);
+    }
+}
+```
+
+### Use Graceful Degradation (log + return fallback) when:
+- **Data is regenerable** - e.g., validation warnings can be recomputed
+- **Historical data is corrupted** - Crashing would be worse than showing empty
+- **Optional enrichment fails** - Core functionality should continue
+
+```java
+// GOOD: Graceful degradation for regenerable data (note: full exception passed as last arg)
+public List<Warning> deserializeWarnings(String json) {
+    try {
+        return objectMapper.readValue(json, WARNING_TYPE);
+    } catch (JsonProcessingException e) {
+        log.warn("Failed to deserialize warnings, returning empty. "
+                + "Data can be regenerated via revalidation. Error: {}", e.getMessage(), e);
+        return List.of();
+    }
+}
+```
+
+## Required Documentation
+
+When using graceful degradation, you **must** include:
+1. A log statement explaining what failed
+2. How the data can be recovered/regenerated (if applicable)
+3. Why silent failure is acceptable for this case
+
+## Code Review Checklist
+
+- [ ] No empty catch blocks
+- [ ] All caught exceptions are logged or rethrown
+- [ ] **Full exception passed to logger** (not just `e.getMessage()`)
+- [ ] Fail-fast used for data integrity operations
+- [ ] Graceful degradation has documented rationale
+- [ ] Specific exceptions caught (not generic Exception)

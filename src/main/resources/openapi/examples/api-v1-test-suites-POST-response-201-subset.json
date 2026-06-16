@@ -1,0 +1,16 @@
+{
+  "id": "770e8400-e29b-41d4-a716-446655440002",
+  "name": "Unbound Test Suite",
+  "datasetId": null,
+  "disabledTestCaseIds": [],
+  "valid": false,
+  "validationWarnings": [
+    {
+      "code": "SUITE_NOT_BOUND_TO_DATASET",
+      "message": "Suite is unbound — assign a dataset before triggering a run"
+    }
+  ],
+  "version": 1,
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000
+}

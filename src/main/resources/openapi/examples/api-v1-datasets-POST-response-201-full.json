@@ -1,0 +1,26 @@
+{
+  "id": "660e8400-e29b-41d4-a716-446655440001",
+  "name": "Suite-Owned Dataset",
+  "description": "PRIVATE dataset owned by a single test suite — atomic create-and-bind",
+  "visibility": "PRIVATE",
+  "testCaseSchema": [
+    {
+      "name": "question",
+      "displayName": "Question",
+      "type": "STRING",
+      "required": true
+    },
+    {
+      "name": "expected_answer",
+      "displayName": "Expected Answer",
+      "type": "STRING",
+      "required": false
+    }
+  ],
+  "valid": true,
+  "validationWarnings": [],
+  "version": 1,
+  "createdBy": "maintainer@example.com",
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000
+}

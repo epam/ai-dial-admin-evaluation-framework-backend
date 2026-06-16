@@ -1,0 +1,35 @@
+---
+description: Update docs/configuration.md when configuration settings change
+alwaysApply: true
+---
+
+# Keep Configuration Documentation Updated
+
+When making changes that add, modify, or delete service configuration settings, you **must** update `docs/configuration.md` to reflect these changes.
+
+## When to Update
+
+Update the configuration documentation when:
+- Adding new properties to `application.yml` or `application-*.yml`
+- Creating/modifying `@ConfigurationProperties` classes
+- Adding new environment variable support
+- Changing default values for existing properties
+- Adding new actuator endpoints or health indicators
+- Modifying security or authentication settings
+- Adding new database or external service configurations
+
+## How to Update
+
+1. Locate the relevant section in `docs/configuration.md`
+2. Add new properties in table format with Property, Description, and Default columns
+3. Include example YAML/JSON snippets for complex configurations
+4. Update the Table of Contents if adding new sections
+5. Document corresponding environment variable names (uppercase, dots replaced with underscores)
+
+## Documentation Format
+
+```markdown
+| Property | Description | Default |
+|----------|-------------|---------|
+| `new.property.name` | What this property controls | `default-value` |
+```

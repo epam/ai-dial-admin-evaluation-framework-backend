@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-05-26T10:15:30Z",
+  "status": 409,
+  "error": "Conflict",
+  "errorCode": "SUITE_HAS_NO_DATASET",
+  "message": "Test suite 770e8400-e29b-41d4-a716-446655440002 has no dataset bound; assign a dataset before triggering a run",
+  "path": "/api/v1/test-suites/770e8400-e29b-41d4-a716-446655440002/runs"
+}

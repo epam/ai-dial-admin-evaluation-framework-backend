@@ -1,0 +1,24 @@
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "testCaseName": "Renamed test case",
+    "data": {
+      "prompt": "Updated prompt"
+    },
+    "valid": true,
+    "validationWarnings": [],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704153600000
+  },
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "testCaseName": "Original name",
+    "data": {
+      "max_tokens": 100
+    },
+    "valid": true,
+    "validationWarnings": [],
+    "createdAt": 1704067200000,
+    "updatedAt": 1704153600000
+  }
+]

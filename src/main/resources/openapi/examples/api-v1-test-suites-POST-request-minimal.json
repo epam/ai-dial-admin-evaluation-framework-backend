@@ -1,0 +1,12 @@
+{
+  "name": "My Test Suite",
+  "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+  "deploymentRef": {
+    "id": "deploy-001",
+    "name": "Production"
+  },
+  "endpointRef": {
+    "method": "POST",
+    "relativeUrlPattern": "/chat/completions"
+  }
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "name": "search",
+    "description": "Search the web for information",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": ["query"]
+    }
+  }
+]

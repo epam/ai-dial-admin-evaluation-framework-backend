@@ -1,0 +1,13 @@
+{
+  "testCaseName": "Smoke test - happy path",
+  "data": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello"
+      }
+    ],
+    "expected_status": 200,
+    "response_time_ms": 150
+  }
+}

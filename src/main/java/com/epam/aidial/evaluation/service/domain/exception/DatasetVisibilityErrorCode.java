@@ -1,0 +1,10 @@
+package com.epam.aidial.evaluation.service.domain.exception;
+
+public enum DatasetVisibilityErrorCode {
+    PRIVATE_DATASET_REQUIRES_SUITE_BINDING,
+    PUBLIC_DATASET_FORBIDS_SUITE_BINDING,
+    VALIDATION_ERROR,
+    PRIVATE_DATASET_REBIND_FORBIDDEN,
+    PRIVATE_TRANSITION_INVALID_BINDING_COUNT,
+    SUITE_HAS_NO_DATASET
+}

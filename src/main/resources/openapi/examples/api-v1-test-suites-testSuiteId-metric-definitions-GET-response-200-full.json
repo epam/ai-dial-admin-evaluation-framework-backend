@@ -1,0 +1,46 @@
+{
+  "content": [
+    {
+      "id": "aa0e8400-e29b-41d4-a716-446655440000",
+      "testSuiteId": "bb0e8400-e29b-41d4-a716-446655440000",
+      "metricDeclarationId": "550e8400-e29b-41d4-a716-446655440000",
+      "metricDeclarationVersionId": "660e8400-e29b-41d4-a716-446655440001",
+      "name": "Accuracy Check",
+      "metricDeclarationName": "Accuracy",
+      "enabled": true,
+      "valid": true,
+      "validationWarnings": [],
+      "configBindings": [
+        {
+          "property": "threshold",
+          "source": {
+            "$type": "Constant",
+            "value": 0.8
+          }
+        }
+      ],
+      "inputBindings": [
+        {
+          "property": "reference",
+          "source": {
+            "$type": "TestCase",
+            "columnName": "expected_output"
+          }
+        },
+        {
+          "property": "response",
+          "source": {
+            "$type": "Response",
+            "columnName": "model_answer"
+          }
+        }
+      ],
+      "createdAt": 1704067200000,
+      "updatedAt": 1704067200000
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}

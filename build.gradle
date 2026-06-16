@@ -1,0 +1,332 @@
+import org.springframework.boot.gradle.plugin.SpringBootPlugin
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        constraints {
+            classpath ('org.apache.commons:commons-lang3:3.20.0') {
+                because("previous versions have vulnerabilities")
+            }
+        }
+        // Dependencies for the generateJooq task (Zonky + Flyway + jOOQ codegen)
+        classpath 'io.zonky.test:embedded-postgres:2.0.7'
+        classpath 'org.flywaydb:flyway-core:11.19.1'
+        classpath 'org.flywaydb:flyway-database-postgresql:11.19.1'
+        classpath 'org.jooq:jooq-codegen:3.20.4'
+        classpath 'org.postgresql:postgresql:42.7.11'
+    }
+}
+
+plugins {
+    id 'java'
+    id 'checkstyle'
+    id 'io.freefair.lombok' version '9.5.0'
+    id 'org.springframework.boot' version '4.0.6'
+    id 'com.diffplug.spotless' version '8.6.0'
+}
+
+group = 'com.epam.aidial'
+version = "0.1.0-rc"
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs += file("${projectDir}/src/main/java-generated")
+        }
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+    configureEach {
+        exclude group: 'commons-logging', module: 'commons-logging'
+        exclude group: "org.springframework.boot", module: "spring-boot-starter-logging"
+    }
+    configureEach {
+        resolutionStrategy {
+            // Pin json-schema-validator to the Jackson 3-native line (3.x); MCP SDK pulls an
+            // older Jackson 2 build that is incompatible with the tools.jackson migration
+            force 'com.networknt:json-schema-validator:3.0.3'
+        }
+    }
+}
+
+checkstyle {
+    toolVersion = "10.26.1"
+    configDirectory = file("$rootProject.projectDir/checkstyle")
+
+    configProperties['org.checkstyle.google.suppressionfilter.config'] =
+            file("$rootDir/checkstyle/checkstyle-suppressions.xml")
+}
+
+spotless {
+    java {
+        // Format hand-written sources only; never touch jOOQ-generated sources.
+        target 'src/*/java/**/*.java'
+        targetExclude 'src/main/java-generated/**'
+
+        palantirJavaFormat('2.91.0')
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform(SpringBootPlugin.BOM_COORDINATES)
+
+    // Core
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-restclient'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-aspectj'
+
+    // OpenAPI / Swagger (Spring Boot 4 / Spring Framework 7 compatible)
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-api:3.0.3'
+
+    // Azure Identity (for Azure auth)
+    implementation 'com.azure:azure-identity:1.18.2'
+
+    // Database
+    implementation 'org.postgresql:postgresql:42.7.11'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-core:11.19.1'
+    implementation 'org.flywaydb:flyway-database-postgresql:11.19.1'
+    implementation 'org.jooq:jooq:3.20.4'
+    implementation 'org.springframework.boot:spring-boot-jooq'
+
+    // Logging
+    implementation('org.springframework.boot:spring-boot-starter-log4j2') {
+        exclude group: 'org.apache.logging.log4j'
+    }
+    implementation 'org.apache.logging.log4j:log4j-slf4j2-impl:2.25.4'
+    implementation 'org.apache.logging.log4j:log4j-core:2.25.4'
+    implementation 'org.apache.logging.log4j:log4j-jul:2.25.4'
+    // Commons Logging (JCL) -> SLF4J bridge. Spring Framework 7 dropped the repackaged spring-jcl
+    // and uses the org.apache.commons.logging API directly; without this bridge, Spring Boot's
+    // Log4J2LoggingSystem fails with NoClassDefFoundError: org/apache/commons/logging/Log.
+    // jcl-over-slf4j provides the org.apache.commons.logging.* API and routes it to SLF4J (Log4j2).
+    implementation 'org.slf4j:jcl-over-slf4j'
+
+    // Metrics & Monitoring
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+    implementation 'io.micrometer:context-propagation'
+    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.28.1')
+    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha:2.28.1-alpha')
+    implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
+    implementation 'io.opentelemetry.instrumentation:opentelemetry-log4j-appender-2.17'
+    runtimeOnly 'io.grpc:grpc-netty-shaded'  // gRPC transport for OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+
+    // Utilities
+    implementation 'org.apache.commons:commons-lang3:3.20.0'
+    implementation 'org.apache.commons:commons-collections4:4.5.0'
+    implementation 'commons-io:commons-io:2.21.0'
+    implementation 'org.apache.commons:commons-csv:1.14.1'
+    implementation 'jakarta.validation:jakarta.validation-api'
+    implementation 'org.hibernate.validator:hibernate-validator'
+    compileOnly 'org.jetbrains:annotations:26.0.2'
+
+    // Schema & OpenAPI utilities
+    implementation 'com.networknt:json-schema-validator:3.0.3'
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
+
+    // MCP SDK (Model Context Protocol client)
+    // mcp-json-jackson2 still depends on Jackson 2; spring-boot-jackson2 provides the transitional shim
+    implementation 'io.modelcontextprotocol.sdk:mcp-core:1.1.1'
+    implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:1.1.0'
+    implementation 'org.springframework.boot:spring-boot-jackson2'
+
+    // Rate limiting
+    implementation 'com.bucket4j:bucket4j_jdk17-core:8.16.1'
+
+    // JSONata expression evaluation
+    implementation 'com.dashjoin:jsonata:0.9.9'
+
+    // MapStruct
+    implementation 'org.mapstruct:mapstruct:1.6.3'
+    annotationProcessor "org.mapstruct:mapstruct-processor:1.6.3"
+    annotationProcessor "org.projectlombok:lombok:1.18.46"
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-resttestclient'
+    testImplementation "org.testcontainers:testcontainers"
+    testImplementation "org.testcontainers:testcontainers-junit-jupiter"
+    testImplementation "org.testcontainers:testcontainers-jdbc"
+    testImplementation "org.testcontainers:testcontainers-postgresql"
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'io.zonky.test:embedded-postgres:2.0.7'
+
+    constraints {
+        implementation ('com.nimbusds:nimbus-jose-jwt:10.3.1') {
+            because("previous versions have vulnerabilities")
+        }
+        implementation("io.grpc:grpc-netty-shaded:1.81.0") {
+            because("Spring Boot 4 / OpenTelemetry 2.28.1 BOMs no longer manage io.grpc; "
+                    + "pin an explicit version for the OTLP gRPC transport")
+        }
+        checkstyle ('org.apache.commons:commons-lang3:3.20.0') {
+            because("previous versions have vulnerabilities")
+        }
+
+        implementation ('org.apache.tomcat.embed:tomcat-embed-core:11.0.22') {
+            because("11.0.21 contains vulnerabilities")
+        }
+
+        implementation ("io.netty:netty-codec:${netty_verison}") {
+            because("previous versions have vulnerabilities")
+        }
+        implementation ("io.netty:netty-codec-dns:${netty_verison}") {
+            because("previous versions have vulnerabilities")
+        }
+        implementation ("io.netty:netty-codec-http:${netty_verison}") {
+            because("previous versions have vulnerabilities")
+        }
+        implementation ("io.netty:netty-codec-http2:${netty_verison}") {
+            because("previous versions have vulnerabilities")
+        }
+        implementation ("io.netty:netty-codec-http3:${netty_verison}") {
+            because("previous versions have vulnerabilities")
+        }
+        implementation ("io.netty:netty-transport-native-epoll:${netty_verison}") {
+            because("previous versions have vulnerabilities")
+        }
+        implementation ("io.netty:netty-resolver-dns:${netty_verison}") {
+            because("previous versions have vulnerabilities")
+        }
+
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        // ArchUnit 1.4.x targets JUnit Platform 1.x; its engine is incompatible with JUnit
+        // Platform 6 (Spring Boot 4). Architectural rules are enforced via plain @Test +
+        // ClassFileImporter so Jupiter discovers and runs them without the ArchUnit engine.
+        // The engine is excluded to prevent it from crashing during the discovery phase.
+        // When ArchUnit releases JUnit Platform 6 support, revert the arch test classes to
+        // @ArchTest/@AnalyzeClasses and remove this exclusion. See: re-enable-archunit-on-junit6.
+        excludeEngines 'archunit'
+    }
+    maxHeapSize = '1g'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += "-Werror"
+}
+
+/**
+ * Boots an embedded Postgres (Zonky, no Docker required), applies Flyway migrations for both
+ * meta and analytics schemas, then runs jOOQ codegen to produce type-safe DSL sources.
+ * Output is written to src/main/java-generated/ and must be committed to version control.
+ * CI compiles the committed sources directly — this task is developer-only.
+ */
+tasks.register('generateJooq') {
+    group = 'build'
+    description = 'Generate jOOQ type-safe DSL classes from live Flyway-migrated schemas (Zonky; no Docker).'
+    outputs.dir(file("${projectDir}/src/main/java-generated"))
+
+    doLast {
+        def outputDir = file("${projectDir}/src/main/java-generated")
+        if (outputDir.exists()) {
+            outputDir.deleteDir()
+        }
+        outputDir.mkdirs()
+
+        def pg = io.zonky.test.db.postgres.embedded.EmbeddedPostgres.start()
+        try {
+            def jdbcUrl = pg.getJdbcUrl("postgres", "postgres")
+            def user = "postgres"
+            def password = ""
+
+            org.flywaydb.core.Flyway.configure()
+                    .dataSource(jdbcUrl, user, password)
+                    .locations("filesystem:${projectDir}/src/main/resources/db/migration/meta/POSTGRES")
+                    .defaultSchema("meta")
+                    .createSchemas(true)
+                    .validateMigrationNaming(true)
+                    .load()
+                    .migrate()
+
+            org.flywaydb.core.Flyway.configure()
+                    .dataSource(jdbcUrl, user, password)
+                    .locations("filesystem:${projectDir}/src/main/resources/db/migration/analytics/POSTGRES")
+                    .defaultSchema("analytics")
+                    .createSchemas(true)
+                    .validateMigrationNaming(true)
+                    .load()
+                    .migrate()
+
+            org.jooq.codegen.GenerationTool.generate(
+                    new org.jooq.meta.jaxb.Configuration()
+                            .withLogging(org.jooq.meta.jaxb.Logging.WARN)
+                            .withJdbc(new org.jooq.meta.jaxb.Jdbc()
+                                    .withUrl(jdbcUrl)
+                                    .withUser(user)
+                                    .withPassword(password))
+                            .withGenerator(new org.jooq.meta.jaxb.Generator()
+                                    .withDatabase(new org.jooq.meta.jaxb.Database()
+                                            .withName("org.jooq.meta.postgres.PostgresDatabase")
+                                            .withInputSchema("meta")
+                                            .withExcludes("flyway_schema_history")
+                                            .withIncludes(".*"))
+                                    .withGenerate(new org.jooq.meta.jaxb.Generate()
+                                            .withPojos(false)
+                                            .withDaos(false)
+                                            .withInterfaces(false)
+                                            .withTables(true)
+                                            .withKeys(true)
+                                            .withIndexes(true)
+                                            .withRecords(true))
+                                    .withTarget(new org.jooq.meta.jaxb.Target()
+                                            .withPackageName("com.epam.aidial.evaluation.data.db.jooq.meta")
+                                            .withDirectory("${projectDir}/src/main/java-generated"))))
+
+            org.jooq.codegen.GenerationTool.generate(
+                    new org.jooq.meta.jaxb.Configuration()
+                            .withLogging(org.jooq.meta.jaxb.Logging.WARN)
+                            .withJdbc(new org.jooq.meta.jaxb.Jdbc()
+                                    .withUrl(jdbcUrl)
+                                    .withUser(user)
+                                    .withPassword(password))
+                            .withGenerator(new org.jooq.meta.jaxb.Generator()
+                                    .withDatabase(new org.jooq.meta.jaxb.Database()
+                                            .withName("org.jooq.meta.postgres.PostgresDatabase")
+                                            .withInputSchema("analytics")
+                                            .withExcludes("flyway_schema_history")
+                                            .withIncludes(".*"))
+                                    .withGenerate(new org.jooq.meta.jaxb.Generate()
+                                            .withPojos(false)
+                                            .withDaos(false)
+                                            .withInterfaces(false)
+                                            .withTables(true)
+                                            .withKeys(true)
+                                            .withIndexes(true)
+                                            .withRecords(true))
+                                    .withTarget(new org.jooq.meta.jaxb.Target()
+                                            .withPackageName("com.epam.aidial.evaluation.data.db.jooq.analytics")
+                                            .withDirectory("${projectDir}/src/main/java-generated"))))
+        } finally {
+            pg.close()
+        }
+    }
+}

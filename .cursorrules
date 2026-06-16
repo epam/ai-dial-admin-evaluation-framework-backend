@@ -1,0 +1,304 @@
+# AI DIAL Admin Evaluation Framework Backend - AI Agent Guidelines
+
+## Project Overview
+
+This is a Spring Boot 3.5.11 backend service for the AI DIAL Admin Evaluation Framework, part of the EPAM AI DIAL Admin product ecosystem. It provides REST APIs for managing evaluation test suites and related resources.
+
+## Technology Stack
+
+- **Java**: 25 (LTS)
+- **Framework**: Spring Boot 3.5.11
+- **Build Tool**: Gradle 8.13
+- **Database**: PostgreSQL (JDBC, not JPA)
+- **Migrations**: Flyway
+- **Security**: Spring Security with OIDC/JWT (multi-issuer support)
+- **API Docs**: OpenAPI 3.0 / Springdoc / Swagger UI
+- **Logging**: Log4j2 with MDC correlation IDs
+- **Testing**: JUnit 5, Testcontainers (PostgreSQL)
+- **Code Style**: Google Java Style (Checkstyle)
+
+## Project Structure
+
+```
+src/main/java/com/epam/aidial/evaluation/
+├── Application.java                    # Main entry point
+├── client/dialcore/                    # DIAL Core client (deployments, models)
+├── configuration/                      # Spring configurations
+│   ├── datasource/                     # DataSource, JDBC configs
+│   ├── jackson/                        # Jackson ObjectMapper customizations
+│   ├── logging/                        # Correlation ID, request logging
+│   ├── properties/                     # ConfigurationProperties classes
+│   └── security/                       # Security & OIDC configs
+├── constants/                          # Constants (Security, TestSuiteRun, Validation)
+├── data/db/                            # Data Access Layer
+│   ├── exception/                      # DB-specific exceptions
+│   ├── mapper/                         # JDBC RowMappers
+│   ├── model/                          # Domain models
+│   │   ├── filter/                     # Filter models
+│   │   └── pagination/                 # Page, PageRequest, SortKey
+│   ├── repository/                     # Repository interfaces + Postgres implementations
+│   │   └── sql/                        # SQL builders (Where, OrderBy, FilterWhitelists)
+│   └── transaction/timestamp/          # TransactionTimestampContext
+├── service/
+│   ├── domain/                         # Business logic services
+│   │   ├── csv/                        # CSV processing utilities
+│   │   ├── dto/                        # DTOs with validation
+│   │   ├── exception/                  # Custom exceptions
+│   │   ├── filter/                     # Filter parsing & execution
+│   │   ├── job/                        # Job execution models
+│   │   ├── mapper/                     # MapStruct mappers
+│   │   └── sort/                       # Sort parsing & execution
+│   └── infrastructure/                 # Cross-cutting concerns
+│       ├── health/                     # Actuator health indicators
+│       ├── logger/                     # Dynamic log level config
+│       └── transaction/               # Transaction aspects
+├── utils/                              # Utility classes
+└── web/                                # Web layer
+    ├── controller/                     # REST controllers
+    ├── handler/                        # Exception handlers
+    ├── pagination/                     # PaginationParamResolver
+    └── security/                       # JWT/OIDC security filters
+```
+
+## Key Conventions
+
+### Naming Conventions
+- **Packages**: lowercase, singular (`model`, `service`, `web`)
+- **Classes**: PascalCase, descriptive names
+- **DTOs**: Suffix with `Dto` (e.g., `TestSuiteDto`)
+- **Mappers**: Suffix with `Mapper` (e.g., `TestSuiteMapper`)
+- **Repositories**: Suffix with `Repository` (e.g., `TestSuiteRepository`)
+- **Services**: Suffix with `Service` (e.g., `TestSuiteService`)
+- **Controllers**: Suffix with `Controller` (e.g., `TestSuiteController`)
+
+### Code Style
+- Use Lombok annotations (`@Data`, `@Builder`, `@RequiredArgsConstructor`)
+- Use `var` for local variables when type is obvious
+- Prefer constructor injection over field injection
+- Use `@Slf4j` for logging
+- Follow Google Java Style Guide (enforced by Checkstyle)
+- Max line length: 180 characters
+- Indentation: 4 spaces
+
+### Database Access Pattern (JDBC, NOT JPA)
+This project uses plain JDBC with `NamedParameterJdbcTemplate`, NOT JPA/Hibernate:
+
+```java
+// Repository interface + Postgres implementation pattern
+public interface EntityRepository {
+    Optional<Entity> findById(UUID id);
+}
+
+@Repository
+@RequiredArgsConstructor
+@ConditionalOnProperty(name = "datasource.vendor", havingValue = "POSTGRES")
+public class PostgresEntityRepository implements EntityRepository {
+    private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final EntityRowMapper rowMapper;
+
+    private static final String SELECT_SQL = """
+            SELECT id, name, created_at
+            FROM entities
+            WHERE id = :id
+            """;
+
+    @Override
+    public Optional<Entity> findById(UUID id) {
+        MapSqlParameterSource params = new MapSqlParameterSource("id", id.toString());
+        List<Entity> results = jdbcTemplate.query(SELECT_SQL, params, rowMapper);
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+    }
+}
+```
+
+### RowMapper Pattern
+```java
+@Component
+public class EntityRowMapper implements RowMapper<Entity> {
+    @Override
+    public Entity mapRow(ResultSet rs, int rowNum) throws SQLException {
+        return Entity.builder()
+                .id(UUID.fromString(rs.getString("id")))
+                .name(rs.getString("name"))
+                .createdAt(rs.getLong("created_at_ms"))
+                .updatedAt(rs.getLong("updated_at_ms"))
+                .build();
+    }
+}
+```
+
+### REST Controller Pattern
+```java
+@RestController
+@RequestMapping("/api/v1/entities")
+@RequiredArgsConstructor
+@Tag(name = "Entities", description = "Entity management")
+public class EntityController {
+    
+    private final EntityService service;
+    private final EntityMapper mapper;
+    
+    @GetMapping("/{id}")
+    @Operation(summary = "Get entity by ID")
+    public ResponseEntity<EntityDto> getById(@PathVariable UUID id) {
+        return ResponseEntity.ok(mapper.toDto(service.getById(id)));
+    }
+}
+```
+
+### Pagination Pattern
+```java
+// Controller
+@GetMapping
+public ResponseEntity<PageResponseDto<EntityDto>> getAll(
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size) {
+    PageRequest pageRequest = PageRequest.of(page, size);
+    Page<Entity> entityPage = service.getAll(pageRequest);
+    return ResponseEntity.ok(PageResponseDto.from(entityPage, mapper::toDto));
+}
+
+// Repository
+public Page<Entity> findAll(PageRequest pageRequest) {
+    long totalCount = count();
+    MapSqlParameterSource params = new MapSqlParameterSource()
+            .addValue("limit", pageRequest.getValidatedSize())
+            .addValue("offset", pageRequest.getOffset());
+    List<Entity> content = jdbcTemplate.query(SELECT_ALL_SQL, params, rowMapper);
+    return Page.of(content, pageRequest, totalCount);
+}
+```
+
+### Exception Handling
+- Use `EntityNotFoundException` for 404 responses
+- Use `ValidationException` for 400 responses
+- `DefaultExceptionHandler` handles all exceptions globally
+
+### Security
+- Security mode controlled by `config.rest.security.mode` (oidc/none)
+- Multi-issuer JWT support via `JwtProvidersProperties`
+- Public endpoints: `/api/v1/health/**`, `/api/internal/**`
+- Swagger auth can be disabled with `config.rest.security.disable-swagger-authorization`
+
+## Database Migrations
+
+Flyway migrations are in `src/main/resources/db/migration/POSTGRES/`:
+- Naming: `V{version}__{description}.sql` (e.g., `V1.1__InitTestSuitesTable.sql`)
+- Use UUID as VARCHAR(36) for primary keys
+- Include indexes for frequently queried columns
+- Use `BIGINT` for timestamps (epoch milliseconds)
+
+## Testing
+
+### Functional Tests with Testcontainers
+```java
+@PostgresFunctionalTests  // Custom annotation for Postgres + Testcontainers
+class EntityControllerTest extends BaseFunctionalTest {
+    
+    @BeforeEach
+    void setUp() {
+        clearTestData();  // Helper from base class
+    }
+    
+    @Test
+    void shouldCreateEntity() {
+        ResponseEntity<EntityDto> response = restTemplate.postForEntity(
+                apiUrl("/entities"),  // Helper builds full URL
+                jsonEntity(request),  // Helper creates JSON HttpEntity
+                EntityDto.class
+        );
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+    }
+}
+```
+
+## Configuration
+
+### Key Properties (application.yml)
+```yaml
+datasource:
+  vendor: POSTGRES              # Database vendor
+  auth:
+    type: basic                 # basic or azure
+
+postgres:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/evaluation_db
+    username: postgres
+    password: postgres
+
+config:
+  rest:
+    security:
+      mode: oidc                # oidc or none
+      disable-swagger-authorization: true
+```
+
+### Environment Variable Override
+Convert property to uppercase, replace `.` with `_`:
+- `postgres.datasource.url` → `POSTGRES_DATASOURCE_URL`
+
+## Common Tasks
+
+### Adding a New Entity
+
+1. Create domain model in `data/db/model/`
+2. Create RowMapper in `data/db/mapper/`
+3. Create Repository interface in `data/db/repository/` + Postgres implementation
+4. Create Service in `service/domain/`
+5. Create Request/Response DTOs in `service/domain/dto/`
+6. Create MapStruct Mapper in `service/domain/mapper/`
+7. Create Controller in `web/controller/`
+8. Add Flyway migration in `resources/db/migration/POSTGRES/`
+9. Add functional tests
+
+### Adding a New API Endpoint
+
+1. Add method to Controller with OpenAPI annotations
+2. Add corresponding Service method
+3. Add Repository method if DB access needed
+4. Add functional test
+
+## Build & Run Commands
+
+```bash
+# Build
+./gradlew clean build
+
+# Run
+./gradlew bootRun
+
+# Test
+./gradlew test
+
+# Docker build
+docker build -t ai-dial-admin-evaluation-framework-backend .
+
+# Docker Compose (local dev)
+docker-compose up -d
+```
+
+## Important Files
+
+- `build.gradle` - Dependencies and build configuration
+- `application.yml` - Main configuration
+- `log4j2.xml` - Logging configuration
+- `checkstyle/checkstyle.xml` - Code style rules
+- `docs/configuration.md` - Configuration documentation
+
+## Related Projects
+
+This service is part of the AI DIAL Admin product family:
+- `ai-dial-admin-deployment-manager-backend` - Deployment management service (source project)
+- Other AI DIAL Admin services share similar patterns and security configuration
+
+## Notes for AI Assistants
+
+1. **Always use JDBC, not JPA** - This project deliberately uses JdbcTemplate for database access
+2. **Follow existing patterns** - Look at TestSuite* classes for reference implementations
+3. **Respect checkstyle** - Run `./gradlew checkstyleMain checkstyleTest` to verify code style (main + tests)
+4. **Use Lombok** - Reduce boilerplate with @Data, @Builder, @RequiredArgsConstructor
+5. **MapStruct for mapping** - Use MapStruct interfaces for DTO conversions
+6. **UUID for IDs** - Store as VARCHAR(36) in database
+7. **Testcontainers for tests** - Use @PostgresFunctionalTests annotation
+8. **OpenAPI annotations** - Add @Operation, @Tag, @ApiResponse to controllers

@@ -1,0 +1,16 @@
+{
+  "runId": "550e8400-e29b-41d4-a716-446655440000",
+  "computation": "latest",
+  "columns": [
+    "testCaseName",
+    "runIndex",
+    "executionStatus",
+    "data:prompt",
+    "response:answer",
+    "metric:Accuracy:score",
+    "metricInfo:Accuracy:score",
+    "metricError:Accuracy"
+  ],
+  "filter": ["executionStatus:eq:SUCCESS"],
+  "delimiter": ","
+}

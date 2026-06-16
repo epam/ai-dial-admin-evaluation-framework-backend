@@ -1,0 +1,88 @@
+# Superpowers brainstorm sessions
+.superpowers/
+
+# Git worktrees
+.worktrees/
+
+# Sandbox / UI prototyping (not production code)
+sandbox/
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.code-workspace
+
+# Compiled class files
+*.class
+
+# Log files
+*.log
+logs/
+
+# Package files
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Virtual machine crash logs
+hs_err_pid*
+replay_pid*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local configuration
+application-local.yml
+application-local.properties
+config/logger-levels.json
+.claude/settings.local.json
+
+# Test results
+test-output/
+test-results/
+
+# Local sandbox data
+sandbox/
+
+# Local plans/drafts
+docs/plans/
+
+# Local scratch / working notes (not production code)
+scratch/
+
+.run
+.sdkmanrc
+
+bin/
+/.classpath
+/.factorypath
+/openspec/changes/metric-declaration-display-name/.openspec.yaml
+/.project
+/.settings/org.eclipse.buildship.core.prefs
+/.settings/org.eclipse.jdt.apt.core.prefs
+/.settings/org.eclipse.jdt.core.prefs
+
+# Secrets / credentials (never commit)
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+.env
+.env.*
+secrets/
+credentials*
+*-credentials.json

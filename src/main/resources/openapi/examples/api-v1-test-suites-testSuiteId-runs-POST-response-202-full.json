@@ -1,0 +1,23 @@
+{
+  "id": "660e8400-e29b-41d4-a716-446655440001",
+  "testSuiteId": "550e8400-e29b-41d4-a716-446655440000",
+  "testRunName": "Benchmark Run v2",
+  "status": "PENDING",
+  "runConfig": {
+    "numberOfRuns": 3,
+    "testRunName": "Benchmark Run v2",
+    "execution": {
+      "concurrencyLevel": 5,
+      "requestTimeoutMs": 60000,
+      "rateLimitRps": 10.0
+    },
+    "retry": {
+      "maxRetries": 2,
+      "retryDelayMs": 1000,
+      "retryBackoffMultiplier": 2.0
+    }
+  },
+  "numberOfTestCases": 10,
+  "createdAt": 1739750400000,
+  "updatedAt": 1739750400000
+}

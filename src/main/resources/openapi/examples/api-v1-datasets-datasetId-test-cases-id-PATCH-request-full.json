@@ -1,0 +1,13 @@
+{
+  "testCaseName": "Patched name",
+  "data": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Updated message"
+      }
+    ],
+    "expected_status": 201,
+    "response_time_ms": 200
+  }
+}

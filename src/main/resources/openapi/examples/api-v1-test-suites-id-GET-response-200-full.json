@@ -1,0 +1,95 @@
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "My Test Suite",
+  "description": "Suite for endpoint smoke tests",
+  "suiteType": "DEPLOYMENT",
+  "deploymentRef": {
+    "id": "deploy-001",
+    "name": "Production",
+    "version": "1.0"
+  },
+  "endpointRef": {
+    "method": "POST",
+    "relativeUrlPattern": "/chat/completions",
+    "operationId": "createCompletion",
+    "parameters": [
+      {
+        "name": "model",
+        "in": "QUERY",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "requestBodySchema": {
+      "contentType": "application/json",
+      "schema": {
+        "type": "object"
+      }
+    },
+    "responseBodySchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "responseColumns": [
+    {
+      "name": "answer",
+      "displayName": "Model Answer",
+      "expression": "choices[0].message.content",
+      "type": "STRING"
+    },
+    {
+      "name": "total_tokens",
+      "displayName": "Total Tokens Used",
+      "expression": "usage.total_tokens",
+      "type": "NUMBER"
+    }
+  ],
+  "requestTemplate": {
+    "urlTemplate": "/chat/completions",
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "messages": "${{messages}}",
+        "model": "${{model}}",
+        "temperature": "${{temperature:0.7}}"
+      }
+    },
+    "queryParams": [
+      {
+        "key": "api-version",
+        "value": "2024-01"
+      }
+    ],
+    "headers": [
+      {
+        "key": "X-Custom",
+        "value": "${{customHeader:default}}"
+      }
+    ]
+  },
+  "inputBindings": [
+    {
+      "templateVariable": "messages",
+      "dataField": "messages"
+    },
+    {
+      "templateVariable": "model",
+      "constantValue": "gpt-4"
+    }
+  ],
+  "valid": true,
+  "validationWarnings": [],
+  "version": 1,
+  "createdBy": "user@example.com",
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000,
+  "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+  "disabledTestCaseIds": []
+}

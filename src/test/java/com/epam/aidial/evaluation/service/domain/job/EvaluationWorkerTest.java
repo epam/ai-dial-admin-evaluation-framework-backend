@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.client.mcp.McpInvocationException;
 import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
+import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
@@ -112,6 +113,8 @@ class EvaluationWorkerTest {
     @BeforeEach
     void setUp() {
         SseEventParser sseEventParser = new SseEventParser(objectMapper, FIXED_CLOCK);
+        SseEventProcessingProperties sseEventProcessingProperties = new SseEventProcessingProperties();
+        sseEventProcessingProperties.setMaxTotalDurationMs(3_600_000L);
         worker = new EvaluationWorker(
                 resolvedRequestService,
                 deploymentInvoker,
@@ -126,7 +129,8 @@ class EvaluationWorkerTest {
                 mcpRequestResolver,
                 mcpResponseSerializer,
                 FIXED_CLOCK,
-                sseEventParser);
+                sseEventParser,
+                sseEventProcessingProperties);
     }
 
     @Test

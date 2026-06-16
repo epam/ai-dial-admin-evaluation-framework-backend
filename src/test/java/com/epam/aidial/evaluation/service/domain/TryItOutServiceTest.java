@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
+import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
@@ -126,6 +127,9 @@ class TryItOutServiceTest {
     @Mock
     private DialCoreProperties.TryOut tryOutProperties;
 
+    @Mock
+    private SseEventProcessingProperties sseEventProcessingProperties;
+
     private TryItOutService service;
     private final ObjectMapper realObjectMapper = new ObjectMapper();
 
@@ -152,7 +156,8 @@ class TryItOutServiceTest {
                 FIXED_CLOCK,
                 sseEventParser,
                 evaluationRunProperties,
-                dialCoreProperties);
+                dialCoreProperties,
+                sseEventProcessingProperties);
         lenient()
                 .when(serializerRegistry.serialize(any()))
                 .thenReturn(new SerializedBody(MediaType.APPLICATION_JSON, Map.of("prompt", "Hello")));
@@ -160,6 +165,7 @@ class TryItOutServiceTest {
         lenient().when(executionProperties.getMaxResponseSizeBytes()).thenReturn(10 * 1024 * 1024L);
         lenient().when(dialCoreProperties.getTryOut()).thenReturn(tryOutProperties);
         lenient().when(tryOutProperties.getReadTimeoutMs()).thenReturn(30_000);
+        lenient().when(sseEventProcessingProperties.getMaxTotalDurationMs()).thenReturn(3_600_000L);
     }
 
     private TestSuite buildSuite(String deploymentRefJson, String endpointRefJson, String requestTemplateJson) {
@@ -477,7 +483,7 @@ class TryItOutServiceTest {
 
             JsonNode eventData = realObjectMapper.readTree("{\"msg\":\"hi\"}");
             List<SseEvent> parsedEvents = List.of(new SseEvent("message", eventData));
-            when(sseEventParser.parse(eq(sseStream), anyLong(), anyLong()))
+            when(sseEventParser.parse(eq(sseStream), anyLong(), anyLong(), anyLong()))
                     .thenReturn(new SseParseResult(parsedEvents, ExecutionStatus.SUCCESS, null));
 
             // objectMapperMock.createObjectNode() — use real mapper to build envelope
@@ -507,7 +513,7 @@ class TryItOutServiceTest {
             InputStream emptyStream = new ByteArrayInputStream(new byte[0]);
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(streamingResult(200, emptyStream));
-            when(sseEventParser.parse(eq(emptyStream), anyLong(), anyLong()))
+            when(sseEventParser.parse(eq(emptyStream), anyLong(), anyLong(), anyLong()))
                     .thenReturn(new SseParseResult(List.of(), ExecutionStatus.SUCCESS, null));
             when(objectMapperMock.createObjectNode()).thenReturn(realObjectMapper.createObjectNode());
             when(objectMapperMock.createArrayNode()).thenReturn(realObjectMapper.createArrayNode());
@@ -535,7 +541,7 @@ class TryItOutServiceTest {
 
             JsonNode partial = realObjectMapper.readTree("{\"partial\":1}");
             List<SseEvent> partialEvents = List.of(new SseEvent("message", partial));
-            when(sseEventParser.parse(eq(sseStream), anyLong(), anyLong()))
+            when(sseEventParser.parse(eq(sseStream), anyLong(), anyLong(), anyLong()))
                     .thenReturn(new SseParseResult(partialEvents, ExecutionStatus.TIMEOUT, null));
             when(objectMapperMock.createObjectNode()).thenReturn(realObjectMapper.createObjectNode());
             when(objectMapperMock.createArrayNode()).thenReturn(realObjectMapper.createArrayNode());
@@ -559,7 +565,7 @@ class TryItOutServiceTest {
             InputStream sseStream = new ByteArrayInputStream(new byte[0]);
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(streamingResult(200, sseStream));
-            when(sseEventParser.parse(eq(sseStream), anyLong(), anyLong()))
+            when(sseEventParser.parse(eq(sseStream), anyLong(), anyLong(), anyLong()))
                     .thenReturn(new SseParseResult(List.of(), ExecutionStatus.ERROR, null));
             when(objectMapperMock.createObjectNode()).thenReturn(realObjectMapper.createObjectNode());
             when(objectMapperMock.createArrayNode()).thenReturn(realObjectMapper.createArrayNode());

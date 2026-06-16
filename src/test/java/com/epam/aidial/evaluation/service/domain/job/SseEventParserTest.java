@@ -21,7 +21,9 @@ class SseEventParserTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     // Fixed clock at epoch 10 000 ms
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.ofEpochMilli(10_000), ZoneId.of("UTC"));
-    private static final long FAR_FUTURE_DEADLINE = 610_000L;
+    // Large timeouts so that, under the FIXED_CLOCK (now never advances), neither bound is ever crossed.
+    private static final long LARGE_IDLE_TIMEOUT_MS = 600_000L;
+    private static final long LARGE_MAX_TOTAL_MS = 3_600_000L;
     private static final long LARGE_MAX_BYTES = 10 * 1024 * 1024L;
 
     private final SseEventParser parser = new SseEventParser(OBJECT_MAPPER, FIXED_CLOCK);
@@ -33,7 +35,7 @@ class SseEventParserTest {
     void parse_namedEventWithJsonData_parsesCorrectly() {
         InputStream stream = sseStream("event: process_rules\ndata: {\"status\":\"FAILED\"}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -50,7 +52,7 @@ class SseEventParserTest {
     void parse_unnamedEvent_defaultsToMessage() {
         InputStream stream = sseStream("data: {\"result\":\"hello\"}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -64,7 +66,7 @@ class SseEventParserTest {
     void parse_nonJsonData_storesAsRawString() {
         InputStream stream = sseStream("data: plain text content\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -80,7 +82,7 @@ class SseEventParserTest {
     void parse_multiLineData_joinsLines() {
         InputStream stream = sseStream("data: line1\ndata: line2\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -94,7 +96,7 @@ class SseEventParserTest {
     void parse_doneTerminator_stopsWithoutDoneEvent() {
         InputStream stream = sseStream("data: {\"first\":1}\n\ndata: [DONE]\n\ndata: {\"after\":2}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -102,18 +104,51 @@ class SseEventParserTest {
                 .isEqualTo(1);
     }
 
-    // ---- Deadline enforcement -----------------------------------------------
+    // ---- Idle timeout + max-total cap ---------------------------------------
 
     @Test
-    @DisplayName("Should return TIMEOUT when deadline is already exceeded")
-    void parse_deadlineExceeded_returnsTimeout() {
-        // deadlineMs = 9999 < FIXED_CLOCK.millis() = 10000 → immediate timeout
+    @DisplayName("Should return TIMEOUT with partial events when the idle timeout is exceeded between lines")
+    void parse_idleTimeoutExceeded_returnsTimeoutWithPartialEvents() {
+        // Scripted reads: entry=0, line1=100, line2=200 (event #1 dispatched), line3=5000.
+        // idleTimeout=1000: the 200→5000 gap (4800ms) exceeds it, so parsing stops on line 3.
+        SseEventParser timedParser = new SseEventParser(OBJECT_MAPPER, new AdvancingClock(0, 100, 200, 5_000));
         InputStream stream = sseStream("data: {\"x\":1}\n\ndata: {\"y\":2}\n\n");
 
-        SseParseResult result = parser.parse(stream, 9_999L, LARGE_MAX_BYTES);
+        SseParseResult result = timedParser.parse(stream, 1_000L, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.TIMEOUT);
+        // The first event was dispatched before the idle gap; the second never arrives in time.
+        assertThat(result.events()).hasSize(1);
+        assertThat(((JsonNode) result.events().get(0).data()).get("x").asInt()).isEqualTo(1);
         assertThat(result.truncationWarning()).isNull();
+    }
+
+    @Test
+    @DisplayName("Should NOT time out when every line arrives within the idle timeout, even over a long total span")
+    void parse_idleDeadlineResetsOnEveryLine_noTimeout() {
+        // Gaps of 500ms each (< idleTimeout 1000), total span 2000ms (> idleTimeout): idle keeps resetting.
+        SseEventParser timedParser = new SseEventParser(OBJECT_MAPPER, new AdvancingClock(0, 500, 1_000, 1_500, 2_000));
+        InputStream stream = sseStream("data: {\"a\":1}\n\ndata: {\"b\":2}\n\n");
+
+        SseParseResult result = timedParser.parse(stream, 1_000L, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
+
+        assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(result.events()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("Should return TIMEOUT on the max-total cap even while lines keep arriving (idle never expires)")
+    void parse_maxTotalCapExceeded_underContinuousActivity_returnsTimeout() {
+        // Gaps of 300ms (idle 10_000 never trips), but total crosses the 1000ms hard cap at read=1200.
+        SseEventParser timedParser = new SseEventParser(OBJECT_MAPPER, new AdvancingClock(0, 300, 600, 900, 1_200));
+        InputStream stream = sseStream("data: {\"a\":1}\n\ndata: {\"b\":2}\n\n");
+
+        SseParseResult result = timedParser.parse(stream, 10_000L, 1_000L, LARGE_MAX_BYTES);
+
+        assertThat(result.status()).isEqualTo(ExecutionStatus.TIMEOUT);
+        // Event 'a' was dispatched before the cap; the cap then stops parsing.
+        assertThat(result.events()).hasSize(1);
+        assertThat(((JsonNode) result.events().get(0).data()).get("a").asInt()).isEqualTo(1);
     }
 
     // ---- Size limit enforcement ---------------------------------------------
@@ -124,7 +159,7 @@ class SseEventParserTest {
         // First event fits; second event would exceed 20 bytes
         InputStream stream = sseStream("data: {\"a\":1}\n\ndata: {\"bigpayload\":\"12345678901234567890\"}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, 20L);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, 20L);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.ERROR);
         assertThat(result.truncationWarning()).isNotNull();
@@ -140,7 +175,7 @@ class SseEventParserTest {
     void parse_commentLines_ignored() {
         InputStream stream = sseStream(": this is a comment\ndata: {\"x\":1}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -153,7 +188,7 @@ class SseEventParserTest {
     void parse_idAndRetryFields_ignored() {
         InputStream stream = sseStream("id: 42\nretry: 3000\ndata: {\"x\":1}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -166,7 +201,7 @@ class SseEventParserTest {
     void parse_eventTypeResets_afterBlankLine() {
         InputStream stream = sseStream("event: typeA\ndata: {}\n\ndata: {}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(2);
@@ -194,7 +229,7 @@ class SseEventParserTest {
             }
         };
 
-        SseParseResult result = parser.parse(errorStream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(errorStream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.ERROR);
         assertThat(result.events()).hasSize(1);
@@ -208,7 +243,7 @@ class SseEventParserTest {
     void parse_emptyStream_returnsSuccessWithEmptyList() {
         InputStream stream = sseStream("");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).isEmpty();
@@ -222,7 +257,7 @@ class SseEventParserTest {
     void parse_eventTypeWithoutData_noEventEmitted() {
         InputStream stream = sseStream("event: typeA\n\ndata: {\"next\":1}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         // typeA block had no data — only the unnamed second event is emitted
@@ -237,7 +272,7 @@ class SseEventParserTest {
     void parse_emptyDataPayload_emitsEmptyStringEvent() {
         InputStream stream = sseStream("data:\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -252,7 +287,7 @@ class SseEventParserTest {
         // "data:   " → strip one leading space → "  " (two spaces preserved)
         InputStream stream = sseStream("data:   \n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -268,7 +303,7 @@ class SseEventParserTest {
         // A large payload that exceeds 5 bytes
         InputStream stream = sseStream("data: {\"longkey\":\"longvalue\"}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, 5L);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, 5L);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.ERROR);
         assertThat(result.truncationWarning()).isNotNull();
@@ -282,7 +317,7 @@ class SseEventParserTest {
     void parse_commentsBetweenEventFields_preservesEventType() {
         InputStream stream = sseStream("event: typeA\n: this is a comment\ndata: {\"x\":1}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -297,7 +332,7 @@ class SseEventParserTest {
     void parse_consecutiveBlankLines_noExtraEventsEmitted() {
         InputStream stream = sseStream("data: {\"a\":1}\n\n\ndata: {\"b\":2}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         // Two events, not three
@@ -311,7 +346,7 @@ class SseEventParserTest {
     void parse_crlfLineEndings_parsedCorrectly() {
         InputStream stream = sseStream("event: typeX\r\ndata: {\"crlf\":true}\r\n\r\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(1);
@@ -328,7 +363,7 @@ class SseEventParserTest {
         // "line1\nline2" = 11 bytes; limit is 15 so it fits, third event would overflow
         InputStream stream = sseStream("data: line1\ndata: line2\n\ndata: more_data\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, 14L);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, 14L);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.ERROR);
         // First event (11 bytes) fits; second event (9 bytes) would push total to 20 > 14
@@ -345,13 +380,42 @@ class SseEventParserTest {
                 + "event: process\ndata: {\"phase\":\"run\"}\n\n"
                 + "event: done\ndata: {\"phase\":\"end\"}\n\n");
 
-        SseParseResult result = parser.parse(stream, FAR_FUTURE_DEADLINE, LARGE_MAX_BYTES);
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.events()).hasSize(3);
         assertThat(result.events().get(0).event()).isEqualTo("start");
         assertThat(result.events().get(1).event()).isEqualTo("process");
         assertThat(result.events().get(2).event()).isEqualTo("done");
+    }
+
+    // ---- Comment type-leak guard + named heartbeat --------------------------
+
+    @Test
+    @DisplayName("Should NOT stamp a comment-derived type onto the following event (type-leak guard)")
+    void parse_commentLine_doesNotLeakEventTypeOntoNextEvent() {
+        // Regression guard: a comment line must not set the current event type. The event that
+        // follows an unnamed-block comment must still default to "message", never "heartbeat".
+        InputStream stream = sseStream(": keep-alive\ndata: {\"x\":1}\n\n");
+
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
+
+        assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(result.events()).hasSize(1);
+        assertThat(result.events().get(0).event()).isEqualTo("message");
+    }
+
+    @Test
+    @DisplayName("Should emit a named 'event: heartbeat' event into the result")
+    void parse_namedHeartbeatEvent_isEmitted() {
+        InputStream stream = sseStream("event: heartbeat\ndata: {}\n\ndata: {\"result\":\"hi\"}\n\n");
+
+        SseParseResult result = parser.parse(stream, LARGE_IDLE_TIMEOUT_MS, LARGE_MAX_TOTAL_MS, LARGE_MAX_BYTES);
+
+        assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(result.events()).hasSize(2);
+        assertThat(result.events().get(0).event()).isEqualTo("heartbeat");
+        assertThat(result.events().get(1).event()).isEqualTo("message");
     }
 
     // ---- Helpers ------------------------------------------------------------

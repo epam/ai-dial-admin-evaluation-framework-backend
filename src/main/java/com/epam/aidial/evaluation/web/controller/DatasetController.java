@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.service.domain.DatasetService;
 import com.epam.aidial.evaluation.service.domain.RevalidationService;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetUpdateResultDto;
@@ -272,6 +273,39 @@ public class DatasetController {
             @Valid @org.springframework.web.bind.annotation.RequestBody DatasetVisibilityTransitionDto requestDto) {
 
         DatasetResponseDto dto = datasetService.transitionVisibility(id, requestDto.getVisibility());
+        return ResponseEntity.ok().eTag(etag(dto.getVersion())).body(dto);
+    }
+
+    @PostMapping("/{id}/publish")
+    @Operation(
+            summary = "Publish a dataset",
+            description =
+                    "Promotes a dataset to PUBLIC visibility and optionally updates its name and description "
+                            + "in a single atomic operation. When the dataset is already PUBLIC and no metadata fields change, "
+                            + "the call is a no-op and returns the unchanged dataset. "
+                            + "Returns 409 UNIQUE_CONSTRAINT_VIOLATION if the provided name conflicts with an existing dataset.",
+            requestBody =
+                    @RequestBody(
+                            description = "Optional name and description to set on publish",
+                            content =
+                                    @Content(
+                                            mediaType = "application/json",
+                                            schema = @Schema(implementation = DatasetPublishRequestDto.class))))
+    @ApiResponse(
+            responseCode = "200",
+            description = "Dataset published (or already PUBLIC — no-op)",
+            content =
+                    @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = DatasetResponseDto.class)))
+    @ApiResponse(responseCode = "400", description = "Validation error (name or description too long)")
+    @ApiResponse(responseCode = "404", description = "Dataset not found")
+    @ApiResponse(responseCode = "409", description = "Duplicate name (UNIQUE_CONSTRAINT_VIOLATION)")
+    public ResponseEntity<DatasetResponseDto> publish(
+            @Parameter(description = "Dataset ID") @PathVariable UUID id,
+            @Valid @org.springframework.web.bind.annotation.RequestBody DatasetPublishRequestDto requestDto) {
+
+        DatasetResponseDto dto = datasetService.publish(id, requestDto);
         return ResponseEntity.ok().eTag(etag(dto.getVersion())).body(dto);
     }
 

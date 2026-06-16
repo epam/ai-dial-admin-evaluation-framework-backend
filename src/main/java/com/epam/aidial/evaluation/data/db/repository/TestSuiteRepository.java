@@ -65,4 +65,13 @@ public interface TestSuiteRepository {
      * The entity's {@code id} field must be non-null.
      */
     TestSuite createWithId(TestSuite testSuite, long timestamp);
+
+    /**
+     * Rebinds the suite to {@code newDatasetId}, replaces its {@code disabled_test_case_ids} with the
+     * caller-supplied (remapped) JSON array, and bumps {@code version} and {@code updated_at_ms}.
+     * Used by the detach-dataset flow inside the meta transaction: the disabled IDs must be remapped
+     * to the cloned test cases and persisted together with the new binding, otherwise the suite would
+     * keep referencing the source dataset's (now-orphaned) test-case IDs.
+     */
+    void updateDatasetId(UUID suiteId, UUID newDatasetId, String disabledTestCaseIds, long updatedAt);
 }

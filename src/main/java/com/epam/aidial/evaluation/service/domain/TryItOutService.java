@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.client.mcp.McpInvocationException;
 import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolder;
@@ -87,6 +88,7 @@ public class TryItOutService {
     private final SseEventParser sseEventParser;
     private final EvaluationRunProperties evaluationRunProperties;
     private final DialCoreProperties dialCoreProperties;
+    private final SseEventProcessingProperties sseEventProcessingProperties;
 
     public TryItOutResponseDto tryWithTestCase(UUID testSuiteId, UUID testCaseId) {
         TestSuite suite = loadSuite(testSuiteId);
@@ -340,7 +342,7 @@ public class TryItOutService {
                 TryItOutCoreResponseDto responseDto;
 
                 if (result.streaming()) {
-                    responseDto = buildSseResponse(result, startMs);
+                    responseDto = buildSseResponse(result);
                 } else {
                     responseDto = TryItOutCoreResponseDto.builder()
                             .statusCode(result.statusCode())
@@ -369,10 +371,14 @@ public class TryItOutService {
         }
     }
 
-    private TryItOutCoreResponseDto buildSseResponse(DeploymentInvocationResult result, long startMs) {
-        long deadlineMs = startMs + dialCoreProperties.getTryOut().getReadTimeoutMs();
+    private TryItOutCoreResponseDto buildSseResponse(DeploymentInvocationResult result) {
         long maxBytes = evaluationRunProperties.getExecution().getMaxResponseSizeBytes();
-        SseParseResult parseResult = sseEventParser.parse(result.eventStream(), deadlineMs, maxBytes);
+        // Idle timeout = per-path read timeout; absolute cap = global property.
+        SseParseResult parseResult = sseEventParser.parse(
+                result.eventStream(),
+                dialCoreProperties.getTryOut().getReadTimeoutMs(),
+                sseEventProcessingProperties.getMaxTotalDurationMs(),
+                maxBytes);
 
         List<SseEventDto> eventDtos = parseResult.events().stream()
                 .map(e -> SseEventDto.builder().event(e.event()).data(e.data()).build())

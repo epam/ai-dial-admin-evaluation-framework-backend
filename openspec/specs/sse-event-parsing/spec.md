@@ -54,11 +54,15 @@ Status: **Implemented**
 
 #### Scenario: Comment lines are ignored
 - **WHEN** stream contains `:comment text\ndata: {"x":1}\n\n`
-- **THEN** parser SHALL ignore the comment line and emit `SseEvent(event="message", data=JsonNode{"x":1})`
+- **THEN** parser SHALL ignore the comment line (it does NOT change the current event type) and emit `SseEvent(event="message", data=JsonNode{"x":1})`
 
 #### Scenario: id: and retry: lines are ignored
 - **WHEN** stream contains `id: 42\nretry: 3000\ndata: {"ok":true}\n\n`
 - **THEN** parser SHALL ignore `id:` and `retry:` and emit `SseEvent(event="message", data=JsonNode{"ok":true})`
+
+#### Scenario: Named heartbeat events are emitted
+- **WHEN** stream contains `event: heartbeat\ndata: {}\n\ndata: {"result":"hi"}\n\n`
+- **THEN** parser SHALL emit `SseEvent(event="heartbeat", data=JsonNode{})` followed by `SseEvent(event="message", data=JsonNode{"result":"hi"})` — named heartbeat events are not suppressed
 
 #### Scenario: Event type resets to "message" after blank line
 - **WHEN** stream contains `event: custom\ndata: {"a":1}\n\ndata: {"b":2}\n\n`
@@ -94,17 +98,31 @@ Status: **Implemented**
 
 #### Scenario: Stream never terminates (no DONE, no EOF)
 - **WHEN** SSE stream keeps sending events without `[DONE]` and without EOF
-- **THEN** parser SHALL rely on `deadlineMs` enforcement to stop reading and return events accumulated so far with `status = TIMEOUT`
+- **THEN** parser SHALL rely on the idle timeout and the absolute max-total cap to stop reading and return the events accumulated so far with `status = TIMEOUT`
 
 ### Requirement: Deadline enforcement
 
-The parser SHALL check `clock.millis() > deadlineMs` before processing each line. When deadline is exceeded, parsing stops immediately and returns `ExecutionStatus.TIMEOUT`.
+The parser SHALL accept two timeout **durations** — `idleTimeoutMs` (inactivity timeout) and `maxTotalDurationMs` (absolute cap) — rather than a precomputed `deadlineMs`. The parser SHALL derive all deadlines internally from the injected `Clock`. The signature SHALL be `parse(InputStream stream, long idleTimeoutMs, long maxTotalDurationMs, long maxBytes)`.
+
+At entry the parser SHALL capture `startMs = clock.millis()` and compute `hardDeadlineMs = startMs + maxTotalDurationMs`. It SHALL maintain an idle deadline initialized to `startMs + idleTimeoutMs`. Before processing each line read from the stream, the parser SHALL check the current time against both deadlines; if `clock.millis() > hardDeadlineMs` OR `clock.millis() > idleDeadlineMs`, parsing SHALL stop immediately and return `ExecutionStatus.TIMEOUT` with the events accumulated so far. After the check, for every line read (any line type — `data:`, `event:`, comment `:`, `id:`, `retry:`, or blank), the parser SHALL reset the idle deadline to `clock.millis() + idleTimeoutMs`. The hard deadline SHALL NOT be reset.
 
 Status: **Implemented**
 
-#### Scenario: Deadline exceeded mid-stream
-- **WHEN** `clock.millis()` exceeds `deadlineMs` during parsing
-- **THEN** parser SHALL return `SseParseResult(events=<events accumulated so far>, status=TIMEOUT, truncationWarning=null)`
+#### Scenario: Idle timeout exceeded between lines
+- **WHEN** more than `idleTimeoutMs` elapses (per the injected `Clock`) between one line and the next line read
+- **THEN** parser SHALL stop on the next line and return `SseParseResult(events=<events accumulated so far>, status=TIMEOUT, truncationWarning=null)`
+
+#### Scenario: Idle deadline resets on every received line
+- **WHEN** lines (including comment/heartbeat keep-alive lines) keep arriving with gaps each shorter than `idleTimeoutMs`, for a total elapsed time greater than `idleTimeoutMs`
+- **THEN** parser SHALL NOT time out on the idle deadline — each received line resets it — and SHALL continue parsing until the stream ends, `[DONE]`, the size limit, or the absolute cap
+
+#### Scenario: Absolute max-total cap exceeded under continuous activity
+- **WHEN** lines keep arriving (so the idle deadline never expires) but total elapsed time since stream start exceeds `maxTotalDurationMs`
+- **THEN** parser SHALL stop and return `SseParseResult(events=<events accumulated so far>, status=TIMEOUT, truncationWarning=null)`
+
+#### Scenario: Caller passes durations, not a deadline
+- **WHEN** a caller invokes `parse(stream, idleTimeoutMs, maxTotalDurationMs, maxBytes)`
+- **THEN** the parser SHALL compute deadlines from `clock.millis()` internally; callers SHALL NOT pass an absolute epoch-millisecond deadline
 
 ### Requirement: Size limit enforcement
 

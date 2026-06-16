@@ -398,26 +398,30 @@ The legacy `inferredType` field is replaced by `effectiveType`. The JSON propert
 - **THEN** `resolvedValue` SHALL be `null`
 
 ### Requirement: Template variables API for TestCase (effective template)
-The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables` to return template variables for the **effective** template and bindings of that test case (suite template/bindings, or overrides when present). This is useful when the test case has `requestTemplateOverride` and/or `inputBindingsOverride`.
+The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables` to return template variables for a specific test case: the suite's template and bindings resolved against that test case's `data`. The test case is looked up dataset-scoped via the suite's `datasetId`. Per-test-case `requestTemplateOverride` / `inputBindingsOverride` were removed when test cases moved to datasets, so the "effective" template/bindings are always the suite's; the only difference from `GET /api/v1/test-suites/{testSuiteId}/template-variables` is that `resolvedValue` is fully resolved using the test case's `data`. For `MCP_TOOL` suites, variables are extracted from `argumentTemplate`; for HTTP suites, from `requestTemplate`. The test-case schema used for type inference is sourced from the suite's dataset.
 
-#### Scenario: Extract variables from effective template for test case
+#### Scenario: Extract variables for a test case
 - **WHEN** client calls `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables`
-- **THEN** system SHALL return a list of `TemplateVariableDto` entries extracted from the effective template (test case's `requestTemplateOverride` if present, otherwise suite's `requestTemplate`), with bindings from effective bindings (test case's `inputBindingsOverride` if present, otherwise suite's `inputBindings`)
+- **THEN** system SHALL return a list of `TemplateVariableDto` entries (same structure as the suite endpoint) extracted from the suite's `requestTemplate` (or `argumentTemplate` for `MCP_TOOL` suites), with `binding` populated from the suite's `inputBindings`
 
-#### Scenario: Test case with overrides returns override-based variables
-- **WHEN** the test case has `requestTemplateOverride` and/or `inputBindingsOverride`
-- **THEN** system SHALL use the override template and/or override bindings to extract and resolve variables (same `TemplateVariableDto` structure as suite endpoint)
+#### Scenario: resolvedValue resolved from test case data
+- **WHEN** the test case exists in the suite's dataset
+- **THEN** system SHALL return the same logical variables as the suite endpoint for that suite, but with `resolvedValue` fully resolved using the test case's `data`
 
-#### Scenario: Test case without overrides returns suite-based variables
-- **WHEN** the test case has no overrides
-- **THEN** system SHALL return the same logical result as `GET /api/v1/test-suites/{testSuiteId}/template-variables` for that suite, but with `resolvedValue` fully resolved using test case data
-
-#### Scenario: Non-existent TestCase or TestSuite
-- **WHEN** client calls the endpoint with a non-existent testSuiteId or testCaseId
+#### Scenario: Non-existent TestSuite
+- **WHEN** client calls the endpoint with a non-existent `testSuiteId`
 - **THEN** system SHALL respond with HTTP 404
 
-#### Scenario: Test case with no effective template
-- **WHEN** effective template is null (suite has no template and test case has no override, or override is null)
+#### Scenario: Non-existent TestCase
+- **WHEN** client calls the endpoint with a `testCaseId` that does not exist in the suite's dataset
+- **THEN** system SHALL respond with HTTP 404
+
+#### Scenario: Suite not bound to a dataset
+- **WHEN** the suite has `datasetId: null` (unbound suite, which can own no test cases)
+- **THEN** system SHALL respond with HTTP 404 for any `testCaseId`
+
+#### Scenario: Suite with no template
+- **WHEN** the suite has `requestTemplate: null` (HTTP suite) or `argumentTemplate: null` (MCP suite)
 - **THEN** system SHALL return an empty list
 
 #### Scenario: Test-case-level resolvedValue for constant-value binding
@@ -445,7 +449,7 @@ The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{tes
 - **THEN** `resolvedValue` SHALL be `"gpt-3.5"` (the default string)
 
 #### Scenario: Test-case-level resolvedValue for unbound variable without default
-- **WHEN** a template variable has `${{prompt}}` (no default, no binding)
+- **WHEN** a template variable has `${{prompt}}` (no default, no binding) and `data` has no matching entry
 - **THEN** `resolvedValue` SHALL be `null`
 
 ### Requirement: TemplateVariableSource enum
@@ -455,7 +459,7 @@ The `TemplateVariableSource` enum SHALL define: `BODY`, `URL`, `QUERY`, `HEADER`
 
 The `TemplateVariableService` SHALL support MCP_TOOL suites via `GET /api/v1/test-suites/{id}/template-variables` and `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables`. When the suite type is `MCP_TOOL`, the service SHALL extract variables from the `argumentTemplate` (not `requestTemplate`) and resolve them using the MCP-specific resolution path with input bindings support.
 
-MCP suites support the same `inputBindings` and `inputBindingsOverride` mechanism as HTTP suites. The resolution priority for MCP template variables follows the same chain as `McpRequestResolver`: binding `constantValue` > binding `dataField` lookup > direct variable name lookup > template default > `null`.
+MCP suites support the same `inputBindings` mechanism as HTTP suites. The resolution priority for MCP template variables follows the same chain as `McpRequestResolver`: binding `constantValue` > binding `dataField` lookup > direct variable name lookup > template default > `null`.
 
 Status: **Implemented**
 
@@ -469,22 +473,18 @@ Status: **Implemented**
 - **THEN** `GET /api/v1/test-suites/{id}/template-variables` SHALL return `userQuery` with `resolvedValue = "fixed query"` and `binding` populated
 
 #### Scenario: MCP test-case-level template variables resolved from bindings and data
-- **WHEN** a test case belongs to an MCP_TOOL suite with a binding mapping `userQuery` to `dataField: "question"`
+- **WHEN** a test case in the dataset of an MCP_TOOL suite has a binding mapping `userQuery` to `dataField: "question"`
 - **AND** the test case has `data = {"question": "What is AI?"}`
 - **THEN** `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables` SHALL return `userQuery` with `resolvedValue = "What is AI?"` (resolved via binding dataField lookup)
 
 #### Scenario: MCP test-case-level template variables with no bindings (direct name lookup)
-- **WHEN** a test case belongs to an MCP_TOOL suite with no input bindings
+- **WHEN** a test case in the dataset of an MCP_TOOL suite with no input bindings
 - **AND** the test case has `data = {"userQuery": "What is AI?"}`
 - **THEN** the variable `userQuery` SHALL resolve via direct variable name lookup in data, returning `resolvedValue = "What is AI?"`
 
-#### Scenario: MCP test-case with inputBindingsOverride
-- **WHEN** a test case has `inputBindingsOverride` and the suite has `inputBindings`
-- **THEN** the system SHALL use the test case's `inputBindingsOverride` (fully replaces, not merges with, suite-level bindings) — same override semantics as HTTP suites
-
 #### Scenario: MCP variable type inference
 - **WHEN** an MCP template variable has no declared type hint
-- **THEN** `effectiveType` SHALL be inferred from `testCaseSchema` by matching the variable name to a schema field name
+- **THEN** `effectiveType` SHALL be inferred from the dataset's test-case schema by matching the variable name to a schema field name
 - **AND** if no match is found, `effectiveType` SHALL default to `STRING`
 
 #### Scenario: MCP variable with declared type hint takes priority

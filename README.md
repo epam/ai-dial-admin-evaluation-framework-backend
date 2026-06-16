@@ -129,6 +129,9 @@ and metrics) — each with its own connection variables.
 > DIAL Core, file storage, MCP, metric-provider, and observability settings have their own
 > environment variables — see [docs/configuration.md](docs/configuration.md) for the complete list.
 
+> ⚠️ **Authorization:** authenticated users are currently fully trusted — there is no
+> per-user/per-tenant authorization yet (planned, TBD)
+
 ## Project Structure
 
 ```

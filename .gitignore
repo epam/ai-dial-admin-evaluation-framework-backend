@@ -74,15 +74,15 @@ bin/
 /.settings/org.eclipse.jdt.apt.core.prefs
 /.settings/org.eclipse.jdt.core.prefs
 
- # Secrets / credentials (never commit)
-  *.pem
-  *.key
-  *.p12
-  *.pfx
-  *.jks
-  *.keystore
-  .env
-  .env.*
-  secrets/
-  credentials*
-  *-credentials.json
+# Secrets / credentials (never commit)
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+.env
+.env.*
+secrets/
+credentials*
+*-credentials.json

@@ -30,7 +30,7 @@ class QueryEntityRegistryTest {
 
         assertThat(entities)
                 .containsExactly(
-                        new QueryEntityDto("eval_summaries", true, "test_suite_id"),
+                        new QueryEntityDto("eval_summaries", true, "test_suite_run_id"),
                         new QueryEntityDto("test_suites", false, null));
     }
 
@@ -53,10 +53,12 @@ class QueryEntityRegistryTest {
     @Test
     @DisplayName("delegates the detailed schema to the provider for a complex entity")
     void shouldReturnDetailedSchema_whenEntityComplex() {
-        QueryEntitySchemaDto schema = registry.getDetailedSchema("eval_summaries", Map.of("test_suite_id", "suite-1"));
+        QueryEntitySchemaDto schema =
+                registry.getDetailedSchema("eval_summaries", Map.of("test_suite_run_id", "run-1"));
 
         assertThat(schema)
-                .isEqualTo(new QueryEntitySchemaDto("eval_summaries", true, "test_suite_id", List.of(METRIC_FIELD)));
+                .isEqualTo(
+                        new QueryEntitySchemaDto("eval_summaries", true, "test_suite_run_id", List.of(METRIC_FIELD)));
     }
 
     @Test
@@ -93,7 +95,7 @@ class QueryEntityRegistryTest {
         return new QueryableEntitySchemaProvider() {
             @Override
             public QueryEntityDto descriptor() {
-                return new QueryEntityDto("eval_summaries", true, "test_suite_id");
+                return new QueryEntityDto("eval_summaries", true, "test_suite_run_id");
             }
 
             @Override

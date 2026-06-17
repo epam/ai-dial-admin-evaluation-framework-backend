@@ -206,6 +206,37 @@ public class AnalyticsTestDataHelper {
         return id;
     }
 
+    /**
+     * Inserts a minimal {@code run_metric_snapshots} row for a run/computation. Identity columns not
+     * exposed as parameters ({@code tsmd_id}, {@code metric_declaration_id},
+     * {@code metric_declaration_version_id}) get random UUIDs; {@code config_bindings}/
+     * {@code input_bindings} are left to their DB defaults.
+     *
+     * @return the inserted run metric snapshot ID
+     */
+    @Transactional("analyticsTransactionManager")
+    public UUID createRunMetricSnapshot(
+            UUID suiteRunId, UUID computationId, String tsmdName, String outputSchemaJson, long computedAtMs) {
+        UUID id = UUID.randomUUID();
+        analyticsDsl
+                .insertInto(RUN_METRIC_SNAPSHOTS)
+                .set(RUN_METRIC_SNAPSHOTS.ID, id.toString())
+                .set(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID, computationId.toString())
+                .set(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID, suiteRunId.toString())
+                .set(RUN_METRIC_SNAPSHOTS.TSMD_ID, UUID.randomUUID().toString())
+                .set(RUN_METRIC_SNAPSHOTS.TSMD_NAME, tsmdName)
+                .set(
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_ID,
+                        UUID.randomUUID().toString())
+                .set(
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_VERSION_ID,
+                        UUID.randomUUID().toString())
+                .set(RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA, JSONB.valueOf(outputSchemaJson))
+                .set(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS, computedAtMs)
+                .execute();
+        return id;
+    }
+
     public List<Map<String, Object>> findRunMetricSnapshotsByRunId(UUID runId) {
         return analyticsDsl
                 .select(

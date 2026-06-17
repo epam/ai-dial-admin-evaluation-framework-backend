@@ -3,12 +3,13 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
+import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntitySchemaDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
+import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
-import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -19,19 +20,38 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-@DisplayName("Query Schema Discovery (/api/v0/queries) Tests")
+@DisplayName("Query Schema Discovery (/api/v1/queries) Tests")
 public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctionalTest {
 
-    private static final UUID SEED_ACCURACY_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final String SNAPSHOT_JSON = """
+            {"snapshotVersion":"2","suiteType":"DEPLOYMENT",
+             "testCaseSchema":[{"name":"question","type":"STRING","required":true},
+                               {"name":"expectedScore","type":"NUMBER","required":false}],
+             "responseColumns":[{"name":"answer","expression":"$.answer","type":"STRING"}]}
+            """;
+
+    private static final String ACCURACY_OUTPUT_SCHEMA = """
+            {"properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}}
+            """;
 
     @Autowired
     private MetaTestDataHelper metaTestDataHelper;
 
     @Autowired
-    private MetricDeclarationTestDataProvider metricDeclarationTestDataProvider;
+    private AnalyticsTestDataHelper analyticsTestDataHelper;
 
     private String queriesUrl(String path) {
-        return baseUrl() + "/api/v0/queries" + path;
+        return baseUrl() + "/api/v1/queries" + path;
+    }
+
+    /** Seeds a suite + run with a current-version snapshot and one metric snapshot; returns the run. */
+    private TestSuiteRun seedRunWithSnapshot() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("query-schema-suite-" + UUID.randomUUID());
+        TestSuiteRun run = metaTestDataHelper.createLegacyTestSuiteRun(suite.getId());
+        metaTestDataHelper.setRunSuiteSnapshot(run.getId(), SNAPSHOT_JSON);
+        analyticsTestDataHelper.createRunMetricSnapshot(
+                run.getId(), UUID.randomUUID(), "Accuracy", ACCURACY_OUTPUT_SCHEMA, 1_000L);
+        return run;
     }
 
     @Test
@@ -43,7 +63,7 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody())
                 .containsExactly(
-                        new QueryEntityDto("eval_summaries", true, "test_suite_id"),
+                        new QueryEntityDto("eval_summaries", true, "test_suite_run_id"),
                         new QueryEntityDto("test_suites", false, null));
     }
 
@@ -77,35 +97,21 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
         assertThat(schema).isNotNull();
         assertThat(schema.entity()).isEqualTo("eval_summaries");
         assertThat(schema.complex()).isTrue();
-        assertThat(schema.schemaIdField()).isEqualTo("test_suite_id");
+        assertThat(schema.schemaIdField()).isEqualTo("test_suite_run_id");
         assertThat(schema.fields())
                 .contains(
-                        new QuerySchemaFieldDto("test_suite_id", QueryFieldType.UUID, "test_suite_id"),
+                        new QuerySchemaFieldDto("test_suite_run_id", QueryFieldType.UUID, "test_suite_run_id"),
                         new QuerySchemaFieldDto("test_case_data", QueryFieldType.OBJECT, "test_case_data"),
                         new QuerySchemaFieldDto("metric_values", QueryFieldType.OBJECT, "metric_values"));
     }
 
     @Test
-    @DisplayName("returns the detailed eval_summaries schema flattened from the current suite state")
-    void shouldReturnDetailedEvalSummariesSchemaFromCurrentSuiteState() {
-        TestSuite suite = metaTestDataHelper.createTestSuite("query-schema-suite-" + UUID.randomUUID());
-        metaTestDataHelper.updateSuiteSchema(suite.getId(), """
-                [{"name": "question", "type": "STRING", "required": true},
-                 {"name": "expectedScore", "type": "NUMBER", "required": false}]
-                """, """
-                [{"name": "answer", "expression": "$.answer", "type": "STRING"}]
-                """);
-        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
-        String versionId = UUID.randomUUID().toString();
-        metricDeclarationTestDataProvider.insertVersionWithSchemas(
-                versionId, SEED_ACCURACY_ID.toString(), 1, "{}", "{}", """
-                {"properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}}
-                """);
-        metaTestDataHelper.createTestSuiteMetricDefinition(
-                suite.getId(), SEED_ACCURACY_ID, UUID.fromString(versionId), "Accuracy");
+    @DisplayName("returns the detailed eval_summaries schema flattened from the run snapshot via run id")
+    void shouldReturnDetailedEvalSummariesSchemaFromRunSnapshot() {
+        TestSuiteRun run = seedRunWithSnapshot();
 
         ResponseEntity<QueryEntitySchemaDto> response = restTemplate.getForEntity(
-                queriesUrl("/entities/schema/eval_summaries/detailed?test_suite_id=" + suite.getId()),
+                queriesUrl("/entities/schema/eval_summaries/detailed?test_suite_run_id=" + run.getId()),
                 QueryEntitySchemaDto.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -126,6 +132,25 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
     }
 
     @Test
+    @DisplayName("resolves the suite's latest run when the detailed schema is requested by test_suite_id")
+    void shouldReturnDetailedEvalSummariesSchemaFromLatestRun() {
+        TestSuiteRun run = seedRunWithSnapshot();
+
+        ResponseEntity<QueryEntitySchemaDto> response = restTemplate.getForEntity(
+                queriesUrl("/entities/schema/eval_summaries/detailed?test_suite_id=" + run.getTestSuiteId()),
+                QueryEntitySchemaDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        QueryEntitySchemaDto schema = response.getBody();
+        assertThat(schema).isNotNull();
+        assertThat(schema.fields())
+                .contains(
+                        new QuerySchemaFieldDto("data:question", QueryFieldType.STRING, "test_case_data"),
+                        new QuerySchemaFieldDto("response:answer", QueryFieldType.STRING, "extracted_columns"),
+                        new QuerySchemaFieldDto("metric:Accuracy:score", QueryFieldType.DECIMAL, "metric_values"));
+    }
+
+    @Test
     @DisplayName("returns 404 for an unknown entity name")
     void shouldReturn404_whenEntityUnknown() {
         ResponseEntity<String> response =
@@ -138,16 +163,29 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
     @DisplayName("returns 400 when a detailed schema is requested for a simple entity")
     void shouldReturn400_whenDetailedSchemaRequestedForSimpleEntity() {
         ResponseEntity<String> response = restTemplate.getForEntity(
-                queriesUrl("/entities/schema/test_suites/detailed?test_suite_id=" + UUID.randomUUID()), String.class);
+                queriesUrl("/entities/schema/test_suites/detailed?test_suite_run_id=" + UUID.randomUUID()),
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
-    @DisplayName("returns 404 when the detailed schema suite does not exist")
-    void shouldReturn404_whenSuiteMissing() {
+    @DisplayName("returns 400 when the detailed schema run has no usable snapshot (legacy run)")
+    void shouldReturn400_whenRunHasNoSnapshot() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("query-schema-legacy-" + UUID.randomUUID());
+        TestSuiteRun run = metaTestDataHelper.createLegacyTestSuiteRun(suite.getId());
+
         ResponseEntity<String> response = restTemplate.getForEntity(
-                queriesUrl("/entities/schema/eval_summaries/detailed?test_suite_id=" + UUID.randomUUID()),
+                queriesUrl("/entities/schema/eval_summaries/detailed?test_suite_run_id=" + run.getId()), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("returns 404 when the detailed schema run does not exist")
+    void shouldReturn404_whenRunMissing() {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                queriesUrl("/entities/schema/eval_summaries/detailed?test_suite_run_id=" + UUID.randomUUID()),
                 String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -155,9 +193,9 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
 
     @Test
     @DisplayName("returns 400 when the detailed schema id is not a UUID")
-    void shouldReturn400_whenSuiteIdMalformed() {
+    void shouldReturn400_whenRunIdMalformed() {
         ResponseEntity<String> response = restTemplate.getForEntity(
-                queriesUrl("/entities/schema/eval_summaries/detailed?test_suite_id=not-a-uuid"), String.class);
+                queriesUrl("/entities/schema/eval_summaries/detailed?test_suite_run_id=not-a-uuid"), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }

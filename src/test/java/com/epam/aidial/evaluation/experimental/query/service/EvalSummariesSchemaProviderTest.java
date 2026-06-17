@@ -4,22 +4,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
-import com.epam.aidial.evaluation.service.domain.DatasetSchemaProvider;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
-import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
-import com.epam.aidial.evaluation.service.domain.TestSuiteService;
+import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,17 +32,19 @@ import tools.jackson.databind.ObjectMapper;
 @ExtendWith(MockitoExtension.class)
 class EvalSummariesSchemaProviderTest {
 
+    private static final UUID RUN_ID = UUID.fromString("11111111-1111-4111-8111-111111111111");
     private static final UUID SUITE_ID = UUID.fromString("3f1c1a39-9c1b-4c11-8b3e-2a4e2c3d4e5f");
-    private static final UUID DATASET_ID = UUID.fromString("7a2b3c4d-5e6f-4a1b-9c8d-1e2f3a4b5c6d");
+    private static final UUID COMPUTATION_ID = UUID.fromString("22222222-2222-4222-8222-222222222222");
+
+    private static final String ACCURACY_OUTPUT_SCHEMA = """
+            {"properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}}
+            """;
 
     @Mock
-    private TestSuiteService testSuiteService;
+    private TestSuiteRunService testSuiteRunService;
 
     @Mock
-    private DatasetSchemaProvider datasetSchemaProvider;
-
-    @Mock
-    private TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
+    private RunMetricSnapshotRepository runMetricSnapshotRepository;
 
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor =
             new OutputSchemaFieldExtractor(new ObjectMapper());
@@ -49,11 +52,11 @@ class EvalSummariesSchemaProviderTest {
     private EvalSummariesSchemaProvider provider;
 
     @Test
-    @DisplayName("describes eval_summaries as a complex entity keyed by test_suite_id")
+    @DisplayName("describes eval_summaries as a complex entity keyed by test_suite_run_id")
     void shouldDescribeComplexEntity() {
         createProvider();
 
-        assertThat(provider.descriptor()).isEqualTo(new QueryEntityDto("eval_summaries", true, "test_suite_id"));
+        assertThat(provider.descriptor()).isEqualTo(new QueryEntityDto("eval_summaries", true, "test_suite_run_id"));
     }
 
     @Test
@@ -65,7 +68,7 @@ class EvalSummariesSchemaProviderTest {
 
         assertThat(fields)
                 .contains(
-                        new QuerySchemaFieldDto("test_suite_id", QueryFieldType.UUID, "test_suite_id"),
+                        new QuerySchemaFieldDto("test_suite_run_id", QueryFieldType.UUID, "test_suite_run_id"),
                         new QuerySchemaFieldDto("execution_status", QueryFieldType.STRING, "execution_status"),
                         new QuerySchemaFieldDto("test_case_data", QueryFieldType.OBJECT, "test_case_data"),
                         new QuerySchemaFieldDto("metric_values", QueryFieldType.OBJECT, "metric_values"),
@@ -75,25 +78,16 @@ class EvalSummariesSchemaProviderTest {
     }
 
     @Test
-    @DisplayName("detailed schema flattens dataset, response-column, and metric fields from current suite state")
-    void shouldFlattenDetailedSchemaFromCurrentSuiteState() {
+    @DisplayName("detailed schema flattens dataset, response-column, and metric fields from the run snapshot")
+    void shouldFlattenDetailedSchemaFromRunSnapshot() {
         createProvider();
-        TestSuiteResponseDto suite = new TestSuiteResponseDto();
-        suite.setId(SUITE_ID);
-        suite.setDatasetId(DATASET_ID);
-        suite.setResponseColumns(List.of(responseColumn("answer", SchemaFieldType.STRING)));
-        when(testSuiteService.getById(SUITE_ID)).thenReturn(suite);
-        when(datasetSchemaProvider.getSchema(DATASET_ID))
-                .thenReturn(List.of(
-                        fieldDefinition("question", SchemaFieldType.STRING),
-                        fieldDefinition("expectedScore", SchemaFieldType.NUMBER)));
-        when(testSuiteMetricDefinitionService.findAllEnabledAndValidAggregatedByTestSuiteId(SUITE_ID))
-                .thenReturn(List.of(aggregatedDefinition("Accuracy", """
-                        {"properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}}
-                        """)));
+        when(testSuiteRunService.getRun(RUN_ID)).thenReturn(runWithSnapshot(fullSnapshot()));
+        when(runMetricSnapshotRepository.findLatestComputationId(RUN_ID)).thenReturn(Optional.of(COMPUTATION_ID));
+        when(runMetricSnapshotRepository.findByRunId(RUN_ID))
+                .thenReturn(List.of(metricSnapshot("Accuracy", ACCURACY_OUTPUT_SCHEMA)));
 
         List<QuerySchemaFieldDto> fields =
-                provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.SCHEMA_ID_FIELD, SUITE_ID.toString()));
+                provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.RUN_ID_FIELD, RUN_ID.toString()));
 
         assertThat(fields)
                 .contains(
@@ -111,52 +105,109 @@ class EvalSummariesSchemaProviderTest {
     }
 
     @Test
-    @DisplayName("detailed schema omits data fields when the suite has no bound dataset")
-    void shouldOmitDataFields_whenSuiteHasNoDataset() {
+    @DisplayName("detailed schema resolves the suite's latest run when only test_suite_id is given")
+    void shouldResolveLatestRun_whenSuiteIdGiven() {
         createProvider();
-        TestSuiteResponseDto suite = new TestSuiteResponseDto();
-        suite.setId(SUITE_ID);
-        suite.setDatasetId(null);
-        suite.setResponseColumns(List.of());
-        when(testSuiteService.getById(SUITE_ID)).thenReturn(suite);
-        when(testSuiteMetricDefinitionService.findAllEnabledAndValidAggregatedByTestSuiteId(SUITE_ID))
-                .thenReturn(List.of());
+        when(testSuiteRunService.getLatestRun(SUITE_ID)).thenReturn(runWithSnapshot(fullSnapshot()));
+        when(runMetricSnapshotRepository.findLatestComputationId(RUN_ID)).thenReturn(Optional.of(COMPUTATION_ID));
+        when(runMetricSnapshotRepository.findByRunId(RUN_ID))
+                .thenReturn(List.of(metricSnapshot("Accuracy", ACCURACY_OUTPUT_SCHEMA)));
 
         List<QuerySchemaFieldDto> fields =
-                provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.SCHEMA_ID_FIELD, SUITE_ID.toString()));
+                provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.SUITE_ID_FIELD, SUITE_ID.toString()));
+
+        assertThat(fields)
+                .contains(
+                        new QuerySchemaFieldDto("data:question", QueryFieldType.STRING, "test_case_data"),
+                        new QuerySchemaFieldDto("response:answer", QueryFieldType.STRING, "extracted_columns"),
+                        new QuerySchemaFieldDto("metric:Accuracy:score", QueryFieldType.DECIMAL, "metric_values"));
+    }
+
+    @Test
+    @DisplayName("detailed schema omits data fields when the run snapshot has no test-case schema")
+    void shouldOmitDataFields_whenSnapshotHasNoTestCaseSchema() {
+        createProvider();
+        SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                .responseColumns(List.of())
+                .build();
+        when(testSuiteRunService.getRun(RUN_ID)).thenReturn(runWithSnapshot(snapshot));
+        when(runMetricSnapshotRepository.findLatestComputationId(RUN_ID)).thenReturn(Optional.empty());
+
+        List<QuerySchemaFieldDto> fields =
+                provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.RUN_ID_FIELD, RUN_ID.toString()));
 
         assertThat(fields).noneMatch(field -> field.name().startsWith("data:"));
     }
 
     @Test
-    @DisplayName("rejects a malformed suite id with a validation error")
-    void shouldThrowValidation_whenSuiteIdMalformed() {
+    @DisplayName("rejects a run with no suite snapshot with a validation error")
+    void shouldThrowValidation_whenSnapshotMissing() {
         createProvider();
+        when(testSuiteRunService.getRun(RUN_ID)).thenReturn(runWithSnapshot(null));
 
         assertThatThrownBy(() ->
-                        provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.SCHEMA_ID_FIELD, "not-a-uuid")))
+                        provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.RUN_ID_FIELD, RUN_ID.toString())))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("test suite UUID");
+                .hasMessageContaining("no suite snapshot");
     }
 
     @Test
-    @DisplayName("propagates not-found when the suite does not exist")
-    void shouldPropagateNotFound_whenSuiteMissing() {
+    @DisplayName("rejects a request that supplies neither a run id nor a suite id")
+    void shouldThrowValidation_whenNoIdProvided() {
         createProvider();
-        when(testSuiteService.getById(SUITE_ID)).thenThrow(new EntityNotFoundException("TestSuite not found"));
 
-        assertThatThrownBy(() -> provider.detailedSchema(
-                        Map.of(EvalSummariesSchemaProvider.SCHEMA_ID_FIELD, SUITE_ID.toString())))
+        assertThatThrownBy(() -> provider.detailedSchema(Map.of()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("test_suite_run_id");
+    }
+
+    @Test
+    @DisplayName("rejects a malformed run id with a validation error")
+    void shouldThrowValidation_whenRunIdMalformed() {
+        createProvider();
+
+        assertThatThrownBy(
+                        () -> provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.RUN_ID_FIELD, "not-a-uuid")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("must be a UUID");
+    }
+
+    @Test
+    @DisplayName("propagates not-found when the run does not exist")
+    void shouldPropagateNotFound_whenRunMissing() {
+        createProvider();
+        when(testSuiteRunService.getRun(RUN_ID)).thenThrow(new EntityNotFoundException("TestSuiteRun not found"));
+
+        assertThatThrownBy(() ->
+                        provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.RUN_ID_FIELD, RUN_ID.toString())))
                 .isInstanceOf(EntityNotFoundException.class);
     }
 
     private void createProvider() {
         provider = new EvalSummariesSchemaProvider(
-                testSuiteService,
-                datasetSchemaProvider,
-                testSuiteMetricDefinitionService,
+                testSuiteRunService,
+                runMetricSnapshotRepository,
                 outputSchemaFieldExtractor,
                 new JooqTableSchemaResolver());
+    }
+
+    private static TestSuiteRunResponseDto runWithSnapshot(SuiteSnapshotDto snapshot) {
+        return TestSuiteRunResponseDto.builder()
+                .id(RUN_ID)
+                .testSuiteId(SUITE_ID)
+                .suiteSnapshot(snapshot)
+                .build();
+    }
+
+    private static SuiteSnapshotDto fullSnapshot() {
+        return SuiteSnapshotDto.builder()
+                .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                .testCaseSchema(List.of(
+                        fieldDefinition("question", SchemaFieldType.STRING),
+                        fieldDefinition("expectedScore", SchemaFieldType.NUMBER)))
+                .responseColumns(List.of(responseColumn("answer", SchemaFieldType.STRING)))
+                .build();
     }
 
     private static FieldDefinitionDto fieldDefinition(String name, SchemaFieldType type) {
@@ -174,10 +225,12 @@ class EvalSummariesSchemaProviderTest {
                 .build();
     }
 
-    private static AggregatedMetricDefinition aggregatedDefinition(String name, String outputSchema) {
-        return AggregatedMetricDefinition.builder()
-                .name(name)
-                .versionOutputSchema(outputSchema)
+    private static RunMetricSnapshot metricSnapshot(String name, String outputSchema) {
+        return RunMetricSnapshot.builder()
+                .computationId(COMPUTATION_ID)
+                .testSuiteRunId(RUN_ID)
+                .tsmdName(name)
+                .outputSchema(outputSchema)
                 .build();
     }
 }

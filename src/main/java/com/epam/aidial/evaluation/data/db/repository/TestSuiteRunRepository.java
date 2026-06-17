@@ -14,6 +14,8 @@ public interface TestSuiteRunRepository {
 
     Optional<TestSuiteRun> findById(UUID id);
 
+    Optional<TestSuiteRun> findLatestByTestSuiteId(UUID testSuiteId);
+
     Page<TestSuiteRun> findAll(PageRequest pageRequest, List<FilterCondition> filters, boolean includeTotalCount);
 
     int countByStatuses(List<String> statuses);

@@ -49,7 +49,7 @@ public class QueryEntityRegistry {
         final QueryEntityDto descriptor = provider.descriptor();
         if (!descriptor.complex()) {
             throw new ValidationException("Entity '" + entityName
-                    + "' is not complex and has no detailed schema; use GET /api/v0/queries/entities/schema/"
+                    + "' is not complex and has no detailed schema; use GET /api/v1/queries/entities/schema/"
                     + entityName);
         }
         return new QueryEntitySchemaDto(

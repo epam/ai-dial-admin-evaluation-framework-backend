@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Schema discovery for the experimental structured query DSL ({@code /api/v0} = experimental,
+ * Schema discovery for the experimental structured query DSL ({@code /api/v1} = experimental,
  * subject to change). Publishes which entities can be queried and which flat field names are valid
  * in a structured query's {@code filter}/{@code select}/{@code sort} sections.
  */
@@ -74,11 +74,12 @@ public class QuerySchemaController {
     @Operation(
             summary = "Get a complex entity's detailed flat schema",
             description = "Returns the instance-specific flat schema with JSONB fields flattened from the"
-                    + " current state of the identified instance. The instance is selected by query"
-                    + " parameters whose names are entity-specific: send the parameter named by the entity's"
-                    + " `schemaIdField` (discoverable via the entities listing). For `eval_summaries` that is"
-                    + " `test_suite_id`, and the schema reflects that suite's current dataset schema, response"
-                    + " columns and metric definitions.")
+                    + " identified instance. The instance is selected by query parameters whose names are"
+                    + " entity-specific: send the parameter named by the entity's `schemaIdField`"
+                    + " (discoverable via the entities listing). For `eval_summaries` that is"
+                    + " `test_suite_run_id`, and the schema is derived from that run's snapshot (the dataset"
+                    + " schema, response columns and metric definitions frozen at run time). Alternatively send"
+                    + " `test_suite_id` to derive the schema from that suite's latest run.")
     @ApiResponse(
             responseCode = "200",
             description = "Detailed entity schema",
@@ -92,9 +93,10 @@ public class QuerySchemaController {
             @Parameter(description = "Entity wire name", example = "eval_summaries") @PathVariable String name,
             @Parameter(
                             description = "Instance-selecting query parameters. The parameter to send is named"
-                                    + " by the entity's `schemaIdField` (e.g. `test_suite_id` for"
-                                    + " `eval_summaries`); different entities may accept different parameters.",
-                            example = "test_suite_id=3fa85f64-5717-4562-b3fc-2c963f66afa6")
+                                    + " by the entity's `schemaIdField` (e.g. `test_suite_run_id` for"
+                                    + " `eval_summaries`, which also accepts `test_suite_id` to target the"
+                                    + " suite's latest run); different entities may accept different parameters.",
+                            example = "test_suite_run_id=3fa85f64-5717-4562-b3fc-2c963f66afa6")
                     @RequestParam
                     Map<String, String> params) {
         return registry.getDetailedSchema(name, params);

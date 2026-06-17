@@ -18,7 +18,7 @@ public record QueryEntitySchemaDto(
 
         @Schema(
                 description = "Field whose value identifies the instance for the detailed schema endpoint",
-                example = "testSuiteId")
+                example = "testSuiteRunId")
         String schemaIdField,
 
         @Schema(description = "Flat, queryable fields") List<QuerySchemaFieldDto> fields) {}

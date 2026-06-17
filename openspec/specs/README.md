@@ -22,6 +22,8 @@ Specs defining the primary business entities and their APIs.
   Detach-dataset endpoint (`POST /api/v1/test-suites/{id}/detach-dataset`) — forks a suite's bound PUBLIC dataset into a new PRIVATE clone for exclusive use by that suite; the original PUBLIC dataset is preserved. Test cases are copied with fresh IDs and file-ref rewrites; `disabledTestCaseIds` are remapped. Optional `name` field in the request body; derived automatically when omitted. 409 when suite has no dataset (SUITE_HAS_NO_DATASET) or bound dataset is already PRIVATE (PRIVATE_DATASET_REBIND_FORBIDDEN).
 - **[test-cases](test-cases/spec.md)** — Implemented
   TestCase CRUD, PATCH, CSV export/import, schema validation, re-validation. Test cases are dataset-scoped — endpoints live under `/api/v1/datasets/{datasetId}/test-cases/*`. Related: datasets, test-suites.
+- **[test-case-bulk-delete-by-ids](test-case-bulk-delete-by-ids/spec.md)** — Implemented
+  Bulk deletion by explicit UUID list (`DELETE /api/v1/datasets/{datasetId}/test-cases:bulk`) with partial-success semantics — deleted and not-found IDs returned separately, configurable cap via `test-case.bulk.max-delete-ids`. Related: test-cases.
 - **[request-template](request-template/spec.md)** — Implemented
   Request template system — `${{variable}}` and `${{variable|type}}` placeholder syntax with optional type hints, input bindings, template variable extraction (`declaredType`/`effectiveType`), resolved-request preview. Related: test-suites.
 - **[test-suite-metric-definitions](test-suite-metric-definitions/spec.md)** — Implemented

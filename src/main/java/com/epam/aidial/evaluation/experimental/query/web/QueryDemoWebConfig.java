@@ -8,15 +8,20 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * Serves the static schema-discovery / query-builder demos under the clean {@code /demo} path by
  * forwarding to the static resources {@code static/demo/schema.html} and
- * {@code static/demo/query.html}. The pages are plain HTML/JS that call the {@code /api/v0/queries}
+ * {@code static/demo/query.html}. The pages are plain HTML/JS that call the {@code /api/v1/queries}
  * endpoints from the same origin. Local-testing aid only — not intended for production use.
+ *
+ * <p>TODO: remove before going to prod — this whole class, and the {@code static/demo/*.html} pages
+ * it forwards to, are temporary demo scaffolding and must not ship to production.
  */
+// TODO: remove before going to prod — temporary demo UI scaffolding.
 @Configuration
 @LogExecution
 public class QueryDemoWebConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
+        // TODO: remove before going to prod — temporary demo UI routes.
         registry.addViewController("/demo").setViewName("forward:/demo/schema.html");
         registry.addViewController("/demo/").setViewName("forward:/demo/schema.html");
         registry.addViewController("/demo/schema").setViewName("forward:/demo/schema.html");

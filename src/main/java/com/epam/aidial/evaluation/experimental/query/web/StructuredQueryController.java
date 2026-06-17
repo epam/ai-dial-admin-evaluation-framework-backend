@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Executes structured queries for the experimental DSL ({@code /api/v0} = experimental, subject to
+ * Executes structured queries for the experimental DSL ({@code /api/v1} = experimental, subject to
  * change). A single entity-agnostic endpoint: the {@code entity} in the request body selects which
  * backing table/datasource runs the query, so the same contract serves {@code test_suites} (meta)
  * and {@code eval_summaries} (analytics). Discover valid entities and field names via the schema

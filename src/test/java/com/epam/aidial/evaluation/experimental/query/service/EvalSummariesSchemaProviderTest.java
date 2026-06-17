@@ -83,7 +83,7 @@ class EvalSummariesSchemaProviderTest {
         createProvider();
         when(testSuiteRunService.getRun(RUN_ID)).thenReturn(runWithSnapshot(fullSnapshot()));
         when(runMetricSnapshotRepository.findLatestComputationId(RUN_ID)).thenReturn(Optional.of(COMPUTATION_ID));
-        when(runMetricSnapshotRepository.findByRunId(RUN_ID))
+        when(runMetricSnapshotRepository.findByRunIdAndComputationId(RUN_ID, COMPUTATION_ID))
                 .thenReturn(List.of(metricSnapshot("Accuracy", ACCURACY_OUTPUT_SCHEMA)));
 
         List<QuerySchemaFieldDto> fields =
@@ -110,7 +110,7 @@ class EvalSummariesSchemaProviderTest {
         createProvider();
         when(testSuiteRunService.getLatestRun(SUITE_ID)).thenReturn(runWithSnapshot(fullSnapshot()));
         when(runMetricSnapshotRepository.findLatestComputationId(RUN_ID)).thenReturn(Optional.of(COMPUTATION_ID));
-        when(runMetricSnapshotRepository.findByRunId(RUN_ID))
+        when(runMetricSnapshotRepository.findByRunIdAndComputationId(RUN_ID, COMPUTATION_ID))
                 .thenReturn(List.of(metricSnapshot("Accuracy", ACCURACY_OUTPUT_SCHEMA)));
 
         List<QuerySchemaFieldDto> fields =

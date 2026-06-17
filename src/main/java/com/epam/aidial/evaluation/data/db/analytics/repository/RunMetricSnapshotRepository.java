@@ -11,5 +11,7 @@ public interface RunMetricSnapshotRepository {
 
     List<RunMetricSnapshot> findByRunId(UUID runId);
 
+    List<RunMetricSnapshot> findByRunIdAndComputationId(UUID runId, UUID computationId);
+
     Optional<UUID> findLatestComputationId(UUID runId);
 }

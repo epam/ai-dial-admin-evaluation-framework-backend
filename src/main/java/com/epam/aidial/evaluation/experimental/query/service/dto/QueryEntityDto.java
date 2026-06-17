@@ -7,7 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * identifier used as the {@code entity} value of a structured query. Complex entities carry JSONB
  * fields whose flattened schema depends on a concrete instance; {@code schemaIdField} names the
  * field whose value selects that instance for {@code GET .../schema/{name}/detailed} (e.g.
- * {@code testSuiteRunId} for {@code eval_summaries}); it is {@code null} for simple entities.
+ * {@code test_suite_run_id} for {@code eval_summaries}); it is {@code null} for simple entities.
  */
 public record QueryEntityDto(
         @Schema(description = "Entity wire name", example = "eval_summaries")
@@ -18,5 +18,5 @@ public record QueryEntityDto(
 
         @Schema(
                 description = "Field whose value identifies the instance for the detailed schema endpoint",
-                example = "testSuiteId")
+                example = "test_suite_run_id")
         String schemaIdField) {}

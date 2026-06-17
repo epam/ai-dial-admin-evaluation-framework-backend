@@ -137,9 +137,7 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
     private List<RunMetricSnapshot> latestComputationMetricSnapshots(UUID runId) {
         return runMetricSnapshotRepository
                 .findLatestComputationId(runId)
-                .map(computationId -> runMetricSnapshotRepository.findByRunId(runId).stream()
-                        .filter(snapshot -> computationId.equals(snapshot.getComputationId()))
-                        .toList())
+                .map(computationId -> runMetricSnapshotRepository.findByRunIdAndComputationId(runId, computationId))
                 .orElseGet(List::of);
     }
 

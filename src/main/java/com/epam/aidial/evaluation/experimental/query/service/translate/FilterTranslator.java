@@ -35,6 +35,9 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class FilterTranslator {
 
+    /** Escape character for {@code co}/{@code nc} LIKE patterns so operand metacharacters match literally. */
+    private static final char LIKE_ESCAPE = '\\';
+
     private final ExprTranslator exprTranslator;
 
     public Condition toCondition(FilterNode node, Map<String, QueryFieldBinding> bindings) {
@@ -94,8 +97,8 @@ public class FilterTranslator {
             };
         }
         return switch (op) {
-            case CO -> ((Field<String>) left).likeIgnoreCase("%" + likeArgument(right) + "%");
-            case NC -> ((Field<String>) left).notLikeIgnoreCase("%" + likeArgument(right) + "%");
+            case CO -> ((Field<String>) left).likeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
+            case NC -> ((Field<String>) left).notLikeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
             case EQ -> left.eq(exprTranslator.toField(right, bindings));
             case NE -> left.ne(exprTranslator.toField(right, bindings));
             case LT -> left.lt(exprTranslator.toField(right, bindings));
@@ -128,10 +131,19 @@ public class FilterTranslator {
         return expr instanceof ValueExpr value && value.valueType() == ValueType.NULL;
     }
 
-    private static String likeArgument(Expr right) {
+    /**
+     * Builds the {@code %…%} LIKE pattern for a {@code co}/{@code nc} operand, escaping the LIKE
+     * metacharacters ({@code %}, {@code _}, and the escape character itself) so the operand matches
+     * literally rather than as a wildcard pattern.
+     */
+    private static String containsPattern(Expr right) {
         if (right instanceof ValueExpr value && value.valueType() == ValueType.STRING && value.value() != null) {
-            return value.value();
+            return "%" + escapeLike(value.value()) + "%";
         }
         throw new ValidationException("'co'/'nc' require a string literal right operand");
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 }

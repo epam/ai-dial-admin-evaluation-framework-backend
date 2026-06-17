@@ -111,7 +111,7 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                         new ComparisonNode(
                                 ComparisonOp.IN,
                                 List.of(
-                                        new FieldExpr("testCaseName"),
+                                        new FieldExpr("test_case_name"),
                                         new ArrayExpr(List.of(
                                                 new ValueExpr(ValueType.STRING, "case-a"),
                                                 new ValueExpr(ValueType.STRING, "case-c")))))));

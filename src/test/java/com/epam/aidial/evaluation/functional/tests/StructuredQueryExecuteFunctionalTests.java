@@ -16,11 +16,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
- * End-to-end coverage of the unified execute endpoint ({@code POST /api/v0/queries/execute}): the
+ * End-to-end coverage of the unified execute endpoint ({@code POST /api/v1/queries/execute}): the
  * same wire contract drives {@code test_suites} (meta) and {@code eval_summaries} (analytics),
  * routed by the {@code entity} field.
  */
-@DisplayName("Structured Query Execute (/api/v0/queries/execute) Tests")
+@DisplayName("Structured Query Execute (/api/v1/queries/execute) Tests")
 public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
@@ -30,7 +30,7 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
     private AnalyticsTestDataHelper analyticsTestDataHelper;
 
     private String executeUrl() {
-        return baseUrl() + "/api/v0/queries/execute";
+        return baseUrl() + "/api/v1/queries/execute";
     }
 
     private ResponseEntity<StructuredQueryResultDto> post(String json) {

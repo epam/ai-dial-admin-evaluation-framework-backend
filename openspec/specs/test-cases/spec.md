@@ -1396,6 +1396,18 @@ Status: **Planned**
 - **WHEN** an `itemOperations[i]` sets `testCaseName` to a value already used by a test case in the same dataset that is not part of the request
 - **THEN** system SHALL respond with HTTP 409 (UNIQUE_CONSTRAINT_VIOLATION) and roll back
 
+### Requirement: Test case mutations do not trigger suite validity recalculation
+Test-case create, update, patch, batch-update, batch-patch, bulk-patch, delete, deleteAll, and CSV import operations SHALL NOT trigger any recalculation or update of the owning suite's `isValid` / `validationWarnings` fields. Suite validity is config-only and is never recalculated from test-case mutations. Test-case presence is enforced at run-creation time only (see `test-suite-runs` spec).
+Status: **Implemented**
+
+#### Scenario: Creating a test case does not change suite validity
+- **WHEN** a test case is created in a dataset
+- **THEN** the `isValid` and `validationWarnings` of any suite bound to that dataset SHALL remain unchanged
+
+#### Scenario: Deleting a test case does not change suite validity
+- **WHEN** a test case is deleted from a dataset
+- **THEN** the `isValid` and `validationWarnings` of any suite bound to that dataset SHALL remain unchanged
+
 ### Requirement: Filter selector resolution semantics
 A `filter` selector SHALL be resolved to a concrete set of test-case ids inside the same transaction that performs the UPDATE. Rows inserted into the dataset between the selector-resolution query and the UPDATE that were not part of the resolved id set SHALL NOT be affected by the bulk operation. This matches the behaviour documented for other filter-based bulk endpoints and SHALL be documented in the OpenAPI description.
 Status: **Planned**

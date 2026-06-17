@@ -95,7 +95,7 @@ public abstract class SuiteValidationBindingFunctionalTests extends BaseFunction
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().isValid()).isTrue();
+        assertSuiteConfigValid(response.getBody());
         List<ValidationWarningDto> filePartWarnings = response.getBody().getValidationWarnings() == null
                 ? List.of()
                 : response.getBody().getValidationWarnings().stream()
@@ -143,8 +143,8 @@ public abstract class SuiteValidationBindingFunctionalTests extends BaseFunction
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().isValid()).isTrue();
-        assertThat(response.getBody().getValidationWarnings()).isEmpty();
+        assertSuiteConfigValid(response.getBody());
+        assertThat(configWarnings(response.getBody())).isEmpty();
     }
 
     @Test

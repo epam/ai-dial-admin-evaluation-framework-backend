@@ -45,9 +45,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.core.JacksonException;
@@ -220,6 +222,74 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).contains("INVALID_OPERATION");
+    }
+
+    @Test
+    @DisplayName("Should return 409 when running a suite with no test cases")
+    void shouldReturn409WhenSuiteHasNoTestCases() {
+        TestSuiteResponseDto suite = createTestSuiteWithoutTestCases("Suite No Test Cases");
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/runs"), jsonEntity(buildRunRequest(1, null)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("INVALID_OPERATION");
+    }
+
+    @Test
+    @DisplayName("Should accept run after first test case is added to previously empty dataset")
+    void shouldAcceptRunAfterTestCaseAdded() {
+        TestSuiteResponseDto suite = createTestSuiteWithoutTestCases("Suite Presence Guard");
+        ResponseEntity<String> emptyRun = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/runs"), jsonEntity(buildRunRequest(1, null)), String.class);
+        assertThat(emptyRun.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(emptyRun.getBody()).contains("INVALID_OPERATION");
+
+        createTestCaseForSuite(suite.getId(), "TC1", Map.of("expected", "answer"));
+
+        ResponseEntity<TestSuiteRunResponseDto> okRun = createRunRequest(suite.getId(), 1, "Run after add");
+        assertThat(okRun.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(okRun.getBody()).isNotNull();
+        assertThat(okRun.getBody().getNumberOfTestCases()).isEqualTo(1);
+    }
+
+    private TestSuiteResponseDto fetchSuite(UUID id) {
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.getForEntity(apiUrl("/test-suites/" + id), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        return response.getBody();
+    }
+
+    private TestSuiteResponseDto updateSuiteDisabledTestCaseIds(TestSuiteResponseDto suite, List<UUID> disabledIds) {
+        TestSuiteRequestDto request = suiteRequestFrom(suite, suite.getName(), suite.getDatasetId(), disabledIds);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set(HttpHeaders.IF_MATCH, String.valueOf(suite.getVersion()));
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + suite.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(request, headers),
+                TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        return response.getBody();
+    }
+
+    private TestSuiteRequestDto suiteRequestFrom(
+            TestSuiteResponseDto template, String name, UUID datasetId, List<UUID> disabledIds) {
+        return TestSuiteRequestDto.builder()
+                .name(name)
+                .description(template.getDescription())
+                .suiteType(template.getSuiteType())
+                .datasetId(datasetId)
+                .disabledTestCaseIds(disabledIds)
+                .deploymentRef(template.getDeploymentRef())
+                .endpointRef(template.getEndpointRef())
+                .responseColumns(template.getResponseColumns())
+                .requestTemplate(template.getRequestTemplate())
+                .inputBindings(template.getInputBindings())
+                .build();
     }
 
     // --- Run CRUD Tests (Task 33) ---
@@ -860,6 +930,12 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     private TestSuiteResponseDto createTestSuite(String name) {
+        TestSuiteResponseDto suite = createTestSuiteWithoutTestCases(name);
+        createTestCaseForSuite(suite.getId(), "Default TC", Map.of("expected", "value"));
+        return suite;
+    }
+
+    private TestSuiteResponseDto createTestSuiteWithoutTestCases(String name) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name)
                 .description("Description for " + name)

@@ -16,6 +16,8 @@ import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.RetryPolicyDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
@@ -239,6 +241,16 @@ public abstract class ExecutionSettingsFunctionalTests extends BaseFunctionalTes
         ResponseEntity<TestSuiteResponseDto> response =
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        return response.getBody();
+        TestSuiteResponseDto suite = response.getBody();
+        // A suite is only runnable when its dataset has at least one runnable test case.
+        ResponseEntity<TestCaseResponseDto> tc = restTemplate.postForEntity(
+                apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("seed")
+                        .data(Map.of("expected", "value"))
+                        .build()),
+                TestCaseResponseDto.class);
+        assertThat(tc.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return suite;
     }
 }

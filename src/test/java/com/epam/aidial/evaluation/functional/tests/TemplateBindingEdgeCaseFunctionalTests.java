@@ -200,8 +200,8 @@ public abstract class TemplateBindingEdgeCaseFunctionalTests extends BaseFunctio
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         TestSuiteResponseDto suite = response.getBody();
         assertThat(suite).isNotNull();
-        assertThat(suite.isValid()).isTrue();
-        assertThat(suite.getValidationWarnings()).isEmpty();
+        assertSuiteConfigValid(suite);
+        assertThat(configWarnings(suite)).isEmpty();
     }
 
     @Test
@@ -241,7 +241,7 @@ public abstract class TemplateBindingEdgeCaseFunctionalTests extends BaseFunctio
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         TestSuiteResponseDto suite = response.getBody();
         assertThat(suite).isNotNull();
-        assertThat(suite.isValid()).isTrue();
+        assertSuiteConfigValid(suite);
     }
 
     // --- Test-case-level validation edge cases ---
@@ -442,7 +442,7 @@ public abstract class TemplateBindingEdgeCaseFunctionalTests extends BaseFunctio
         assertThat(suiteRes.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         TestSuiteResponseDto suite = suiteRes.getBody();
         assertThat(suite).isNotNull();
-        assertThat(suite.isValid()).isTrue();
+        assertSuiteConfigValid(suite);
 
         // Create a test case with all data satisfied
         TestCaseRequestDto tcReq = TestCaseRequestDto.builder()

@@ -137,4 +137,12 @@ public interface TestCaseRepository {
      * Returns the subset of {@code ids} that exist in {@code datasetId}.
      */
     List<UUID> findExistingIdsInDataset(UUID datasetId, List<UUID> ids);
+
+    /**
+     * Deletes all test cases whose id is in {@code ids} and which belong to {@code datasetId}.
+     * Uses a PostgreSQL {@code RETURNING id} clause to identify which rows were actually deleted.
+     *
+     * @return IDs of the rows that were deleted (order is not guaranteed to match input)
+     */
+    List<UUID> deleteByIdsAndDatasetId(UUID datasetId, List<UUID> ids);
 }

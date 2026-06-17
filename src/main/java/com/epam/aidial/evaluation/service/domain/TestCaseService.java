@@ -14,6 +14,8 @@ import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkDeleteRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkOperationDto;
 import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkPatchRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkPatchResponseDto;
@@ -64,6 +66,7 @@ public class TestCaseService {
     private final ValidationWarningsSerializer warningsSerializer;
     private final TestCaseProperties testCaseProperties;
     private final TestCaseBulkPatchValidator bulkPatchValidator;
+    private final TestCaseBulkDeleteValidator bulkDeleteValidator;
     private final TestCaseBulkSelectorResolver bulkSelectorResolver;
     private final TransactionTimestampContext transactionTimestampContext;
 
@@ -442,6 +445,22 @@ public class TestCaseService {
         ensureDatasetExists(datasetId);
         List<FilterCondition> filters = filterParser.parse(filter != null ? filter : List.of());
         return testCaseRepository.deleteAllByDatasetId(datasetId, filters);
+    }
+
+    @Transactional("metaTransactionManager")
+    public TestCaseBulkDeleteResponseDto bulkDelete(UUID datasetId, TestCaseBulkDeleteRequestDto request) {
+        ensureDatasetExists(datasetId);
+        bulkDeleteValidator.validate(request);
+        List<UUID> deletedIds = testCaseRepository.deleteByIdsAndDatasetId(datasetId, request.getIds());
+        Set<UUID> deletedSet = new HashSet<>(deletedIds);
+        List<UUID> deleted =
+                request.getIds().stream().filter(deletedSet::contains).toList();
+        List<UUID> notFound =
+                request.getIds().stream().filter(id -> !deletedSet.contains(id)).toList();
+        return TestCaseBulkDeleteResponseDto.builder()
+                .deleted(deleted)
+                .notFound(notFound)
+                .build();
     }
 
     private void ensureDatasetExists(UUID datasetId) {

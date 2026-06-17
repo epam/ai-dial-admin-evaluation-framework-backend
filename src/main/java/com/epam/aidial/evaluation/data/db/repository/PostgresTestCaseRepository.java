@@ -486,6 +486,23 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         return result;
     }
 
+    @Override
+    public List<UUID> deleteByIdsAndDatasetId(UUID datasetId, List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<String> idStrings = ids.stream().map(UUID::toString).toList();
+        List<String> deletedIdStrings = dsl.deleteFrom(TEST_CASES)
+                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.ID.in(idStrings)))
+                .returningResult(TEST_CASES.ID)
+                .fetch(TEST_CASES.ID);
+        List<UUID> result = new ArrayList<>(deletedIdStrings.size());
+        for (String s : deletedIdStrings) {
+            result.add(UUID.fromString(s));
+        }
+        return result;
+    }
+
     private static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
     }

@@ -94,7 +94,7 @@ public abstract class HeaderBlacklistFunctionalTests extends BaseFunctionalTest 
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().isValid()).isTrue();
+        assertSuiteConfigValid(response.getBody());
     }
 
     // --- Helper Methods ---

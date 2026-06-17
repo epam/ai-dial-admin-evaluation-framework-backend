@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuitesRec
 import com.epam.aidial.evaluation.data.db.mapper.TestSuiteRecordMapper;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
+import com.epam.aidial.evaluation.data.db.model.TestSuiteSummary;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
@@ -224,6 +225,17 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
         return dsl.selectFrom(TEST_SUITES)
                 .where(TEST_SUITES.DATASET_ID.eq(datasetId.toString()))
                 .fetch(recordMapper::map);
+    }
+
+    @Override
+    public List<TestSuiteSummary> findSuiteSummariesReferencingDataset(UUID datasetId) {
+        return dsl.select(TEST_SUITES.ID, TEST_SUITES.NAME, TEST_SUITES.DESCRIPTION)
+                .from(TEST_SUITES)
+                .where(TEST_SUITES.DATASET_ID.eq(datasetId.toString()))
+                .fetch(r -> new TestSuiteSummary(
+                        UUID.fromString(r.get(TEST_SUITES.ID)),
+                        r.get(TEST_SUITES.NAME),
+                        r.get(TEST_SUITES.DESCRIPTION)));
     }
 
     @Override

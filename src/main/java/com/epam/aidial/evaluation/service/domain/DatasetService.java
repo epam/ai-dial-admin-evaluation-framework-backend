@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
@@ -110,6 +111,18 @@ public class DatasetService {
                 .findById(id)
                 .map(datasetMapper::toDto)
                 .orElseThrow(() -> new EntityNotFoundException("Dataset not found with id: " + id));
+    }
+
+    /**
+     * Lists the test suites that depend on (are bound to) the given dataset, returning a lightweight
+     * {@code {id, name, description}} summary per suite. Throws {@link EntityNotFoundException} (HTTP
+     * 404) when the dataset does not exist. Cross-domain read delegated to {@link TestSuiteService}.
+     */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<DatasetDependentSuiteDto> getDependentSuites(UUID id) {
+        log.debug("Listing dependent suites for Dataset id: {}", id);
+        getById(id);
+        return testSuiteService.getDependentSuiteSummaries(id);
     }
 
     @Transactional("metaTransactionManager")

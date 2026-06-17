@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
@@ -276,6 +277,22 @@ public class TestSuiteService {
     public List<TestSuiteResponseDto> getReferencingDataset(UUID datasetId) {
         return testSuiteRepository.findSuitesReferencingDataset(datasetId).stream()
                 .map(testSuiteMapper::toDto)
+                .toList();
+    }
+
+    /**
+     * Returns a lightweight {@code {id, name, description}} summary for every suite bound to the
+     * given dataset. Backed by a selective-column projection so the suite's large JSONB columns are
+     * not fetched. Used by the dataset → dependent-suites listing endpoint.
+     */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<DatasetDependentSuiteDto> getDependentSuiteSummaries(UUID datasetId) {
+        return testSuiteRepository.findSuiteSummariesReferencingDataset(datasetId).stream()
+                .map(summary -> DatasetDependentSuiteDto.builder()
+                        .id(summary.id())
+                        .name(summary.name())
+                        .description(summary.description())
+                        .build())
                 .toList();
     }
 

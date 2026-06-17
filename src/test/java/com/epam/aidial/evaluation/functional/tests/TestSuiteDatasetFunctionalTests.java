@@ -3,8 +3,11 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
+import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
@@ -15,6 +18,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -119,6 +123,76 @@ public abstract class TestSuiteDatasetFunctionalTests extends BaseFunctionalTest
         assertThat(getResp.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(getResp.getBody()).isNotNull();
         assertThat(getResp.getBody().getDisabledTestCaseIds()).containsExactlyInAnyOrder(disabled1, disabled2);
+    }
+
+    @Test
+    @DisplayName("GET /datasets/{id}/test-suites returns id/name/description of bound suites")
+    void listDependentSuitesReturnsBoundSuiteSummaries() {
+        Dataset dataset = metaTestDataHelper.createDataset("Dependents-" + UUID.randomUUID());
+        TestSuiteResponseDto suiteA = createSuite(dataset.getId());
+        TestSuiteResponseDto suiteB = createSuite(dataset.getId());
+
+        ResponseEntity<List<DatasetDependentSuiteDto>> response = restTemplate.exchange(
+                apiUrl("/datasets/" + dataset.getId() + "/test-suites"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody())
+                .extracting(DatasetDependentSuiteDto::getId)
+                .containsExactlyInAnyOrder(suiteA.getId(), suiteB.getId());
+        assertThat(response.getBody())
+                .extracting(DatasetDependentSuiteDto::getName)
+                .containsExactlyInAnyOrder(suiteA.getName(), suiteB.getName());
+        assertThat(response.getBody())
+                .allSatisfy(dto -> assertThat(dto.getDescription()).isEqualTo("desc"));
+    }
+
+    @Test
+    @DisplayName("GET /datasets/{id}/test-suites returns empty array when no suites are bound")
+    void listDependentSuitesReturnsEmptyWhenNoneBound() {
+        Dataset dataset = metaTestDataHelper.createDataset("NoDependents-" + UUID.randomUUID());
+
+        ResponseEntity<List<DatasetDependentSuiteDto>> response = restTemplate.exchange(
+                apiUrl("/datasets/" + dataset.getId() + "/test-suites"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull().isEmpty();
+    }
+
+    @Test
+    @DisplayName("GET /datasets/{id}/test-suites returns 404 for an unknown dataset")
+    void listDependentSuitesReturns404ForUnknownDataset() {
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/datasets/" + UUID.randomUUID() + "/test-suites"), HttpMethod.GET, null, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("GET /datasets/{id}/test-suites lists dependents of a PRIVATE dataset (visibility does not block)")
+    void listDependentSuitesIncludesPrivateDatasetDependents() {
+        Dataset dataset = metaTestDataHelper.createDataset(
+                "PrivateDependents-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+        TestSuite suite = metaTestDataHelper.createTestSuite("PrivBound-" + UUID.randomUUID(), dataset.getId());
+
+        ResponseEntity<List<DatasetDependentSuiteDto>> response = restTemplate.exchange(
+                apiUrl("/datasets/" + dataset.getId() + "/test-suites"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody()).singleElement().satisfies(dto -> {
+            assertThat(dto.getId()).isEqualTo(suite.getId());
+            assertThat(dto.getName()).isEqualTo(suite.getName());
+        });
     }
 
     // -----------------------------------------------------------------------

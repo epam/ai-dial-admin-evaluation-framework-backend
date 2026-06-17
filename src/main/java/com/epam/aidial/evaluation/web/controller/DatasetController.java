@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.service.domain.DatasetService;
 import com.epam.aidial.evaluation.service.domain.RevalidationService;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
@@ -17,7 +18,9 @@ import com.epam.aidial.evaluation.web.pagination.FilterParam;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -98,6 +101,31 @@ public class DatasetController {
 
         DatasetResponseDto dto = datasetService.getById(id);
         return ResponseEntity.ok().eTag(etag(dto.getVersion())).body(dto);
+    }
+
+    @GetMapping("/{id}/test-suites")
+    @Operation(
+            summary = "List test suites depending on a dataset",
+            description = "Returns the id, name, and description of every test suite bound to this dataset "
+                    + "(suites whose datasetId references it). An empty array means the dataset has no "
+                    + "dependent suites.")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Dependent test suites retrieved",
+            content =
+                    @Content(
+                            mediaType = "application/json",
+                            array = @ArraySchema(schema = @Schema(implementation = DatasetDependentSuiteDto.class)),
+                            examples =
+                                    @ExampleObject(
+                                            value = "[{\"id\":\"550e8400-e29b-41d4-a716-446655440000\","
+                                                    + "\"name\":\"Regression suite\","
+                                                    + "\"description\":\"Nightly regression coverage\"}]")))
+    @ApiResponse(responseCode = "404", description = "Dataset not found")
+    public List<DatasetDependentSuiteDto> getDependentSuites(
+            @Parameter(description = "Dataset ID") @PathVariable UUID id) {
+
+        return datasetService.getDependentSuites(id);
     }
 
     @PostMapping

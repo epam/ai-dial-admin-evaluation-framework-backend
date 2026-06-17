@@ -36,6 +36,7 @@ import com.epam.aidial.evaluation.functional.tests.EvalSummaryAggregationFunctio
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportPageSizeFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalSummaryStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvaluationExecutorFailureModesFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvaluationMultipartFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ExecutionSettingsFunctionalTests;
@@ -56,10 +57,12 @@ import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseRunInputRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestSuiteRunRepositoryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.QuerySchemaDiscoveryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ResponseColumnFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RevalidationCoercionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RevalidationTaskFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationBindingFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationFileRefFunctionalTests;
@@ -77,6 +80,7 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.TestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TryItOutFunctionalTests;
 import com.epam.aidial.evaluation.service.domain.MetricProviderSyncJob;
@@ -457,6 +461,18 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class RevalidationCoercionTests extends RevalidationCoercionFunctionalTests {}
+
+    @Nested
+    class QuerySchemaDiscoveryTests extends QuerySchemaDiscoveryFunctionalTests {}
+
+    @Nested
+    class TestSuiteStructuredQueryTests extends TestSuiteStructuredQueryFunctionalTests {}
+
+    @Nested
+    class EvalSummaryStructuredQueryTests extends EvalSummaryStructuredQueryFunctionalTests {}
+
+    @Nested
+    class StructuredQueryExecuteTests extends StructuredQueryExecuteFunctionalTests {}
 
     @Nested
     @DisplayName("Metric provider sync job")

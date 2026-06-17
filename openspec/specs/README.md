@@ -95,6 +95,8 @@ Specs for behaviors that apply across multiple domain areas.
   OpenAPI request/response examples (minimal + full), resource-based JSON, OpenApiExampleCustomizer.
 - **[openapi-query-param-docs](openapi-query-param-docs/spec.md)** — Implemented
   Auto-generated OpenAPI query parameter descriptions from FilterWhitelists, SortWhitelists, and PaginationProperties. Covers field-operator matrices, type hints, pagination defaults, and parameter examples.
+- **[structured-query-model](structured-query-model/spec.md)** — Partial
+  Body-delivered structured query wire contract (v7) and its request-side object model — envelope (`entity`/`filter`/`mode`/`select`/`group_by`/`aggregate`/`having`/`sort`/`page`), CQL2-JSON filter tree (`op`/`args`), uniform expression grammar discriminated by `type` (`field`/`value`/`param`/`fn`/`array`), aggregation/sort/dual-strategy pagination shapes. Implemented: immutable record model under `experimental.query.model` (sealed `Expr`/`FilterNode`/`PageSpec` hierarchies, `FilterNodeDeserializer`, `@JsonValue` wire codes) proven by `StructuredQueryDeserializationTest`. Planned: per-entity validation/allowlist, SQL translation, response envelopes. Related: entity-filtering, sorting.
 
 ### Analytics
 

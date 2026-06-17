@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Structured Query — Schema Discovery (experimental)</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #1e293b;
+            --panel-2: #273449;
+            --border: #334155;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-2: #818cf8;
+            --ok: #34d399;
+            --warn: #fbbf24;
+            --err: #f87171;
+            --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        header {
+            padding: 28px 32px 20px;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(180deg, #15213b, var(--bg));
+        }
+        nav { display: flex; gap: 8px; margin-bottom: 14px; }
+        nav a {
+            font-size: 13px; text-decoration: none; color: var(--muted);
+            border: 1px solid var(--border); padding: 5px 12px; border-radius: 8px;
+        }
+        nav a.active { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+        nav a:hover { color: var(--text); }
+        nav a.active:hover { color: var(--bg); }
+        header h1 { margin: 0 0 4px; font-size: 22px; }
+        header h1 .v0 {
+            font-family: var(--mono);
+            font-size: 13px;
+            color: var(--bg);
+            background: var(--warn);
+            padding: 2px 8px;
+            border-radius: 6px;
+            vertical-align: middle;
+            margin-left: 8px;
+        }
+        header p { margin: 6px 0 0; color: var(--muted); max-width: 820px; font-size: 14px; }
+        main { padding: 24px 32px 64px; max-width: 1080px; }
+        .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .baseurl { margin-top: 14px; }
+        .baseurl label { color: var(--muted); font-size: 13px; margin-right: 8px; }
+        input[type=text] {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 7px 10px;
+            border-radius: 8px;
+            font-family: var(--mono);
+            font-size: 13px;
+            min-width: 320px;
+        }
+        input[type=text]:focus { outline: none; border-color: var(--accent); }
+        button {
+            background: var(--accent);
+            color: #06283d;
+            border: none;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+        button:hover { filter: brightness(1.08); }
+        button:disabled { opacity: .5; cursor: not-allowed; }
+        h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 32px 0 12px; }
+        .entities { display: flex; gap: 12px; flex-wrap: wrap; }
+        .entity {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            cursor: pointer;
+            min-width: 200px;
+            transition: border-color .15s, transform .15s;
+        }
+        .entity:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .entity.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+        .entity .name { font-family: var(--mono); font-size: 15px; color: var(--accent); }
+        .entity .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+        .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; font-weight: 600; }
+        .tag.complex { background: #3b2f63; color: #c4b5fd; }
+        .tag.simple { background: #1e3a34; color: #6ee7b7; }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+        .endpoint {
+            font-family: var(--mono); font-size: 13px; color: var(--muted);
+            background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+            padding: 8px 12px; margin-bottom: 14px; word-break: break-all;
+        }
+        .endpoint .verb { color: var(--ok); font-weight: 700; margin-right: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+        td { padding: 7px 10px; border-bottom: 1px solid #2a3650; font-family: var(--mono); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: var(--panel-2); }
+        .fname .fam { opacity: .55; }
+        .badge { font-size: 11px; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+        .t-uuid { background: #2a2a4d; color: #a5b4fc; }
+        .t-string { background: #133b4d; color: #7dd3fc; }
+        .t-number { background: #143a2a; color: #6ee7b7; }
+        .t-boolean { background: #3d2a16; color: #fcd34d; }
+        .t-temporal { background: #3a1f3a; color: #f0abfc; }
+        .t-struct { background: #2d3340; color: #cbd5e1; }
+        .fam-chip { font-size: 10px; padding: 1px 7px; border-radius: 999px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+        .fam-column { background: #2d3340; color: #94a3b8; }
+        .fam-data { background: #133b4d; color: #7dd3fc; }
+        .fam-response { background: #143a2a; color: #6ee7b7; }
+        .fam-metric { background: #3b2f63; color: #c4b5fd; }
+        .fam-metricInfo { background: #3d2a16; color: #fcd34d; }
+        .detail-controls { margin: 4px 0 16px; }
+        .count { color: var(--muted); font-size: 12px; margin-left: 8px; font-family: var(--mono); }
+        .hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+        .banner { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+        .banner.err { background: #3a1717; color: var(--err); border: 1px solid #5b2020; }
+        details { margin-top: 14px; }
+        summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+        pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow: auto; font-size: 12px; color: #cbd5e1; }
+        .hidden { display: none; }
+        .spinner { color: var(--muted); font-size: 13px; }
+    </style>
+</head>
+<body>
+<header>
+    <nav>
+        <a href="/demo/schema" class="active">Schema Discovery</a>
+        <a href="/demo/query">Query Builder</a>
+    </nav>
+    <h1>Structured Query — Schema Discovery <span class="v0">/api/v1 · experimental</span></h1>
+    <p>
+        Discover which entities the structured query DSL can target and which flat field names are
+        valid in a query's <code>filter</code> / <code>select</code> / <code>sort</code>. Complex
+        entities expose an instance-specific <em>detailed</em> schema that flattens JSONB columns
+        (<code>data:</code>, <code>response:</code>, <code>metric:</code>, <code>metricInfo:</code>)
+        from the current state of the identified instance.
+    </p>
+    <div class="row baseurl">
+        <label for="baseUrl">API base</label>
+        <input type="text" id="baseUrl" placeholder="(same origin)" value=""/>
+        <button class="secondary" id="reload">Reload entities</button>
+    </div>
+</header>
+
+<main>
+    <div id="banner"></div>
+
+    <h2>1 · Queryable entities</h2>
+    <div class="entities" id="entities"><span class="spinner">Loading…</span></div>
+
+    <section id="schemaSection" class="hidden">
+        <h2>2 · <span id="schemaTitle"></span> schema</h2>
+
+        <div class="detail-controls" id="detailControls"></div>
+
+        <div class="panel">
+            <div class="endpoint" id="endpoint"></div>
+            <div id="fields"></div>
+            <details>
+                <summary>View raw JSON</summary>
+                <pre id="rawJson"></pre>
+            </details>
+        </div>
+    </section>
+</main>
+
+<script>
+    const $ = (id) => document.getElementById(id);
+    const state = { entities: [], selected: null };
+
+    const apiBase = () => $("baseUrl").value.replace(/\/+$/, "");
+    const url = (path) => apiBase() + "/api/v1/queries" + path;
+
+    function showError(msg) {
+        $("banner").innerHTML = '<div class="banner err">' + escapeHtml(msg) + "</div>";
+    }
+    function clearError() { $("banner").innerHTML = ""; }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    }
+
+    async function getJson(path) {
+        const res = await fetch(url(path), { headers: { Accept: "application/json" } });
+        const text = await res.text();
+        let body;
+        try { body = text ? JSON.parse(text) : null; } catch (e) { body = text; }
+        if (!res.ok) {
+            const detail = body && body.message ? body.message : (typeof body === "string" ? body : res.statusText);
+            throw new Error("HTTP " + res.status + " — " + detail);
+        }
+        return body;
+    }
+
+    const TYPE_CLASS = {
+        uuid: "t-uuid", string: "t-string",
+        integer: "t-number", long: "t-number", decimal: "t-number",
+        boolean: "t-boolean", date: "t-temporal", timestamp: "t-temporal",
+        object: "t-struct", array: "t-struct",
+    };
+
+    function family(name) {
+        const i = name.indexOf(":");
+        return i === -1 ? "column" : name.slice(0, i);
+    }
+
+    function fieldNameHtml(name) {
+        const i = name.indexOf(":");
+        if (i === -1) return escapeHtml(name);
+        // dim the family prefix, emphasize the leaf
+        const head = name.slice(0, name.lastIndexOf(":") + 1);
+        const leaf = name.slice(name.lastIndexOf(":") + 1);
+        return '<span class="fam">' + escapeHtml(head) + "</span>" + escapeHtml(leaf);
+    }
+
+    function renderFields(schema, endpointPath) {
+        $("endpoint").innerHTML = '<span class="verb">GET</span>' + escapeHtml("/api/v1/queries" + endpointPath);
+        $("rawJson").textContent = JSON.stringify(schema, null, 2);
+        const fields = schema.fields || [];
+        const rows = fields.map((f) => {
+            const fam = family(f.name);
+            return "<tr>"
+                + '<td class="fname">' + fieldNameHtml(f.name) + "</td>"
+                + '<td><span class="badge ' + (TYPE_CLASS[f.type] || "t-struct") + '">' + escapeHtml(f.type) + "</span></td>"
+                + '<td><span class="fam-chip fam-' + escapeHtml(fam) + '">' + escapeHtml(fam) + "</span></td>"
+                + '<td style="color:var(--muted)">' + escapeHtml(f.source) + "</td>"
+                + "</tr>";
+        }).join("");
+        $("fields").innerHTML =
+            '<table><thead><tr><th>Field</th><th>Type</th><th>Family</th><th>Source</th></tr></thead><tbody>'
+            + rows + "</tbody></table>"
+            + '<div class="count">' + fields.length + " fields</div>";
+    }
+
+    async function loadBaseSchema(entity) {
+        clearError();
+        $("fields").innerHTML = '<span class="spinner">Loading…</span>';
+        try {
+            const path = "/entities/schema/" + encodeURIComponent(entity.name);
+            renderFields(await getJson(path), path);
+        } catch (e) { showError(e.message); $("fields").innerHTML = ""; }
+    }
+
+    async function loadDetailedSchema(entity, id) {
+        clearError();
+        $("fields").innerHTML = '<span class="spinner">Loading…</span>';
+        try {
+            // The instance is selected via a query parameter whose name is the entity's
+            // schemaIdField (entities may accept different parameters), not a path variable.
+            const idField = entity.schemaIdField || "id";
+            const path = "/entities/schema/" + encodeURIComponent(entity.name) + "/detailed?"
+                + encodeURIComponent(idField) + "=" + encodeURIComponent(id);
+            renderFields(await getJson(path), path);
+        } catch (e) { showError(e.message); $("fields").innerHTML = ""; }
+    }
+
+    function selectEntity(entity) {
+        state.selected = entity;
+        document.querySelectorAll(".entity").forEach((el) =>
+            el.classList.toggle("active", el.dataset.name === entity.name));
+        $("schemaSection").classList.remove("hidden");
+        $("schemaTitle").textContent = entity.name;
+
+        if (entity.complex) {
+            const idField = entity.schemaIdField || "id";
+            $("detailControls").innerHTML =
+                '<div class="row">'
+                + '<button class="secondary" id="baseBtn">Base schema</button>'
+                + '<input type="text" id="instanceId" placeholder="' + escapeHtml(idField) + ' (UUID)"/>'
+                + '<button id="detailBtn">Detailed schema</button>'
+                + "</div>"
+                + '<p class="hint">Detailed schema flattens JSONB columns from the current state of the '
+                + escapeHtml(idField) + ". Enter an existing test suite ID.</p>";
+            $("baseBtn").onclick = () => loadBaseSchema(entity);
+            $("detailBtn").onclick = () => {
+                const id = $("instanceId").value.trim();
+                if (!id) { showError("Enter a " + idField + " value first."); return; }
+                loadDetailedSchema(entity, id);
+            };
+            $("instanceId").addEventListener("keydown", (e) => { if (e.key === "Enter") $("detailBtn").click(); });
+        } else {
+            $("detailControls").innerHTML =
+                '<p class="hint">Simple entity — instance-independent schema only.</p>';
+        }
+        loadBaseSchema(entity);
+    }
+
+    function renderEntities() {
+        $("entities").innerHTML = state.entities.map((e) =>
+            '<div class="entity" data-name="' + escapeHtml(e.name) + '">'
+            + '<div class="name">' + escapeHtml(e.name) + "</div>"
+            + '<div class="meta">'
+            + '<span class="tag ' + (e.complex ? "complex" : "simple") + '">' + (e.complex ? "complex" : "simple") + "</span>"
+            + (e.complex ? '<span style="margin-left:8px">id: <code>' + escapeHtml(e.schemaIdField) + "</code></span>" : "")
+            + "</div></div>"
+        ).join("");
+        document.querySelectorAll(".entity").forEach((el) => {
+            el.onclick = () => selectEntity(state.entities.find((x) => x.name === el.dataset.name));
+        });
+    }
+
+    async function loadEntities() {
+        clearError();
+        $("schemaSection").classList.add("hidden");
+        $("entities").innerHTML = '<span class="spinner">Loading…</span>';
+        try {
+            state.entities = await getJson("/entities");
+            renderEntities();
+            if (state.entities.length) selectEntity(state.entities[0]);
+        } catch (e) {
+            showError("Could not load entities: " + e.message);
+            $("entities").innerHTML = "";
+        }
+    }
+
+    $("reload").onclick = loadEntities;
+    loadEntities();
+</script>
+</body>
+</html>

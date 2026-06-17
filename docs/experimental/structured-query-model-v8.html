@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Structured Query Model — v8</title>
+<style>
+  :root {
+    --fg: #1a1c1e;
+    --muted: #5b6166;
+    --bg: #ffffff;
+    --code-bg: #f5f7f9;
+    --code-fg: #1a1c1e;
+    --border: #e2e6ea;
+    --accent: #2563b8;
+    --accent-soft: #eef3fb;
+    --table-head: #f0f3f6;
+    --table-stripe: #fafbfc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e4e7ea;
+      --muted: #9aa1a8;
+      --bg: #16181a;
+      --code-bg: #1e2225;
+      --code-fg: #e4e7ea;
+      --border: #2c3136;
+      --accent: #6ba4ec;
+      --accent-soft: #1c2530;
+      --table-head: #21262b;
+      --table-stripe: #1b1e21;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 0;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  nav.toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    max-height: 100vh;
+    overflow-y: auto;
+    padding: 2rem 1.25rem 2rem 1.5rem;
+    border-right: 1px solid var(--border);
+    font-size: 0.85rem;
+  }
+  nav.toc .toctitle {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+  nav.toc ul { list-style: none; margin: 0; padding: 0; }
+  nav.toc ul ul { padding-left: 0.85rem; }
+  nav.toc li { margin: 0.15rem 0; }
+  nav.toc a {
+    color: var(--muted);
+    text-decoration: none;
+    display: block;
+    padding: 0.1rem 0;
+    border-radius: 4px;
+  }
+  nav.toc a:hover { color: var(--accent); }
+  main {
+    padding: 2rem 2.5rem 5rem;
+    min-width: 0;
+  }
+  h1, h2, h3, h4 { line-height: 1.25; scroll-margin-top: 1.5rem; }
+  h1 { font-size: 1.9rem; margin: 0 0 1.5rem; padding-bottom: 0.6rem; border-bottom: 2px solid var(--border); }
+  h2 { font-size: 1.4rem; margin: 2.5rem 0 1rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.12rem; margin: 1.8rem 0 0.6rem; }
+  h4 { font-size: 1rem; margin: 1.2rem 0 0.5rem; }
+  p { margin: 0.75rem 0; }
+  a { color: var(--accent); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+  code {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.86em;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 0.12em 0.38em;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.84rem;
+    color: var(--code-fg);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.7rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  thead th { background: var(--table-head); font-weight: 600; }
+  tbody tr:nth-child(even) { background: var(--table-stripe); }
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--fg);
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p { margin: 0.3rem 0; }
+  ul, ol { padding-left: 1.4rem; }
+  li { margin: 0.3rem 0; }
+  strong { font-weight: 650; }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc {
+      position: static;
+      max-height: none;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+    main { padding: 1.5rem 1.25rem 4rem; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc">
+<div class="toctitle">Contents</div>
+<div class="toc">
+<ul>
+<li><a href="#0-problem-statement">0. Problem statement</a></li>
+<li><a href="#conventions">Conventions</a></li>
+<li><a href="#1-top-level-envelope">1. Top-level envelope</a></li>
+<li><a href="#2-modes-row-vs-aggregate">2. Modes: row vs aggregate</a></li>
+<li><a href="#3-filter-sub-grammar-cql2-json-op-args">3. Filter sub-grammar (CQL2-JSON op / args)</a><ul>
+<li><a href="#logical-nodes">Logical nodes</a></li>
+<li><a href="#predicate-nodes">Predicate nodes</a></li>
+<li><a href="#operator-codes">Operator codes</a></li>
+<li><a href="#collision-note">Collision note</a></li>
+<li><a href="#example">Example</a></li>
+</ul>
+</li>
+<li><a href="#4-expression-grammar">4. Expression grammar</a><ul>
+<li><a href="#41-the-five-kinds">4.1 The five kinds</a></li>
+<li><a href="#42-literals-and-value_type">4.2 Literals and value_type</a></li>
+<li><a href="#43-runtime-parameters-param">4.3 Runtime parameters (param)</a></li>
+<li><a href="#44-functions-fn-and-the-safety-boundary">4.4 Functions (fn) — and the safety boundary</a></li>
+<li><a href="#45-flat-property-abstraction-field-references-and-physical-sources">4.5 Flat property abstraction (field references and physical sources)</a></li>
+<li><a href="#46-arrays">4.6 Arrays</a></li>
+</ul>
+</li>
+<li><a href="#5-output-columns-select-group_by-distinct-and-having">5. Output columns (select), group_by, distinct, and having</a><ul>
+<li><a href="#51-output-columns-select">5.1 Output columns — select</a></li>
+<li><a href="#52-grouping-group_by-aggregate-mode">5.2 Grouping — group_by (aggregate mode)</a></li>
+<li><a href="#53-statement-level-distinct-distinct">5.3 Statement-level distinct — distinct</a></li>
+<li><a href="#54-having-aggregate-mode">5.4 having (aggregate mode)</a></li>
+</ul>
+</li>
+<li><a href="#6-sort">6. Sort</a></li>
+<li><a href="#7-pagination-4">7. Pagination (#4)</a><ul>
+<li><a href="#71-request">7.1 Request</a></li>
+<li><a href="#72-the-cursor-is-opaque">7.2 The cursor is opaque</a></li>
+<li><a href="#73-strategy-semantics-and-tradeoffs-normative-notes">7.3 Strategy semantics and tradeoffs (normative notes)</a></li>
+<li><a href="#74-response-envelope">7.4 Response envelope</a></li>
+<li><a href="#75-governance-applies-to-both-strategies">7.5 Governance (applies to BOTH strategies)</a></li>
+</ul>
+</li>
+<li><a href="#8-worked-examples">8. Worked examples</a><ul>
+<li><a href="#81-row-mode-filter-by-a-metric-threshold-projection-offset-page-with-total">8.1 Row mode: filter by a metric threshold + projection + offset page with total</a></li>
+<li><a href="#82-aggregate-mode-group-by-avg-having-cursor-page">8.2 Aggregate mode: group-by + avg + having + cursor page</a></li>
+<li><a href="#83-null-handling-on-a-metric-derived-column">8.3 Null handling on a metric-derived column</a></li>
+<li><a href="#84-computed-operand-function-on-the-left-of-a-comparison">8.4 Computed operand: function on the left of a comparison</a></li>
+<li><a href="#85-set-membership-in-with-an-array-operand">8.5 Set membership: in with an array operand</a></li>
+</ul>
+</li>
+<li><a href="#9-validation-allowlist-hooks">9. Validation / allowlist hooks</a></li>
+<li><a href="#10-open-decisions">10. Open decisions</a></li>
+</ul>
+</div>
+
+</nav>
+<main>
+<h1 id="structured-query-model-v8">Structured Query Model — v8</h1>
+<p>A purpose-built top-level JSON query model with borrowed sub-grammars, providing a single
+grammar for filtering, sorting, pagination, projection, and aggregation across all listable
+entities (both meta and analytics). Clients send a structured query object (never SQL); the
+server validates it against a per-entity allowlist and translates it to parameterized SQL.
+<strong>How the translation is implemented (query-building library, etc.) is out of scope for this
+spec</strong> — this document defines the wire contract and the validation/translation <em>semantics</em>
+only.</p>
+<p>Each top-level section is independently bounded so it can be allowlisted per entity, and the
+section structure maps onto the
+<code>scan → filter → group_by → having → sort → page</code> pipeline (with aggregate functions
+appearing as output columns in <code>select</code>).</p>
+<hr />
+<h2 id="0-problem-statement">0. Problem statement</h2>
+<p>The legacy query DSL — exposed across list endpoints as <code>filter=</code>, <code>sort=</code>, <code>page</code>, <code>size</code>,
+<code>cursor</code> query parameters — grew organically per capability and hit several structural
+limits. This model exists to resolve them. The numbered problems below are referenced
+throughout the spec (e.g. "#3").</p>
+<ol>
+<li><strong>URL length cap.</strong> Non-trivial filter sets bump against typical proxy/server URL limits
+   (~8 KB), making complex client queries (e.g. dashboards with many active facets) silently
+   truncated or rejected.</li>
+<li><strong>No boolean composition.</strong> The legacy DSL supports only an implicit AND of flat
+   predicates. <code>OR</code>, <code>NOT</code>, and nested groups — <code>(A AND B) OR (C AND D)</code> — cannot be
+   expressed at all, forcing clients to issue multiple requests and merge results.</li>
+<li><strong>Spotty property coverage.</strong> Each entity exposes a hand-picked allowlist of
+   filterable/sortable fields. Many DTO fields (especially in analytics responses) are not
+   queryable even when the underlying column would support it, and adding a property today
+   requires a code change per entity.</li>
+<li><strong>Two incompatible pagination models.</strong> The meta layer uses offset-based paging; the
+   analytics layer uses opaque keyset cursors. Clients must implement both, and cross-entity
+   tooling (export, bulk operations, generic UI grids) cannot share pagination logic.</li>
+<li><strong>No aggregation primitives.</strong> Analytics consumers need group-by, count/sum/avg, and
+   having-style filtering. Today this is solved per-endpoint with bespoke aggregation
+   routes, which scales poorly as new metric views are added.</li>
+<li><strong>No client-driven projection.</strong> Every list response carries the full DTO shape. Clients
+   that need only a few fields pay the full payload + serialization cost, and large JSONB
+   columns trigger TOAST decompression even when not consumed.</li>
+</ol>
+<p>The cumulative effect is that clients work around the API instead of with it, the surface
+area grows with every new entity, and analytics use cases in particular are blocked on
+capabilities the data layer already supports.</p>
+<p><strong>How this model addresses each problem</strong></p>
+<ul>
+<li><strong>#1</strong> — Queries are submitted in a request body (a structured JSON object), not encoded
+  into the URL, so there is no practical length limit.</li>
+<li><strong>#2</strong> — The filter grammar (§3) is a recursive boolean tree with <code>and</code>/<code>or</code>/<code>not</code> and
+  arbitrary nesting.</li>
+<li><strong>#3</strong> — Field queryability is governed by a data-driven per-entity allowlist (§9)
+  declared once per entity, so exposing a property is configuration, not a per-entity code
+  change.</li>
+<li><strong>#4</strong> — A single pagination contract (§7) offers two client-selectable strategies
+  (offset and cursor) behind one shape, so all entities and tooling share one model.</li>
+<li><strong>#5</strong> — Aggregation is first-class (§5): <code>group_by</code>, aggregate functions, and
+  having-style filtering, available uniformly across entities rather than per bespoke route.</li>
+<li><strong>#6</strong> — Clients project exactly the fields they need (§4 <code>select</code>), avoiding full-DTO
+  payloads and unnecessary large-column reads.</li>
+</ul>
+<hr />
+<h2 id="conventions">Conventions</h2>
+<ul>
+<li>JSON keys are <code>snake_case</code>.</li>
+<li>Filter nodes are discriminated by <strong><code>op</code></strong> (CQL2-JSON shape).</li>
+<li>Expression nodes are discriminated by <strong><code>type</code></strong>.</li>
+<li>Pagination nodes are discriminated by <strong><code>type</code></strong>.</li>
+<li>The filter <code>op</code> convention and the <code>type</code> conventions are intentionally separate: filters
+  follow CQL2-JSON (<code>op</code> is intrinsic to it); expressions and pagination are our own
+  grammars (<code>type</code> is the natural fit).</li>
+<li><code>// ←</code> comments are annotations, not part of the JSON.</li>
+</ul>
+<hr />
+<h2 id="1-top-level-envelope">1. Top-level envelope</h2>
+<pre><code class="language-jsonc">{
+  &quot;entity&quot;: &quot;orders&quot;,          // required; resolved against the entity registry (allowlist root)
+  &quot;filter&quot;:   { ... },         // optional; WHERE — boolean tree of filter nodes (§3)
+  &quot;mode&quot;:     &quot;row&quot;,           // &quot;row&quot; | &quot;aggregate&quot; (§2)
+  &quot;distinct&quot;: false,           // optional; statement-level SELECT DISTINCT (row dedup) (§5)
+  &quot;select&quot;:   [ ... ],         // output columns — list of { expr, as } (§5); used in BOTH modes
+  &quot;group_by&quot;: [ ... ],         // aggregate mode only — grouping keys (§5)
+  &quot;having&quot;:   { ... },         // aggregate mode only — filter over aggregate aliases (§5)
+  &quot;sort&quot;:     [ ... ],         // ordering (§6)
+  &quot;page&quot;:     { ... }          // pagination — discriminated, offset or cursor (§7)
+}
+</code></pre>
+<p>Only <code>entity</code> is always required; the rest are constrained by <code>mode</code> (§2). Output columns
+are listed in <code>select</code> in both modes (§5); there is no separate <code>aggregate</code> section — an
+aggregate output column is simply a <code>select</code> entry whose expression is an aggregate function.</p>
+<hr />
+<h2 id="2-modes-row-vs-aggregate">2. Modes: row vs aggregate</h2>
+<p>SQL forbids mixing non-grouped raw columns with aggregates, so the model has two mutually
+exclusive modes, switched by <code>mode</code>. Both modes list their output columns in <code>select</code> (§5);
+what is <em>legal inside</em> a <code>select</code> entry differs by mode.</p>
+<ul>
+<li>
+<p><strong><code>row</code></strong> — projection of individual rows.
+  Allowed: <code>filter</code>, <code>distinct</code>, <code>select</code>, <code>sort</code>, <code>page</code>. Forbidden: <code>group_by</code>, <code>having</code>.
+  Each <code>select</code> entry is a scalar expression (optionally aliased).</p>
+</li>
+<li>
+<p><strong><code>aggregate</code></strong> — grouped aggregation.
+  Allowed: <code>filter</code> (pre-aggregation WHERE), <code>group_by</code>, <code>select</code>, <code>having</code>
+  (post-aggregation), <code>sort</code>, <code>page</code>.
+  Each <code>select</code> entry must be <strong>either</strong> a <code>group_by</code> member (a <code>field</code> whose name is a
+  grouping key) <strong>or</strong> an aggregate-function output column. Group-by keys are <strong>not</strong>
+  implicitly projected — to appear in the output a key must be listed explicitly in
+  <code>select</code> (matching SQL, where <code>GROUP BY a, b</code> does not auto-select <code>a, b</code>). <code>having</code>/<code>sort</code>
+  may reference <code>group_by</code> keys or output-column aliases only — never raw non-grouped
+  columns.</p>
+</li>
+</ul>
+<blockquote>
+<p>Open decision D1 (carried): require <code>mode</code> explicitly, or infer it from the presence of
+<code>group_by</code>. This spec shows it explicit.</p>
+</blockquote>
+<hr />
+<h2 id="3-filter-sub-grammar-cql2-json-op-args">3. Filter sub-grammar (CQL2-JSON <code>op</code> / <code>args</code>)</h2>
+<p>A filter is a recursive tree of <strong>filter nodes</strong>. A node is either a <strong>logical node</strong> or a
+<strong>predicate node</strong>, discriminated by <code>op</code>.</p>
+<h3 id="logical-nodes">Logical nodes</h3>
+<pre><code class="language-jsonc">{ &quot;op&quot;: &quot;and&quot;, &quot;args&quot;: [ &lt;node&gt;, &lt;node&gt;, ... ] }
+{ &quot;op&quot;: &quot;or&quot;,  &quot;args&quot;: [ &lt;node&gt;, &lt;node&gt;, ... ] }
+{ &quot;op&quot;: &quot;not&quot;, &quot;args&quot;: [ &lt;node&gt; ] }
+</code></pre>
+<h3 id="predicate-nodes">Predicate nodes</h3>
+<pre><code class="language-jsonc">{ &quot;op&quot;: &quot;&lt;code&gt;&quot;, &quot;args&quot;: [ &lt;expr&gt;, &lt;expr&gt; ] }
+</code></pre>
+<ul>
+<li>Both operands are <strong>expressions</strong> (§4) — <code>field</code>, <code>value</code>, <code>param</code>, <code>fn</code>, or <code>array</code>.
+  There is no separate "property" node: a column reference is just a <code>field</code> expression
+  (<code>{ "type": "field", "name": "amount" }</code>).</li>
+<li>Because operands are full expressions, either side may be computed. The left operand is
+  not required to be a bare column — e.g. <code>length(test_suite_id) = 3</code> puts a <code>fn</code> on the
+  left and a <code>value</code> on the right (see §8.4).</li>
+<li><code>in</code> is structurally an ordinary binary predicate; its right operand is typically an
+  <code>array</code> expression (§4.6). The model does not encode "left must be scalar / right must be
+  a set" — that is a type/semantic constraint validated at a later stage, not part of the
+  grammar.</li>
+</ul>
+<h3 id="operator-codes">Operator codes</h3>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Name</th>
+<th>SQL emission</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eq</code></td>
+<td>EQUALS</td>
+<td><code>=</code> (special-cased for a <code>null</code> operand → <code>IS NULL</code>, see §4.2)</td>
+</tr>
+<tr>
+<td><code>ne</code></td>
+<td>NOT_EQUAL</td>
+<td><code>&lt;&gt;</code> (special-cased for a <code>null</code> operand → <code>IS NOT NULL</code>)</td>
+</tr>
+<tr>
+<td><code>co</code></td>
+<td>CONTAINS</td>
+<td>left <code>ILIKE '%' || ? || '%'</code> (case-insensitive substring; literal <code>%</code>/<code>_</code> in the pattern operand are escaped)</td>
+</tr>
+<tr>
+<td><code>nc</code></td>
+<td>NOT_CONTAINS</td>
+<td>left <code>NOT ILIKE '%' || ? || '%'</code> (same escaping)</td>
+</tr>
+<tr>
+<td><code>lt</code></td>
+<td>LESS_THAN</td>
+<td><code>&lt;</code></td>
+</tr>
+<tr>
+<td><code>gt</code></td>
+<td>GREATER_THAN</td>
+<td><code>&gt;</code></td>
+</tr>
+<tr>
+<td><code>le</code></td>
+<td>LESS_THAN_OR_EQUAL</td>
+<td><code>&lt;=</code></td>
+</tr>
+<tr>
+<td><code>ge</code></td>
+<td>GREATER_THAN_OR_EQUAL</td>
+<td><code>&gt;=</code></td>
+</tr>
+<tr>
+<td><code>in</code></td>
+<td>INCLUDES</td>
+<td><code>IN (?, ?, …)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Notes:
+- <strong><code>co</code>/<code>nc</code> are positional</strong> (not commutative): the <strong>left</strong> operand is the value being
+  searched, the <strong>right</strong> operand supplies the substring pattern. They are case-insensitive
+  (<code>ILIKE</code>) and escape <code>%</code>/<code>_</code> in the pattern operand so the user's literal characters are
+  not treated as wildcards.</p>
+<h3 id="collision-note">Collision note</h3>
+<p>Logical keywords appear only as the <code>op</code> value (not as object keys alongside field names),
+so there is no field-name/operator collision in this shape — one reason it was chosen over
+the underscore-keyed GraphQL shape.</p>
+<h3 id="example">Example</h3>
+<p><code>(status = 'OPEN' AND amount &gt; 100) OR (status = 'PENDING' AND priority = 'HIGH')</code>:</p>
+<pre><code class="language-jsonc">{
+  &quot;op&quot;: &quot;or&quot;,
+  &quot;args&quot;: [
+    { &quot;op&quot;: &quot;and&quot;, &quot;args&quot;: [
+        { &quot;op&quot;: &quot;eq&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;status&quot; }, { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;,  &quot;value&quot;: &quot;OPEN&quot; } ] },
+        { &quot;op&quot;: &quot;gt&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;amount&quot; }, { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;decimal&quot;, &quot;value&quot;: &quot;100&quot; } ] }
+    ]},
+    { &quot;op&quot;: &quot;and&quot;, &quot;args&quot;: [
+        { &quot;op&quot;: &quot;eq&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;status&quot; },   { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;, &quot;value&quot;: &quot;PENDING&quot; } ] },
+        { &quot;op&quot;: &quot;eq&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;priority&quot; }, { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;, &quot;value&quot;: &quot;HIGH&quot; } ] }
+    ]}
+  ]
+}
+</code></pre>
+<p>Null check (<code>shipped_at IS NULL</code>):</p>
+<pre><code class="language-jsonc">{ &quot;op&quot;: &quot;eq&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;shipped_at&quot; }, { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;null&quot;, &quot;value&quot;: null } ] }
+</code></pre>
+<hr />
+<h2 id="4-expression-grammar">4. Expression grammar</h2>
+<p>A uniform grammar used wherever a value can appear: <code>select</code> entries, function arguments,
+filter/<code>having</code> operands, and sort targets. An expression is one of five kinds, discriminated
+by <strong><code>type</code></strong>.</p>
+<h3 id="41-the-five-kinds">4.1 The five kinds</h3>
+<pre><code class="language-jsonc">// column reference
+{ &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;amount&quot; }
+
+// literal — value ALWAYS a JSON string; value_type governs parsing (§4.2)
+{ &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;decimal&quot;, &quot;value&quot;: &quot;100.00&quot; }
+
+// runtime parameter — bound at execution from a trusted server-side context (§4.3)
+{ &quot;type&quot;: &quot;param&quot;, &quot;name&quot;: &quot;min_threshold&quot; }
+
+// function call — arbitrary arity; args are themselves expressions; nestable (§4.4)
+// optional `distinct` applies to the function's argument(s), e.g. COUNT(DISTINCT …)
+{ &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;round&quot;, &quot;args&quot;: [
+    { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;div&quot;, &quot;args&quot;: [
+        { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;sum&quot;,   &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;amount&quot; } ] },
+        { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;count&quot;, &quot;args&quot;: [] }
+    ]},
+    { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;integer&quot;, &quot;value&quot;: &quot;2&quot; }
+]}
+
+// COUNT(DISTINCT length(test_suite_id)) — distinct attaches to the FUNCTION, over any expression
+{ &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;count&quot;, &quot;distinct&quot;: true, &quot;args&quot;: [
+    { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;length&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_suite_id&quot; } ] }
+]}
+
+// array — an ordered collection of expressions; items are themselves expressions (§4.6)
+{ &quot;type&quot;: &quot;array&quot;, &quot;items&quot;: [
+    { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;, &quot;value&quot;: &quot;SUCCESS&quot; },
+    { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;, &quot;value&quot;: &quot;PARTIAL&quot; }
+]}
+</code></pre>
+<p>Java mapping (sealed interface + records ⇒ recursive Jackson deserialization via
+<code>@JsonTypeInfo(use = NAME, property = "type")</code> + <code>@JsonSubTypes</code>, and exhaustive <code>switch</code>
+in the translator):</p>
+<pre><code class="language-java">@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = &quot;type&quot;)
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = FieldExpr.class, name = &quot;field&quot;),
+    @JsonSubTypes.Type(value = ValueExpr.class, name = &quot;value&quot;),
+    @JsonSubTypes.Type(value = ParamExpr.class, name = &quot;param&quot;),
+    @JsonSubTypes.Type(value = FnExpr.class,    name = &quot;fn&quot;),
+    @JsonSubTypes.Type(value = ArrayExpr.class, name = &quot;array&quot;)
+})
+public sealed interface Expr permits FieldExpr, ValueExpr, ParamExpr, FnExpr, ArrayExpr {}
+
+public record FieldExpr(String name) implements Expr {}
+public record ValueExpr(ValueType valueType, String value) implements Expr {} // value: always String
+public record ParamExpr(String name) implements Expr {}
+public record FnExpr(String name, boolean distinct, List&lt;Expr&gt; args) implements Expr {}
+public record ArrayExpr(List&lt;Expr&gt; items) implements Expr {}
+</code></pre>
+<h3 id="42-literals-and-value_type">4.2 Literals and <code>value_type</code></h3>
+<ul>
+<li><strong><code>value</code> is always a JSON string.</strong> <code>value_type</code> tells the parser what to parse it into.
+  This eliminates JSON-number precision loss (decimals/money exact) and gives one parsing
+  path.</li>
+<li><code>value_type</code> is a stable, documented, allowlisted enum:
+  <code>string</code>, <code>integer</code>, <code>long</code>, <code>decimal</code>, <code>boolean</code>, <code>date</code>, <code>timestamp</code>, <code>uuid</code>, <code>null</code>
+  (extend deliberately).</li>
+<li><strong><code>null</code></strong>: a reserved <code>value_type</code> representing SQL NULL. <strong><code>value</code> is ignored</strong> when
+  <code>value_type</code> is <code>null</code>. Whether an implementation tolerates or rejects a non-empty
+  <code>value</code> alongside <code>value_type: null</code> is an implementation detail, out of scope for this
+  spec.</li>
+<li><code>null</code> is only meaningful with <code>eq</code> / <code>ne</code>. When <strong>either operand</strong> of an <code>eq</code>/<code>ne</code>
+    predicate is a <code>null</code> value literal (in practice the right operand), the translator
+    emits <code>IS NULL</code> (for <code>eq</code>) or <code>IS NOT NULL</code> (for <code>ne</code>) against the other operand. The
+    validator rejects a <code>null</code> operand with any other operator.</li>
+<li><strong>Temporals are always instants.</strong> <code>timestamp</code> must carry a zone designator (<code>Z</code> or an
+  explicit offset), e.g. <code>2020-10-11T11:55:31Z</code>; a zoneless string is invalid. <code>date</code> is
+  ISO-8601 <code>YYYY-MM-DD</code>. Locale→instant conversion is the client's responsibility (frontend
+  or calling API). Maps to Postgres <code>timestamptz</code> / Java <code>Instant</code>.</li>
+</ul>
+<p>Parse stage produces a typed Java value per <code>value_type</code> with specific, attributable errors
+(e.g. "value '10x' is not a valid integer"; "timestamp must include a zone offset or Z").</p>
+<h3 id="43-runtime-parameters-param">4.3 Runtime parameters (<code>param</code>)</h3>
+<ul>
+<li>Resolved at execution from a <strong>trusted server-side context</strong> (per-request), NOT from
+  client-supplied SQL or arbitrary column names. Emitted as a bind parameter.</li>
+<li>The resolution source must be explicitly constrained (a fixed server-provided map per
+  request, etc.) so a <code>param</code> can never become a vector for the client to control query
+  structure. (Open decision D10: define the parameter source/registry.)</li>
+</ul>
+<h3 id="44-functions-fn-and-the-safety-boundary">4.4 Functions (<code>fn</code>) — and the safety boundary</h3>
+<ul>
+<li><code>args</code> is an array of expressions ⇒ <strong>arbitrary arity and arbitrary nesting</strong>; operands
+  may freely mix <code>field</code>, <code>value</code>, <code>param</code>, <code>array</code>, and nested <code>fn</code>.</li>
+<li><strong>Aggregates are just functions</strong> (<code>sum</code>, <code>count</code>, <code>avg</code>, <code>min</code>, <code>max</code>, …). <code>count</code> with
+  no args ⇒ <code>COUNT(*)</code>.</li>
+<li><strong><code>distinct</code></strong> (optional, default false) applies to the function's argument(s) — i.e.
+  argument-level deduplication such as <code>COUNT(DISTINCT x)</code>. Because the argument is any
+  expression, this generalizes to <code>COUNT(DISTINCT length(x))</code>. This is distinct from
+  statement-level <code>SELECT DISTINCT</code> (§5), which dedupes whole result rows and is a top-level
+  query flag, not a function property.</li>
+<li><strong>The function set is a registry/allowlist — this is the core safety property.</strong>
+  Each registered function declares: a SQL template/emitter, arity rule (fixed/variadic),
+  argument type constraints, and an <code>is_aggregate</code> flag. A <code>fn name</code> not in the registry is
+  <strong>rejected at validation</strong> — there is no code path that emits an unregistered name, so a
+  client cannot invoke <code>pg_sleep</code>, <code>pg_read_file</code>, or any unblessed function. "Custom
+  functions" means functions <em>you register</em> (a config/admin step), never functions named
+  inline by the client.</li>
+</ul>
+<h3 id="45-flat-property-abstraction-field-references-and-physical-sources">4.5 Flat property abstraction (field references and physical sources)</h3>
+<p>A <code>field</code> reference names a <strong>flat, allowlisted property</strong> as published by the entity's
+schema endpoint — a single name from a flat list of available columns. The client always
+works in this flat namespace and never expresses how a property is physically stored.</p>
+<ul>
+<li>A property may map to a <strong>plain column</strong> or to a <strong>derived source</strong> — for example a value
+  nested inside a JSONB column, exposed under a flat name. The per-entity allowlist (§9)
+  holds, for each property: its declared type, its permitted operators/capabilities, and its
+  server-side resolution to a physical source (column access, JSONB navigation, casts,
+  etc.). This resolution happens during translation and is invisible to the DSL.</li>
+<li>Consequently the DSL contains no JSONB navigation, path, or cast syntax. A client filters,
+  projects, groups, and aggregates a derived property exactly as it would a plain column
+  (see §8). Adding or changing a derived property is an allowlist change, not a grammar or
+  client change (#3).</li>
+<li><strong>Null semantics of a derived property collapse to SQL NULL.</strong> A derived property resolves
+  to SQL NULL whenever its underlying value is unavailable — this includes both an absent
+  source (e.g. a missing JSONB key) and a present-but-null source (e.g. a key whose value is
+  JSON null). These cases are <strong>not distinguished</strong> at the DSL level; <code>value_type: null</code>
+  with <code>eq</code>/<code>ne</code> (§4.2) tests the resolved SQL NULL, covering both.</li>
+</ul>
+<h3 id="46-arrays">4.6 Arrays</h3>
+<pre><code class="language-jsonc">{ &quot;type&quot;: &quot;array&quot;, &quot;items&quot;: [ &lt;expr&gt;, &lt;expr&gt;, ... ] }
+</code></pre>
+<ul>
+<li>An <code>array</code> is an ordinary expression kind — it may appear <strong>wherever an expression may
+  appear</strong> (the most common use is the right operand of <code>in</code>, but it is not restricted to
+  that; e.g. it may be a function argument). Whether a given context accepts a
+  collection-typed operand is a type-compatibility matter resolved during validation, the
+  same as for any other expression — it is not a placement rule in the grammar. (For
+  example, using an <code>array</code> where a scalar is expected, such as <code>gt</code>, is a type error;
+  the grammar permits the structure, the validator rejects the incoherent use.)</li>
+<li><strong><code>items</code> are expressions.</strong> The key is deliberately <code>items</code> (a collection), distinct from
+  a function's <code>args</code> (ordered positional arguments to a callable).</li>
+<li><strong>Homogeneity:</strong> an array's items must be type-compatible with one another (homogeneous).</li>
+<li>Which expression <em>kinds</em> are admissible as items in a given position (e.g. literals only
+  vs. also <code>field</code>/<code>param</code>/<code>fn</code>), and how an <strong>empty</strong> array is handled, are determined by
+  the DSL processor at query construction and are <strong>not specified here</strong>.</li>
+</ul>
+<hr />
+<h2 id="5-output-columns-select-group_by-distinct-and-having">5. Output columns (<code>select</code>), <code>group_by</code>, <code>distinct</code>, and <code>having</code></h2>
+<h3 id="51-output-columns-select">5.1 Output columns — <code>select</code></h3>
+<p>Both modes list output columns in <code>select</code>. Each entry is an <strong>output column</strong>:</p>
+<pre><code class="language-jsonc">{ &quot;expr&quot;: &lt;expression&gt;, &quot;as&quot;: &quot;&lt;alias&gt;&quot; }
+</code></pre>
+<ul>
+<li><code>expr</code> — any expression (§4): <code>field</code>, <code>value</code>, <code>param</code>, <code>fn</code>, <code>array</code>.</li>
+<li><code>as</code> — output alias. <strong>Optional</strong> when <code>expr</code> is a plain <code>field</code> (the output key defaults
+  to the field name); <strong>required</strong> otherwise (a computed/function result has no natural
+  name). Aliases must be <strong>unique</strong> within a query.</li>
+</ul>
+<p>An <strong>aggregate output column</strong> is simply one whose <code>expr</code> is an aggregate function — there is
+no separate <code>aggregate</code> section. Examples (aggregate mode):</p>
+<pre><code class="language-jsonc">&quot;select&quot;: [
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;region&quot; } },                 // group_by key, projected explicitly
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;status&quot; } },                 // group_by key, projected explicitly
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;sum&quot;,   &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;amount&quot; } ] }, &quot;as&quot;: &quot;total&quot; },
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;avg&quot;,   &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;amount&quot; } ] }, &quot;as&quot;: &quot;avg_amount&quot; },
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;count&quot;, &quot;args&quot;: [] }, &quot;as&quot;: &quot;cnt&quot; },
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;count&quot;, &quot;distinct&quot;: true, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;customer_id&quot; } ] }, &quot;as&quot;: &quot;unique_customers&quot; }
+]
+</code></pre>
+<p>Row-mode example (a plain field, an aliased field, and a computed column):</p>
+<pre><code class="language-jsonc">&quot;select&quot;: [
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;id&quot; } },
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_case_name&quot; }, &quot;as&quot;: &quot;name&quot; },
+  { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;length&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_suite_id&quot; } ] }, &quot;as&quot;: &quot;suite_id_len&quot; }
+]
+</code></pre>
+<p>Absent/empty <code>select</code>: in <strong>row mode</strong>, defaults to the entity's default projection (open
+decision D2-style per-entity default; protects #6 by excluding heavy columns). In
+<strong>aggregate mode</strong>, <code>select</code> is <strong>required</strong>.</p>
+<p>Java mapping:</p>
+<pre><code class="language-java">public record OutputColumn(Expr expr, String as) implements ... {}  // as nullable
+</code></pre>
+<h3 id="52-grouping-group_by-aggregate-mode">5.2 Grouping — <code>group_by</code> (aggregate mode)</h3>
+<pre><code class="language-jsonc">&quot;group_by&quot;: [&quot;region&quot;, &quot;status&quot;]      // grouping keys (flat property names)
+</code></pre>
+<p>Grouping keys are <strong>not</strong> auto-projected: to appear in output, a key must be listed in
+<code>select</code> as a <code>field</code> expression (§5.1). Every aggregate-mode <code>select</code> entry must be either a
+<code>group_by</code> member or an aggregate-function output (§2).</p>
+<h3 id="53-statement-level-distinct-distinct">5.3 Statement-level distinct — <code>distinct</code></h3>
+<pre><code class="language-jsonc">&quot;distinct&quot;: true       // top-level; SELECT DISTINCT over the output columns (row dedup)
+</code></pre>
+<ul>
+<li>A top-level boolean flag (default false) producing <code>SELECT DISTINCT …</code> — deduplication of
+  whole result rows across the <code>select</code> columns. This is distinct from a function's
+  argument-level <code>distinct</code> (§4.4): statement-level dedups rows, function-level dedups a
+  function's argument values.</li>
+<li>Structurally independent of mode; combining it with <code>group_by</code> is permitted but typically
+  redundant and not specially policed.</li>
+</ul>
+<h3 id="54-having-aggregate-mode">5.4 <code>having</code> (aggregate mode)</h3>
+<p><code>having</code> reuses the §3 filter grammar. Its <code>field</code> references resolve to <strong>output-column
+aliases</strong> and/or <code>group_by</code> keys, never raw columns — a <code>field</code> whose <code>name</code> matches an <code>as</code>
+alias refers to that output column:</p>
+<pre><code class="language-jsonc">&quot;having&quot;: {
+  &quot;op&quot;: &quot;and&quot;,
+  &quot;args&quot;: [
+    { &quot;op&quot;: &quot;gt&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;total&quot; }, { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;decimal&quot;, &quot;value&quot;: &quot;50000&quot; } ] },
+    { &quot;op&quot;: &quot;ge&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;cnt&quot; },   { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;integer&quot;, &quot;value&quot;: &quot;10&quot; } ] }
+  ]
+}
+</code></pre>
+<p>Translation note: HAVING is a filter applied <strong>after</strong> aggregation; its aliases resolve to
+aggregate output, not base columns. The validator must check <code>having</code>/<code>sort</code> references
+against <code>group_by ∪ {output-column aliases}</code>, and must enforce SQL context rules: no
+aggregate nested inside an aggregate; raw non-grouped columns are illegal outside an
+aggregate; <code>having</code> is aggregate-level.</p>
+<hr />
+<h2 id="6-sort">6. Sort</h2>
+<pre><code class="language-jsonc">&quot;sort&quot;: [
+  { &quot;field&quot;: &quot;total&quot;,  &quot;dir&quot;: &quot;desc&quot; },   // output-column alias (aggregate mode) ...
+  { &quot;field&quot;: &quot;region&quot;, &quot;dir&quot;: &quot;asc&quot; }      // ... or group_by key / projectable field (row mode)
+]
+</code></pre>
+<ul>
+<li><code>dir</code> ∈ <code>asc | desc</code>.</li>
+<li>References must be sortable per allowlist (row mode) or in <code>group_by ∪ {output-column
+  aliases}</code> (aggregate mode).</li>
+<li>Null ordering (<code>NULLS FIRST/LAST</code>) must be deterministic (open decision D8: default null
+  ordering); it affects both page-boundary determinism (offset) and seek correctness
+  (cursor).</li>
+<li><strong>Total order:</strong> if the client's sort is not a total order, the server appends a stable
+  unique tiebreaker (open decision D5; default: primary key). For <code>cursor</code> pagination this
+  is strictly required (keyset seek breaks without it); for <code>offset</code> it is required for
+  deterministic page boundaries — which is the stated purpose of offset mode. The
+  tiebreaker therefore applies to <strong>both</strong> pagination types.</li>
+</ul>
+<hr />
+<h2 id="7-pagination-4">7. Pagination (#4)</h2>
+<p>One pagination <strong>contract</strong> with two client-selectable <strong>strategies</strong>, discriminated by
+<code>type</code>. This unifies the legacy split (meta = offset, analytics = opaque cursors) into a
+single model both layers share: clients implement one shape; the strategy is a field, not a
+different API.</p>
+<ul>
+<li><strong><code>offset</code></strong> — deterministic pagination: page numbers, jump-to-page, "page 3 of 17" UIs.</li>
+<li><strong><code>cursor</code></strong> — stable iteration: infinite scroll, exports, large scans.</li>
+</ul>
+<h3 id="71-request">7.1 Request</h3>
+<pre><code class="language-jsonc">// offset strategy
+&quot;page&quot;: {
+  &quot;type&quot;: &quot;offset&quot;,
+  &quot;offset&quot;: 200,                // 0-based row offset
+  &quot;limit&quot;: 100,
+  &quot;include_total&quot;: true         // optional, default false — opt-in total count (§7.3)
+}
+
+// cursor strategy
+&quot;page&quot;: {
+  &quot;type&quot;: &quot;cursor&quot;,
+  &quot;cursor&quot;: &quot;eyJ2IjoxLCJrIjpb...&quot;,  // opaque token; omit/null for the first page
+  &quot;limit&quot;: 100
+}
+</code></pre>
+<p>Java mapping (same discriminator pattern as expressions):</p>
+<pre><code class="language-java">@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = &quot;type&quot;)
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = OffsetPage.class, name = &quot;offset&quot;),
+    @JsonSubTypes.Type(value = CursorPage.class, name = &quot;cursor&quot;)
+})
+public sealed interface Page permits OffsetPage, CursorPage {}
+
+public record OffsetPage(long offset, int limit, boolean includeTotal) implements Page {}
+public record CursorPage(String cursor, int limit) implements Page {}   // cursor null on first page
+</code></pre>
+<p>Validation: fields foreign to the declared <code>type</code> (e.g. <code>offset</code> on a <code>cursor</code> page, or
+<code>cursor</code> on an <code>offset</code> page) are rejected with a specific error, consistent with the rest
+of the model.</p>
+<h3 id="72-the-cursor-is-opaque">7.2 The cursor is opaque</h3>
+<p>The cursor is a <strong>server-issued opaque token</strong>. The client <strong>echoes it verbatim</strong> and never
+constructs, modifies, or inspects one. Its encoding, contents, versioning, and
+staleness/invalidation behavior (e.g. what happens if <code>filter</code>/<code>sort</code> change between pages)
+are <strong>implementation details outside this spec</strong>. The only contract-level guarantees:</p>
+<ul>
+<li>A <code>next_cursor</code> returned by the server is valid input for the next request of the same
+  query.</li>
+<li>An invalid or stale cursor is rejected with a specific error (not silently reinterpreted).</li>
+</ul>
+<h3 id="73-strategy-semantics-and-tradeoffs-normative-notes">7.3 Strategy semantics and tradeoffs (normative notes)</h3>
+<ul>
+<li><strong><code>offset</code> is deterministic, not write-consistent.</strong> Page boundaries are deterministic
+  for a fixed dataset and total-order sort, but under concurrent writes rows can shift
+  between pages (skips/repeats across page fetches). This is inherent to offset paging and
+  accepted; clients needing a stable scan should use <code>cursor</code>.</li>
+<li><strong><code>offset</code> cost grows with depth.</strong> The database scans past <code>offset</code> rows; deep offsets
+  on large tables are expensive. See governance (§7.5).</li>
+<li><strong><code>cursor</code> (keyset/seek)</strong>: the next page is fetched via a seek predicate over the sort
+  keys — <code>(k1, k2) &lt; (?, ?)</code> with per-column direction handling — built like any other
+  filter, so it inherits parameterization. Requires the total-order sort invariant (§6).</li>
+<li><strong>Total count</strong>: available only as <strong>opt-in</strong> (<code>include_total: true</code>, offset strategy) —
+  it is a second, potentially expensive query. Cursor responses do not carry totals.</li>
+</ul>
+<h3 id="74-response-envelope">7.4 Response envelope</h3>
+<pre><code class="language-jsonc">// offset strategy
+{
+  &quot;data&quot;: [ ... ],
+  &quot;page&quot;: {
+    &quot;type&quot;: &quot;offset&quot;,
+    &quot;offset&quot;: 200,
+    &quot;limit&quot;: 100,
+    &quot;total&quot;: 1432               // present only when include_total was true
+  }
+}
+
+// cursor strategy
+{
+  &quot;data&quot;: [ ... ],
+  &quot;page&quot;: {
+    &quot;type&quot;: &quot;cursor&quot;,
+    &quot;next_cursor&quot;: &quot;eyJ...&quot;,    // null when no more pages
+    &quot;limit&quot;: 100
+  }
+}
+</code></pre>
+<p>The client computes the next offset itself (<code>offset + limit</code>); for cursors it echoes
+<code>next_cursor</code>.</p>
+<h3 id="75-governance-applies-to-both-strategies">7.5 Governance (applies to BOTH strategies)</h3>
+<ul>
+<li><code>limit</code> is clamped to a server-defined maximum.</li>
+<li>Statement timeout and row cap apply at execution regardless of strategy.</li>
+<li>The server MAY cap the <strong>maximum offset</strong> for the <code>offset</code> strategy (deep-offset cost
+  protection); exceeding it is a specific error suggesting the <code>cursor</code> strategy.</li>
+<li>The per-entity allowlist MAY constrain <strong>which pagination types</strong> an entity supports
+  (e.g. an analytics entity over a very large table may permit only <code>cursor</code>). Default:
+  both.</li>
+</ul>
+<hr />
+<h2 id="8-worked-examples">8. Worked examples</h2>
+<p>These examples query the analytics entity <code>test_case_eval_summaries</code> (metric-enriched test
+case run results; one row = one test case execution). They illustrate the <strong>flat-column
+abstraction</strong> (§4.5): metric outputs that are physically nested inside a JSONB column are
+exposed to the client as flat, allowlisted property names (e.g. <code>accuracy_score</code>,
+<code>relevance_score</code>). The client never expresses JSONB navigation or casts; the server resolves
+each flat property to its underlying source during translation. The DSL requests below
+therefore look identical to any other entity's; the JSONB expansion is visible only in the
+intended SQL.</p>
+<h3 id="81-row-mode-filter-by-a-metric-threshold-projection-offset-page-with-total">8.1 Row mode: filter by a metric threshold + projection + offset page with total</h3>
+<p>Select a few flat columns (some plain, some metric-derived), keep cases for one run whose
+Accuracy score is below a threshold, newest first.</p>
+<p>Request:</p>
+<pre><code class="language-jsonc">{
+  &quot;entity&quot;: &quot;test_case_eval_summaries&quot;,
+  &quot;mode&quot;: &quot;row&quot;,
+  &quot;filter&quot;: {
+    &quot;op&quot;: &quot;and&quot;,
+    &quot;args&quot;: [
+      { &quot;op&quot;: &quot;eq&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_suite_run_id&quot; }, { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;uuid&quot;,    &quot;value&quot;: &quot;8f3a…&quot; } ] },
+      { &quot;op&quot;: &quot;eq&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;computation_id&quot; },    { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;uuid&quot;,    &quot;value&quot;: &quot;1c20…&quot; } ] },
+      { &quot;op&quot;: &quot;lt&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;accuracy_score&quot; },    { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;decimal&quot;, &quot;value&quot;: &quot;0.5&quot; } ] }
+    ]
+  },
+  &quot;select&quot;: [
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;id&quot; } },
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_case_name&quot; } },
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;execution_status&quot; } },
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;accuracy_score&quot; } },
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;accuracy_confidence&quot; } },
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;relevance_score&quot; } }
+  ],
+  &quot;sort&quot;: [ { &quot;field&quot;: &quot;accuracy_score&quot;, &quot;dir&quot;: &quot;asc&quot; }, { &quot;field&quot;: &quot;id&quot;, &quot;dir&quot;: &quot;asc&quot; } ],
+  &quot;page&quot;: { &quot;type&quot;: &quot;offset&quot;, &quot;offset&quot;: 0, &quot;limit&quot;: 25, &quot;include_total&quot;: true }
+}
+</code></pre>
+<p>Intended SQL (parameterized; flat metric properties expanded server-side to their JSONB
+sources; total fetched as a separate count query when requested):</p>
+<pre><code class="language-sql">SELECT
+    id,
+    test_case_name,
+    execution_status,
+    (metric_values -&gt; 'Accuracy'  -&gt;&gt; 'score')::numeric      AS accuracy_score,
+    (metric_values -&gt; 'Accuracy'  -&gt;&gt; 'confidence')::numeric AS accuracy_confidence,
+    (metric_values -&gt; 'Relevance' -&gt;&gt; 'score')::numeric      AS relevance_score
+FROM test_case_eval_summaries
+WHERE test_suite_run_id = ?
+  AND computation_id    = ?
+  AND (metric_values -&gt; 'Accuracy' -&gt;&gt; 'score')::numeric &lt; ?
+ORDER BY accuracy_score ASC, id ASC
+LIMIT ? OFFSET ?;          -- 25 (clamped), 0
+</code></pre>
+<p>Note how <code>accuracy_score lt 0.5</code> in the DSL becomes the expanded, cast JSONB predicate in
+SQL — the client wrote only the flat name and a decimal literal.</p>
+<h3 id="82-aggregate-mode-group-by-avg-having-cursor-page">8.2 Aggregate mode: group-by + avg + having + cursor page</h3>
+<p>Average Accuracy score per execution status for one run, keeping only statuses with a
+meaningful number of scored cases. <code>avg</code>/<code>count</code> over a metric-derived column ignore SQL
+NULLs (a failed or missing score resolves to NULL), so they don't skew the result.</p>
+<p>Request:</p>
+<pre><code class="language-jsonc">{
+  &quot;entity&quot;: &quot;test_case_eval_summaries&quot;,
+  &quot;mode&quot;: &quot;aggregate&quot;,
+  &quot;filter&quot;: {
+    &quot;op&quot;: &quot;and&quot;,
+    &quot;args&quot;: [
+      { &quot;op&quot;: &quot;eq&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_suite_run_id&quot; }, { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;uuid&quot;, &quot;value&quot;: &quot;8f3a…&quot; } ] },
+      { &quot;op&quot;: &quot;eq&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;computation_id&quot; },    { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;uuid&quot;, &quot;value&quot;: &quot;1c20…&quot; } ] }
+    ]
+  },
+  &quot;group_by&quot;: [&quot;execution_status&quot;],
+  &quot;select&quot;: [
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;execution_status&quot; } },
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;count&quot;, &quot;args&quot;: [] }, &quot;as&quot;: &quot;total_cases&quot; },
+    { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;avg&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;accuracy_score&quot; } ] }, &quot;as&quot;: &quot;avg_accuracy_score&quot; }
+  ],
+  &quot;having&quot;: { &quot;op&quot;: &quot;ge&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;avg_accuracy_score&quot; },
+              { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;decimal&quot;, &quot;value&quot;: &quot;0.6&quot; } ] },
+  &quot;sort&quot;: [ { &quot;field&quot;: &quot;avg_accuracy_score&quot;, &quot;dir&quot;: &quot;desc&quot; } ],
+  &quot;page&quot;: { &quot;type&quot;: &quot;cursor&quot;, &quot;limit&quot;: 100 }
+}
+</code></pre>
+<p>Intended SQL (the <code>avg</code> argument's flat property is expanded to its JSONB source):</p>
+<pre><code class="language-sql">SELECT
+    execution_status,
+    COUNT(*)                                                AS total_cases,
+    AVG((metric_values -&gt; 'Accuracy' -&gt;&gt; 'score')::numeric) AS avg_accuracy_score
+FROM test_case_eval_summaries
+WHERE test_suite_run_id = ?
+  AND computation_id    = ?
+GROUP BY execution_status
+HAVING AVG((metric_values -&gt; 'Accuracy' -&gt;&gt; 'score')::numeric) &gt;= ?
+ORDER BY avg_accuracy_score DESC
+LIMIT ?;
+</code></pre>
+<p>Aggregate-mode response groups (heterogeneous; keys + metrics), cursor envelope:</p>
+<pre><code class="language-jsonc">{
+  &quot;data&quot;: [
+    { &quot;keys&quot;: { &quot;execution_status&quot;: &quot;SUCCESS&quot; }, &quot;metrics&quot;: { &quot;total_cases&quot;: 1840, &quot;avg_accuracy_score&quot;: 0.83 } },
+    { &quot;keys&quot;: { &quot;execution_status&quot;: &quot;PARTIAL&quot; }, &quot;metrics&quot;: { &quot;total_cases&quot;: 212,  &quot;avg_accuracy_score&quot;: 0.61 } }
+  ],
+  &quot;page&quot;: { &quot;type&quot;: &quot;cursor&quot;, &quot;next_cursor&quot;: &quot;…&quot;, &quot;limit&quot;: 100 }
+}
+</code></pre>
+<p>(<code>keys</code> + <code>metrics</code> envelope so one schema serves any grouping/aggregate combo; metric
+values aren't statically typed per-column — inherent dynamic-shape tradeoff for aggregation.
+Open decision D6.)</p>
+<h3 id="83-null-handling-on-a-metric-derived-column">8.3 Null handling on a metric-derived column</h3>
+<p>A flat metric column resolves to SQL NULL whenever its score is unavailable — this covers
+<strong>both</strong> an absent JSONB key and a key present with JSON null. The two cases are not
+distinguished at the DSL level (see §4.5). To keep only cases that have an Accuracy score:</p>
+<pre><code class="language-jsonc">{
+  &quot;op&quot;: &quot;ne&quot;,
+  &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;accuracy_score&quot; }, { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;null&quot;, &quot;value&quot;: null } ]
+}
+</code></pre>
+<p>→ <code>WHERE (metric_values -&gt; 'Accuracy' -&gt;&gt; 'score')::numeric IS NOT NULL</code> (per §4.2,
+<code>ne</code> + <code>null</code> ⇒ <code>IS NOT NULL</code>).</p>
+<h3 id="84-computed-operand-function-on-the-left-of-a-comparison">8.4 Computed operand: function on the left of a comparison</h3>
+<p>Either side of a predicate is a full expression, so the left operand need not be a bare
+column. To keep only rows whose <code>test_suite_id</code> is exactly three characters long
+(<code>WHERE length(test_suite_id) = 3</code>):</p>
+<pre><code class="language-jsonc">{
+  &quot;op&quot;: &quot;eq&quot;,
+  &quot;args&quot;: [
+    { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;length&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_suite_id&quot; } ] },
+    { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;integer&quot;, &quot;value&quot;: &quot;3&quot; }
+  ]
+}
+</code></pre>
+<p>→ <code>WHERE length(test_suite_id) = ?</code> — <code>length</code> must be a registered scalar function and
+<code>test_suite_id</code> must be filterable (§9). The literal is bound as a parameter.</p>
+<h3 id="85-set-membership-in-with-an-array-operand">8.5 Set membership: <code>in</code> with an <code>array</code> operand</h3>
+<p><code>WHERE execution_status IN ('SUCCESS', 'PARTIAL')</code> — an ordinary binary predicate whose
+right operand is an <code>array</code> expression (§4.6):</p>
+<pre><code class="language-jsonc">{
+  &quot;op&quot;: &quot;in&quot;,
+  &quot;args&quot;: [
+    { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;execution_status&quot; },
+    { &quot;type&quot;: &quot;array&quot;, &quot;items&quot;: [
+        { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;, &quot;value&quot;: &quot;SUCCESS&quot; },
+        { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;, &quot;value&quot;: &quot;PARTIAL&quot; }
+    ]}
+  ]
+}
+</code></pre>
+<p>→ <code>WHERE execution_status IN (?, ?)</code> — each array item bound as a parameter.</p>
+<hr />
+<h2 id="9-validation-allowlist-hooks">9. Validation / allowlist hooks</h2>
+<p>Enforced <strong>before</strong> any SQL is built (additive safety — invalid queries unrepresentable):</p>
+<ol>
+<li><strong>Entity</strong> resolves in the registry, else reject.</li>
+<li><strong>Mode coherence</strong> — only sections legal for the mode are present (§2).</li>
+<li><strong>Expression operands are walked as trees.</strong> Filter/predicate operands, <code>select</code> entry
+   <code>expr</code>s, <code>group_by</code> keys, <code>sort</code> targets, and <code>having</code> operands are expressions (§4), so
+   the validator recurses through each tree and checks every leaf: each <code>field</code> is a flat
+   allowlisted property (§4.5) with the right per-capability flag (<code>filterable | projectable |
+   groupable | aggregatable | sortable</code>) and type/operator compatibility — the allowlist
+   also supplies its server-side resolution to a physical source; each <code>fn</code> resolves in the
+   function registry (item 4); each <code>value</code>/<code>param</code>/<code>array</code> is checked per items 5–7. A
+   <code>field</code> reference may sit anywhere in the tree (e.g. inside <code>length(test_suite_id)</code>), not
+   only as a top-level operand.</li>
+<li><strong>Functions</strong> — every <code>fn name</code> resolves in the function registry; arity and argument
+   types match; aggregate/scalar context rules hold (no aggregate-in-aggregate; raw
+   non-grouped column illegal outside an aggregate in aggregate mode; <code>having</code> is
+   aggregate-level).</li>
+<li><strong>Literals</strong> — <code>value</code> parses per <code>value_type</code>; <code>null</code> only with <code>eq</code>/<code>ne</code>; temporals are
+   valid instants; parsed type compatible with usage context.</li>
+<li><strong>Arrays</strong> — items are homogeneous (type-compatible with one another, §4.6); the operand
+   context accepts a collection (e.g. <code>array</code> is a type error where a scalar is expected).</li>
+<li><strong>Output columns (<code>select</code>)</strong> — <code>as</code> aliases unique within the query; <code>as</code> required for
+   non-<code>field</code> expressions. In <strong>aggregate mode</strong>, every <code>select</code> entry is either a
+   <code>group_by</code> member or an aggregate-function output (§2); <code>select</code> is required. In <strong>row
+   mode</strong>, entries are scalar (non-aggregate) expressions.</li>
+<li><strong><code>having</code>/<code>sort</code> (aggregate mode)</strong> references resolve to <code>group_by ∪ {output-column
+   aliases}</code> only.</li>
+<li><strong><code>param</code></strong> resolves only against the constrained runtime-parameter source (§4.3).</li>
+<li><strong>Pagination</strong> — <code>type</code> is one of <code>offset | cursor</code>; fields foreign to the declared type
+    are rejected; the strategy is permitted for the entity (per-entity pagination-type
+    allowlist, §7.5); <code>limit</code> clamped; offset within the server's maximum-offset cap if one
+    is set. Statement timeout + row cap apply at execution regardless (resource governance —
+    required, independent of injection safety).</li>
+<li>Reject with <strong>specific</strong> errors, e.g.
+    <code>{"error":{"code":"field_not_filterable","field":"internal_notes","detail":"allowed ops: eq, in"}}</code>.</li>
+</ol>
+<p>The per-entity allowlist is <strong>data-driven</strong> (declared once per entity, ideally derived from
+schema metadata) so adding a queryable property is config, not a code change (#3).</p>
+<hr />
+<h2 id="10-open-decisions">10. Open decisions</h2>
+<ul>
+<li><strong>D1</strong> — explicit vs inferred <code>mode</code>.</li>
+<li><strong>D5</strong> — auto tiebreaker key when client sort isn't a total order (default: primary key);
+  applies to both pagination strategies (§6).</li>
+<li><strong>D6</strong> — aggregate response typing: keep dynamic <code>keys</code>+<code>metrics</code>, or generate per-query
+  typed shapes.</li>
+<li><strong>D8</strong> — default null ordering (<code>NULLS FIRST/LAST</code>); affects offset page-boundary
+  determinism and cursor seek correctness.</li>
+<li><strong>D10</strong> — runtime-parameter (<code>param</code>) source/registry definition and its trust boundary.</li>
+</ul>
+<p>(Resolved and baked into the spec: filter grammar = CQL2-JSON <code>op</code>/<code>args</code> with the fixed
+operator codes; predicate operands are expressions (no separate "property" node); <code>array</code>
+as a fifth expression kind with homogeneous items, with item-kind and empty-array handling
+left to the DSL processor (former D9 resolved); output columns unified as <code>{ expr, as }</code> in
+both modes (no separate <code>aggregate</code> section; an aggregate output column is just a <code>select</code>
+entry whose expression is an aggregate function); aggregate mode lists group-by keys
+explicitly in <code>select</code> (no implicit projection); two distincts — statement-level
+<code>SELECT DISTINCT</code> as a top-level <code>distinct</code> flag, argument-level <code>COUNT(DISTINCT …)</code> on the
+<code>fn</code> node; aggregation via explicit <code>group_by</code>; expression discriminator = <code>type</code>; <code>value</code>
+always a string with <code>value_type</code> governing parsing; <code>null</code> as a <code>value_type</code> replacing a
+separate <code>is_null</code> operator; temporals always instants; pagination = dual-strategy
+discriminated by <code>type</code>, with cursor structure an implementation detail and former D4 moved
+to the implementation.)</p>
+</main>
+</div>
+</body>
+</html>

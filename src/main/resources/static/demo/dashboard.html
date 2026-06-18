@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<!-- TODO: remove before going to prod — temporary demo page for the experimental query DSL. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Structured Query — Run Dashboard (experimental)</title>
+    <style>
+        :root {
+            --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --border: #334155;
+            --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --accent-2: #818cf8;
+            --ok: #34d399; --warn: #fbbf24; --err: #f87171;
+            --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+               background: var(--bg); color: var(--text); line-height: 1.5; }
+        a { color: var(--accent); }
+        header { padding: 28px 32px 20px; border-bottom: 1px solid var(--border);
+                 background: linear-gradient(180deg, #15213b, var(--bg)); }
+        nav { display: flex; gap: 8px; margin-bottom: 14px; }
+        nav a { font-size: 13px; text-decoration: none; color: var(--muted);
+                border: 1px solid var(--border); padding: 5px 12px; border-radius: 8px; }
+        nav a.active { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+        nav a:hover { color: var(--text); } nav a.active:hover { color: var(--bg); }
+        header h1 { margin: 0 0 4px; font-size: 22px; }
+        header h1 .v0 { font-family: var(--mono); font-size: 13px; color: var(--bg); background: var(--warn);
+                        padding: 2px 8px; border-radius: 6px; vertical-align: middle; margin-left: 8px; }
+        header p { margin: 6px 0 0; color: var(--muted); max-width: 860px; font-size: 14px; }
+
+        main { padding: 24px 32px 80px; }
+        .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        label.lbl { color: var(--muted); font-size: 13px; }
+        input[type=text], select {
+            background: var(--panel); border: 1px solid var(--border); color: var(--text);
+            padding: 7px 10px; border-radius: 8px; font-family: var(--mono); font-size: 13px; }
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
+        input#suiteId { min-width: 340px; }
+        button { background: var(--accent); color: #06283d; border: none; padding: 7px 14px;
+                 border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+        button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+        button:hover { filter: brightness(1.08); } button:disabled { opacity: .5; cursor: not-allowed; }
+        .muted { color: var(--muted); font-size: 13px; }
+        .banner { padding: 9px 13px; border-radius: 8px; font-size: 13px; margin: 14px 0; }
+        .banner.err { background: #3a1717; color: var(--err); border: 1px solid #5b2020; }
+        .banner.warn { background: #3a2e14; color: var(--warn); border: 1px solid #5b4a20; }
+
+        .controls { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+                    padding: 16px 18px; margin-top: 16px; }
+
+        /* run header */
+        .run-head { margin: 26px 0 6px; }
+        .run-head .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+                             text-transform: uppercase; color: var(--accent); }
+        .run-head h2 { margin: 2px 0 2px; font-size: 24px; font-weight: 600; }
+        .run-head h2 .sep { color: var(--muted); font-weight: 400; }
+        .run-head .sub { color: var(--muted); font-size: 13px; font-family: var(--mono); }
+
+        /* section label */
+        .seclabel { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted);
+                    margin: 0; font-family: var(--mono); }
+
+        /* inspectable affordance — the signature element */
+        .inspectable { position: relative; }
+        .inspect-badge {
+            position: absolute; top: 10px; right: 10px; font-family: var(--mono); font-size: 10px;
+            letter-spacing: .06em; color: var(--muted); background: var(--bg); border: 1px solid var(--border);
+            border-radius: 999px; padding: 2px 8px; cursor: pointer; opacity: 0; transition: opacity .12s, color .12s;
+            user-select: none; z-index: 2; }
+        .inspectable:hover .inspect-badge { opacity: 1; }
+        .inspect-badge:hover { color: var(--accent); border-color: var(--accent); }
+
+        /* summary cards */
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 10px; }
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+        .card .label { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+                       color: var(--muted); }
+        .card .big { font-family: var(--mono); font-size: 34px; font-weight: 600; margin-top: 8px; line-height: 1; }
+        .card .big .unit { font-size: 15px; color: var(--muted); margin-left: 4px; }
+        .card .big .denom { font-size: 20px; color: var(--muted); }
+        .card .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+        .pips { display: flex; gap: 12px; margin-top: 10px; font-family: var(--mono); font-size: 12px; }
+        .pips .pip { display: flex; gap: 5px; align-items: center; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .dot.ok { background: var(--ok); } .dot.fail { background: var(--err); } .dot.err { background: var(--warn); }
+
+        /* lower band: distribution (left) + metric scores (right) */
+        .lower { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 26px; align-items: start; }
+        @media (max-width: 1100px) { .lower { grid-template-columns: 1fr; } }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+        .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+
+        /* metric scores */
+        .toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+        .toggle button { background: transparent; color: var(--muted); border: none; border-radius: 0;
+                         padding: 4px 11px; font-family: var(--mono); font-size: 12px; font-weight: 500; }
+        .toggle button.on { background: var(--accent); color: #06283d; font-weight: 600; }
+        .metric { padding: 12px 12px; border: 1px solid transparent; border-radius: 10px; cursor: pointer;
+                  transition: border-color .12s, background .12s; }
+        .metric:hover { background: var(--panel-2); }
+        .metric.sel { border-color: var(--accent); background: #0e2536; box-shadow: 0 0 0 1px var(--accent); }
+        .metric .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+        .metric .name { font-size: 14px; }
+        .metric .name .sub { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-left: 6px; }
+        .metric .score { font-family: var(--mono); font-size: 18px; font-weight: 600; }
+        .metric .track { height: 6px; border-radius: 999px; background: var(--bg); margin-top: 8px; overflow: hidden; }
+        .metric .fill { height: 100%; border-radius: 999px; }
+        .metric .spread { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+        /* distribution bar chart */
+        .dist-empty { color: var(--muted); font-size: 14px; padding: 30px 4px; text-align: center; }
+        .chart { display: flex; align-items: flex-end; gap: 6px; height: 220px; padding-top: 8px; }
+        .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+                   height: 100%; gap: 6px; }
+        .bar-count { font-family: var(--mono); font-size: 12px; color: var(--text); }
+        .bar { width: 100%; border-radius: 6px 6px 2px 2px; min-height: 2px; transition: height .25s ease; }
+        .bar-labels { display: flex; gap: 6px; margin-top: 8px; }
+        .bar-label { flex: 1; text-align: center; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+        /* inspector slide-in (the signature) */
+        .scrim { position: fixed; inset: 0; background: rgba(2, 6, 18, .5); opacity: 0; pointer-events: none;
+                 transition: opacity .2s; z-index: 40; }
+        .scrim.open { opacity: 1; pointer-events: auto; }
+        aside.inspector {
+            position: fixed; top: 0; right: 0; height: 100vh; width: min(560px, 92vw); z-index: 50;
+            background: #0b1426; border-left: 1px solid var(--border); padding: 20px 22px;
+            transform: translateX(100%); transition: transform .24s ease; overflow: auto; }
+        aside.inspector.open { transform: translateX(0); }
+        aside.inspector h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+        aside.inspector .title { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+        .insp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+        .insp-endpoint { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; }
+        .verb { display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 700; color: #06283d;
+                background: var(--accent); border-radius: 6px; padding: 1px 7px; margin-right: 8px; }
+        pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+              overflow: auto; font-size: 12px; color: #cbd5e1; margin: 8px 0 0; max-height: 38vh; }
+        .insp-actions { display: flex; gap: 8px; align-items: center; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+<header>
+    <nav>
+        <a href="/demo/schema">Schema Discovery</a>
+        <a href="/demo/query">Query Builder</a>
+        <a href="/demo/dashboard" class="active">Run Dashboard</a>
+    </nav>
+    <h1>Structured Query — Run Dashboard <span class="v0">/api/v1 · experimental</span></h1>
+    <p>
+        Pick a test suite run and watch the unified query DSL drive a real dashboard: every number,
+        bar, and metric below is computed by an aggregate query against <code>eval_summaries</code>.
+        Hover any panel and click <b>⌕ query</b> to see the exact JSON request that produced it.
+    </p>
+    <div class="row" style="margin-top:12px">
+        <label class="lbl" for="baseUrl">API base</label>
+        <input type="text" id="baseUrl" placeholder="(same origin)" value=""/>
+    </div>
+</header>
+
+<main>
+    <div id="banner"></div>
+
+    <div class="controls">
+        <div class="row">
+            <label class="lbl" for="suiteId">Test suite id</label>
+            <input type="text" id="suiteId" placeholder="e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6"/>
+            <button id="loadRuns">Load runs</button>
+            <span id="runWrap" class="row hidden">
+                <label class="lbl" for="runSelect">Run</label>
+                <select id="runSelect" style="min-width:320px"></select>
+            </span>
+            <span class="muted" id="status">Enter a test suite id to list its runs.</span>
+        </div>
+    </div>
+
+    <div id="dashboard" class="hidden">
+        <div class="run-head">
+            <div class="eyebrow">Single run</div>
+            <h2 id="runTitle"></h2>
+            <div class="sub" id="runSub"></div>
+        </div>
+
+        <div class="cards" id="cards"></div>
+
+        <div class="lower">
+            <section class="panel inspectable" id="distPanel">
+                <div class="panel-head">
+                    <p class="seclabel">Score distribution</p>
+                    <span class="muted" id="distMetricLabel">select a metric →</span>
+                </div>
+                <div id="distBody"><div class="dist-empty">Select a metric on the right to render its
+                    <code>width_bucket</code> histogram over <code>[0, 1.01)</code>.</div></div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head">
+                    <p class="seclabel">Metric scores</p>
+                    <div class="toggle" id="statToggle"></div>
+                </div>
+                <div id="metricsBody"><div class="muted">No metrics loaded.</div></div>
+            </section>
+        </div>
+    </div>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="inspector" id="inspector">
+    <div class="insp-head">
+        <h3 style="flex:1">Query inspector</h3>
+        <button class="secondary" id="inspClose">Close ✕</button>
+    </div>
+    <p class="title" id="inspTitle"></p>
+    <div class="insp-endpoint" id="inspEndpoint"></div>
+
+    <h3 style="margin-top:18px">Request body</h3>
+    <div class="insp-actions">
+        <button class="secondary" id="inspCopy">Copy JSON</button>
+        <span class="muted" id="inspCopyStatus"></span>
+    </div>
+    <pre id="inspRequest">{}</pre>
+
+    <h3 style="margin-top:18px">Response</h3>
+    <pre id="inspResponse">{}</pre>
+</aside>
+
+<script>
+    const $ = (id) => document.getElementById(id);
+    const apiBase = () => $("baseUrl").value.replace(/\/+$/, "");
+    const EXECUTE = "/api/v1/queries/execute";
+    const STATS = ["avg", "p10", "p90", "min", "max"];
+
+    const state = { suiteId: "", runs: [], run: null, metrics: [], stat: "avg" };
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    }
+    function showBanner(msg, kind) { $("banner").innerHTML = '<div class="banner ' + kind + '">' + escapeHtml(msg) + "</div>"; }
+    function clearBanner() { $("banner").innerHTML = ""; }
+
+    async function httpJson(method, path, body) {
+        const opts = { method, headers: { Accept: "application/json" } };
+        if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+        const res = await fetch(apiBase() + path, opts);
+        const text = await res.text();
+        let parsed; try { parsed = text ? JSON.parse(text) : null; } catch (e) { parsed = text; }
+        if (!res.ok) {
+            const detail = parsed && parsed.message ? parsed.message : (typeof parsed === "string" ? parsed : res.statusText);
+            throw new Error("HTTP " + res.status + " — " + detail);
+        }
+        return parsed;
+    }
+    const getJson = (path) => httpJson("GET", path);
+    const execQuery = (query) => httpJson("POST", EXECUTE, query);
+
+    // ---- StructuredQuery builders -----------------------------------------
+    const field = (name) => ({ type: "field", name });
+    const val = (valueType, value) => ({ type: "value", value_type: valueType, value: String(value) });
+    const fn = (name, args) => ({ type: "fn", name, distinct: false, args });
+    const col = (expr, as) => (as ? { expr, as } : { expr });
+    const runFilter = (runId) => ({ op: "eq", args: [field("test_suite_run_id"), val("uuid", runId)] });
+    const offset = (limit) => ({ type: "offset", offset: 0, limit, include_total: false });
+
+    function statusCountsQuery(runId) {
+        return {
+            entity: "eval_summaries", mode: "aggregate", filter: runFilter(runId),
+            select: [col(field("execution_status")), col(fn("count", []), "cnt")],
+            group_by: ["execution_status"], page: offset(100),
+        };
+    }
+    function avgLatencyQuery(runId) {
+        return {
+            entity: "eval_summaries", mode: "aggregate", filter: runFilter(runId),
+            select: [col(fn("avg", [field("exec_duration_ms")]), "avg_ms")],
+            group_by: [], page: offset(1),
+        };
+    }
+    function metricStatsQuery(runId, fieldName) {
+        const f = field(fieldName);
+        return {
+            entity: "eval_summaries", mode: "aggregate", filter: runFilter(runId),
+            select: [
+                col(fn("avg", [f]), "avg"),
+                col(fn("min", [f]), "min"),
+                col(fn("max", [f]), "max"),
+                col(fn("percentile_cont", [val("decimal", "0.1"), f]), "p10"),
+                col(fn("percentile_cont", [val("decimal", "0.9"), f]), "p90"),
+            ],
+            group_by: [], page: offset(1),
+        };
+    }
+    function histogramQuery(runId, fieldName) {
+        return {
+            entity: "eval_summaries", mode: "aggregate", filter: runFilter(runId),
+            select: [
+                col(fn("width_bucket", [field(fieldName), val("decimal", "0"), val("decimal", "1.01"), val("integer", "10")]), "bucket"),
+                col(fn("count", []), "cnt"),
+            ],
+            group_by: ["bucket"], sort: [{ field: "bucket", dir: "asc" }], page: offset(100),
+        };
+    }
+
+    // ---- formatting + color ------------------------------------------------
+    const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
+    function fmt(v, digits) {
+        const n = num(v);
+        if (n === null || Number.isNaN(n)) return "—";
+        return n.toFixed(digits === undefined ? 3 : digits);
+    }
+    function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
+    // red (#f87171) → amber (#fbbf24) → green (#34d399), t in [0,1]
+    function scoreColor(t) {
+        const c = Math.max(0, Math.min(1, t));
+        const red = [248, 113, 113], amber = [251, 191, 36], green = [52, 211, 153];
+        const [from, to, u] = c < 0.5 ? [red, amber, c / 0.5] : [amber, green, (c - 0.5) / 0.5];
+        return "rgb(" + lerp(from[0], to[0], u) + "," + lerp(from[1], to[1], u) + "," + lerp(from[2], to[2], u) + ")";
+    }
+
+    // ---- inspector (signature element) ------------------------------------
+    function openInspector(info) {
+        $("inspTitle").textContent = info.title;
+        $("inspEndpoint").innerHTML = '<span class="verb">' + escapeHtml(info.method) + "</span>" + escapeHtml(info.endpoint);
+        $("inspRequest").textContent = info.requestBody ? JSON.stringify(info.requestBody, null, 2) : "(no request body — GET)";
+        $("inspResponse").textContent = JSON.stringify(info.response, null, 2);
+        $("scrim").classList.add("open");
+        $("inspector").classList.add("open");
+    }
+    function closeInspector() { $("scrim").classList.remove("open"); $("inspector").classList.remove("open"); }
+    function addInspectBadge(el, info) {
+        const badge = document.createElement("span");
+        badge.className = "inspect-badge";
+        badge.textContent = "⌕ query";
+        badge.addEventListener("click", (e) => { e.stopPropagation(); openInspector(info); });
+        el.classList.add("inspectable");
+        el.appendChild(badge);
+    }
+
+    // ---- run listing -------------------------------------------------------
+    async function loadRuns() {
+        clearBanner();
+        const suiteId = $("suiteId").value.trim();
+        if (!suiteId) { showBanner("Enter a test suite id first.", "err"); return; }
+        state.suiteId = suiteId;
+        $("loadRuns").disabled = true;
+        $("status").textContent = "Loading runs…";
+        $("dashboard").classList.add("hidden");
+        $("runWrap").classList.add("hidden");
+        try {
+            const path = "/api/v1/test-suite-runs?size=100&filter="
+                + encodeURIComponent("testSuiteId:EQ:" + suiteId);
+            const page = await getJson(path);
+            const runs = (page && page.content) || [];
+            runs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            state.runs = runs;
+            if (!runs.length) {
+                $("status").textContent = "No runs found for that suite.";
+                return;
+            }
+            $("runSelect").innerHTML = '<option value="">— select a run —</option>'
+                + runs.map((r) => '<option value="' + escapeHtml(r.id) + '">'
+                    + escapeHtml(runLabel(r)) + "</option>").join("");
+            $("runWrap").classList.remove("hidden");
+            $("status").textContent = runs.length + " run(s). Pick one to build the dashboard.";
+        } catch (e) {
+            showBanner("Could not load runs: " + e.message, "err");
+            $("status").textContent = "Failed to load runs.";
+        } finally {
+            $("loadRuns").disabled = false;
+        }
+    }
+
+    function runLabel(r) {
+        const when = r.createdAt ? new Date(r.createdAt).toLocaleString() : "";
+        const name = r.testRunName || r.id;
+        return name + "  ·  " + (r.numberOfTestCases ?? "?") + " cases" + (when ? "  ·  " + when : "");
+    }
+
+    // ---- run selection → build the dashboard ------------------------------
+    async function selectRun(runId) {
+        if (!runId) { $("dashboard").classList.add("hidden"); return; }
+        const run = state.runs.find((r) => r.id === runId);
+        state.run = run;
+        clearBanner();
+        $("status").textContent = "Discovering schema & running queries…";
+        try {
+            const schemaPath = "/api/v1/queries/entities/schema/eval_summaries/detailed?test_suite_run_id="
+                + encodeURIComponent(runId);
+            const schema = await getJson(schemaPath);
+            state.metrics = (schema.fields || [])
+                .filter((f) => f.type === "decimal" && f.name.startsWith("metric:"))
+                .map((f) => {
+                    const parts = f.name.split(":");
+                    return { fieldName: f.name, metric: parts[1] || f.name, sub: parts.slice(2).join(":") };
+                });
+
+            $("runTitle").innerHTML = escapeHtml(run.testRunName || "Run")
+                + ' <span class="sep">/</span> ' + escapeHtml(runId.slice(0, 8));
+            const when = run.createdAt ? new Date(run.createdAt).toLocaleString() : "—";
+            $("runSub").textContent = (run.numberOfTestCases ?? "?") + " test cases  ·  " + (run.status || "")
+                + "  ·  created " + when;
+            $("dashboard").classList.remove("hidden");
+
+            await Promise.all([renderSummary(runId), renderMetrics(runId)]);
+            clearDistribution();
+            $("status").textContent = "Dashboard ready. " + state.metrics.length + " numeric metric field(s).";
+        } catch (e) {
+            showBanner(e.message, "err");
+            $("status").textContent = "Failed to build dashboard.";
+        }
+    }
+
+    // ---- summary cards -----------------------------------------------------
+    async function renderSummary(runId) {
+        const countsReq = statusCountsQuery(runId);
+        const latencyReq = avgLatencyQuery(runId);
+        const [counts, latency] = await Promise.all([execQuery(countsReq), execQuery(latencyReq)]);
+
+        const byStatus = {};
+        (counts.rows || []).forEach((r) => { byStatus[r.execution_status] = num(r.cnt) || 0; });
+        const passed = byStatus.SUCCESS || 0;
+        const failed = byStatus.FAILED || 0;
+        const errored = (byStatus.ERROR || 0) + (byStatus.TIMEOUT || 0);
+        const total = Object.values(byStatus).reduce((a, b) => a + b, 0);
+        const avgMs = num((latency.rows && latency.rows[0]) ? latency.rows[0].avg_ms : null);
+
+        const cards = $("cards");
+        cards.innerHTML = "";
+
+        const passedCard = cardEl("Cases passed",
+            '<span>' + passed + '</span><span class="denom">/' + total + "</span>",
+            "",
+            '<div class="pips">'
+                + '<span class="pip"><span class="dot ok"></span>' + passed + " passed</span>"
+                + '<span class="pip"><span class="dot fail"></span>' + failed + " failed</span>"
+                + '<span class="pip"><span class="dot err"></span>' + errored + " err/timeout</span>"
+                + "</div>"
+                + '<div class="note">“passed” = execution_status SUCCESS</div>');
+        addInspectBadge(passedCard, inspInfo("Cases passed vs total", EXECUTE, "POST", countsReq, counts));
+        cards.appendChild(passedCard);
+
+        const latencyCard = cardEl("Avg test-case run time",
+            (avgMs === null ? "—" : Math.round(avgMs)) + '<span class="unit">ms</span>',
+            "",
+            '<div class="note">avg(exec_duration_ms) across the run</div>');
+        addInspectBadge(latencyCard, inspInfo("Average run time", EXECUTE, "POST", latencyReq, latency));
+        cards.appendChild(latencyCard);
+    }
+
+    function cardEl(label, bigHtml, _unused, noteHtml) {
+        const el = document.createElement("div");
+        el.className = "card";
+        el.innerHTML = '<div class="label">' + escapeHtml(label) + "</div>"
+            + '<div class="big">' + bigHtml + "</div>" + (noteHtml || "");
+        return el;
+    }
+
+    // ---- metric scores -----------------------------------------------------
+    async function renderMetrics(runId) {
+        const body = $("metricsBody");
+        if (!state.metrics.length) { body.innerHTML = '<div class="muted">No numeric metric fields in this run’s schema.</div>'; return; }
+        body.innerHTML = '<div class="muted">Running ' + state.metrics.length + " aggregate queries…</div>";
+
+        const results = await Promise.all(state.metrics.map((m) => {
+            const req = metricStatsQuery(runId, m.fieldName);
+            return execQuery(req).then((res) => ({ m, req, res, stats: (res.rows && res.rows[0]) || {} }));
+        }));
+
+        body.innerHTML = "";
+        state.metricResults = results;
+        results.forEach((entry) => body.appendChild(metricRow(entry)));
+        paintMetrics();
+    }
+
+    function metricRow(entry) {
+        const { m, req, res } = entry;
+        const row = document.createElement("div");
+        row.className = "metric";
+        row.dataset.fieldName = m.fieldName;
+        const subHtml = m.sub && m.sub !== "score" ? '<span class="sub">' + escapeHtml(m.sub) + "</span>" : "";
+        row.innerHTML =
+            '<div class="top"><div class="name">' + escapeHtml(m.metric) + subHtml + "</div>"
+            + '<div class="score"></div></div>'
+            + '<div class="track"><div class="fill"></div></div>'
+            + '<div class="spread"></div>';
+        row.addEventListener("click", () => selectMetric(m.fieldName));
+        addInspectBadge(row, inspInfo("Metric aggregates · " + m.metric, EXECUTE, "POST", req, res));
+        return row;
+    }
+
+    function paintMetrics() {
+        const stat = state.stat;
+        (state.metricResults || []).forEach((entry) => {
+            const row = $("metricsBody").querySelector('[data-field-name="' + cssEscape(entry.m.fieldName) + '"]');
+            if (!row) return;
+            const v = num(entry.stats[stat]);
+            const display = v === null ? "—" : Math.max(0, Math.min(1, v));
+            row.querySelector(".score").textContent = fmt(entry.stats[stat]);
+            const fill = row.querySelector(".fill");
+            fill.style.width = (v === null ? 0 : display * 100) + "%";
+            fill.style.background = v === null ? "var(--border)" : scoreColor(display);
+            row.querySelector(".spread").textContent =
+                "avg " + fmt(entry.stats.avg) + "  ·  p10 " + fmt(entry.stats.p10)
+                + "  ·  p90 " + fmt(entry.stats.p90) + "  ·  min " + fmt(entry.stats.min)
+                + "  ·  max " + fmt(entry.stats.max);
+        });
+    }
+
+    const cssEscape = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&"));
+
+    function renderStatToggle() {
+        const t = $("statToggle");
+        t.innerHTML = "";
+        STATS.forEach((s) => {
+            const b = document.createElement("button");
+            b.textContent = s;
+            if (s === state.stat) b.classList.add("on");
+            b.addEventListener("click", () => {
+                state.stat = s;
+                t.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.textContent === s));
+                paintMetrics();
+            });
+            t.appendChild(b);
+        });
+    }
+
+    // ---- distribution histogram -------------------------------------------
+    function clearDistribution() {
+        state.selectedMetric = null;
+        $("distMetricLabel").textContent = "select a metric →";
+        $("distBody").innerHTML = '<div class="dist-empty">Select a metric on the right to render its '
+            + '<code>width_bucket</code> histogram over <code>[0, 1.01)</code>.</div>';
+        $("metricsBody").querySelectorAll(".metric").forEach((el) => el.classList.remove("sel"));
+    }
+
+    async function selectMetric(fieldName) {
+        state.selectedMetric = fieldName;
+        const m = state.metrics.find((x) => x.fieldName === fieldName);
+        $("metricsBody").querySelectorAll(".metric").forEach((el) =>
+            el.classList.toggle("sel", el.dataset.fieldName === fieldName));
+        $("distMetricLabel").textContent = (m ? m.metric + (m.sub ? " · " + m.sub : "") : fieldName);
+        $("distBody").innerHTML = '<div class="dist-empty">Running width_bucket query…</div>';
+        const req = histogramQuery(state.run.id, fieldName);
+        try {
+            const res = await execQuery(req);
+            renderHistogram(res, req);
+        } catch (e) {
+            $("distBody").innerHTML = '<div class="dist-empty">' + escapeHtml(e.message) + "</div>";
+        }
+    }
+
+    // width_bucket(field, 0, 1.01, 10): bucket i → [ (i-1)*0.101, i*0.101 ); rounds to clean 0.1 steps.
+    function renderHistogram(res, req) {
+        const BUCKETS = 10, LOW = 0, HIGH = 1.01, STEP = (HIGH - LOW) / BUCKETS;
+        const counts = new Array(BUCKETS).fill(0);
+        (res.rows || []).forEach((r) => {
+            const b = num(r.bucket);
+            if (b >= 1 && b <= BUCKETS) counts[b - 1] = num(r.cnt) || 0;
+        });
+        const maxCount = Math.max(1, ...counts);
+        const rangeLabel = (i) => (LOW + i * STEP).toFixed(1) + "–" + (LOW + (i + 1) * STEP).toFixed(1);
+
+        let bars = "", labels = "";
+        for (let i = 0; i < BUCKETS; i++) {
+            const h = (counts[i] / maxCount) * 100;
+            const color = scoreColor((i + 0.5) / BUCKETS);
+            bars += '<div class="bar-col">'
+                + '<div class="bar-count">' + counts[i] + "</div>"
+                + '<div class="bar" style="height:' + h + "%;background:" + color + '"></div>'
+                + "</div>";
+            labels += '<div class="bar-label">' + rangeLabel(i) + "</div>";
+        }
+        const total = counts.reduce((a, b) => a + b, 0);
+        $("distBody").innerHTML = '<div class="muted" style="margin-bottom:6px">' + total
+            + " cases bucketed by score</div>"
+            + '<div class="chart">' + bars + "</div>"
+            + '<div class="bar-labels">' + labels + "</div>";
+        // make the chart inspectable (replace any prior badge from a previous metric selection)
+        $("distPanel").querySelectorAll(".inspect-badge").forEach((b) => b.remove());
+        addInspectBadge($("distPanel"), inspInfo("Score distribution (width_bucket)", EXECUTE, "POST", req, res));
+    }
+
+    function inspInfo(title, endpoint, method, requestBody, response) {
+        return { title, endpoint: endpoint, method, requestBody, response };
+    }
+
+    // ---- wiring ------------------------------------------------------------
+    $("loadRuns").addEventListener("click", loadRuns);
+    $("suiteId").addEventListener("keydown", (e) => { if (e.key === "Enter") loadRuns(); });
+    $("runSelect").addEventListener("change", (e) => selectRun(e.target.value));
+    $("inspClose").addEventListener("click", closeInspector);
+    $("scrim").addEventListener("click", closeInspector);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeInspector(); });
+    $("inspCopy").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText($("inspRequest").textContent); $("inspCopyStatus").textContent = "copied"; }
+        catch (e) { $("inspCopyStatus").textContent = "copy failed"; }
+        setTimeout(() => ($("inspCopyStatus").textContent = ""), 1500);
+    });
+
+    renderStatToggle();
+</script>
+</body>
+</html>

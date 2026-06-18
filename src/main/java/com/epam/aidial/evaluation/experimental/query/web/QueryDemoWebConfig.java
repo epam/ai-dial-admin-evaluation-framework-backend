@@ -6,9 +6,10 @@ import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Serves the static schema-discovery / query-builder demos under the clean {@code /demo} path by
- * forwarding to the static resources {@code static/demo/schema.html} and
- * {@code static/demo/query.html}. The pages are plain HTML/JS that call the {@code /api/v1/queries}
+ * Serves the static schema-discovery / query-builder / run-dashboard demos under the clean
+ * {@code /demo} path by forwarding to the static resources {@code static/demo/schema.html},
+ * {@code static/demo/query.html} and {@code static/demo/dashboard.html}. The pages are plain HTML/JS
+ * that call the {@code /api/v1/queries} (and, for the dashboard, {@code /api/v1/test-suite-runs})
  * endpoints from the same origin. Local-testing aid only — not intended for production use.
  *
  * <p>TODO: remove before going to prod — this whole class, and the {@code static/demo/*.html} pages
@@ -26,5 +27,6 @@ public class QueryDemoWebConfig implements WebMvcConfigurer {
         registry.addViewController("/demo/").setViewName("forward:/demo/schema.html");
         registry.addViewController("/demo/schema").setViewName("forward:/demo/schema.html");
         registry.addViewController("/demo/query").setViewName("forward:/demo/query.html");
+        registry.addViewController("/demo/dashboard").setViewName("forward:/demo/dashboard.html");
     }
 }

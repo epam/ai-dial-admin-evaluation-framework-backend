@@ -104,7 +104,7 @@ public class StructuredQueryBuilder {
                 final Field<?> field = exprTranslator.toField(col.expr(), bindings);
                 final String alias = col.as() != null
                         ? col.as()
-                        : (col.expr() instanceof FieldExpr(String fieldName) ? fieldName : null);
+                        : col.expr() instanceof FieldExpr(String fieldName) ? fieldName : null;
                 if (alias != null) {
                     fields.add(field.as(alias));
                     selectAliases.add(alias);

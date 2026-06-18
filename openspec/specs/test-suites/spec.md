@@ -312,36 +312,45 @@ The `endpointRef.requestBodySchema` and `endpointRef.responseBodySchema` fields 
 - **THEN** system SHALL skip template-vs-schema validation (no schema warnings generated)
 
 ### Requirement: Suite-level soft validation (`isValid` + `validationWarnings`)
-The TestSuite response SHALL include `isValid` (boolean) and `validationWarnings` (structured list, same format as TestCase validation warnings). Suite-level validation covers template + bindings configuration correctness, cross-checked against the **referenced dataset's** `testCaseSchema` (resolved via `DatasetSchemaProvider`) and the suite's `responseColumns` / `endpointRef`. Suite-level validation is **independent of test case data**. Suite `isValid` is recalculated on every create or update. TestCase `isValid` covers data-specific checks only — the two layers are independent.
-Status: **Planned**
+The TestSuite response SHALL include `isValid` (boolean) and `validationWarnings` (structured list, same format as TestCase validation warnings). Suite-level validation covers **configuration correctness only**. Test-case presence is **not** a component of stored suite validity and does not affect `isValid` or `validationWarnings` in the suite GET response. A bound suite with zero runnable test cases MAY be `isValid = true`; the run path enforces the presence requirement at run-creation time (see `test-suite-runs` spec).
+
+Suite-level configuration correctness covers: template + bindings, cross-checked against the **referenced dataset's** `testCaseSchema` (resolved via `DatasetSchemaProvider`) and the suite's `responseColumns` / `endpointRef`. This dimension is **independent of test case data**.
+
+`isValid` SHALL be `true` only when the configuration dimension produces no warnings. `isValid` SHALL be recalculated on every suite create or update, and on dataset bind/detach and dataset schema revalidation (Phase 2). TestCase `isValid` (test-case **data** validation) is owned by the test-case domain and is never triggered by suite validation — the configuration and data layers remain independent.
+
+Status: **Implemented**
 
 #### Scenario: Create returns suite validation result
 - **WHEN** client creates a TestSuite with `requestTemplate` and `inputBindings`
-- **THEN** the response SHALL include `isValid` and `validationWarnings` reflecting suite-level checks (urlTemplate, binding coverage, binding references against the dataset's schema, template conformance to endpoint schema)
+- **THEN** the response SHALL include `isValid` and `validationWarnings` reflecting suite-level configuration checks (urlTemplate, binding coverage, binding references against the dataset's schema, template conformance to endpoint schema)
 
 #### Scenario: Update recalculates suite validation
 - **WHEN** client updates `requestTemplate`, `inputBindings`, `endpointRef`, `responseColumns`, or `datasetId`
 - **THEN** system SHALL recalculate `isValid` and `validationWarnings` for the suite against the (possibly newly-bound) dataset's schema
 
 #### Scenario: Suite valid — no warnings
-- **WHEN** all suite-level checks pass (urlTemplate valid, all required variables bound, all bindings reference fields in the dataset's schema and template variables, template conforms to endpoint schema)
+- **WHEN** all suite-level configuration checks pass (urlTemplate valid, all required variables bound, all bindings reference fields in the dataset's schema and template variables, template conforms to endpoint schema)
 - **THEN** `isValid` SHALL be `true` and `validationWarnings` SHALL be empty
 
-#### Scenario: Suite invalid — warnings produced
-- **WHEN** any suite-level check fails (e.g., urlTemplate null, required variable unbound, binding references field not in dataset schema)
+#### Scenario: Suite invalid — configuration warnings produced
+- **WHEN** any suite-level configuration check fails (e.g., urlTemplate null, required variable unbound, binding references field not in dataset schema)
 - **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL contain structured warning objects (`fieldName`, `path`, `message`, optional `code`)
 
 #### Scenario: Suite with no request template produces warning
 - **WHEN** TestSuite has `requestTemplate: null`
 - **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a warning ("urlTemplate is required for request assembly") — same as when `requestTemplate` is non-null but `urlTemplate` is null
 
-#### Scenario: Suite validation accessible without test cases
-- **WHEN** a TestSuite has just been created and the referenced dataset has no test cases yet
-- **THEN** the response SHALL still include `isValid` and `validationWarnings` from suite-level checks (dataset schema is sufficient context)
+#### Scenario: Bound suite with no test cases is still config-valid
+- **WHEN** a bound suite's configuration is valid but the referenced dataset has no test cases, or all are invalid, or all are excluded by `disabledTestCaseIds`
+- **THEN** `isValid` SHALL be `true` and `validationWarnings` SHALL be empty (test-case presence is not a suite-validity concern; the run path enforces it separately)
+
+#### Scenario: Unbound suite is not subject to the runnable-test-case rule
+- **WHEN** a suite has `datasetId == null`
+- **THEN** `isValid` SHALL reflect configuration checks only and SHALL NOT carry a `NO_TEST_CASES` warning
 
 #### Scenario: Suite revalidated when dataset schema changes
 - **WHEN** the referenced dataset's `testCaseSchema` is updated (via dataset PUT) and the dataset-rooted `RevalidationTask` runs Phase 2
-- **THEN** the suite's `isValid` and `validationWarnings` SHALL be refreshed by the task's per-suite handler (see `datasets` spec for Phase 2 semantics)
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be refreshed by the task's per-suite handler, reflecting configuration correctness against the new schema (see `datasets` spec for Phase 2 semantics)
 
 ### Requirement: No stored roles in field definitions
 The service SHALL NOT store role annotations (INPUT, FACT) on field definitions. Field roles are emergent — derived by clients from `inputBindings` (fields referenced by bindings = inputs, fields without bindings = fact candidates).

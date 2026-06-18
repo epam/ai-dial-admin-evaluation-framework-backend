@@ -407,6 +407,46 @@ Status: **Implemented**
 - **WHEN** client calls `POST /api/v1/datasets/{id}/publish` for an unknown id
 - **THEN** system SHALL return HTTP 404 with error code `NOT_FOUND`
 
+### Requirement: List test suites depending on a dataset
+The system SHALL provide `GET /api/v1/datasets/{datasetId}/test-suites` that returns the test suites bound to the dataset — every suite whose `dataset_id` equals the path id. The response SHALL be a plain JSON array of `DatasetDependentSuiteDto` items, each carrying exactly `id` (UUID), `name` (String), and `description` (String, nullable). The endpoint SHALL NOT be paginated, filterable, or sortable. Visibility SHALL NOT affect this endpoint — it lists dependents for both PUBLIC and PRIVATE datasets.
+Status: **Planned**
+
+#### Scenario: Dataset with bound suites returns their summaries
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-suites` for an existing dataset that has one or more bound test suites
+- **THEN** system SHALL respond with HTTP 200 and a JSON array containing one `DatasetDependentSuiteDto` per bound suite, each with `id`, `name`, and `description` matching the suite, and SHALL NOT include any other suite fields
+
+#### Scenario: Dataset with no bound suites returns empty array
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-suites` for an existing dataset that has no bound test suites
+- **THEN** system SHALL respond with HTTP 200 and an empty JSON array `[]`
+
+#### Scenario: Unknown dataset returns 404
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-suites` for a dataset id that does not exist
+- **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
+
+#### Scenario: Lists dependents of a PRIVATE dataset
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-suites` for an existing PRIVATE dataset bound to a suite
+- **THEN** system SHALL respond with HTTP 200 and include the bound suite's summary; visibility SHALL NOT block the listing
+
+### Requirement: DatasetDependentSuiteDto wire shape
+The system SHALL expose `DatasetDependentSuiteDto` as the response element type for `GET /api/v1/datasets/{datasetId}/test-suites`. The DTO SHALL contain exactly three fields — `id` (UUID), `name` (String), `description` (String, nullable) — and SHALL NOT expose the full `TestSuiteResponseDto` field set.
+Status: **Planned**
+
+#### Scenario: DatasetDependentSuiteDto fields
+- **WHEN** client receives a `DatasetDependentSuiteDto`
+- **THEN** the payload SHALL include `id`, `name`, and `description`, and SHALL NOT include suite fields such as `suiteType`, `datasetId`, `version`, `responseColumns`, `inputBindings`, `validationWarnings`, `createdBy`, `createdAt`, or `updatedAt`
+
+#### Scenario: Null suite description serializes as null
+- **WHEN** a bound suite has no `description` and client receives its `DatasetDependentSuiteDto`
+- **THEN** the `description` field SHALL be present with value `null`
+
+### Requirement: OpenAPI documentation for the dataset dependent-suites endpoint
+`GET /api/v1/datasets/{datasetId}/test-suites` SHALL carry OpenAPI annotations including an operation summary, the `DatasetDependentSuiteDto` array response schema, a response example, and documented 200 and 404 responses, under the existing "Datasets" tag.
+Status: **Planned**
+
+#### Scenario: Swagger UI shows the dependent-suites endpoint
+- **WHEN** user opens Swagger UI
+- **THEN** the `GET /api/v1/datasets/{datasetId}/test-suites` operation SHALL appear under the "Datasets" tag with a summary describing the listing of dependent suites, an array-of-`DatasetDependentSuiteDto` response schema with an example, and documented 200 and 404 responses
+
 ## Implementation notes
 
 - New table: `datasets` (`src/main/resources/db/migration/meta/POSTGRES/V1.<next>__IntroduceDataset.sql`); unique index `uq_datasets_name` on `LOWER(name)`.
@@ -418,4 +458,5 @@ Status: **Implemented**
 - New DTOs: `service.domain.dto.{DatasetRequestDto, DatasetResponseDto, DatasetReferenceDto}`.
 - New filter/sort whitelists: registered with `FilterWhitelists` and `SortWhitelists`; new entry in `OpenApiQueryParamCustomizer` for the list endpoint.
 - Revalidation-task subresources reuse the existing `RevalidationTaskRepository` (rebound from `test_suite_id` to `dataset_id`) and `RevalidationService`.
+- Dependent-suites endpoint: new `@GetMapping("/{id}/test-suites")` on `web.controller.DatasetController`; new `DatasetService.getDependentSuites(UUID)` (dataset existence check via `getById`, then delegates to `TestSuiteService.getDependentSuiteSummaries`); new `TestSuiteRepository.findSuiteSummariesReferencingDataset(UUID)` with selective column projection (`id`, `name`, `description` only) to avoid TOAST decompression; new pure-carrier `data.db.model.TestSuiteSummary` record; new DTO `service.domain.dto.DatasetDependentSuiteDto`.
 

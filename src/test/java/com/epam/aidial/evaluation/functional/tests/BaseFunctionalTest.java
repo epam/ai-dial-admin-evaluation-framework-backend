@@ -1,5 +1,10 @@
 package com.epam.aidial.evaluation.functional.tests;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.core.env.Environment;
@@ -35,5 +40,14 @@ public abstract class BaseFunctionalTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         return new HttpEntity<>(body, headers);
+    }
+
+    protected List<ValidationWarningDto> configWarnings(TestSuiteResponseDto suite) {
+        return suite.getValidationWarnings() != null ? suite.getValidationWarnings() : List.of();
+    }
+
+    protected void assertSuiteConfigValid(TestSuiteResponseDto suite) {
+        assertThat(suite.isValid()).isTrue();
+        assertThat(suite.getValidationWarnings()).isEmpty();
     }
 }

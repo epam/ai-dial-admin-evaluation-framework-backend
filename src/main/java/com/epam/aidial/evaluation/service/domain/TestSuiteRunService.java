@@ -9,7 +9,6 @@ import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
-import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
@@ -51,7 +50,7 @@ public class TestSuiteRunService {
 
     private final TestSuiteRunRepository testSuiteRunRepository;
     private final TestSuiteRepository testSuiteRepository;
-    private final TestCaseRepository testCaseRepository;
+    private final RunnableTestCaseCounter runnableTestCaseCounter;
     private final TestSuiteRunProperties properties;
     private final TestSuiteEvaluationJob evaluationJob;
     private final ExecutionSettingsValidator executionSettingsValidator;
@@ -79,6 +78,12 @@ public class TestSuiteRunService {
         if (!testSuite.isValid()) {
             throw new InvalidOperationException("Cannot create a run for test suite with id: " + testSuiteId
                     + ". The test suite is not in a valid state.");
+        }
+
+        List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());
+        long numberOfTestCases = runnableTestCaseCounter.countRunnable(testSuite.getDatasetId(), disabledIds);
+        if (numberOfTestCases == 0) {
+            throw new InvalidOperationException("Suite has no valid and enabled test cases");
         }
 
         int maxRuns = properties.getRunConfig().getMaxNumberOfRuns();
@@ -111,10 +116,6 @@ public class TestSuiteRunService {
                             "maxRunsPerSuite",
                             properties.getLimits().getMaxConcurrentRunsPerSuite()));
         }
-
-        List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());
-        long numberOfTestCases =
-                testCaseRepository.countValidByDatasetIdExcludingIds(testSuite.getDatasetId(), disabledIds);
 
         String testRunName = config.getTestRunName();
         if (testRunName == null || testRunName.isBlank()) {

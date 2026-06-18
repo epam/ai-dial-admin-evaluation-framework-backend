@@ -87,7 +87,7 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
         assertThat(dataset.getTestCaseSchema())
                 .extracting(FieldDefinitionDto::getName)
                 .containsExactly("expected");
-        assertThat(response.getBody().isValid()).isTrue();
+        assertSuiteConfigValid(response.getBody());
         assertThat(response.getBody().getVersion()).isNotNull();
         assertThat(response.getBody().getCreatedAt()).isNotNull();
     }

@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.data.db.repository;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
+import com.epam.aidial.evaluation.data.db.model.TestSuiteSummary;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
@@ -42,6 +43,14 @@ public interface TestSuiteRepository {
      * Used by {@code RevalidationService} Phase 2 for the dataset → suites fan-out.
      */
     List<TestSuite> findSuitesReferencingDataset(UUID datasetId);
+
+    /**
+     * Returns a lightweight {@link TestSuiteSummary} ({@code id}, {@code name}, {@code description})
+     * for every suite whose {@code dataset_id} equals the supplied id. Uses a selective column
+     * projection so the suite's large JSONB columns are not fetched or TOAST-decompressed. Used by
+     * the dataset → dependent-suites listing endpoint.
+     */
+    List<TestSuiteSummary> findSuiteSummariesReferencingDataset(UUID datasetId);
 
     /**
      * Sets {@code test_suites.dataset_id = NULL} for every suite currently bound to the given

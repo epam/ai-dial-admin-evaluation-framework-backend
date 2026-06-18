@@ -1,6 +1,6 @@
 # Typed SQL DSL (jOOQ)
 
-All repositories use the typed jOOQ 3.20 DSL instead of `NamedParameterJdbcTemplate` + SQL text blocks.
+All repositories use the typed jOOQ 3.21 DSL instead of `NamedParameterJdbcTemplate` + SQL text blocks.
 
 **Codegen pipeline**: `./gradlew generateJooq` boots Zonky EmbeddedPostgres, applies both Flyway migration sets, and writes generated sources to `src/main/java-generated/`. Sources are committed to VCS; CI compiles them without running codegen. Run `./gradlew generateJooq` and commit the diff whenever a Flyway migration changes the schema.
 

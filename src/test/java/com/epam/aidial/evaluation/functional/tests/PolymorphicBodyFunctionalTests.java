@@ -76,7 +76,7 @@ public abstract class PolymorphicBodyFunctionalTests extends BaseFunctionalTest 
         TestSuiteResponseDto suite = createSuiteWithMultipartTemplateAndSchema();
 
         assertThat(suite).isNotNull();
-        assertThat(suite.isValid()).isTrue();
+        assertSuiteConfigValid(suite);
         // No content-type mismatch warning
         if (suite.getValidationWarnings() != null) {
             assertThat(suite.getValidationWarnings().stream()

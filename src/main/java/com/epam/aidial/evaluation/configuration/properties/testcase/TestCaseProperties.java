@@ -41,5 +41,8 @@ public class TestCaseProperties {
 
         @Min(1)
         private int maxItemOperations;
+
+        @Min(1)
+        private int maxDeleteIds;
     }
 }

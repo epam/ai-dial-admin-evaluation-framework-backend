@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
@@ -18,10 +19,13 @@ import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkDeleteRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkDeleteResponseDto;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +58,9 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private TestCaseRepository testCaseRepository;
 
     private UUID newDatasetWithSchema(List<FieldDefinitionDto> schema) {
         try {
@@ -1657,4 +1664,172 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
     }
 
     private record TestCaseControllerBulkDeleteResponse(long deleted) {}
+
+    @Test
+    @DisplayName("Should bulk delete by IDs when all IDs exist")
+    void shouldBulkDeleteByIdsWhenAllExist() {
+        TestSuiteResponseDto suite = createTestSuite();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "BulkDelA");
+        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "BulkDelB");
+        createTestCase(suite.getId(), "BulkDelKeep");
+
+        TestCaseBulkDeleteRequestDto request = TestCaseBulkDeleteRequestDto.builder()
+                .ids(List.of(tc1.getId(), tc2.getId()))
+                .build();
+
+        ResponseEntity<TestCaseBulkDeleteResponseDto> response = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/test-cases:bulk"),
+                HttpMethod.DELETE,
+                jsonEntity(request),
+                TestCaseBulkDeleteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeleted()).containsExactly(tc1.getId(), tc2.getId());
+        assertThat(response.getBody().getNotFound()).isEmpty();
+
+        assertThat(restTemplate
+                        .getForEntity(apiUrl("/datasets/" + datasetId + "/test-cases/" + tc1.getId()), String.class)
+                        .getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(restTemplate
+                        .getForEntity(apiUrl("/datasets/" + datasetId + "/test-cases/" + tc2.getId()), String.class)
+                        .getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Should bulk delete by IDs with partial success when some IDs not found")
+    void shouldBulkDeleteByIdsWithPartialSuccess() {
+        TestSuiteResponseDto suite = createTestSuite();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        TestCaseResponseDto existing = createTestCase(suite.getId(), "BulkDelPartial");
+        UUID nonExistent = UUID.randomUUID();
+
+        TestCaseBulkDeleteRequestDto request = TestCaseBulkDeleteRequestDto.builder()
+                .ids(List.of(existing.getId(), nonExistent))
+                .build();
+
+        ResponseEntity<TestCaseBulkDeleteResponseDto> response = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/test-cases:bulk"),
+                HttpMethod.DELETE,
+                jsonEntity(request),
+                TestCaseBulkDeleteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeleted()).containsExactly(existing.getId());
+        assertThat(response.getBody().getNotFound()).containsExactly(nonExistent);
+
+        assertThat(restTemplate
+                        .getForEntity(
+                                apiUrl("/datasets/" + datasetId + "/test-cases/" + existing.getId()), String.class)
+                        .getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Should bulk delete by IDs returning all as notFound when none exist")
+    void shouldBulkDeleteByIdsReturnsAllAsNotFoundWhenNoneExist() {
+        TestSuiteResponseDto suite = createTestSuite();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+
+        TestCaseBulkDeleteRequestDto request =
+                TestCaseBulkDeleteRequestDto.builder().ids(List.of(id1, id2)).build();
+
+        ResponseEntity<TestCaseBulkDeleteResponseDto> response = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/test-cases:bulk"),
+                HttpMethod.DELETE,
+                jsonEntity(request),
+                TestCaseBulkDeleteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeleted()).isEmpty();
+        assertThat(response.getBody().getNotFound()).containsExactly(id1, id2);
+    }
+
+    @Test
+    @DisplayName("Should return 404 when bulk deleting by IDs on non-existent dataset")
+    void shouldReturn404WhenBulkDeleteByIdsDatasetNotFound() {
+        TestCaseBulkDeleteRequestDto request = TestCaseBulkDeleteRequestDto.builder()
+                .ids(List.of(UUID.randomUUID()))
+                .build();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/datasets/" + UUID.randomUUID() + "/test-cases:bulk"),
+                HttpMethod.DELETE,
+                jsonEntity(request),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when bulk deleting by IDs with empty list")
+    void shouldReturn400WhenBulkDeleteByIdsWithEmptyList() {
+        TestSuiteResponseDto suite = createTestSuite();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createTestCase(suite.getId(), "ShouldStay");
+
+        TestCaseBulkDeleteRequestDto request =
+                TestCaseBulkDeleteRequestDto.builder().ids(List.of()).build();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/test-cases:bulk"),
+                HttpMethod.DELETE,
+                jsonEntity(request),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(testCaseRepository.countByDatasetId(datasetId)).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when bulk deleting by IDs with duplicate IDs")
+    void shouldReturn400WhenBulkDeleteByIdsWithDuplicates() {
+        TestSuiteResponseDto suite = createTestSuite();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createTestCase(suite.getId(), "ShouldStayDup");
+        UUID id = UUID.randomUUID();
+
+        TestCaseBulkDeleteRequestDto request =
+                TestCaseBulkDeleteRequestDto.builder().ids(List.of(id, id)).build();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/test-cases:bulk"),
+                HttpMethod.DELETE,
+                jsonEntity(request),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(testCaseRepository.countByDatasetId(datasetId)).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when bulk deleting by IDs count exceeds cap")
+    void shouldReturn400WhenBulkDeleteByIdsExceedsCap() {
+        TestSuiteResponseDto suite = createTestSuite();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createTestCase(suite.getId(), "ShouldStayCap");
+        List<UUID> ids = new ArrayList<>();
+        for (int i = 0; i < 10001; i++) {
+            ids.add(UUID.randomUUID());
+        }
+
+        TestCaseBulkDeleteRequestDto request =
+                TestCaseBulkDeleteRequestDto.builder().ids(ids).build();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/test-cases:bulk"),
+                HttpMethod.DELETE,
+                jsonEntity(request),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(testCaseRepository.countByDatasetId(datasetId)).isEqualTo(1L);
+    }
 }

@@ -14,7 +14,7 @@ buildscript {
         classpath 'io.zonky.test:embedded-postgres:2.0.7'
         classpath 'org.flywaydb:flyway-core:11.19.1'
         classpath 'org.flywaydb:flyway-database-postgresql:11.19.1'
-        classpath 'org.jooq:jooq-codegen:3.20.4'
+        classpath 'org.jooq:jooq-codegen:3.21.5'
         classpath 'org.postgresql:postgresql:42.7.11'
     }
 }
@@ -23,7 +23,7 @@ plugins {
     id 'java'
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.5.0'
-    id 'org.springframework.boot' version '4.0.6'
+    id 'org.springframework.boot' version '4.1.0'
     id 'com.diffplug.spotless' version '8.6.0'
 }
 
@@ -110,7 +110,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-core:11.19.1'
     implementation 'org.flywaydb:flyway-database-postgresql:11.19.1'
-    implementation 'org.jooq:jooq:3.20.4'
+    implementation 'org.jooq:jooq:3.21.5'
     implementation 'org.springframework.boot:spring-boot-jooq'
 
     // Logging

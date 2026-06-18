@@ -28,13 +28,14 @@ import org.jooq.QueryPart;
 import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
-import org.jooq.Select;
 import org.jooq.Stringly;
 import org.jooq.Table;
 import org.jooq.TableField;
+import org.jooq.TableLike;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -281,7 +282,7 @@ public class TestSuiteRuns extends TableImpl<TestSuiteRunsRecord> {
      */
     @Override
     public TestSuiteRuns where(Condition condition) {
-        return new TestSuiteRuns(getQualifiedName(), aliased() ? this : null, null, condition);
+        return new TestSuiteRuns(getQualifiedName(), aliased() ? this : null, null, Internal.condition(this, condition));
     }
 
     /**
@@ -348,7 +349,7 @@ public class TestSuiteRuns extends TableImpl<TestSuiteRunsRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public TestSuiteRuns whereExists(Select<?> select) {
+    public TestSuiteRuns whereExists(TableLike<?> select) {
         return where(DSL.exists(select));
     }
 
@@ -356,7 +357,7 @@ public class TestSuiteRuns extends TableImpl<TestSuiteRunsRecord> {
      * Create an inline derived table from this table
      */
     @Override
-    public TestSuiteRuns whereNotExists(Select<?> select) {
+    public TestSuiteRuns whereNotExists(TableLike<?> select) {
         return where(DSL.notExists(select));
     }
 }

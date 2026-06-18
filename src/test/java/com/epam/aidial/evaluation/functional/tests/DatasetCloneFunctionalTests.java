@@ -144,4 +144,24 @@ public abstract class DatasetCloneFunctionalTests extends BaseFunctionalTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
+
+    @Test
+    @DisplayName(
+            "POST /datasets/{id}/clone on a PRIVATE source → 400 PRIVATE_DATASET_REQUIRES_SUITE_BINDING; nothing persisted")
+    void shouldRejectCloningPrivateDataset() {
+        Dataset source = metaTestDataHelper.createDataset(
+                "Clone-Private-Src-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+        long datasetsBefore = datasetRepository.count();
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/datasets/" + source.getId() + "/clone"),
+                jsonEntity(new DatasetCloneRequestDto()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("PRIVATE_DATASET_REQUIRES_SUITE_BINDING");
+        assertThat(datasetRepository.count())
+                .as("a rejected clone must not persist a new dataset")
+                .isEqualTo(datasetsBefore);
+    }
 }

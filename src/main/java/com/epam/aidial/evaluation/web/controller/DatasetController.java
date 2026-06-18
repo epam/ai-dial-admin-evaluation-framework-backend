@@ -173,12 +173,13 @@ public class DatasetController {
     @PostMapping("/{id}/clone")
     @Operation(
             summary = "Clone a dataset",
-            description = "Deep-copies a dataset (row + all test cases with fresh ids and "
-                    + "`@ef/datasets/{id}/` file-reference rewrites) into a new dataset. The clone inherits the "
-                    + "source's visibility and is unbound to any suite. Both `name` and `description` are optional — "
-                    + "an omitted `name` is auto-derived as `\"<source> (clone)\"` and an omitted `description` is "
-                    + "copied verbatim from the source. An empty body is valid. Any source dataset (PUBLIC or PRIVATE) "
-                    + "may be cloned; the source is never modified.",
+            description = "Deep-copies a PUBLIC dataset (row + all test cases with fresh ids and "
+                    + "`@ef/datasets/{id}/` file-reference rewrites) into a new unbound PUBLIC dataset. Both `name` "
+                    + "and `description` are optional — an omitted `name` is auto-derived as `\"<source> (clone)\"` "
+                    + "and an omitted `description` is copied verbatim from the source. An empty body is valid. "
+                    + "Cloning a PRIVATE dataset is rejected with 400 (PRIVATE_DATASET_REQUIRES_SUITE_BINDING) — the "
+                    + "clone would be unbound, and a PRIVATE dataset must be bound to a suite; clone the owning suite "
+                    + "instead. The source is never modified.",
             requestBody =
                     @RequestBody(
                             description = "Optional name and description overrides for the clone",
@@ -200,7 +201,10 @@ public class DatasetController {
                     @Content(
                             mediaType = "application/json",
                             schema = @Schema(implementation = DatasetResponseDto.class)))
-    @ApiResponse(responseCode = "400", description = "Validation error (name or description too long)")
+    @ApiResponse(
+            responseCode = "400",
+            description = "Validation error (name or description too long), or the source dataset is PRIVATE "
+                    + "(PRIVATE_DATASET_REQUIRES_SUITE_BINDING)")
     @ApiResponse(responseCode = "404", description = "Source dataset not found")
     @ApiResponse(responseCode = "409", description = "A dataset with the resolved name already exists")
     @ResponseStatus(HttpStatus.CREATED)

@@ -153,10 +153,14 @@ public class DatasetService {
 
     /**
      * Deep-copies the dataset {@code id} (row + all test cases with fresh ids and
-     * {@code @ef/datasets/{id}/} file-ref rewrites) into a new dataset. The clone inherits the
-     * source's visibility, is unbound to any suite, and starts at {@code version} 0. {@code name}
-     * and {@code description} are taken from the request when present, otherwise derived/copied from
-     * the source.
+     * {@code @ef/datasets/{id}/} file-ref rewrites) into a new unbound PUBLIC dataset, starting at
+     * {@code version} 0. {@code name} and {@code description} are taken from the request when present,
+     * otherwise derived/copied from the source.
+     *
+     * <p>Only PUBLIC datasets may be cloned here: the clone is unbound, and a PRIVATE dataset must be
+     * bound to exactly one suite. Cloning a PRIVATE source therefore fails fast with
+     * {@code PRIVATE_DATASET_REQUIRES_SUITE_BINDING} (HTTP 400) before any side effect — clone the
+     * owning suite instead, which clones its PRIVATE dataset alongside it.
      *
      * <p>DIAL files are copied before the DB transaction (non-transactional I/O). On transaction
      * failure the just-copied files are deleted best-effort. A duplicate name surfaces as a 409.
@@ -166,6 +170,12 @@ public class DatasetService {
         final Dataset source = datasetRepository
                 .findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Dataset not found with id: " + id));
+        if (source.getVisibility() == DatasetVisibility.PRIVATE) {
+            throw new DatasetVisibilityRuleException(
+                    DatasetVisibilityErrorCode.PRIVATE_DATASET_REQUIRES_SUITE_BINDING,
+                    "PRIVATE dataset " + id + " cannot be cloned standalone (the clone would be unbound); "
+                            + "clone the owning suite instead, which clones its PRIVATE dataset");
+        }
         final UUID newDatasetId = UUID.randomUUID();
 
         // Pre-TX: DIAL file I/O is not transactional and must not run inside the meta tx.

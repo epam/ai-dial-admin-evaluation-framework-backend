@@ -1,17 +1,17 @@
 # Dataset Clone
 
 ## Purpose
-This spec describes the standalone dataset clone action: deep-copying a dataset (row + all test cases) into a new dataset that inherits the source's visibility and is unbound to any suite.
+This spec describes the standalone dataset clone action: deep-copying a PUBLIC dataset (row + all test cases) into a new unbound PUBLIC dataset. PRIVATE datasets cannot be cloned standalone (the clone would be unbound, violating the single-suite-binding invariant); they are cloned only alongside their owning suite (see test-suite-clone).
 
 ## Requirements
 
 ### Requirement: Clone a dataset
 The system SHALL provide `POST /api/v1/datasets/{id}/clone` to deep-copy the dataset identified by `{id}` into a new dataset and return the new dataset as `DatasetResponseDto` with `201 Created` and an `ETag` header reflecting the clone's version.
 
-Any source dataset MAY be cloned regardless of its visibility (PUBLIC or PRIVATE). The original source dataset SHALL remain unmodified.
+Only PUBLIC datasets MAY be cloned through this endpoint. Cloning a PRIVATE dataset SHALL be rejected with `400 Bad Request` (code `PRIVATE_DATASET_REQUIRES_SUITE_BINDING`) before any side effect, because the resulting clone would be unbound and a PRIVATE dataset must be bound to exactly one suite. The original source dataset SHALL remain unmodified.
 
 The clone SHALL:
-- inherit the source dataset's `visibility` (the clone is NOT forced to PRIVATE);
+- be PUBLIC (inheriting the source's PUBLIC visibility);
 - be **unbound** to any test suite;
 - inherit the source's `testCaseSchema`, `valid`, and `validationWarnings` verbatim, with no re-validation;
 - start at `version` 0;
@@ -37,9 +37,13 @@ The request body is a JSON object with two optional fields: `name` (`String`, ma
 - **WHEN** `POST /api/v1/datasets/{id}/clone` is called with no `description` field
 - **THEN** the new dataset's `description` equals the source dataset's `description`
 
-#### Scenario: Clone inherits source visibility
-- **WHEN** a source dataset with visibility `V` is cloned
-- **THEN** the new dataset's visibility equals `V` and the new dataset is not bound to any suite
+#### Scenario: Clone is PUBLIC and unbound
+- **WHEN** a PUBLIC source dataset is cloned
+- **THEN** the new dataset's visibility is PUBLIC and the new dataset is not bound to any suite
+
+#### Scenario: Cloning a PRIVATE dataset is rejected
+- **WHEN** `POST /api/v1/datasets/{id}/clone` is called for a PRIVATE source dataset
+- **THEN** `400 Bad Request` with code `PRIVATE_DATASET_REQUIRES_SUITE_BINDING` is returned, no new dataset is persisted, and no DIAL files are copied
 
 #### Scenario: Test cases are copied with new IDs and rewritten file refs
 - **WHEN** the clone operation succeeds

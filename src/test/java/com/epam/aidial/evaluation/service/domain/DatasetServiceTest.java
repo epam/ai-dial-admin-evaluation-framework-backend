@@ -746,10 +746,10 @@ class DatasetServiceTest {
                 .id(id)
                 .name("Src")
                 .description("src-desc")
-                .visibility(DatasetVisibility.PRIVATE)
+                .visibility(DatasetVisibility.PUBLIC)
                 .validationWarnings("[]")
                 .build();
-        stubCloneReads(id, source, DatasetVisibility.PRIVATE);
+        stubCloneReads(id, source, DatasetVisibility.PUBLIC);
         when(authorResolver.getCreatedBy(any())).thenReturn("bob");
         when(transactionTimestampContext.getTimestamp()).thenReturn(42L);
 
@@ -768,7 +768,7 @@ class DatasetServiceTest {
                         eq("Overridden"),
                         eq("bob"),
                         eq(42L),
-                        eq(DatasetVisibility.PRIVATE));
+                        eq(DatasetVisibility.PUBLIC));
     }
 
     @Test
@@ -830,6 +830,28 @@ class DatasetServiceTest {
         assertThatThrownBy(() -> service.clone(id, new DatasetCloneRequestDto(), null))
                 .isInstanceOf(EntityNotFoundException.class)
                 .hasMessageContaining(id.toString());
+
+        verify(datasetCloneService, never()).copyDatasetFiles(any(), any());
+        verify(datasetCloneService, never()).cloneRowAndTestCases(any(), any(), any(), any(), any(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "clone on a PRIVATE source throws PRIVATE_DATASET_REQUIRES_SUITE_BINDING before copying files or writing")
+    void cloneRejectsPrivateSource() {
+        UUID id = UUID.randomUUID();
+        Dataset source = Dataset.builder()
+                .id(id)
+                .name("Src")
+                .visibility(DatasetVisibility.PRIVATE)
+                .validationWarnings("[]")
+                .build();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(source));
+
+        assertThatThrownBy(() -> service.clone(id, new DatasetCloneRequestDto(), null))
+                .isInstanceOf(DatasetVisibilityRuleException.class)
+                .satisfies(ex -> assertThat(((DatasetVisibilityRuleException) ex).getErrorCode())
+                        .isEqualTo(DatasetVisibilityErrorCode.PRIVATE_DATASET_REQUIRES_SUITE_BINDING));
 
         verify(datasetCloneService, never()).copyDatasetFiles(any(), any());
         verify(datasetCloneService, never()).cloneRowAndTestCases(any(), any(), any(), any(), any(), anyLong(), any());

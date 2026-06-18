@@ -141,7 +141,7 @@ class TestSuiteServiceTest {
         when(datasetQueryService.findById(sourceDatasetId)).thenReturn(Optional.of(source));
         // The in-transaction clone blows up, so the surrounding TransactionTemplate.execute(...)
         // rethrows, leaving txSucceeded=false and triggering the file-cleanup branch.
-        when(datasetCloneService.cloneRowAndTestCases(any(), any(), any(), any(), anyLong()))
+        when(datasetCloneService.cloneRowAndTestCases(any(), any(), any(), any(), any(), anyLong(), any()))
                 .thenThrow(new RuntimeException("boom"));
 
         assertThatThrownBy(() -> service.detachDataset(

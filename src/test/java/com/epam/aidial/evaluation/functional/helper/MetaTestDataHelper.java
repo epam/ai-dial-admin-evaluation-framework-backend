@@ -56,8 +56,14 @@ public class MetaTestDataHelper {
 
     @Transactional("metaTransactionManager")
     public Dataset createDataset(String name, String schemaJson, DatasetVisibility visibility) {
+        return createDataset(name, schemaJson, visibility, null);
+    }
+
+    @Transactional("metaTransactionManager")
+    public Dataset createDataset(String name, String schemaJson, DatasetVisibility visibility, String description) {
         Dataset dataset = Dataset.builder()
                 .name(name)
+                .description(description)
                 .testCaseSchema(schemaJson != null ? schemaJson : "[]")
                 .validationWarnings("[]")
                 .valid(true)

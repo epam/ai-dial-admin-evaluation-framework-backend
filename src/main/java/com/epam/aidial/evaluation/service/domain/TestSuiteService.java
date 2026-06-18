@@ -394,8 +394,14 @@ public class TestSuiteService {
         final String resolvedName =
                 dto.getName() != null ? dto.getName() : datasetCloneService.deriveCloneName(source.getName());
         final String createdBy = authorResolver.getCreatedBy(jwt);
-        Map<UUID, UUID> tcIdMap =
-                datasetCloneService.cloneRowAndTestCases(source, newDatasetId, resolvedName, createdBy, timestamp);
+        Map<UUID, UUID> tcIdMap = datasetCloneService.cloneRowAndTestCases(
+                source,
+                newDatasetId,
+                resolvedName,
+                source.getDescription(),
+                createdBy,
+                timestamp,
+                DatasetVisibility.PRIVATE);
         String remappedDisabledIds = testSuiteMapper.remapDisabledIds(suite.getDisabledTestCaseIds(), tcIdMap);
         testSuiteRepository.updateDatasetId(suiteId, newDatasetId, remappedDisabledIds, timestamp);
         suite.setDatasetId(newDatasetId);

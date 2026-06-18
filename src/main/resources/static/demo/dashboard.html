@@ -117,6 +117,15 @@
         .bar-labels { display: flex; gap: 6px; margin-top: 8px; }
         .bar-label { flex: 1; text-align: center; font-family: var(--mono); font-size: 10px; color: var(--muted); }
 
+        /* raw rows table */
+        .raw { margin-top: 26px; }
+        .table-wrap { margin-top: 4px; max-height: 480px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+        table.raw-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+        table.raw-table th, table.raw-table td { border: 1px solid var(--border); padding: 5px 9px; text-align: left;
+                       max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        table.raw-table th { color: var(--muted); background: var(--bg); position: sticky; top: 0; }
+        table.raw-table tbody tr:hover td { background: var(--panel-2); }
+
         /* inspector slide-in (the signature) */
         .scrim { position: fixed; inset: 0; background: rgba(2, 6, 18, .5); opacity: 0; pointer-events: none;
                  transition: opacity .2s; z-index: 40; }
@@ -200,6 +209,14 @@
                 <div id="metricsBody"><div class="muted">No metrics loaded.</div></div>
             </section>
         </div>
+
+        <section class="panel raw inspectable" id="rawPanel">
+            <div class="panel-head">
+                <p class="seclabel">Raw eval summaries</p>
+                <span class="muted" id="rawMeta"></span>
+            </div>
+            <div id="rawBody"><div class="muted">Loading rows…</div></div>
+        </section>
     </div>
 </main>
 
@@ -286,6 +303,15 @@
                 col(fn("percentile_cont", [val("decimal", "0.9"), f]), "p90"),
             ],
             group_by: [], page: offset(1),
+        };
+    }
+    function rawRowsQuery(runId) {
+        const select = [col(field("test_case_name")), col(field("execution_status")), col(field("exec_duration_ms"))];
+        state.metrics.forEach((m) => select.push(col(field(m.fieldName))));
+        return {
+            entity: "eval_summaries", mode: "row", filter: runFilter(runId), select,
+            sort: [{ field: "test_case_name", dir: "asc" }],
+            page: { type: "offset", offset: 0, limit: 100, include_total: true },
         };
     }
     function histogramQuery(runId, fieldName) {
@@ -399,7 +425,7 @@
                 + "  ·  created " + when;
             $("dashboard").classList.remove("hidden");
 
-            await Promise.all([renderSummary(runId), renderMetrics(runId)]);
+            await Promise.all([renderSummary(runId), renderMetrics(runId), renderRaw(runId)]);
             clearDistribution();
             $("status").textContent = "Dashboard ready. " + state.metrics.length + " numeric metric field(s).";
         } catch (e) {
@@ -580,6 +606,36 @@
 
     function inspInfo(title, endpoint, method, requestBody, response) {
         return { title, endpoint: endpoint, method, requestBody, response };
+    }
+
+    // ---- raw eval_summaries rows (cross-reference the aggregates) ----------
+    async function renderRaw(runId) {
+        const req = rawRowsQuery(runId);
+        $("rawBody").innerHTML = '<div class="muted">Running row query…</div>';
+        try {
+            const res = await execQuery(req);
+            const rows = res.rows || [];
+            const total = res.totalCount;
+            $("rawMeta").textContent = rows.length + " row(s)"
+                + (total != null ? " of " + total : "")
+                + (total != null && rows.length < total ? " · showing first " + rows.length : "");
+            $("rawBody").innerHTML = rows.length ? renderTable(rows) : '<div class="muted">No rows for this run.</div>';
+            $("rawPanel").querySelectorAll(".inspect-badge").forEach((b) => b.remove());
+            addInspectBadge($("rawPanel"), inspInfo("Raw eval summaries (row query)", EXECUTE, "POST", req, res));
+        } catch (e) {
+            $("rawBody").innerHTML = '<div class="muted">' + escapeHtml(e.message) + "</div>";
+        }
+    }
+
+    function renderTable(rows) {
+        const cols = [...rows.reduce((set, r) => { Object.keys(r).forEach((k) => set.add(k)); return set; }, new Set())];
+        const head = "<tr>" + cols.map((c) => "<th>" + escapeHtml(c) + "</th>").join("") + "</tr>";
+        const body = rows.map((r) => "<tr>" + cols.map((c) => {
+            const v = r[c];
+            const text = v === null || v === undefined ? "" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+            return '<td title="' + escapeHtml(text) + '">' + escapeHtml(text) + "</td>";
+        }).join("") + "</tr>").join("");
+        return '<div class="table-wrap"><table class="raw-table"><thead>' + head + "</thead><tbody>" + body + "</tbody></table></div>";
     }
 
     // ---- wiring ------------------------------------------------------------

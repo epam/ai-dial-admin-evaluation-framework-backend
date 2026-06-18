@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
@@ -311,5 +312,89 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         assertThatThrownBy(() -> queryRepository.execute(query))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("eval_summaries");
+    }
+
+    @Test
+    @DisplayName("computes p10/p90 percentile_cont over a run's metric scores in a single row")
+    void computesPercentilesOverMetricScores() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                "case-a",
+                ExecutionStatus.SUCCESS.name(),
+                100L,
+                1_000L,
+                "{}",
+                "{\"Relevancy\":{\"score\":0.0}}");
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                "case-b",
+                ExecutionStatus.SUCCESS.name(),
+                200L,
+                2_000L,
+                "{}",
+                "{\"Relevancy\":{\"score\":0.5}}");
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                "case-c",
+                ExecutionStatus.SUCCESS.name(),
+                300L,
+                3_000L,
+                "{}",
+                "{\"Relevancy\":{\"score\":1.0}}");
+
+        // Aggregate over the whole run (no group_by) → single row with two ordered-set aggregates.
+        StructuredQuery query = new StructuredQuery(
+                "eval_summaries",
+                runIdEq(runId),
+                QueryMode.AGGREGATE,
+                false,
+                List.of(
+                        new OutputColumn(percentileCont("0.1", "metric:Relevancy:score"), "p10"),
+                        new OutputColumn(percentileCont("0.9", "metric:Relevancy:score"), "p90")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        QueryResultPage page = queryRepository.execute(query);
+
+        assertThat(page.rows()).hasSize(1);
+        Map<String, Object> row = page.rows().get(0);
+        // percentile_cont over sorted [0.0, 0.5, 1.0]: cont(0.1)=0.1, cont(0.9)=0.9 (linear interpolation).
+        assertThat(((Number) row.get("p10")).doubleValue()).isCloseTo(0.1, within(1e-9));
+        assertThat(((Number) row.get("p90")).doubleValue()).isCloseTo(0.9, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("rejects a percentile fraction outside [0, 1] with a validation error")
+    void rejectsPercentileFractionOutOfRange() {
+        StructuredQuery query = new StructuredQuery(
+                "eval_summaries",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(percentileCont("1.5", "exec_duration_ms"), "bad")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        assertThatThrownBy(() -> queryRepository.execute(query))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("[0, 1]");
+    }
+
+    private static FnExpr percentileCont(String fraction, String column) {
+        return new FnExpr(
+                "percentile_cont", false, List.of(new ValueExpr(ValueType.DECIMAL, fraction), new FieldExpr(column)));
     }
 }

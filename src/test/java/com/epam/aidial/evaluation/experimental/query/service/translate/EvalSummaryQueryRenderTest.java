@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.experimental.query.service.translate;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
@@ -21,6 +22,7 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -234,5 +236,106 @@ class EvalSummaryQueryRenderTest {
 
         String sql = render(query);
         assertThat(sql).contains("\"test_suite_run_id\" in (");
+    }
+
+    @Test
+    @DisplayName("renders percentile_cont(fraction, column) as an ordered-set aggregate over metric scores")
+    void rendersPercentileContWithinGroup() {
+        StructuredQuery query = new StructuredQuery(
+                "eval_summaries",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(
+                        new OutputColumn(
+                                percentile("percentile_cont", "0.1", "metric:Ragas Answer Relevancy:score"), "p10"),
+                        new OutputColumn(
+                                percentile("percentile_cont", "0.9", "metric:DeepEval Answer Relevancy:score"), "p90")),
+                List.of(),
+                null,
+                null,
+                new OffsetPage(0, 50, false));
+
+        String sql = render(query);
+        assertThat(sql)
+                .contains("percentile_cont(")
+                .contains("within group (order by")
+                .contains("\"metric_values\"")
+                .contains("numeric")
+                .contains("\"p10\"")
+                .contains("\"p90\"");
+    }
+
+    @Test
+    @DisplayName("renders percentile_disc(fraction, column) as an ordered-set aggregate")
+    void rendersPercentileDiscWithinGroup() {
+        StructuredQuery query = new StructuredQuery(
+                "eval_summaries",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(percentile("percentile_disc", "0.5", "exec_duration_ms"), "median_ms")),
+                List.of(),
+                null,
+                null,
+                new OffsetPage(0, 50, false));
+
+        String sql = render(query);
+        assertThat(sql)
+                .contains("percentile_disc(")
+                .contains("within group (order by")
+                .contains("\"exec_duration_ms\"")
+                .contains("\"median_ms\"");
+    }
+
+    @Test
+    @DisplayName("rejects a percentile call that does not have exactly two arguments")
+    void rejectsPercentileWrongArity() {
+        StructuredQuery query = aggregateSelecting(
+                new FnExpr("percentile_cont", false, List.of(new ValueExpr(ValueType.DECIMAL, "0.5"))));
+
+        assertThatThrownBy(() -> render(query))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("two arguments");
+    }
+
+    @Test
+    @DisplayName("rejects a percentile fraction outside [0, 1]")
+    void rejectsPercentileFractionOutOfRange() {
+        StructuredQuery query = aggregateSelecting(percentile("percentile_cont", "1.5", "exec_duration_ms"));
+
+        assertThatThrownBy(() -> render(query))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("[0, 1]");
+    }
+
+    @Test
+    @DisplayName("rejects a non-numeric percentile fraction literal")
+    void rejectsPercentileNonNumericFraction() {
+        StructuredQuery query = aggregateSelecting(new FnExpr(
+                "percentile_cont",
+                false,
+                List.of(new ValueExpr(ValueType.STRING, "half"), new FieldExpr("exec_duration_ms"))));
+
+        assertThatThrownBy(() -> render(query))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("numeric literal");
+    }
+
+    private static FnExpr percentile(String fn, String fraction, String column) {
+        return new FnExpr(fn, false, List.of(new ValueExpr(ValueType.DECIMAL, fraction), new FieldExpr(column)));
+    }
+
+    private static StructuredQuery aggregateSelecting(Expr expr) {
+        return new StructuredQuery(
+                "eval_summaries",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(expr, "value")),
+                List.of(),
+                null,
+                null,
+                new OffsetPage(0, 50, false));
     }
 }

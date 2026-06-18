@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.experimental.query.model.ParamExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -117,6 +118,8 @@ public class ExprTranslator {
             }
             case "min" -> DSL.min((Field) requireSingleArg(name, args, bindings));
             case "max" -> DSL.max((Field) requireSingleArg(name, args, bindings));
+            case "percentile_cont" -> percentile(name, args, bindings, true);
+            case "percentile_disc" -> percentile(name, args, bindings, false);
             default -> throw new ValidationException("unsupported function '" + fn.name() + "' in query expression");
         };
     }
@@ -144,5 +147,39 @@ public class ExprTranslator {
         final Field high = toField(args.get(2), bindings);
         final Field<Integer> count = toField(args.get(3), bindings).cast(Integer.class);
         return DSL.widthBucket(operand, low, high, count);
+    }
+
+    /**
+     * {@code percentile_cont(fraction, column)} / {@code percentile_disc(fraction, column)} — the
+     * ordered-set aggregate {@code percentile_(cont|disc)(fraction) WITHIN GROUP (ORDER BY column)}.
+     * {@code fraction} must be a numeric literal in {@code [0, 1]} (PostgreSQL requires a per-group
+     * constant); {@code column} is any resolvable field expression, including flattened JSONB paths.
+     * {@code cont} interpolates between adjacent values; {@code disc} returns an actual member.
+     */
+    private Field<?> percentile(
+            String fn, List<Expr> args, Map<String, QueryFieldBinding> bindings, boolean continuous) {
+        if (args.size() != 2) {
+            throw new ValidationException("function '" + fn + "' expects exactly two arguments (fraction, column)");
+        }
+        final Field<BigDecimal> fraction = DSL.val(percentileFraction(fn, args.getFirst()));
+        final Field<?> orderField = toField(args.get(1), bindings);
+        return continuous
+                ? DSL.percentileCont(fraction).withinGroupOrderBy(orderField)
+                : DSL.percentileDisc(fraction).withinGroupOrderBy(orderField);
+    }
+
+    private BigDecimal percentileFraction(String fn, Expr arg) {
+        if (!(arg instanceof ValueExpr value)) {
+            throw new ValidationException(
+                    "function '" + fn + "' requires a numeric literal fraction as its first argument");
+        }
+        if (!(valueExprToObjectMapper.map(value) instanceof Number number)) {
+            throw new ValidationException("function '" + fn + "' fraction must be a numeric literal");
+        }
+        final BigDecimal fraction = new BigDecimal(number.toString());
+        if (fraction.compareTo(BigDecimal.ZERO) < 0 || fraction.compareTo(BigDecimal.ONE) > 0) {
+            throw new ValidationException("function '" + fn + "' fraction must be within [0, 1]");
+        }
+        return fraction;
     }
 }

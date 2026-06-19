@@ -50,7 +50,7 @@ public class MaxRequestBodyFilter extends OncePerRequestFilter {
             throws IOException {
         ErrorView errorView = new ErrorView(
                 request,
-                HttpStatus.PAYLOAD_TOO_LARGE,
+                HttpStatus.CONTENT_TOO_LARGE,
                 ErrorCode.PAYLOAD_TOO_LARGE,
                 "Request body exceeds maximum size of " + maxBytes + " bytes");
 

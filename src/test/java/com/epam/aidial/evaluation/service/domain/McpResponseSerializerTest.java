@@ -31,8 +31,8 @@ class McpResponseSerializerTest {
         JsonNode node = objectMapper.readTree(json);
 
         assertThat(node.get("content").size()).isEqualTo(1);
-        assertThat(node.get("content").get(0).get("type").asText()).isEqualTo("text");
-        assertThat(node.get("content").get(0).get("text").asText()).isEqualTo("Hello world");
+        assertThat(node.get("content").get(0).get("type").asString()).isEqualTo("text");
+        assertThat(node.get("content").get(0).get("text").asString()).isEqualTo("Hello world");
         assertThat(node.get("isError").asBoolean()).isFalse();
     }
 
@@ -83,9 +83,9 @@ class McpResponseSerializerTest {
         JsonNode node = objectMapper.readTree(json);
 
         assertThat(node.get("content").size()).isEqualTo(2);
-        assertThat(node.get("content").get(0).get("type").asText()).isEqualTo("text");
-        assertThat(node.get("content").get(1).get("type").asText()).isEqualTo("image");
-        assertThat(node.get("content").get(1).get("mimeType").asText()).isEqualTo("image/png");
+        assertThat(node.get("content").get(0).get("type").asString()).isEqualTo("text");
+        assertThat(node.get("content").get(1).get("type").asString()).isEqualTo("image");
+        assertThat(node.get("content").get(1).get("mimeType").asString()).isEqualTo("image/png");
     }
 
     @Test
@@ -115,9 +115,9 @@ class McpResponseSerializerTest {
         JsonNode node = objectMapper.readTree(json);
 
         assertThat(node.get("content").size()).isEqualTo(1);
-        assertThat(node.get("content").get(0).get("type").asText()).isEqualTo("audio");
-        assertThat(node.get("content").get(0).get("data").asText()).isEqualTo("audioBase64Data");
-        assertThat(node.get("content").get(0).get("mimeType").asText()).isEqualTo("audio/wav");
+        assertThat(node.get("content").get(0).get("type").asString()).isEqualTo("audio");
+        assertThat(node.get("content").get(0).get("data").asString()).isEqualTo("audioBase64Data");
+        assertThat(node.get("content").get(0).get("mimeType").asString()).isEqualTo("audio/wav");
     }
 
     @Test
@@ -131,9 +131,9 @@ class McpResponseSerializerTest {
         JsonNode node = objectMapper.readTree(json);
 
         assertThat(node.get("content").size()).isEqualTo(1);
-        assertThat(node.get("content").get(0).get("type").asText()).isEqualTo("resource");
+        assertThat(node.get("content").get(0).get("type").asString()).isEqualTo("resource");
         assertThat(node.get("content").get(0).has("resource")).isTrue();
-        assertThat(node.get("content").get(0).get("resource").get("uri").asText())
+        assertThat(node.get("content").get(0).get("resource").get("uri").asString())
                 .isEqualTo("file:///test.txt");
     }
 
@@ -147,9 +147,9 @@ class McpResponseSerializerTest {
         JsonNode node = objectMapper.readTree(json);
 
         assertThat(node.get("content").size()).isEqualTo(1);
-        assertThat(node.get("content").get(0).get("type").asText()).isEqualTo("resource_link");
-        assertThat(node.get("content").get(0).get("uri").asText()).isEqualTo("file:///data.csv");
-        assertThat(node.get("content").get(0).get("name").asText()).isEqualTo("test-resource");
+        assertThat(node.get("content").get(0).get("type").asString()).isEqualTo("resource_link");
+        assertThat(node.get("content").get(0).get("uri").asString()).isEqualTo("file:///data.csv");
+        assertThat(node.get("content").get(0).get("name").asString()).isEqualTo("test-resource");
     }
 
     @Test

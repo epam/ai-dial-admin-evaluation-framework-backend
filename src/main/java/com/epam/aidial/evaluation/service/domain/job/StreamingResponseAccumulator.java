@@ -172,6 +172,6 @@ public class StreamingResponseAccumulator {
         if (content == null || content.isNull()) {
             return null;
         }
-        return content.asText();
+        return content.asString();
     }
 }

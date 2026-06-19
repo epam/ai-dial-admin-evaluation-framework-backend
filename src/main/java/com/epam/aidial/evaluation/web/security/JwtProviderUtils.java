@@ -2,7 +2,8 @@ package com.epam.aidial.evaluation.web.security;
 
 import com.epam.aidial.evaluation.configuration.properties.security.JwtProvidersProperties;
 import java.net.MalformedURLException;
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -34,9 +35,9 @@ public class JwtProviderUtils {
             return false;
         }
         try {
-            final var protocol = new URL(urlString).getProtocol();
+            final var protocol = new URI(urlString).toURL().getProtocol();
             return protocol != null && !protocol.isEmpty();
-        } catch (final MalformedURLException e) {
+        } catch (final URISyntaxException | MalformedURLException e) {
             log.debug("Invalid format for URL: {}", urlString, e);
             return false;
         }

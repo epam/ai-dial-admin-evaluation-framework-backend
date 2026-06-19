@@ -49,7 +49,7 @@ class StreamingResponseAccumulatorTest {
 
             JsonNode response = OBJECT_MAPPER.readTree(accumulator.getResponseBody());
             String content =
-                    response.get("choices").get(0).get("message").get("content").asText();
+                    response.get("choices").get(0).get("message").get("content").asString();
             assertThat(content).isEqualTo("Hello world");
             assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         }
@@ -67,12 +67,12 @@ class StreamingResponseAccumulatorTest {
             assertThat(response.has("choices")).isTrue();
 
             JsonNode choice = response.get("choices").get(0);
-            assertThat(choice.get("finish_reason").asText()).isEqualTo("stop");
+            assertThat(choice.get("finish_reason").asString()).isEqualTo("stop");
             assertThat(choice.get("index").asInt()).isEqualTo(0);
 
             JsonNode message = choice.get("message");
-            assertThat(message.get("role").asText()).isEqualTo("assistant");
-            assertThat(message.get("content").asText()).isEqualTo("Test response");
+            assertThat(message.get("role").asString()).isEqualTo("assistant");
+            assertThat(message.get("content").asString()).isEqualTo("Test response");
         }
 
         @Test
@@ -88,7 +88,7 @@ class StreamingResponseAccumulatorTest {
 
             JsonNode response = OBJECT_MAPPER.readTree(accumulator.getResponseBody());
             String content =
-                    response.get("choices").get(0).get("message").get("content").asText();
+                    response.get("choices").get(0).get("message").get("content").asString();
             assertThat(content).isEqualTo("Before");
         }
 
@@ -183,9 +183,9 @@ class StreamingResponseAccumulatorTest {
             JsonNode events = response.get("events");
             assertThat(events.isArray()).isTrue();
             assertThat(events).hasSize(2);
-            assertThat(events.get(0).get("event").asText()).isEqualTo("message");
-            assertThat(events.get(0).get("data").get("text").asText()).isEqualTo("chunk1");
-            assertThat(events.get(1).get("data").get("text").asText()).isEqualTo("chunk2");
+            assertThat(events.get(0).get("event").asString()).isEqualTo("message");
+            assertThat(events.get(0).get("data").get("text").asString()).isEqualTo("chunk1");
+            assertThat(events.get(1).get("data").get("text").asString()).isEqualTo("chunk2");
             assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         }
 
@@ -203,8 +203,8 @@ class StreamingResponseAccumulatorTest {
             JsonNode response = OBJECT_MAPPER.readTree(accumulator.getResponseBody());
             JsonNode events = response.get("events");
             assertThat(events).hasSize(2);
-            assertThat(events.get(0).get("event").asText()).isEqualTo("process_entities");
-            assertThat(events.get(1).get("event").asText()).isEqualTo("success");
+            assertThat(events.get(0).get("event").asString()).isEqualTo("process_entities");
+            assertThat(events.get(1).get("event").asString()).isEqualTo("success");
         }
 
         @Test
@@ -234,8 +234,8 @@ class StreamingResponseAccumulatorTest {
             JsonNode events = response.get("events");
             assertThat(events.isArray()).isTrue();
             assertThat(events).hasSize(2);
-            assertThat(events.get(0).get("data").asText()).isEqualTo("not-valid-json");
-            assertThat(events.get(1).get("data").asText()).isEqualTo("also-not-json");
+            assertThat(events.get(0).get("data").asString()).isEqualTo("not-valid-json");
+            assertThat(events.get(1).get("data").asString()).isEqualTo("also-not-json");
         }
 
         @Test

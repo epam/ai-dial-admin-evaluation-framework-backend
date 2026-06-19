@@ -65,13 +65,13 @@ public class CsvExportService {
         header.addAll(dataColumnNames);
 
         List<FilterCondition> filters = filterParser.parse(filter != null ? filter : List.of());
-        int pageSize = Math.min(Math.max(1, csvExportProperties.getPageSize()), paginationProperties.getMaxSize());
+        int pageSize = Math.clamp(csvExportProperties.getPageSize(), 1, paginationProperties.getMaxSize());
 
         CSVFormat format = CSVFormat.DEFAULT
                 .builder()
                 .setDelimiter(delimiter)
                 .setRecordSeparator("\n")
-                .build();
+                .get();
 
         try (OutputStreamWriter writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
                 CSVPrinter printer = new CSVPrinter(writer, format)) {

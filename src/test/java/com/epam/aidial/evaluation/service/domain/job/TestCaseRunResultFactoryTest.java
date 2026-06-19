@@ -54,9 +54,9 @@ class TestCaseRunResultFactoryTest {
         assertThat(row.getCreatedAtMs()).isEqualTo(NOW_MS);
 
         JsonNode envelope = objectMapper.readTree(row.getResponseBody());
-        assertThat(envelope.get("error").get("type").asText()).isEqualTo("RuntimeException");
-        assertThat(envelope.get("error").get("message").asText()).isEqualTo("boom");
-        assertThat(envelope.get("error").get("origin").asText()).isEqualTo("executor");
+        assertThat(envelope.get("error").get("type").asString()).isEqualTo("RuntimeException");
+        assertThat(envelope.get("error").get("message").asString()).isEqualTo("boom");
+        assertThat(envelope.get("error").get("origin").asString()).isEqualTo("executor");
     }
 
     @Test
@@ -73,7 +73,7 @@ class TestCaseRunResultFactoryTest {
         TestCaseRunResult row = factory.errorResult(input, 0, cause, NOW_MS);
 
         JsonNode envelope = objectMapper.readTree(row.getResponseBody());
-        assertThat(envelope.get("error").get("message").asText()).isEmpty();
+        assertThat(envelope.get("error").get("message").asString()).isEmpty();
     }
 
     @Test

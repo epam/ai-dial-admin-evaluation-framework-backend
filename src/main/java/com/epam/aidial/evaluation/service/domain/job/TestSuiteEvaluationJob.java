@@ -371,16 +371,16 @@ public class TestSuiteEvaluationJob {
                 .testSuiteRun(run)
                 .numberOfRuns(config.getNumberOfRuns())
                 .numberOfTestCases(run.getNumberOfTestCases())
-                .concurrencyLevel(ObjectUtils.defaultIfNull(
+                .concurrencyLevel(ObjectUtils.getIfNull(
                         exec != null ? exec.getConcurrencyLevel() : null, execProps.getDefaultConcurrencyLevel()))
-                .requestTimeoutMs(ObjectUtils.defaultIfNull(
+                .requestTimeoutMs(ObjectUtils.getIfNull(
                         exec != null ? exec.getRequestTimeoutMs() : null, execProps.getDefaultRequestTimeoutMs()))
                 .rateLimitRps(exec != null ? exec.getRateLimitRps() : execProps.getDefaultRateLimitRps())
-                .maxRetries(ObjectUtils.defaultIfNull(
+                .maxRetries(ObjectUtils.getIfNull(
                         retry != null ? retry.getMaxRetries() : null, retryProps.getDefaultMaxRetries()))
-                .retryDelayMs(ObjectUtils.defaultIfNull(
+                .retryDelayMs(ObjectUtils.getIfNull(
                         retry != null ? retry.getRetryDelayMs() : null, retryProps.getDefaultRetryDelayMs()))
-                .retryBackoffMultiplier(ObjectUtils.defaultIfNull(
+                .retryBackoffMultiplier(ObjectUtils.getIfNull(
                         retry != null ? retry.getRetryBackoffMultiplier() : null,
                         retryProps.getDefaultRetryBackoffMultiplier()))
                 .maxRetryDelayMs(retryProps.getMaxRetryDelayMs())

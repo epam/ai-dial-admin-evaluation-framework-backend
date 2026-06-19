@@ -140,10 +140,10 @@ public class DefaultExceptionHandler {
     public ResponseEntity<ErrorView> handleWrongJsonError(HttpServletRequest req, HttpMessageNotReadableException ex) {
         logUncaught(ex);
         if (findCause(ex, PayloadTooLargeException.class) != null) {
-            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+            return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
                     .body(new ErrorView(
                             req,
-                            HttpStatus.PAYLOAD_TOO_LARGE,
+                            HttpStatus.CONTENT_TOO_LARGE,
                             ErrorCode.PAYLOAD_TOO_LARGE,
                             findCause(ex, PayloadTooLargeException.class).getMessage()));
         }
@@ -303,27 +303,28 @@ public class DefaultExceptionHandler {
         };
     }
 
-    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
     @ExceptionHandler(SnapshotSuiteMissingException.class)
     public ErrorView handleSnapshotSuiteMissingError(HttpServletRequest req, SnapshotSuiteMissingException ex) {
         logUncaught(ex);
-        return new ErrorView(req, HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.SNAPSHOT_SUITE_MISSING, ex.getMessage());
+        return new ErrorView(req, HttpStatus.UNPROCESSABLE_CONTENT, ErrorCode.SNAPSHOT_SUITE_MISSING, ex.getMessage());
     }
 
-    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
     @ExceptionHandler(SnapshotDatasetMissingException.class)
     public ErrorView handleSnapshotDatasetMissingError(HttpServletRequest req, SnapshotDatasetMissingException ex) {
         logUncaught(ex);
-        return new ErrorView(req, HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.SNAPSHOT_DATASET_MISSING, ex.getMessage());
+        return new ErrorView(
+                req, HttpStatus.UNPROCESSABLE_CONTENT, ErrorCode.SNAPSHOT_DATASET_MISSING, ex.getMessage());
     }
 
-    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
     @ExceptionHandler(UnsupportedSnapshotVersionException.class)
     public ErrorView handleUnsupportedSnapshotVersionError(
             HttpServletRequest req, UnsupportedSnapshotVersionException ex) {
         logUncaught(ex);
         return new ErrorView(
-                req, HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.UNSUPPORTED_SNAPSHOT_VERSION, ex.getMessage());
+                req, HttpStatus.UNPROCESSABLE_CONTENT, ErrorCode.UNSUPPORTED_SNAPSHOT_VERSION, ex.getMessage());
     }
 
     @ResponseStatus(HttpStatus.CONFLICT)

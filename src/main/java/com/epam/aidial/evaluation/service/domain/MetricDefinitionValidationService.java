@@ -212,8 +212,8 @@ public class MetricDefinitionValidationService {
             }
             Set<String> names = new HashSet<>();
             required.forEach(node -> {
-                if (node.isTextual()) {
-                    names.add(node.asText());
+                if (node.isString()) {
+                    names.add(node.asString());
                 }
             });
             return names;
@@ -235,8 +235,8 @@ public class MetricDefinitionValidationService {
             Set<String> names = new HashSet<>();
             schema.forEach(field -> {
                 JsonNode nameNode = field.get("name");
-                if (nameNode != null && nameNode.isTextual()) {
-                    names.add(nameNode.asText());
+                if (nameNode != null && nameNode.isString()) {
+                    names.add(nameNode.asString());
                 }
             });
             return names;
@@ -258,8 +258,8 @@ public class MetricDefinitionValidationService {
             Set<String> names = new HashSet<>();
             schema.forEach(col -> {
                 JsonNode nameNode = col.get("name");
-                if (nameNode != null && nameNode.isTextual()) {
-                    names.add(nameNode.asText());
+                if (nameNode != null && nameNode.isString()) {
+                    names.add(nameNode.asString());
                 }
             });
             return names;

@@ -53,7 +53,8 @@ class MetricOutputMapperTest {
 
         assertThat(values.path("Accuracy").path("score").decimalValue()).isEqualByComparingTo(new BigDecimal("0.95"));
         assertThat(infos).isNotNull();
-        assertThat(infos.path("Accuracy").path("score").path("reason").asText()).isEqualTo("matches exactly");
+        assertThat(infos.path("Accuracy").path("score").path("reason").asString())
+                .isEqualTo("matches exactly");
     }
 
     @Test
@@ -67,7 +68,7 @@ class MetricOutputMapperTest {
 
         assertThat(values.path("Regex").path("regex_match").isNull()).isTrue();
         assertThat(infos).isNotNull();
-        assertThat(infos.path("Regex").path("regex_match").path("error").asText())
+        assertThat(infos.path("Regex").path("regex_match").path("error").asString())
                 .isEqualTo("Invalid pattern");
     }
 
@@ -87,8 +88,9 @@ class MetricOutputMapperTest {
         assertThat(values.path("Accuracy").path("confidence").isNull()).isTrue();
         assertThat(values.path("Accuracy").has("error")).isFalse();
         assertThat(infos).isNotNull();
-        assertThat(infos.path("Accuracy").path("score").path("error").asText()).isEqualTo("Connection refused");
-        assertThat(infos.path("Accuracy").path("confidence").path("error").asText())
+        assertThat(infos.path("Accuracy").path("score").path("error").asString())
+                .isEqualTo("Connection refused");
+        assertThat(infos.path("Accuracy").path("confidence").path("error").asString())
                 .isEqualTo("Connection refused");
     }
 
@@ -103,7 +105,7 @@ class MetricOutputMapperTest {
 
         assertThat(values.path("Accuracy").isEmpty()).isTrue();
         assertThat(infos).isNotNull();
-        assertThat(infos.path("Accuracy").path("error").asText()).isEqualTo("Schema missing");
+        assertThat(infos.path("Accuracy").path("error").asString()).isEqualTo("Schema missing");
     }
 
     @Test
@@ -145,7 +147,7 @@ class MetricOutputMapperTest {
         assertThat(values.path("Relevancy").path("relevance_score").isNull()).isTrue();
         assertThat(infos).isNotNull();
         assertThat(infos.has("Accuracy")).isFalse();
-        assertThat(infos.path("Relevancy").path("relevance_score").path("error").asText())
+        assertThat(infos.path("Relevancy").path("relevance_score").path("error").asString())
                 .isEqualTo("Timeout");
     }
 

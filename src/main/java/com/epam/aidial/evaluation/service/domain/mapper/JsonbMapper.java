@@ -142,7 +142,7 @@ public class JsonbMapper {
         try {
             JsonNode node = objectMapper.readTree(deploymentRefJson);
             JsonNode idNode = node.get("id");
-            return idNode != null ? idNode.asText() : null;
+            return idNode != null ? idNode.asString() : null;
         } catch (JacksonException e) {
             log.warn("Failed to extract deploymentId: {}", e.getMessage(), e);
             return null;
@@ -161,7 +161,7 @@ public class JsonbMapper {
             JsonNode node = objectMapper.readTree(endpointRefJson);
             JsonNode methodNode = node.get("method");
             if (methodNode != null && !methodNode.isNull()) {
-                return HttpMethod.valueOf(methodNode.asText().toUpperCase());
+                return HttpMethod.valueOf(methodNode.asString().toUpperCase());
             }
             return HttpMethod.POST;
         } catch (JacksonException e) {

@@ -80,8 +80,8 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.TestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
-import com.epam.aidial.evaluation.functional.tests.TestSuiteStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TryItOutFunctionalTests;
 import com.epam.aidial.evaluation.service.domain.MetricProviderSyncJob;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
@@ -522,8 +522,8 @@ public class PostgresFunctionalTests extends FunctionalTests {
             assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().getContent()).hasSize(1);
-            assertThat(response.getBody().getContent().get(0).getName()).isEqualTo("SyncedMetric");
-            assertThat(response.getBody().getContent().get(0).getProviderId()).isEqualTo("sync-test-provider");
+            assertThat(response.getBody().getContent().getFirst().getName()).isEqualTo("SyncedMetric");
+            assertThat(response.getBody().getContent().getFirst().getProviderId()).isEqualTo("sync-test-provider");
         }
     }
 }

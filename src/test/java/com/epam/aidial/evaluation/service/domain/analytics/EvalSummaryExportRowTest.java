@@ -72,8 +72,8 @@ class EvalSummaryExportRowTest {
         JsonNode precision = row.metricInfo(METRIC, "precision", SCHEMA_FIELDS);
         JsonNode wholesale = row.metricWholesaleError(METRIC, SCHEMA_FIELDS);
 
-        assertThat(recall.get("type").asText()).isEqualTo("error");
-        assertThat(recall.get("message").asText()).isEqualTo("facts missing");
+        assertThat(recall.get("type").asString()).isEqualTo("error");
+        assertThat(recall.get("message").asString()).isEqualTo("facts missing");
         assertThat(precision.get("details").isObject()).isTrue();
         assertThat(wholesale).isNull();
     }
@@ -100,8 +100,8 @@ class EvalSummaryExportRowTest {
         JsonNode wholesale = row.metricWholesaleError(METRIC, SCHEMA_FIELDS);
 
         assertThat(wholesale).isNotNull();
-        assertThat(wholesale.get("type").asText()).isEqualTo("error");
-        assertThat(wholesale.get("message").asText()).isEqualTo("metric crashed before evaluation");
+        assertThat(wholesale.get("type").asString()).isEqualTo("error");
+        assertThat(wholesale.get("message").asString()).isEqualTo("metric crashed before evaluation");
         for (String field : SCHEMA_FIELDS) {
             assertThat(row.metricInfo(METRIC, field, SCHEMA_FIELDS))
                     .as("per-field cell for %s", field)
@@ -118,8 +118,8 @@ class EvalSummaryExportRowTest {
         JsonNode wholesale = row.metricWholesaleError(METRIC, SCHEMA_FIELDS);
 
         assertThat(wholesale).isNotNull();
-        assertThat(wholesale.isTextual()).isTrue();
-        assertThat(wholesale.asText()).isEqualTo("unrecoverable failure");
+        assertThat(wholesale.isString()).isTrue();
+        assertThat(wholesale.asString()).isEqualTo("unrecoverable failure");
         assertThat(row.metricInfo(METRIC, "recall", SCHEMA_FIELDS)).isNull();
     }
 

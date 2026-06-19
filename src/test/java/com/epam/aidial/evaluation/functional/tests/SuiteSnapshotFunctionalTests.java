@@ -153,7 +153,7 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
                 testSuiteRunRepository.findById(runId).orElseThrow().getSuiteSnapshot();
         assertThat(snapshotJson).isNotNull();
         JsonNode snapshotNode = objectMapper.readTree(snapshotJson);
-        assertThat(snapshotNode.path("deploymentRef").path("id").asText()).isEqualTo("deployment-1");
+        assertThat(snapshotNode.path("deploymentRef").path("id").asString()).isEqualTo("deployment-1");
     }
 
     @Test
@@ -209,12 +209,12 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
                 testSuiteRunRepository.findById(runId).orElseThrow().getSuiteSnapshot();
         assertThat(snapshotJson).isNotNull();
         JsonNode snapshotNode = objectMapper.readTree(snapshotJson);
-        assertThat(snapshotNode.path("snapshotVersion").asText()).isEqualTo(SuiteSnapshotDto.CURRENT_VERSION);
+        assertThat(snapshotNode.path("snapshotVersion").asString()).isEqualTo(SuiteSnapshotDto.CURRENT_VERSION);
         JsonNode datasetRef = snapshotNode.path("datasetRef");
         assertThat(datasetRef.isMissingNode()).isFalse();
         UUID expectedDatasetId = metaTestDataHelper.getDatasetId(suite.getId());
-        assertThat(datasetRef.path("id").asText()).isEqualTo(expectedDatasetId.toString());
-        assertThat(datasetRef.path("name").asText()).startsWith("snap-");
+        assertThat(datasetRef.path("id").asString()).isEqualTo(expectedDatasetId.toString());
+        assertThat(datasetRef.path("name").asString()).startsWith("snap-");
         assertThat(datasetRef.path("version").asLong()).isGreaterThanOrEqualTo(0);
     }
 

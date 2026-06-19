@@ -616,7 +616,7 @@ class TestSuiteCloneServiceTest {
         when(testSuiteMapper.toRequestDto(entity)).thenReturn(requestDto);
         when(endpointSchemaRefResolver.resolve(any())).thenAnswer(inv -> inv.getArgument(0));
         when(datasetSchemaProvider.getSchema(entity.getDatasetId())).thenReturn(List.of());
-        when(suiteValidationService.validateSuite(any(TestSuiteRequestDto.class), isNull(), any(List.class)))
+        when(suiteValidationService.validateSuite(any(TestSuiteRequestDto.class), isNull(), anyList()))
                 .thenReturn(ValidationResult.builder()
                         .valid(true)
                         .warnings(List.of())

@@ -1607,13 +1607,15 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
     }
 
     private List<CSVRecord> parseCsv(String csvContent) throws IOException {
-        try (CSVParser parser = new CSVParser(
-                new StringReader(csvContent),
-                CSVFormat.DEFAULT
-                        .builder()
-                        .setHeader()
-                        .setSkipHeaderRecord(true)
-                        .build())) {
+        CSVFormat format = CSVFormat.DEFAULT
+                .builder()
+                .setHeader()
+                .setSkipHeaderRecord(true)
+                .get();
+        try (CSVParser parser = CSVParser.builder()
+                .setReader(new StringReader(csvContent))
+                .setFormat(format)
+                .get()) {
             return parser.getRecords();
         }
     }

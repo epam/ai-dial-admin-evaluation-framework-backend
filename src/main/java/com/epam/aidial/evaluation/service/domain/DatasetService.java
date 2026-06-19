@@ -289,28 +289,28 @@ public class DatasetService {
         }
     }
 
-    public void delete(UUID id) {
-        log.info("Deleting Dataset with id: {}", id);
-        TransactionTemplate txTemplate = new TransactionTemplate(metaTransactionManager);
-        txTemplate.execute(status -> {
+    public void delete(UUID id, boolean force) {
+        log.info("Deleting Dataset with id: {} (force={})", id, force);
+
+        final var txTemplate = new TransactionTemplate(metaTransactionManager);
+        txTemplate.execute(_ -> {
             transactionTimestampContext.initializeIfAbsent();
-            Dataset dataset = datasetRepository
+
+            final Dataset dataset = datasetRepository
                     .findById(id)
                     .orElseThrow(() -> new EntityNotFoundException("Dataset not found with id: " + id));
-            if (dataset.getVisibility() == DatasetVisibility.PRIVATE) {
-                // PRIVATE: atomically unbind the (at most one) bound suite then delete the dataset.
-                // The trigger early-returns on dataset_id = NULL, so the unbind step is unblocked.
-                // Test cases cascade via existing FK.
+
+            if (force || dataset.getVisibility() == DatasetVisibility.PRIVATE) {
                 testSuiteService.unbindAllFromDataset(id);
                 datasetCascadeService.deleteById(id);
                 return null;
             }
-            // PUBLIC: preserve the existing FK-RESTRICT behavior — surface a 409 listing
-            // dependent suite names if any are bound.
-            List<TestSuiteResponseDto> referencingSuites = testSuiteService.getReferencingDataset(id);
+
+            final List<TestSuiteResponseDto> referencingSuites = testSuiteService.getReferencingDataset(id);
             if (!referencingSuites.isEmpty()) {
                 throw datasetInUseException(id, referencingSuites);
             }
+
             try {
                 datasetCascadeService.deleteById(id);
             } catch (DataIntegrityViolationException ex) {
@@ -325,8 +325,7 @@ public class DatasetService {
             return null;
         });
         schemaValidationService.invalidateSchemaCache(id);
-        // After commit, best-effort DIAL file cleanup for both PUBLIC explicit delete and
-        // PRIVATE explicit delete (suite-cascade flow is handled by TestSuiteService).
+
         fileService.deleteAllByDatasetId(id);
     }
 

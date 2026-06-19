@@ -363,7 +363,7 @@ class DatasetServiceTest {
                                 .name("suiteB")
                                 .build()));
 
-        assertThatThrownBy(() -> service.delete(id))
+        assertThatThrownBy(() -> service.delete(id, false))
                 .isInstanceOf(InvalidOperationException.class)
                 .hasMessageContaining("suiteA")
                 .hasMessageContaining("suiteB")
@@ -386,7 +386,7 @@ class DatasetServiceTest {
                         .build()));
         when(testSuiteService.getReferencingDataset(id)).thenReturn(List.of());
 
-        service.delete(id);
+        service.delete(id, false);
 
         verify(datasetCascadeService).deleteById(id);
         verify(schemaValidationService).invalidateSchemaCache(id);
@@ -399,7 +399,7 @@ class DatasetServiceTest {
         wireTxTemplate();
         when(datasetRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.delete(id))
+        assertThatThrownBy(() -> service.delete(id, false))
                 .isInstanceOf(EntityNotFoundException.class)
                 .hasMessageContaining(id.toString());
 
@@ -428,7 +428,7 @@ class DatasetServiceTest {
                 .when(datasetCascadeService)
                 .deleteById(id);
 
-        assertThatThrownBy(() -> service.delete(id))
+        assertThatThrownBy(() -> service.delete(id, false))
                 .isInstanceOf(InvalidOperationException.class)
                 .hasMessageContaining("raceSuite");
 
@@ -448,7 +448,7 @@ class DatasetServiceTest {
                         .validationWarnings("[]")
                         .build()));
 
-        service.delete(id);
+        service.delete(id, false);
 
         verify(testSuiteService).unbindAllFromDataset(id);
         verify(datasetCascadeService).deleteById(id);

@@ -12,10 +12,10 @@ buildscript {
         }
         // Dependencies for the generateJooq task (Zonky + Flyway + jOOQ codegen)
         classpath 'io.zonky.test:embedded-postgres:2.0.7'
-        classpath 'org.flywaydb:flyway-core:11.19.1'
-        classpath 'org.flywaydb:flyway-database-postgresql:11.19.1'
+        classpath "org.flywaydb:flyway-core:${flyway_version}"
+        classpath "org.flywaydb:flyway-database-postgresql:${flyway_version}"
         classpath 'org.jooq:jooq-codegen:3.21.5'
-        classpath 'org.postgresql:postgresql:42.7.11'
+        classpath "org.postgresql:postgresql:${pg_version}"
     }
 }
 
@@ -24,7 +24,7 @@ plugins {
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.5.0'
     id 'org.springframework.boot' version '4.1.0'
-    id 'com.diffplug.spotless' version '8.6.0'
+    id 'com.diffplug.spotless' version '8.7.0'
 }
 
 group = 'com.epam.aidial'
@@ -118,20 +118,22 @@ dependencies {
     implementation 'com.azure:azure-identity:1.18.2'
 
     // Database
-    implementation 'org.postgresql:postgresql:42.7.11'
+    implementation "org.postgresql:postgresql:${pg_version}"
+
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
-    implementation 'org.flywaydb:flyway-core:11.19.1'
-    implementation 'org.flywaydb:flyway-database-postgresql:11.19.1'
-    implementation 'org.jooq:jooq:3.21.5'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
     implementation 'org.springframework.boot:spring-boot-jooq'
+    implementation 'org.jooq:jooq'
 
     // Logging
     implementation('org.springframework.boot:spring-boot-starter-log4j2') {
         exclude group: 'org.apache.logging.log4j'
     }
-    implementation 'org.apache.logging.log4j:log4j-slf4j2-impl:2.25.4'
-    implementation 'org.apache.logging.log4j:log4j-core:2.25.4'
-    implementation 'org.apache.logging.log4j:log4j-jul:2.25.4'
+    implementation "org.apache.logging.log4j:log4j-slf4j2-impl:${log4j_version}"
+    implementation "org.apache.logging.log4j:log4j-core:${log4j_version}"
+    implementation "org.apache.logging.log4j:log4j-jul:${log4j_version}"
     // Commons Logging (JCL) -> SLF4J bridge. Spring Framework 7 dropped the repackaged spring-jcl
     // and uses the org.apache.commons.logging API directly; without this bridge, Spring Boot's
     // Log4J2LoggingSystem fails with NoClassDefFoundError: org/apache/commons/logging/Log.

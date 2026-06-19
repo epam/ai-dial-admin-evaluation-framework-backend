@@ -523,7 +523,8 @@ public class PostgresFunctionalTests extends FunctionalTests {
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().getContent()).hasSize(1);
             assertThat(response.getBody().getContent().getFirst().getName()).isEqualTo("SyncedMetric");
-            assertThat(response.getBody().getContent().getFirst().getProviderId()).isEqualTo("sync-test-provider");
+            assertThat(response.getBody().getContent().getFirst().getProviderId())
+                    .isEqualTo("sync-test-provider");
         }
     }
 }

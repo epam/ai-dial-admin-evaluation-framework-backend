@@ -309,16 +309,27 @@ public class DatasetController {
     @DeleteMapping("/{id}")
     @Operation(
             summary = "Delete a dataset",
-            description = "Deletes a dataset. Behavior depends on visibility: "
+            description = "Deletes a dataset. Default behavior (force=false) depends on visibility: "
                     + "PUBLIC datasets enforce FK RESTRICT — returns 409 if any test suite still references the dataset; "
                     + "PRIVATE datasets cascade — atomically unbinds the bound suite (sets datasetId=null) and deletes "
-                    + "the dataset plus its test cases in one transaction.")
+                    + "the dataset plus its test cases in one transaction. "
+                    + "When force=true, the dataset is deleted regardless of visibility: every referencing test suite "
+                    + "is unbound (datasetId=null) and the dataset plus its test cases are deleted in one transaction.")
     @ApiResponse(responseCode = "204", description = "Dataset deleted successfully")
     @ApiResponse(responseCode = "404", description = "Dataset not found")
-    @ApiResponse(responseCode = "409", description = "PUBLIC dataset is referenced by one or more test suites")
-    public ResponseEntity<Void> delete(@Parameter(description = "Dataset ID") @PathVariable UUID id) {
+    @ApiResponse(
+            responseCode = "409",
+            description = "PUBLIC dataset is referenced by one or more test suites (only when force=false)")
+    public ResponseEntity<Void> delete(
+            @Parameter(description = "Dataset ID") @PathVariable UUID id,
+            @Parameter(
+                            description =
+                                    "When true, unbind all referencing test suites (datasetId=null) and delete the "
+                                            + "dataset regardless of visibility, instead of returning 409. Default: false.")
+                    @RequestParam(defaultValue = "false")
+                    boolean force) {
 
-        datasetService.delete(id);
+        datasetService.delete(id, force);
         return ResponseEntity.noContent().build();
     }
 

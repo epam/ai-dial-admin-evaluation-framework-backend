@@ -37,7 +37,7 @@ public class JwtProviderUtils {
         try {
             final var protocol = new URI(urlString).toURL().getProtocol();
             return protocol != null && !protocol.isEmpty();
-        } catch (final URISyntaxException | MalformedURLException e) {
+        } catch (final URISyntaxException | MalformedURLException | IllegalArgumentException e) {
             log.debug("Invalid format for URL: {}", urlString, e);
             return false;
         }

@@ -6,16 +6,18 @@ import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.service.domain.dto.SseStatusEventDto;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
@@ -24,7 +26,6 @@ import tools.jackson.databind.ObjectMapper;
 public class TestSuiteRunSseService {
 
     private final TestSuiteRunProperties properties;
-    private final ObjectMapper objectMapper;
 
     private final ConcurrentHashMap<String, SseEmitterWrapper> activeEmitters = new ConcurrentHashMap<>();
 
@@ -38,10 +39,10 @@ public class TestSuiteRunSseService {
 
         emitter.onCompletion(() -> activeEmitters.remove(connectionId));
         emitter.onTimeout(() -> activeEmitters.remove(connectionId));
-        emitter.onError(ex -> activeEmitters.remove(connectionId));
+        emitter.onError(_ -> activeEmitters.remove(connectionId));
 
         try {
-            emitter.send(SseEmitter.event().name("connected").data("{\"connectionId\":\"" + connectionId + "\"}"));
+            emitter.send(SseEmitter.event().name("connected").data(Map.of("connectionId", connectionId)));
         } catch (IOException e) {
             log.debug("Failed to send initial SSE connected event for connection {}", connectionId, e);
         }
@@ -61,9 +62,8 @@ public class TestSuiteRunSseService {
         activeEmitters.values().forEach(wrapper -> {
             if (wrapper.matches(run)) {
                 try {
-                    String data = objectMapper.writeValueAsString(event);
                     wrapper.getEmitter()
-                            .send(SseEmitter.event().name("status-update").data(data));
+                            .send(SseEmitter.event().name("status-update").data(event));
                 } catch (IOException e) {
                     log.debug("Failed to send SSE event to connection {}, removing", wrapper.getConnectionId(), e);
                     activeEmitters.remove(wrapper.getConnectionId());
@@ -73,23 +73,16 @@ public class TestSuiteRunSseService {
     }
 
     public void notifyProgress(UUID runId, UUID testSuiteId, int completedCases, int totalCases) {
-        String data;
-        try {
-            var progressEvent = new java.util.LinkedHashMap<String, Object>();
-            progressEvent.put("runId", runId.toString());
-            progressEvent.put("testSuiteId", testSuiteId.toString());
-            progressEvent.put("completedCases", completedCases);
-            progressEvent.put("totalCases", totalCases);
-            progressEvent.put("timestamp", System.currentTimeMillis());
-            data = objectMapper.writeValueAsString(progressEvent);
-        } catch (Exception e) {
-            log.warn("Failed to serialize progress event for run {}", runId, e);
-            return;
-        }
+        final Map<String, Object> progressEvent = new LinkedHashMap<>();
+        progressEvent.put("runId", runId.toString());
+        progressEvent.put("testSuiteId", testSuiteId.toString());
+        progressEvent.put("completedCases", completedCases);
+        progressEvent.put("totalCases", totalCases);
+        progressEvent.put("timestamp", System.currentTimeMillis());
 
         activeEmitters.values().forEach(wrapper -> {
             try {
-                wrapper.getEmitter().send(SseEmitter.event().name("progress").data(data));
+                wrapper.getEmitter().send(SseEmitter.event().name("progress").data(progressEvent));
             } catch (IOException e) {
                 log.debug("Failed to send progress SSE to connection {}", wrapper.getConnectionId(), e);
                 activeEmitters.remove(wrapper.getConnectionId());
@@ -102,7 +95,7 @@ public class TestSuiteRunSseService {
         List<String> staleKeys = new ArrayList<>();
         activeEmitters.forEach((connectionId, wrapper) -> {
             try {
-                wrapper.getEmitter().send(SseEmitter.event().name("heartbeat").data("ping"));
+                wrapper.getEmitter().send(SseEmitter.event().name("heartbeat").data("ping", MediaType.TEXT_PLAIN));
             } catch (IOException e) {
                 staleKeys.add(connectionId);
             }

@@ -77,6 +77,7 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.TestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TryItOutFunctionalTests;
 import com.epam.aidial.evaluation.service.domain.MetricProviderSyncJob;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
@@ -321,6 +322,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestSuiteRunTests extends TestSuiteRunFunctionalTests {}
+
+    @Nested
+    class TestSuiteRunSseTests extends TestSuiteRunSseFunctionalTests {}
 
     @Nested
     class AnalyticsResultBatchWriteTests extends AnalyticsResultBatchWriteFunctionalTests {}

@@ -65,7 +65,7 @@ public class StructuredQueryBuilder {
         select.addFrom(table);
         select.addConditions(filterTranslator.toCondition(query.filter(), bindings));
 
-        final QueryMode mode = query.mode() == null ? QueryMode.ROW : query.mode();
+        final QueryMode mode = query.mode();
         // Names that are select outputs (aliases / projected fields), so sort can reference the output
         // column instead of re-translating its expression.
         final Set<String> selectAliases = new HashSet<>();

@@ -324,10 +324,6 @@ what is <em>legal inside</em> a <code>select</code> entry differs by mode.</p>
   columns.</p>
 </li>
 </ul>
-<blockquote>
-<p>Open decision D1 (carried): require <code>mode</code> explicitly, or infer it from the presence of
-<code>group_by</code>. This spec shows it explicit.</p>
-</blockquote>
 <hr />
 <h2 id="3-filter-sub-grammar-cql2-json-op-args">3. Filter sub-grammar (CQL2-JSON <code>op</code> / <code>args</code>)</h2>
 <p>A filter is a recursive tree of <strong>filter nodes</strong>. A node is either a <strong>logical node</strong> or a
@@ -1007,7 +1003,6 @@ target, not yet fully config-only).</p>
 <hr />
 <h2 id="10-open-decisions">10. Open decisions</h2>
 <ul>
-<li><strong>D1</strong> — explicit vs inferred <code>mode</code>.</li>
 <li><strong>D5</strong> — auto tiebreaker key when client sort isn't a total order (default: primary key);
   applies to both pagination strategies (§6).</li>
 <li><strong>D6</strong> — aggregate response typing. <strong>Current:</strong> the implementation returns the
@@ -1017,7 +1012,8 @@ target, not yet fully config-only).</p>
   determinism and cursor seek correctness.</li>
 <li><strong>D10</strong> — runtime-parameter (<code>param</code>) source/registry definition and its trust boundary.</li>
 </ul>
-<p>(Resolved and baked into the spec: filter grammar = CQL2-JSON <code>op</code>/<code>args</code> with the fixed
+<p>(Resolved and baked into the spec: <strong>D1</strong> — <code>mode</code> is always explicit and required; auto-inference
+from <code>group_by</code> presence will not be added. filter grammar = CQL2-JSON <code>op</code>/<code>args</code> with the fixed
 operator codes; predicate operands are expressions (no separate "property" node); <code>array</code>
 as a fifth expression kind with homogeneous items, with item-kind and empty-array handling
 left to the DSL processor (former D9 resolved); output columns unified as <code>{ expr, as }</code> in

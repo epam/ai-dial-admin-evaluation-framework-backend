@@ -203,7 +203,7 @@
 </ul>
 </li>
 <li><a href="#9-validation-allowlist-hooks">9. Validation / allowlist hooks</a></li>
-<li><a href="#10-open-decisions">10. Open decisions</a></li>
+<li><a href="#10-open-decisions">10. Decisions</a></li>
 </ul>
 </div>
 
@@ -896,8 +896,9 @@ echoed <code>page</code>. <code>totalCount</code> is <code>null</code> in aggreg
 </code></pre>
 <p>(One flat <code>rows</code> schema serves any grouping/aggregate combo; aggregate values are not
 statically typed per-column — an inherent dynamic-shape tradeoff for aggregation. A draft of
-this spec proposed a typed <code>keys</code>+<code>metrics</code> envelope, but the implementation emits the
-flat row shape above. Open decision D6.)</p>
+this spec proposed a typed <code>keys</code>+<code>metrics</code> envelope; that approach was rejected (D6,
+resolved). The flat row shape above is the contract: per-query typed response shapes will not be
+generated.)</p>
 <h3 id="83-null-handling-on-a-metric-derived-column">8.3 Null handling on a metric-derived column</h3>
 <p>A flat metric column resolves to SQL NULL whenever its score is unavailable — this covers
 <strong>both</strong> an absent JSONB key and a key present with JSON null. The two cases are not
@@ -1002,31 +1003,46 @@ flattened JSONB property names via its schema provider. Exposing a plain column 
 schema-driven; exposing a new derived/JSONB property still requires a provider change today (#3
 target, not yet fully config-only).</p>
 <hr />
-<h2 id="10-open-decisions">10. Open decisions</h2>
+<h2 id="10-open-decisions">10. Decisions</h2>
+<h3 id="101-open-decisions">10.1 Open decisions</h3>
 <ul>
 <li><strong>D5</strong> — auto tiebreaker key when client sort isn't a total order (default: primary key);
   applies to both pagination strategies (§6).</li>
-<li><strong>D6</strong> — aggregate response typing. <strong>Current:</strong> the implementation returns the
-  flat <code>{ rows, totalCount }</code> shape (group keys + aggregate aliases flattened into each row,
-  §7.4/§8.2). Open question: keep this dynamic flat shape or generate per-query typed shapes.</li>
-<li><strong>D10</strong> — runtime-parameter (<code>param</code>) source/registry definition and its trust boundary.</li>
 </ul>
-<p>(Resolved and baked into the spec: <strong>D1</strong> — <code>mode</code> is always explicit and required; auto-inference
-from <code>group_by</code> presence will not be added. <strong>D8</strong> — null ordering is a client-controlled,
-optional per-sort-item field <code>nulls</code> ∈ <code>first | last</code>; when omitted the database default
-applies (<code>asc</code> → NULLS LAST, <code>desc</code> → NULLS FIRST). filter grammar = CQL2-JSON <code>op</code>/<code>args</code> with the fixed
-operator codes; predicate operands are expressions (no separate "property" node); <code>array</code>
-as a fifth expression kind with homogeneous items, with item-kind and empty-array handling
-left to the DSL processor (former D9 resolved); output columns unified as <code>{ expr, as }</code> in
-both modes (no separate <code>aggregate</code> section; an aggregate output column is just a <code>select</code>
-entry whose expression is an aggregate function); aggregate mode lists group-by keys
-explicitly in <code>select</code> (no implicit projection); two distincts — statement-level
-<code>SELECT DISTINCT</code> as a top-level <code>distinct</code> flag, argument-level <code>COUNT(DISTINCT …)</code> on the
-<code>fn</code> node; aggregation via explicit <code>group_by</code>; expression discriminator = <code>type</code>; <code>value</code>
-always a string with <code>value_type</code> governing parsing; <code>null</code> as a <code>value_type</code> replacing a
-separate <code>is_null</code> operator; temporals always instants; pagination = dual-strategy
-discriminated by <code>type</code>, with cursor structure an implementation detail and former D4 moved
-to the implementation.)</p>
+<h3 id="102-closed-decisions-log">10.2 Closed decisions log</h3>
+<p>Resolved and baked into the spec:</p>
+<ul>
+<li><strong>D1</strong> — <code>mode</code> is always explicit and required; auto-inference from
+  <code>group_by</code> presence will not be added.</li>
+<li><strong>D4</strong> (former) — pagination = dual-strategy discriminated by <code>type</code>; cursor
+  structure is an implementation detail (moved to the implementation).</li>
+<li><strong>D6</strong> — aggregate responses use the flat <code>{ rows, totalCount }</code> shape (group
+  keys + aggregate aliases flattened into each row, §7.4/§8.2); per-query typed response shapes
+  will not be generated.</li>
+<li><strong>D8</strong> — null ordering is a client-controlled, optional per-sort-item field
+  <code>nulls</code> ∈ <code>first | last</code>; when omitted the database default applies
+  (<code>asc</code> → NULLS LAST, <code>desc</code> → NULLS FIRST).</li>
+<li><strong>D9</strong> (former) — <code>array</code> as a fifth expression kind with homogeneous items;
+  item-kind and empty-array handling left to the DSL processor.</li>
+<li><strong>D10</strong> — runtime-parameter (<code>param</code>) source/registry definition and its trust
+  boundary are an implementation detail, out of this spec's scope.</li>
+</ul>
+<h4 id="103-other-settled-design-choices">Other settled design choices</h4>
+<ul>
+<li>filter grammar = CQL2-JSON <code>op</code>/<code>args</code> with the fixed operator codes.</li>
+<li>predicate operands are expressions (no separate "property" node).</li>
+<li>output columns unified as <code>{ expr, as }</code> in both modes (no separate <code>aggregate</code>
+  section; an aggregate output column is just a <code>select</code> entry whose expression is an aggregate
+  function).</li>
+<li>aggregate mode lists group-by keys explicitly in <code>select</code> (no implicit projection).</li>
+<li>two distincts — statement-level <code>SELECT DISTINCT</code> as a top-level <code>distinct</code> flag,
+  argument-level <code>COUNT(DISTINCT …)</code> on the <code>fn</code> node.</li>
+<li>aggregation via explicit <code>group_by</code>.</li>
+<li>expression discriminator = <code>type</code>.</li>
+<li><code>value</code> always a string with <code>value_type</code> governing parsing.</li>
+<li><code>null</code> as a <code>value_type</code> replacing a separate <code>is_null</code> operator.</li>
+<li>temporals always instants.</li>
+</ul>
 </main>
 </div>
 </body>

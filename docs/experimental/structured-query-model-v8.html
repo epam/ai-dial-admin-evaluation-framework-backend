@@ -663,17 +663,18 @@ aggregate; <code>having</code> is aggregate-level.</p>
 <hr />
 <h2 id="6-sort">6. Sort</h2>
 <pre><code class="language-jsonc">&quot;sort&quot;: [
-  { &quot;field&quot;: &quot;total&quot;,  &quot;dir&quot;: &quot;desc&quot; },   // output-column alias (aggregate mode) ...
-  { &quot;field&quot;: &quot;region&quot;, &quot;dir&quot;: &quot;asc&quot; }      // ... or group_by key / projectable field (row mode)
+  { &quot;field&quot;: &quot;total&quot;,  &quot;dir&quot;: &quot;desc&quot;, &quot;nulls&quot;: &quot;last&quot; }, // output-column alias (aggregate mode) ...
+  { &quot;field&quot;: &quot;region&quot;, &quot;dir&quot;: &quot;asc&quot; }                  // ... or group_by key / projectable field (row mode)
 ]
 </code></pre>
 <ul>
 <li><code>dir</code> ∈ <code>asc | desc</code>.</li>
 <li>References must be sortable per allowlist (row mode) or in <code>group_by ∪ {output-column
   aliases}</code> (aggregate mode).</li>
-<li>Null ordering (<code>NULLS FIRST/LAST</code>) must be deterministic (open decision D8: default null
-  ordering); it affects both page-boundary determinism (offset) and seek correctness
-  (cursor).</li>
+<li>Null ordering (<code>nulls</code> ∈ <code>first | last</code>) is an optional, client-controlled
+  per-item field. When omitted, the database default applies (<code>asc</code> → NULLS LAST,
+  <code>desc</code> → NULLS FIRST). It affects both page-boundary determinism (offset) and seek
+  correctness (cursor), so clients that need cross-page stability should set it explicitly.</li>
 <li><strong>Total order:</strong> if the client's sort is not a total order, the server appends a stable
   unique tiebreaker (open decision D5; default: primary key). For <code>cursor</code> pagination this
   is strictly required (keyset seek breaks without it); for <code>offset</code> it is required for
@@ -1008,12 +1009,12 @@ target, not yet fully config-only).</p>
 <li><strong>D6</strong> — aggregate response typing. <strong>Current:</strong> the implementation returns the
   flat <code>{ rows, totalCount }</code> shape (group keys + aggregate aliases flattened into each row,
   §7.4/§8.2). Open question: keep this dynamic flat shape or generate per-query typed shapes.</li>
-<li><strong>D8</strong> — default null ordering (<code>NULLS FIRST/LAST</code>); affects offset page-boundary
-  determinism and cursor seek correctness.</li>
 <li><strong>D10</strong> — runtime-parameter (<code>param</code>) source/registry definition and its trust boundary.</li>
 </ul>
 <p>(Resolved and baked into the spec: <strong>D1</strong> — <code>mode</code> is always explicit and required; auto-inference
-from <code>group_by</code> presence will not be added. filter grammar = CQL2-JSON <code>op</code>/<code>args</code> with the fixed
+from <code>group_by</code> presence will not be added. <strong>D8</strong> — null ordering is a client-controlled,
+optional per-sort-item field <code>nulls</code> ∈ <code>first | last</code>; when omitted the database default
+applies (<code>asc</code> → NULLS LAST, <code>desc</code> → NULLS FIRST). filter grammar = CQL2-JSON <code>op</code>/<code>args</code> with the fixed
 operator codes; predicate operands are expressions (no separate "property" node); <code>array</code>
 as a fifth expression kind with homogeneous items, with item-kind and empty-array handling
 left to the DSL processor (former D9 resolved); output columns unified as <code>{ expr, as }</code> in

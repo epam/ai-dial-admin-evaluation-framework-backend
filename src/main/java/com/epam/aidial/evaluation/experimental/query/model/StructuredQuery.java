@@ -25,6 +25,4 @@ public record StructuredQuery(
         FilterNode having,
 
         List<SortItem> sort,
-        PageSpec page) {
-
-}
+        PageSpec page) {}

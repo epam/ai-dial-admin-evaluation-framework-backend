@@ -15,6 +15,7 @@ import com.epam.aidial.evaluation.experimental.query.model.FilterNode;
 import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
 import com.epam.aidial.evaluation.experimental.query.model.LogicalNode;
 import com.epam.aidial.evaluation.experimental.query.model.LogicalOp;
+import com.epam.aidial.evaluation.experimental.query.model.NullsOrder;
 import com.epam.aidial.evaluation.experimental.query.model.OffsetPage;
 import com.epam.aidial.evaluation.experimental.query.model.OutputColumn;
 import com.epam.aidial.evaluation.experimental.query.model.ParamExpr;
@@ -143,12 +144,42 @@ class StructuredQueryBuilderTest {
                 null,
                 null,
                 null,
-                List.of(new SortItem("created_at_ms", SortDir.DESC)),
+                List.of(new SortItem("created_at_ms", SortDir.DESC, null)),
                 new OffsetPage(20, 25, false));
         String sql = render(query);
         assertThat(sql).contains("order by").contains("\"created_at_ms\" desc");
         // POSTGRES dialect renders SQL-standard paging: "offset 20 rows fetch next 25 rows only".
         assertThat(sql).contains("offset 20").contains("25 rows");
+        // No client-supplied null ordering → no NULLS clause; DB default applies (D8).
+        assertThat(sql).doesNotContain("nulls");
+    }
+
+    @Test
+    @DisplayName("emits client-supplied NULLS FIRST/LAST ordering on sort keys")
+    void emitsClientNullOrdering() {
+        StructuredQuery descNullsLast = new StructuredQuery(
+                "test_suites",
+                null,
+                QueryMode.ROW,
+                false,
+                null,
+                null,
+                null,
+                List.of(new SortItem("created_at_ms", SortDir.DESC, NullsOrder.LAST)),
+                null);
+        assertThat(render(descNullsLast)).contains("\"created_at_ms\" desc nulls last");
+
+        StructuredQuery ascNullsFirst = new StructuredQuery(
+                "test_suites",
+                null,
+                QueryMode.ROW,
+                false,
+                null,
+                null,
+                null,
+                List.of(new SortItem("created_at_ms", SortDir.ASC, NullsOrder.FIRST)),
+                null);
+        assertThat(render(ascNullsFirst)).contains("\"created_at_ms\" asc nulls first");
     }
 
     @Test
@@ -183,7 +214,7 @@ class StructuredQueryBuilderTest {
                 List.of(col(field("suite_type")), new OutputColumn(new FnExpr("count", false, List.of()), "total")),
                 List.of("suite_type"),
                 null,
-                List.of(new SortItem("total", SortDir.DESC)),
+                List.of(new SortItem("total", SortDir.DESC, null)),
                 new OffsetPage(0, 50, false));
         String sql = render(query);
         assertThat(sql).contains("order by \"total\" desc").doesNotContain("order by count(*)");

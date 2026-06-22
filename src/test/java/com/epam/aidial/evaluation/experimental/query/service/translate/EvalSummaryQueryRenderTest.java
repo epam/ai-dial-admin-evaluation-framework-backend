@@ -69,7 +69,7 @@ class EvalSummaryQueryRenderTest {
                         new OutputColumn(new FieldExpr("exec_duration_ms"), null)),
                 null,
                 null,
-                List.of(new SortItem("created_at_ms", SortDir.DESC)),
+                List.of(new SortItem("created_at_ms", SortDir.DESC, null)),
                 new OffsetPage(0, 50, false));
 
         String sql = render(query);

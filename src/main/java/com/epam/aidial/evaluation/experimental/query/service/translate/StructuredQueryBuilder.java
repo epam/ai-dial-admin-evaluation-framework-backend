@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.experimental.query.service.translate;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.CursorPage;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
+import com.epam.aidial.evaluation.experimental.query.model.NullsOrder;
 import com.epam.aidial.evaluation.experimental.query.model.OffsetPage;
 import com.epam.aidial.evaluation.experimental.query.model.OutputColumn;
 import com.epam.aidial.evaluation.experimental.query.model.PageSpec;
@@ -193,7 +194,15 @@ public class StructuredQueryBuilder {
             final Field<?> field = selectAliases.contains(item.field())
                     ? DSL.field(DSL.name(item.field()))
                     : exprTranslator.resolveField(item.field(), bindings);
-            fields.add(item.dir() == SortDir.DESC ? field.desc() : field.asc());
+            SortField<?> sortField = item.dir() == SortDir.DESC ? field.desc() : field.asc();
+            // Null ordering is client-controlled (§6, D8); when unspecified we emit no NULLS clause
+            // and let the database default apply (ASC → NULLS LAST, DESC → NULLS FIRST).
+            if (item.nulls() == NullsOrder.FIRST) {
+                sortField = sortField.nullsFirst();
+            } else if (item.nulls() == NullsOrder.LAST) {
+                sortField = sortField.nullsLast();
+            }
+            fields.add(sortField);
         }
         return fields;
     }

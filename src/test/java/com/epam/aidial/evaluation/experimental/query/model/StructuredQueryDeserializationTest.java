@@ -182,7 +182,7 @@ class StructuredQueryDeserializationTest {
                     { "expr": { "type": "field", "name": "id" } },
                     { "expr": { "type": "field", "name": "accuracy_score" } }
                   ],
-                  "sort": [ { "field": "accuracy_score", "dir": "asc" }, { "field": "id", "dir": "asc" } ],
+                  "sort": [ { "field": "accuracy_score", "dir": "asc", "nulls": "last" }, { "field": "id", "dir": "asc" } ],
                   "page": { "type": "offset", "offset": 0, "limit": 25, "include_total": true }
                 }
                 """;
@@ -197,7 +197,9 @@ class StructuredQueryDeserializationTest {
                         new OutputColumn(new FieldExpr("id"), null),
                         new OutputColumn(new FieldExpr("accuracy_score"), null));
         assertThat(query.sort())
-                .containsExactly(new SortItem("accuracy_score", SortDir.ASC), new SortItem("id", SortDir.ASC));
+                .containsExactly(
+                        new SortItem("accuracy_score", SortDir.ASC, NullsOrder.LAST),
+                        new SortItem("id", SortDir.ASC, null));
         assertThat(query.page()).isEqualTo(new OffsetPage(0L, 25, true));
     }
 

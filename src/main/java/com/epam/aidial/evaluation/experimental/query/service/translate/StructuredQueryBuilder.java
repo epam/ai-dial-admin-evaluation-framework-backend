@@ -214,7 +214,7 @@ public class StructuredQueryBuilder {
                 if (offset.offset() < 0) {
                     throw new ValidationException("page offset must not be negative");
                 }
-                select.addLimit((Number) offset.offset(), (Number) clampLimit(offset.limit()));
+                select.addLimit(offset.offset(), clampLimit(offset.limit()));
             }
             case CursorPage ignored ->
                 throw new ValidationException(

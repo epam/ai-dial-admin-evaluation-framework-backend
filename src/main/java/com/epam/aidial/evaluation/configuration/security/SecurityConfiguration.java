@@ -125,7 +125,8 @@ public class SecurityConfiguration {
     protected String[] publicPathPatterns() {
         var swaggerPaths =
                 disableSwaggerAuthorization ? List.of("/swagger-ui/**", "/v3/api-docs/**") : List.<String>of();
-        var unsecuredPaths = List.of("/api/v1/health/**");
+        // todo: remove /demo permits before going to prod — temporary demo UI scaffolding.
+        var unsecuredPaths = List.of("/api/v1/health/**", "/demo", "/demo/**");
 
         return Stream.of(swaggerPaths, unsecuredPaths)
                 .flatMap(Collection::stream)

@@ -91,6 +91,13 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                         break;
                     }
 
+                    log.debug(
+                            "Run {}: evaluating metrics for result {} (testCaseId={}, status={})",
+                            context.getTestSuiteRunId(),
+                            result.getId(),
+                            result.getTestCaseId(),
+                            result.getExecutionStatus());
+
                     if (result.getExecutionStatus() != ExecutionStatus.SUCCESS) {
                         buffer.add(buildPropagatedItem(result, context));
                     } else {
@@ -171,6 +178,11 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
         for (AggregatedMetricDefinition tsmd : context.getAggregatedTsmds()) {
             List<String> fieldNames = outputFieldNamesMap.get(tsmd.getName());
             Semaphore semaphore = providerSemaphores.get(tsmd.getDeclarationProviderId());
+            log.debug(
+                    "Run {}: dispatching metric '{}' for result {}",
+                    context.getTestSuiteRunId(),
+                    tsmd.getName(),
+                    result.getId());
             CompletableFuture<Void> tsmdFuture = CompletableFuture.runAsync(
                     () -> {
                         try {

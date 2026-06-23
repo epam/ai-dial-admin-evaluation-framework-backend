@@ -105,14 +105,13 @@ public class TestSuiteEvaluationJob {
 
     @Async("testSuiteRunExecutor")
     public void executeRunAsync(UUID runId, String token) {
-        AtomicBoolean cancellationSignal = activeCancellationSignals.get(runId);
-        if (cancellationSignal == null) {
-            cancellationSignal = new AtomicBoolean(false);
-            activeCancellationSignals.put(runId, cancellationSignal);
-        }
+        final AtomicBoolean cancellationSignal =
+                activeCancellationSignals.computeIfAbsent(runId, _ -> new AtomicBoolean(false));
         try {
+            log.info("Starting test suite run {}", runId);
             long now = clock.millis();
             if (cancellationSignal.get()) {
+                log.info("Run {} cancelled before start", runId);
                 repository.updateToCancelled(runId, now, now);
                 notifySse(runId);
                 return;
@@ -162,8 +161,10 @@ public class TestSuiteEvaluationJob {
 
             now = clock.millis();
             if (cancellationSignal.get()) {
+                log.info("Run {} cancelled", runId);
                 repository.updateToCancelled(runId, now, now);
             } else {
+                log.info("Run {} completed", runId);
                 repository.updateToCompleted(runId, now, now);
             }
             notifySse(runId);
@@ -274,6 +275,7 @@ public class TestSuiteEvaluationJob {
             long now = clock.millis();
             repository.updateSuiteSnapshot(runId, snapshotJson, now);
             repository.updateNumberOfTestCases(runId, totalInputs, now);
+            log.info("Created suite snapshot for run {}: {} test case input(s)", runId, totalInputs);
             return null;
         });
     }

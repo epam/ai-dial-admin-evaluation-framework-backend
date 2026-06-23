@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:17.4
+    image: postgres:17.5
     container_name: evaluation-postgres
     environment:
       POSTGRES_DB: evaluation_db

@@ -145,7 +145,7 @@ class EvalSummaryQueryRenderTest {
                 "width_bucket",
                 false,
                 List.of(
-                        new FieldExpr("metric:DeepEval Answer Relevancy:score"),
+                        new FieldExpr("metric::DeepEval Answer Relevancy::score"),
                         new ValueExpr(ValueType.DECIMAL, "0"),
                         new ValueExpr(ValueType.DECIMAL, "1"),
                         new ValueExpr(ValueType.INTEGER, "5")));
@@ -182,11 +182,11 @@ class EvalSummaryQueryRenderTest {
                 new ComparisonNode(
                         ComparisonOp.GT,
                         List.of(
-                                new FieldExpr("metric:Exact Match1:exact_match"),
+                                new FieldExpr("metric::Exact Match1::exact_match"),
                                 new ValueExpr(ValueType.DECIMAL, "0.5"))),
                 QueryMode.ROW,
                 false,
-                List.of(new OutputColumn(new FieldExpr("metric:Exact Match1:exact_match"), null)),
+                List.of(new OutputColumn(new FieldExpr("metric::Exact Match1::exact_match"), null)),
                 null,
                 null,
                 null,
@@ -208,7 +208,7 @@ class EvalSummaryQueryRenderTest {
                 "eval_summaries",
                 new ComparisonNode(
                         ComparisonOp.CO,
-                        List.of(new FieldExpr("data:question"), new ValueExpr(ValueType.STRING, "what"))),
+                        List.of(new FieldExpr("data::question"), new ValueExpr(ValueType.STRING, "what"))),
                 QueryMode.ROW,
                 false,
                 null,
@@ -248,9 +248,10 @@ class EvalSummaryQueryRenderTest {
                 false,
                 List.of(
                         new OutputColumn(
-                                percentile("percentile_cont", "0.1", "metric:Ragas Answer Relevancy:score"), "p10"),
+                                percentile("percentile_cont", "0.1", "metric::Ragas Answer Relevancy::score"), "p10"),
                         new OutputColumn(
-                                percentile("percentile_cont", "0.9", "metric:DeepEval Answer Relevancy:score"), "p90")),
+                                percentile("percentile_cont", "0.9", "metric::DeepEval Answer Relevancy::score"),
+                                "p90")),
                 List.of(),
                 null,
                 null,

@@ -48,8 +48,8 @@ public class ExprTranslator {
 
     /**
      * Resolves a field name to its jOOQ {@link Field}: a base column from the bindings, or — for a
-     * complex entity's published flattened name ({@code data:}/{@code response:}/{@code metric:}/
-     * {@code metricInfo:}) — the JSONB path it denotes. Unknown names are rejected (the field
+     * complex entity's published flattened name ({@code data::}/{@code response::}/{@code metric::}/
+     * {@code metricInfo::}) — the JSONB path it denotes. Unknown names are rejected (the field
      * allowlist is the schema the client discovered).
      */
     public Field<?> resolveField(String name, Map<String, QueryFieldBinding> bindings) {

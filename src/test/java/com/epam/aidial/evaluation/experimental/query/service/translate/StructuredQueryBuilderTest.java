@@ -299,10 +299,10 @@ class StructuredQueryBuilderTest {
     @DisplayName("rejects a flattened JSONB field on an entity that lacks the backing column")
     void rejectsFlattenedFieldWithoutBackingColumn() {
         // test_suites has no metric_values column, so the published metric: family is not resolvable here.
-        StructuredQuery query = rowQuery(null, List.of(col(field("metric:Accuracy:score"))), null);
+        StructuredQuery query = rowQuery(null, List.of(col(field("metric::Accuracy::score"))), null);
         assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("unknown field 'metric:Accuracy:score'");
+                .hasMessageContaining("unknown field 'metric::Accuracy::score'");
     }
 
     @Test

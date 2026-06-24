@@ -19,7 +19,7 @@ class QueryEntityRegistryTest {
     private static final QuerySchemaFieldDto SUITE_NAME_FIELD =
             new QuerySchemaFieldDto("name", QueryFieldType.STRING, "name");
     private static final QuerySchemaFieldDto METRIC_FIELD =
-            new QuerySchemaFieldDto("metric:Accuracy:score", QueryFieldType.DECIMAL, "metricValues");
+            new QuerySchemaFieldDto("metric::Accuracy::score", QueryFieldType.DECIMAL, "metricValues");
 
     private final QueryEntityRegistry registry = new QueryEntityRegistry(List.of(simpleProvider(), complexProvider()));
 

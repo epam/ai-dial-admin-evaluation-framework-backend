@@ -38,10 +38,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>Resolution is keyed by run: callers pass {@code test_suite_run_id} (preferred) to target a run
  * directly, or {@code test_suite_id} to target the suite's latest run. The schema is then derived
- * from that run's {@link SuiteSnapshotDto} ({@code data:<field>} from the snapshot's test-case
- * schema, {@code response:<column>} from the snapshot's response columns) and the run's analytics
- * {@link RunMetricSnapshot} rows for the latest computation ({@code metric:<name>:<field>}, always
- * numeric — metric values are numbers by nature; {@code metricInfo:<name>}, an opaque object holding
+ * from that run's {@link SuiteSnapshotDto} ({@code data::<field>} from the snapshot's test-case
+ * schema, {@code response::<column>} from the snapshot's response columns) and the run's analytics
+ * {@link RunMetricSnapshot} rows for the latest computation ({@code metric::<name>::<field>}, always
+ * numeric — metric values are numbers by nature; {@code metricInfo::<name>}, an opaque object holding
  * any non-numeric per-metric info/error, split by metric name only). These mirror the CSV export
  * manifest's column families. Runs without a snapshot (legacy null snapshot) are rejected with a
  * {@link ValidationException}.

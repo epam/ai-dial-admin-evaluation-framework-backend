@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Resolves the <em>flattened</em> field names a complex entity's detailed schema publishes — the
- * {@code data:}/{@code response:}/{@code metric:}/{@code metricInfo:} families
+ * {@code data::}/{@code response::}/{@code metric::}/{@code metricInfo::} families
  * ({@link com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants}) — into jOOQ JSONB
  * path expressions over the entity's backing JSONB columns. This is the execution-side counterpart
  * of {@code EvalSummariesSchemaProvider}: the schema endpoint advertises the flat names, this turns
@@ -31,7 +31,7 @@ import org.springframework.stereotype.Component;
  * without the column ({@code test_suites}) a prefixed name returns {@code null} and the caller
  * rejects it as unknown. Paths mirror the production analytics layer: metric values are addressed by
  * a two-level {@code metric_values -> '<metric>' ->> '<field>'} cast to {@code numeric} (every metric
- * output value is a number); {@code data:}/{@code response:} extract text; {@code metricInfo:} keeps
+ * output value is a number); {@code data::}/{@code response::} extract text; {@code metricInfo::} keeps
  * the raw JSONB object. Key components are bound parameters, never concatenated into SQL.
  */
 @Component
@@ -96,7 +96,7 @@ public class JsonbFieldResolver {
         final int separator = suffix.lastIndexOf(COLUMN_SEPARATOR);
         if (separator <= 0 || separator == suffix.length() - COLUMN_SEPARATOR.length()) {
             throw new ValidationException(
-                    "metric field must be of the form 'metric:<metricName>:<outputField>': '" + fullName + "'");
+                    "metric field must be of the form 'metric::<metricName>::<outputField>': '" + fullName + "'");
         }
         final String metricName = suffix.substring(0, separator);
         final String outputField = suffix.substring(separator + COLUMN_SEPARATOR.length());

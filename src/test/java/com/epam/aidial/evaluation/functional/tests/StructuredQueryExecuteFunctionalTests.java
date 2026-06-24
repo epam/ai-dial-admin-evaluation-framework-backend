@@ -169,8 +169,8 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
                       { "type": "field", "name": "test_suite_run_id" },
                       { "type": "value", "value_type": "uuid", "value": "%s" } ] },
                   "select": [
-                      { "expr": { "type": "field", "name": "data:question" } },
-                      { "expr": { "type": "field", "name": "metric:Exact Match1:exact_match" } } ],
+                      { "expr": { "type": "field", "name": "data::question" } },
+                      { "expr": { "type": "field", "name": "metric::Exact Match1::exact_match" } } ],
                   "page": { "type": "offset", "offset": 0, "limit": 10 }
                 }
                 """.formatted(runId);
@@ -182,8 +182,8 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
         assertThat(body).isNotNull();
         assertThat(body.rows()).hasSize(1);
         Map<String, Object> row = body.rows().get(0);
-        assertThat(row.get("data:question")).isEqualTo("q1");
-        assertThat(((Number) row.get("metric:Exact Match1:exact_match")).intValue())
+        assertThat(row.get("data::question")).isEqualTo("q1");
+        assertThat(((Number) row.get("metric::Exact Match1::exact_match")).intValue())
                 .isEqualTo(1);
     }
 
@@ -237,7 +237,7 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
                   "group_by": ["bucket"],
                   "select": [
                       { "expr": { "type": "fn", "name": "width_bucket", "args": [
-                          { "type": "field", "name": "metric:Accuracy:score" },
+                          { "type": "field", "name": "metric::Accuracy::score" },
                           { "type": "value", "value_type": "decimal", "value": "0" },
                           { "type": "value", "value_type": "decimal", "value": "1" },
                           { "type": "value", "value_type": "integer", "value": "5" } ] }, "as": "bucket" },
@@ -280,7 +280,7 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
                   "group_by": ["test_suite_run_id"],
                   "select": [
                       { "expr": { "type": "fn", "name": "avg", "args": [
-                          { "type": "field", "name": "metricInfo:Regex Match1" } ] }, "as": "avg" } ],
+                          { "type": "field", "name": "metricInfo::Regex Match1" } ] }, "as": "avg" } ],
                   "page": { "type": "offset", "offset": 0, "limit": 25, "include_total": true }
                 }
                 """.formatted(runId);

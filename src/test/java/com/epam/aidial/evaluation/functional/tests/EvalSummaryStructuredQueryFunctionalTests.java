@@ -193,7 +193,7 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
     }
 
     @Test
-    @DisplayName("projects flattened data: and metric: fields from JSONB columns")
+    @DisplayName("projects flattened data:: and metric:: fields from JSONB columns")
     void projectsFlattenedJsonbFields() {
         UUID suiteId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
@@ -211,12 +211,14 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
 
         QueryResultPage page = queryRepository.execute(rowQuery(
                 runIdEq(runId),
-                List.of(col(new FieldExpr("data:question")), col(new FieldExpr("metric:Exact Match1:exact_match")))));
+                List.of(
+                        col(new FieldExpr("data::question")),
+                        col(new FieldExpr("metric::Exact Match1::exact_match")))));
 
         assertThat(page.rows()).hasSize(1);
         Map<String, Object> row = page.rows().get(0);
-        assertThat(row.get("data:question")).isEqualTo("what is 2+2?");
-        assertThat(((Number) row.get("metric:Exact Match1:exact_match")).intValue())
+        assertThat(row.get("data::question")).isEqualTo("what is 2+2?");
+        assertThat(((Number) row.get("metric::Exact Match1::exact_match")).intValue())
                 .isEqualTo(1);
     }
 
@@ -264,7 +266,7 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                         new ComparisonNode(
                                 ComparisonOp.GE,
                                 List.of(
-                                        new FieldExpr("metric:Exact Match1:exact_match"),
+                                        new FieldExpr("metric::Exact Match1::exact_match"),
                                         new ValueExpr(ValueType.DECIMAL, "1")))));
 
         QueryResultPage page = queryRepository.execute(rowQuery(filter, List.of(col(new FieldExpr("test_case_name")))));
@@ -283,7 +285,7 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         analyticsTestDataHelper.createEvalSummary(
                 suiteId, runId, computationId, "case-a", ExecutionStatus.SUCCESS.name(), 100L, 1_000L);
 
-        // avg() over metricInfo:<name>, which resolves to a JSONB object — Postgres has no avg(jsonb).
+        // avg() over metricInfo::<name>, which resolves to a JSONB object — Postgres has no avg(jsonb).
         StructuredQuery query = new StructuredQuery(
                 "eval_summaries",
                 runIdEq(runId),
@@ -292,7 +294,7 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                 List.of(
                         new OutputColumn(new FieldExpr("test_suite_run_id"), null),
                         new OutputColumn(
-                                new FnExpr("avg", false, List.of(new FieldExpr("metricInfo:Regex Match1"))), "avg")),
+                                new FnExpr("avg", false, List.of(new FieldExpr("metricInfo::Regex Match1"))), "avg")),
                 List.of("test_suite_run_id"),
                 null,
                 null,
@@ -358,8 +360,8 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                 QueryMode.AGGREGATE,
                 false,
                 List.of(
-                        new OutputColumn(percentileCont("0.1", "metric:Relevancy:score"), "p10"),
-                        new OutputColumn(percentileCont("0.9", "metric:Relevancy:score"), "p90")),
+                        new OutputColumn(percentileCont("0.1", "metric::Relevancy::score"), "p10"),
+                        new OutputColumn(percentileCont("0.9", "metric::Relevancy::score"), "p90")),
                 null,
                 null,
                 null,

@@ -120,12 +120,13 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
         assertThat(schema.fields())
                 .contains(
                         new QuerySchemaFieldDto("test_suite_run_id", QueryFieldType.UUID, "test_suite_run_id"),
-                        new QuerySchemaFieldDto("data:question", QueryFieldType.STRING, "test_case_data"),
-                        new QuerySchemaFieldDto("data:expectedScore", QueryFieldType.DECIMAL, "test_case_data"),
-                        new QuerySchemaFieldDto("response:answer", QueryFieldType.STRING, "extracted_columns"),
-                        new QuerySchemaFieldDto("metric:Accuracy:score", QueryFieldType.DECIMAL, "metric_values"),
-                        new QuerySchemaFieldDto("metric:Accuracy:explanation", QueryFieldType.DECIMAL, "metric_values"),
-                        new QuerySchemaFieldDto("metricInfo:Accuracy", QueryFieldType.OBJECT, "metric_infos"))
+                        new QuerySchemaFieldDto("data::question", QueryFieldType.STRING, "test_case_data"),
+                        new QuerySchemaFieldDto("data::expectedScore", QueryFieldType.DECIMAL, "test_case_data"),
+                        new QuerySchemaFieldDto("response::answer", QueryFieldType.STRING, "extracted_columns"),
+                        new QuerySchemaFieldDto("metric::Accuracy::score", QueryFieldType.DECIMAL, "metric_values"),
+                        new QuerySchemaFieldDto(
+                                "metric::Accuracy::explanation", QueryFieldType.DECIMAL, "metric_values"),
+                        new QuerySchemaFieldDto("metricInfo::Accuracy", QueryFieldType.OBJECT, "metric_infos"))
                 .noneMatch(field -> field.name().equals("test_case_data"))
                 .noneMatch(field -> field.name().equals("metric_values"))
                 .noneMatch(field -> field.name().equals("metric_infos"));
@@ -145,9 +146,9 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
         assertThat(schema).isNotNull();
         assertThat(schema.fields())
                 .contains(
-                        new QuerySchemaFieldDto("data:question", QueryFieldType.STRING, "test_case_data"),
-                        new QuerySchemaFieldDto("response:answer", QueryFieldType.STRING, "extracted_columns"),
-                        new QuerySchemaFieldDto("metric:Accuracy:score", QueryFieldType.DECIMAL, "metric_values"));
+                        new QuerySchemaFieldDto("data::question", QueryFieldType.STRING, "test_case_data"),
+                        new QuerySchemaFieldDto("response::answer", QueryFieldType.STRING, "extracted_columns"),
+                        new QuerySchemaFieldDto("metric::Accuracy::score", QueryFieldType.DECIMAL, "metric_values"));
     }
 
     @Test

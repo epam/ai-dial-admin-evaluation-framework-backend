@@ -71,6 +71,15 @@ public class PostgresRunMetricSnapshotRepository implements RunMetricSnapshotRep
     }
 
     @Override
+    public List<RunMetricSnapshot> findByRunIdAndComputationId(UUID runId, UUID computationId) {
+        return dsl.selectFrom(RUN_METRIC_SNAPSHOTS)
+                .where(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .and(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID.eq(computationId.toString()))
+                .orderBy(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS.desc())
+                .fetch(recordMapper::map);
+    }
+
+    @Override
     public Optional<UUID> findLatestComputationId(UUID runId) {
         return dsl.select(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID)
                 .from(RUN_METRIC_SNAPSHOTS)

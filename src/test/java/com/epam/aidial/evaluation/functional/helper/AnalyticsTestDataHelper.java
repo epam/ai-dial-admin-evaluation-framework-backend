@@ -138,6 +138,105 @@ public class AnalyticsTestDataHelper {
         return id;
     }
 
+    /**
+     * Inserts a minimal {@code test_case_eval_summaries} row. Columns not exposed as parameters are
+     * filled with deterministic placeholders (random natural-key UUIDs, run index 0, empty JSONB);
+     * columns with DB defaults ({@code extracted_columns}, {@code metric_values},
+     * {@code extraction_warnings}) and nullable columns ({@code metric_infos},
+     * {@code response_status_code}) are left to the database.
+     *
+     * @return the inserted eval summary ID
+     */
+    @Transactional("analyticsTransactionManager")
+    public UUID createEvalSummary(
+            UUID suiteId,
+            UUID suiteRunId,
+            UUID computationId,
+            String testCaseName,
+            String executionStatus,
+            long execDurationMs,
+            long createdAtMs) {
+        return createEvalSummary(
+                suiteId,
+                suiteRunId,
+                computationId,
+                testCaseName,
+                executionStatus,
+                execDurationMs,
+                createdAtMs,
+                "{}",
+                "{}");
+    }
+
+    /**
+     * Variant carrying explicit {@code test_case_data} and {@code metric_values} JSON, for exercising
+     * the flattened {@code data:}/{@code metric:} field paths.
+     */
+    @Transactional("analyticsTransactionManager")
+    public UUID createEvalSummary(
+            UUID suiteId,
+            UUID suiteRunId,
+            UUID computationId,
+            String testCaseName,
+            String executionStatus,
+            long execDurationMs,
+            long createdAtMs,
+            String testCaseDataJson,
+            String metricValuesJson) {
+        UUID id = UUID.randomUUID();
+        analyticsDsl
+                .insertInto(TEST_CASE_EVAL_SUMMARIES)
+                .set(TEST_CASE_EVAL_SUMMARIES.ID, id.toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID, suiteId.toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID, suiteRunId.toString())
+                .set(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
+                        UUID.randomUUID().toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, UUID.randomUUID().toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, testCaseName)
+                .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, 0)
+                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID, computationId.toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA, JSONB.valueOf(testCaseDataJson))
+                .set(TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS, executionStatus)
+                .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, execDurationMs)
+                .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, JSONB.valueOf(metricValuesJson))
+                .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, createdAtMs)
+                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, createdAtMs)
+                .execute();
+        return id;
+    }
+
+    /**
+     * Inserts a minimal {@code run_metric_snapshots} row for a run/computation. Identity columns not
+     * exposed as parameters ({@code tsmd_id}, {@code metric_declaration_id},
+     * {@code metric_declaration_version_id}) get random UUIDs; {@code config_bindings}/
+     * {@code input_bindings} are left to their DB defaults.
+     *
+     * @return the inserted run metric snapshot ID
+     */
+    @Transactional("analyticsTransactionManager")
+    public UUID createRunMetricSnapshot(
+            UUID suiteRunId, UUID computationId, String tsmdName, String outputSchemaJson, long computedAtMs) {
+        UUID id = UUID.randomUUID();
+        analyticsDsl
+                .insertInto(RUN_METRIC_SNAPSHOTS)
+                .set(RUN_METRIC_SNAPSHOTS.ID, id.toString())
+                .set(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID, computationId.toString())
+                .set(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID, suiteRunId.toString())
+                .set(RUN_METRIC_SNAPSHOTS.TSMD_ID, UUID.randomUUID().toString())
+                .set(RUN_METRIC_SNAPSHOTS.TSMD_NAME, tsmdName)
+                .set(
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_ID,
+                        UUID.randomUUID().toString())
+                .set(
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_VERSION_ID,
+                        UUID.randomUUID().toString())
+                .set(RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA, JSONB.valueOf(outputSchemaJson))
+                .set(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS, computedAtMs)
+                .execute();
+        return id;
+    }
+
     public List<Map<String, Object>> findRunMetricSnapshotsByRunId(UUID runId) {
         return analyticsDsl
                 .select(

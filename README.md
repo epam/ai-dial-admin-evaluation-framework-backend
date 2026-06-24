@@ -34,7 +34,7 @@ A Spring Boot backend service for the AI DIAL Admin Evaluation Framework. This s
 
 - Java 25
 - Docker (for local development with PostgreSQL)
-- Gradle 9.5.1 (a wrapper is included — use `./gradlew`)
+- Gradle 9.6.0 (a wrapper is included — use `./gradlew`)
 
 ### Running Locally with Docker Compose
 

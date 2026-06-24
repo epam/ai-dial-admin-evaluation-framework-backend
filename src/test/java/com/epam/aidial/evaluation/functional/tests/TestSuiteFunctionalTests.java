@@ -836,10 +836,10 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should return 400 when responseColumns name contains a colon")
-    void shouldReturn400WhenResponseColumnNameContainsColon() {
+    @DisplayName("Should return 400 when responseColumns name contains a double colon")
+    void shouldReturn400WhenResponseColumnNameContainsDoubleColon() {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
-                .name("Colon In Response Column Name")
+                .name("Double Colon In Response Column Name")
                 .description("Desc")
                 .deploymentRef(
                         DeploymentReferenceDto.builder().id("d1").name("D1").build())
@@ -850,7 +850,7 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
                         .required(true)
                         .build())))
                 .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
-                        .name("with:colon")
+                        .name("with::colon")
                         .expression("choices[0].message.content")
                         .build()))
                 .build();
@@ -859,7 +859,7 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).contains("':'");
+        assertThat(response.getBody()).contains("'::'");
     }
 
     // PUT-with-colon-in-schema-field-name test moved to DatasetCrudFunctionalTest (15.1).

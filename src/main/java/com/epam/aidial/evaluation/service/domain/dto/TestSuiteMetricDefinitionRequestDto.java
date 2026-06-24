@@ -36,8 +36,8 @@ public class TestSuiteMetricDefinitionRequestDto {
     @NotBlank(message = "Name is required")
     @Size(max = 255, message = "Name must be less than 255 characters")
     @Pattern(
-            regexp = ValidationConstants.IDENTIFIER_NAME_NO_COLON_PATTERN,
-            message = ValidationConstants.IDENTIFIER_NAME_NO_COLON_MESSAGE)
+            regexp = ValidationConstants.NAME_NO_TWO_COLON_PATTERN,
+            message = ValidationConstants.NAME_NO_TWO_COLON_MESSAGE)
     @Schema(description = "Display name for this metric application", example = "Accuracy Check")
     private String name;
 

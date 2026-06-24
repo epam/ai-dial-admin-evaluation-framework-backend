@@ -45,7 +45,7 @@ public class EvalSummaryExportRequestDto {
                     + "`requestBody`/`responseBody`. Naming either body column explicitly turns on the "
                     + "test_case_run_results JOIN projection. Discover the full manifest via GET /export/preview.",
             example =
-                    "[\"testCaseName\", \"data:prompt\", \"metric:Accuracy:score\", \"metricInfo:Accuracy:score\", \"metricError:Accuracy\"]")
+                    "[\"testCaseName\", \"data::prompt\", \"metric::Accuracy::score\", \"metricInfo::Accuracy::score\", \"metricError::Accuracy\"]")
     private List<String> columns;
 
     @Size(

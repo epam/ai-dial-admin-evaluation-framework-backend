@@ -42,21 +42,21 @@ Status: **Implemented**
 - **THEN** `git diff --exit-code src/main/java-generated/` SHALL exit 0 (no differences)
 
 ### Requirement: Documented Java and Gradle versions match the wrapper and toolchain
-The Gradle version recorded in `AGENTS.md` (Quick Reference table), `openspec/config.yaml` (Tech Stack section), and the build-tooling image tags in `.gitlab-ci.yml` and `Dockerfile` SHALL match the version pinned in `gradle/wrapper/gradle-wrapper.properties`. The Java version recorded in `AGENTS.md` (Quick Reference table), `openspec/config.yaml` (Tech Stack section), `README.md`, `.cursorrules`, `docs/dev-setup/jdtls-setup.md`, and the JDK image tags in `.gitlab-ci.yml` (`gradle:<gradle>-jdk25`) and `Dockerfile` (builder `gradle:<gradle>-jdk25-alpine`, runtime `amazoncorretto:25-alpine`) SHALL match the Java toolchain declared in `build.gradle`. The wrapper is the source of truth for the Gradle version and the `build.gradle` toolchain is the source of truth for the Java version; docs, config metadata, and CI/Docker base images follow both.
+The Gradle version recorded in `AGENTS.md` (Quick Reference table), `openspec/config.yaml` (Tech Stack section), and the build-tooling image tag in `Dockerfile` SHALL match the version pinned in `gradle/wrapper/gradle-wrapper.properties`. The Java version recorded in `AGENTS.md` (Quick Reference table), `openspec/config.yaml` (Tech Stack section), `README.md`, `.cursorrules`, `docs/dev-setup/jdtls-setup.md`, and the JDK image tags in `Dockerfile` (builder `gradle:<gradle>-jdk25-alpine`, runtime `amazoncorretto:25-alpine`) SHALL match the Java toolchain declared in `build.gradle`. The wrapper is the source of truth for the Gradle version and the `build.gradle` toolchain is the source of truth for the Java version; docs, config metadata, and Docker base images follow both.
 
 Status: **Implemented**
 
 #### Scenario: Single source of truth for Gradle version
-- **WHEN** any of `AGENTS.md`, `openspec/config.yaml`, `gradle/wrapper/gradle-wrapper.properties`, `.gitlab-ci.yml`, or `Dockerfile` is updated to change the Gradle version
-- **THEN** the other four SHALL be updated in the same change to match
+- **WHEN** any of `AGENTS.md`, `openspec/config.yaml`, `gradle/wrapper/gradle-wrapper.properties`, or `Dockerfile` is updated to change the Gradle version
+- **THEN** the other three SHALL be updated in the same change to match
 
 #### Scenario: Single source of truth for Java version
 - **WHEN** the Java toolchain in `build.gradle` is changed
 - **THEN** `AGENTS.md`, `openspec/config.yaml`, `README.md`, `.cursorrules`, and `docs/dev-setup/jdtls-setup.md` SHALL be updated in the same change to state the same Java version
-- **AND THEN** the `.gitlab-ci.yml` `jdk<version>` image tag and the `Dockerfile` builder (`gradle:<gradle>-jdk<version>-alpine`) and runtime (`amazoncorretto:<version>-alpine`) image tags SHALL be updated to the same Java version
+- **AND THEN** the `Dockerfile` builder (`gradle:<gradle>-jdk<version>-alpine`) and runtime (`amazoncorretto:<version>-alpine`) image tags SHALL be updated to the same Java version
 
 ### Requirement: Java toolchain pinned to JDK 25
-The build SHALL declare a Java toolchain of `JavaLanguageVersion.of(25)` in `build.gradle`. The Gradle wrapper version chosen MUST be compatible with executing a JDK 25 toolchain (Gradle 9.5.1 supports this, as evidenced by the published `gradle:9.5.1-jdk25-alpine` build image).
+The build SHALL declare a Java toolchain of `JavaLanguageVersion.of(25)` in `build.gradle`. The Gradle wrapper version chosen MUST be compatible with executing a JDK 25 toolchain (Gradle 9.6.0 supports this, as evidenced by the published `gradle:9.6.0-jdk25-alpine` build image).
 
 Status: **Implemented**
 
@@ -71,8 +71,8 @@ Status: **Implemented**
 - **AND THEN** the full test suite (unit + Testcontainers functional, including `JooqSchemaDriftTest`) SHALL pass
 
 ## Implementation notes
-- Wrapper files: `gradle/wrapper/gradle-wrapper.properties` (pinned to `gradle-9.5.1-bin.zip` as of 2026-05-29), `gradle/wrapper/gradle-wrapper.jar`, `gradlew`, `gradlew.bat` — regenerated via two consecutive `./gradlew wrapper --gradle-version 9.5.1 --distribution-type bin` invocations (first pass updates `distributionUrl`; second pass, driven by 9.5.1, refreshes the wrapper jar + scripts).
+- Wrapper files: `gradle/wrapper/gradle-wrapper.properties` (pinned to `gradle-9.6.0-bin.zip` as of 2026-06-19), `gradle/wrapper/gradle-wrapper.jar`, `gradlew`, `gradlew.bat` — regenerated via two consecutive `./gradlew wrapper --gradle-version 9.6.0 --distribution-type bin` invocations (first pass updates `distributionUrl`; second pass, driven by 9.6.0, refreshes the wrapper jar + scripts).
 - Build script: `build.gradle` (Groovy DSL) — toolchain block: `java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }`.
 - Drift guard: `git diff --exit-code src/main/java-generated/` post-`generateJooq` is the operational check that the codegen output is stable; `JooqSchemaDriftTest` (in `./gradlew test`) is the runtime check that the committed sources match the live schema.
-- Tech-stack metadata: `AGENTS.md` Quick Reference table row `| Build | Gradle 9.5.1 |`; `openspec/config.yaml` `# Tech Stack` line `- Build: Gradle 9.5.1`.
-- CI/Docker images: `.gitlab-ci.yml` `image: gradle:9.5.1-jdk25`; `Dockerfile` `FROM gradle:9.5.1-jdk25-alpine AS builder` and runtime `FROM amazoncorretto:25-alpine`.
+- Tech-stack metadata: `AGENTS.md` Quick Reference table row `| Build | Gradle 9.6.0 |`; `openspec/config.yaml` `# Tech Stack` line `- Build: Gradle 9.6.0`.
+- Docker images: `Dockerfile` `FROM gradle:9.6.0-jdk25-alpine AS builder` and runtime `FROM amazoncorretto:25-alpine`. (CI builds via GitHub Actions under `.github/workflows/`, which build through the `Dockerfile` rather than pinning a Gradle image directly.)

@@ -120,7 +120,7 @@ Specs for the analytics datasource and result storage.
 Specs for database, observability, and operational concerns.
 
 - **[build-tooling](build-tooling/spec.md)** — Implemented
-  Gradle wrapper version pin (9.5+ on the 9.x line, `-bin` distribution), JDK 21 toolchain declaration, zero-deprecation-warning build invariant, jOOQ codegen output stability across wrapper bumps, and single-source-of-truth binding between wrapper, `AGENTS.md`, `openspec/config.yaml`, `.gitlab-ci.yml`, and `Dockerfile`.
+  Gradle wrapper version pin (9.5+ on the 9.x line, `-bin` distribution), JDK 25 toolchain declaration, zero-deprecation-warning build invariant, jOOQ codegen output stability across wrapper bumps, and single-source-of-truth binding between wrapper, `AGENTS.md`, `openspec/config.yaml`, and `Dockerfile`.
 - **[typed-sql-dsl](typed-sql-dsl/spec.md)** — Implemented
   jOOQ 3.20 typed DSL replacing NamedParameterJdbcTemplate across all repositories. Zonky EmbeddedPostgres codegen pipeline (`./gradlew generateJooq`), committed generated sources, schema-drift guard test, DSLContext beans with TransactionAwareDataSourceProxy and exception translation, RecordMapper pattern, FilterWhitelists/SortWhitelists with typed Field references, ArchUnit fence enforcing JdbcTemplate usage limits.
 - **[database-and-migrations](database-and-migrations/spec.md)** — Implemented

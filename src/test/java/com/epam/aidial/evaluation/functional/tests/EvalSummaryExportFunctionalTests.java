@@ -370,7 +370,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
 
         // Seed two summaries:
         //   firstItem  — metricInfos.Accuracy has NO key matching the schema field "score",
-        //                so the payload routes to metricError:Accuracy (wholesale-error path).
+        //                so the payload routes to metricError::Accuracy (wholesale-error path).
         //   secondItem — Accuracy.score is JSON null, executionStatus FAILED.
         EvalSummaryBatchWriteItemDto firstItem = buildBasicSummaryItem(UUID.randomUUID(), "preview-A");
         ObjectNode metricInfos = JsonNodeFactory.instance.objectNode();
@@ -411,14 +411,14 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                         "requestBody",
                         "responseBody",
                         "extractionWarnings",
-                        "metric:Accuracy:score",
-                        "metricInfo:Accuracy:score",
-                        "metricError:Accuracy");
+                        "metric::Accuracy::score",
+                        "metricInfo::Accuracy::score",
+                        "metricError::Accuracy");
         assertThat(headers).doesNotContain("metricInfos");
 
-        int accuracyScoreIdx = headers.indexOf("metric:Accuracy:score");
-        int accuracyInfoIdx = headers.indexOf("metricInfo:Accuracy:score");
-        int accuracyErrorIdx = headers.indexOf("metricError:Accuracy");
+        int accuracyScoreIdx = headers.indexOf("metric::Accuracy::score");
+        int accuracyInfoIdx = headers.indexOf("metricInfo::Accuracy::score");
+        int accuracyErrorIdx = headers.indexOf("metricError::Accuracy");
 
         boolean foundWholesaleErrorObject = false;
         boolean foundNumericScore = false;
@@ -433,7 +433,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
             // The per-field info column is always null in this scenario: firstItem's payload
             // is wholesale-error material; secondItem has no metricInfos at all.
             assertThat(body.get(i).get(accuracyInfoIdx))
-                    .as("metricInfo:Accuracy:score should be null in this scenario")
+                    .as("metricInfo::Accuracy::score should be null in this scenario")
                     .isNull();
             Object scoreCell = body.get(i).get(accuracyScoreIdx);
             if (scoreCell instanceof Number) {
@@ -443,13 +443,13 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
             }
         }
         assertThat(foundWholesaleErrorObject)
-                .as("preview-A's wholesale-error payload should route to metricError:Accuracy as a JSON object")
+                .as("preview-A's wholesale-error payload should route to metricError::Accuracy as a JSON object")
                 .isTrue();
         assertThat(foundNumericScore)
-                .as("at least one preview row should carry metric:Accuracy:score as a JSON number")
+                .as("at least one preview row should carry metric::Accuracy::score as a JSON number")
                 .isTrue();
         assertThat(foundNullScore)
-                .as("at least one preview row should carry metric:Accuracy:score as JSON null")
+                .as("at least one preview row should carry metric::Accuracy::score as JSON null")
                 .isTrue();
     }
 
@@ -506,20 +506,20 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                         "executionStatus",
                         "execDurationMs",
                         "responseStatusCode",
-                        "data:prompt",
-                        "data:attachment",
-                        "response:answer",
-                        "response:audio",
-                        "metric:Accuracy:score",
-                        "metric:Accuracy:confidence",
-                        "metricInfo:Accuracy:score",
-                        "metricInfo:Accuracy:confidence",
-                        "metricError:Accuracy",
-                        "metric:Relevance:score",
-                        "metric:Relevance:explanation",
-                        "metricInfo:Relevance:score",
-                        "metricInfo:Relevance:explanation",
-                        "metricError:Relevance",
+                        "data::prompt",
+                        "data::attachment",
+                        "response::answer",
+                        "response::audio",
+                        "metric::Accuracy::score",
+                        "metric::Accuracy::confidence",
+                        "metricInfo::Accuracy::score",
+                        "metricInfo::Accuracy::confidence",
+                        "metricError::Accuracy",
+                        "metric::Relevance::score",
+                        "metric::Relevance::explanation",
+                        "metricInfo::Relevance::score",
+                        "metricInfo::Relevance::explanation",
+                        "metricError::Relevance",
                         "extractionWarnings");
         // Legacy single metricInfos JSON-blob column is gone; default export must omit body columns.
         assertThat(header).doesNotContain("requestBody", "responseBody");
@@ -590,11 +590,11 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                 .runId(completedRun.getId())
                 .columns(List.of(
                         "testCaseName",
-                        "metric:Retrieval:recall",
-                        "metric:Retrieval:precision",
-                        "metricInfo:Retrieval:recall",
-                        "metricInfo:Retrieval:precision",
-                        "metricError:Retrieval"))
+                        "metric::Retrieval::recall",
+                        "metric::Retrieval::precision",
+                        "metricInfo::Retrieval::recall",
+                        "metricInfo::Retrieval::precision",
+                        "metricError::Retrieval"))
                 .build();
         ResponseEntity<String> csvResponse = restTemplate.postForEntity(exportUrl(), jsonEntity(request), String.class);
 
@@ -602,10 +602,10 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         String csvBody = csvResponse.getBody();
         String[] csvLines = csvBody.split("\\r?\\n");
         assertThat(csvLines[0])
-                .isEqualTo("testCaseName,metric:Retrieval:recall,metric:Retrieval:precision,"
-                        + "metricInfo:Retrieval:recall,metricInfo:Retrieval:precision,"
-                        + "metricError:Retrieval");
-        // The wholesale-error payload's distinctive marker must land in metricError:Retrieval, not in
+                .isEqualTo("testCaseName,metric::Retrieval::recall,metric::Retrieval::precision,"
+                        + "metricInfo::Retrieval::recall,metricInfo::Retrieval::precision,"
+                        + "metricError::Retrieval");
+        // The wholesale-error payload's distinctive marker must land in metricError::Retrieval, not in
         // the per-field info cells.
         assertThat(csvBody).contains("metric crashed before evaluation");
         assertThat(csvBody).contains("facts missing");
@@ -623,9 +623,9 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
 
         List<Object> previewHeaders = previewBody.get(0);
         int nameIdx = previewHeaders.indexOf("testCaseName");
-        int recallInfoIdx = previewHeaders.indexOf("metricInfo:Retrieval:recall");
-        int precisionInfoIdx = previewHeaders.indexOf("metricInfo:Retrieval:precision");
-        int errorIdx = previewHeaders.indexOf("metricError:Retrieval");
+        int recallInfoIdx = previewHeaders.indexOf("metricInfo::Retrieval::recall");
+        int precisionInfoIdx = previewHeaders.indexOf("metricInfo::Retrieval::precision");
+        int errorIdx = previewHeaders.indexOf("metricError::Retrieval");
         assertThat(recallInfoIdx).isPositive();
         assertThat(precisionInfoIdx).isPositive();
         assertThat(errorIdx).isPositive();

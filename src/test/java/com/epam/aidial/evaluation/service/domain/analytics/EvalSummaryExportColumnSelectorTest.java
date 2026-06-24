@@ -29,7 +29,7 @@ class EvalSummaryExportColumnSelectorTest {
 
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
-                .containsExactly("testCaseName", "data:prompt", "metric:Accuracy:score");
+                .containsExactly("testCaseName", "data::prompt", "metric::Accuracy::score");
         assertThat(result).extracting(ColumnDescriptor::isBodyColumn).containsOnly(false);
     }
 
@@ -42,7 +42,7 @@ class EvalSummaryExportColumnSelectorTest {
 
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
-                .containsExactly("testCaseName", "data:prompt", "metric:Accuracy:score")
+                .containsExactly("testCaseName", "data::prompt", "metric::Accuracy::score")
                 .doesNotContain("requestBody", "responseBody");
     }
 
@@ -52,11 +52,11 @@ class EvalSummaryExportColumnSelectorTest {
         List<ColumnDescriptor> manifest = manifestWithBodies();
 
         List<ColumnDescriptor> result =
-                selector.select(manifest, List.of("metric:Accuracy:score", "testCaseName", "data:prompt"));
+                selector.select(manifest, List.of("metric::Accuracy::score", "testCaseName", "data::prompt"));
 
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
-                .containsExactly("metric:Accuracy:score", "testCaseName", "data:prompt");
+                .containsExactly("metric::Accuracy::score", "testCaseName", "data::prompt");
     }
 
     @Test
@@ -65,11 +65,11 @@ class EvalSummaryExportColumnSelectorTest {
         List<ColumnDescriptor> manifest = manifestWithBodies();
 
         List<ColumnDescriptor> result =
-                selector.select(manifest, List.of("testCaseName", "responseBody", "metric:Accuracy:score"));
+                selector.select(manifest, List.of("testCaseName", "responseBody", "metric::Accuracy::score"));
 
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
-                .containsExactly("testCaseName", "responseBody", "metric:Accuracy:score");
+                .containsExactly("testCaseName", "responseBody", "metric::Accuracy::score");
         assertThat(result.get(1).isBodyColumn()).isTrue();
         assertThat(result.get(1).requiresJoinProjection()).isTrue();
     }
@@ -91,7 +91,7 @@ class EvalSummaryExportColumnSelectorTest {
         List<ColumnDescriptor> manifest = manifestWithBodies();
 
         assertThatThrownBy(() -> selector.select(
-                        manifest, List.of("testCaseName", "unknownOne", "metric:Accuracy:score", "unknownTwo")))
+                        manifest, List.of("testCaseName", "unknownOne", "metric::Accuracy::score", "unknownTwo")))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("unknownOne")
                 .hasMessageContaining("unknownTwo");
@@ -115,8 +115,8 @@ class EvalSummaryExportColumnSelectorTest {
     private static List<ColumnDescriptor> manifestWithBodies() {
         return List.of(
                 plain("testCaseName"),
-                plain("data:prompt"),
-                plain("metric:Accuracy:score"),
+                plain("data::prompt"),
+                plain("metric::Accuracy::score"),
                 body("requestBody"),
                 body("responseBody"));
     }

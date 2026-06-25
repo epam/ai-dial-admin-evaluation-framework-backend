@@ -1,0 +1,75 @@
+# Tasks
+
+## 1. Database migrations + jOOQ regeneration
+
+- [x] 1.1 Add `V1.9__CreateMetricScoreDefinitionTable.sql` under `db/migration/analytics/POSTGRES/`: `metric_score_definition(id VARCHAR(36) PK, type VARCHAR(32) NOT NULL, name VARCHAR(255) NOT NULL, description VARCHAR(1024), expression JSONB NOT NULL, target_id VARCHAR(36) NULL)` with partial unique indexes `(type,name) WHERE target_id IS NULL` and `(type,name,target_id) WHERE target_id IS NOT NULL`. (Final state after §9.1/§9.10: type values are `DEFAULT`/`TEST_SUITE`, no audit timestamp columns.)
+- [x] 1.2 Add `V1.10__CreateMetricScoreResultTable.sql`: `metric_score_result(id VARCHAR(36) PRIMARY KEY, test_suite_run_id VARCHAR(36) NOT NULL, computation_id VARCHAR(36) NOT NULL, metric_score_name VARCHAR(255) NOT NULL, metric_name VARCHAR(255) NOT NULL, value DOUBLE PRECISION)` with unique `(test_suite_run_id, computation_id, metric_score_name, metric_name)` and index `(test_suite_run_id, computation_id)`. (Final state after §9.10: no `created_at_ms`/`computed_at_ms`; PK is `id`.)
+- [x] 1.3 Add `V1.11__SeedGlobalMetricScoreDefinitions.sql` seeding the predefined `DEFAULT` stat definitions (AVG, P10, P90, MIN, MAX) + the `overall` definition (6 total), each `expression` a self-contained `StructuredQuery` JSON with `:metricField`/`:runId`/`:computationId` params (percentile fraction as a baked literal), using deterministic UUID literals and `ON CONFLICT DO NOTHING`. (Final state after §9.1/§9.2/§9.5: `DEFAULT` type, MED dropped, `overall` selects `mean(:metricAvgs)`.)
+- [x] 1.4 Run `./gradlew generateJooq`; commit generated `MetricScoreDefinition*` and `MetricScoreResult*` sources under `src/main/java-generated/.../jooq/analytics/`.
+- [x] 1.5 Verify `./gradlew compileJava` and `JooqSchemaDriftTest` pass.
+
+## 2. Analytics models, mappers, repositories
+
+- [x] 2.1 Add models `MetricScoreDefinition` and `MetricScoreResult` in `data/db/analytics/model/` (Lombok, epoch-millis `Long`, `Double value`; mirror `RunMetricSnapshot`).
+- [x] 2.2 Add `MetricScoreDefinitionRecordMapper` and `MetricScoreResultRecordMapper` in `data/db/analytics/mapper/` (`@Component @LogExecution`; JSONB→expression String, UUID parsing, nullable `targetId`).
+- [x] 2.3 Add `MetricScoreDefinitionRepository` + `PostgresMetricScoreDefinitionRepository` (`@Qualifier("analyticsDsl")`, `@ConditionalOnProperty` POSTGRES, `@Transactional("analyticsTransactionManager")` on writes). (Final state after §9.11: trimmed to just `findApplicable(suiteId)` — `DEFAULT OR (TEST_SUITE AND target_id=:suiteId)` — used by the executor; definitions are seed-only.)
+- [x] 2.4 Add `MetricScoreResultRepository` + `PostgresMetricScoreResultRepository`: `saveAll(List)` batched append-only with `.onConflict(...).doNothing()` (copy `PostgresEvalSummaryRepository.saveAll`), and `findByRunAndComputation(runId, computationId)` ordered by `(metric_score_name, metric_name)`.
+- [x] 2.5 Both analytics repositories confirmed wired against the analytics datasource — the `MetricScore*FunctionalTests` boot the full Spring context (both datasources POSTGRES) and exercise `MetricScoreDefinitionRepository`/`MetricScoreResultRepository` end-to-end; all green in the full suite.
+
+## 3. Constants
+
+- [x] 3.1 Add `constants/MetricScoreConstants.java`: type names (`DEFAULT`/`TEST_SUITE`), reserved param names (`runId`/`computationId`/`metricField`, plus `metricAvgs`), stat names (`AVG/P10/P90/MIN/MAX/overall`), `mean` function name, `value` output alias, `eval_summaries` entity name. Reuse `EvalSummaryExportColumnConstants` for metric-field tokens (do not redefine). (Final state after §9.1/§9.2: `TYPE_DEFAULT`/`TYPE_TEST_SUITE`, `PARAM_METRIC_AVGS`/`FN_MEAN` added, no `STAT_MED`.)
+- [x] 3.2 Add a guard unit test (`MetricScoreSeedGuardTest`) deserializing each seeded `expression` JSON into a `StructuredQuery` and asserting entity/mode/`value` alias + reserved param names match `MetricScoreConstants`. Green (no Docker).
+
+## 4. ParamExpr support in the Query DSL
+
+- [x] 4.1 Thread an optional `Map<String,Expr> params` (default `Map.of()`) through `ExprTranslator.toField` (keep a 2-arg overload), forwarding through `toFunction`/`percentile`/`widthBucket`.
+- [x] 4.2 Replace the `ParamExpr` rejection in `ExprTranslator` with substitution: look up the bound `Expr`, recurse; unbound → `ValidationException` (HTTP 400); reject param→param bindings (cycle guard).
+- [x] 4.3 Thread `params` through `FilterTranslator.toCondition` and helpers, and through `StructuredQueryBuilder.build`/`buildRow`/`buildAggregate`/`sortFields`/`countRows` (only `toField` paths need it).
+- [x] 4.4 Add `StructuredQueryService.execute(query, Map<String,Expr> params)` overload (old delegates `Map.of()`); add `StructuredQueryRepository.execute` default-method overload; thread `params` through `StructuredQueryExecutor.execute`. Keep the public controller paramless.
+- [x] 4.5 Unit tests: bound value→bind param, bound field→column, unbound→`ValidationException`, param→param cycle rejected, param inside `percentile_cont`; regression covered by the existing paramless `StructuredQueryBuilderTest`/`EvalSummaryQueryRenderTest` suites (still green). All pass without Docker.
+
+## 5. Phase-3 computation executor + run-job hook
+
+- [x] 5.1 Add the Phase-3 computation executor (`@Component @LogExecution @RequiredArgsConstructor @Slf4j`) injecting the two new repos, `RunMetricSnapshotRepository`, output-schema field extractor, `StructuredQueryService`, `ObjectMapper`. (Final state after §9.9: lives in `experimental.query.service.metricscore` implementing the `MetricScoreComputation` interface declared in `service.domain.job`; after §9.10 no `Clock` dependency.)
+- [x] 5.2 Implement metric-field discovery from `RunMetricSnapshot.outputSchema` (numeric properties → `metric:<tsmd>:<field>` tokens) and per-(DEFAULT def × field) execution: deserialize expression, bind `{runId, computationId, metricField}`, execute, read scalar `value`, collect result; catch `ValidationException` per pair and continue (log exception as last arg); honor `cancellationSignal`. (Final state after §9.6: param-driven dispatch — `:metricField` → one execution per field; otherwise run-level binding `:metricAvgs`.)
+- [x] 5.3 Batch-write all results via `resultRepository.saveAll`. (Final state after §9.6: `overall` is computed via the DSL `mean(:metricAvgs)` expression, not an engine-side `addOverall` method.)
+- [x] 5.4 Hook into `TestSuiteEvaluationJob`: hoist Phase-2 `computationId` so Phase 3 reuses it; invoke the executor (via the `MetricScoreComputation` interface) after Phase 2, guarded by `!cancellationSignal.get()`, before the COMPLETED transition; wrap in try/catch so failure is non-fatal (log + continue to COMPLETED). (Final state after §9.10: no `computedAtMs` passed.)
+- [x] 5.5 Unit test `MetricScoreComputationExecutor` with mocked repos + fake `StructuredQueryService` (deterministic fixed ctx timestamps instead of injecting `Clock` — the executor reads computedAt/createdAt from the context, so no `Clock` dependency): one result per (def × field), `overall` = mean of AVGs, fault isolation on `ValidationException`, and skip-when-no-fields. Also updated `TestSuiteEvaluationJobTest` for the new constructor arg. All green (no Docker).
+
+## 6. Results read API
+
+> Final state after §9.11: the definition management API (CRUD) was dropped — definitions are seed-only. Only the results read API ships. The definition DTOs/mapper/controller/functional tests described below (6.1 partial, 6.2 partial, 6.3, 6.4, 6.5) were removed; what remains is `MetricScoreResultResponseDto`, `MetricScoreResultMapper`, `MetricScoreService.listResults`, and `MetricScoreResultController`.
+
+- [x] 6.1 Add DTOs in `service/domain/dto/analytics/`: `MetricScoreResultResponseDto` (epoch-millis Long, Double value). (Definition request/response DTOs removed in §9.11.)
+- [x] 6.2 Add MapStruct mapper `MetricScoreResultMapper` in `service/domain/mapper/`. (`MetricScoreDefinitionMapper` removed in §9.11.)
+- [x] 6.3 Add `service/domain/analytics/MetricScoreService.java` (`@Component @LogExecution`): `listResults(runId, computation)` resolving via `ComputationResolver`. (Definition `create`/`listDefinitions`/`findById`/`deleteDefinition` removed in §9.11; no `Clock` dep after §9.10.)
+- [x] 6.4 Add `MetricScoreResultController` in `web/controller/` (`/api/v1/analytics/metric-score-results`: GET `?testSuiteRunId=&computation=latest`), with OpenAPI annotations + `@Validated`. (`MetricScoreDefinitionController` removed in §9.11.)
+- [x] 6.5 Functional tests for the read endpoint. (The definition CRUD functional tests `MetricScoreDefinitionFunctionalTests` were removed in §9.11; suite-scoping is covered via the executor's `findApplicable` and `MetricScoreComputationFunctionalTests`.)
+
+## 7. End-to-end functional verification
+
+- [x] 7.1 `MetricScoreComputationFunctionalTests.computesStatisticsForRun`: seeds run-metric-snapshot + 3 eval summaries (scores 0.0/0.5/1.0), drives Phase 3, asserts 6 rows — AVG=0.5, MIN=0.0, MAX=1.0, P10≈0.1, P90≈0.9, overall=0.5. Executed against real Postgres and green (validates percentile_cont over JSONB numeric extraction). (Final state after §9.2: MED dropped → 6 rows; overall = mean of AVGs via the DSL.)
+- [x] 7.2 Same test asserts every row carries the run's `computation_id`; `readsResultsViaLatest` hits `GET /metric-score-results?...&computation=latest` and asserts 6 results via `ComputationResolver`. Executed and green. (Final state after §9.10: no `createdAt`/`computedAt` columns.)
+- [x] 7.3 `./gradlew spotlessApply checkstyleMain checkstyleTest` pass. Full `./gradlew test` suite is GREEN (1909 tests, incl. `LayeredArchitectureTest`, `JooqSchemaDriftTest`, `LoggingConventionTest`, both new functional suites, and all unit tests).
+
+## 8. Docs & spec sync
+
+- [x] 8.1 Update `docs/database-schema.md` with `metric_score_definition` and `metric_score_result` (columns, PK, unique constraints, append-only-per-computation note).
+- [x] 8.2 Update `openspec/specs/README.md` to index the new `metric-score-statistics` spec (Analytics section, marked Planned).
+- [x] 8.3 Note in `AGENTS.md` that `ParamExpr` is now supported (expression substitution) and the public `/queries/execute` endpoint stays paramless. Added to Inline conventions.
+- [x] 8.4 No new configuration property introduced (Phase 3 has no enable/timeout flag in v1), so no `application.yml` / `docs/configuration.md` change is required.
+
+## 9. Enhancement — overall via the DSL, type rename, registry-driven functions, drop MED
+
+- [x] 9.1 Rename definition `type` values `GLOBAL`→`DEFAULT` and `TEST_SUITE_RUN`→`TEST_SUITE` (no `kind` column). Edit migrations in place: `V1.9` type comment, `V1.11` seed rows. Update `MetricScoreConstants` (`TYPE_DEFAULT`/`TYPE_TEST_SUITE`, add `PARAM_METRIC_AVGS`/`FN_MEAN`), `PostgresMetricScoreDefinitionRepository.findApplicable` (`DEFAULT OR (TEST_SUITE AND target_id=:suiteId)`), `MetricScoreService` (reject `DEFAULT` create/delete), `MetricScoreDefinitionRequestDto`/controller `@Schema`/`@Operation` text.
+- [x] 9.2 Drop the `MED` predefined statistic for now: remove its `V1.11` seed row, the `STAT_MED` constant, and every MED assertion (seed-guard count 7→6, functional row count, type-list assertions).
+- [x] 9.3 Make the DSL function catalog registry-driven: add `experimental/query/service/translate/function/` with `QueryFunction` SPI, `FunctionContext`, `QueryFunctionRegistry` (`@Component`, reject duplicate names, unknown → `ValidationException`), and `BuiltInQueryFunctions` (one bean per existing built-in migrated out of the `ExprTranslator` switch). Wire `ExprTranslator.toField` to delegate to the registry.
+- [x] 9.4 Add `MeanFunction` (`mean`) — single `array` arg (resolved via param substitution), folds `(e₁+…+eₙ)/n` via jOOQ `Field.add/.divide`; allow `ArrayExpr` to reach it. Add render/reject unit tests (`StructuredQueryBuilderTest`) and a registry test support helper.
+- [x] 9.5 Seed `overall` as a `DEFAULT` definition whose expression selects `mean(:metricAvgs)`, run-scoped by `:runId`/`:computationId` (`V1.11`).
+- [x] 9.6 Rewrite `MetricScoreComputationExecutor` for param-driven dispatch: walk each expression's `param` names; `:metricField` → one execution per metric field; otherwise run-level → bind `:metricAvgs` to an `ArrayExpr` of the run's `avg(metric:<tsmd>:<field>)` terms and execute once. Remove `addOverall`.
+- [x] 9.7 Update tests: `MetricScoreComputationExecutorTest` (overall via DSL + metricAvgs array binding), `MetricScoreSeedGuardTest` (6 expressions; metricField or metricAvgs), `MetricScoreComputationFunctionalTests` (drop MED, overall = mean of AVGs), `MetricScoreDefinitionFunctionalTests` (type rename, drop MED). Run unit tests under JDK 25 — green.
+- [x] 9.8 Sync OpenSpec (`proposal.md`, `design.md` D2/D5/D7/D8, `specs/metric-score-statistics/spec.md`, `specs/structured-query-model/spec.md` `mean` + registry note) and docs (`docs/database-schema.md`, `AGENTS.md`). Run `openspec validate`.
+- [x] 9.9 Preserve the `experimental` boundary instead of relaxing `LayeredArchitectureTest` (superseded D7): declare a one-method `MetricScoreComputation` interface in `service.domain.job`, move `MetricScoreComputationExecutor` into `experimental.query.service.metricscore` implementing it, and retype `TestSuiteEvaluationJob`'s field to the interface. No `service → experimental.query.service` edge; `LayeredArchitectureTest` unchanged and green. Updated the two test references and the AGENTS.md `ParamExpr` note.
+- [x] 9.11 Drop the definition management API — definitions are seed-only for now (focus on already-stored `DEFAULT` definitions). Removed `MetricScoreDefinitionController`, `MetricScoreDefinitionRequestDto`/`ResponseDto`, `MetricScoreDefinitionMapper`, and `MetricScoreDefinitionFunctionalTests`; trimmed `MetricScoreService` to just `listResults` (dropped definition repo/mapper/objectMapper deps) and `MetricScoreDefinitionRepository` to just `findApplicable` (used by the executor). Kept the results read API (`MetricScoreResultController`). Aligned OpenSpec (proposal, design D6/goals, spec: replaced the "Custom definition management API" requirement with "Definitions are seed-only (no management API)").
+- [x] 9.10 Drop all audit/computation timestamps from the new tables (edited migrations in place; rerun on a fresh DB): `metric_score_definition` loses `created_at_ms`/`updated_at_ms` (V1.9, V1.11 seed); `metric_score_result` loses `created_at_ms`/`computed_at_ms` and its PK becomes `id` (V1.10). Regenerated jOOQ; removed the fields from models, RecordMappers, repositories, response DTOs, the MapStruct definition mapper (`toEntity(request, id)`), `MetricScoreService` (dropped the now-unused `Clock`), the executor `buildResult`, and `MetricScoreComputationContext` (dropped `computedAtMs`/`runCreatedAtMs`; job stops passing them). Updated the three tests and `docs/database-schema.md`. `computation_id` and the natural-key unique index are retained.

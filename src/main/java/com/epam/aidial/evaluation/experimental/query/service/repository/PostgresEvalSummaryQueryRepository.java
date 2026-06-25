@@ -3,7 +3,9 @@ package com.epam.aidial.evaluation.experimental.query.service.repository;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -36,7 +38,7 @@ public class PostgresEvalSummaryQueryRepository implements EvalSummaryQueryRepos
     }
 
     @Override
-    public QueryResultPage execute(StructuredQuery query) {
-        return executor.execute(ENTITY, dsl, TEST_CASE_EVAL_SUMMARIES, query);
+    public QueryResultPage execute(StructuredQuery query, Map<String, Expr> params) {
+        return executor.execute(ENTITY, dsl, TEST_CASE_EVAL_SUMMARIES, query, params);
     }
 }

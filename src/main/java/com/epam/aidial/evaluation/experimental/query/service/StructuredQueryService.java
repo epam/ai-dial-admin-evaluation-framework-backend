@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.experimental.query.service;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryRepository;
@@ -36,8 +37,16 @@ public class StructuredQueryService {
         this.repositoriesByEntity = byEntity;
     }
 
-    /** Routes {@code query} to the repository for {@code query.entity()} and executes it. */
+    /** Routes {@code query} to the repository for {@code query.entity()} and executes it (no params). */
     public QueryResultPage execute(StructuredQuery query) {
+        return execute(query, Map.of());
+    }
+
+    /**
+     * Routes {@code query} to the repository for {@code query.entity()} and executes it, resolving
+     * {@code param} expressions against {@code params} (parameter = expression substitution).
+     */
+    public QueryResultPage execute(StructuredQuery query, Map<String, Expr> params) {
         if (query == null) {
             throw new ValidationException("query must not be null");
         }
@@ -46,7 +55,7 @@ public class StructuredQueryService {
             throw new ValidationException("entity '" + query.entity() + "' is not queryable; supported entities: "
                     + repositoriesByEntity.keySet());
         }
-        return repository.execute(query);
+        return repository.execute(query, params);
     }
 
     /** The entities this service can currently query, in stable order. */

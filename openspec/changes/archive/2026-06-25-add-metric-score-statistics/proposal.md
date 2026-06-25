@@ -1,0 +1,37 @@
+## Why
+
+The only aggregation over evaluation results today is `EvalSummaryService.aggregate()` — computed on-demand and limited to AVG/MIN/MAX/COUNT, so it **cannot** produce median or percentiles, which the Single-Run dashboard requires (its `avg / med / p10 / p90 / min / max` toggle and the per-run "Overall score" card). We need richer, stable, per-run aggregated metric statistics, and a way to let users define custom scores — reusing the existing experimental Query DSL, which already supports `percentile_cont`/`percentile_disc` and can aggregate over the `eval_summaries` entity's flattened `metric:<name>:<field>` JSONB columns.
+
+## What Changes
+
+- Introduce **metric-score definitions**: persisted, reusable Query-DSL expressions describing an aggregated metric statistic. Two types (no separate `kind` discriminator — the executor dispatches on which `param` an expression references):
+  - `DEFAULT` — predefined stats (`AVG`, `P10`, `P90`, `MIN`, `MAX`) plus the `overall` composite, seeded via Flyway, applied to every suite. The per-metric stats are evaluated once per numeric metric output field of a run; `overall` once at run level.
+  - `TEST_SUITE` — user-defined custom scores scoped to a suite (`target_id = test_suite_id`). This is the extension point for per-suite weighted/selective scores later.
+- Each definition stores a **full, self-contained `StructuredQuery`** (aggregate select + run-scoping filter) with `:runId`, `:computationId` plus either `:metricField` (per-metric leaf stats) or `:metricAvgs` (the run-level `overall`) as **`ParamExpr` params** (a reusable template, never a hardcoded run id). This keeps a future *independent score recalculation* fully data-driven.
+- Implement **`ParamExpr` support** in the Query DSL (currently rejected by the translator) via **parameter = expression substitution**: a `Map<String,Expr>` binding; `ExprTranslator` resolves a param by looking up the bound `Expr` and translating it recursively. The public `POST /api/v1/queries/execute` endpoint stays **paramless** by design.
+- Make the DSL **function catalog registry-driven** (`QueryFunction` SPI + `QueryFunctionRegistry`) so the engine is no longer a hardcoded `switch`: every built-in becomes a bean, and adding a function later means dropping in a new `@Component` — no edits to the translator. Add one new function now, **`mean`**, a reduction over an `ArrayExpr` (folds `(e₁+…+eₙ)/n`), enabling `overall` to be computed through the DSL.
+- Add a **Phase 3** to the test-suite-run job (`TestSuiteEvaluationJob`), after metric evaluation, that loads applicable definitions, enumerates the run's numeric metric output fields (from `RunMetricSnapshot.outputSchema`), and **executes each definition's stored `StructuredQuery` via `StructuredQueryService`** over the run's eval summaries for the run's existing `computation_id`, persisting results. Dispatch is param-driven: `:metricField` → one execution per metric field; `:metricAvgs` → one run-level execution with the param bound to an `ArrayExpr` of the run's per-metric `avg(...)` terms. The executor lives in `experimental.query.service.metricscore` (so its use of the DSL is intra-layer) and implements a one-method `MetricScoreComputation` interface in the stable `service` layer; the run job triggers Phase 3 through that interface, so no `service → experimental.query.service` dependency is introduced and `LayeredArchitectureTest` is unchanged. Score-computation failure is **non-fatal** to the run.
+- Compute the `overall` score **through the DSL** as the unweighted mean of the per-metric averages (`mean(:metricAvgs)`), stored as a `DEFAULT` definition — no hardcoded Java. Refinable later to the prototype's weighted, group-selectable mean + pass threshold by adding arithmetic functions and authoring `TEST_SUITE` definitions.
+- Add a new analytics table **`metric_score_result`** (append-only per computation) and read API to expose results to the frontend per run (`computation=latest|<uuid>`, resolved via existing `ComputationResolver`).
+- Definitions are **seed-only** (the `DEFAULT` statistics + `overall`, inserted by Flyway); there is **no management API**. The Phase-3 computation reads them directly.
+
+**Non-goals (v1):** any HTTP API to author/list/delete definitions (definitions are seed-only; a `TEST_SUITE` authoring API is deferred); standalone "recompute scores only" endpoint (storage is designed to enable it later with zero rework); per-test-case overall score + pass/fail "Cases passed" threshold; weighted/group-selectable overall; prev/base run comparison deltas (a frontend concern satisfied by results being queryable per run).
+
+## Capabilities
+
+### New Capabilities
+- `metric-score-statistics`: seed-only Query-DSL metric-score definitions (`DEFAULT`), automatic Phase-3 computation at run-end into `metric_score_result` (per-metric stats + the DSL-computed `overall`), and the results read API. (No definition management API.)
+
+### Modified Capabilities
+- `structured-query-model`: implement `ParamExpr` via expression-substitution parameter binding (previously an explicitly-rejected feature); add an `execute(query, params)` path while keeping the public execute endpoint paramless; make the function catalog **registry-driven** (`QueryFunction` SPI) and add the `mean` array-reduction function.
+
+## Impact
+
+- **Database (analytics datasource):** new Flyway migrations under `src/main/resources/db/migration/analytics/POSTGRES/` — `V1.9__CreateMetricScoreDefinitionTable.sql`, `V1.10__CreateMetricScoreResultTable.sql`, `V1.11__SeedGlobalMetricScoreDefinitions.sql`. Requires `./gradlew generateJooq` + committing generated sources under `src/main/java-generated/.../jooq/analytics/`. Update `docs/database-schema.md`.
+- **Query DSL** (`com.epam.aidial.evaluation.experimental.query`): `ExprTranslator`, `FilterTranslator`, `StructuredQueryBuilder`, `StructuredQueryExecutor`, `StructuredQueryService`, `StructuredQueryRepository` — thread an optional `Map<String,Expr> params` (default empty) through translation. New `service.translate.function` package: `QueryFunction` SPI, `QueryFunctionRegistry`, `FunctionContext`, `BuiltInQueryFunctions` (one bean per built-in), and `MeanFunction`.
+- **Run flow** (`service.domain.job`): new `MetricScoreComputationExecutor` + Phase-3 hook in `TestSuiteEvaluationJob`; hoist the Phase-2 `computationId`/`computedAtMs` so Phase 3 reuses them.
+- **New analytics layer artifacts:** models `MetricScoreDefinition`/`MetricScoreResult`, their RecordMappers, and repositories (`@Qualifier("analyticsDsl")`, `@Transactional("analyticsTransactionManager")`); reuse `PostgresEvalSummaryRepository.saveAll` batch pattern and `ComputationResolver`.
+- **New API:** `MetricScoreService` (results read-back), `MetricScoreResultResponseDto` + MapStruct mapper, and one controller `/api/v1/analytics/metric-score-results` (GET by `testSuiteRunId` + `computation`). OpenAPI annotations + examples. No definition-management controller/DTOs.
+- **New constants:** `MetricScoreConstants` (types, reserved param names, stat names, `value` alias, entity); reuse `EvalSummaryExportColumnConstants` for metric-field tokens.
+- **No new config properties expected** (revisit only if a Phase-3 enable/timeout flag is added → then update `docs/configuration.md`).
+- **Docs/specs:** update `openspec/specs/README.md` (new `metric-score-statistics` spec), and note in `AGENTS.md` that `ParamExpr` is now supported and `/queries/execute` stays paramless.

@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.experimental.query.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,6 +14,7 @@ import com.epam.aidial.evaluation.experimental.query.service.repository.QueryRes
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryRepository;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -38,12 +40,12 @@ class StructuredQueryServiceTest {
     void routesByEntity() {
         StructuredQuery query = query("eval_summaries");
         QueryResultPage expected = new QueryResultPage(List.of(), null);
-        when(evalSummaries.execute(query)).thenReturn(expected);
+        when(evalSummaries.execute(eq(query), eq(Map.of()))).thenReturn(expected);
 
         QueryResultPage result = service.execute(query);
 
         assertThat(result).isSameAs(expected);
-        verify(evalSummaries).execute(query);
+        verify(evalSummaries).execute(eq(query), eq(Map.of()));
     }
 
     @Test

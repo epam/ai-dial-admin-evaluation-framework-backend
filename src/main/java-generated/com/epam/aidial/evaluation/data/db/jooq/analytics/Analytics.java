@@ -4,6 +4,8 @@
 package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreDefinition;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunMetricSnapshots;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
@@ -29,6 +31,16 @@ public class Analytics extends SchemaImpl {
      * The reference instance of <code>analytics</code>
      */
     public static final Analytics ANALYTICS = new Analytics();
+
+    /**
+     * The table <code>analytics.metric_score_definition</code>.
+     */
+    public final MetricScoreDefinition METRIC_SCORE_DEFINITION = MetricScoreDefinition.METRIC_SCORE_DEFINITION;
+
+    /**
+     * The table <code>analytics.metric_score_result</code>.
+     */
+    public final MetricScoreResult METRIC_SCORE_RESULT = MetricScoreResult.METRIC_SCORE_RESULT;
 
     /**
      * The table <code>analytics.run_metric_snapshots</code>.
@@ -61,6 +73,8 @@ public class Analytics extends SchemaImpl {
     @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
+            MetricScoreDefinition.METRIC_SCORE_DEFINITION,
+            MetricScoreResult.METRIC_SCORE_RESULT,
             RunMetricSnapshots.RUN_METRIC_SNAPSHOTS,
             TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES,
             TestCaseRunResults.TEST_CASE_RUN_RESULTS

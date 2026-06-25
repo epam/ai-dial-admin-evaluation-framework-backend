@@ -841,6 +841,64 @@ Metric definition snapshots captured at computation time. Each row records the m
 
 ---
 
+## Table: `metric_score_definition` (Analytics DB)
+
+Reusable Query-DSL definitions for aggregated metric statistics. `DEFAULT` definitions (seeded: AVG, P10, P90, MIN, MAX per-metric stats + the `overall` composite) apply to every run; `TEST_SUITE` definitions are user-created and scoped to a suite via `target_id`. The `expression` is a serialized `StructuredQuery` parameterized with `:runId`/`:computationId` plus either `:metricField` (per-metric stats) or `:metricAvgs` (the run-level `overall`, computed via `mean(:metricAvgs)`). There is no `kind` column — the computation engine dispatches per-metric vs. run-level on which parameter the expression references.
+
+> **Note:** This table resides in the **analytics database**. `target_id` referencing a meta-DB test suite is a soft FK — no physical constraint.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
+| `type` | VARCHAR(32) | NOT NULL | - | `DEFAULT` or `TEST_SUITE` |
+| `name` | VARCHAR(255) | NOT NULL | - | Definition / statistic name (e.g. `AVG`, `P90`, `overall`) |
+| `description` | VARCHAR(1024) | NULL | - | Human-readable description |
+| `expression` | JSONB | NOT NULL | - | Serialized `StructuredQuery` computing the score |
+| `target_id` | VARCHAR(36) | NULL | - | Target test suite (soft FK); NULL for `DEFAULT` |
+
+### Indexes
+
+| Index Name | Columns | Type | Notes |
+|------------|---------|------|-------|
+| `uq_metric_score_definition_global` | `(type, name) WHERE target_id IS NULL` | UNIQUE (partial) | One DEFAULT definition per name |
+| `uq_metric_score_definition_targeted` | `(type, name, target_id) WHERE target_id IS NOT NULL` | UNIQUE (partial) | One targeted definition per (name, suite) |
+| `idx_metric_score_definition_type_target` | `(type, target_id)` | BTREE | Lookup applicable definitions for a suite |
+
+---
+
+## Table: `metric_score_result` (Analytics DB)
+
+Computed aggregated metric statistics per run, append-only per computation. One row per (run, computation, statistic, metric field). Written by the run job's metric-score phase (Phase 3), reusing the run's metric-evaluation `computation_id`.
+
+> **Note:** This table resides in the **analytics database**. `test_suite_run_id` is a soft FK — no physical constraint.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
+| `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | Reference to test suite run (soft FK) |
+| `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
+| `metric_score_name` | VARCHAR(255) | NOT NULL | - | Statistic / definition name (e.g. `AVG`, `P90`, `overall`) |
+| `metric_name` | VARCHAR(255) | NOT NULL | - | Metric output field as `<metricName>.<outputField>` |
+| `value` | DOUBLE PRECISION | NULL | - | Computed numeric value |
+
+### Primary Key
+
+`id`
+
+### Constraints
+
+| Constraint Name | Type | Columns | Notes |
+|-----------------|------|---------|-------|
+| `uq_metric_score_result_natural_key` | UNIQUE | `(test_suite_run_id, computation_id, metric_score_name, metric_name)` | One result per statistic per metric field per computation (append-only) |
+
+### Indexes
+
+| Index Name | Columns | Type | Notes |
+|------------|---------|------|-------|
+| `idx_metric_score_result_run_computation` | `(test_suite_run_id, computation_id)` | BTREE | Lookup results for a run's computation |
+
+---
+
 ## Migration History
 
 ### Meta Database (`db/migration/meta/POSTGRES/`)
@@ -881,6 +939,9 @@ Metric definition snapshots captured at computation time. Each row records the m
 | V1.6 | `V1.6__CreateRunMetricSnapshotsTable.sql` | Created run_metric_snapshots table with unique constraint on (computation_id, tsmd_id) |
 | V1.7 | `V1.7__AddExtractionWarningsToEvalSummaries.sql` | Added extraction_warnings JSONB NOT NULL DEFAULT '[]' to test_case_eval_summaries |
 | V1.8 | `V1.8__NormalizeErrorShapedMetricValues.sql` | Normalized transport-failure metric_values from synthetic `{"error": null}` to real output field names; updated corresponding metric_infos entries |
+| V1.9 | `V1.9__CreateMetricScoreDefinitionTable.sql` | Created metric_score_definition table with partial unique indexes for DEFAULT (null target) and targeted definitions |
+| V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |
+| V1.11 | `V1.11__SeedGlobalMetricScoreDefinitions.sql` | Seeded DEFAULT statistics (AVG, P10, P90, MIN, MAX) and the DEFAULT `overall` composite (`mean(:metricAvgs)`) |
 
 ---
 

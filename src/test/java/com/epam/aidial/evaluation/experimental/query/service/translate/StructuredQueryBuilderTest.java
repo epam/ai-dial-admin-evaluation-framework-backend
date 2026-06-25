@@ -48,7 +48,8 @@ class StructuredQueryBuilderTest {
 
     private final ValueExprToObjectMapper valueExprToObjectMapper = new ValueExprToObjectMapper();
     private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(new PostgresJsonPathAccessor());
-    private final ExprTranslator exprTranslator = new ExprTranslator(valueExprToObjectMapper, jsonbFieldResolver);
+    private final ExprTranslator exprTranslator = new ExprTranslator(
+            valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
     private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
     private final StructuredQueryBuilder builder = new StructuredQueryBuilder(exprTranslator, filterTranslator);
 
@@ -316,11 +317,105 @@ class StructuredQueryBuilderTest {
     }
 
     @Test
-    @DisplayName("rejects a param expression (no server-side registry in the demo)")
-    void rejectsParamExpression() {
+    @DisplayName("rejects an unbound param expression when no binding is supplied")
+    void rejectsUnboundParamExpression() {
         StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("p")), null, null);
         assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("param expressions");
+                .hasMessageContaining("unbound query parameter 'p'");
+    }
+
+    @Test
+    @DisplayName("substitutes a value-bound param as a literal operand")
+    void substitutesValueBoundParam() {
+        StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("p")), null, null);
+        String sql = renderWithParams(query, Map.of("p", value(ValueType.STRING, "demo")));
+        assertThat(sql).contains("\"name\" = 'demo'");
+    }
+
+    @Test
+    @DisplayName("substitutes a field-bound param as the bound column")
+    void substitutesFieldBoundParam() {
+        StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("col")), null, null);
+        String sql = renderWithParams(query, Map.of("col", field("description")));
+        assertThat(sql).contains("\"name\" = ").contains("\"description\"");
+    }
+
+    @Test
+    @DisplayName("substitutes a field-bound param inside percentile_cont's ordering column")
+    void substitutesParamInsidePercentile() {
+        StructuredQuery query = new StructuredQuery(
+                "test_suites",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(
+                        new FnExpr(
+                                "percentile_cont",
+                                false,
+                                List.of(value(ValueType.DECIMAL, "0.5"), new ParamExpr("metricField"))),
+                        "med")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 50, false));
+        String sql = renderWithParams(query, Map.of("metricField", field("version")));
+        assertThat(sql).contains("percentile_cont(").contains("within group").contains("\"version\"");
+    }
+
+    @Test
+    @DisplayName("rejects a param bound to another param to keep substitution acyclic")
+    void rejectsParamBoundToParam() {
+        StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("p")), null, null);
+        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query, Map.of("p", new ParamExpr("q"))))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("must not be bound to another parameter");
+    }
+
+    @Test
+    @DisplayName("mean(:array) folds its elements into (e1+…+en)/n over an array-bound param")
+    void rendersMeanOverArrayParam() {
+        StructuredQuery query = new StructuredQuery(
+                "test_suites",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(new FnExpr("mean", false, List.of(new ParamExpr("metricAvgs"))), "value")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 50, false));
+        ArrayExpr metricAvgs = new ArrayExpr(List.of(
+                new FnExpr("avg", false, List.of(field("version"))),
+                new FnExpr("avg", false, List.of(field("created_at_ms")))));
+        String sql = renderWithParams(query, Map.of("metricAvgs", metricAvgs));
+        assertThat(sql)
+                .contains("avg(\"meta\".\"test_suites\".\"version\")")
+                .contains("avg(\"meta\".\"test_suites\".\"created_at_ms\")")
+                .contains("/");
+    }
+
+    @Test
+    @DisplayName("rejects mean when its argument does not resolve to an array")
+    void rejectsMeanWithNonArrayArgument() {
+        StructuredQuery query = new StructuredQuery(
+                "test_suites",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(new FnExpr("mean", false, List.of(new ParamExpr("p"))), "value")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 50, false));
+        assertThatThrownBy(() ->
+                        builder.build(dsl, TEST_SUITES, bindings, query, Map.of("p", value(ValueType.DECIMAL, "0.5"))))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("array");
+    }
+
+    private String renderWithParams(StructuredQuery query, Map<String, Expr> params) {
+        return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, query, params))
+                .toLowerCase(Locale.ROOT);
     }
 }

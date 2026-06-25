@@ -40,53 +40,62 @@ public class FilterTranslator {
 
     private final ExprTranslator exprTranslator;
 
+    /** Translates a filter tree with no parameter bindings. */
     public Condition toCondition(FilterNode node, Map<String, QueryFieldBinding> bindings) {
+        return toCondition(node, bindings, Map.of());
+    }
+
+    /** Translates a filter tree, resolving {@link com.epam.aidial.evaluation.experimental.query.model.ParamExpr}
+     * operands against {@code params}. */
+    public Condition toCondition(FilterNode node, Map<String, QueryFieldBinding> bindings, Map<String, Expr> params) {
         if (node == null) {
             return DSL.trueCondition();
         }
         return switch (node) {
-            case LogicalNode logical -> toLogical(logical, bindings);
-            case ComparisonNode comparison -> toComparison(comparison, bindings);
+            case LogicalNode logical -> toLogical(logical, bindings, params);
+            case ComparisonNode comparison -> toComparison(comparison, bindings, params);
         };
     }
 
-    private Condition toLogical(LogicalNode node, Map<String, QueryFieldBinding> bindings) {
+    private Condition toLogical(LogicalNode node, Map<String, QueryFieldBinding> bindings, Map<String, Expr> params) {
         final List<FilterNode> args = node.args() == null ? List.of() : node.args();
         return switch (node.op()) {
-            case AND -> DSL.and(translateAll(args, bindings));
-            case OR -> DSL.or(translateAll(args, bindings));
+            case AND -> DSL.and(translateAll(args, bindings, params));
+            case OR -> DSL.or(translateAll(args, bindings, params));
             case NOT -> {
                 if (args.size() != 1) {
                     throw new ValidationException("'not' expects exactly one child node");
                 }
-                yield DSL.not(toCondition(args.get(0), bindings));
+                yield DSL.not(toCondition(args.get(0), bindings, params));
             }
         };
     }
 
-    private List<Condition> translateAll(List<FilterNode> nodes, Map<String, QueryFieldBinding> bindings) {
+    private List<Condition> translateAll(
+            List<FilterNode> nodes, Map<String, QueryFieldBinding> bindings, Map<String, Expr> params) {
         if (nodes.isEmpty()) {
             throw new ValidationException("'and'/'or' require at least one child node");
         }
         final List<Condition> conditions = new ArrayList<>(nodes.size());
         for (final FilterNode child : nodes) {
-            conditions.add(toCondition(child, bindings));
+            conditions.add(toCondition(child, bindings, params));
         }
         return conditions;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private Condition toComparison(ComparisonNode node, Map<String, QueryFieldBinding> bindings) {
+    private Condition toComparison(
+            ComparisonNode node, Map<String, QueryFieldBinding> bindings, Map<String, Expr> params) {
         final List<Expr> args = node.args() == null ? List.of() : node.args();
         if (args.size() != 2) {
             throw new ValidationException("comparison '" + node.op().code() + "' expects exactly two arguments");
         }
-        final Field left = exprTranslator.toField(args.get(0), bindings);
+        final Field left = exprTranslator.toField(args.get(0), bindings, params);
         final Expr right = args.get(1);
         final ComparisonOp op = node.op();
 
         if (op == ComparisonOp.IN) {
-            return left.in(inValues(right, bindings));
+            return left.in(inValues(right, bindings, params));
         }
         if (isNullLiteral(right)) {
             return switch (op) {
@@ -99,17 +108,17 @@ public class FilterTranslator {
         return switch (op) {
             case CO -> ((Field<String>) left).likeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
             case NC -> ((Field<String>) left).notLikeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
-            case EQ -> left.eq(exprTranslator.toField(right, bindings));
-            case NE -> left.ne(exprTranslator.toField(right, bindings));
-            case LT -> left.lt(exprTranslator.toField(right, bindings));
-            case GT -> left.gt(exprTranslator.toField(right, bindings));
-            case LE -> left.le(exprTranslator.toField(right, bindings));
-            case GE -> left.ge(exprTranslator.toField(right, bindings));
+            case EQ -> left.eq(exprTranslator.toField(right, bindings, params));
+            case NE -> left.ne(exprTranslator.toField(right, bindings, params));
+            case LT -> left.lt(exprTranslator.toField(right, bindings, params));
+            case GT -> left.gt(exprTranslator.toField(right, bindings, params));
+            case LE -> left.le(exprTranslator.toField(right, bindings, params));
+            case GE -> left.ge(exprTranslator.toField(right, bindings, params));
             case IN -> throw new IllegalStateException("'in' handled above");
         };
     }
 
-    private List<Object> inValues(Expr right, Map<String, QueryFieldBinding> bindings) {
+    private List<Object> inValues(Expr right, Map<String, QueryFieldBinding> bindings, Map<String, Expr> params) {
         if (!(right instanceof ArrayExpr array)) {
             throw new ValidationException("'in' requires an array as its right operand");
         }
@@ -122,7 +131,7 @@ public class FilterTranslator {
             if (!(item instanceof ValueExpr value)) {
                 throw new ValidationException("'in' array items must be literal values");
             }
-            values.add(exprTranslator.toField(value, bindings));
+            values.add(exprTranslator.toField(value, bindings, params));
         }
         return values;
     }

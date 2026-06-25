@@ -1,10 +1,12 @@
 # AI DIAL Admin Evaluation Framework Backend
 
-A Spring Boot backend service for the AI DIAL Admin Evaluation Framework. This service manages the lifecycle of LLM/AI model evaluations, including test suite authoring, execution tracking, and metrics collection.
+A Spring Boot backend service for the AI DIAL Admin Evaluation Framework. This service manages the lifecycle of LLM/AI
+model evaluations, including test suite authoring, execution tracking, and metrics collection.
 
 ## Features
 
 ### Core Functionality
+
 - **Test Suite Management**: Full CRUD operations for Test Suites and Test Cases
 - **Datasets**: Dataset CRUD with file upload/download and background revalidation tasks
 - **Evaluation Runs**: Track test suite execution and results, with real-time status streaming (SSE)
@@ -16,6 +18,7 @@ A Spring Boot backend service for the AI DIAL Admin Evaluation Framework. This s
 - **Pagination & Filtering**: Built-in pagination, filtering, and sorting for list endpoints
 
 ### Technical Features
+
 - **Security**: OIDC/JWT-based authentication with multi-issuer support
 - **Database**: PostgreSQL with Flyway migrations — JDBC-based (no JPA), queries via the typed jOOQ DSL
 - **Dual Datasource**: Separate **meta** (domain) and **analytics** datasources/schemas
@@ -37,6 +40,18 @@ A Spring Boot backend service for the AI DIAL Admin Evaluation Framework. This s
 - Gradle 9.5.1 (a wrapper is included — use `./gradlew`)
 
 ### Running Locally with Docker Compose
+
+#### Environemnt setup
+
+Following set of environment variables is required for a service startup:
+
+| Name                           | Example value                     | Comment                                                        |
+|--------------------------------|-----------------------------------|----------------------------------------------------------------|
+| CONFIG_REST_SECURITY_MODE      | none                              |                                                                |
+| METRIC_PROVIDERS_DIAL_BASE_URL | https://your-metrics-provider-url |                                                                |
+| METRIC_PROVIDERS_SYNC_ENABLED  | true                              | if you have metric service alongside to fetch metrics          |
+| METRIC_PROVIDERS_SYNC_CRON     | 0 */1 * * * *                     | defines how often metrics will be fetched from metircs service |
+| DIAL_EF_API_KEY                | secret-key                        |                                                                |
 
 The Compose file lives under `local_env/`. It starts a single PostgreSQL container that
 initializes **both** databases — `evaluation_db` (meta) and `evaluation_analytics_db`
@@ -74,6 +89,7 @@ docker compose -f local_env/docker-compose.yml up -d postgres
 ## API Endpoints
 
 Once running, access:
+
 - **Swagger UI**: http://localhost:8080/swagger-ui.html
 - **API Docs**: http://localhost:8080/v3/api-docs
 - **Health Check**: http://localhost:8080/api/v1/health (plus `/api/v1/health/ready` and `/api/v1/health/live`)
@@ -83,29 +99,29 @@ Once running, access:
 
 ### Endpoint Groups
 
-| Group | Base Path | Purpose |
-|-------|-----------|---------|
-| Test Suites | `/api/v1/test-suites` | CRUD + clone |
-| Test Suite Runs | `/api/v1/test-suite-runs` | Create/list/get/patch/delete runs; SSE status stream |
-| Test Cases | `/api/v1/datasets/{datasetId}/test-cases` | CRUD, CSV import/preview, bulk patch, try-it-out |
-| Datasets | `/api/v1/datasets` | CRUD, file upload/download, revalidation tasks |
-| Metric Declarations | `/api/v1/metric-declarations` | List/get declarations and versions |
-| Metric Definitions | `/api/v1/test-suites/{testSuiteId}/metric-definitions` | Per-suite metric definitions + aggregation |
-| Analytics | `/api/v1/analytics/...` | Test-case results, eval summaries (+ CSV export), run-metric snapshots |
-| Deployments | `/api/v1/deployments` | Discover DIAL Core deployments, models, and tools |
-| Files | `/api/v1/test-suites/{suiteId}/files` | Suite file upload/download |
-| Health | `/api/v1/health` | Health, readiness, liveness |
+| Group               | Base Path                                              | Purpose                                                                |
+|---------------------|--------------------------------------------------------|------------------------------------------------------------------------|
+| Test Suites         | `/api/v1/test-suites`                                  | CRUD + clone                                                           |
+| Test Suite Runs     | `/api/v1/test-suite-runs`                              | Create/list/get/patch/delete runs; SSE status stream                   |
+| Test Cases          | `/api/v1/datasets/{datasetId}/test-cases`              | CRUD, CSV import/preview, bulk patch, try-it-out                       |
+| Datasets            | `/api/v1/datasets`                                     | CRUD, file upload/download, revalidation tasks                         |
+| Metric Declarations | `/api/v1/metric-declarations`                          | List/get declarations and versions                                     |
+| Metric Definitions  | `/api/v1/test-suites/{testSuiteId}/metric-definitions` | Per-suite metric definitions + aggregation                             |
+| Analytics           | `/api/v1/analytics/...`                                | Test-case results, eval summaries (+ CSV export), run-metric snapshots |
+| Deployments         | `/api/v1/deployments`                                  | Discover DIAL Core deployments, models, and tools                      |
+| Files               | `/api/v1/test-suites/{suiteId}/files`                  | Suite file upload/download                                             |
+| Health              | `/api/v1/health`                                       | Health, readiness, liveness                                            |
 
 ### Test Suites API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/test-suites` | Create a new test suite |
-| GET | `/api/v1/test-suites` | List all test suites (paginated) |
-| GET | `/api/v1/test-suites/{id}` | Get a test suite by ID |
-| PUT | `/api/v1/test-suites/{id}` | Update a test suite |
-| DELETE | `/api/v1/test-suites/{id}` | Delete a test suite |
-| POST | `/api/v1/test-suites/{id}/clone` | Clone a test suite |
+| Method | Endpoint                         | Description                      |
+|--------|----------------------------------|----------------------------------|
+| POST   | `/api/v1/test-suites`            | Create a new test suite          |
+| GET    | `/api/v1/test-suites`            | List all test suites (paginated) |
+| GET    | `/api/v1/test-suites/{id}`       | Get a test suite by ID           |
+| PUT    | `/api/v1/test-suites/{id}`       | Update a test suite              |
+| DELETE | `/api/v1/test-suites/{id}`       | Delete a test suite              |
+| POST   | `/api/v1/test-suites/{id}/clone` | Clone a test suite               |
 
 ## Configuration
 
@@ -116,15 +132,15 @@ See [docs/configuration.md](docs/configuration.md) for detailed configuration op
 The service uses two datasources — **meta** (domain entities) and **analytics** (run results
 and metrics) — each with its own connection variables.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `POSTGRES_META_DATASOURCE_URL` | Meta DB connection URL | `jdbc:postgresql://localhost:5432/evaluation_db` |
-| `POSTGRES_META_DATASOURCE_USERNAME` | Meta DB username | `postgres` |
-| `POSTGRES_META_DATASOURCE_PASSWORD` | Meta DB password | `postgres` |
-| `POSTGRES_ANALYTICS_DATASOURCE_URL` | Analytics DB connection URL | `jdbc:postgresql://localhost:5432/evaluation_analytics_db` |
-| `POSTGRES_ANALYTICS_DATASOURCE_USERNAME` | Analytics DB username | `postgres` |
-| `POSTGRES_ANALYTICS_DATASOURCE_PASSWORD` | Analytics DB password | `postgres` |
-| `CONFIG_REST_SECURITY_MODE` | Security mode (`oidc` or `none`) | `oidc` |
+| Variable                                 | Description                      | Default                                                    |
+|------------------------------------------|----------------------------------|------------------------------------------------------------|
+| `POSTGRES_META_DATASOURCE_URL`           | Meta DB connection URL           | `jdbc:postgresql://localhost:5432/evaluation_db`           |
+| `POSTGRES_META_DATASOURCE_USERNAME`      | Meta DB username                 | `postgres`                                                 |
+| `POSTGRES_META_DATASOURCE_PASSWORD`      | Meta DB password                 | `postgres`                                                 |
+| `POSTGRES_ANALYTICS_DATASOURCE_URL`      | Analytics DB connection URL      | `jdbc:postgresql://localhost:5432/evaluation_analytics_db` |
+| `POSTGRES_ANALYTICS_DATASOURCE_USERNAME` | Analytics DB username            | `postgres`                                                 |
+| `POSTGRES_ANALYTICS_DATASOURCE_PASSWORD` | Analytics DB password            | `postgres`                                                 |
+| `CONFIG_REST_SECURITY_MODE`              | Security mode (`oidc` or `none`) | `oidc`                                                     |
 
 > DIAL Core, file storage, MCP, metric-provider, and observability settings have their own
 > environment variables — see [docs/configuration.md](docs/configuration.md) for the complete list.
@@ -195,7 +211,9 @@ Architecture and behavior are specified with [OpenSpec](https://github.com/Fissi
 The authoritative description of each capability — entities, APIs, and design decisions — lives in
 the spec files under `openspec/`:
 
-- [OpenSpec Specifications](openspec/specs/README.md) - Indexed, per-capability baseline specs (datasets, test suites, runs, analytics, metrics, DIAL Core integration, security, and more) — the source of truth for system behavior and design
+- [OpenSpec Specifications](openspec/specs/README.md) - Indexed, per-capability baseline specs (datasets, test suites,
+  runs, analytics, metrics, DIAL Core integration, security, and more) — the source of truth for system behavior and
+  design
 - [Configuration Reference](docs/configuration.md) - Detailed configuration options
 - [Database Schema Reference](docs/database-schema.md) - Tables, columns, indexes, and JSONB schemas
 

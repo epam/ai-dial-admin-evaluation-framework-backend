@@ -5,11 +5,11 @@
     "testCaseName",
     "runIndex",
     "executionStatus",
-    "data:prompt",
-    "response:answer",
-    "metric:Accuracy:score",
-    "metricInfo:Accuracy:score",
-    "metricError:Accuracy"
+    "data::prompt",
+    "response::answer",
+    "metric::Accuracy::score",
+    "metricInfo::Accuracy::score",
+    "metricError::Accuracy"
   ],
   "filter": ["executionStatus:eq:SUCCESS"],
   "delimiter": ","

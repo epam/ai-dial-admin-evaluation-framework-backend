@@ -6,7 +6,7 @@
 |--------|-------|
 | Language | Java 25 |
 | Framework | Spring Boot 4.1.0 |
-| Build | Gradle 9.5.1 |
+| Build | Gradle 9.6.0 |
 | Database | PostgreSQL (JDBC only, NO JPA) |
 | Security | OIDC/JWT multi-issuer |
 | Testing | JUnit 5 + Testcontainers |
@@ -146,53 +146,56 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 
 ## Key Packages Reference
 
-| Package | Purpose |
-|---------|---------|
-| `com.epam.aidial.evaluation` | Root package |
-| `.client.dialcore` | DIAL Core client (deployments, models, deployment invocation, file operations) |
-| `.client.mcp` | MCP SDK client (tool invocation, tool listing via DIAL Core MCP proxy) |
-| `.configuration` | Spring @Configuration classes |
-| `.configuration.datasource` | DataSource setup |
-| `.configuration.jackson` | Jackson ObjectMapper customizations |
-| `.configuration.logging` | Logging, correlation IDs |
-| `.configuration.properties` | ConfigurationProperties classes |
-| `.configuration.properties.analytics` | Analytics-specific config (EvalSummaryProperties, AnalyticsResultsProperties) |
-| `.configuration.properties.dial` | DIAL-specific config (DialProperties, DialCoreProperties, DialFileStorageProperties) |
-| `.configuration.security` | Security & OIDC configurations |
-| `.constants` | Constants (Security, TestSuiteRun, Validation) |
-| `.data.db.exception` | DB-specific exceptions |
-| `.data.db.jooq.meta` | Generated jOOQ classes for meta schema (Tables, Records, Keys, Indexes) |
-| `.data.db.jooq.analytics` | Generated jOOQ classes for analytics schema (Tables, Records, Keys, Indexes) |
-| `.data.db.mapper` | RecordMapper `@Component`s for meta entities (maps jOOQ Record → domain model) |
-| `.data.db.model` | Meta domain models |
-| `.data.db.model.filter` | Filter models |
-| `.data.db.model.pagination` | Page, PageRequest, SortKey |
-| `.data.db.repository` | Meta data access with jOOQ DSLContext |
-| `.data.db.repository.sql` | SQL builders (WhereBuilder, OrderByBuilder, PageRequestSqlBuilder, FilterWhitelists, SortWhitelists) |
-| `.data.db.repository.sql.json` | JsonPathAccessor — JSONB path access abstraction (`->`, `->>`, numeric cast) |
-| `.data.db.transaction.timestamp` | Transaction timestamp context (meta only) |
-| `.data.db.analytics.mapper` | RecordMapper `@Component`s for analytics entities |
-| `.data.db.analytics.model` | Analytics domain models (TestCaseRunResult, EvalSummary, RunMetricSnapshot, ExecutionStatus) |
-| `.data.db.analytics.model.cursor` | Cursor, CursorPage — keyset pagination carriers |
-| `.data.db.analytics.repository` | Analytics data access with jOOQ DSLContext (append-only, batch writes) |
-| `.service.domain` | Business logic services |
-| `.service.domain.analytics` | Analytics services, CursorCodec |
-| `.service.domain.csv` | CSV processing utilities |
-| `.service.domain.dto` | DTOs with validation (meta entities) |
-| `.service.domain.dto.analytics` | Analytics DTOs (BatchWriteRequestDto, CursorPageResponseDto, etc.) |
-| `.service.domain.exception` | Custom exceptions |
-| `.service.domain.filter` | Filter parsing & execution |
-| `.service.domain.job` | Job execution models; SSE parsing (`SseEventParser`, `SseEvent`, `SseParseResult`) |
-| `.service.domain.mapper` | MapStruct mappers |
-| `.service.domain.sort` | Sort parsing & execution |
-| `.service.infrastructure.health` | Actuator health indicators |
-| `.service.infrastructure.logger` | Dynamic log level config |
-| `.service.infrastructure.transaction` | Transaction aspects |
-| `.utils` | Utilities |
-| `.web.controller` | REST controllers |
-| `.web.handler` | Global exception handler |
-| `.web.pagination` | PaginationParamResolver (page/size resolution), `@FilterParam` + FilterParamArgumentResolver (repeatable `filter` query param binding without comma-splitting) |
-| `.web.security` | JWT/OIDC security
+| Package                               | Pu†rpose                                                                                                                                                                                                                                                            |
+|---------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `com.epam.aidial.evaluation`          | Root package                                                                                                                                                                                                                                                        |
+| `.client.dialcore`                    | DIAL Core client (deployments, models, deployment invocation, file operations)                                                                                                                                                                                      |
+| `.client.mcp`                         | MCP SDK client (tool invocation, tool listing via DIAL Core MCP proxy)                                                                                                                                                                                              |
+| `.configuration`                      | Spring @Configuration classes                                                                                                                                                                                                                                       |
+| `.configuration.datasource`           | DataSource setup                                                                                                                                                                                                                                                    |
+| `.configuration.jackson`              | Jackson ObjectMapper customizations                                                                                                                                                                                                                                 |
+| `.configuration.logging`              | Logging, correlation IDs                                                                                                                                                                                                                                            |
+| `.configuration.properties`           | ConfigurationProperties classes                                                                                                                                                                                                                                     |
+| `.configuration.properties.analytics` | Analytics-specific config (EvalSummaryProperties, AnalyticsResultsProperties)                                                                                                                                                                                       |
+| `.configuration.properties.dial`      | DIAL-specific config (DialProperties, DialCoreProperties, DialFileStorageProperties)                                                                                                                                                                                |
+| `.configuration.security`             | Security & OIDC configurations                                                                                                                                                                                                                                      |
+| `.constants`                          | Constants (Security, TestSuiteRun, Validation)                                                                                                                                                                                                                      |
+| `.data.db.exception`                  | DB-specific exceptions                                                                                                                                                                                                                                              |
+| `.data.db.jooq.meta`                  | Generated jOOQ classes for meta schema (Tables, Records, Keys, Indexes)                                                                                                                                                                                             |
+| `.data.db.jooq.analytics`             | Generated jOOQ classes for analytics schema (Tables, Records, Keys, Indexes)                                                                                                                                                                                        |
+| `.data.db.mapper`                     | RecordMapper `@Component`s for meta entities (maps jOOQ Record → domain model)                                                                                                                                                                                      |
+| `.data.db.model`                      | Meta domain models                                                                                                                                                                                                                                                  |
+| `.data.db.model.filter`               | Filter models                                                                                                                                                                                                                                                       |
+| `.data.db.model.pagination`           | Page, PageRequest, SortKey                                                                                                                                                                                                                                          |
+| `.data.db.repository`                 | Meta data access with jOOQ DSLContext                                                                                                                                                                                                                               |
+| `.data.db.repository.sql`             | SQL builders (WhereBuilder, OrderByBuilder, PageRequestSqlBuilder, FilterWhitelists, SortWhitelists)                                                                                                                                                                |
+| `.data.db.repository.sql.json`        | JsonPathAccessor — JSONB path access abstraction (`->`, `->>`, numeric cast)                                                                                                                                                                                        |
+| `.data.db.transaction.timestamp`      | Transaction timestamp context (meta only)                                                                                                                                                                                                                           |
+| `.data.db.analytics.mapper`           | RecordMapper `@Component`s for analytics entities                                                                                                                                                                                                                   |
+| `.data.db.analytics.model`            | Analytics domain models (TestCaseRunResult, EvalSummary, RunMetricSnapshot, ExecutionStatus)                                                                                                                                                                        |
+| `.data.db.analytics.model.cursor`     | Cursor, CursorPage — keyset pagination carriers                                                                                                                                                                                                                     |
+| `.data.db.analytics.repository`       | Analytics data access with jOOQ DSLContext (append-only, batch writes)                                                                                                                                                                                              |
+| `.experimental.query.model`           | **(experimental)** Structured query DSL request model — sealed `Expr`/`FilterNode`/`PageSpec`, `StructuredQuery`, enums, `FilterNodeDeserializer`                                                                                                                   |
+| `.experimental.query.service`         | **(experimental)** Schema discovery (`QueryableEntitySchemaProvider` SPI + `QueryEntityRegistry`, `JooqTableSchemaResolver`, per-entity providers) and entity-agnostic query dispatch/execution/translation (`StructuredQueryService`, `…repository`, `…translate`) |
+| `.experimental.query.web`             | **(experimental)** Structured query controllers under `/api/v1/queries` (schema discovery + `POST /execute`)                                                                                                                                                        |
+| `.service.domain`                     | Business logic services                                                                                                                                                                                                                                             |
+| `.service.domain.analytics`           | Analytics services, CursorCodec                                                                                                                                                                                                                                     |
+| `.service.domain.csv`                 | CSV processing utilities                                                                                                                                                                                                                                            |
+| `.service.domain.dto`                 | DTOs with validation (meta entities)                                                                                                                                                                                                                                |
+| `.service.domain.dto.analytics`       | Analytics DTOs (BatchWriteRequestDto, CursorPageResponseDto, etc.)                                                                                                                                                                                                  |
+| `.service.domain.exception`           | Custom exceptions                                                                                                                                                                                                                                                   |
+| `.service.domain.filter`              | Filter parsing & execution                                                                                                                                                                                                                                          |
+| `.service.domain.job`                 | Job execution models; SSE parsing (`SseEventParser`, `SseEvent`, `SseParseResult`)                                                                                                                                                                                  |
+| `.service.domain.mapper`              | MapStruct mappers                                                                                                                                                                                                                                                   |
+| `.service.domain.sort`                | Sort parsing & execution                                                                                                                                                                                                                                            |
+| `.service.infrastructure.health`      | Actuator health indicators                                                                                                                                                                                                                                          |
+| `.service.infrastructure.logger`      | Dynamic log level config                                                                                                                                                                                                                                            |
+| `.service.infrastructure.transaction` | Transaction aspects                                                                                                                                                                                                                                                 |
+| `.utils`                              | Utilities                                                                                                                                                                                                                                                           |
+| `.web.controller`                     | REST controllers                                                                                                                                                                                                                                                    |
+| `.web.handler`                        | Global exception handler                                                                                                                                                                                                                                            |
+| `.web.pagination`                     | PaginationParamResolver (page/size resolution), `@FilterParam` + FilterParamArgumentResolver (repeatable `filter` query param binding without comma-splitting)                                                                                                      |
+| `.web.security`                       | JWT/OIDC security                                                                                                                                                                                                                                                   |
 
 ## Debugging Tips
 

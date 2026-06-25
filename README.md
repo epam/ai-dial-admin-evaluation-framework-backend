@@ -37,7 +37,7 @@ model evaluations, including test suite authoring, execution tracking, and metri
 
 - Java 25
 - Docker (for local development with PostgreSQL)
-- Gradle 9.5.1 (a wrapper is included — use `./gradlew`)
+- Gradle 9.6.0 (a wrapper is included — use `./gradlew`)
 
 ### Running Locally with Docker Compose
 

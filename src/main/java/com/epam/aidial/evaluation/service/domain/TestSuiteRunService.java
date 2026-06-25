@@ -189,6 +189,14 @@ public class TestSuiteRunService {
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
+    public TestSuiteRunResponseDto getLatestRun(UUID suiteId) {
+        TestSuiteRun run = testSuiteRunRepository
+                .findLatestByTestSuiteId(suiteId)
+                .orElseThrow(() -> new EntityNotFoundException("No runs found for test suite with id: " + suiteId));
+        return mapper.toDto(run);
+    }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
     public PageResponseDto<TestSuiteRunResponseDto> listRuns(
             int page, int size, List<String> sort, List<String> filter, Boolean includeTotalCount) {
         PageRequest pageRequest = PageRequest.builder()

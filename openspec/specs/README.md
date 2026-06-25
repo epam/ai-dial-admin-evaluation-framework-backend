@@ -95,6 +95,10 @@ Specs for behaviors that apply across multiple domain areas.
   OpenAPI request/response examples (minimal + full), resource-based JSON, OpenApiExampleCustomizer.
 - **[openapi-query-param-docs](openapi-query-param-docs/spec.md)** — Implemented
   Auto-generated OpenAPI query parameter descriptions from FilterWhitelists, SortWhitelists, and PaginationProperties. Covers field-operator matrices, type hints, pagination defaults, and parameter examples.
+- **[structured-query-model](structured-query-model/spec.md)** — Implemented
+  Body-delivered structured query wire contract (v7), its request-side object model, and body-delivered execution at `POST /api/v1/queries/execute`. Envelope (`entity`/`filter`/`mode`/`select`/`group_by`/`aggregate`/`having`/`sort`/`page`), CQL2-JSON filter tree (`op`/`args`), uniform expression grammar discriminated by `type` (`field`/`value`/`param`/`fn`/`array`), aggregation/sort/offset pagination. Implemented under `experimental.query.*`: the record model (sealed `Expr`/`FilterNode`/`PageSpec`, `FilterNodeDeserializer`, `@JsonValue` wire codes) plus schema-driven validation, jOOQ SQL translation, and a `{rows, totalCount}` response — narrower than the original vision (no per-field capability flags, no `page`/`next_cursor` envelope, cursor paging rejected). Related: query-schema-discovery, entity-filtering, sorting.
+- **[query-schema-discovery](query-schema-discovery/spec.md)** — Implemented
+  Discovery of queryable entities and their flat field schemas for the structured query DSL (`GET /api/v1/queries/entities`, base schema, and instance-specific detailed schema). Entity catalog with `complex`/`schemaIdField`, jOOQ-derived base schema (JSONB fields listed as-is), per-instance JSONB flattening for `eval_summaries` derived from a test suite run snapshot, a `QueryableEntitySchemaProvider` SPI + registry, and the 404/400 error contract. Related: structured-query-model.
 
 ### Analytics
 
@@ -113,14 +117,14 @@ Specs for the analytics datasource and result storage.
 - **[metric-evaluation](metric-evaluation/spec.md)** — Implemented
   In-process metric evaluation engine — Phase 2 of test suite run lifecycle. Evaluates configured TSMDs against test case results by calling metric provider `/evaluate` endpoints with resolved bindings, writes results as EvalSummary records. Provider-bounded concurrency, retry with exponential backoff, RunMetricSnapshot capture.
 - **[eval-summary-export](eval-summary-export/spec.md)** — Implemented
-  CSV export and JSON preview for eval summaries — `POST /api/v1/analytics/eval-summaries/export.csv` (streaming CSV) and `GET /api/v1/analytics/eval-summaries/export/preview` (typed array-of-arrays JSON for column discovery). Snapshot-driven column manifest (identity → timestamps → execution → `data:<field>` → `response:<column>` → `metric:<metric>:<field>` → `metricInfo:<metric>:<field>` → `metricError:<metric>` → `extractionWarnings` → bodies; `:` is the family-separator, dots inside identifiers are preserved verbatim), `requestBody`/`responseBody` opt-in via explicit `columns`, run-state guard (terminal runs only), run-scoping filter injection, per-page `TransactionTemplate` streaming. Related: metrics-storage, suite-run-snapshot.
+  CSV export and JSON preview for eval summaries — `POST /api/v1/analytics/eval-summaries/export.csv` (streaming CSV) and `GET /api/v1/analytics/eval-summaries/export/preview` (typed array-of-arrays JSON for column discovery). Snapshot-driven column manifest (identity → timestamps → execution → `data::<field>` → `response::<column>` → `metric::<metric>::<field>` → `metricInfo::<metric>::<field>` → `metricError::<metric>` → `extractionWarnings` → bodies; `::` is the family-separator, dots inside identifiers are preserved verbatim), `requestBody`/`responseBody` opt-in via explicit `columns`, run-state guard (terminal runs only), run-scoping filter injection, per-page `TransactionTemplate` streaming. Related: metrics-storage, suite-run-snapshot.
 
 ### Infrastructure
 
 Specs for database, observability, and operational concerns.
 
 - **[build-tooling](build-tooling/spec.md)** — Implemented
-  Gradle wrapper version pin (9.5+ on the 9.x line, `-bin` distribution), JDK 21 toolchain declaration, zero-deprecation-warning build invariant, jOOQ codegen output stability across wrapper bumps, and single-source-of-truth binding between wrapper, `AGENTS.md`, `openspec/config.yaml`, `.gitlab-ci.yml`, and `Dockerfile`.
+  Gradle wrapper version pin (9.5+ on the 9.x line, `-bin` distribution), JDK 25 toolchain declaration, zero-deprecation-warning build invariant, jOOQ codegen output stability across wrapper bumps, and single-source-of-truth binding between wrapper, `AGENTS.md`, `openspec/config.yaml`, and `Dockerfile`.
 - **[typed-sql-dsl](typed-sql-dsl/spec.md)** — Implemented
   jOOQ 3.20 typed DSL replacing NamedParameterJdbcTemplate across all repositories. Zonky EmbeddedPostgres codegen pipeline (`./gradlew generateJooq`), committed generated sources, schema-drift guard test, DSLContext beans with TransactionAwareDataSourceProxy and exception translation, RecordMapper pattern, FilterWhitelists/SortWhitelists with typed Field references, ArchUnit fence enforcing JdbcTemplate usage limits.
 - **[database-and-migrations](database-and-migrations/spec.md)** — Implemented

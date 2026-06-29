@@ -661,6 +661,41 @@ Status: **Implemented**
 - **WHEN** response columns use MCP-specific JSONata paths (e.g., `$.isError`, `$.content[0].text`, `$.structuredContent.results`)
 - **THEN** the extraction SHALL work correctly because the serialized JSON preserves the MCP envelope structure
 
+### Requirement: Multi-step execution branch
+When executing a test case whose snapshot has `multiStep == true`, `EvaluationWorker` SHALL delegate to a dedicated `MultiStepConversationExecutor` that runs the conversation turn loop and returns a single `TestCaseRunResult`. When `multiStep == false`, `EvaluationWorker` SHALL follow the existing single-request path unchanged.
+Status: **Planned**
+
+#### Scenario: Worker delegates multi-step conversations
+- **WHEN** the worker executes a test case for a suite snapshot with `multiStep == true`
+- **THEN** it SHALL delegate the conversation loop to `MultiStepConversationExecutor`
+- **AND** it SHALL produce exactly one `TestCaseRunResult` for that `(runId, testCaseId, runIndex)`
+
+#### Scenario: Single-step path unaffected
+- **WHEN** the worker executes a test case for a suite snapshot with `multiStep == false`
+- **THEN** it SHALL use the existing single-request execution path with no behavior change
+
+### Requirement: One concurrency permit per conversation
+A multi-step conversation SHALL execute within a single worker task holding a single concurrency permit for the entire conversation; its steps SHALL run sequentially within that task. Per-step call pacing relies on the existing per-call retry and upstream 429 handling. Each step's retries SHALL reuse the existing retry policy independently.
+Status: **Planned**
+
+#### Scenario: Conversation holds one permit
+- **WHEN** a multi-step conversation with multiple steps executes
+- **THEN** the engine SHALL acquire exactly one concurrency permit for the whole conversation
+- **AND** the steps SHALL execute sequentially without acquiring additional permits per step
+
+#### Scenario: Per-step retries reuse existing policy
+- **WHEN** a step receives a retryable status (e.g. 429 or 5xx)
+- **THEN** that step SHALL be retried per the existing retry policy
+- **AND** retry exhaustion SHALL trigger the multi-step fail-fast behavior
+
+### Requirement: Multi-step result carries the last step's trace id
+For a multi-step result, the persisted `traceId` SHALL be the trace id of the last attempted step. (Per-step trace correlation is out of scope for the POC.)
+Status: **Planned**
+
+#### Scenario: Last step's trace id persisted
+- **WHEN** a multi-step conversation attempts several steps
+- **THEN** the resulting `TestCaseRunResult.traceId` SHALL be the last attempted step's trace id
+
 ## Implementation Notes
 - Executor interface: `com.epam.aidial.evaluation.service.domain.job.EvaluationExecutor`
 - In-process executor: `com.epam.aidial.evaluation.service.domain.job.InProcessEvaluationExecutor`
@@ -677,3 +712,4 @@ Status: **Implemented**
 - MCP field loading chain: `TestSuiteEvaluationJob` deserializes MCP fields from the suite's JSONB strings and passes them into `EvaluationContext.builder()` as typed objects (conditionally for `MCP_TOOL` suites only). `inputBindings` is loaded alongside other MCP fields.
 - MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `context.getInputBindings()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
 - DTOs: `ExecutionSettingsDto`, `RetryPolicyDto` (in `service.domain.dto`)
+- Multi-step: new injectable `service.domain.job.MultiStepConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the `multiStep` flag. `EvaluationWorker` reads discrete `context.getSnapshotX()` getters off `EvaluationContext`, not `SuiteSnapshotDto` directly. The `multiStep` flag and per-step bindings therefore travel via `EvaluationContext`: it gains `snapshotMultiStep` and `snapshotMultistepInputBindings`, populated in `TestSuiteEvaluationJob.buildContext` from the resolved snapshot. The worker branches on `context.getSnapshotMultiStep()`. Concurrency permit acquisition remains in `InProcessEvaluationExecutor` at the per-(test case, run index) task granularity — multi-step changes only what happens inside the task, not the permit model.

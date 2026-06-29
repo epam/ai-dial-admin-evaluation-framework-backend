@@ -45,4 +45,4 @@
 
 ## 8. Spec sync
 
-- [ ] 8.1 Sync delta specs into `openspec/specs/` at archive time (`multi-step-conversation` added; `test-suites` and `eval-execution-engine` updated) and update `openspec/specs/README.md` per the Spec Index Maintenance Policy for the new `multi-step-conversation` folder (done: index lists the new spec, summaries accurate).
+- [x] 8.1 Sync delta specs into `openspec/specs/` at archive time (`multi-step-conversation` added; `test-suites` and `eval-execution-engine` updated) and update `openspec/specs/README.md` per the Spec Index Maintenance Policy for the new `multi-step-conversation` folder (done: index lists the new spec, summaries accurate).

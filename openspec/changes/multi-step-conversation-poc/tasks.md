@@ -15,7 +15,7 @@
 ## 3. Validation
 
 - [x] 3.1 Add `MAX_CONVERSATION_STEPS = 10` to `constants.ValidationConstants` (done: single source of truth).
-- [ ] 3.2 Extend `service.domain.SuiteValidationService.validateDeploymentSuite` for `multiStep == true`: require JSON body with top-level `messages` array; require non-empty `multistepInputBindings` with size ≤ cap; validate each step's bindings via the existing `BindingValidator`; ignore single `inputBindings` (done: any violation adds a warning and `isValid=false`).
+- [x] 3.2 Extend `service.domain.SuiteValidationService.validateDeploymentSuite` for `multiStep == true`: require JSON body with top-level `messages` array; require non-empty `multistepInputBindings` with size ≤ cap; validate each step's bindings via the existing `BindingValidator`; ignore single `inputBindings` (done: any violation adds a warning and `isValid=false`).
 
 ## 4. Multi-step execution
 

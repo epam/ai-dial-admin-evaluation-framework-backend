@@ -2,12 +2,14 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
+import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.FormPartType;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
+import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestBodyDto;
@@ -80,6 +82,8 @@ public class SuiteValidationService {
                 .responseColumns(jsonbMapper.mapResponseColumns(suite.getResponseColumns()))
                 .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
                 .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()))
+                .multiStep(suite.isMultiStep())
+                .multistepInputBindings(jsonbMapper.mapMultistepInputBindings(suite.getMultistepInputBindings()))
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
@@ -158,8 +162,13 @@ public class SuiteValidationService {
             warnings.add(warning(null, "$.requestTemplate", typeHintWarning, ValidationWarningCode.TYPE));
         }
 
-        // Shared binding cross-validation
-        warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId));
+        // Shared binding cross-validation. Multi-step suites source bindings exclusively from
+        // multistepInputBindings (the single inputBindings field is ignored); see design D8.
+        if (dto.isMultiStep()) {
+            warnings.addAll(validateMultiStep(dto, template, variables, testCaseSchema, suiteId));
+        } else {
+            warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId));
+        }
 
         // Multipart FILE part constant value validation (deployment-specific)
         if (template != null
@@ -234,6 +243,66 @@ public class SuiteValidationService {
                 .valid(warnings.isEmpty())
                 .warnings(warnings)
                 .build();
+    }
+
+    /**
+     * Multi-step ({@code multiStep == true}) binding/body validation. The single {@code inputBindings} field is
+     * ignored; bindings are sourced exclusively from {@code multistepInputBindings}. Any violation yields a
+     * warning (marking the suite invalid): the request body must be JSON with a top-level {@code messages} array,
+     * {@code multistepInputBindings} must be non-empty and within the step cap, and every step's bindings must
+     * pass the existing per-binding cross-validation.
+     */
+    private List<ValidationWarningDto> validateMultiStep(
+            TestSuiteRequestDto dto,
+            RequestTemplateDto template,
+            List<TemplateVariableExtractor.ExtractedVariable> variables,
+            List<FieldDefinitionDto> testCaseSchema,
+            UUID suiteId) {
+        List<ValidationWarningDto> warnings = new ArrayList<>();
+
+        // Body must be JSON with a top-level messages array (chat-completions contract)
+        if (template == null
+                || !(template.getBody() instanceof JsonRequestBodyDto jsonBody)
+                || jsonBody.getContent() == null
+                || !(jsonBody.getContent().get("messages") instanceof List)) {
+            warnings.add(warning(
+                    null,
+                    "$.requestTemplate.body",
+                    "Multi-step suite requires a JSON request body with a top-level 'messages' array",
+                    ValidationWarningCode.REQUIRED));
+        }
+
+        List<List<InputBindingDto>> steps = dto.getMultistepInputBindings();
+        if (steps == null || steps.isEmpty()) {
+            warnings.add(warning(
+                    null,
+                    "$.multistepInputBindings",
+                    "multistepInputBindings must be non-empty when multiStep is true",
+                    ValidationWarningCode.REQUIRED));
+            return warnings;
+        }
+        if (steps.size() > ValidationConstants.MAX_CONVERSATION_STEPS) {
+            warnings.add(warning(
+                    null,
+                    "$.multistepInputBindings",
+                    "multistepInputBindings must not exceed " + ValidationConstants.MAX_CONVERSATION_STEPS + " steps",
+                    ValidationWarningCode.ADDITIONAL));
+        }
+
+        // Per-step binding cross-validation against the single (unchanged) template + test-case schema
+        for (int i = 0; i < steps.size(); i++) {
+            List<ValidationWarningDto> stepWarnings =
+                    bindingValidator.validate(variables, steps.get(i), testCaseSchema, suiteId);
+            for (ValidationWarningDto w : stepWarnings) {
+                warnings.add(warning(
+                        w.getFieldName(),
+                        "$.multistepInputBindings[" + i + "]",
+                        "Step " + i + ": " + w.getMessage(),
+                        w.getCode()));
+            }
+        }
+
+        return warnings;
     }
 
     private static ValidationWarningDto warning(

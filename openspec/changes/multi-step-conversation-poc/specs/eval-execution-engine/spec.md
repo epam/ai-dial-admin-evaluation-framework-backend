@@ -36,5 +36,6 @@ Status: **Planned**
 - **THEN** the resulting `TestCaseRunResult.traceId` SHALL be the last attempted step's trace id
 
 ### Implementation notes
-- New injectable `service.domain.job.MultiStepConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the snapshot `multiStep` flag.
+- New injectable `service.domain.job.MultiStepConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the `multiStep` flag.
+- `EvaluationWorker` reads discrete `context.getSnapshotX()` getters off `EvaluationContext`, not `SuiteSnapshotDto` directly. The `multiStep` flag and per-step bindings therefore travel via `EvaluationContext`: it gains `snapshotMultiStep` and `snapshotMultistepInputBindings`, populated in `TestSuiteEvaluationJob.buildContext` from the resolved snapshot. The worker branches on `context.getSnapshotMultiStep()`.
 - Concurrency permit acquisition remains in `InProcessEvaluationExecutor` at the per-(test case, run index) task granularity — multi-step changes only what happens inside the task, not the permit model.

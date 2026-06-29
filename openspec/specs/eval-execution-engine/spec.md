@@ -81,7 +81,7 @@ Status: **Implemented**
 
 #### Scenario: Snapshot phase builds SuiteSnapshotDto
 - **WHEN** the snapshot phase executes
-- **THEN** `SuiteSnapshotBuilder.build(liveSuite)` SHALL produce a `SuiteSnapshotDto` with `snapshotVersion = "1"`, `suiteType`, and all execution-relevant fields. DEPLOYMENT suites: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`. MCP_TOOL suites: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`.
+- **THEN** `SuiteSnapshotBuilder.build(liveSuite)` SHALL produce a `SuiteSnapshotDto` with `snapshotVersion = "2"`, `suiteType`, and all execution-relevant fields. DEPLOYMENT suites: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`. MCP_TOOL suites: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`.
 
 #### Scenario: Snapshot phase inserts test case inputs
 - **WHEN** the snapshot phase executes

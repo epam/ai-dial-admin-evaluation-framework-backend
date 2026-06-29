@@ -54,6 +54,11 @@ Status: **Planned**
 - **AND** `responseBody` SHALL contain the history accumulated through the failed turn
 - **AND** `extractedColumns` SHALL contain the per-step maps for the steps completed before the failure
 
+#### Scenario: Failure at step 0 yields an empty extractedColumns array
+- **WHEN** a conversation fails at step 0 (before any step completes)
+- **THEN** `extractedColumns` SHALL be an empty JSON array `[]`
+- **AND** the metric phase SHALL normalize that empty array to an empty JSON object `{}` (see the metric-normalization requirement)
+
 ### Requirement: Multi-step result shape reuses existing columns
 A multi-step run SHALL persist exactly one `TestCaseRunResult` per `(runId, testCaseId, runIndex)`, reusing existing columns: `responseBody` SHALL hold the accumulated `messages` array as of the last attempted turn, and `extractedColumns` SHALL hold a JSON array of per-step extraction maps (one element per completed step). Single-step runs SHALL keep the existing object shape for `extractedColumns`. The `multiStep` flag is the indicator readers use to interpret the shape.
 Status: **Planned**
@@ -72,13 +77,18 @@ Status: **Planned**
 - **THEN** `extractedColumns` SHALL be a JSON object and `responseBody` SHALL be the single response, exactly as before
 
 ### Requirement: Metric evaluation normalizes multi-step columns to the last step
-When the metric evaluation phase reads a result's `extractedColumns`, it SHALL normalize by shape: if the value is a JSON array, it SHALL use the last element (`array[n-1]`); if it is a JSON object, it SHALL use it as-is. Metric input/config bindings SHALL resolve against the normalized object, and the value copied into the `EvalSummary` SHALL be the normalized (last-step) object.
+When the metric evaluation phase reads a result's `extractedColumns`, it SHALL normalize by shape: if the value is a JSON array, it SHALL use the last element (`array[n-1]`); if the array is empty (`n == 0`), it SHALL yield an empty JSON object `{}` (it SHALL NOT throw and SHALL NOT produce an array); if it is a JSON object, it SHALL use it as-is. Metric input/config bindings SHALL resolve against the normalized object, and the value copied into the `EvalSummary` SHALL be the normalized (last-step) object.
 Status: **Planned**
 
 #### Scenario: Metrics score the last turn for multi-step
 - **WHEN** the metric phase processes a multi-step result whose `extractedColumns` is an array of length `n`
 - **THEN** metric bindings SHALL resolve against element `n-1`
 - **AND** `EvalSummary.extractedColumns` SHALL store element `n-1` as a JSON object
+
+#### Scenario: Empty extractedColumns array normalizes to an empty object
+- **WHEN** the metric phase processes a result whose `extractedColumns` is an empty JSON array `[]` (e.g. a conversation that failed at step 0 before any step completed)
+- **THEN** normalization SHALL yield an empty JSON object `{}` rather than throwing or producing an array
+- **AND** `EvalSummary.extractedColumns` SHALL store `{}`
 
 #### Scenario: Single-step metric behavior unchanged
 - **WHEN** the metric phase processes a single-step result whose `extractedColumns` is a JSON object
@@ -88,4 +98,7 @@ Status: **Planned**
 ### Implementation notes
 - Turn loop lives in a new `service.domain.job.MultiStepConversationExecutor`, delegated to from `EvaluationWorker.execute`.
 - Template resolution reuses `service.domain.ResolvedRequestService.resolve`; per-step extraction reuses `service.domain.ResponseColumnExtractor.extract`.
-- Metric normalization is applied at the result→metric boundary via shape detection in `service.domain.metric` binding resolution (`BindingResolver.parseJsonMap`) and the `EvalSummary` copy in `InProcessMetricEvaluationExecutor`.
+- Metric normalization is applied at the result→metric boundary at **two distinct call sites** via a single shared injectable component (e.g. `service.domain.job.ExtractedColumnsNormalizer`):
+  - **Metric binding resolution**: `MetricEvaluationWorker.buildRequest` normalizes the `extractedColumns` value it passes to `BindingResolver.resolveBindings` (the `parseJsonMap(result.getExtractedColumns())` call); the sibling `testCaseData` parse is left untouched.
+  - **EvalSummary copy**: `InProcessMetricEvaluationExecutor.buildItem` normalizes the `extractedColumns` value (its private `parseJsonNode(result.getExtractedColumns())` path) before storing it into `EvalSummary`; this path runs for both SUCCESS and propagated non-SUCCESS results.
+- Empty-array (`n == 0`) extractedColumns normalize to an empty JSON object `{}` at both sites.

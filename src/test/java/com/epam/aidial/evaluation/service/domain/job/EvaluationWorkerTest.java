@@ -105,6 +105,9 @@ class EvaluationWorkerTest {
     @Mock
     private McpResponseSerializer mcpResponseSerializer;
 
+    @Mock
+    private MultiStepConversationExecutor multiStepConversationExecutor;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneId.of("UTC"));
 
@@ -130,7 +133,8 @@ class EvaluationWorkerTest {
                 mcpResponseSerializer,
                 FIXED_CLOCK,
                 sseEventParser,
-                sseEventProcessingProperties);
+                sseEventProcessingProperties,
+                multiStepConversationExecutor);
     }
 
     @Test

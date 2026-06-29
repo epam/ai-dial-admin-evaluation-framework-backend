@@ -69,6 +69,10 @@ public class EvaluationContext {
     private final List<InputBindingDto> snapshotInputBindings;
     private final List<ResponseColumnDefinitionDto> snapshotResponseColumns;
 
+    // Multi-step conversation configuration (from the snapshot; default single-step)
+    private final boolean snapshotMultiStep;
+    private final List<List<InputBindingDto>> snapshotMultistepInputBindings;
+
     // Pre-deserialized typed DTOs (deserialized once at run init, immutable for run duration)
     private final McpDeploymentReferenceDto mcpDeploymentRefDto;
     private final ToolReferenceDto toolRefDto;

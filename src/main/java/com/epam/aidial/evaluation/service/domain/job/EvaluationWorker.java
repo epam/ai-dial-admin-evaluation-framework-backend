@@ -80,6 +80,7 @@ public class EvaluationWorker {
     private final Clock clock;
     private final SseEventParser sseEventParser;
     private final SseEventProcessingProperties sseEventProcessingProperties;
+    private final MultiStepConversationExecutor multiStepConversationExecutor;
 
     public TestCaseRunResult execute(
             TestCaseRunInput input,
@@ -102,6 +103,12 @@ public class EvaluationWorker {
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {
                 return executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs);
+            }
+
+            // Multi-step conversation suites delegate to the turn-loop executor (single permit per conversation)
+            if (context.isSnapshotMultiStep()) {
+                return multiStepConversationExecutor.execute(
+                        input, context, runIndex, responseColumns, traceId, execStartedAtMs);
             }
 
             // Parse test case data for template resolution

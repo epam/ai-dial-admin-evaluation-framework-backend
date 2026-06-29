@@ -162,6 +162,16 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
      */
     public final TableField<TestSuitesRecord, JSONB> DISABLED_TEST_CASE_IDS = createField(DSL.name("disabled_test_case_ids"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'::jsonb"), SQLDataType.JSONB)), this, "");
 
+    /**
+     * The column <code>meta.test_suites.multi_step</code>.
+     */
+    public final TableField<TestSuitesRecord, Boolean> MULTI_STEP = createField(DSL.name("multi_step"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
+
+    /**
+     * The column <code>meta.test_suites.multistep_input_bindings</code>.
+     */
+    public final TableField<TestSuitesRecord, JSONB> MULTISTEP_INPUT_BINDINGS = createField(DSL.name("multistep_input_bindings"), SQLDataType.JSONB, this, "");
+
     private TestSuites(Name alias, Table<TestSuitesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

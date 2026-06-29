@@ -299,6 +299,34 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         return (JSONB) get(19);
     }
 
+    /**
+     * Setter for <code>meta.test_suites.multi_step</code>.
+     */
+    public void setMultiStep(Boolean value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suites.multi_step</code>.
+     */
+    public Boolean getMultiStep() {
+        return (Boolean) get(20);
+    }
+
+    /**
+     * Setter for <code>meta.test_suites.multistep_input_bindings</code>.
+     */
+    public void setMultistepInputBindings(JSONB value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suites.multistep_input_bindings</code>.
+     */
+    public JSONB getMultistepInputBindings() {
+        return (JSONB) get(21);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -322,7 +350,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     /**
      * Create a detached, initialised TestSuitesRecord
      */
-    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds) {
+    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, Boolean multiStep, JSONB multistepInputBindings) {
         super(TestSuites.TEST_SUITES);
 
         setId(id);
@@ -345,6 +373,8 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         setArgumentTemplate(argumentTemplate);
         setDatasetId(datasetId);
         setDisabledTestCaseIds(disabledTestCaseIds);
+        setMultiStep(multiStep);
+        setMultistepInputBindings(multistepInputBindings);
         resetTouchedOnNotNull();
     }
 }

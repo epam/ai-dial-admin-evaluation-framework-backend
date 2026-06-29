@@ -1,8 +1,8 @@
 ## 1. Database & jOOQ
 
-- [ ] 1.1 Add Flyway meta migration `src/main/resources/db/migration/meta/POSTGRES/V{next}__AddMultiStepToTestSuites.sql` adding `multi_step` BOOLEAN NOT NULL DEFAULT false and `multistep_input_bindings` JSONB (nullable) to `test_suites` (done: migration applies cleanly on a fresh DB and existing rows default to `multi_step=false`).
-- [ ] 1.2 Run `./gradlew generateJooq` and commit the regenerated `TestSuites` table sources under `src/main/java-generated/` (done: generated `TestSuites` has `MULTI_STEP` and `MULTISTEP_INPUT_BINDINGS` fields; `JooqSchemaDriftTest` passes).
-- [ ] 1.3 Update `docs/database-schema.md` with the two new `test_suites` columns (done: table reflects new columns + types).
+- [x] 1.1 Add Flyway meta migration `src/main/resources/db/migration/meta/POSTGRES/V{next}__AddMultiStepToTestSuites.sql` adding `multi_step` BOOLEAN NOT NULL DEFAULT false and `multistep_input_bindings` JSONB (nullable) to `test_suites` (done: migration applies cleanly on a fresh DB and existing rows default to `multi_step=false`).
+- [x] 1.2 Run `./gradlew generateJooq` and commit the regenerated `TestSuites` table sources under `src/main/java-generated/` (done: generated `TestSuites` has `MULTI_STEP` and `MULTISTEP_INPUT_BINDINGS` fields; `JooqSchemaDriftTest` passes).
+- [x] 1.3 Update `docs/database-schema.md` with the two new `test_suites` columns (done: table reflects new columns + types).
 
 ## 2. Domain model, DTOs, mappers, snapshot
 

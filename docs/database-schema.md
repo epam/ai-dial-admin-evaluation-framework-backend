@@ -98,7 +98,9 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `endpoint_ref` | JSONB | NULL | - | Endpoint contract definition (EndpointContractDto) — HTTP suites |
 | `response_columns` | JSONB | NOT NULL | `'[]'::jsonb` | Response column definitions (List of ResponseColumnDefinitionDto) |
 | `request_template` | JSONB | NULL | - | Postman-style request template (RequestTemplateDto) — HTTP suites |
-| `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Bindings from template variables to data fields (List of InputBindingDto) |
+| `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Bindings from template variables to data fields (List of InputBindingDto). Ignored when `multi_step = true`. |
+| `multi_step` | BOOLEAN | NOT NULL | `false` | Marks a DEPLOYMENT suite as multi-turn (POC). When true, execution drives a scripted conversation via `multistep_input_bindings` and ignores `input_bindings`. |
+| `multistep_input_bindings` | JSONB | NULL | - | One binding list per conversation step (List of List of InputBindingDto); `list[i]` populates the single `request_template` for step _i_. Total steps = array length; capped at `ValidationConstants.MAX_CONVERSATION_STEPS` (10). NULL/unused for single-step suites. |
 | `mcp_deployment_ref` | JSONB | NULL | - | MCP deployment reference (McpDeploymentReferenceDto) — MCP suites |
 | `tool_ref` | JSONB | NULL | - | MCP tool reference with schema (ToolReferenceDto) — MCP suites |
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
@@ -868,6 +870,7 @@ Metric definition snapshots captured at computation time. Each row records the m
 | V1.20 | `V1.20__AddDisplayNameToMetricDeclarationVersions.sql` | Added nullable display_name TEXT column to metric_declaration_versions |
 | V1.21 | `V1.21__AddCoercedCellCountToRevalidationTasks.sql` | Added coerced_cell_count column to revalidation_tasks |
 | V1.22 | `V1.22__IntroduceDataset.sql` | Introduced datasets table; rebound test_cases and revalidation_tasks FKs from test_suites to datasets; backfilled per-suite datasets; relaxed `test_suites.dataset_id` to nullable (unbound state); added `datasets.visibility` (`'PUBLIC'`/`'PRIVATE'`) with CHECK constraint; added `tg_test_suites_private_binding_guard` trigger raising `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` for concurrent PRIVATE-binding violations; backfilled `suite_snapshot` JSON to v2 (`snapshotVersion`, `datasetRef`) |
+| V1.23 | `V1.23__AddMultiStepToTestSuites.sql` | Added `multi_step` (BOOLEAN NOT NULL DEFAULT false) and `multistep_input_bindings` (JSONB, nullable) to test_suites for multi-turn conversation POC |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

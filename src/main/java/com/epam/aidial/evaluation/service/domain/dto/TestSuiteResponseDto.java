@@ -41,10 +41,13 @@ public class TestSuiteResponseDto {
     private RequestTemplateDto requestTemplate;
     private List<InputBindingDto> inputBindings;
 
-    @Schema(description = "Whether this suite is multi-turn (POC)")
+    @Schema(description = "Whether this suite is multi-turn (POC)", example = "true")
     private boolean multiStep;
 
-    @Schema(description = "Per-step binding lists used when multiStep is true (one list per conversation step)")
+    @Schema(
+            description = "Per-step binding lists used when multiStep is true (one list per conversation step)",
+            example = "[[{\"templateVariable\":\"turn\",\"dataField\":\"question_1\"}],"
+                    + "[{\"templateVariable\":\"turn\",\"dataField\":\"question_2\"}]]")
     private List<List<InputBindingDto>> multistepInputBindings;
 
     @Schema(description = "MCP deployment reference (MCP_TOOL suites only)")

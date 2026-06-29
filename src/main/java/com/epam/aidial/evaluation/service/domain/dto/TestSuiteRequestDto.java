@@ -65,7 +65,8 @@ public class TestSuiteRequestDto {
 
     @Schema(
             description = "Marks a DEPLOYMENT suite as multi-turn (POC). When true, execution drives a scripted "
-                    + "conversation via multistepInputBindings and ignores inputBindings.")
+                    + "conversation via multistepInputBindings and ignores inputBindings.",
+            example = "true")
     private boolean multiStep;
 
     @Valid
@@ -75,7 +76,9 @@ public class TestSuiteRequestDto {
     @Schema(
             description = "One binding list per conversation step (used only when multiStep is true); "
                     + "list[i] populates the single requestTemplate for step i. "
-                    + "Total steps = array length; capped at " + ValidationConstants.MAX_CONVERSATION_STEPS + ".")
+                    + "Total steps = array length; capped at " + ValidationConstants.MAX_CONVERSATION_STEPS + ".",
+            example = "[[{\"templateVariable\":\"turn\",\"dataField\":\"question_1\"}],"
+                    + "[{\"templateVariable\":\"turn\",\"dataField\":\"question_2\"}]]")
     private List<List<InputBindingDto>> multistepInputBindings;
 
     @Valid

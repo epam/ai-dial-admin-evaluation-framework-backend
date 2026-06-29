@@ -32,7 +32,7 @@
 
 ## 6. OpenAPI & docs
 
-- [ ] 6.1 Add `@Schema(example=...)` for `multiStep` and `multistepInputBindings` on the request/response DTOs (done: Swagger shows a minimal multi-step example).
+- [x] 6.1 Add `@Schema(example=...)` for `multiStep` and `multistepInputBindings` on the request/response DTOs (done: Swagger shows a minimal multi-step example).
 
 ## 7. Tests
 

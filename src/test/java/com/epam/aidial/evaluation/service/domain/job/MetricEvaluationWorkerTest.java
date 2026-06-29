@@ -52,7 +52,8 @@ class MetricEvaluationWorkerTest {
     @BeforeEach
     void setUp() {
         BindingResolver bindingResolver = new BindingResolver(new ObjectMapper());
-        worker = new MetricEvaluationWorker(metricProviderClient, bindingResolver, OpenTelemetry.noop());
+        ExtractedColumnsNormalizer normalizer = new ExtractedColumnsNormalizer(new ObjectMapper());
+        worker = new MetricEvaluationWorker(metricProviderClient, bindingResolver, normalizer, OpenTelemetry.noop());
     }
 
     @Test
@@ -194,8 +195,9 @@ class MetricEvaluationWorkerTest {
             UUID resultId = UUID.fromString("44444444-4444-4444-4444-444444444444");
 
             BindingResolver bindingResolver = new BindingResolver(new ObjectMapper());
-            MetricEvaluationWorker spanWorker =
-                    new MetricEvaluationWorker(mockMetricProviderClient, bindingResolver, mockOpenTelemetry);
+            ExtractedColumnsNormalizer normalizer = new ExtractedColumnsNormalizer(new ObjectMapper());
+            MetricEvaluationWorker spanWorker = new MetricEvaluationWorker(
+                    mockMetricProviderClient, bindingResolver, normalizer, mockOpenTelemetry);
 
             AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
                     .id(UUID.randomUUID())

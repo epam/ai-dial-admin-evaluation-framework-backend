@@ -35,6 +35,7 @@ public class MetricEvaluationWorker {
 
     private final MetricProviderClient metricProviderClient;
     private final BindingResolver bindingResolver;
+    private final ExtractedColumnsNormalizer extractedColumnsNormalizer;
     private final OpenTelemetry openTelemetry;
 
     /**
@@ -150,7 +151,10 @@ public class MetricEvaluationWorker {
 
     private EvaluationRequestDto buildRequest(AggregatedMetricDefinition tsmd, TestCaseRunResult result) {
         Map<String, Object> testCaseData = bindingResolver.parseJsonMap(result.getTestCaseData());
-        Map<String, Object> extractedColumns = bindingResolver.parseJsonMap(result.getExtractedColumns());
+        // Multi-step results store extractedColumns as a per-step array; normalize to the last step's object
+        // before resolving metric bindings. testCaseData is always an object and is left untouched.
+        Map<String, Object> extractedColumns = bindingResolver.parseJsonMap(
+                extractedColumnsNormalizer.normalizeToJsonString(result.getExtractedColumns()));
 
         List<MetricParameterBindingDto> configBindings = bindingResolver.parseBindings(tsmd.getConfigBindings());
         List<MetricParameterBindingDto> inputBindings = bindingResolver.parseBindings(tsmd.getInputBindings());

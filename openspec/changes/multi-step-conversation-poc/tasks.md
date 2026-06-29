@@ -26,9 +26,9 @@
 
 ## 5. Metric normalization
 
-- [ ] 5.0 Create a shared injectable `service.domain.job.ExtractedColumnsNormalizer` `@Component` that applies shape detection to an `extractedColumns` value: JSON array → last element (`array[n-1]`); empty array (`n == 0`) → empty JSON object `{}` (no throw, no array); JSON object → unchanged (done: single source of truth used by both metric paths).
-- [ ] 5.1 Normalize the metric-binding path: in `MetricEvaluationWorker.buildRequest`, run the `extractedColumns` value through `ExtractedColumnsNormalizer` before `BindingResolver.resolveBindings` (scoped to `extractedColumns` only; leave the sibling `testCaseData` parse untouched) (done: metric bindings resolve against the last step for multi-step; object unchanged for single-step; testCaseData unaffected).
-- [ ] 5.2 Normalize the EvalSummary-copy path: in `InProcessMetricEvaluationExecutor.buildItem` (the private `parseJsonNode(result.getExtractedColumns())` site, which runs for both SUCCESS and propagated non-SUCCESS results), apply `ExtractedColumnsNormalizer` so the last-step object (or `{}` for an empty array) is stored into `EvalSummary.extractedColumns` (done: `EvalSummary` never stores an array; export/filter paths unchanged).
+- [x] 5.0 Create a shared injectable `service.domain.job.ExtractedColumnsNormalizer` `@Component` that applies shape detection to an `extractedColumns` value: JSON array → last element (`array[n-1]`); empty array (`n == 0`) → empty JSON object `{}` (no throw, no array); JSON object → unchanged (done: single source of truth used by both metric paths).
+- [x] 5.1 Normalize the metric-binding path: in `MetricEvaluationWorker.buildRequest`, run the `extractedColumns` value through `ExtractedColumnsNormalizer` before `BindingResolver.resolveBindings` (scoped to `extractedColumns` only; leave the sibling `testCaseData` parse untouched) (done: metric bindings resolve against the last step for multi-step; object unchanged for single-step; testCaseData unaffected).
+- [x] 5.2 Normalize the EvalSummary-copy path: in `InProcessMetricEvaluationExecutor.buildItem` (the private `parseJsonNode(result.getExtractedColumns())` site, which runs for both SUCCESS and propagated non-SUCCESS results), apply `ExtractedColumnsNormalizer` so the last-step object (or `{}` for an empty array) is stored into `EvalSummary.extractedColumns` (done: `EvalSummary` never stores an array; export/filter paths unchanged).
 
 ## 6. OpenAPI & docs
 

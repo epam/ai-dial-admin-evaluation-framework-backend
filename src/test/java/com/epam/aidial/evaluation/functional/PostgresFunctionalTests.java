@@ -52,6 +52,7 @@ import com.epam.aidial.evaluation.functional.tests.McpEvaluationRunFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.McpTestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiStepConversationRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
@@ -357,6 +358,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
     @Nested
     @TestPropertySource(properties = {"test-suite-run.execution.cancellation-grace-period-ms=1000"})
     class EvaluationExecutorFailureModesTests extends EvaluationExecutorFailureModesFunctionalTests {}
+
+    @Nested
+    class MultiStepConversationRunTests extends MultiStepConversationRunFunctionalTests {}
 
     @Nested
     class AnalyticsRetryFieldsTests extends AnalyticsRetryFieldsFunctionalTests {}

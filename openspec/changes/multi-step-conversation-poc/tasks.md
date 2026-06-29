@@ -36,12 +36,12 @@
 
 ## 7. Tests
 
-- [ ] 7.1 Unit tests for `JsonbMapper` `List<List<InputBindingDto>>` round-trip (done: covers null/empty/multi-step shapes).
-- [ ] 7.2 Unit tests for `MultiStepConversationExecutor`: happy-path history accumulation, full-history resend, assistant append, per-step extraction array, fail-fast (mid-conversation HTTP failure and unextractable assistant content) (done: deterministic assertions, mocked invoker).
-- [ ] 7.3 Unit tests for the metric shape-detection normalization (`ExtractedColumnsNormalizer`): array→last element; object→unchanged; length-1 array; length-0 (empty) array → empty object `{}` (done: covers length-1 array, length-0 array → `{}`, and object).
-- [ ] 7.4 Unit tests for multi-step suite validation (empty bindings, over-cap, non-messages body, bad per-step binding) (done: each produces a warning + `isValid=false`).
-- [ ] 7.5 Functional test (`@PostgresFunctionalTests`, boots context) exercising create → run of a multi-step suite against a mocked DIAL Core deployment, asserting `responseBody` = accumulated messages and `extractedColumns` = per-step array via repository (done: end-to-end path green).
-- [ ] 7.6 Run `./gradlew spotlessApply checkstyleMain checkstyleTest test` and confirm green (done: build passes including the new tests).
+- [x] 7.1 Unit tests for `JsonbMapper` `List<List<InputBindingDto>>` round-trip (done: covers null/empty/multi-step shapes).
+- [x] 7.2 Unit tests for `MultiStepConversationExecutor`: happy-path history accumulation, full-history resend, assistant append, per-step extraction array, fail-fast (mid-conversation HTTP failure and unextractable assistant content) (done: deterministic assertions, mocked invoker).
+- [x] 7.3 Unit tests for the metric shape-detection normalization (`ExtractedColumnsNormalizer`): array→last element; object→unchanged; length-1 array; length-0 (empty) array → empty object `{}` (done: covers length-1 array, length-0 array → `{}`, and object).
+- [x] 7.4 Unit tests for multi-step suite validation (empty bindings, over-cap, non-messages body, bad per-step binding) (done: each produces a warning + `isValid=false`).
+- [x] 7.5 Functional test (`@PostgresFunctionalTests`, boots context) exercising create → run of a multi-step suite against a mocked DIAL Core deployment, asserting `responseBody` = accumulated messages and `extractedColumns` = per-step array via repository (done: end-to-end path green).
+- [x] 7.6 Run `./gradlew spotlessApply checkstyleMain checkstyleTest test` and confirm green (done: build passes including the new tests).
 
 ## 8. Spec sync
 

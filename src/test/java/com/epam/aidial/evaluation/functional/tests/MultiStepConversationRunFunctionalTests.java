@@ -98,17 +98,17 @@ public abstract class MultiStepConversationRunFunctionalTests extends BaseFuncti
         // Two steps → two deployment calls
         assertThat(callCount.get()).isEqualTo(2);
 
-        // response_body = accumulated messages: [user(hello), assistant(reply-0), user(how are you),
-        // assistant(reply-1)]
+        // response_body = the last turn's raw chat-completion response (technical fields preserved,
+        // e.g. the "id" field), with the final assistant reply
         JsonNode responseBody = objectMapper.readTree(String.valueOf(row.get("response_body")));
-        assertThat(responseBody.isArray()).isTrue();
-        assertThat(responseBody.size()).isEqualTo(4);
-        assertThat(responseBody.get(0).get("role").asString()).isEqualTo("user");
-        assertThat(responseBody.get(0).get("content").asString()).isEqualTo("hello");
-        assertThat(responseBody.get(1).get("role").asString()).isEqualTo("assistant");
-        assertThat(responseBody.get(1).get("content").asString()).isEqualTo("reply-0");
-        assertThat(responseBody.get(2).get("content").asString()).isEqualTo("how are you");
-        assertThat(responseBody.get(3).get("content").asString()).isEqualTo("reply-1");
+        assertThat(responseBody.get("id").asString()).isEqualTo("mock");
+        assertThat(responseBody
+                        .path("choices")
+                        .get(0)
+                        .path("message")
+                        .get("content")
+                        .asString())
+                .isEqualTo("reply-1");
 
         // extracted_columns = per-step array of length 2
         JsonNode extracted = objectMapper.readTree(String.valueOf(row.get("extracted_columns")));

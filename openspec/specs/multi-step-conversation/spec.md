@@ -58,7 +58,7 @@ Status: **Planned**
 - **THEN** steps `k+1 .. N-1` SHALL NOT be sent
 - **AND** the result `executionStatus` SHALL be the failing step's status
 - **AND** `responseStatusCode` SHALL be the failing step's status code
-- **AND** `responseBody` SHALL contain the history accumulated through the failed turn
+- **AND** `responseBody` SHALL contain the failing turn's raw response body (or be absent when no response was received)
 - **AND** `extractedColumns` SHALL contain the per-step maps for the steps completed before the failure
 
 #### Scenario: Failure at step 0 yields an empty extractedColumns array
@@ -67,7 +67,7 @@ Status: **Planned**
 - **AND** the metric phase SHALL normalize that empty array to an empty JSON object `{}` (see the metric-normalization requirement)
 
 ### Requirement: Multi-step result shape reuses existing columns
-A multi-step run SHALL persist exactly one `TestCaseRunResult` per `(runId, testCaseId, runIndex)`, reusing existing columns: `responseBody` SHALL hold the accumulated `messages` array as of the last attempted turn, and `extractedColumns` SHALL hold a JSON array of per-step extraction maps (one element per completed step). Single-step runs SHALL keep the existing object shape for `extractedColumns`. The `multiStep` flag is the indicator readers use to interpret the shape.
+A multi-step run SHALL persist exactly one `TestCaseRunResult` per `(runId, testCaseId, runIndex)`, reusing existing columns: `responseBody` SHALL hold the last attempted turn's raw response body (preserving its technical fields, e.g. `id`/`usage`/`model`) — mirroring `requestBody`, which holds that turn's raw request — and `extractedColumns` SHALL hold a JSON array of per-step extraction maps (one element per completed step). The full conversation remains recoverable from the last request body (which carries the whole message history through the final user turn) plus the final response. Single-step runs SHALL keep the existing object shape for `extractedColumns`. The `multiStep` flag is the indicator readers use to interpret the shape.
 Status: **Planned**
 
 #### Scenario: Multi-step extractedColumns is an array
@@ -75,9 +75,9 @@ Status: **Planned**
 - **THEN** `extractedColumns` SHALL be a JSON array of length 3
 - **AND** element `i` SHALL be the extraction map for step `i`
 
-#### Scenario: responseBody holds accumulated messages
+#### Scenario: responseBody holds the last turn's raw response
 - **WHEN** a multi-step conversation completes
-- **THEN** `responseBody` SHALL be the full `messages` array (all user and assistant turns) as of the last turn
+- **THEN** `responseBody` SHALL be the last turn's raw response body, with its technical fields (e.g. `id`) preserved, and `requestBody` SHALL be that turn's raw request body
 
 #### Scenario: Single-step result shape unchanged
 - **WHEN** a suite has `multiStep == false`

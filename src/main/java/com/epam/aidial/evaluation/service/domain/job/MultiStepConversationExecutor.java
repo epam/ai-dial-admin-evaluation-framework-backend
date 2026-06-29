@@ -46,8 +46,11 @@ import tools.jackson.databind.node.ArrayNode;
  * Multi-step (multi-turn) conversation executor (POC). Drives a fixed, author-scripted sequence of
  * chat-completions turns for a single test case, accumulating {@code messages} history and re-sending
  * the full history each turn. Returns a single {@link TestCaseRunResult} that reuses the existing
- * columns: {@code responseBody} = accumulated messages, {@code extractedColumns} = a JSON array of
- * per-step extraction maps.
+ * columns: {@code responseBody} = the last turn's raw response body (preserving its technical fields,
+ * e.g. {@code id}/{@code usage}/{@code model}) — mirroring how {@code requestBody} holds the last turn's
+ * raw request; {@code extractedColumns} = a JSON array of per-step extraction maps. The full conversation
+ * remains recoverable from the last request body (which carries the whole message history through the
+ * final user turn) plus this final response.
  *
  * <p>Contract (see design D1–D4): the resolved request body must be JSON with a top-level {@code messages}
  * array; the assistant reply is read from the hardcoded {@code choices[0].message.content} OpenAI path;
@@ -105,6 +108,7 @@ public class MultiStepConversationExecutor {
         ExecutionStatus finalStatus = ExecutionStatus.SUCCESS;
         Integer lastStatusCode = null;
         String lastRequestBodyJson = null;
+        String lastResponseBodyJson = null;
         int lastRetryCount = 0;
 
         try {
@@ -149,6 +153,7 @@ public class MultiStepConversationExecutor {
                         invokeWithRetries(context, method, path, headers, queryParams, serialized.body());
                 lastStatusCode = outcome.statusCode();
                 lastRetryCount = outcome.retryCount();
+                lastResponseBodyJson = outcome.responseBody();
 
                 if (outcome.status() != ExecutionStatus.SUCCESS) {
                     // Fail-fast: keep the partial history (incl. this failed turn's user message); no extraction.
@@ -196,7 +201,7 @@ public class MultiStepConversationExecutor {
                 .runIndex(runIndex)
                 .testCaseData(input.getTestCaseData())
                 .requestBody(lastRequestBodyJson)
-                .responseBody(serializeBody(history))
+                .responseBody(lastResponseBodyJson)
                 .responseStatusCode(lastStatusCode)
                 .executionStatus(finalStatus)
                 .execStartedAtMs(execStartedAtMs)

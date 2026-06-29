@@ -135,12 +135,15 @@ class MultiStepConversationExecutorTest {
         assertThat(result.getResponseStatusCode()).isEqualTo(200);
         assertThat(result.getTraceId()).isEqualTo("trace-1");
 
-        // responseBody = accumulated messages of the whole conversation (4 turns)
+        // responseBody = the last turn's raw response body (not the reconstructed history)
         JsonNode responseBody = objectMapper.readTree(result.getResponseBody());
-        assertThat(responseBody.isArray()).isTrue();
-        assertThat(responseBody.size()).isEqualTo(4);
-        assertThat(responseBody.get(3).get("role").asString()).isEqualTo("assistant");
-        assertThat(responseBody.get(3).get("content").asString()).isEqualTo("assistant-1");
+        assertThat(responseBody
+                        .path("choices")
+                        .get(0)
+                        .path("message")
+                        .get("content")
+                        .asString())
+                .isEqualTo("assistant-1");
 
         // extractedColumns = per-step array of length 2
         JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
@@ -167,9 +170,15 @@ class MultiStepConversationExecutorTest {
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(result.getResponseStatusCode()).isEqualTo(500);
 
-        // history through the failed turn: [user-0, assistant-0, user-1]
+        // responseBody = the failed last turn's raw response body
         JsonNode responseBody = objectMapper.readTree(result.getResponseBody());
-        assertThat(responseBody.size()).isEqualTo(3);
+        assertThat(responseBody
+                        .path("choices")
+                        .get(0)
+                        .path("message")
+                        .get("role")
+                        .asString())
+                .isEqualTo("assistant");
 
         // only the completed step's extraction is kept
         JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
@@ -194,10 +203,17 @@ class MultiStepConversationExecutorTest {
         TestCaseRunResult result = executor.execute(input(), context(1), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        // history holds the user turn only; no assistant appended
+        // responseBody = the raw 2xx response body (which lacked extractable assistant content)
         JsonNode responseBody = objectMapper.readTree(result.getResponseBody());
-        assertThat(responseBody.size()).isEqualTo(1);
-        assertThat(responseBody.get(0).get("role").asString()).isEqualTo("user");
+        assertThat(responseBody
+                        .path("choices")
+                        .get(0)
+                        .path("message")
+                        .get("role")
+                        .asString())
+                .isEqualTo("assistant");
+        assertThat(responseBody.path("choices").get(0).path("message").has("content"))
+                .isFalse();
         // step 0 never completed → empty per-step array
         JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
         assertThat(extracted.isArray()).isTrue();

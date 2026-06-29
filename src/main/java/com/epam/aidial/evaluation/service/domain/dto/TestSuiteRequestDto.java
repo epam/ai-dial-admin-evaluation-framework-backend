@@ -63,6 +63,21 @@ public class TestSuiteRequestDto {
     @Valid
     private List<InputBindingDto> inputBindings;
 
+    @Schema(
+            description = "Marks a DEPLOYMENT suite as multi-turn (POC). When true, execution drives a scripted "
+                    + "conversation via multistepInputBindings and ignores inputBindings.")
+    private boolean multiStep;
+
+    @Valid
+    @Size(
+            max = ValidationConstants.MAX_CONVERSATION_STEPS,
+            message = "multistepInputBindings must not exceed " + ValidationConstants.MAX_CONVERSATION_STEPS + " steps")
+    @Schema(
+            description = "One binding list per conversation step (used only when multiStep is true); "
+                    + "list[i] populates the single requestTemplate for step i. "
+                    + "Total steps = array length; capped at " + ValidationConstants.MAX_CONVERSATION_STEPS + ".")
+    private List<List<InputBindingDto>> multistepInputBindings;
+
     @Valid
     @Schema(description = "MCP deployment reference (required for MCP_TOOL suites)")
     private McpDeploymentReferenceDto mcpDeploymentRef;

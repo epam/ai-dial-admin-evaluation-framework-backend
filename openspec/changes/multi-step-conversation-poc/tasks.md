@@ -6,15 +6,15 @@
 
 ## 2. Domain model, DTOs, mappers, snapshot
 
-- [ ] 2.1 Add `boolean multiStep` and `String multistepInputBindings` (JSON string) to `data.db.model.TestSuite` (done: pure carrier, no logic).
-- [ ] 2.2 Add a `List<List<InputBindingDto>>` ser/deser pair to `service.domain.mapper.JsonbMapper` (done: round-trips array-of-arrays; null/blank → null).
-- [ ] 2.3 Add `multiStep` + `multistepInputBindings` (`List<List<InputBindingDto>>`) to `TestSuiteRequestDto` and `TestSuiteResponseDto` with `@Valid`/`@Schema` annotations (done: fields bind and validate nested bindings).
-- [ ] 2.4 Update `service.domain.mapper.TestSuiteMapper` (toEntity/toDto/update) and `data.db.mapper.TestSuiteRecordMapper` to map the new fields (done: create/update/read preserve both fields).
-- [ ] 2.5 Add `multiStep` + `multistepInputBindings` to `SuiteSnapshotDto` (additive; `CURRENT_VERSION` stays `"2"`) and populate them in `SuiteSnapshotBuilder.build` for DEPLOYMENT suites (done: new snapshots carry the fields; legacy `"2"` snapshots deserialize with `multiStep=false`).
+- [x] 2.1 Add `boolean multiStep` and `String multistepInputBindings` (JSON string) to `data.db.model.TestSuite` (done: pure carrier, no logic).
+- [x] 2.2 Add a `List<List<InputBindingDto>>` ser/deser pair to `service.domain.mapper.JsonbMapper` (done: round-trips array-of-arrays; null/blank → null).
+- [x] 2.3 Add `multiStep` + `multistepInputBindings` (`List<List<InputBindingDto>>`) to `TestSuiteRequestDto` and `TestSuiteResponseDto` with `@Valid`/`@Schema` annotations (done: fields bind and validate nested bindings).
+- [x] 2.4 Update `service.domain.mapper.TestSuiteMapper` (toEntity/toDto/update) and `data.db.mapper.TestSuiteRecordMapper` to map the new fields (done: create/update/read preserve both fields).
+- [x] 2.5 Add `multiStep` + `multistepInputBindings` to `SuiteSnapshotDto` (additive; `CURRENT_VERSION` stays `"2"`) and populate them in `SuiteSnapshotBuilder.build` for DEPLOYMENT suites (done: new snapshots carry the fields; legacy `"2"` snapshots deserialize with `multiStep=false`).
 
 ## 3. Validation
 
-- [ ] 3.1 Add `MAX_CONVERSATION_STEPS = 10` to `constants.ValidationConstants` (done: single source of truth).
+- [x] 3.1 Add `MAX_CONVERSATION_STEPS = 10` to `constants.ValidationConstants` (done: single source of truth).
 - [ ] 3.2 Extend `service.domain.SuiteValidationService.validateDeploymentSuite` for `multiStep == true`: require JSON body with top-level `messages` array; require non-empty `multistepInputBindings` with size ≤ cap; validate each step's bindings via the existing `BindingValidator`; ignore single `inputBindings` (done: any violation adds a warning and `isValid=false`).
 
 ## 4. Multi-step execution

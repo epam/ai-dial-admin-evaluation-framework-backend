@@ -23,6 +23,12 @@ public final class ValidationConstants {
     public static final int MAX_DISABLED_TC_IDS = 10000;
 
     /**
+     * Maximum number of conversation steps in a multi-step ({@code multiStep == true}) suite, i.e. the cap on
+     * {@code multistepInputBindings.size()}. Bounds per-test-case deployment calls (one call per step).
+     */
+    public static final int MAX_CONVERSATION_STEPS = 10;
+
+    /**
      * Regex enforced on test-case schema field names ({@code FieldDefinitionDto}).
      * Forbids ':' — reserved as the filter operator separator ({@code field:op:value}); a colon in a
      * field name would make filter expressions on {@code testCaseData.<field>} ambiguous when tokenized.

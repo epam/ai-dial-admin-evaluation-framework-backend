@@ -127,8 +127,7 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
      * default — computed only when the run has exactly one numeric metric field (then {@code overall} is
      * that metric's average), otherwise skipped (no {@code overall} row).
      */
-    private List<MetricScoreResult> computeOverall(
-            MetricScoreComputationContext ctx, List<MetricField> metricFields) {
+    private List<MetricScoreResult> computeOverall(MetricScoreComputationContext ctx, List<MetricField> metricFields) {
         final boolean isDefault = ctx.getOverallExpression() == null;
         if (isDefault && metricFields.size() != 1) {
             log.debug(
@@ -154,8 +153,8 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         final Double value = executeScalar(
                 query, params, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, ctx);
         return value != null
-                ? List.of(buildResult(
-                        ctx, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, value))
+                ? List.of(
+                        buildResult(ctx, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, value))
                 : List.of();
     }
 

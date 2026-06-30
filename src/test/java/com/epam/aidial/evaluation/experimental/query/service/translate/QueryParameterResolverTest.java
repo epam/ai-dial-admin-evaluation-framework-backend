@@ -85,18 +85,18 @@ class QueryParameterResolverTest {
     }
 
     @Test
-    @DisplayName("substitutes an array-bound param (e.g. mean's argument) preserving its items")
+    @DisplayName("substitutes an array-bound param preserving its items")
     void substitutesArrayParam() {
-        StructuredQuery query = selecting(new FnExpr("mean", false, List.of(new ParamExpr("metricAvgs"))));
+        StructuredQuery query = selecting(new FnExpr("avg", false, List.of(new ParamExpr("metricAvgs"))));
         ArrayExpr bound = new ArrayExpr(List.of(
                 new FnExpr("avg", false, List.of(new FieldExpr("metric::A::score"))),
                 new FnExpr("avg", false, List.of(new FieldExpr("metric::B::score")))));
 
         StructuredQuery resolved = resolver.resolve(query, Map.of("metricAvgs", bound));
 
-        FnExpr mean = (FnExpr) selectExpr(resolved);
-        assertThat(mean.args().getFirst()).isInstanceOf(ArrayExpr.class);
-        assertThat(((ArrayExpr) mean.args().getFirst()).items()).hasSize(2);
+        FnExpr fn = (FnExpr) selectExpr(resolved);
+        assertThat(fn.args().getFirst()).isInstanceOf(ArrayExpr.class);
+        assertThat(((ArrayExpr) fn.args().getFirst()).items()).hasSize(2);
     }
 
     @Test

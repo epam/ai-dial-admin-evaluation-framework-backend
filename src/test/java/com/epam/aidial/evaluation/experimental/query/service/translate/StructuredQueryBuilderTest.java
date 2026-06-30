@@ -364,48 +364,6 @@ class StructuredQueryBuilderTest {
         assertThat(sql).contains("percentile_cont(").contains("within group").contains("\"version\"");
     }
 
-    @Test
-    @DisplayName("mean(:array) folds its elements into (e1+…+en)/n over an array-bound param")
-    void rendersMeanOverArrayParam() {
-        StructuredQuery query = new StructuredQuery(
-                "test_suites",
-                null,
-                QueryMode.AGGREGATE,
-                false,
-                List.of(new OutputColumn(new FnExpr("mean", false, List.of(new ParamExpr("metricAvgs"))), "value")),
-                null,
-                null,
-                null,
-                new OffsetPage(0, 50, false));
-        ArrayExpr metricAvgs = new ArrayExpr(List.of(
-                new FnExpr("avg", false, List.of(field("version"))),
-                new FnExpr("avg", false, List.of(field("created_at_ms")))));
-        String sql = renderWithParams(query, Map.of("metricAvgs", metricAvgs));
-        assertThat(sql)
-                .contains("avg(\"meta\".\"test_suites\".\"version\")")
-                .contains("avg(\"meta\".\"test_suites\".\"created_at_ms\")")
-                .contains("/");
-    }
-
-    @Test
-    @DisplayName("rejects mean when its argument does not resolve to an array")
-    void rejectsMeanWithNonArrayArgument() {
-        StructuredQuery query = new StructuredQuery(
-                "test_suites",
-                null,
-                QueryMode.AGGREGATE,
-                false,
-                List.of(new OutputColumn(new FnExpr("mean", false, List.of(new ParamExpr("p"))), "value")),
-                null,
-                null,
-                null,
-                new OffsetPage(0, 50, false));
-        StructuredQuery resolved = parameterResolver.resolve(query, Map.of("p", value(ValueType.DECIMAL, "0.5")));
-        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, resolved))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("array");
-    }
-
     private String renderWithParams(StructuredQuery query, Map<String, Expr> params) {
         return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, parameterResolver.resolve(query, params)))
                 .toLowerCase(Locale.ROOT);

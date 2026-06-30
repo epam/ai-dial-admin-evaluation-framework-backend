@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.experimental.query.service.translate;
 
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.BuiltInQueryFunctions;
-import com.epam.aidial.evaluation.experimental.query.service.translate.function.MeanFunction;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.QueryFunction;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.QueryFunctionRegistry;
 import java.util.List;
@@ -26,8 +25,7 @@ final class QueryFunctionTestSupport {
                 builtIns.minFunction(),
                 builtIns.maxFunction(),
                 builtIns.percentileContFunction(),
-                builtIns.percentileDiscFunction(),
-                new MeanFunction());
+                builtIns.percentileDiscFunction());
         return new QueryFunctionRegistry(functions);
     }
 }

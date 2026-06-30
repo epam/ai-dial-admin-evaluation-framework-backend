@@ -28,6 +28,7 @@ public class PostgresMetricScoreResultQueryRepository implements MetricScoreResu
     private final DSLContext dsl;
 
     private final StructuredQueryExecutor executor;
+    private final MetricScoreLatestComputationDefaulter latestComputationDefaulter;
 
     @Override
     public String supportedEntity() {
@@ -36,6 +37,8 @@ public class PostgresMetricScoreResultQueryRepository implements MetricScoreResu
 
     @Override
     public QueryResultPage execute(StructuredQuery query) {
-        return executor.execute(ENTITY, dsl, METRIC_SCORE_RESULT, query);
+        // Resolve a computation_id eq "latest" sentinel to the run's latest computation before translation.
+        return executor.execute(
+                ENTITY, dsl, METRIC_SCORE_RESULT, latestComputationDefaulter.resolveLatestComputation(query));
     }
 }

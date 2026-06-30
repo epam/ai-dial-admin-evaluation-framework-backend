@@ -17,7 +17,7 @@ This is a cross-cutting change: a DSL capability extension, an analytics data mo
 - Define the per-metric statistics (AVG/P10/P90/MIN/MAX) **in code** as self-contained `StructuredQuery` objects (`BuiltInMetricStatistics`). The `overall` definition is a per-suite property (`test_suites.overall_score`), snapshotted per run.
 - Compute statistics (AVG, P10, P90, MIN, MAX) per numeric metric output field automatically at run-end, plus a DSL-computed run-level `overall` resolved from the suite snapshot (custom per-suite expression, or a single-metric default), into a new `metric_score_result` analytics table keyed by the run's `computation_id`.
 - Implement `ParamExpr` in the DSL via a single substitution pre-pass (`QueryParameterResolver`), and make the function catalog registry-driven (adding the `mean` reduction), without changing behaviour for existing entity repositories or the public `/queries/execute` endpoint.
-- Expose computed results to the frontend via a read API. Statistics are code-defined — no management API.
+- Expose computed results to the frontend only via the unified Query DSL entity `metric_score_results` (no dedicated read endpoint). Statistics are code-defined — no management API.
 
 **Non-Goals:**
 - Standalone "recompute scores only" endpoint (deferred; storage is designed to enable it later with zero rework).
@@ -69,9 +69,9 @@ A new `MetricScoreComputationExecutor` (`@Component` in `experimental.query.serv
 - **Trade-off:** more classes than a switch; accepted for the extensibility payoff and testability (each function is unit-testable in isolation). Existing render tests act as a migration regression guard.
 
 ### D6. API shape
-- Read: `GET /api/v1/analytics/metric-score-results?testSuiteRunId=<uuid>&computation=latest|<uuid>` → list of `MetricScoreResultResponseDto` (`Double` value; no timestamps). Plain `@RequestParam` (no `@FilterParam` resolver) so no `OpenApiQueryParamCustomizer` entry is needed.
+- Read: **only** via the unified Query DSL entity `metric_score_results` (`POST /api/v1/queries/execute`) — no dedicated metric-score-results REST endpoint. The generic engine is computation-agnostic, so the entity's repo resolves the `computation_id eq "latest"` sentinel: `MetricScoreLatestComputationDefaulter`, for a single-run query (`test_suite_run_id eq <uuid>`), pulls the single `computation_id` value out of the filter and — when it is `"latest"` — calls `ComputationResolver.resolve("latest", runId)` (the single authority for "latest", shared with the eval-summary path) and swaps the resolved id back in before translation, so `"latest"` is never UUID-parsed. Explicit `computation_id` (eq `<uuid>`/`in`) and an omitted `computation_id` (spans all computations) pass straight through.
 - Statistics: **code-defined**, no management API. `BuiltInMetricStatistics` exposes `perMetric()` + `defaultOverall()`, consumed by the Phase-3 executor.
-- `MetricScoreService` exposes only `listResults`; DTO ↔ model via MapStruct; `metric_name` stored/returned as the frontend-friendly `<metricGroup>.<outputField>` (DSL token `metric:<tsmd>:<field>` stays internal).
+- `MetricScoreService` exposes only `saveAll` (the Phase-3 executor's write path); `metric_name` is stored as the frontend-friendly `<metricGroup>.<outputField>` (DSL token `metric:<tsmd>:<field>` stays internal).
 - `MetricScoreConstants` holds the reserved param names, `value` alias, entity, and run-scoping field names; reuse `EvalSummaryExportColumnConstants` for metric-field tokens.
 
 ## Risks / Trade-offs
@@ -93,6 +93,6 @@ A new `MetricScoreComputationExecutor` (`@Component` in `experimental.query.serv
 
 ## Open Questions
 
-- Final stored token for `metric_name`: `<metricGroup>.<outputField>` (proposed) vs. the raw tsmd name — confirm with frontend during spec/implementation.
+- *(Resolved)* `metric_name` is stored as the frontend-friendly `<metricGroup>.<outputField>` format (the internal DSL token `metric:<tsmd>:<field>` stays internal).
 - *(Resolved)* `overall` is a **per-suite property** (`test_suites.overall_score`), captured in the suite snapshot. When unset, the code-defined default is the single metric's `avg(:metricField)`, computed only for single-metric runs (D5).
 - *(Resolved)* The per-metric statistics are **code-defined** as typed `StructuredQuery` objects in `BuiltInMetricStatistics`.

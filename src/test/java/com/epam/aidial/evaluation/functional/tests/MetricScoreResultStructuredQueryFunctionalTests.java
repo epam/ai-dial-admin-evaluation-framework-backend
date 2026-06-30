@@ -20,6 +20,7 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.repository.MetricScoreResultQueryRepository;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import java.util.List;
 import java.util.Map;
@@ -31,17 +32,22 @@ import org.springframework.beans.factory.annotation.Autowired;
 /**
  * End-to-end reads of the {@code metric_score_results} queryable entity via the unified Query DSL on
  * real Postgres: per-run/per-computation projection, {@code in} over computations (the cross-run
- * building block), and aggregate rollups. {@code latest} resolution is NOT exercised here — it stays a
- * server-side concern; these queries always pass a concrete {@code computation_id}.
+ * building block), aggregate rollups, and the entity's {@code computation_id eq "latest"} sentinel
+ * resolution (scoped to the run's latest computation via {@code ComputationResolver}).
  */
 @DisplayName("Structured Query → jOOQ translation (metric_score_results) Tests")
 public abstract class MetricScoreResultStructuredQueryFunctionalTests extends BaseFunctionalTest {
+
+    private static final String OUTPUT_SCHEMA = "{\"properties\":{\"score\":{\"type\":\"number\"}}}";
 
     @Autowired
     private MetricScoreResultQueryRepository queryRepository;
 
     @Autowired
     private MetricScoreService metricScoreService;
+
+    @Autowired
+    private AnalyticsTestDataHelper analyticsTestDataHelper;
 
     private static MetricScoreResult result(
             UUID runId, UUID computationId, String scoreName, String metricName, double value) {
@@ -144,9 +150,21 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
                 result(runId, computationA, "AVG", "Relevancy.score", 0.4),
                 result(runId, computationB, "AVG", "Relevancy.score", 0.8)));
 
+        // Explicitly span both computations via `in` (so the rollup is independent of latest-defaulting).
+        FilterNode filter = new LogicalNode(
+                LogicalOp.AND,
+                List.of(
+                        eq("test_suite_run_id", runId.toString()),
+                        new ComparisonNode(
+                                ComparisonOp.IN,
+                                List.of(
+                                        new FieldExpr("computation_id"),
+                                        new ArrayExpr(List.of(
+                                                new ValueExpr(ValueType.UUID, computationA.toString()),
+                                                new ValueExpr(ValueType.UUID, computationB.toString())))))));
         StructuredQuery query = new StructuredQuery(
                 "metric_score_results",
-                eq("test_suite_run_id", runId.toString()),
+                filter,
                 QueryMode.AGGREGATE,
                 false,
                 List.of(
@@ -163,5 +181,33 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
         Map<String, Object> row = page.rows().get(0);
         assertThat(row.get("metric_score_name")).isEqualTo("AVG");
         assertThat(((Number) row.get("mean_value")).doubleValue()).isCloseTo(0.6, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("resolves the computation_id eq \"latest\" sentinel to the run's latest computation")
+    void resolvesLatestSentinel() {
+        UUID runId = UUID.randomUUID();
+        UUID older = UUID.randomUUID();
+        UUID newer = UUID.randomUUID();
+        analyticsTestDataHelper.createRunMetricSnapshot(runId, older, "Relevancy", OUTPUT_SCHEMA, 1_000L);
+        analyticsTestDataHelper.createRunMetricSnapshot(runId, newer, "Relevancy", OUTPUT_SCHEMA, 2_000L);
+        metricScoreService.saveAll(List.of(
+                result(runId, older, "AVG", "Relevancy.score", 0.4),
+                result(runId, newer, "AVG", "Relevancy.score", 0.8)));
+
+        // computation_id eq "latest" — the sentinel is resolved before translation (no uuid-parse error).
+        FilterNode filter = new LogicalNode(
+                LogicalOp.AND,
+                List.of(
+                        eq("test_suite_run_id", runId.toString()),
+                        new ComparisonNode(
+                                ComparisonOp.EQ,
+                                List.of(new FieldExpr("computation_id"), new ValueExpr(ValueType.STRING, "latest")))));
+
+        QueryResultPage page = queryRepository.execute(rowQuery(filter, List.of(col("computation_id"), col("value"))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(page.rows().get(0).get("computation_id")).isEqualTo(newer.toString());
+        assertThat(((Number) page.rows().get(0).get("value")).doubleValue()).isEqualTo(0.8);
     }
 }

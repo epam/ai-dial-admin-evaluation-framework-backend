@@ -2,7 +2,7 @@
 
 ### Requirement: Parameter binding via expression substitution
 The system SHALL support binding `param` expressions to concrete expressions at execution time via an optional name → expression map supplied alongside a structured query. **Before** translation, a single resolution pass SHALL rewrite the query into a parameter-free form, replacing each `param` expression with the expression bound to its name — recursively, so parameters nested inside a bound expression are also resolved. Once resolved, a bound `field` expression resolves to its column (including JSONB metric paths) and a bound `value` expression translates to a bound SQL parameter. A `param` whose name has no binding SHALL be rejected with HTTP 400. A binding whose value is itself a `param` expression (parameter-to-parameter), or any cyclic binding chain, SHALL be rejected with HTTP 400. When no binding map is supplied, the map SHALL be treated as empty and the query SHALL behave identically to one that contains no `param` expressions. The translator/builder themselves are parameter-agnostic: resolution is isolated in the pre-pass, not threaded through translation.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Field parameter resolves to a column
 - **WHEN** a query containing `param` `metricField` is executed with `metricField` bound to a `field` expression
@@ -26,7 +26,7 @@ Status: **Planned**
 
 ### Requirement: Public execution endpoint is parameterless
 The public query execution endpoint (`POST /api/v1/queries/execute`) SHALL NOT accept parameter bindings; a query submitted to it that contains an unbound `param` expression SHALL be rejected with HTTP 400. Parameter binding SHALL be available only to internal callers that invoke execution with an explicit binding map.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Param in public request is rejected
 - **WHEN** a query containing a `param` expression is posted to `/api/v1/queries/execute`

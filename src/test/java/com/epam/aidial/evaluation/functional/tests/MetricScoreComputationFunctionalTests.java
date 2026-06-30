@@ -7,7 +7,6 @@ import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricScoreResultResponseDto;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
 import java.util.List;
@@ -16,13 +15,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 
 /**
- * End-to-end Phase-3 metric-score computation over a run's persisted eval summaries, plus the
- * results read endpoint. Exercises the full DSL path including {@code percentile_cont} over a
- * JSONB-extracted numeric metric value on real Postgres.
+ * End-to-end Phase-3 metric-score computation over a run's persisted eval summaries. Exercises the
+ * full DSL path including {@code percentile_cont} over a JSONB-extracted numeric metric value on real
+ * Postgres. Results are read via the {@code metric_score_results} Query DSL entity (see
+ * {@code MetricScoreResultStructuredQueryFunctionalTests}).
  */
 @DisplayName("Metric Score Computation (Phase 3) Functional Tests")
 public abstract class MetricScoreComputationFunctionalTests extends BaseFunctionalTest {
@@ -90,26 +88,6 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     // the query schema, so an authored custom expression cannot translate end-to-end. The executor's
     // custom-overall branch (run with only the run-scoping params) is covered by the unit test
     // MetricScoreComputationExecutorTest#computesCustomOverallForMultipleMetrics.
-
-    @Test
-    @DisplayName("exposes computed results via the read endpoint, resolving computation=latest")
-    void readsResultsViaLatest() {
-        final UUID suiteId = UUID.randomUUID();
-        final UUID runId = UUID.randomUUID();
-        final UUID computationId = UUID.randomUUID();
-        seedRun(suiteId, runId, computationId, 1_700_000_000_000L, 1_700_000_500_000L);
-        executor.execute(context(suiteId, runId, computationId));
-
-        final ResponseEntity<MetricScoreResultResponseDto[]> response = restTemplate.getForEntity(
-                apiUrl("/analytics/metric-score-results?testSuiteRunId=" + runId + "&computation=latest"),
-                MetricScoreResultResponseDto[].class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).hasSize(6);
-        assertThat(response.getBody())
-                .extracting(MetricScoreResultResponseDto::getMetricScoreName)
-                .contains("AVG", "P10", "P90", "MIN", "MAX", "overall");
-    }
 
     private void seedRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
         analyticsTestDataHelper.createRunMetricSnapshot(runId, computationId, "Relevancy", OUTPUT_SCHEMA, computedAt);

@@ -30,8 +30,7 @@ import org.springframework.stereotype.Component;
  *       {@code QueryParameterResolver} before translation, so a surviving one means it was unbound
  *       (e.g. submitted to the paramless public execute endpoint);
  *   <li>{@link ArrayExpr} → rejected here (only meaningful as the right operand of {@code in},
- *       handled by {@link FilterTranslator}, or unpacked by an array-aware function such as
- *       {@code mean}).
+ *       handled by {@link FilterTranslator}).
  * </ul>
  *
  * <p>This translator is parameter-agnostic; parameter binding is resolved in a single pre-pass by

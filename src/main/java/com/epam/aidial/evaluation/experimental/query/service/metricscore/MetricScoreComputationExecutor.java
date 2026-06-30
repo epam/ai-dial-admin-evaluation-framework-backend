@@ -88,12 +88,12 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
             if (isCancelled(ctx)) {
                 return;
             }
-            computePerMetric(statistic.query(), statistic.name(), metricFields, ctx, results);
+            results.addAll(computePerMetric(statistic.query(), statistic.name(), metricFields, ctx));
         }
 
         // Run-level overall, from the suite's (snapshot) definition or the single-metric default.
         if (!isCancelled(ctx)) {
-            computeOverall(ctx, metricFields, results);
+            results.addAll(computeOverall(ctx, metricFields));
         }
 
         metricScoreService.saveAll(results);
@@ -105,12 +105,12 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
     }
 
     /** Per-metric statistic: run the query once per field, binding {@code :metricField}. */
-    private void computePerMetric(
+    private List<MetricScoreResult> computePerMetric(
             StructuredQuery query,
             String scoreName,
             List<MetricField> metricFields,
-            MetricScoreComputationContext ctx,
-            List<MetricScoreResult> results) {
+            MetricScoreComputationContext ctx) {
+        final List<MetricScoreResult> results = new ArrayList<>();
         for (final MetricField metricField : metricFields) {
             final Map<String, Expr> params = baseParams(ctx);
             params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
@@ -119,6 +119,7 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
                 results.add(buildResult(ctx, scoreName, metricField.metricName(), value));
             }
         }
+        return results;
     }
 
     /**
@@ -126,21 +127,21 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
      * default — computed only when the run has exactly one numeric metric field (then {@code overall} is
      * that metric's average), otherwise skipped (no {@code overall} row).
      */
-    private void computeOverall(
-            MetricScoreComputationContext ctx, List<MetricField> metricFields, List<MetricScoreResult> results) {
+    private List<MetricScoreResult> computeOverall(
+            MetricScoreComputationContext ctx, List<MetricField> metricFields) {
         final boolean isDefault = ctx.getOverallExpression() == null;
         if (isDefault && metricFields.size() != 1) {
             log.debug(
                     "Default overall skipped for run {}: {} metric fields (computed only for a single metric)",
                     ctx.getTestSuiteRunId(),
                     metricFields.size());
-            return;
+            return List.of();
         }
         final StructuredQuery query = isDefault
                 ? builtInStatistics.defaultOverall()
                 : parseExpression(ctx.getOverallExpression(), MetricScoreConstants.SCORE_OVERALL);
         if (query == null) {
-            return;
+            return List.of();
         }
         // Default: the single metric's average — bind :metricField to that one field. Custom: a
         // self-contained expression over the real configured metric columns — run-scoping params only.
@@ -152,10 +153,10 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         }
         final Double value = executeScalar(
                 query, params, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, ctx);
-        if (value != null) {
-            results.add(
-                    buildResult(ctx, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, value));
-        }
+        return value != null
+                ? List.of(buildResult(
+                        ctx, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, value))
+                : List.of();
     }
 
     private Map<String, Expr> baseParams(MetricScoreComputationContext ctx) {
@@ -177,10 +178,11 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
             MetricScoreComputationContext ctx) {
         try {
             final QueryResultPage page = structuredQueryService.execute(query, params);
-            if (page.rows().isEmpty()) {
+            final List<Map<String, Object>> rows = page.rows();
+            if (rows.isEmpty()) {
                 return null;
             }
-            final Object value = page.rows().getFirst().get(MetricScoreConstants.VALUE_ALIAS);
+            final Object value = rows.getFirst().get(MetricScoreConstants.VALUE_ALIAS);
             return value instanceof Number number ? number.doubleValue() : null;
         } catch (ValidationException e) {
             log.warn(

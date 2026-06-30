@@ -40,11 +40,5 @@ VALUES (
     NULL)
 ON CONFLICT DO NOTHING;
 
--- "overall": unweighted mean of the run's per-metric averages, computed via the DSL. The executor
--- binds :metricAvgs to an array of avg(metric:<tsmd>:<field>) terms for the run's discovered metrics.
-INSERT INTO metric_score_definition (id, type, name, description, expression, target_id)
-VALUES (
-    '11111111-1111-1111-1111-1111111111ff', 'DEFAULT', 'overall', 'Overall run score: unweighted mean of each metric''s average',
-    '{"entity":"eval_summaries","mode":"aggregate","select":[{"expr":{"type":"fn","name":"mean","args":[{"type":"param","name":"metricAvgs"}]},"as":"value"}],"filter":{"op":"and","args":[{"op":"eq","args":[{"type":"field","name":"test_suite_run_id"},{"type":"param","name":"runId"}]},{"op":"eq","args":[{"type":"field","name":"computation_id"},{"type":"param","name":"computationId"}]}]}}'::jsonb,
-    NULL)
-ON CONFLICT DO NOTHING;
+-- The "overall" score is NOT seeded here: it is a per-suite definition (test_suites.overall_score),
+-- defaulting to a Java constant computed only for single-metric runs. See V1.25 / MetricScoreConstants.

@@ -7,6 +7,7 @@ package com.epam.aidial.evaluation.data.db.jooq.meta;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.Datasets;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarationVersions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarations;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricScoreDefinition;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RevalidationTasks;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
@@ -33,6 +34,7 @@ public class Indexes {
     public static final Index IDX_DATASETS_CREATED_AT_MS = Internal.createIndex(DSL.name("idx_datasets_created_at_ms"), Datasets.DATASETS, new OrderField[] { Datasets.DATASETS.CREATED_AT_MS.desc() }, false);
     public static final Index IDX_METRIC_DECLARATION_VERSIONS_DECLARATION_ID = Internal.createIndex(DSL.name("idx_metric_declaration_versions_declaration_id"), MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS, new OrderField[] { MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS.METRIC_DECLARATION_ID }, false);
     public static final Index IDX_METRIC_DECLARATION_VERSIONS_DECLARATION_VERSION = Internal.createIndex(DSL.name("idx_metric_declaration_versions_declaration_version"), MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS, new OrderField[] { MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS.METRIC_DECLARATION_ID, MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS.SCHEMA_VERSION.desc() }, false);
+    public static final Index IDX_METRIC_SCORE_DEFINITION_TYPE_TARGET = Internal.createIndex(DSL.name("idx_metric_score_definition_type_target"), MetricScoreDefinition.METRIC_SCORE_DEFINITION, new OrderField[] { MetricScoreDefinition.METRIC_SCORE_DEFINITION.TYPE, MetricScoreDefinition.METRIC_SCORE_DEFINITION.TARGET_ID }, false);
     public static final Index IDX_REVALIDATION_TASKS_DATASET_ID = Internal.createIndex(DSL.name("idx_revalidation_tasks_dataset_id"), RevalidationTasks.REVALIDATION_TASKS, new OrderField[] { RevalidationTasks.REVALIDATION_TASKS.DATASET_ID }, false);
     public static final Index IDX_TEST_CASE_RUN_INPUTS_RUN_ID = Internal.createIndex(DSL.name("idx_test_case_run_inputs_run_id"), TestCaseRunInputs.TEST_CASE_RUN_INPUTS, new OrderField[] { TestCaseRunInputs.TEST_CASE_RUN_INPUTS.RUN_ID }, false);
     public static final Index IDX_TEST_CASES_CREATED_AT_MS = Internal.createIndex(DSL.name("idx_test_cases_created_at_ms"), TestCases.TEST_CASES, new OrderField[] { TestCases.TEST_CASES.CREATED_AT_MS.desc() }, false);
@@ -45,4 +47,6 @@ public class Indexes {
     public static final Index IDX_TSMD_METRIC_DECLARATION_ID = Internal.createIndex(DSL.name("idx_tsmd_metric_declaration_id"), TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS, new OrderField[] { TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS.METRIC_DECLARATION_ID }, false);
     public static final Index IDX_TSMD_TEST_SUITE_ID = Internal.createIndex(DSL.name("idx_tsmd_test_suite_id"), TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS, new OrderField[] { TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS.TEST_SUITE_ID }, false);
     public static final Index UQ_METRIC_DECLARATIONS_PROVIDER_ID_NAME = Internal.createIndex(DSL.name("uq_metric_declarations_provider_id_name"), MetricDeclarations.METRIC_DECLARATIONS, new OrderField[] { MetricDeclarations.METRIC_DECLARATIONS.PROVIDER_ID, MetricDeclarations.METRIC_DECLARATIONS.NAME }, true);
+    public static final Index UQ_METRIC_SCORE_DEFINITION_GLOBAL = Internal.createIndex(DSL.name("uq_metric_score_definition_global"), MetricScoreDefinition.METRIC_SCORE_DEFINITION, new OrderField[] { MetricScoreDefinition.METRIC_SCORE_DEFINITION.TYPE, MetricScoreDefinition.METRIC_SCORE_DEFINITION.NAME }, true);
+    public static final Index UQ_METRIC_SCORE_DEFINITION_TARGETED = Internal.createIndex(DSL.name("uq_metric_score_definition_targeted"), MetricScoreDefinition.METRIC_SCORE_DEFINITION, new OrderField[] { MetricScoreDefinition.METRIC_SCORE_DEFINITION.TYPE, MetricScoreDefinition.METRIC_SCORE_DEFINITION.NAME, MetricScoreDefinition.METRIC_SCORE_DEFINITION.TARGET_ID }, true);
 }

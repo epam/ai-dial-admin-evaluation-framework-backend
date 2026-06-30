@@ -4,7 +4,6 @@
 package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 
-import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreDefinition;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunMetricSnapshots;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
@@ -16,11 +15,6 @@ import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResul
  */
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Tables {
-
-    /**
-     * The table <code>analytics.metric_score_definition</code>.
-     */
-    public static final MetricScoreDefinition METRIC_SCORE_DEFINITION = MetricScoreDefinition.METRIC_SCORE_DEFINITION;
 
     /**
      * The table <code>analytics.metric_score_result</code>.

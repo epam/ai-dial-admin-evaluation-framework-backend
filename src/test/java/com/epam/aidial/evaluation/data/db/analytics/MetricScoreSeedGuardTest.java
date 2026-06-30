@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Guards the V1.11 seed migration against drift from the StructuredQuery Jackson wire contract and
+ * Guards the metric-score seed migration against drift from the StructuredQuery Jackson wire contract and
  * the {@link MetricScoreConstants} names: every seeded {@code ::jsonb} expression MUST deserialize
  * into a {@link StructuredQuery} over {@code eval_summaries} in aggregate mode, selecting a single
  * {@code value} alias and referencing the run-scoping params plus either the per-metric
@@ -26,8 +26,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class MetricScoreSeedGuardTest {
 
-    private static final String SEED_RESOURCE =
-            "/db/migration/analytics/POSTGRES/V1.11__SeedGlobalMetricScoreDefinitions.sql";
+    private static final String SEED_RESOURCE = "/db/migration/meta/POSTGRES/V1.24__SeedMetricScoreDefinitions.sql";
 
     private static final Pattern JSONB_LITERAL = Pattern.compile("'(\\{.*?})'::jsonb");
 
@@ -36,8 +35,9 @@ class MetricScoreSeedGuardTest {
     @Test
     void everySeededExpressionDeserializesIntoStructuredQuery() throws IOException {
         final List<String> expressions = extractJsonbLiterals();
-        // 5 DEFAULT statistics (AVG, P10, P90, MIN, MAX) + the DEFAULT overall composite.
-        assertThat(expressions).hasSize(6);
+        // 5 DEFAULT per-metric statistics (AVG, P10, P90, MIN, MAX). The overall score is no longer
+        // seeded — it is a per-suite property (test_suites.overall_score) defaulting to a Java constant.
+        assertThat(expressions).hasSize(5);
 
         for (final String expression : expressions) {
             final StructuredQuery query = mapper.readValue(expression, StructuredQuery.class);
@@ -47,11 +47,8 @@ class MetricScoreSeedGuardTest {
             assertThat(query.select().getFirst().as()).isEqualTo(MetricScoreConstants.VALUE_ALIAS);
             assertThat(expression)
                     .contains(MetricScoreConstants.PARAM_RUN_ID)
-                    .contains(MetricScoreConstants.PARAM_COMPUTATION_ID);
-            assertThat(expression.contains(MetricScoreConstants.PARAM_METRIC_FIELD)
-                            || expression.contains(MetricScoreConstants.PARAM_METRIC_AVGS))
-                    .as("expression references metricField (leaf) or metricAvgs (overall)")
-                    .isTrue();
+                    .contains(MetricScoreConstants.PARAM_COMPUTATION_ID)
+                    .contains(MetricScoreConstants.PARAM_METRIC_FIELD);
         }
     }
 

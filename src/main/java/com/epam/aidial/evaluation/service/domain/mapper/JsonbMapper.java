@@ -133,6 +133,22 @@ public class JsonbMapper {
     }
 
     /**
+     * The per-suite {@code overall} score definition (an opaque {@code StructuredQuery} JSON object),
+     * read from the entity into the suite snapshot. Setting a custom value is not yet exposed via the
+     * API; the column stays null and the run-level {@code overall} falls back to the system default.
+     */
+    public Map<String, Object> mapOverallScore(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, MAP_TYPE);
+        } catch (JacksonException ex) {
+            throw new IllegalArgumentException("Failed to deserialize overallScore", ex);
+        }
+    }
+
+    /**
      * Extracts deployment ID from serialized deploymentRef JSONB.
      */
     public String extractDeploymentId(String deploymentRefJson) {

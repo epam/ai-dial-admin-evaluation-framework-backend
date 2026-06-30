@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
+import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
@@ -28,6 +29,7 @@ import org.springframework.http.ResponseEntity;
 public abstract class MetricScoreComputationFunctionalTests extends BaseFunctionalTest {
 
     private static final String OUTPUT_SCHEMA = "{\"properties\":{\"score\":{\"type\":\"number\"}}}";
+    private static final String DEFAULT_OVERALL_EXPRESSION = MetricScoreConstants.DEFAULT_OVERALL_EXPRESSION;
 
     @Autowired
     private MetricScoreComputation executor;
@@ -64,6 +66,46 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
 
         assertThat(results)
                 .allSatisfy(result -> assertThat(result.getComputationId()).isEqualTo(computationId));
+    }
+
+    @Test
+    @DisplayName("computes per-metric statistics but no default overall when the run has multiple metric fields")
+    void skipsDefaultOverallForMultipleMetrics() {
+        final UUID suiteId = UUID.randomUUID();
+        final UUID runId = UUID.randomUUID();
+        final UUID computationId = UUID.randomUUID();
+        final long createdAt = 1_700_000_000_000L;
+        final long computedAt = 1_700_000_500_000L;
+
+        seedTwoMetricRun(suiteId, runId, computationId, createdAt, computedAt);
+
+        executor.execute(context(suiteId, runId, computationId));
+
+        final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
+        // 5 DEFAULT statistics x 2 metric fields, and NO overall (default overall is single-metric only).
+        assertThat(results).hasSize(10);
+        assertThat(results).extracting(MetricScoreResult::getMetricScoreName).doesNotContain("overall");
+    }
+
+    @Test
+    @DisplayName("computes a custom overall (from the suite snapshot) even when the run has multiple metric fields")
+    void computesCustomOverallForMultipleMetrics() {
+        final UUID suiteId = UUID.randomUUID();
+        final UUID runId = UUID.randomUUID();
+        final UUID computationId = UUID.randomUUID();
+        final long createdAt = 1_700_000_000_000L;
+        final long computedAt = 1_700_000_500_000L;
+
+        seedTwoMetricRun(suiteId, runId, computationId, createdAt, computedAt);
+
+        // A suite with a custom overall: the system default placeholder, opted in for any metric count.
+        executor.execute(context(suiteId, runId, computationId, DEFAULT_OVERALL_EXPRESSION));
+
+        final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
+        // 5 statistics x 2 fields + the custom overall.
+        assertThat(results).hasSize(11);
+        // overall = mean of the two per-metric averages (Relevancy avg 0.5, Accuracy avg 0.7) = 0.6.
+        assertThat(value(results, "overall", "overall")).isCloseTo(0.6, within(1e-6));
     }
 
     @Test
@@ -120,11 +162,45 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
                 "{\"Relevancy\":{\"score\":1.0}}");
     }
 
+    private void seedTwoMetricRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
+        analyticsTestDataHelper.createRunMetricSnapshot(runId, computationId, "Relevancy", OUTPUT_SCHEMA, computedAt);
+        analyticsTestDataHelper.createRunMetricSnapshot(runId, computationId, "Accuracy", OUTPUT_SCHEMA, computedAt);
+        seedTwoMetricSummary(suiteId, runId, computationId, "case-a", createdAt, 0.0, 0.6);
+        seedTwoMetricSummary(suiteId, runId, computationId, "case-b", createdAt, 0.5, 0.7);
+        seedTwoMetricSummary(suiteId, runId, computationId, "case-c", createdAt, 1.0, 0.8);
+    }
+
+    private void seedTwoMetricSummary(
+            UUID suiteId,
+            UUID runId,
+            UUID computationId,
+            String caseId,
+            long createdAt,
+            double relevancy,
+            double accuracy) {
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                caseId,
+                ExecutionStatus.SUCCESS.name(),
+                100L,
+                createdAt,
+                "{}",
+                "{\"Relevancy\":{\"score\":" + relevancy + "},\"Accuracy\":{\"score\":" + accuracy + "}}");
+    }
+
     private static MetricScoreComputationContext context(UUID suiteId, UUID runId, UUID computationId) {
+        return context(suiteId, runId, computationId, null);
+    }
+
+    private static MetricScoreComputationContext context(
+            UUID suiteId, UUID runId, UUID computationId, String overallExpression) {
         return MetricScoreComputationContext.builder()
                 .testSuiteRunId(runId)
                 .testSuiteId(suiteId)
                 .computationId(computationId)
+                .overallExpression(overallExpression)
                 .cancellationSignal(new AtomicBoolean(false))
                 .build();
     }

@@ -38,8 +38,7 @@ public class MeanFunction implements QueryFunction {
         if (args.size() != 1) {
             throw new ValidationException("function 'mean' expects exactly one array argument");
         }
-        final Expr resolved = ctx.substitute(args.getFirst());
-        if (!(resolved instanceof ArrayExpr array)) {
+        if (!(args.getFirst() instanceof ArrayExpr array)) {
             throw new ValidationException("function 'mean' expects an array argument");
         }
         final List<Expr> items = array.items() == null ? List.of() : array.items();

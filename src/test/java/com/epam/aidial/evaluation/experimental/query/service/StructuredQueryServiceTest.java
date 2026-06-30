@@ -12,9 +12,9 @@ import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryRepository;
+import com.epam.aidial.evaluation.experimental.query.service.translate.QueryParameterResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +22,8 @@ class StructuredQueryServiceTest {
 
     private final StructuredQueryRepository testSuites = repository("test_suites");
     private final StructuredQueryRepository evalSummaries = repository("eval_summaries");
-    private final StructuredQueryService service = new StructuredQueryService(List.of(testSuites, evalSummaries));
+    private final StructuredQueryService service =
+            new StructuredQueryService(List.of(testSuites, evalSummaries), new QueryParameterResolver());
 
     private static StructuredQueryRepository repository(String entity) {
         StructuredQueryRepository repository = mock(StructuredQueryRepository.class);
@@ -40,12 +41,13 @@ class StructuredQueryServiceTest {
     void routesByEntity() {
         StructuredQuery query = query("eval_summaries");
         QueryResultPage expected = new QueryResultPage(List.of(), null);
-        when(evalSummaries.execute(eq(query), eq(Map.of()))).thenReturn(expected);
+        // No params → the resolver returns the same query instance, which is dispatched as-is.
+        when(evalSummaries.execute(eq(query))).thenReturn(expected);
 
         QueryResultPage result = service.execute(query);
 
         assertThat(result).isSameAs(expected);
-        verify(evalSummaries).execute(eq(query), eq(Map.of()));
+        verify(evalSummaries).execute(eq(query));
     }
 
     @Test
@@ -73,8 +75,8 @@ class StructuredQueryServiceTest {
     @Test
     @DisplayName("fails fast when two repositories claim the same entity")
     void rejectsDuplicateEntityRegistration() {
-        assertThatThrownBy(
-                        () -> new StructuredQueryService(List.of(repository("test_suites"), repository("test_suites"))))
+        assertThatThrownBy(() -> new StructuredQueryService(
+                        List.of(repository("test_suites"), repository("test_suites")), new QueryParameterResolver()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("test_suites");
     }

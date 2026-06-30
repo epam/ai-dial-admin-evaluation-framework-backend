@@ -7,6 +7,7 @@ package com.epam.aidial.evaluation.data.db.jooq.meta;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.Datasets;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarationVersions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarations;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricScoreDefinition;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RevalidationTasks;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
@@ -51,6 +52,11 @@ public class Meta extends SchemaImpl {
      * The table <code>meta.metric_declarations</code>.
      */
     public final MetricDeclarations METRIC_DECLARATIONS = MetricDeclarations.METRIC_DECLARATIONS;
+
+    /**
+     * The table <code>meta.metric_score_definition</code>.
+     */
+    public final MetricScoreDefinition METRIC_SCORE_DEFINITION = MetricScoreDefinition.METRIC_SCORE_DEFINITION;
 
     /**
      * The table <code>meta.revalidation_tasks</code>.
@@ -108,6 +114,7 @@ public class Meta extends SchemaImpl {
             Datasets.DATASETS,
             MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS,
             MetricDeclarations.METRIC_DECLARATIONS,
+            MetricScoreDefinition.METRIC_SCORE_DEFINITION,
             RevalidationTasks.REVALIDATION_TASKS,
             TestCaseRunInputs.TEST_CASE_RUN_INPUTS,
             TestCases.TEST_CASES,

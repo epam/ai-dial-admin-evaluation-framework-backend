@@ -5,36 +5,29 @@ import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConsta
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
-import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreDefinition;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
-import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreDefinitionRepository;
-import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.data.db.model.MetricScoreDefinition;
+import com.epam.aidial.evaluation.data.db.repository.MetricScoreDefinitionRepository;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
-import com.epam.aidial.evaluation.experimental.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
-import com.epam.aidial.evaluation.experimental.query.model.FilterNode;
 import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
-import com.epam.aidial.evaluation.experimental.query.model.LogicalNode;
-import com.epam.aidial.evaluation.experimental.query.model.OutputColumn;
-import com.epam.aidial.evaluation.experimental.query.model.ParamExpr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
+import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,19 +36,23 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Phase 3 of a test suite run: computes metric-score statistics by executing each applicable
- * {@link MetricScoreDefinition}'s persisted {@link StructuredQuery} via the Query DSL, and persists
- * the results. Reuses the run's metric-evaluation {@code computationId}, so the scores join that
- * computation.
+ * Phase 3 of a test suite run: computes metric-score statistics over the run's eval summaries via the
+ * Query DSL and persists the results, reusing the run's metric-evaluation {@code computationId}.
  *
- * <p>Dispatch is driven by which {@code param} an expression references (no separate kind flag):
- * an expression using {@code :metricField} is executed once per metric field (one row per metric —
- * the per-metric statistics); an expression using {@code :metricAvgs} (or no metric param) is
- * executed once at run level (one row — e.g. {@code overall}, whose expression averages the array of
- * per-metric {@code avg(...)} terms bound to {@code :metricAvgs}).
+ * <p>Two kinds of computation:
+ * <ul>
+ *   <li><b>Per-metric statistics</b> — each seeded {@link MetricScoreDefinition} (AVG/P10/P90/MIN/MAX)
+ *       is executed once per numeric metric field, binding {@code :metricField}.
+ *   <li><b>Run-level {@code overall}</b> — a per-suite definition taken from the run's suite snapshot
+ *       ({@link MetricScoreComputationContext#getOverallExpression()}). When the suite has no custom
+ *       definition (null), the {@linkplain MetricScoreConstants#DEFAULT_OVERALL_EXPRESSION default}
+ *       is used, but computed <b>only when the run has exactly one numeric metric field</b> (so the
+ *       mean is unambiguous); with more than one field no {@code overall} row is produced. A custom
+ *       expression is computed regardless of metric count.
+ * </ul>
  *
- * <p>Fault isolation: a failure on one (definition, field) pair is logged and skipped; the rest still
- * compute. The caller treats a Phase-3 failure as non-fatal to the run.
+ * <p>Fault isolation: a {@link ValidationException} computing one score is logged and skipped so it
+ * does not abort the rest. Any other runtime exception propagates to the caller unchanged.
  */
 @Slf4j
 @Component
@@ -63,9 +60,12 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class MetricScoreComputationExecutor implements MetricScoreComputation {
 
+    /** DSL aggregate-function name used to build the per-metric averages bound to {@code :metricAvgs}. */
+    private static final String AVG_FUNCTION = "avg";
+
     private final MetricScoreDefinitionRepository definitionRepository;
-    private final MetricScoreResultRepository resultRepository;
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
+    private final MetricScoreService metricScoreService;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
     private final StructuredQueryService structuredQueryService;
     private final ObjectMapper objectMapper;
@@ -86,26 +86,25 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
             return;
         }
 
-        final List<MetricScoreDefinition> definitions = definitionRepository.findApplicable(ctx.getTestSuiteId());
-        final ArrayExpr metricAvgs = metricAvgsArray(metricFields);
-
         final List<MetricScoreResult> results = new ArrayList<>();
-        for (final MetricScoreDefinition definition : definitions) {
+
+        // Per-metric statistics: each seeded definition, once per metric field.
+        for (final MetricScoreDefinition definition : definitionRepository.findAll()) {
             if (isCancelled(ctx)) {
                 return;
             }
-            final StructuredQuery query = parseExpression(definition);
-            if (query == null) {
-                continue;
-            }
-            if (referencesParam(query, MetricScoreConstants.PARAM_METRIC_FIELD)) {
+            final StructuredQuery query = parseExpression(definition.getExpression(), definition.getName());
+            if (query != null) {
                 computePerMetric(query, definition, metricFields, ctx, results);
-            } else {
-                computeRunLevel(query, definition, metricAvgs, ctx, results);
             }
         }
 
-        resultRepository.saveAll(results);
+        // Run-level overall, from the suite's (snapshot) definition or the single-metric default.
+        if (!isCancelled(ctx)) {
+            computeOverall(ctx, metricFields, results);
+        }
+
+        metricScoreService.saveAll(results);
         log.debug(
                 "Computed {} metric score result(s) for run {} computation {}",
                 results.size(),
@@ -122,26 +121,42 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
             List<MetricScoreResult> results) {
         for (final MetricField metricField : metricFields) {
             final Map<String, Expr> params = baseParams(ctx);
-            params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.token()));
-            final Double value = executeScalar(query, params, definition.getName(), metricField.token(), ctx);
+            params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
+            final Double value = executeScalar(query, params, definition.getName(), metricField.flattenedName(), ctx);
             if (value != null) {
                 results.add(buildResult(ctx, definition.getName(), metricField.metricName(), value));
             }
         }
     }
 
-    /** Run-level score (e.g. {@code overall}): run once, binding the per-metric {@code avg} array. */
-    private void computeRunLevel(
-            StructuredQuery query,
-            MetricScoreDefinition definition,
-            ArrayExpr metricAvgs,
-            MetricScoreComputationContext ctx,
-            List<MetricScoreResult> results) {
+    /**
+     * Run-level {@code overall}: a custom per-suite expression (computed for any metric count), or the
+     * system default — computed only when the run has exactly one numeric metric field (so the mean is
+     * unambiguous), otherwise skipped (no {@code overall} row).
+     */
+    private void computeOverall(
+            MetricScoreComputationContext ctx, List<MetricField> metricFields, List<MetricScoreResult> results) {
+        final boolean isDefault = ctx.getOverallExpression() == null;
+        if (isDefault && metricFields.size() != 1) {
+            log.debug(
+                    "Default overall skipped for run {}: {} metric fields (computed only for a single metric)",
+                    ctx.getTestSuiteRunId(),
+                    metricFields.size());
+            return;
+        }
+        final String expression =
+                isDefault ? MetricScoreConstants.DEFAULT_OVERALL_EXPRESSION : ctx.getOverallExpression();
+        final StructuredQuery query = parseExpression(expression, MetricScoreConstants.SCORE_OVERALL);
+        if (query == null) {
+            return;
+        }
         final Map<String, Expr> params = baseParams(ctx);
-        params.put(MetricScoreConstants.PARAM_METRIC_AVGS, metricAvgs);
-        final Double value = executeScalar(query, params, definition.getName(), definition.getName(), ctx);
+        params.put(MetricScoreConstants.PARAM_METRIC_AVGS, metricAvgsArray(metricFields));
+        final Double value = executeScalar(
+                query, params, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, ctx);
         if (value != null) {
-            results.add(buildResult(ctx, definition.getName(), definition.getName(), value));
+            results.add(
+                    buildResult(ctx, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, value));
         }
     }
 
@@ -160,10 +175,7 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
     private ArrayExpr metricAvgsArray(List<MetricField> metricFields) {
         final List<Expr> avgs = new ArrayList<>(metricFields.size());
         for (final MetricField metricField : metricFields) {
-            avgs.add(new FnExpr(
-                    MetricScoreConstants.STAT_AVG.toLowerCase(java.util.Locale.ROOT),
-                    false,
-                    List.of(new FieldExpr(metricField.token()))));
+            avgs.add(new FnExpr(AVG_FUNCTION, false, List.of(new FieldExpr(metricField.flattenedName()))));
         }
         return new ArrayExpr(avgs);
     }
@@ -171,7 +183,7 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
     private Double executeScalar(
             StructuredQuery query,
             Map<String, Expr> params,
-            String definitionName,
+            String scoreName,
             String label,
             MetricScoreComputationContext ctx) {
         try {
@@ -184,7 +196,7 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         } catch (ValidationException e) {
             log.warn(
                     "Metric score '{}' over '{}' failed for run {}: {}",
-                    definitionName,
+                    scoreName,
                     label,
                     ctx.getTestSuiteRunId(),
                     e.getMessage(),
@@ -198,24 +210,20 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         final List<MetricField> fields = new ArrayList<>();
         for (final RunMetricSnapshot snapshot : snapshots) {
             for (final String outputField : outputSchemaFieldExtractor.extractFieldNames(snapshot.getOutputSchema())) {
-                final String token = METRIC_COLUMN_PREFIX + snapshot.getTsmdName() + COLUMN_SEPARATOR + outputField;
+                final String flattenedName =
+                        METRIC_COLUMN_PREFIX + snapshot.getTsmdName() + COLUMN_SEPARATOR + outputField;
                 final String metricName = snapshot.getTsmdName() + "." + outputField;
-                fields.add(new MetricField(token, metricName));
+                fields.add(new MetricField(flattenedName, metricName));
             }
         }
         return fields;
     }
 
-    private StructuredQuery parseExpression(MetricScoreDefinition definition) {
+    private StructuredQuery parseExpression(String expression, String label) {
         try {
-            return objectMapper.readValue(definition.getExpression(), StructuredQuery.class);
+            return objectMapper.readValue(expression, StructuredQuery.class);
         } catch (JacksonException e) {
-            log.warn(
-                    "Skipping metric score definition '{}' ({}): unparseable expression: {}",
-                    definition.getName(),
-                    definition.getId(),
-                    e.getMessage(),
-                    e);
+            log.warn("Skipping metric score '{}': unparseable expression: {}", label, e.getMessage(), e);
             return null;
         }
     }
@@ -237,59 +245,6 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
                 && ctx.getCancellationSignal().get();
     }
 
-    /** True if {@code query}'s select/filter/having reference a {@code param} with the given name. */
-    private static boolean referencesParam(StructuredQuery query, String paramName) {
-        final Set<String> names = new HashSet<>();
-        if (query.select() != null) {
-            for (final OutputColumn col : query.select()) {
-                collectExprParams(col.expr(), names);
-            }
-        }
-        collectFilterParams(query.filter(), names);
-        collectFilterParams(query.having(), names);
-        return names.contains(paramName);
-    }
-
-    private static void collectExprParams(Expr expr, Set<String> names) {
-        switch (expr) {
-            case null -> {
-                /* nothing */
-            }
-            case ParamExpr param -> names.add(param.name());
-            case FnExpr fn -> {
-                if (fn.args() != null) {
-                    fn.args().forEach(arg -> collectExprParams(arg, names));
-                }
-            }
-            case ArrayExpr array -> {
-                if (array.items() != null) {
-                    array.items().forEach(item -> collectExprParams(item, names));
-                }
-            }
-            default -> {
-                /* FieldExpr / ValueExpr have no params */
-            }
-        }
-    }
-
-    private static void collectFilterParams(FilterNode node, Set<String> names) {
-        switch (node) {
-            case null -> {
-                /* nothing */
-            }
-            case LogicalNode logical -> {
-                if (logical.args() != null) {
-                    logical.args().forEach(child -> collectFilterParams(child, names));
-                }
-            }
-            case ComparisonNode comparison -> {
-                if (comparison.args() != null) {
-                    comparison.args().forEach(arg -> collectExprParams(arg, names));
-                }
-            }
-        }
-    }
-
-    /** A flattened numeric metric column: its DSL field token and the stored {@code metric_name}. */
-    private record MetricField(String token, String metricName) {}
+    /** A flattened numeric metric column: its DSL field name ({@code metric:<tsmd>:<field>}) and the stored {@code metric_name}. */
+    private record MetricField(String flattenedName, String metricName) {}
 }

@@ -14,7 +14,6 @@ import org.jooq.Query;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Repository
@@ -29,7 +28,6 @@ public class PostgresMetricScoreResultRepository implements MetricScoreResultRep
     private final MetricScoreResultRecordMapper recordMapper;
 
     @Override
-    @Transactional("analyticsTransactionManager")
     public void saveAll(List<MetricScoreResult> results) {
         if (results == null || results.isEmpty()) {
             return;

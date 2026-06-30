@@ -1,8 +1,6 @@
 package com.epam.aidial.evaluation.experimental.query.service.repository;
 
-import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
-import java.util.Map;
 
 /**
  * Executes a {@link StructuredQuery} against a single backing entity by translating it to jOOQ SQL.
@@ -10,6 +8,9 @@ import java.util.Map;
  * in {@link StructuredQueryExecutor}, so an implementation only binds an entity name to its table and
  * {@code DSLContext}. {@code StructuredQueryService} dispatches across all implementations by
  * {@link #supportedEntity()}.
+ *
+ * <p>The query passed here is already parameter-free — {@code QueryParameterResolver} substitutes any
+ * {@code param} expressions in {@code StructuredQueryService} before dispatch.
  */
 public interface StructuredQueryRepository {
 
@@ -17,20 +18,10 @@ public interface StructuredQueryRepository {
     String supportedEntity();
 
     /**
-     * Translates and runs {@code query} (whose {@code entity} must equal {@link #supportedEntity()})
-     * with no parameter bindings.
+     * Translates and runs {@code query} (whose {@code entity} must equal {@link #supportedEntity()}).
      *
      * @throws com.epam.aidial.evaluation.service.domain.exception.ValidationException if the entity
      *     does not match or the query uses an unsupported field, function, or feature
      */
-    default QueryResultPage execute(StructuredQuery query) {
-        return execute(query, Map.of());
-    }
-
-    /**
-     * Translates and runs {@code query}, resolving {@code param} expressions against {@code params}
-     * (parameter = expression substitution). Trusted internal callers supply the bindings; the public
-     * execute path passes an empty map.
-     */
-    QueryResultPage execute(StructuredQuery query, Map<String, Expr> params);
+    QueryResultPage execute(StructuredQuery query);
 }

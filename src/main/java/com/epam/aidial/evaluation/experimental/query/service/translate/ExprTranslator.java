@@ -26,16 +26,16 @@ import org.springframework.stereotype.Component;
  *       allowlist is the schema the client discovered);
  *   <li>{@link ValueExpr} → a typed bind parameter via {@link ValueExprToObjectMapper};
  *   <li>{@link FnExpr} → dispatched to a {@link QueryFunctionRegistry} bean (pluggable catalog);
- *   <li>{@link ParamExpr} → substituted with the {@link Expr} bound to its name in the supplied
- *       params map, then translated recursively; an unbound name, or a binding to another
- *       {@link ParamExpr}, is rejected;
+ *   <li>{@link ParamExpr} → rejected here: {@code param} expressions are substituted away by
+ *       {@code QueryParameterResolver} before translation, so a surviving one means it was unbound
+ *       (e.g. submitted to the paramless public execute endpoint);
  *   <li>{@link ArrayExpr} → rejected here (only meaningful as the right operand of {@code in},
  *       handled by {@link FilterTranslator}, or unpacked by an array-aware function such as
  *       {@code mean}).
  * </ul>
  *
- * <p>Parameter bindings are supplied only by trusted internal callers; the public execute endpoint
- * passes an empty map, so a {@code param} in a public request is always unbound (rejected).
+ * <p>This translator is parameter-agnostic; parameter binding is resolved in a single pre-pass by
+ * {@code QueryParameterResolver}, not threaded through translation.
  */
 @Component
 @LogExecution
@@ -77,47 +77,18 @@ public class ExprTranslator {
         return jsonbFieldResolver.resolve(name, bindings);
     }
 
-    /** Translates any non-array expression into a jOOQ {@link Field} with no parameter bindings. */
+    /** Translates any non-array expression into a jOOQ {@link Field}. */
     public Field<?> toField(Expr expr, Map<String, QueryFieldBinding> bindings) {
-        return toField(expr, bindings, Map.of());
-    }
-
-    /**
-     * Translates any non-array expression into a jOOQ {@link Field}, resolving {@link ParamExpr}
-     * nodes against {@code params} (parameter = expression substitution).
-     */
-    public Field<?> toField(Expr expr, Map<String, QueryFieldBinding> bindings, Map<String, Expr> params) {
         if (expr == null) {
             throw new ValidationException("missing expression; a select/filter entry has no 'expr'");
         }
         return switch (expr) {
             case FieldExpr field -> resolveField(field, bindings);
             case ValueExpr value -> DSL.val(valueExprToObjectMapper.map(value));
-            case FnExpr fn -> functionRegistry.translate(fn, new FunctionContext(this, bindings, params));
-            case ParamExpr param -> toField(substituteParam(param, params), bindings, params);
+            case FnExpr fn -> functionRegistry.translate(fn, new FunctionContext(this, bindings));
+            case ParamExpr param -> throw new ValidationException("unbound query parameter '" + param.name() + "'");
             case ArrayExpr ignored ->
                 throw new ValidationException("array expressions are only valid as the right operand of 'in'");
         };
-    }
-
-    /**
-     * One-level parameter substitution: a {@link ParamExpr} resolves to the {@link Expr} bound to its
-     * name (any other expression is returned unchanged). An unbound name is rejected (HTTP 400);
-     * binding a parameter to another parameter is rejected to keep substitution acyclic. Used both by
-     * {@link #toField} and by array-aware functions that need the bound expression (not a field).
-     */
-    public Expr substituteParam(Expr expr, Map<String, Expr> params) {
-        if (!(expr instanceof ParamExpr param)) {
-            return expr;
-        }
-        final Expr bound = params.get(param.name());
-        if (bound == null) {
-            throw new ValidationException("unbound query parameter '" + param.name() + "'");
-        }
-        if (bound instanceof ParamExpr) {
-            throw new ValidationException(
-                    "query parameter '" + param.name() + "' must not be bound to another parameter");
-        }
-        return bound;
     }
 }

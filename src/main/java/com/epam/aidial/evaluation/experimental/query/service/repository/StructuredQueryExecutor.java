@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.experimental.query.service.repository;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.OffsetPage;
 import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
@@ -52,16 +51,6 @@ public class StructuredQueryExecutor {
      *     against the data (e.g. aggregating a non-numeric JSONB field) — all client errors (HTTP 400)
      */
     public QueryResultPage execute(String entity, DSLContext dsl, Table<?> table, StructuredQuery query) {
-        return execute(entity, dsl, table, query, Map.of());
-    }
-
-    /**
-     * Translates and runs {@code query} against {@code table} on {@code dsl}, resolving {@code param}
-     * expressions against {@code params} (parameter = expression substitution). Used by internal
-     * callers; the public execute path supplies an empty map.
-     */
-    public QueryResultPage execute(
-            String entity, DSLContext dsl, Table<?> table, StructuredQuery query, Map<String, Expr> params) {
         if (query == null) {
             throw new ValidationException("query must not be null");
         }
@@ -72,10 +61,10 @@ public class StructuredQueryExecutor {
 
         final Map<String, QueryFieldBinding> bindings = bindings(table);
         // build() validates fields/functions/features and may throw ValidationException — let it propagate.
-        final SelectQuery<Record> select = queryBuilder.build(dsl, table, bindings, query, params);
+        final SelectQuery<Record> select = queryBuilder.build(dsl, table, bindings, query);
         try {
             final List<Map<String, Object>> rows = select.fetch().intoMaps();
-            final Long totalCount = totalCount(dsl, table, bindings, query, params);
+            final Long totalCount = totalCount(dsl, table, bindings, query);
             log.debug("Executed structured {} query: {} row(s), totalCount={}", entity, rows.size(), totalCount);
             return new QueryResultPage(rows, totalCount);
         } catch (BadSqlGrammarException | DataIntegrityViolationException e) {
@@ -95,17 +84,13 @@ public class StructuredQueryExecutor {
     }
 
     private Long totalCount(
-            DSLContext dsl,
-            Table<?> table,
-            Map<String, QueryFieldBinding> bindings,
-            StructuredQuery query,
-            Map<String, Expr> params) {
+            DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
         // Total count is meaningful for offset row paging; group counts in aggregate mode are out of scope.
         if (query.mode() == QueryMode.AGGREGATE) {
             return null;
         }
         if (query.page() instanceof OffsetPage offset && offset.includeTotal()) {
-            return (long) queryBuilder.countRows(dsl, table, bindings, query, params);
+            return (long) queryBuilder.countRows(dsl, table, bindings, query);
         }
         return null;
     }

@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.experimental.query.service.translate;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.CursorPage;
-import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.model.NullsOrder;
 import com.epam.aidial.evaluation.experimental.query.model.OffsetPage;
@@ -60,33 +59,23 @@ public class StructuredQueryBuilder {
     private final ExprTranslator exprTranslator;
     private final FilterTranslator filterTranslator;
 
-    /** Builds the executable select for {@code query} with no parameter bindings. */
-    public SelectQuery<Record> build(
-            DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
-        return build(dsl, table, bindings, query, Map.of());
-    }
-
     /**
-     * Builds the executable select for {@code query} against {@code table} using {@code bindings},
-     * resolving any {@code param} expressions against {@code params}.
+     * Builds the executable select for {@code query} against {@code table} using {@code bindings}.
+     * The query must already be parameter-free ({@code QueryParameterResolver} runs before this).
      */
     public SelectQuery<Record> build(
-            DSLContext dsl,
-            Table<?> table,
-            Map<String, QueryFieldBinding> bindings,
-            StructuredQuery query,
-            Map<String, Expr> params) {
+            DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
         final SelectQuery<Record> select = dsl.selectQuery();
         select.addFrom(table);
-        select.addConditions(filterTranslator.toCondition(query.filter(), bindings, params));
+        select.addConditions(filterTranslator.toCondition(query.filter(), bindings));
 
         final QueryMode mode = query.mode();
         // Names that are select outputs (aliases / projected fields), so sort can reference the output
         // column instead of re-translating its expression.
         final Set<String> selectAliases = new HashSet<>();
         final Map<String, QueryFieldBinding> sortBindings = mode == QueryMode.AGGREGATE
-                ? buildAggregate(select, bindings, query, selectAliases, params)
-                : buildRow(select, table, bindings, query, selectAliases, params);
+                ? buildAggregate(select, bindings, query, selectAliases)
+                : buildRow(select, table, bindings, query, selectAliases);
 
         if (query.distinct()) {
             select.setDistinct(true);
@@ -98,12 +87,8 @@ public class StructuredQueryBuilder {
 
     /** Counts matching rows for offset {@code include_total} (row mode only; ignores paging). */
     public int countRows(
-            DSLContext dsl,
-            Table<?> table,
-            Map<String, QueryFieldBinding> bindings,
-            StructuredQuery query,
-            Map<String, Expr> params) {
-        final Condition where = filterTranslator.toCondition(query.filter(), bindings, params);
+            DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
+        final Condition where = filterTranslator.toCondition(query.filter(), bindings);
         final Integer count = dsl.selectCount().from(table).where(where).fetchOne(0, Integer.class);
         return count == null ? 0 : count;
     }
@@ -113,15 +98,14 @@ public class StructuredQueryBuilder {
             Table<?> table,
             Map<String, QueryFieldBinding> bindings,
             StructuredQuery query,
-            Set<String> selectAliases,
-            Map<String, Expr> params) {
+            Set<String> selectAliases) {
         final List<OutputColumn> projection = query.select();
         if (projection == null || projection.isEmpty()) {
             select.addSelect(List.of(table.fields()));
         } else {
             final List<Field<?>> fields = new ArrayList<>(projection.size());
             for (final OutputColumn col : projection) {
-                final Field<?> field = exprTranslator.toField(col.expr(), bindings, params);
+                final Field<?> field = exprTranslator.toField(col.expr(), bindings);
                 final String alias = col.as() != null
                         ? col.as()
                         : col.expr() instanceof FieldExpr(String fieldName) ? fieldName : null;
@@ -141,8 +125,7 @@ public class StructuredQueryBuilder {
             SelectQuery<Record> select,
             Map<String, QueryFieldBinding> bindings,
             StructuredQuery query,
-            Set<String> selectAliases,
-            Map<String, Expr> params) {
+            Set<String> selectAliases) {
         final List<String> groupBy = query.groupBy() == null ? List.of() : query.groupBy();
         final List<OutputColumn> selectEntries = query.select() == null ? List.of() : query.select();
         if (selectEntries.isEmpty()) {
@@ -162,7 +145,7 @@ public class StructuredQueryBuilder {
                 selectFields.add(field.as(alias));
                 selectAliases.add(alias);
             } else {
-                final Field<?> expr = exprTranslator.toField(col.expr(), bindings, params);
+                final Field<?> expr = exprTranslator.toField(col.expr(), bindings);
                 final String alias = requireAlias(col);
                 selectFields.add(expr.as(alias));
                 aliasBindings.put(alias, new QueryFieldBinding(alias, expr, QueryFieldType.DECIMAL));
@@ -178,7 +161,7 @@ public class StructuredQueryBuilder {
         select.addSelect(selectFields);
         select.addGroupBy(groupFields);
         if (query.having() != null) {
-            select.addHaving(filterTranslator.toCondition(query.having(), aliasBindings, params));
+            select.addHaving(filterTranslator.toCondition(query.having(), aliasBindings));
         }
         return aliasBindings;
     }

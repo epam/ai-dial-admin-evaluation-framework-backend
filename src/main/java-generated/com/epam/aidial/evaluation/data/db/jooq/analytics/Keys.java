@@ -4,12 +4,10 @@
 package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 
-import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreDefinition;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunMetricSnapshots;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
-import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.MetricScoreDefinitionRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.MetricScoreResultRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.RunMetricSnapshotsRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalSummariesRecord;
@@ -32,7 +30,6 @@ public class Keys {
     // UNIQUE and PRIMARY KEY definitions
     // -------------------------------------------------------------------------
 
-    public static final UniqueKey<MetricScoreDefinitionRecord> METRIC_SCORE_DEFINITION_PKEY = Internal.createUniqueKey(MetricScoreDefinition.METRIC_SCORE_DEFINITION, DSL.name("metric_score_definition_pkey"), new TableField[] { MetricScoreDefinition.METRIC_SCORE_DEFINITION.ID }, true);
     public static final UniqueKey<MetricScoreResultRecord> METRIC_SCORE_RESULT_PKEY = Internal.createUniqueKey(MetricScoreResult.METRIC_SCORE_RESULT, DSL.name("metric_score_result_pkey"), new TableField[] { MetricScoreResult.METRIC_SCORE_RESULT.ID }, true);
     public static final UniqueKey<RunMetricSnapshotsRecord> RUN_METRIC_SNAPSHOTS_PKEY = Internal.createUniqueKey(RunMetricSnapshots.RUN_METRIC_SNAPSHOTS, DSL.name("run_metric_snapshots_pkey"), new TableField[] { RunMetricSnapshots.RUN_METRIC_SNAPSHOTS.ID }, true);
     public static final UniqueKey<TestCaseEvalSummariesRecord> TEST_CASE_EVAL_SUMMARIES_PKEY = Internal.createUniqueKey(TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES, DSL.name("test_case_eval_summaries_pkey"), new TableField[] { TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.ID }, true);

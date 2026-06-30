@@ -52,6 +52,7 @@ class StructuredQueryBuilderTest {
             valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
     private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
     private final StructuredQueryBuilder builder = new StructuredQueryBuilder(exprTranslator, filterTranslator);
+    private final QueryParameterResolver parameterResolver = new QueryParameterResolver();
 
     private String render(StructuredQuery query) {
         return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, query))
@@ -364,15 +365,6 @@ class StructuredQueryBuilderTest {
     }
 
     @Test
-    @DisplayName("rejects a param bound to another param to keep substitution acyclic")
-    void rejectsParamBoundToParam() {
-        StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("p")), null, null);
-        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query, Map.of("p", new ParamExpr("q"))))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("must not be bound to another parameter");
-    }
-
-    @Test
     @DisplayName("mean(:array) folds its elements into (e1+…+en)/n over an array-bound param")
     void rendersMeanOverArrayParam() {
         StructuredQuery query = new StructuredQuery(
@@ -408,14 +400,14 @@ class StructuredQueryBuilderTest {
                 null,
                 null,
                 new OffsetPage(0, 50, false));
-        assertThatThrownBy(() ->
-                        builder.build(dsl, TEST_SUITES, bindings, query, Map.of("p", value(ValueType.DECIMAL, "0.5"))))
+        StructuredQuery resolved = parameterResolver.resolve(query, Map.of("p", value(ValueType.DECIMAL, "0.5")));
+        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, resolved))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("array");
     }
 
     private String renderWithParams(StructuredQuery query, Map<String, Expr> params) {
-        return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, query, params))
+        return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, parameterResolver.resolve(query, params)))
                 .toLowerCase(Locale.ROOT);
     }
 }

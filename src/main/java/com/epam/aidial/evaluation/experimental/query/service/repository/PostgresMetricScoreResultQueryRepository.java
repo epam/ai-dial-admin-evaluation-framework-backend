@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.experimental.query.service.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
@@ -11,19 +11,18 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 /**
- * Postgres implementation of {@link EvalSummaryQueryRepository}: binds the {@code eval_summaries}
- * entity to the generated {@code TEST_CASE_EVAL_SUMMARIES} table on the analytics datasource
- * ({@code analyticsDsl}) and delegates all translation and execution to
- * {@link StructuredQueryExecutor} — mirroring {@link PostgresTestSuiteQueryRepository} with no
- * duplicated query plumbing.
+ * Postgres implementation of {@link MetricScoreResultQueryRepository}: binds the
+ * {@code metric_score_results} entity to the generated {@code METRIC_SCORE_RESULT} table on the
+ * analytics datasource ({@code analyticsDsl}) and delegates translation/execution to
+ * {@link StructuredQueryExecutor} — mirroring {@code PostgresEvalSummaryQueryRepository}.
  */
 @Repository
 @LogExecution
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES")
-public class PostgresEvalSummaryQueryRepository implements EvalSummaryQueryRepository {
+public class PostgresMetricScoreResultQueryRepository implements MetricScoreResultQueryRepository {
 
-    private static final String ENTITY = "eval_summaries";
+    private static final String ENTITY = "metric_score_results";
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -37,6 +36,6 @@ public class PostgresEvalSummaryQueryRepository implements EvalSummaryQueryRepos
 
     @Override
     public QueryResultPage execute(StructuredQuery query) {
-        return executor.execute(ENTITY, dsl, TEST_CASE_EVAL_SUMMARIES, query);
+        return executor.execute(ENTITY, dsl, METRIC_SCORE_RESULT, query);
     }
 }

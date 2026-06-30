@@ -1,16 +1,16 @@
 ## ADDED Requirements
 
 ### Requirement: Parameter binding via expression substitution
-The system SHALL support binding `param` expressions to concrete expressions at execution time via an optional name → expression map supplied alongside a structured query. During translation, a `param` expression SHALL be resolved by looking up the bound expression for its name and translating that expression recursively: a bound `field` expression SHALL resolve to its column (including JSONB metric paths), and a bound `value` expression SHALL translate to a bound SQL parameter. A `param` whose name has no binding SHALL be rejected with HTTP 400. A binding whose value is itself a `param` expression (parameter-to-parameter) SHALL be rejected to prevent cycles. When no binding map is supplied, the binding map SHALL be treated as empty and translation SHALL behave identically to queries that contain no `param` expressions.
+The system SHALL support binding `param` expressions to concrete expressions at execution time via an optional name → expression map supplied alongside a structured query. **Before** translation, a single resolution pass SHALL rewrite the query into a parameter-free form, replacing each `param` expression with the expression bound to its name — recursively, so parameters nested inside a bound expression are also resolved. Once resolved, a bound `field` expression resolves to its column (including JSONB metric paths) and a bound `value` expression translates to a bound SQL parameter. A `param` whose name has no binding SHALL be rejected with HTTP 400. A binding whose value is itself a `param` expression (parameter-to-parameter), or any cyclic binding chain, SHALL be rejected with HTTP 400. When no binding map is supplied, the map SHALL be treated as empty and the query SHALL behave identically to one that contains no `param` expressions. The translator/builder themselves are parameter-agnostic: resolution is isolated in the pre-pass, not threaded through translation.
 Status: **Planned**
 
 #### Scenario: Field parameter resolves to a column
 - **WHEN** a query containing `param` `metricField` is executed with `metricField` bound to a `field` expression
-- **THEN** the translator resolves the parameter to that column (including JSONB numeric-cast metric paths) as if the field had been written inline
+- **THEN** the resolved query references that column (including JSONB numeric-cast metric paths) as if the field had been written inline
 
 #### Scenario: Value parameter resolves to a bound SQL parameter
 - **WHEN** a query containing `param` `runId` is executed with `runId` bound to a `value` expression
-- **THEN** the translator emits a bound SQL parameter carrying that value
+- **THEN** the executed query emits a bound SQL parameter carrying that value
 
 #### Scenario: Unbound parameter is rejected
 - **WHEN** a query containing a `param` is executed with no binding for that parameter's name
@@ -18,6 +18,10 @@ Status: **Planned**
 
 #### Scenario: Parameter-to-parameter binding is rejected
 - **WHEN** a parameter is bound to another `param` expression
+- **THEN** the query is rejected with HTTP 400
+
+#### Scenario: Cyclic binding chain is rejected
+- **WHEN** parameters are bound such that resolving one re-enters the same parameter through nested expressions
 - **THEN** the query is rejected with HTTP 400
 
 ### Requirement: Public execution endpoint is parameterless

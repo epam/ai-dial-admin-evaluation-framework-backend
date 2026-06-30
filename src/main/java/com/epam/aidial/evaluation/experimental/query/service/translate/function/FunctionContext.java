@@ -11,30 +11,23 @@ import org.jooq.Field;
 
 /**
  * Per-invocation context handed to a {@link QueryFunction}. Carries the active field bindings and
- * parameter map, and exposes recursive translation back into {@link ExprTranslator} so a function
- * can translate its arguments (which may themselves be functions, fields, values, or params).
+ * exposes recursive translation back into {@link ExprTranslator} so a function can translate its
+ * arguments (which may themselves be functions, fields, values, or arrays). Parameters are already
+ * substituted away before translation, so functions never see a {@code param}.
  */
 public final class FunctionContext {
 
     private final ExprTranslator translator;
     private final Map<String, QueryFieldBinding> bindings;
-    private final Map<String, Expr> params;
 
-    public FunctionContext(
-            ExprTranslator translator, Map<String, QueryFieldBinding> bindings, Map<String, Expr> params) {
+    public FunctionContext(ExprTranslator translator, Map<String, QueryFieldBinding> bindings) {
         this.translator = translator;
         this.bindings = bindings;
-        this.params = params;
     }
 
     /** Translates an argument expression to a jOOQ field (recurses through the translator). */
     public Field<?> toField(Expr expr) {
-        return translator.toField(expr, bindings, params);
-    }
-
-    /** One-level parameter substitution (e.g. to inspect an array bound to a {@code param}). */
-    public Expr substitute(Expr expr) {
-        return translator.substituteParam(expr, params);
+        return translator.toField(expr, bindings);
     }
 
     public List<Expr> args(FnExpr fn) {
@@ -52,9 +45,5 @@ public final class FunctionContext {
 
     public Map<String, QueryFieldBinding> bindings() {
         return bindings;
-    }
-
-    public Map<String, Expr> params() {
-        return params;
     }
 }

@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.data.db.analytics.model;
+package com.epam.aidial.evaluation.data.db.model;
 
 import java.util.UUID;
 import lombok.AllArgsConstructor;
@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class MetricScoreDefinition {
     private UUID id;
-    private String type;
+    private MetricScoreDefinitionType type;
     private String name;
     private String description;
     private String expression;

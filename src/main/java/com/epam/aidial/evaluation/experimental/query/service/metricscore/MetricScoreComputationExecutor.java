@@ -8,12 +8,8 @@ import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
-import com.epam.aidial.evaluation.data.db.model.MetricScoreDefinition;
-import com.epam.aidial.evaluation.data.db.repository.MetricScoreDefinitionRepository;
-import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
-import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
@@ -41,14 +37,16 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>Two kinds of computation:
  * <ul>
- *   <li><b>Per-metric statistics</b> — each seeded {@link MetricScoreDefinition} (AVG/P10/P90/MIN/MAX)
- *       is executed once per numeric metric field, binding {@code :metricField}.
+ *   <li><b>Per-metric statistics</b> — each built-in {@link BuiltInMetricStatistics#perMetric()}
+ *       statistic (AVG/P10/P90/MIN/MAX) is executed once per numeric metric field, binding
+ *       {@code :metricField}.
  *   <li><b>Run-level {@code overall}</b> — a per-suite definition taken from the run's suite snapshot
  *       ({@link MetricScoreComputationContext#getOverallExpression()}). When the suite has no custom
- *       definition (null), the {@linkplain MetricScoreConstants#DEFAULT_OVERALL_EXPRESSION default}
- *       is used, but computed <b>only when the run has exactly one numeric metric field</b> (so the
- *       mean is unambiguous); with more than one field no {@code overall} row is produced. A custom
- *       expression is computed regardless of metric count.
+ *       definition (null), the {@linkplain BuiltInMetricStatistics#defaultOverall() default} query is
+ *       used — computed <b>only when the run has exactly one numeric metric field</b> (so {@code overall}
+ *       is that metric's average; the executor binds {@code :metricField} to the single field) and
+ *       skipped otherwise. A custom expression (JSON, from the snapshot) references the real configured
+ *       metric columns and is run with only the run-scoping params, regardless of metric count.
  * </ul>
  *
  * <p>Fault isolation: a {@link ValidationException} computing one score is logged and skipped so it
@@ -60,10 +58,7 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class MetricScoreComputationExecutor implements MetricScoreComputation {
 
-    /** DSL aggregate-function name used to build the per-metric averages bound to {@code :metricAvgs}. */
-    private static final String AVG_FUNCTION = "avg";
-
-    private final MetricScoreDefinitionRepository definitionRepository;
+    private final BuiltInMetricStatistics builtInStatistics;
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final MetricScoreService metricScoreService;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
@@ -88,15 +83,12 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
 
         final List<MetricScoreResult> results = new ArrayList<>();
 
-        // Per-metric statistics: each seeded definition, once per metric field.
-        for (final MetricScoreDefinition definition : definitionRepository.findAll()) {
+        // Per-metric statistics: each built-in statistic, once per metric field.
+        for (final BuiltInMetricStatistics.MetricStatistic statistic : builtInStatistics.perMetric()) {
             if (isCancelled(ctx)) {
                 return;
             }
-            final StructuredQuery query = parseExpression(definition.getExpression(), definition.getName());
-            if (query != null) {
-                computePerMetric(query, definition, metricFields, ctx, results);
-            }
+            computePerMetric(statistic.query(), statistic.name(), metricFields, ctx, results);
         }
 
         // Run-level overall, from the suite's (snapshot) definition or the single-metric default.
@@ -112,27 +104,27 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
                 ctx.getComputationId());
     }
 
-    /** Per-metric statistic: run the expression once per field, binding {@code :metricField}. */
+    /** Per-metric statistic: run the query once per field, binding {@code :metricField}. */
     private void computePerMetric(
             StructuredQuery query,
-            MetricScoreDefinition definition,
+            String scoreName,
             List<MetricField> metricFields,
             MetricScoreComputationContext ctx,
             List<MetricScoreResult> results) {
         for (final MetricField metricField : metricFields) {
             final Map<String, Expr> params = baseParams(ctx);
             params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
-            final Double value = executeScalar(query, params, definition.getName(), metricField.flattenedName(), ctx);
+            final Double value = executeScalar(query, params, scoreName, metricField.flattenedName(), ctx);
             if (value != null) {
-                results.add(buildResult(ctx, definition.getName(), metricField.metricName(), value));
+                results.add(buildResult(ctx, scoreName, metricField.metricName(), value));
             }
         }
     }
 
     /**
-     * Run-level {@code overall}: a custom per-suite expression (computed for any metric count), or the
-     * system default — computed only when the run has exactly one numeric metric field (so the mean is
-     * unambiguous), otherwise skipped (no {@code overall} row).
+     * Run-level {@code overall}: a custom per-suite expression (run for any metric count), or the system
+     * default — computed only when the run has exactly one numeric metric field (then {@code overall} is
+     * that metric's average), otherwise skipped (no {@code overall} row).
      */
     private void computeOverall(
             MetricScoreComputationContext ctx, List<MetricField> metricFields, List<MetricScoreResult> results) {
@@ -144,14 +136,20 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
                     metricFields.size());
             return;
         }
-        final String expression =
-                isDefault ? MetricScoreConstants.DEFAULT_OVERALL_EXPRESSION : ctx.getOverallExpression();
-        final StructuredQuery query = parseExpression(expression, MetricScoreConstants.SCORE_OVERALL);
+        final StructuredQuery query = isDefault
+                ? builtInStatistics.defaultOverall()
+                : parseExpression(ctx.getOverallExpression(), MetricScoreConstants.SCORE_OVERALL);
         if (query == null) {
             return;
         }
+        // Default: the single metric's average — bind :metricField to that one field. Custom: a
+        // self-contained expression over the real configured metric columns — run-scoping params only.
         final Map<String, Expr> params = baseParams(ctx);
-        params.put(MetricScoreConstants.PARAM_METRIC_AVGS, metricAvgsArray(metricFields));
+        if (isDefault) {
+            params.put(
+                    MetricScoreConstants.PARAM_METRIC_FIELD,
+                    new FieldExpr(metricFields.getFirst().flattenedName()));
+        }
         final Double value = executeScalar(
                 query, params, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, ctx);
         if (value != null) {
@@ -169,15 +167,6 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
                 MetricScoreConstants.PARAM_COMPUTATION_ID,
                 new ValueExpr(ValueType.UUID, ctx.getComputationId().toString()));
         return params;
-    }
-
-    /** The run's per-metric {@code avg(metric:<tsmd>:<field>)} terms, as an array for {@code mean(...)}. */
-    private ArrayExpr metricAvgsArray(List<MetricField> metricFields) {
-        final List<Expr> avgs = new ArrayList<>(metricFields.size());
-        for (final MetricField metricField : metricFields) {
-            avgs.add(new FnExpr(AVG_FUNCTION, false, List.of(new FieldExpr(metricField.flattenedName()))));
-        }
-        return new ArrayExpr(avgs);
     }
 
     private Double executeScalar(

@@ -90,7 +90,7 @@ Status: **Implemented**
 - **THEN** the query is rejected with HTTP 400
 
 #### Scenario: Mean reduces an array to its arithmetic mean
-- **WHEN** a query selects `mean(:metricAvgs)` and `metricAvgs` is bound to an `array` of `avg(...)` terms
+- **WHEN** a query selects `mean(...)` over an `array` of numeric terms (e.g. `avg(...)` aggregates)
 - **THEN** the translator folds the terms as `(e₁ + … + eₙ) / n` and returns the numeric mean
 
 #### Scenario: Mean rejects a non-array argument

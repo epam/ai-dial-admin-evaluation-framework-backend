@@ -7,7 +7,6 @@ package com.epam.aidial.evaluation.data.db.jooq.meta;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.Datasets;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarationVersions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarations;
-import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricScoreDefinition;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RevalidationTasks;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
@@ -36,11 +35,6 @@ public class Tables {
      * The table <code>meta.metric_declarations</code>.
      */
     public static final MetricDeclarations METRIC_DECLARATIONS = MetricDeclarations.METRIC_DECLARATIONS;
-
-    /**
-     * The table <code>meta.metric_score_definition</code>.
-     */
-    public static final MetricScoreDefinition METRIC_SCORE_DEFINITION = MetricScoreDefinition.METRIC_SCORE_DEFINITION;
 
     /**
      * The table <code>meta.revalidation_tasks</code>.

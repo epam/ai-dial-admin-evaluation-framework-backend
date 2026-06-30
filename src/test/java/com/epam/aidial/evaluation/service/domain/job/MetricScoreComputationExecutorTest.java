@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,13 +12,10 @@ import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
-import com.epam.aidial.evaluation.data.db.model.MetricScoreDefinition;
-import com.epam.aidial.evaluation.data.db.model.MetricScoreDefinitionType;
-import com.epam.aidial.evaluation.data.db.repository.MetricScoreDefinitionRepository;
-import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
+import com.epam.aidial.evaluation.experimental.query.service.metricscore.BuiltInMetricStatistics;
 import com.epam.aidial.evaluation.experimental.query.service.metricscore.MetricScoreComputationExecutor;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
@@ -40,25 +36,24 @@ class MetricScoreComputationExecutorTest {
     private static final UUID SUITE_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
     private static final UUID COMPUTATION_ID = UUID.fromString("33333333-3333-3333-3333-333333333333");
 
-    private static final String AVG_EXPRESSION = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
-            + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"avg\","
-            + "\"args\":[{\"type\":\"param\",\"name\":\"metricField\"}]},\"as\":\"value\"}]}";
-    private static final String P90_EXPRESSION = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
-            + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"percentile_cont\","
-            + "\"args\":[{\"type\":\"value\",\"value_type\":\"decimal\",\"value\":\"0.9\"},"
-            + "{\"type\":\"param\",\"name\":\"metricField\"}]},\"as\":\"value\"}]}";
-    private static final String OVERALL_EXPRESSION = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
-            + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"mean\","
-            + "\"args\":[{\"type\":\"param\",\"name\":\"metricAvgs\"}]},\"as\":\"value\"}]}";
+    /** The built-in per-metric statistic names (AVG/P10/P90/MIN/MAX), all run per metric field. */
+    private static final List<String> PER_METRIC_NAMES = List.of("AVG", "P10", "P90", "MIN", "MAX");
 
-    private final MetricScoreDefinitionRepository definitionRepository = mock(MetricScoreDefinitionRepository.class);
+    /**
+     * A custom (non-default) overall expression in JSON, exercising the snapshot-driven parse path. It is
+     * self-contained — it references a real metric column directly and binds no executor placeholders.
+     */
+    private static final String CUSTOM_OVERALL_EXPRESSION = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
+            + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"avg\","
+            + "\"args\":[{\"type\":\"field\",\"name\":\"metric:Relevancy:score\"}]},\"as\":\"value\"}]}";
+
     private final RunMetricSnapshotRepository runMetricSnapshotRepository = mock(RunMetricSnapshotRepository.class);
     private final MetricScoreService metricScoreService = mock(MetricScoreService.class);
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor = mock(OutputSchemaFieldExtractor.class);
     private final StructuredQueryService structuredQueryService = mock(StructuredQueryService.class);
 
     private final MetricScoreComputationExecutor executor = new MetricScoreComputationExecutor(
-            definitionRepository,
+            new BuiltInMetricStatistics(),
             runMetricSnapshotRepository,
             metricScoreService,
             outputSchemaFieldExtractor,
@@ -94,52 +89,51 @@ class MetricScoreComputationExecutorTest {
                 .build();
     }
 
-    private static MetricScoreDefinition definition(String name, String expression) {
-        return MetricScoreDefinition.builder()
-                .id(UUID.randomUUID())
-                .type(MetricScoreDefinitionType.DEFAULT)
-                .name(name)
-                .expression(expression)
-                .build();
-    }
-
     /**
-     * Per-metric expressions bind {@code :metricField}; the run-level {@code overall} binds the
-     * {@code :metricAvgs} array. Returns 0.6 for the Relevancy field, 0.8 for Accuracy, and the
-     * supplied run-level value for {@code overall}.
+     * Per-metric stats and the default overall bind {@code :metricField} (the default overall to the
+     * single field); a custom overall is self-contained and binds neither. Returns 0.6 for the Relevancy
+     * field, 0.8 for Accuracy, and the supplied run-level value for a custom (no-field) overall.
      */
-    private static QueryResultPage answer(Map<String, Expr> params, double relevancy, double accuracy, double overall) {
-        if (params.containsKey(MetricScoreConstants.PARAM_METRIC_AVGS)) {
-            return new QueryResultPage(List.of(Map.of("value", overall)), null);
+    private static QueryResultPage answer(Map<String, Expr> params, double relevancy, double accuracy, double custom) {
+        final Expr metricField = params.get(MetricScoreConstants.PARAM_METRIC_FIELD);
+        if (metricField == null) {
+            return new QueryResultPage(List.of(Map.of("value", custom)), null);
         }
-        final String token = ((FieldExpr) params.get(MetricScoreConstants.PARAM_METRIC_FIELD)).name();
+        final String token = ((FieldExpr) metricField).name();
         return new QueryResultPage(List.of(Map.of("value", token.contains("Relevancy") ? relevancy : accuracy)), null);
     }
 
     @Test
-    @DisplayName("computes per-metric stats and the default overall when the run has a single metric field")
+    @DisplayName("computes the 5 built-in stats and the default overall when the run has a single metric field")
     void computesPerMetricStatsAndDefaultOverallForSingleMetric() {
         oneMetricField();
-        when(definitionRepository.findAll())
-                .thenReturn(List.of(definition("AVG", AVG_EXPRESSION), definition("P90", P90_EXPRESSION)));
         when(structuredQueryService.execute(any(), any()))
                 .thenAnswer(invocation -> answer(invocation.getArgument(1), 0.6, 0.8, 0.7));
 
         executor.execute(context(null));
 
         final List<MetricScoreResult> saved = captureSaved();
-        // AVG + P90 over the single field, plus the default overall (single-metric → computed).
-        assertThat(saved).hasSize(3);
+        // 5 built-in stats over the single field, plus the default overall (single-metric → computed).
+        assertThat(saved).hasSize(6);
         assertThat(saved)
-                .filteredOn(r -> "AVG".equals(r.getMetricScoreName()))
-                .extracting(MetricScoreResult::getMetricName, MetricScoreResult::getValue)
-                .containsExactly(Tuple.tuple("Relevancy.score", 0.6));
+                .filteredOn(r -> PER_METRIC_NAMES.contains(r.getMetricScoreName()))
+                .extracting(
+                        MetricScoreResult::getMetricScoreName,
+                        MetricScoreResult::getMetricName,
+                        MetricScoreResult::getValue)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("AVG", "Relevancy.score", 0.6),
+                        Tuple.tuple("P10", "Relevancy.score", 0.6),
+                        Tuple.tuple("P90", "Relevancy.score", 0.6),
+                        Tuple.tuple("MIN", "Relevancy.score", 0.6),
+                        Tuple.tuple("MAX", "Relevancy.score", 0.6));
         final MetricScoreResult overall = saved.stream()
                 .filter(r -> MetricScoreConstants.SCORE_OVERALL.equals(r.getMetricScoreName()))
                 .findFirst()
                 .orElseThrow();
         assertThat(overall.getMetricName()).isEqualTo(MetricScoreConstants.SCORE_OVERALL);
-        assertThat(overall.getValue()).isEqualTo(0.7);
+        // Default overall is the single metric's average (binds :metricField to the one field).
+        assertThat(overall.getValue()).isEqualTo(0.6);
         assertThat(overall.getComputationId()).isEqualTo(COMPUTATION_ID);
     }
 
@@ -147,51 +141,42 @@ class MetricScoreComputationExecutorTest {
     @DisplayName("skips the default overall when the run has more than one metric field")
     void skipsDefaultOverallForMultipleMetrics() {
         twoMetricFields();
-        when(definitionRepository.findAll()).thenReturn(List.of(definition("AVG", AVG_EXPRESSION)));
         when(structuredQueryService.execute(any(), any()))
                 .thenAnswer(invocation -> answer(invocation.getArgument(1), 0.6, 0.8, 0.7));
 
         executor.execute(context(null));
 
         final List<MetricScoreResult> saved = captureSaved();
-        // AVG over both fields; NO overall row (default overall is single-metric only).
-        assertThat(saved).hasSize(2);
-        assertThat(saved).extracting(MetricScoreResult::getMetricScoreName).containsOnly("AVG");
+        // 5 built-in stats over both fields; NO overall row (default overall is single-metric only).
+        assertThat(saved).hasSize(10);
+        assertThat(saved).extracting(MetricScoreResult::getMetricScoreName).isSubsetOf(PER_METRIC_NAMES);
     }
 
     @Test
-    @DisplayName("computes a custom overall over the avg(...) array even with multiple metric fields")
+    @DisplayName("computes a self-contained custom overall (real metric columns) even with multiple metric fields")
     void computesCustomOverallForMultipleMetrics() {
         twoMetricFields();
-        when(definitionRepository.findAll()).thenReturn(List.of(definition("AVG", AVG_EXPRESSION)));
         when(structuredQueryService.execute(any(), any()))
                 .thenAnswer(invocation -> answer(invocation.getArgument(1), 0.6, 0.8, 0.7));
 
-        executor.execute(context(OVERALL_EXPRESSION));
+        executor.execute(context(CUSTOM_OVERALL_EXPRESSION));
 
         final List<MetricScoreResult> saved = captureSaved();
+        // 5 built-in stats x 2 fields + the custom overall (run for any metric count).
+        assertThat(saved).hasSize(11);
         final MetricScoreResult overall = saved.stream()
                 .filter(r -> MetricScoreConstants.SCORE_OVERALL.equals(r.getMetricScoreName()))
                 .findFirst()
                 .orElseThrow();
+        // The custom expression is self-contained — it binds no :metricField, so the executor runs it
+        // with only the run-scoping params and the mock returns the custom value.
         assertThat(overall.getValue()).isEqualTo(0.7);
-
-        // The overall invocation binds :metricAvgs to one avg(...) term per metric field.
-        final ArgumentCaptor<Map<String, Expr>> params = captureParams();
-        verify(structuredQueryService, atLeastOnce()).execute(any(), params.capture());
-        final ArrayExpr metricAvgs = params.getAllValues().stream()
-                .filter(p -> p.containsKey(MetricScoreConstants.PARAM_METRIC_AVGS))
-                .map(p -> (ArrayExpr) p.get(MetricScoreConstants.PARAM_METRIC_AVGS))
-                .findFirst()
-                .orElseThrow();
-        assertThat(metricAvgs.items()).hasSize(2);
     }
 
     @Test
-    @DisplayName("isolates a failing metric field: the remaining pairs are still computed and persisted")
+    @DisplayName("isolates a failing metric field: the other field's stats are still computed and persisted")
     void isolatesFailingMetricField() {
         twoMetricFields();
-        when(definitionRepository.findAll()).thenReturn(List.of(definition("AVG", AVG_EXPRESSION)));
         when(structuredQueryService.execute(any(), any())).thenAnswer(invocation -> {
             final Map<String, Expr> params = invocation.getArgument(1);
             final String token = ((FieldExpr) params.get(MetricScoreConstants.PARAM_METRIC_FIELD)).name();
@@ -204,10 +189,11 @@ class MetricScoreComputationExecutorTest {
         executor.execute(context(null));
 
         final List<MetricScoreResult> saved = captureSaved();
-        // The Accuracy AVG failed; the default overall is skipped (two metrics) — only Relevancy AVG survives.
-        assertThat(saved)
-                .extracting(MetricScoreResult::getMetricScoreName, MetricScoreResult::getMetricName)
-                .containsExactly(Tuple.tuple("AVG", "Relevancy.score"));
+        // Every Accuracy stat failed; the default overall is skipped (two metrics) — only the
+        // 5 Relevancy stats survive.
+        assertThat(saved).hasSize(5);
+        assertThat(saved).extracting(MetricScoreResult::getMetricName).containsOnly("Relevancy.score");
+        assertThat(saved).extracting(MetricScoreResult::getMetricScoreName).isSubsetOf(PER_METRIC_NAMES);
     }
 
     @Test
@@ -227,10 +213,5 @@ class MetricScoreComputationExecutorTest {
         final ArgumentCaptor<List<MetricScoreResult>> captor = ArgumentCaptor.forClass(List.class);
         verify(metricScoreService).saveAll(captor.capture());
         return captor.getValue();
-    }
-
-    @SuppressWarnings("unchecked")
-    private ArgumentCaptor<Map<String, Expr>> captureParams() {
-        return ArgumentCaptor.forClass(Map.class);
     }
 }

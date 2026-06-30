@@ -1,39 +1,27 @@
 ## ADDED Requirements
 
-### Requirement: Metric-score definition model
-The system SHALL model a metric-score definition with: an `id` (UUID), a `type` ∈ {`DEFAULT`, `TEST_SUITE`}, a `name`, an optional `description`, an `expression` (a serialized structured query), and an optional `target_id` (UUID). `DEFAULT` definitions SHALL have a null `target_id`; `TEST_SUITE` definitions SHALL carry the test-suite id in `target_id`. Definitions are configuration and SHALL be persisted in the **meta** datasource (alongside `test_suites`); `target_id` is a same-datasource reference to a test suite.
-Status: **Planned**
-
-#### Scenario: Global definition has no target
-- **WHEN** a `DEFAULT` definition is persisted
-- **THEN** its `target_id` is null and the definition applies to every run regardless of suite
-
-#### Scenario: Suite-scoped definition carries a target
-- **WHEN** a `TEST_SUITE` definition is persisted
-- **THEN** its `target_id` holds the test-suite id it is scoped to
-
-### Requirement: Predefined default statistics
-The system SHALL provide predefined `DEFAULT` definitions for the statistics AVG, P10, P90, MIN, and MAX, each expressed as a self-contained structured query over the `eval_summaries` entity in aggregate mode that selects a single aliased `value`. P10 and P90 SHALL use `percentile_cont` with the fraction (0.1, 0.9) bound as a literal.
+### Requirement: Predefined per-metric statistics defined in code
+The system SHALL provide predefined per-metric statistics — AVG, P10, P90, MIN, and MAX — **defined in code** as typed structured-query objects (`BuiltInMetricStatistics`). Each SHALL be a self-contained query over the `eval_summaries` entity in aggregate mode that selects a single aliased `value`. P10 and P90 SHALL use `percentile_cont` with the fraction (0.1, 0.9) bound as a literal. A statistic's name (e.g. `AVG`, `P90`) is the persisted `metric_score_name` of its results.
 Status: **Planned**
 
 #### Scenario: Percentile statistic is available
-- **WHEN** the predefined `P90` definition is resolved
-- **THEN** its expression aggregates the target metric field via `percentile_cont` with fraction 0.9
+- **WHEN** the predefined `P90` statistic query is inspected
+- **THEN** it aggregates the metric field via `percentile_cont` with fraction 0.9
 
 #### Scenario: Average statistic is available
-- **WHEN** the predefined `AVG` definition is resolved
-- **THEN** its expression aggregates the target metric field via `avg`
+- **WHEN** the predefined `AVG` statistic query is inspected
+- **THEN** it aggregates the metric field via `avg`
 
-### Requirement: Definition expression is a reusable parameterized query
-A metric-score definition's `expression` SHALL store a full structured query — the aggregate select and the run-scoping filter (`test_suite_run_id` and `computation_id`) — using runtime parameters (`runId`, `computationId`, and either `metricField` for a per-metric statistic or `metricAvgs` for a run-level score) rather than hardcoded values, so that it is reusable across all runs and computations. At computation time the system SHALL execute this expression through the structured-query service, binding the run, computation, and the appropriate metric parameter. The system SHALL determine whether a definition is per-metric or run-level by which parameter its expression references (no separate discriminator column).
+### Requirement: Statistic queries are reusable parameterized templates
+Each predefined statistic SHALL be a full structured query — the aggregate select and the run-scoping filter (`test_suite_run_id` and `computation_id`) — using runtime parameters (`runId`, `computationId`, and `metricField`) rather than hardcoded values, so that it is reusable across all runs and computations. At computation time the system SHALL execute the query through the structured-query service, binding the run, computation, and metric field. The default run-level `overall` is the single metric's `avg(:metricField)` (see the Overall score requirement).
 Status: **Planned**
 
-#### Scenario: Definition is not bound to a specific run
-- **WHEN** a definition's expression is inspected
+#### Scenario: Statistic query is not bound to a specific run
+- **WHEN** a predefined statistic query is inspected
 - **THEN** the run id and computation id appear as parameters, not literal values, and the metric field is a parameter
 
 ### Requirement: Automatic metric-score computation at run completion
-After a test suite run's metric-evaluation phase completes, the system SHALL compute metric scores for that run before the run transitions to its terminal completed state. It SHALL load all seeded `DEFAULT` per-metric definitions, enumerate the run's numeric metric output fields, and execute each definition once per metric field against the run's metric-evaluation `computation_id` (persisting one result per (statistic, metric field)). It SHALL additionally compute the run-level `overall` from the suite snapshot's `overall_score` (per the Overall score requirement). Computation SHALL reuse the same `computation_id` produced by the metric-evaluation phase.
+After a test suite run's metric-evaluation phase completes, the system SHALL compute metric scores for that run before the run transitions to its terminal completed state. It SHALL take the code-defined per-metric statistics, enumerate the run's numeric metric output fields, and execute each statistic once per metric field against the run's metric-evaluation `computation_id` (persisting one result per (statistic, metric field)). It SHALL additionally compute the run-level `overall` from the suite snapshot's `overall_score` (per the Overall score requirement). Computation SHALL reuse the same `computation_id` produced by the metric-evaluation phase.
 Status: **Planned**
 
 #### Scenario: Scores produced for each statistic and metric field
@@ -41,16 +29,16 @@ Status: **Planned**
 - **THEN** a metric-score result exists for each (predefined statistic × metric field) under the run's computation id
 
 ### Requirement: Overall score (default; per-suite definition reserved)
-The `overall` metric score is a **per-test-suite** definition rather than a seeded catalog entry. The test suite SHALL carry a nullable `overall_score` column (a structured-query `StructuredQuery` expression, JSONB), captured **verbatim** into the suite snapshot at run start, so each run computes `overall` per the suite's configuration at run time. The column is NOT seeded/defaulted in SQL; null means "use the system default".
+The `overall` metric score is a **per-test-suite** definition. The test suite SHALL carry a nullable `overall_score` column (a structured-query `StructuredQuery` expression, JSONB), captured **verbatim** into the suite snapshot at run start, so each run computes `overall` per the suite's configuration at run time. The column defaults to NULL, meaning "use the system default".
 
-In this version the system SHALL NOT expose any way to set a custom `overall_score` — the column and snapshot field are a **reserved extension point**, the column stays null, and `overall` is always computed from the built-in **default** expression (a Java constant, `mean(:metricAvgs)`). Setting a per-suite custom `overall` is future work; the Phase-3 executor already resolves the expression from the snapshot and computes a non-null one when present, so enabling it later requires no executor change.
+In this version the system SHALL NOT expose any way to set a custom `overall_score` — the column and snapshot field are a **reserved extension point**, the column stays null, and `overall` is always computed from the built-in **default** (the single metric's `avg(:metricField)`). Setting a per-suite custom `overall` (a self-contained expression over the configured metric columns, run with only the run-scoping params) is future work; the Phase-3 executor already resolves the expression from the snapshot and runs a non-null one when present, so enabling it later requires no executor change.
 
-At computation time (Phase 3) the system SHALL resolve the run's `overall` expression from the snapshot and compute it **through the structured-query DSL** (not hardcoded), binding `metricAvgs` to the run's per-metric `avg(...)` terms and executing once at run level, persisting a single result with `metric_score_name` and `metric_name` both equal to `overall`. The default SHALL be computed **only when the run resolves to exactly one numeric metric field** (so the mean is unambiguous = that metric's average); with more than one metric field the default produces **no** `overall` result (deferred to future per-suite metric selection).
+At computation time (Phase 3) the system SHALL resolve the run's `overall` expression from the snapshot and compute it **through the structured-query DSL** (not hardcoded), persisting a single result with `metric_score_name` and `metric_name` both equal to `overall`. The default SHALL be computed **only when the run resolves to exactly one numeric metric field** — `overall` is then that metric's average (the system binds `:metricField` to the single field); with more than one metric field the default produces **no** `overall` result (deferred to future per-suite metric selection).
 Status: **Planned**
 
 #### Scenario: Default overall for a single-metric run
 - **WHEN** a run with exactly one numeric metric field completes (suite has no custom `overall_score`)
-- **THEN** an `overall` result is produced equal to that metric's average, computed by executing the default `mean(:metricAvgs)` expression
+- **THEN** an `overall` result is produced equal to that metric's average, computed by executing the default `avg(:metricField)` query bound to that field
 
 #### Scenario: Default overall skipped for a multi-metric run
 - **WHEN** a run with more than one numeric metric field completes (suite has no custom `overall_score`)
@@ -104,12 +92,12 @@ Status: **Planned**
 - **WHEN** a structured query filters `computation_id in [...]` and aggregates `value` grouped by `metric_score_name`
 - **THEN** the aggregate is computed across the selected computations in a single response
 
-### Requirement: Definitions are seed-only (no management API)
-The seeded metric-score definitions (the `DEFAULT` per-metric statistics `AVG`/`P10`/`P90`/`MIN`/`MAX`) SHALL be provided exclusively by the seed migration and SHALL NOT be created, edited, or deleted through any `metric-score-definitions` HTTP endpoint; the system exposes no such API. The applicable definitions are read directly by the Phase-3 computation; only the computed results are exposed (via the results read API). The `overall` definition is NOT part of this seeded catalog — it is a per-suite property (`test_suites.overall_score`); its API exposure is reserved for future work, so today it stays null and `overall` uses the built-in default.
+### Requirement: Statistics are code-defined (no management API)
+The predefined per-metric statistics (`AVG`/`P10`/`P90`/`MIN`/`MAX`) SHALL be defined in code as typed structured-query objects (`BuiltInMetricStatistics`), and SHALL NOT be created, edited, or deleted through any HTTP endpoint; the system exposes no `metric-score-definitions` API. The Phase-3 computation reads these built-in statistics directly; only the computed results are exposed (via the results read API). The `overall` definition is a per-suite property (`test_suites.overall_score`); its API exposure is reserved for future work, so today it stays null and `overall` uses the built-in default.
 Status: **Planned**
 
 #### Scenario: No definition management endpoints exist
 - **WHEN** a client looks for endpoints to create, update, or delete metric-score definitions
-- **THEN** none are exposed; definitions originate only from the seed migration
+- **THEN** none exist; the statistics originate only from code
 
-> **Note:** Per-suite metric-score configuration is reserved through `test_suites.overall_score` (the `overall` definition), snapshotted per run. Setting it (suite create/update exposure) and a richer per-suite "score config" (modes, weights, metric selection) compiled into a `StructuredQuery` are deferred; today the column stays null and `overall` uses the built-in default. The seeded `metric_score_definition` catalog holds only the generic `DEFAULT` per-metric statistics; its dormant `type`/`target_id` columns remain as an extension point.
+> **Note:** Per-suite metric-score configuration is reserved through `test_suites.overall_score` (the `overall` definition), snapshotted per run. Setting it (suite create/update exposure) and a richer per-suite "score config" (modes, weights, metric selection) compiled into a `StructuredQuery` are deferred; today the column stays null and `overall` uses the built-in default. The per-metric statistics are a fixed code-owned catalog (`BuiltInMetricStatistics`).

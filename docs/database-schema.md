@@ -102,7 +102,7 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `mcp_deployment_ref` | JSONB | NULL | - | MCP deployment reference (McpDeploymentReferenceDto) — MCP suites |
 | `tool_ref` | JSONB | NULL | - | MCP tool reference with schema (ToolReferenceDto) — MCP suites |
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
-| `overall_score` | JSONB | NULL | - | Per-suite `overall` metric-score definition — a serialized `StructuredQuery` expression (`mean(:metricAvgs)` shape). Reserved extension point: setting it is **not** exposed via the API yet, so it stays NULL and Phase 3 uses the built-in default (computed only when the run has exactly one numeric metric field). Captured verbatim into the suite snapshot per run; the executor would honor a non-null value if set (future). See V1.25. |
+| `overall_score` | JSONB | NULL | - | Per-suite `overall` metric-score definition — a serialized `StructuredQuery` expression. Reserved extension point: setting it is **not** exposed via the API yet, so it stays NULL and Phase 3 uses the built-in default (the single metric's average — `avg(:metricField)` — computed only when the run has exactly one numeric metric field). Captured verbatim into the suite snapshot per run; the executor would honor a non-null value if set (future). See V1.23. |
 | `is_valid` | BOOLEAN | NOT NULL | TRUE | Suite-level validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `version` | BIGINT | NOT NULL | 0 | Optimistic locking version |
@@ -842,28 +842,9 @@ Metric definition snapshots captured at computation time. Each row records the m
 
 ---
 
-## Table: `metric_score_definition` (Meta DB)
+## Metric-score statistics (code-defined)
 
-Reusable Query-DSL definitions for aggregated metric statistics — configuration, so it lives in the **meta** database. The seeded `DEFAULT` definitions (AVG, P10, P90, MIN, MAX per-metric stats) apply to every run. The `expression` is a serialized `StructuredQuery` parameterized with `:runId`/`:computationId` plus `:metricField` (per-metric stats). There is no `kind` column; the `type`/`target_id` columns are a dormant extension point. The run-level **`overall`** is NOT seeded here — it is a per-suite property (`test_suites.overall_score`), snapshotted per run and computed via `mean(:metricAvgs)`.
-
-> **Note:** This table resides in the **meta database** alongside `test_suites`; `target_id` is a same-DB reference to a test suite (soft FK by convention — no physical constraint). Phase-3 computation reads these definitions from meta and writes results to the analytics `metric_score_result`.
-
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
-| `type` | VARCHAR(32) | NOT NULL | - | `DEFAULT` or `TEST_SUITE` |
-| `name` | VARCHAR(255) | NOT NULL | - | Definition / statistic name (e.g. `AVG`, `P90`) |
-| `description` | VARCHAR(1024) | NULL | - | Human-readable description |
-| `expression` | JSONB | NOT NULL | - | Serialized `StructuredQuery` computing the score |
-| `target_id` | VARCHAR(36) | NULL | - | Target test suite (soft FK); NULL for `DEFAULT` |
-
-### Indexes
-
-| Index Name | Columns | Type | Notes |
-|------------|---------|------|-------|
-| `uq_metric_score_definition_global` | `(type, name) WHERE target_id IS NULL` | UNIQUE (partial) | One DEFAULT definition per name |
-| `uq_metric_score_definition_targeted` | `(type, name, target_id) WHERE target_id IS NOT NULL` | UNIQUE (partial) | One targeted definition per (name, suite) |
-| `idx_metric_score_definition_type_target` | `(type, target_id)` | BTREE | Lookup applicable definitions for a suite |
+The per-metric statistics (AVG, P10, P90, MIN, MAX) are defined in code as typed `StructuredQuery` objects in `BuiltInMetricStatistics` (package `experimental.query.service.metricscore`), each a single-`value` aggregate over `eval_summaries` parameterized with `:runId`/`:computationId` plus `:metricField`. The run-level **`overall`** is a per-suite property (`test_suites.overall_score`), snapshotted per run; when unset, Phase 3 uses the built-in default — the single metric's average (`avg(:metricField)`), computed only for single-metric runs. Phase-3 computation runs these queries via `StructuredQueryService` and writes results to the analytics `metric_score_result` table below.
 
 ---
 
@@ -927,9 +908,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.20 | `V1.20__AddDisplayNameToMetricDeclarationVersions.sql` | Added nullable display_name TEXT column to metric_declaration_versions |
 | V1.21 | `V1.21__AddCoercedCellCountToRevalidationTasks.sql` | Added coerced_cell_count column to revalidation_tasks |
 | V1.22 | `V1.22__IntroduceDataset.sql` | Introduced datasets table; rebound test_cases and revalidation_tasks FKs from test_suites to datasets; backfilled per-suite datasets; relaxed `test_suites.dataset_id` to nullable (unbound state); added `datasets.visibility` (`'PUBLIC'`/`'PRIVATE'`) with CHECK constraint; added `tg_test_suites_private_binding_guard` trigger raising `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` for concurrent PRIVATE-binding violations; backfilled `suite_snapshot` JSON to v2 (`snapshotVersion`, `datasetRef`) |
-| V1.23 | `V1.23__CreateMetricScoreDefinitionTable.sql` | Created metric_score_definition table (config; meta DB) with partial unique indexes for DEFAULT (null target) and targeted definitions |
-| V1.24 | `V1.24__SeedMetricScoreDefinitions.sql` | Seeded DEFAULT per-metric statistics (AVG, P10, P90, MIN, MAX). The `overall` score is not seeded — it is a per-suite property (`test_suites.overall_score`, see V1.25) |
-| V1.25 | `V1.25__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs) |
+| V1.23 | `V1.23__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs) |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 
@@ -943,7 +922,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.6 | `V1.6__CreateRunMetricSnapshotsTable.sql` | Created run_metric_snapshots table with unique constraint on (computation_id, tsmd_id) |
 | V1.7 | `V1.7__AddExtractionWarningsToEvalSummaries.sql` | Added extraction_warnings JSONB NOT NULL DEFAULT '[]' to test_case_eval_summaries |
 | V1.8 | `V1.8__NormalizeErrorShapedMetricValues.sql` | Normalized transport-failure metric_values from synthetic `{"error": null}` to real output field names; updated corresponding metric_infos entries |
-| V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation). (metric_score_definition is in the meta DB — see V1.23/V1.24.) |
+| V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |
 
 ---
 

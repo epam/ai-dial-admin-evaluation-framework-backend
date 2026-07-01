@@ -186,19 +186,17 @@ public class MultiStepConversationExecutor {
                     break;
                 }
 
-                // (4) Read the assistant reply from the hardcoded OpenAI path; absence aborts the conversation.
-                final String assistant = extractAssistantContent(outcome.responseBody());
-                if (assistant == null) {
+                // (4) Append the assistant reply — the full choices[0].message object, verbatim — to history.
+                // Absence of a message object (not merely missing content) aborts the conversation.
+                final JsonNode assistantMessage = extractAssistantMessage(outcome.responseBody());
+                if (assistantMessage == null) {
                     log.warn(
-                            "Multi-step step {} for test case {} returned 2xx with no extractable assistant content",
+                            "Multi-step step {} for test case {} returned 2xx with no assistant message object",
                             i,
                             input.getTestCaseId());
                     finalStatus = ExecutionStatus.ERROR;
                     break;
                 }
-                final Map<String, Object> assistantMessage = new LinkedHashMap<>();
-                assistantMessage.put("role", "assistant");
-                assistantMessage.put("content", assistant);
                 history.add(assistantMessage);
 
                 // (5) Extract response columns for this completed step and accumulate the per-step array.
@@ -443,18 +441,21 @@ public class MultiStepConversationExecutor {
         return ExecutionStatus.FAILED;
     }
 
-    /** Reads {@code choices[0].message.content} (hardcoded OpenAI path); returns null when absent. */
-    private String extractAssistantContent(String responseBody) {
+    /**
+     * Reads the full {@code choices[0].message} object (hardcoded OpenAI path) to append to history verbatim;
+     * returns null when there is no such message object (missing {@code choices}, empty array, or a
+     * {@code message} that is not a JSON object). A present message object with {@code content: null} is valid.
+     */
+    private JsonNode extractAssistantMessage(String responseBody) {
         if (responseBody == null || responseBody.isBlank()) {
             return null;
         }
         try {
             final JsonNode root = objectMapper.readTree(responseBody);
-            final JsonNode content =
-                    root.path("choices").path(0).path("message").path("content");
-            return content.isString() ? content.asString() : null;
+            final JsonNode message = root.path("choices").path(0).path("message");
+            return message.isObject() ? message : null;
         } catch (JacksonException e) {
-            log.warn("Failed to parse multi-step response body for assistant content: {}", e.getMessage(), e);
+            log.warn("Failed to parse multi-step response body for assistant message: {}", e.getMessage(), e);
             return null;
         }
     }

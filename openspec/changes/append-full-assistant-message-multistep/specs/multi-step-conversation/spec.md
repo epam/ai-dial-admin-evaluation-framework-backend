@@ -16,12 +16,16 @@ Status: **Planned**
 - **AND** the engine SHALL NOT special-case step 0 versus later steps
 
 ### Requirement: Assistant reply extraction (hardcoded OpenAI path, non-streaming)
-The engine SHALL append each step's assistant turn to the running history as the full `choices[0].message` object of the response, verbatim — preserving every field it contains (e.g. `role`, `content`, `tool_calls`, `refusal`, `reasoning_content`, structured/array `content`, and any provider-specific fields), including an explicit `content: null`. It SHALL NOT reconstruct a reduced `{ "role": "assistant", "content": <value> }` message from `choices[0].message.content`. The appended message SHALL be stored such that explicit JSON `null` values survive serialization of the resent history (i.e. a `null` field is emitted as JSON `null`, not dropped). The `choices[0].message` path is hardcoded (OpenAI-shaped). Multi-step steps SHALL always be invoked non-streaming regardless of any streaming hint. A step is considered to have no usable reply — aborting the conversation per the fail-fast requirement — only when the response has no `choices[0].message` object (missing `choices`, an empty `choices` array, or a `message` that is not a JSON object); a present `message` object whose `content` is `null` is a valid turn.
+The engine SHALL append each step's assistant turn to the running history as the full `choices[0].message` object of the response, verbatim — preserving the fields it contains (e.g. `role`, `content`, `tool_calls`, `refusal`, `reasoning_content`, structured/array `content`, and any provider-specific fields). It SHALL NOT reconstruct a reduced `{ "role": "assistant", "content": <value> }` message from `choices[0].message.content`. The `choices[0].message` path is hardcoded (OpenAI-shaped). Multi-step steps SHALL always be invoked non-streaming regardless of any streaming hint. A step is considered to have no usable reply — aborting the conversation per the fail-fast requirement — only when the response has no `choices[0].message` object (missing `choices`, an empty `choices` array, or a `message` that is not a JSON object); a `message` object without a string `content` (e.g. a tool-call turn) is a valid turn. Because the response body is serialized with the shared `NON_NULL` object mapper before the message is read, a reply whose `content` is JSON `null` is appended with `content` absent (functionally equivalent for resend); all present fields are preserved.
 Status: **Planned**
 
 #### Scenario: Full assistant message appended verbatim
-- **WHEN** a step returns a 2xx response whose `choices[0].message` contains fields beyond `role`/`content` (e.g. `tool_calls`, `refusal`) and/or an explicit `content: null`
-- **THEN** the engine SHALL append that `message` object to the running history verbatim, preserving those extra fields and the explicit `content: null`
+- **WHEN** a step returns a 2xx response whose `choices[0].message` contains fields beyond `role`/`content` (e.g. `tool_calls`, `refusal`)
+- **THEN** the engine SHALL append that `message` object to the running history verbatim, preserving those extra fields
+
+#### Scenario: Tool-call turn without string content is a valid turn
+- **WHEN** a step returns a 2xx response whose `choices[0].message` is a message object with no string `content` (e.g. a tool-call-only message)
+- **THEN** the engine SHALL append that `message` object to history and SHALL NOT abort the conversation
 
 #### Scenario: Plain-content message appended verbatim
 - **WHEN** a step returns a 2xx response whose `choices[0].message` is `{ "role": "assistant", "content": "..." }`

@@ -191,38 +191,68 @@ class MultiStepConversationExecutorTest {
     }
 
     @Test
-    @DisplayName("fail-fast when a 2xx response has no extractable assistant content; empty extractedColumns array")
-    void failFastOnUnextractableAssistant() throws Exception {
+    @DisplayName("fail-fast when a 2xx response has no choices[0].message object; empty extractedColumns array")
+    void failFastOnNoMessageObject() throws Exception {
         when(resolvedRequestService.resolve(any(), any(), any())).thenReturn(resolvedTurn("turn-0"));
-        // 200 but body has no choices[0].message.content
-        DeploymentInvocationResult noContent = new DeploymentInvocationResult(
-                200,
-                false,
-                Map.of("choices", List.of(Map.of("message", Map.of("role", "assistant")))),
-                null,
-                new HttpHeaders());
+        // 200 but choices[0] carries no message object → no usable reply
+        DeploymentInvocationResult noMessage = new DeploymentInvocationResult(
+                200, false, Map.of("choices", List.of(Map.of())), null, new HttpHeaders());
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
-                .thenReturn(noContent);
+                .thenReturn(noMessage);
 
         TestCaseRunResult result =
                 executor.execute(inputWithTurns(1), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        // responseBody = the raw 2xx response body (which lacked extractable assistant content)
-        JsonNode responseBody = objectMapper.readTree(result.getResponseBody());
-        assertThat(responseBody
-                        .path("choices")
-                        .get(0)
-                        .path("message")
-                        .get("role")
-                        .asString())
-                .isEqualTo("assistant");
-        assertThat(responseBody.path("choices").get(0).path("message").has("content"))
-                .isFalse();
         // step 0 never completed → empty per-step array
         JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
         assertThat(extracted.isArray()).isTrue();
         assertThat(extracted.isEmpty()).isTrue();
+    }
+
+    @Test
+    @DisplayName(
+            "appends the full assistant message verbatim (extra fields preserved) for a tool-call turn with no content")
+    void appendsFullAssistantMessageVerbatim() throws Exception {
+        when(resolvedRequestService.resolve(any(), any(), any()))
+                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
+        // Turn 0's reply is a tool-call message: no string content, but it carries tool_calls + refusal.
+        Map<String, Object> toolCall = Map.of(
+                "id", "call_1", "type", "function", "function", Map.of("name", "get_weather", "arguments", "{}"));
+        Map<String, Object> toolCallMessage =
+                Map.of("role", "assistant", "tool_calls", List.of(toolCall), "refusal", "none");
+        DeploymentInvocationResult turn0 = new DeploymentInvocationResult(
+                200, false, Map.of("choices", List.of(Map.of("message", toolCallMessage))), null, new HttpHeaders());
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(turn0, response(200, "assistant-1"));
+        when(responseColumnExtractor.extract(any(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+
+        TestCaseRunResult result =
+                executor.execute(inputWithTurns(2), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        // Previously this turn would have aborted (no string content); now it is a valid turn.
+        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+
+        verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), bodyCaptor.capture());
+        // Turn 1's resent history: [user-0, assistant-0 (verbatim tool-call message), user-1]
+        List<Object> step1Sent = messagesOf(bodyCaptor.getAllValues().get(1));
+        assertThat(step1Sent).hasSize(3);
+        Object assistant = step1Sent.get(1);
+        assertThat(assistant).isInstanceOf(JsonNode.class);
+        JsonNode assistantNode = (JsonNode) assistant;
+        assertThat(assistantNode.get("role").asString()).isEqualTo("assistant");
+        // extra fields preserved verbatim (not stripped by a {role, content} reconstruction)
+        assertThat(assistantNode
+                        .path("tool_calls")
+                        .get(0)
+                        .path("function")
+                        .get("name")
+                        .asString())
+                .isEqualTo("get_weather");
+        assertThat(assistantNode.get("refusal").asString()).isEqualTo("none");
     }
 
     @Test
@@ -330,6 +360,10 @@ class MultiStepConversationExecutorTest {
 
     @SuppressWarnings("unchecked")
     private String roleOf(Object message) {
+        // Template (user) messages stay Maps; assistant messages are appended verbatim as JsonNode objects.
+        if (message instanceof JsonNode node) {
+            return node.get("role").asString();
+        }
         return (String) ((Map<String, Object>) message).get("role");
     }
 

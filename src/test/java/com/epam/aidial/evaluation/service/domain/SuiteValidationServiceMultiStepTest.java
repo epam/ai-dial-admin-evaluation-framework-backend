@@ -14,10 +14,8 @@ import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +24,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpMethod;
 
+/**
+ * Multi-step suite validation: a multi-step suite uses its single {@code inputBindings} (validated by the
+ * shared {@link BindingValidator}); the only multi-step-specific config requirement is a chat-completions
+ * body (top-level {@code messages} array). Turn count / array-shape are per-test-case runtime concerns.
+ */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("SuiteValidationService multi-step validation")
 class SuiteValidationServiceMultiStepTest {
@@ -59,9 +62,9 @@ class SuiteValidationServiceMultiStepTest {
     }
 
     @Test
-    @DisplayName("a well-formed multi-step suite is valid")
+    @DisplayName("a well-formed multi-step suite (single bindings + messages body) is valid")
     void wellFormedMultiStepSuiteIsValid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(step("q1"), step("q2")));
+        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(binding("q1")));
 
         ValidationResult result = service.validateSuite(dto, null, SCHEMA);
 
@@ -70,34 +73,9 @@ class SuiteValidationServiceMultiStepTest {
     }
 
     @Test
-    @DisplayName("empty multistepInputBindings is invalid")
-    void emptyBindingsIsInvalid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of());
-
-        ValidationResult result = service.validateSuite(dto, null, SCHEMA);
-
-        assertThat(result.isValid()).isFalse();
-        assertThat(result.getWarnings())
-                .anyMatch(w -> w.getMessage().contains("multistepInputBindings must be non-empty"));
-    }
-
-    @Test
-    @DisplayName("over-cap multistepInputBindings is invalid")
-    void overCapIsInvalid() {
-        List<List<InputBindingDto>> steps =
-                new ArrayList<>(IntStream.range(0, 11).mapToObj(i -> step("q1")).toList());
-        TestSuiteRequestDto dto = baseMultiStepSuite(steps);
-
-        ValidationResult result = service.validateSuite(dto, null, SCHEMA);
-
-        assertThat(result.isValid()).isFalse();
-        assertThat(result.getWarnings()).anyMatch(w -> w.getMessage().contains("must not exceed 10 steps"));
-    }
-
-    @Test
     @DisplayName("non-messages JSON body is invalid")
     void nonMessagesJsonBodyIsInvalid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(step("q1")));
+        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(binding("q1")));
         dto.setRequestTemplate(RequestTemplateDto.builder()
                 .urlTemplate("/chat")
                 .body(JsonRequestBodyDto.builder()
@@ -114,7 +92,7 @@ class SuiteValidationServiceMultiStepTest {
     @Test
     @DisplayName("multipart body is invalid for multi-step")
     void multipartBodyIsInvalid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(step("q1")));
+        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(binding("q1")));
         dto.setRequestTemplate(RequestTemplateDto.builder()
                 .urlTemplate("/chat")
                 .body(MultipartFormDataRequestBodyDto.builder()
@@ -129,23 +107,21 @@ class SuiteValidationServiceMultiStepTest {
     }
 
     @Test
-    @DisplayName("bad per-step binding (unknown field) is invalid")
-    void badPerStepBindingIsInvalid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(step("q1"), step("unknown_field")));
+    @DisplayName("binding to an unknown field is invalid (shared binding validation)")
+    void bindingToUnknownFieldIsInvalid() {
+        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(binding("unknown_field")));
 
         ValidationResult result = service.validateSuite(dto, null, SCHEMA);
 
         assertThat(result.isValid()).isFalse();
-        assertThat(result.getWarnings())
-                .anyMatch(w ->
-                        w.getMessage().contains("Step 1") && w.getMessage().contains("unknown field 'unknown_field'"));
+        assertThat(result.getWarnings()).anyMatch(w -> w.getMessage().contains("unknown field 'unknown_field'"));
     }
 
-    private TestSuiteRequestDto baseMultiStepSuite(List<List<InputBindingDto>> steps) {
+    private TestSuiteRequestDto baseMultiStepSuite(List<InputBindingDto> inputBindings) {
         return TestSuiteRequestDto.builder()
                 .name("multi-step suite")
                 .multiStep(true)
-                .multistepInputBindings(steps)
+                .inputBindings(inputBindings)
                 .endpointRef(
                         EndpointContractDto.builder().method(HttpMethod.POST).build())
                 .requestTemplate(RequestTemplateDto.builder()
@@ -161,10 +137,10 @@ class SuiteValidationServiceMultiStepTest {
                 .build();
     }
 
-    private List<InputBindingDto> step(String dataField) {
-        return List.of(InputBindingDto.builder()
+    private InputBindingDto binding(String dataField) {
+        return InputBindingDto.builder()
                 .templateVariable("turn")
                 .dataField(dataField)
-                .build());
+                .build();
     }
 }

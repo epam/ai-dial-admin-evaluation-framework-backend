@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
+import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
@@ -23,6 +24,7 @@ import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,22 +43,30 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Multi-step (multi-turn) conversation executor (POC). Drives a fixed, author-scripted sequence of
- * chat-completions turns for a single test case, accumulating {@code messages} history and re-sending
- * the full history each turn. Returns a single {@link TestCaseRunResult} that reuses the existing
- * columns: {@code responseBody} = the last turn's raw response body (preserving its technical fields,
- * e.g. {@code id}/{@code usage}/{@code model}) — mirroring how {@code requestBody} holds the last turn's
- * raw request; {@code extractedColumns} = a JSON array of per-step extraction maps. The full conversation
- * remains recoverable from the last request body (which carries the whole message history through the
- * final user turn) plus this final response.
+ * Multi-step (multi-turn) conversation executor (POC). Drives a data-driven sequence of chat-completions
+ * turns for a single test case, accumulating {@code messages} history and re-sending the full history each
+ * turn. The suite uses its single {@code inputBindings}; per-turn variation comes from array-valued
+ * test-case columns bound by those bindings. The number of turns is derived <b>per test case</b> as the
+ * common length of the array-valued bound columns; scalar columns and {@code constantValue} bindings are
+ * broadcast (reused unchanged) on every turn. Turn {@code i} resolves the template with element {@code i}
+ * of each array-valued column.
  *
- * <p>Contract (see design D1–D4): the resolved request body must be JSON with a top-level {@code messages}
- * array; the assistant reply is read from the hardcoded {@code choices[0].message.content} OpenAI path;
- * steps are always invoked non-streaming; the loop is fail-fast — the first step that fails after retries
- * (or returns a 2xx with no extractable assistant reply) aborts the conversation, persisting partial
- * history and partial per-step extractions.
+ * <p>Returns a single {@link TestCaseRunResult} that reuses the existing columns: {@code responseBody} =
+ * the last turn's raw response body (preserving its technical fields, e.g. {@code id}/{@code usage}/{@code
+ * model}) — mirroring how {@code requestBody} holds the last turn's raw request; {@code extractedColumns} =
+ * a JSON array of per-step extraction maps. The full conversation remains recoverable from the last request
+ * body (which carries the whole message history through the final user turn) plus this final response.
+ *
+ * <p>Contract: the resolved request body must be JSON with a top-level {@code messages} array; the assistant
+ * reply is read from the hardcoded {@code choices[0].message.content} OpenAI path; steps are always invoked
+ * non-streaming; the loop is fail-fast — the first step that fails after retries (or returns a 2xx with no
+ * extractable assistant reply) aborts the conversation, persisting partial history and partial per-step
+ * extractions. A per-test-case data problem (no array-valued bound column, mismatched array lengths, or a
+ * turn count exceeding the cap) fails only that test case with an {@code ERROR} result; other test cases in
+ * the run proceed.
  */
 @Slf4j
 @Component
@@ -78,8 +88,8 @@ public class MultiStepConversationExecutor {
 
     /**
      * Runs the full conversation for one test case. The whole conversation executes inside the caller's
-     * single worker task / semaphore permit; steps are sequential. {@code traceId} is the worker span's
-     * id (shared by every step, hence equal to the last step's — see design D5).
+     * single worker task / semaphore permit; turns are sequential. {@code traceId} is the worker span's
+     * id (shared by every turn). The turn count is derived from this test case's array-valued bound columns.
      */
     public TestCaseRunResult execute(
             TestCaseRunInput input,
@@ -89,11 +99,25 @@ public class MultiStepConversationExecutor {
             String traceId,
             long execStartedAtMs) {
 
-        final List<List<InputBindingDto>> steps = context.getSnapshotMultistepInputBindings();
+        final List<InputBindingDto> bindings = input.getInputBindingsOverride() != null
+                ? jsonbMapper.mapInputBindings(input.getInputBindingsOverride())
+                : context.getSnapshotInputBindings();
         final Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
         final RequestTemplateDto template = input.getRequestTemplateOverride() != null
                 ? jsonbMapper.mapRequestTemplate(input.getRequestTemplateOverride())
                 : context.getSnapshotRequestTemplate();
+
+        // Turn count is derived per test case from the array-valued bound columns. A data problem here
+        // (no array column, mismatched lengths, over the cap) fails only this test case.
+        final TurnPlan turnPlan = resolveTurnCount(bindings, testCaseData);
+        if (turnPlan.hasError()) {
+            log.warn(
+                    "Multi-step turn resolution failed for test case {} in suite {}: {}",
+                    input.getTestCaseId(),
+                    context.getSuiteId(),
+                    turnPlan.error());
+            return errorResult(input, context, runIndex, traceId, execStartedAtMs, turnPlan.error());
+        }
 
         final String deploymentId = context.getSnapshotDeploymentRef() != null
                 ? context.getSnapshotDeploymentRef().getId()
@@ -112,14 +136,15 @@ public class MultiStepConversationExecutor {
         int lastRetryCount = 0;
 
         try {
-            for (int i = 0; i < steps.size(); i++) {
+            for (int i = 0; i < turnPlan.turnCount(); i++) {
                 if (context.getCancellationSignal().get()) {
                     finalStatus = ExecutionStatus.ERROR;
                     break;
                 }
 
-                final ResolvedRequestDto resolved =
-                        resolvedRequestService.resolve(template, steps.get(i), testCaseData);
+                // (1) Project this turn's data: array-valued bound columns → element i; scalars/constants broadcast.
+                final Map<String, Object> perTurnData = projectTurnData(testCaseData, turnPlan.iteratingFields(), i);
+                final ResolvedRequestDto resolved = resolvedRequestService.resolve(template, bindings, perTurnData);
                 final ResolvedBodyDto resolvedBody = resolved.getBody();
                 if (!(resolvedBody instanceof ResolvedJsonBodyDto jsonBody) || jsonBody.getContent() == null) {
                     log.warn(
@@ -214,6 +239,110 @@ public class MultiStepConversationExecutor {
                 .logDetails(null)
                 .createdAtMs(context.getCreatedAtMs())
                 .build();
+    }
+
+    /** Resolved turn count for a test case: a valid count with the iterating field names, or an error message. */
+    private record TurnPlan(int turnCount, Set<String> iteratingFields, String error) {
+        static TurnPlan of(int turnCount, Set<String> iteratingFields) {
+            return new TurnPlan(turnCount, iteratingFields, null);
+        }
+
+        static TurnPlan error(String message) {
+            return new TurnPlan(0, Set.of(), message);
+        }
+
+        boolean hasError() {
+            return error != null;
+        }
+    }
+
+    /**
+     * Derives the per-test-case turn count from the array-valued columns referenced by {@code dataField}
+     * bindings. All such columns must share a single non-zero length within the cap; scalar columns and
+     * {@code constantValue} bindings are ignored here (they broadcast). Returns an error plan for a
+     * length mismatch, an empty/absent array column, or a count over {@code MAX_CONVERSATION_STEPS}.
+     */
+    private TurnPlan resolveTurnCount(List<InputBindingDto> bindings, Map<String, Object> data) {
+        final Map<String, Integer> arrayFieldLengths = new LinkedHashMap<>();
+        if (bindings != null) {
+            for (InputBindingDto binding : bindings) {
+                if (binding == null
+                        || binding.getDataField() == null
+                        || binding.getDataField().isBlank()) {
+                    continue;
+                }
+                if (data.get(binding.getDataField()) instanceof List<?> list) {
+                    arrayFieldLengths.put(binding.getDataField(), list.size());
+                }
+            }
+        }
+        if (arrayFieldLengths.isEmpty()) {
+            return TurnPlan.error(
+                    "Multi-step suite requires at least one array-valued bound column; none found in test-case data");
+        }
+        final Set<Integer> distinctLengths = new HashSet<>(arrayFieldLengths.values());
+        if (distinctLengths.size() > 1) {
+            return TurnPlan.error("Array-valued bound columns must have equal length; got " + arrayFieldLengths);
+        }
+        final int turnCount = distinctLengths.iterator().next();
+        if (turnCount == 0) {
+            return TurnPlan.error("Array-valued bound columns are empty; no conversation turns to run");
+        }
+        if (turnCount > ValidationConstants.MAX_CONVERSATION_STEPS) {
+            return TurnPlan.error("Conversation turn count " + turnCount + " exceeds the maximum of "
+                    + ValidationConstants.MAX_CONVERSATION_STEPS);
+        }
+        return TurnPlan.of(turnCount, arrayFieldLengths.keySet());
+    }
+
+    /** Builds turn {@code i}'s data: iterating (array-valued) fields → element {@code i}; all others unchanged. */
+    private Map<String, Object> projectTurnData(Map<String, Object> data, Set<String> iteratingFields, int i) {
+        final Map<String, Object> perTurn = new LinkedHashMap<>(data);
+        for (String field : iteratingFields) {
+            if (data.get(field) instanceof List<?> list) {
+                perTurn.put(field, list.get(i));
+            }
+        }
+        return perTurn;
+    }
+
+    /** Persists a single {@code ERROR} result for a per-test-case data problem, without aborting the run. */
+    private TestCaseRunResult errorResult(
+            TestCaseRunInput input,
+            EvaluationContext context,
+            int runIndex,
+            String traceId,
+            long execStartedAtMs,
+            String message) {
+        final long execCompletedAtMs = clock.millis();
+        return TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(context.getRunId())
+                .testSuiteId(context.getSuiteId())
+                .testCaseId(input.getTestCaseId())
+                .testCaseName(input.getTestCaseName())
+                .runIndex(runIndex)
+                .testCaseData(input.getTestCaseData())
+                .requestBody(null)
+                .responseBody(null)
+                .responseStatusCode(null)
+                .executionStatus(ExecutionStatus.ERROR)
+                .execStartedAtMs(execStartedAtMs)
+                .execCompletedAtMs(execCompletedAtMs)
+                .execDurationMs(execCompletedAtMs - execStartedAtMs)
+                .traceId(traceId)
+                .extractedColumns("[]")
+                .extractionWarnings("[]")
+                .retryCount(0)
+                .logDetails(buildErrorLogDetails(message))
+                .createdAtMs(context.getCreatedAtMs())
+                .build();
+    }
+
+    private String buildErrorLogDetails(String message) {
+        final ObjectNode node = objectMapper.createObjectNode();
+        node.put("error", message);
+        return serializeBody(node);
     }
 
     /** Per-step outcome carrier (one HTTP turn after retries). */

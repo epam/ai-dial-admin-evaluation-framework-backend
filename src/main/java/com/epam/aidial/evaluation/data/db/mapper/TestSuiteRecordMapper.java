@@ -26,7 +26,6 @@ public class TestSuiteRecordMapper {
                 .requestTemplate(toJsonString(r.getRequestTemplate()))
                 .inputBindings(toJsonString(r.getInputBindings()))
                 .multiStep(Boolean.TRUE.equals(r.getMultiStep()))
-                .multistepInputBindings(toJsonString(r.getMultistepInputBindings()))
                 .mcpDeploymentRef(toJsonString(r.getMcpDeploymentRef()))
                 .toolRef(toJsonString(r.getToolRef()))
                 .argumentTemplate(toJsonString(r.getArgumentTemplate()))

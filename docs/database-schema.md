@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-05-25 (meta V1.22, analytics V1.8)
+> **Last sync**: 2026-07-01 (meta V1.24, analytics V1.8)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -98,9 +98,8 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `endpoint_ref` | JSONB | NULL | - | Endpoint contract definition (EndpointContractDto) — HTTP suites |
 | `response_columns` | JSONB | NOT NULL | `'[]'::jsonb` | Response column definitions (List of ResponseColumnDefinitionDto) |
 | `request_template` | JSONB | NULL | - | Postman-style request template (RequestTemplateDto) — HTTP suites |
-| `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Bindings from template variables to data fields (List of InputBindingDto). Ignored when `multi_step = true`. |
-| `multi_step` | BOOLEAN | NOT NULL | `false` | Marks a DEPLOYMENT suite as multi-turn (POC). When true, execution drives a scripted conversation via `multistep_input_bindings` and ignores `input_bindings`. |
-| `multistep_input_bindings` | JSONB | NULL | - | One binding list per conversation step (List of List of InputBindingDto); `list[i]` populates the single `request_template` for step _i_. Total steps = array length; capped at `ValidationConstants.MAX_CONVERSATION_STEPS` (10). NULL/unused for single-step suites. |
+| `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Bindings from template variables to data fields (List of InputBindingDto). Used for both single-step and multi-step suites. |
+| `multi_step` | BOOLEAN | NOT NULL | `false` | Marks a DEPLOYMENT suite as multi-turn (POC). When true, the suite uses its single `input_bindings`; the number of turns is derived per test case from the length of the array-valued columns bound by those bindings. |
 | `mcp_deployment_ref` | JSONB | NULL | - | MCP deployment reference (McpDeploymentReferenceDto) — MCP suites |
 | `tool_ref` | JSONB | NULL | - | MCP tool reference with schema (ToolReferenceDto) — MCP suites |
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
@@ -871,6 +870,7 @@ Metric definition snapshots captured at computation time. Each row records the m
 | V1.21 | `V1.21__AddCoercedCellCountToRevalidationTasks.sql` | Added coerced_cell_count column to revalidation_tasks |
 | V1.22 | `V1.22__IntroduceDataset.sql` | Introduced datasets table; rebound test_cases and revalidation_tasks FKs from test_suites to datasets; backfilled per-suite datasets; relaxed `test_suites.dataset_id` to nullable (unbound state); added `datasets.visibility` (`'PUBLIC'`/`'PRIVATE'`) with CHECK constraint; added `tg_test_suites_private_binding_guard` trigger raising `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` for concurrent PRIVATE-binding violations; backfilled `suite_snapshot` JSON to v2 (`snapshotVersion`, `datasetRef`) |
 | V1.23 | `V1.23__AddMultiStepToTestSuites.sql` | Added `multi_step` (BOOLEAN NOT NULL DEFAULT false) and `multistep_input_bindings` (JSONB, nullable) to test_suites for multi-turn conversation POC |
+| V1.24 | `V1.24__DropMultistepInputBindingsFromTestSuites.sql` | Dropped `multistep_input_bindings` from test_suites; multi-turn conversations now derive turns per test case from array-valued columns bound via the single `input_bindings` |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

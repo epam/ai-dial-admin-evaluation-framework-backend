@@ -167,11 +167,6 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
      */
     public final TableField<TestSuitesRecord, Boolean> MULTI_STEP = createField(DSL.name("multi_step"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
 
-    /**
-     * The column <code>meta.test_suites.multistep_input_bindings</code>.
-     */
-    public final TableField<TestSuitesRecord, JSONB> MULTISTEP_INPUT_BINDINGS = createField(DSL.name("multistep_input_bindings"), SQLDataType.JSONB, this, "");
-
     private TestSuites(Name alias, Table<TestSuitesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

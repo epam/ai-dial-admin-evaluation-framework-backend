@@ -398,7 +398,6 @@ public class TestSuiteEvaluationJob {
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
                 .snapshotMultiStep(snapshot.isMultiStep())
-                .snapshotMultistepInputBindings(snapshot.getMultistepInputBindings())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())

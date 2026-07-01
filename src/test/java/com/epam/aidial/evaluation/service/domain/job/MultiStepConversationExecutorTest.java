@@ -5,11 +5,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
+import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
@@ -117,7 +119,8 @@ class MultiStepConversationExecutorTest {
 
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
 
-        TestCaseRunResult result = executor.execute(input(), context(2), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        TestCaseRunResult result =
+                executor.execute(inputWithTurns(2), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), bodyCaptor.capture());
         List<Object> sentBodies = bodyCaptor.getAllValues();
@@ -163,7 +166,8 @@ class MultiStepConversationExecutorTest {
         when(responseColumnExtractor.extract(any(), any()))
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{\"a\":\"answer-0\"}", "[]"));
 
-        TestCaseRunResult result = executor.execute(input(), context(2), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        TestCaseRunResult result =
+                executor.execute(inputWithTurns(2), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
         // step 1 (index 1) failed; step 2 would not exist anyway, but no third invocation
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), any());
@@ -200,7 +204,8 @@ class MultiStepConversationExecutorTest {
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenReturn(noContent);
 
-        TestCaseRunResult result = executor.execute(input(), context(1), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        TestCaseRunResult result =
+                executor.execute(inputWithTurns(1), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
         // responseBody = the raw 2xx response body (which lacked extractable assistant content)
@@ -218,6 +223,81 @@ class MultiStepConversationExecutorTest {
         JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
         assertThat(extracted.isArray()).isTrue();
         assertThat(extracted.isEmpty()).isTrue();
+    }
+
+    @Test
+    @DisplayName("array columns iterate per turn while scalar columns broadcast unchanged")
+    void scalarBroadcastAcrossTurns() throws Exception {
+        when(resolvedRequestService.resolve(any(), any(), any()))
+                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(response(200, "assistant-0"), response(200, "assistant-1"));
+        when(responseColumnExtractor.extract(any(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+
+        EvaluationContext context = contextWithBindings(List.of(
+                InputBindingDto.builder()
+                        .templateVariable("turn")
+                        .dataField("turns")
+                        .build(),
+                InputBindingDto.builder()
+                        .templateVariable("sys")
+                        .dataField("system")
+                        .build()));
+        TestCaseRunInput input =
+                inputWithData(Map.<String, Object>of("turns", List.of("q0", "q1"), "system", "be concise"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> dataCaptor = ArgumentCaptor.forClass(Map.class);
+
+        TestCaseRunResult result = executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        verify(resolvedRequestService, times(2)).resolve(any(), any(), dataCaptor.capture());
+        List<Map<String, Object>> perTurnData = dataCaptor.getAllValues();
+        // array column iterates: element i per turn
+        assertThat(perTurnData.get(0).get("turns")).isEqualTo("q0");
+        assertThat(perTurnData.get(1).get("turns")).isEqualTo("q1");
+        // scalar column broadcasts unchanged on every turn
+        assertThat(perTurnData.get(0).get("system")).isEqualTo("be concise");
+        assertThat(perTurnData.get(1).get("system")).isEqualTo("be concise");
+    }
+
+    @Test
+    @DisplayName("mismatched array lengths fail only that test case with an ERROR result and no calls")
+    void mismatchedArrayLengthsError() {
+        EvaluationContext context = contextWithBindings(List.of(
+                InputBindingDto.builder().templateVariable("a").dataField("as").build(),
+                InputBindingDto.builder().templateVariable("b").dataField("bs").build()));
+        TestCaseRunInput input = inputWithData(Map.<String, Object>of("as", List.of("x", "y"), "bs", List.of("z")));
+
+        TestCaseRunResult result = executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(result.getExtractedColumns()).isEqualTo("[]");
+        verifyNoInteractions(deploymentInvoker);
+    }
+
+    @Test
+    @DisplayName("no array-valued bound column fails only that test case with an ERROR result and no calls")
+    void noArrayColumnError() {
+        TestCaseRunInput input = inputWithData(Map.<String, Object>of("turns", "just a string"));
+
+        TestCaseRunResult result = executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        verifyNoInteractions(deploymentInvoker);
+    }
+
+    @Test
+    @DisplayName("turn count over the cap fails only that test case with an ERROR result and no calls")
+    void turnCountOverCapError() {
+        TestCaseRunInput input = inputWithTurns(ValidationConstants.MAX_CONVERSATION_STEPS + 1);
+
+        TestCaseRunResult result = executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        verifyNoInteractions(deploymentInvoker);
     }
 
     private ResolvedRequestDto resolvedTurn(String userContent) {
@@ -253,23 +333,33 @@ class MultiStepConversationExecutorTest {
         return (String) ((Map<String, Object>) message).get("role");
     }
 
-    private TestCaseRunInput input() {
+    /** Builds an input whose single array-valued column {@code turns} has {@code n} elements → {@code n} turns. */
+    private TestCaseRunInput inputWithTurns(int n) {
+        List<String> values = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            values.add("q" + i);
+        }
+        return inputWithData(Map.<String, Object>of("turns", values));
+    }
+
+    private TestCaseRunInput inputWithData(Map<String, Object> data) {
         return TestCaseRunInput.builder()
                 .runId(UUID.randomUUID())
                 .testCaseId(UUID.randomUUID())
                 .testCaseName("tc-1")
-                .testCaseData("{}")
+                .testCaseData(objectMapper.writeValueAsString(data))
                 .build();
     }
 
-    private EvaluationContext context(int numSteps) {
-        List<List<InputBindingDto>> steps = new ArrayList<>();
-        for (int i = 0; i < numSteps; i++) {
-            steps.add(List.of(InputBindingDto.builder()
-                    .templateVariable("turn")
-                    .dataField("q" + i)
-                    .build()));
-        }
+    /** Single-step-shaped bindings: one {@code turn} variable bound to the array-valued {@code turns} column. */
+    private EvaluationContext context() {
+        return contextWithBindings(List.of(InputBindingDto.builder()
+                .templateVariable("turn")
+                .dataField("turns")
+                .build()));
+    }
+
+    private EvaluationContext contextWithBindings(List<InputBindingDto> bindings) {
         return EvaluationContext.builder()
                 .runId(UUID.randomUUID())
                 .suiteId(UUID.randomUUID())
@@ -281,7 +371,7 @@ class MultiStepConversationExecutorTest {
                 .maxResponseSizeBytes(10_000_000L)
                 .createdAtMs(FIXED_CLOCK.millis())
                 .snapshotMultiStep(true)
-                .snapshotMultistepInputBindings(steps)
+                .snapshotInputBindings(bindings)
                 .snapshotRequestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/chat").build())
                 .snapshotDeploymentRef(

@@ -55,9 +55,6 @@ public class SuiteSnapshotDto {
     @Schema(description = "Whether the suite was multi-turn at snapshot time (POC)")
     private boolean multiStep = false;
 
-    @Schema(description = "Per-step input binding lists (multi-step suites only); one list per conversation step")
-    private List<List<InputBindingDto>> multistepInputBindings;
-
     @Schema(description = "Response column definitions")
     private List<ResponseColumnDefinitionDto> responseColumns;
 

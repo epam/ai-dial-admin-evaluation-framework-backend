@@ -30,8 +30,6 @@ public class JsonbMapper {
 
     private static final TypeReference<List<FieldDefinitionDto>> FIELD_DEF_LIST_TYPE = new TypeReference<>() {};
     private static final TypeReference<List<InputBindingDto>> BINDING_LIST_TYPE = new TypeReference<>() {};
-    private static final TypeReference<List<List<InputBindingDto>>> MULTISTEP_BINDING_LIST_TYPE =
-            new TypeReference<>() {};
     private static final TypeReference<List<ResponseColumnDefinitionDto>> RESPONSE_COL_LIST_TYPE =
             new TypeReference<>() {};
     private static final TypeReference<List<MetricParameterBindingDto>> METRIC_BINDING_LIST_TYPE =
@@ -69,21 +67,6 @@ public class JsonbMapper {
 
     public List<InputBindingDto> mapInputBindings(String json) {
         return readList(json, BINDING_LIST_TYPE, "inputBindings");
-    }
-
-    public String mapMultistepInputBindings(List<List<InputBindingDto>> value) {
-        return write(value, "multistepInputBindings");
-    }
-
-    public List<List<InputBindingDto>> mapMultistepInputBindings(String json) {
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-        try {
-            return objectMapper.readValue(json, MULTISTEP_BINDING_LIST_TYPE);
-        } catch (JacksonException ex) {
-            throw new IllegalArgumentException("Failed to deserialize multistepInputBindings", ex);
-        }
     }
 
     public String mapResponseColumns(List<ResponseColumnDefinitionDto> value) {

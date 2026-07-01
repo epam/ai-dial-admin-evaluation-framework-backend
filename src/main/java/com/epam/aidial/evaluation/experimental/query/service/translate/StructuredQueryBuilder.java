@@ -59,7 +59,10 @@ public class StructuredQueryBuilder {
     private final ExprTranslator exprTranslator;
     private final FilterTranslator filterTranslator;
 
-    /** Builds the executable select for {@code query} against {@code table} using {@code bindings}. */
+    /**
+     * Builds the executable select for {@code query} against {@code table} using {@code bindings}.
+     * The query must already be parameter-free ({@code QueryParameterResolver} runs before this).
+     */
     public SelectQuery<Record> build(
             DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
         final SelectQuery<Record> select = dsl.selectQuery();

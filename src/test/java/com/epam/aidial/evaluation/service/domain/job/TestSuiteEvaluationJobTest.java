@@ -78,6 +78,9 @@ class TestSuiteEvaluationJobTest {
     private MetricEvaluationExecutor metricEvaluationExecutor;
 
     @Mock
+    private MetricScoreComputation metricScoreComputation;
+
+    @Mock
     private Clock clock;
 
     @Mock
@@ -103,6 +106,7 @@ class TestSuiteEvaluationJobTest {
                 testSuiteMetricDefinitionService,
                 metricEvaluationProperties,
                 metricEvaluationExecutor,
+                metricScoreComputation,
                 clock,
                 metaTransactionManager);
     }

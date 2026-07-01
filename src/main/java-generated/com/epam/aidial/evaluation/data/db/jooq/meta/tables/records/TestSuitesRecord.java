@@ -299,6 +299,20 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         return (JSONB) get(19);
     }
 
+    /**
+     * Setter for <code>meta.test_suites.overall_score</code>.
+     */
+    public void setOverallScore(JSONB value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suites.overall_score</code>.
+     */
+    public JSONB getOverallScore() {
+        return (JSONB) get(20);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -322,7 +336,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     /**
      * Create a detached, initialised TestSuitesRecord
      */
-    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds) {
+    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore) {
         super(TestSuites.TEST_SUITES);
 
         setId(id);
@@ -345,6 +359,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         setArgumentTemplate(argumentTemplate);
         setDatasetId(datasetId);
         setDisabledTestCaseIds(disabledTestCaseIds);
+        setOverallScore(overallScore);
         resetTouchedOnNotNull();
     }
 }

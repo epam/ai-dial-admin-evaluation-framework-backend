@@ -28,6 +28,7 @@ public class TestSuiteRecordMapper {
                 .mcpDeploymentRef(toJsonString(r.getMcpDeploymentRef()))
                 .toolRef(toJsonString(r.getToolRef()))
                 .argumentTemplate(toJsonString(r.getArgumentTemplate()))
+                .overallScore(toJsonString(r.getOverallScore()))
                 .valid(r.getIsValid())
                 .validationWarnings(toJsonString(r.getValidationWarnings()))
                 .version(r.getVersion())

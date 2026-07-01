@@ -187,6 +187,7 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(mcpDeploymentRef)
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
+                .overallScore(source.getOverallScore())
                 .version(0L)
                 .createdBy(createdBy)
                 .build();

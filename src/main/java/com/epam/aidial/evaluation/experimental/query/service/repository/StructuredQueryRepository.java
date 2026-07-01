@@ -8,6 +8,9 @@ import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
  * in {@link StructuredQueryExecutor}, so an implementation only binds an entity name to its table and
  * {@code DSLContext}. {@code StructuredQueryService} dispatches across all implementations by
  * {@link #supportedEntity()}.
+ *
+ * <p>The query passed here is already parameter-free — {@code QueryParameterResolver} substitutes any
+ * {@code param} expressions in {@code StructuredQueryService} before dispatch.
  */
 public interface StructuredQueryRepository {
 

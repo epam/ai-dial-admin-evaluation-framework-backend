@@ -40,6 +40,7 @@ public class FilterTranslator {
 
     private final ExprTranslator exprTranslator;
 
+    /** Translates a filter tree into a jOOQ {@link Condition} ({@code null} tree → {@code TRUE}). */
     public Condition toCondition(FilterNode node, Map<String, QueryFieldBinding> bindings) {
         if (node == null) {
             return DSL.trueCondition();

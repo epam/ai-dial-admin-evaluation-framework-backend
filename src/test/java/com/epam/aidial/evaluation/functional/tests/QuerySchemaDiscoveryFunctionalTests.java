@@ -64,6 +64,7 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
         assertThat(response.getBody())
                 .containsExactly(
                         new QueryEntityDto("eval_summaries", true, "test_suite_run_id"),
+                        new QueryEntityDto("metric_score_results", false, null),
                         new QueryEntityDto("test_suites", false, null));
     }
 

@@ -538,47 +538,34 @@ The system SHALL expose a `detach-dataset` action endpoint on the test-suite res
 - **THEN** the system processes the request according to the `detach-dataset` capability spec and returns `TestSuiteResponseDto`
 
 ### Requirement: Multi-step suite configuration fields
-A `DEPLOYMENT` `TestSuite` SHALL support a `multiStep` boolean (default `false`) and a `multistepInputBindings` field typed as an ordered list of input-binding lists (`List<List<InputBindingDto>>`), where element `i` configures the bindings for conversation step `i`. These fields SHALL be accepted on create/update, persisted, returned in the suite response, and captured in the suite snapshot. When `multiStep == false`, both fields behave as today and `multistepInputBindings` is ignored.
+A `DEPLOYMENT` `TestSuite` SHALL support a `multiStep` boolean (default `false`). When `multiStep == true`, the suite uses its regular single `inputBindings` and `requestTemplate`, exactly like a single-step suite; per-turn variation comes from array-valued test-case columns at execution time (see multi-step-conversation). The `multiStep` flag SHALL be accepted on create/update, persisted, returned in the suite response, and captured in the suite snapshot. There SHALL be no suite-level per-turn binding configuration.
 Status: **Planned**
 
 #### Scenario: Create a multi-step suite
-- **WHEN** a client creates a `DEPLOYMENT` suite with `multiStep: true` and a non-empty `multistepInputBindings`
-- **THEN** the suite SHALL persist both fields
-- **AND** the suite response SHALL include `multiStep` and `multistepInputBindings`
+- **WHEN** a client creates a `DEPLOYMENT` suite with `multiStep: true` and a single `inputBindings`
+- **THEN** the suite SHALL persist the `multiStep` flag and `inputBindings`
+- **AND** the suite response SHALL include `multiStep`
 
 #### Scenario: multiStep defaults to false
 - **WHEN** a client creates a suite without specifying `multiStep`
 - **THEN** the stored `multiStep` SHALL be `false`
 - **AND** the suite SHALL behave exactly as a single-step suite
 
-### Requirement: Multi-step and single-step bindings are mutually exclusive
-When `multiStep == true`, the engine and validation SHALL use only `multistepInputBindings` and SHALL ignore the single `inputBindings` field. When `multiStep == false`, the engine and validation SHALL use only `inputBindings` and SHALL ignore `multistepInputBindings`.
-Status: **Planned**
-
-#### Scenario: Single inputBindings ignored for multi-step
-- **WHEN** a suite has `multiStep == true`
-- **THEN** validation and execution SHALL source bindings exclusively from `multistepInputBindings`
-- **AND** the `inputBindings` field SHALL NOT be validated or applied
-
 ### Requirement: Multi-step suite validation
-For a suite with `multiStep == true`, suite soft-validation SHALL mark the suite invalid (adding a validation warning) when any of the following holds: the resolved `requestTemplate` body is not JSON with a top-level `messages` array; `multistepInputBindings` is null or empty; `multistepInputBindings` size exceeds the configured maximum of 10 steps; or any step's bindings fail the existing per-binding cross-validation (template-variable match and test-case-schema resolution). A suite with no violations SHALL be valid.
+For a suite with `multiStep == true`, suite soft-validation SHALL mark the suite invalid (adding a validation warning) when either of the following holds: the resolved `requestTemplate` body is not JSON with a top-level `messages` array; or the single `inputBindings` fail the existing per-binding cross-validation (template-variable match and test-case-schema resolution). A suite with no violations SHALL be valid. Turn count and array-shape checks are per-test-case data concerns evaluated at execution time, not suite-validation concerns.
 Status: **Planned**
-
-#### Scenario: Empty multistepInputBindings is invalid
-- **WHEN** a suite has `multiStep == true` and `multistepInputBindings` is empty or null
-- **THEN** the suite SHALL be marked invalid with a validation warning
-
-#### Scenario: Step count over the cap is invalid
-- **WHEN** a suite has `multiStep == true` and `multistepInputBindings` has more than 10 entries
-- **THEN** the suite SHALL be marked invalid with a validation warning
 
 #### Scenario: Non-messages body is invalid for multi-step
 - **WHEN** a suite has `multiStep == true` and its request body is multipart, url-encoded, or JSON without a top-level `messages` array
 - **THEN** the suite SHALL be marked invalid with a validation warning
 
-#### Scenario: Bad per-step binding is invalid
-- **WHEN** a suite has `multiStep == true` and any step's binding references a missing template variable or an unknown test-case field
+#### Scenario: Bad binding is invalid
+- **WHEN** a suite has `multiStep == true` and a binding references a missing template variable or an unknown test-case field
 - **THEN** the suite SHALL be marked invalid with a validation warning
+
+#### Scenario: Valid multi-step suite
+- **WHEN** a suite has `multiStep == true`, a JSON body with a top-level `messages` array, and `inputBindings` that pass cross-validation
+- **THEN** the suite SHALL be valid
 
 ## Implementation Notes
 - REST API: `com.epam.aidial.evaluation.web.controller.TestSuiteController`
@@ -592,7 +579,7 @@ Status: **Planned**
 - Modified repository: `PostgresTestSuiteRepository` — include new columns in SELECT/INSERT/UPDATE
 - Modified service: `TestSuiteService` — type-specific validation and field handling
 - FilterWhitelists: `TEST_SUITES` — `suiteType` (EQ, IN), `id` (EQ, IN), `description` (CO), `updatedAt` (GT, GTE, LT, LTE), plus existing `name`, `createdBy`, `createdAt`
-- Multi-step: new fields on `data.db.model.TestSuite`, `TestSuiteRequestDto`, `TestSuiteResponseDto`, `SuiteSnapshotDto`. `multistepInputBindings` serialized to/from a JSONB column via a new `JsonbMapper` `List<List<InputBindingDto>>` ser/deser pair. Validation extends `service.domain.SuiteValidationService.validateDeploymentSuite`; step cap is `ValidationConstants.MAX_CONVERSATION_STEPS = 10`; per-step checks reuse the existing `BindingValidator`.
+- Multi-step: a `multiStep` boolean field on `data.db.model.TestSuite`, `TestSuiteRequestDto`, `TestSuiteResponseDto`, `SuiteSnapshotDto`. There is no per-turn binding field; the suite's single `inputBindings` and `requestTemplate` are reused per turn, and per-turn variation comes from array-valued test-case columns at execution time (see multi-step-conversation). Validation extends `service.domain.SuiteValidationService.validateDeploymentSuite` (messages-array body check + normal `inputBindings` cross-validation via the existing `BindingValidator`). Turn count is derived per test case at execution time and capped at `ValidationConstants.MAX_CONVERSATION_STEPS`.
 
 ## Open Questions / TODO
 - Add explicit validation rules for `name`/`description` in DTOs (current behavior depends on DTO constraints).

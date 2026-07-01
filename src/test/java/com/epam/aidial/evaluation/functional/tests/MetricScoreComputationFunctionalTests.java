@@ -27,6 +27,20 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
 
     private static final String OUTPUT_SCHEMA = "{\"properties\":{\"score\":{\"type\":\"number\"}}}";
 
+    /**
+     * A self-contained custom overall averaging exactly one of two metric columns (Relevancy), run-scoped
+     * by the {@code :runId}/{@code :computationId} params the executor always supplies. This is the same
+     * JSON a client would PUT as a suite's {@code overallScore} (double-colon {@code metric::<name>::<field>}).
+     */
+    private static final String CUSTOM_OVERALL_RELEVANCY = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
+            + "\"filter\":{\"op\":\"and\",\"args\":["
+            + "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"test_suite_run_id\"},"
+            + "{\"type\":\"param\",\"name\":\"runId\"}]},"
+            + "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"computation_id\"},"
+            + "{\"type\":\"param\",\"name\":\"computationId\"}]}]},"
+            + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"avg\","
+            + "\"args\":[{\"type\":\"field\",\"name\":\"metric::Relevancy::score\"}]},\"as\":\"value\"}]}";
+
     @Autowired
     private MetricScoreComputation executor;
 
@@ -83,11 +97,26 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         assertThat(results).extracting(MetricScoreResult::getMetricScoreName).doesNotContain("overall");
     }
 
-    // A custom per-suite overall (a self-contained expression referencing the configured metric columns)
-    // is future work: the dynamic `metric:<tsmd>:<field>` JSONB columns are not yet authorable through
-    // the query schema, so an authored custom expression cannot translate end-to-end. The executor's
-    // custom-overall branch (run with only the run-scoping params) is covered by the unit test
-    // MetricScoreComputationExecutorTest#computesCustomOverallForMultipleMetrics.
+    @Test
+    @DisplayName("custom overall referencing one of two metrics computes that metric's average end-to-end")
+    void computesCustomOverallForOneOfTwoMetrics() {
+        final UUID suiteId = UUID.randomUUID();
+        final UUID runId = UUID.randomUUID();
+        final UUID computationId = UUID.randomUUID();
+        final long createdAt = 1_700_000_000_000L;
+        final long computedAt = 1_700_000_500_000L;
+
+        // Relevancy avg = (0.0+0.5+1.0)/3 = 0.5; Accuracy avg = (0.6+0.7+0.8)/3 = 0.7.
+        seedTwoMetricRun(suiteId, runId, computationId, createdAt, computedAt);
+
+        executor.execute(context(suiteId, runId, computationId, CUSTOM_OVERALL_RELEVANCY));
+
+        final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
+        // 5 per-metric stats x 2 fields + the custom overall (computed for any metric count).
+        assertThat(results).hasSize(11);
+        // overall is Relevancy's average alone (0.5) — NOT Accuracy (0.7) and NOT the two-metric mean (0.6).
+        assertThat(value(results, "overall", "overall")).isCloseTo(0.5, within(1e-6));
+    }
 
     private void seedRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
         analyticsTestDataHelper.createRunMetricSnapshot(runId, computationId, "Relevancy", OUTPUT_SCHEMA, computedAt);

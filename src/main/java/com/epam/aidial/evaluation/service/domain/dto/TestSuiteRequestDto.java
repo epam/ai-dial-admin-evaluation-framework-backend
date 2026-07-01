@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -79,4 +80,15 @@ public class TestSuiteRequestDto {
     @Size(max = 255)
     @Schema(example = "maintainer@example.com")
     private String createdBy;
+
+    @Schema(
+            description =
+                    "Optional per-suite definition of the run-level `overall` metric score, as a structured-query "
+                            + "expression (StructuredQuery). References configured metric columns by their flattened name "
+                            + "`metric::<metricName>::<outputField>`. When omitted, `overall` falls back to the built-in "
+                            + "default (single-metric only). Stored verbatim; not validated as a runnable query at write time.",
+            example = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\",\"select\":[{\"expr\":{\"type\":\"fn\","
+                    + "\"name\":\"avg\",\"args\":[{\"type\":\"field\",\"name\":\"metric::Relevancy::score\"}]},"
+                    + "\"as\":\"value\"}]}")
+    private Map<String, Object> overallScore;
 }

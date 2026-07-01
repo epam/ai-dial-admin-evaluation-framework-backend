@@ -509,6 +509,65 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should persist and return overallScore on update")
+    void shouldPersistAndReturnOverallScoreOnUpdate() {
+        // Given: a suite and a custom overall expression referencing one specific metric column
+        TestSuiteResponseDto created = createTestSuite("Overall Score Suite");
+        Map<String, Object> overallScore = Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "avg",
+                                "args",
+                                List.of(Map.of("type", "field", "name", "metric::Relevancy::score"))),
+                        "as",
+                        "value")));
+        TestSuiteRequestDto updateRequest = TestSuiteRequestDto.builder()
+                .name(created.getName())
+                .description(created.getDescription())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(buildEndpointContract("/v1/chat"))
+                .datasetId(created.getDatasetId())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .overallScore(overallScore)
+                .build();
+
+        // When (If-Match required for optimistic locking)
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch(created.getVersion() != null ? "\"" + created.getVersion() + "\"" : "0");
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + created.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(updateRequest, headers),
+                TestSuiteResponseDto.class);
+
+        // Then: the response echoes the submitted overallScore
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getOverallScore()).isEqualTo(overallScore);
+
+        // And: it is persisted — a fresh GET returns the same overallScore
+        ResponseEntity<TestSuiteResponseDto> fetched =
+                restTemplate.getForEntity(apiUrl("/test-suites/" + created.getId()), TestSuiteResponseDto.class);
+        assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fetched.getBody()).isNotNull();
+        assertThat(fetched.getBody().getOverallScore()).isEqualTo(overallScore);
+    }
+
+    @Test
     @DisplayName("Should return 409 when If-Match version does not match")
     void shouldReturn409OnVersionConflict() {
         // Given

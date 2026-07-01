@@ -74,6 +74,7 @@ public class TestSuiteMapper {
                 .createdBy(entity.getCreatedBy())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
+                .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
                 .build();
     }
 
@@ -96,6 +97,7 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(dto.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()))
+                .overallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()))
                 .valid(true)
                 .validationWarnings("[]")
                 .createdBy(createdBy)
@@ -118,6 +120,7 @@ public class TestSuiteMapper {
         entity.setMcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()));
         entity.setToolRef(jsonbMapper.mapToolRef(dto.getToolRef()));
         entity.setArgumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()));
+        entity.setOverallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()));
     }
 
     /**
@@ -222,6 +225,7 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(entity.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(entity.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(entity.getArgumentTemplate()))
+                .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
                 .build();
     }
 

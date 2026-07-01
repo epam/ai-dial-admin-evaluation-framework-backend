@@ -133,9 +133,18 @@ public class JsonbMapper {
     }
 
     /**
+     * Serializes the per-suite {@code overall} score definition (an opaque {@code StructuredQuery}
+     * JSON object) from the request DTO into the entity's JSONB column. Returns {@code null} for a
+     * null input so the column stays null (meaning "use the system default").
+     */
+    public String mapOverallScore(Map<String, Object> value) {
+        return write(value, "overallScore");
+    }
+
+    /**
      * The per-suite {@code overall} score definition (an opaque {@code StructuredQuery} JSON object),
-     * read from the entity into the suite snapshot. Setting a custom value is not yet exposed via the
-     * API; the column stays null and the run-level {@code overall} falls back to the system default.
+     * read from the entity into the suite snapshot or the suite response. A null column means the
+     * run-level {@code overall} falls back to the system default.
      */
     public Map<String, Object> mapOverallScore(String json) {
         if (json == null || json.isBlank()) {

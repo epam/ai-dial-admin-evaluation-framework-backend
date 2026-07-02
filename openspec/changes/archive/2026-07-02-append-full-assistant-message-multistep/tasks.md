@@ -15,4 +15,4 @@
 ## 3. Docs & spec sync
 
 - [x] 3.1 Updated the AGENTS.md multi-step inline convention (line 146): the assistant reply appended to history is the full `choices[0].message` verbatim; abort only when no message object; noted the `NON_NULL`/`content: null` interaction. Response-column extraction wording left unchanged.
-- [ ] 3.2 At archive time, sync the delta spec into `openspec/specs/multi-step-conversation/spec.md` via the `/opsx:archive` sync step (intelligent merge, not a copy).
+- [x] 3.2 At archive time, sync the delta spec into `openspec/specs/multi-step-conversation/spec.md` via the `/opsx:archive` sync step (intelligent merge, not a copy).

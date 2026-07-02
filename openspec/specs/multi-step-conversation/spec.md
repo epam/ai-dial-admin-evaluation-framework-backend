@@ -22,14 +22,14 @@ Status: **Planned**
 - **AND** the values that differ between steps SHALL come from the per-turn element of the array-valued bound columns in the test case's data
 
 ### Requirement: Per-step turn loop with full-history resend
-For a multi-step test case, the engine SHALL maintain a running `messages` history `H` (initially empty) and execute steps sequentially for `i` in `0 .. N-1`, where `N` is the turn count derived per test case (see the turn-count requirement). For each step it SHALL: (1) build the per-turn data by projecting each array-valued bound column to its `i`-th element (leaving scalar columns and `constantValue` bindings unchanged); (2) resolve `requestTemplate` with the single `inputBindings` and that per-turn data; (3) append the resolved body's `messages` to `H`; (4) send the request with its `messages` field overwritten by the full `H` (all other body fields as resolved for that step); (5) append the assistant reply to `H`; (6) extract response columns for that step. The full accumulated history MUST be re-sent on every step.
+For a multi-step test case, the engine SHALL maintain a running `messages` history `H` (initially empty) and execute steps sequentially for `i` in `0 .. N-1`, where `N` is the turn count derived per test case (see the turn-count requirement). For each step it SHALL: (1) build the per-turn data by projecting each array-valued bound column to its `i`-th element (leaving scalar columns and `constantValue` bindings unchanged); (2) resolve `requestTemplate` with the single `inputBindings` and that per-turn data; (3) append the resolved body's `messages` to `H`; (4) send the request with its `messages` field overwritten by the full `H` (all other body fields as resolved for that step); (5) append the assistant reply — the full `choices[0].message` object of the response, verbatim — to `H`; (6) extract response columns for that step. The full accumulated history MUST be re-sent on every step.
 Status: **Planned**
 
 #### Scenario: Two-step conversation accumulates history
 - **WHEN** a test case whose array-valued bound column has length 2 runs and both steps succeed
 - **THEN** step 0 SHALL send `messages` = [turn-0 user message]
 - **AND** step 1 SHALL send `messages` = [turn-0 user, turn-0 assistant, turn-1 user]
-- **AND** the assistant reply from each step SHALL be appended to history before the next step
+- **AND** the full assistant message (`choices[0].message`) from each step SHALL be appended verbatim to history before the next step
 
 #### Scenario: Template messages represent the new turn only
 - **WHEN** a step's resolved template body contains messages
@@ -69,20 +69,28 @@ Status: **Planned**
 - **AND** other test cases in the run SHALL still execute
 
 ### Requirement: Assistant reply extraction (hardcoded OpenAI path, non-streaming)
-The engine SHALL read each step's assistant reply from `choices[0].message.content` of the response and append it to history as `{ "role": "assistant", "content": <value> }`. Multi-step steps SHALL always be invoked non-streaming regardless of any streaming hint.
+The engine SHALL append each step's assistant turn to the running history as the full `choices[0].message` object of the response, verbatim — preserving the fields it contains (e.g. `role`, `content`, `tool_calls`, `refusal`, `reasoning_content`, structured/array `content`, and any provider-specific fields). It SHALL NOT reconstruct a reduced `{ "role": "assistant", "content": <value> }` message from `choices[0].message.content`. The `choices[0].message` path is hardcoded (OpenAI-shaped). Multi-step steps SHALL always be invoked non-streaming regardless of any streaming hint. A step is considered to have no usable reply — aborting the conversation per the fail-fast requirement — only when the response has no `choices[0].message` object (missing `choices`, an empty `choices` array, or a `message` that is not a JSON object); a `message` object without a string `content` (e.g. a tool-call turn) is a valid turn. Because the response body is serialized with the shared `NON_NULL` object mapper before the message is read, a reply whose `content` is JSON `null` is appended with `content` absent (functionally equivalent for resend); all present fields are preserved.
 Status: **Planned**
 
-#### Scenario: Assistant content appended from response
-- **WHEN** a step returns a 2xx response with `choices[0].message.content` present
-- **THEN** the engine SHALL append an assistant message with that content to the running history
+#### Scenario: Full assistant message appended verbatim
+- **WHEN** a step returns a 2xx response whose `choices[0].message` contains fields beyond `role`/`content` (e.g. `tool_calls`, `refusal`)
+- **THEN** the engine SHALL append that `message` object to the running history verbatim, preserving those extra fields
 
-#### Scenario: Missing assistant content aborts the conversation
-- **WHEN** a step returns a 2xx response with no extractable `choices[0].message.content`
+#### Scenario: Tool-call turn without string content is a valid turn
+- **WHEN** a step returns a 2xx response whose `choices[0].message` is a message object with no string `content` (e.g. a tool-call-only message)
+- **THEN** the engine SHALL append that `message` object to history and SHALL NOT abort the conversation
+
+#### Scenario: Plain-content message appended verbatim
+- **WHEN** a step returns a 2xx response whose `choices[0].message` is `{ "role": "assistant", "content": "..." }`
+- **THEN** the engine SHALL append that `message` object to history verbatim
+
+#### Scenario: Missing message object aborts the conversation
+- **WHEN** a step returns a 2xx response with no `choices[0].message` object (missing `choices`, an empty `choices` array, or a `message` that is not a JSON object)
 - **THEN** the engine SHALL treat the step as failed (history cannot continue)
 - **AND** the conversation SHALL abort per the fail-fast requirement
 
 ### Requirement: Fail-fast on step failure
-If any step fails after retries — a non-2xx final status, a timeout/network error, an oversized (truncated) response, or an unextractable assistant reply — the engine SHALL stop the conversation at that step and SHALL NOT send subsequent steps. The persisted result SHALL reflect partial progress.
+If any step fails after retries — a non-2xx final status, a timeout/network error, an oversized (truncated) response, or a 2xx response with no assistant `message` object — the engine SHALL stop the conversation at that step and SHALL NOT send subsequent steps. The persisted result SHALL reflect partial progress.
 Status: **Planned**
 
 #### Scenario: Failure at step k stops remaining steps

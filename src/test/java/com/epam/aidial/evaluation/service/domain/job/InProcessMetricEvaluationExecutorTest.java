@@ -64,9 +64,6 @@ class InProcessMetricEvaluationExecutorTest {
     @Mock
     private OutputSchemaFieldExtractor outputSchemaFieldExtractor;
 
-    @Spy
-    private ExtractedColumnsNormalizer extractedColumnsNormalizer = new ExtractedColumnsNormalizer(new ObjectMapper());
-
     @InjectMocks
     private InProcessMetricEvaluationExecutor executor;
 

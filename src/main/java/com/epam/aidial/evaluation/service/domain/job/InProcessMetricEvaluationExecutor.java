@@ -55,7 +55,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private final RunMetricSnapshotBatchWriteClient runMetricSnapshotBatchWriteClient;
     private final ObjectMapper objectMapper;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
-    private final ExtractedColumnsNormalizer extractedColumnsNormalizer;
 
     @Override
     public void execute(MetricEvaluationContext context) {
@@ -288,9 +287,9 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .testCaseName(result.getTestCaseName())
                 .runIndex(result.getRunIndex())
                 .testCaseData(parseJsonNode(result.getTestCaseData()))
-                // Multi-step results store a per-step array; store only the last step's object in EvalSummary so
-                // the downstream summary/export/query layer keeps operating on an object shape (design D6).
-                .extractedColumns(extractedColumnsNormalizer.normalize(parseJsonNode(result.getExtractedColumns())))
+                // extractedColumns is stored verbatim: single-step results carry scalar values, multi-step
+                // results carry per-column arrays. No normalization — turn selection is a per-binding concern.
+                .extractedColumns(parseJsonNode(result.getExtractedColumns()))
                 .executionStatus(executionStatus)
                 .execDurationMs(result.getExecDurationMs())
                 .responseStatusCode(result.getResponseStatusCode())

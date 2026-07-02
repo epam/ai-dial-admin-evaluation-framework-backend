@@ -57,8 +57,10 @@ import tools.jackson.databind.node.ObjectNode;
  * <p>Returns a single {@link TestCaseRunResult} that reuses the existing columns: {@code responseBody} =
  * the last turn's raw response body (preserving its technical fields, e.g. {@code id}/{@code usage}/{@code
  * model}) — mirroring how {@code requestBody} holds the last turn's raw request; {@code extractedColumns} =
- * a JSON array of per-step extraction maps. The full conversation remains recoverable from the last request
- * body (which carries the whole message history through the final user turn) plus this final response.
+ * a column-major JSON object mapping each response column name to an array of that column's per-step
+ * extracted values (one element per completed step, {@code null} for a step whose extraction failed).
+ * The full conversation remains recoverable from the last request body (which carries the whole message
+ * history through the final user turn) plus this final response.
  *
  * <p>Contract: the resolved request body must be JSON with a top-level {@code messages} array; the assistant
  * reply is read from the hardcoded {@code choices[0].message.content} OpenAI path; steps are always invoked
@@ -127,7 +129,8 @@ public class MultiStepConversationExecutor {
                 : null;
 
         final List<Object> history = new ArrayList<>();
-        final ArrayNode extractedPerStep = objectMapper.createArrayNode();
+        // Column-major accumulation: column name → array of that column's per-step extracted values.
+        final Map<String, ArrayNode> columnArrays = new LinkedHashMap<>();
 
         ExecutionStatus finalStatus = ExecutionStatus.SUCCESS;
         Integer lastStatusCode = null;
@@ -199,10 +202,10 @@ public class MultiStepConversationExecutor {
                 }
                 history.add(assistantMessage);
 
-                // (5) Extract response columns for this completed step and accumulate the per-step array.
+                // (5) Extract response columns for this completed step and append each column's value to its array.
                 final ResponseColumnExtractor.ExtractionResult extraction =
                         responseColumnExtractor.extract(responseColumns, outcome.responseBody());
-                extractedPerStep.add(readTree(extraction.extractedColumns()));
+                accumulateStep(columnArrays, responseColumns, extraction.extractedColumns());
             }
         } catch (RuntimeException e) {
             log.warn(
@@ -231,7 +234,7 @@ public class MultiStepConversationExecutor {
                 .execCompletedAtMs(execCompletedAtMs)
                 .execDurationMs(execCompletedAtMs - execStartedAtMs)
                 .traceId(traceId)
-                .extractedColumns(serializeBody(extractedPerStep))
+                .extractedColumns(serializeColumnMajor(columnArrays))
                 .extractionWarnings("[]")
                 .retryCount(lastRetryCount)
                 .logDetails(null)
@@ -329,7 +332,7 @@ public class MultiStepConversationExecutor {
                 .execCompletedAtMs(execCompletedAtMs)
                 .execDurationMs(execCompletedAtMs - execStartedAtMs)
                 .traceId(traceId)
-                .extractedColumns("[]")
+                .extractedColumns("{}")
                 .extractionWarnings("[]")
                 .retryCount(0)
                 .logDetails(buildErrorLogDetails(message))
@@ -520,6 +523,38 @@ public class MultiStepConversationExecutor {
             log.warn("Failed to parse extracted columns JSON: {}", e.getMessage(), e);
             return objectMapper.createObjectNode();
         }
+    }
+
+    /**
+     * Appends one completed step's extracted values to the column-major accumulator: for each response
+     * column, the step's value is added to that column's array ({@code null} when the step lacked it), so
+     * every column's array stays aligned to the completed-step count.
+     */
+    private void accumulateStep(
+            Map<String, ArrayNode> columnArrays,
+            List<ResponseColumnDefinitionDto> responseColumns,
+            String stepExtractedColumnsJson) {
+        if (responseColumns == null || responseColumns.isEmpty()) {
+            return;
+        }
+        final JsonNode stepObject = readTree(stepExtractedColumnsJson);
+        for (ResponseColumnDefinitionDto column : responseColumns) {
+            final ArrayNode columnArray =
+                    columnArrays.computeIfAbsent(column.getName(), name -> objectMapper.createArrayNode());
+            final JsonNode value = stepObject.get(column.getName());
+            if (value == null || value.isNull()) {
+                columnArray.addNull();
+            } else {
+                columnArray.add(value);
+            }
+        }
+    }
+
+    /** Serializes the column-major accumulator to a JSON object {@code {col: [step0, step1, ...]}}. */
+    private String serializeColumnMajor(Map<String, ArrayNode> columnArrays) {
+        final ObjectNode node = objectMapper.createObjectNode();
+        columnArrays.forEach(node::set);
+        return serializeBody(node);
     }
 
     private String serializeBody(Object body) {

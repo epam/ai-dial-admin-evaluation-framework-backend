@@ -48,7 +48,8 @@ import tools.jackson.databind.ObjectMapper;
  * {@code inputBindings} bound to an array-valued dataset column) against a mocked DIAL Core deployment. The
  * number of turns is derived per test case from the array-column length. Asserts the single persisted result
  * reuses the existing columns ({@code response_body} = the last turn's raw response, {@code extracted_columns}
- * = per-step array), and that two test cases in the same run can execute different turn counts.
+ * = a column-major object of per-column arrays), and that two test cases in the same run can execute
+ * different turn counts.
  */
 @DisplayName("Multi-step Conversation Run Functional Tests")
 public abstract class MultiStepConversationRunFunctionalTests extends BaseFunctionalTest {
@@ -66,7 +67,7 @@ public abstract class MultiStepConversationRunFunctionalTests extends BaseFuncti
     private ObjectMapper objectMapper;
 
     @Test
-    @DisplayName("Should persist last-turn response and per-step extraction array for a 2-turn conversation")
+    @DisplayName("Should persist last-turn response and column-major per-turn extraction for a 2-turn conversation")
     void shouldRunTwoStepConversation() throws JacksonException {
         TestSuiteResponseDto suite = createMultiStepSuite();
         assertThat(suite.isMultiStep()).isTrue();
@@ -113,12 +114,14 @@ public abstract class MultiStepConversationRunFunctionalTests extends BaseFuncti
                         .asString())
                 .isEqualTo("reply-1");
 
-        // extracted_columns = per-step array of length 2
+        // extracted_columns = column-major object: {"answer": ["reply-0", "reply-1"]}
         JsonNode extracted = objectMapper.readTree(String.valueOf(row.get("extracted_columns")));
-        assertThat(extracted.isArray()).isTrue();
-        assertThat(extracted.size()).isEqualTo(2);
-        assertThat(extracted.get(0).get("answer").asString()).isEqualTo("reply-0");
-        assertThat(extracted.get(1).get("answer").asString()).isEqualTo("reply-1");
+        assertThat(extracted.isObject()).isTrue();
+        JsonNode answers = extracted.get("answer");
+        assertThat(answers.isArray()).isTrue();
+        assertThat(answers.size()).isEqualTo(2);
+        assertThat(answers.get(0).asString()).isEqualTo("reply-0");
+        assertThat(answers.get(1).asString()).isEqualTo("reply-1");
     }
 
     @Test
@@ -150,7 +153,10 @@ public abstract class MultiStepConversationRunFunctionalTests extends BaseFuncti
         for (Map<String, Object> row : results) {
             assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("SUCCESS");
             JsonNode extracted = objectMapper.readTree(String.valueOf(row.get("extracted_columns")));
-            extractedSizeByName.put(String.valueOf(row.get("test_case_name")), extracted.size());
+            // column-major: the turn count is the length of the per-column array
+            extractedSizeByName.put(
+                    String.valueOf(row.get("test_case_name")),
+                    extracted.get("answer").size());
         }
         // TC2's 2-element array → 2 turns; TC3's 3-element array → 3 turns
         assertThat(extractedSizeByName).containsEntry("TC2", 2).containsEntry("TC3", 3);

@@ -26,6 +26,7 @@ import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -120,7 +121,7 @@ class MultiStepConversationExecutorTest {
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
 
         TestCaseRunResult result =
-                executor.execute(inputWithTurns(2), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+                executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
 
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), bodyCaptor.capture());
         List<Object> sentBodies = bodyCaptor.getAllValues();
@@ -148,12 +149,37 @@ class MultiStepConversationExecutorTest {
                         .asString())
                 .isEqualTo("assistant-1");
 
-        // extractedColumns = per-step array of length 2
+        // extractedColumns = column-major object: {"a": ["answer-0", "answer-1"]}
         JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
-        assertThat(extracted.isArray()).isTrue();
-        assertThat(extracted.size()).isEqualTo(2);
-        assertThat(extracted.get(0).get("a").asString()).isEqualTo("answer-0");
-        assertThat(extracted.get(1).get("a").asString()).isEqualTo("answer-1");
+        assertThat(extracted.isObject()).isTrue();
+        JsonNode answers = extracted.get("a");
+        assertThat(answers.isArray()).isTrue();
+        assertThat(answers.size()).isEqualTo(2);
+        assertThat(answers.get(0).asString()).isEqualTo("answer-0");
+        assertThat(answers.get(1).asString()).isEqualTo("answer-1");
+    }
+
+    @Test
+    @DisplayName("per-step extraction failure keeps index alignment with a null element in the column array")
+    void perStepNullAlignment() throws Exception {
+        when(resolvedRequestService.resolve(any(), any(), any()))
+                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(response(200, "assistant-0"), response(200, "assistant-1"));
+        // step 0 extracts "a"; step 1's extraction yields null for "a"
+        when(responseColumnExtractor.extract(any(), any()))
+                .thenReturn(
+                        new ResponseColumnExtractor.ExtractionResult("{\"a\":\"answer-0\"}", "[]"),
+                        new ResponseColumnExtractor.ExtractionResult("{\"a\":null}", "[]"));
+
+        TestCaseRunResult result =
+                executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        JsonNode answers = objectMapper.readTree(result.getExtractedColumns()).get("a");
+        assertThat(answers.size()).isEqualTo(2);
+        assertThat(answers.get(0).asString()).isEqualTo("answer-0");
+        assertThat(answers.get(1).isNull()).isTrue();
     }
 
     @Test
@@ -167,7 +193,7 @@ class MultiStepConversationExecutorTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{\"a\":\"answer-0\"}", "[]"));
 
         TestCaseRunResult result =
-                executor.execute(inputWithTurns(2), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+                executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
 
         // step 1 (index 1) failed; step 2 would not exist anyway, but no third invocation
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), any());
@@ -184,14 +210,15 @@ class MultiStepConversationExecutorTest {
                         .asString())
                 .isEqualTo("assistant");
 
-        // only the completed step's extraction is kept
+        // only the completed step's extraction is kept: {"a": ["answer-0"]}
         JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
-        assertThat(extracted.isArray()).isTrue();
-        assertThat(extracted.size()).isEqualTo(1);
+        assertThat(extracted.isObject()).isTrue();
+        assertThat(extracted.get("a").size()).isEqualTo(1);
+        assertThat(extracted.get("a").get(0).asString()).isEqualTo("answer-0");
     }
 
     @Test
-    @DisplayName("fail-fast when a 2xx response has no choices[0].message object; empty extractedColumns array")
+    @DisplayName("fail-fast when a 2xx response has no choices[0].message object; empty extractedColumns object")
     void failFastOnNoMessageObject() throws Exception {
         when(resolvedRequestService.resolve(any(), any(), any())).thenReturn(resolvedTurn("turn-0"));
         // 200 but choices[0] carries no message object → no usable reply
@@ -204,9 +231,9 @@ class MultiStepConversationExecutorTest {
                 executor.execute(inputWithTurns(1), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        // step 0 never completed → empty per-step array
+        // step 0 never completed → empty column-major object
         JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
-        assertThat(extracted.isArray()).isTrue();
+        assertThat(extracted.isObject()).isTrue();
         assertThat(extracted.isEmpty()).isTrue();
     }
 
@@ -304,7 +331,7 @@ class MultiStepConversationExecutorTest {
         TestCaseRunResult result = executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        assertThat(result.getExtractedColumns()).isEqualTo("[]");
+        assertThat(result.getExtractedColumns()).isEqualTo("{}");
         verifyNoInteractions(deploymentInvoker);
     }
 
@@ -365,6 +392,14 @@ class MultiStepConversationExecutorTest {
             return node.get("role").asString();
         }
         return (String) ((Map<String, Object>) message).get("role");
+    }
+
+    /** A single response column {@code a} so the executor accumulates a per-column array under that name. */
+    private List<ResponseColumnDefinitionDto> columnsA() {
+        return List.of(ResponseColumnDefinitionDto.builder()
+                .name("a")
+                .expression("choices[0].message.content")
+                .build());
     }
 
     /** Builds an input whose single array-valued column {@code turns} has {@code n} elements → {@code n} turns. */

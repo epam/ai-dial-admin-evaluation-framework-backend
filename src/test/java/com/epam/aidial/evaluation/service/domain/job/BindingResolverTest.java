@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.epam.aidial.evaluation.service.domain.DashjoinJsonataEvaluationService;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseBindingSourceDto;
@@ -22,7 +23,7 @@ class BindingResolverTest {
 
     @BeforeEach
     void setUp() {
-        resolver = new BindingResolver(new ObjectMapper());
+        resolver = new BindingResolver(new ObjectMapper(), new DashjoinJsonataEvaluationService(new ObjectMapper()));
     }
 
     @Test
@@ -104,6 +105,83 @@ class BindingResolverTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("missing_col")
                 .hasMessageContaining("extracted columns");
+    }
+
+    @Test
+    @DisplayName("Response binding without jsonataExpression returns the whole multi-step array")
+    void responseBinding_noExpression_returnsWholeArray() {
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("answers")
+                .source(ResponseBindingSourceDto.builder().columnName("answer").build())
+                .build();
+
+        Map<String, Object> extractedColumns = Map.of("answer", List.of("Paris", "Tokio"));
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), Map.of(), extractedColumns);
+
+        assertThat(result).containsEntry("answers", List.of("Paris", "Tokio"));
+    }
+
+    @Test
+    @DisplayName("Response binding jsonataExpression selects an array element")
+    void responseBinding_jsonataExpression_selectsArrayElement() {
+        MetricParameterBindingDto first = MetricParameterBindingDto.builder()
+                .property("first")
+                .source(ResponseBindingSourceDto.builder()
+                        .columnName("answer")
+                        .jsonataExpression("$[0]")
+                        .build())
+                .build();
+        MetricParameterBindingDto last = MetricParameterBindingDto.builder()
+                .property("last")
+                .source(ResponseBindingSourceDto.builder()
+                        .columnName("answer")
+                        .jsonataExpression("$[-1]")
+                        .build())
+                .build();
+
+        Map<String, Object> extractedColumns = Map.of("answer", List.of("Paris", "Tokio"));
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(first, last), Map.of(), extractedColumns);
+
+        assertThat(result).containsEntry("first", "Paris").containsEntry("last", "Tokio");
+    }
+
+    @Test
+    @DisplayName("Response binding jsonataExpression selects a nested object path")
+    void responseBinding_jsonataExpression_selectsObjectPath() {
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("total")
+                .source(ResponseBindingSourceDto.builder()
+                        .columnName("meta")
+                        .jsonataExpression("usage.total")
+                        .build())
+                .build();
+
+        Map<String, Object> extractedColumns = Map.of("meta", Map.of("usage", Map.of("total", 42)));
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), Map.of(), extractedColumns);
+
+        assertThat(result).containsEntry("total", 42);
+    }
+
+    @Test
+    @DisplayName("Response binding jsonataExpression matching nothing resolves to null")
+    void responseBinding_jsonataExpression_noMatch_resolvesToNull() {
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("third")
+                .source(ResponseBindingSourceDto.builder()
+                        .columnName("answer")
+                        .jsonataExpression("$[2]")
+                        .build())
+                .build();
+
+        Map<String, Object> extractedColumns = Map.of("answer", List.of("Paris", "Tokio"));
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), Map.of(), extractedColumns);
+
+        assertThat(result).containsKey("third");
+        assertThat(result.get("third")).isNull();
     }
 
     @Test

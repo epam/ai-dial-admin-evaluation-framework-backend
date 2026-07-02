@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.service.domain.JsonataEvaluationService;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
@@ -30,6 +31,7 @@ public class BindingResolver {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final ObjectMapper objectMapper;
+    private final JsonataEvaluationService jsonataEvaluationService;
 
     /**
      * Parses a JSON string of metric parameter bindings.
@@ -103,11 +105,33 @@ public class BindingResolver {
                 throw new IllegalArgumentException(
                         "Response binding references missing column '" + columnName + "' in extracted columns");
             }
-            return extractedColumns.get(columnName);
+            Object columnValue = extractedColumns.get(columnName);
+            return applyJsonataSelector(columnValue, responseSource.getJsonataExpression());
         } else if (source instanceof ConstantBindingSourceDto constantSource) {
             return constantSource.getValue();
         }
         throw new IllegalArgumentException(
                 "Unknown binding source type: " + source.getClass().getSimpleName());
+    }
+
+    /**
+     * Applies an optional JSONata selector to a resolved column value. With no expression the raw value is
+     * returned unchanged (the whole per-turn array for a multi-step column). With an expression, it is
+     * evaluated against the column value's JSON form; an expression that matches nothing yields {@code null}.
+     */
+    private Object applyJsonataSelector(Object columnValue, String jsonataExpression) {
+        if (jsonataExpression == null || jsonataExpression.isBlank()) {
+            return columnValue;
+        }
+        return jsonataEvaluationService.evaluate(jsonataExpression, serializeToJson(columnValue));
+    }
+
+    private String serializeToJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JacksonException e) {
+            throw new IllegalArgumentException(
+                    "Failed to serialize column value for JSONata selection: " + e.getMessage(), e);
+        }
     }
 }

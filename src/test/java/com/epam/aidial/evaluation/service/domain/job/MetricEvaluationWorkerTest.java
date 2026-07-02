@@ -54,7 +54,11 @@ class MetricEvaluationWorkerTest {
     void setUp() {
         BindingResolver bindingResolver =
                 new BindingResolver(new ObjectMapper(), new DashjoinJsonataEvaluationService(new ObjectMapper()));
-        worker = new MetricEvaluationWorker(metricProviderClient, bindingResolver, OpenTelemetry.noop());
+        worker = new MetricEvaluationWorker(
+                metricProviderClient,
+                bindingResolver,
+                new ArrayBindingTypeMismatchDetector(new ObjectMapper()),
+                OpenTelemetry.noop());
     }
 
     @Test
@@ -197,8 +201,11 @@ class MetricEvaluationWorkerTest {
 
             BindingResolver bindingResolver =
                     new BindingResolver(new ObjectMapper(), new DashjoinJsonataEvaluationService(new ObjectMapper()));
-            MetricEvaluationWorker spanWorker =
-                    new MetricEvaluationWorker(mockMetricProviderClient, bindingResolver, mockOpenTelemetry);
+            MetricEvaluationWorker spanWorker = new MetricEvaluationWorker(
+                    mockMetricProviderClient,
+                    bindingResolver,
+                    new ArrayBindingTypeMismatchDetector(new ObjectMapper()),
+                    mockOpenTelemetry);
 
             AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
                     .id(UUID.randomUUID())

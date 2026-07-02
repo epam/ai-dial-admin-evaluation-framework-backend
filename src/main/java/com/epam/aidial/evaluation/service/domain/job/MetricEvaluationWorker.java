@@ -35,6 +35,7 @@ public class MetricEvaluationWorker {
 
     private final MetricProviderClient metricProviderClient;
     private final BindingResolver bindingResolver;
+    private final ArrayBindingTypeMismatchDetector arrayBindingTypeMismatchDetector;
     private final OpenTelemetry openTelemetry;
 
     /**
@@ -161,11 +162,40 @@ public class MetricEvaluationWorker {
         Map<String, Object> config = bindingResolver.resolveBindings(configBindings, testCaseData, extractedColumns);
         Map<String, Object> input = bindingResolver.resolveBindings(inputBindings, testCaseData, extractedColumns);
 
+        warnOnArrayBoundToScalar(tsmd, result, tsmd.getVersionConfigSchema(), config, "config");
+        warnOnArrayBoundToScalar(tsmd, result, tsmd.getVersionInputSchema(), input, "input");
+
         return EvaluationRequestDto.builder()
                 .metricName(tsmd.getMetricDeclarationName())
                 .config(config)
                 .input(input)
                 .build();
+    }
+
+    /**
+     * Logs a traceable warning when a resolved binding hands the metric an array for a property whose schema
+     * declares a non-array type — typically a multi-step Response binding on a per-turn array column with no
+     * {@code jsonataExpression} to select a single turn. Diagnostic only; evaluation still proceeds.
+     */
+    private void warnOnArrayBoundToScalar(
+            AggregatedMetricDefinition tsmd,
+            TestCaseRunResult result,
+            String schemaJson,
+            Map<String, Object> resolved,
+            String bindingKind) {
+        List<String> mismatches = arrayBindingTypeMismatchDetector.detect(schemaJson, resolved);
+        if (!mismatches.isEmpty()) {
+            log.warn(
+                    "TSMD {} {} bindings resolved an array for scalar-typed properties {} "
+                            + "(result {}, testCaseId {}, testCaseName {}); the metric will receive the full array. "
+                            + "Add a jsonataExpression (e.g. $[-1]) to select a single turn.",
+                    tsmd.getName(),
+                    bindingKind,
+                    mismatches,
+                    result.getId(),
+                    result.getTestCaseId(),
+                    result.getTestCaseName());
+        }
     }
 
     private void sleepWithCancellation(long delayMs, MetricEvaluationContext context) throws InterruptedException {

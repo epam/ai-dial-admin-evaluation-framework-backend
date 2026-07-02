@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestCaseBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,6 +31,7 @@ public class MetricDefinitionValidationService {
     private final ObjectMapper objectMapper;
     private final ValidationWarningsSerializer warningsSerializer;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
+    private final JsonataEvaluationService jsonataEvaluationService;
 
     /**
      * Validates config and input bindings against their respective metric schemas and the suite context.
@@ -163,6 +165,20 @@ public class MetricDefinitionValidationService {
                             ValidationWarningCode.UNRESOLVED_REFERENCE,
                             bindingListPath,
                             "Response column '" + columnName + "' does not exist in the suite's responseColumns"));
+                }
+
+                // Check 4b: INVALID_EXPRESSION — optional jsonataExpression must be syntactically valid JSONata
+                String jsonataExpression = responseSource.getJsonataExpression();
+                if (jsonataExpression != null && !jsonataExpression.isBlank()) {
+                    try {
+                        jsonataEvaluationService.validateExpression(jsonataExpression);
+                    } catch (ValidationException e) {
+                        warnings.add(buildWarning(
+                                property,
+                                ValidationWarningCode.INVALID_EXPRESSION,
+                                bindingListPath,
+                                "Invalid JSONata expression for response binding: " + e.getMessage()));
+                    }
                 }
             }
         }

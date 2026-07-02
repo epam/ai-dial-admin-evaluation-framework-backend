@@ -49,7 +49,8 @@ class MetricDefinitionValidationServiceTest {
     void setUp() {
         ValidationWarningsSerializer serializer = new ValidationWarningsSerializer(OBJECT_MAPPER);
         OutputSchemaFieldExtractor extractor = new OutputSchemaFieldExtractor(OBJECT_MAPPER);
-        service = new MetricDefinitionValidationService(OBJECT_MAPPER, serializer, extractor);
+        JsonataEvaluationService jsonataEvaluationService = new DashjoinJsonataEvaluationService(OBJECT_MAPPER);
+        service = new MetricDefinitionValidationService(OBJECT_MAPPER, serializer, extractor, jsonataEvaluationService);
     }
 
     @Test
@@ -342,6 +343,79 @@ class MetricDefinitionValidationServiceTest {
         assertThat(result.isValid()).isFalse();
         assertThat(result.getWarnings()).anyMatch(w -> w.getCode() == INVALID_OUTPUT_SCHEMA);
         assertThat(result.getWarnings()).anyMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE);
+    }
+
+    @Test
+    @DisplayName("Response binding with syntactically invalid jsonataExpression produces INVALID_EXPRESSION warning")
+    void responseBinding_invalidJsonataExpression_producesWarning() {
+        List<MetricParameterBindingDto> inputBindings = List.of(binding(
+                "actual",
+                ResponseBindingSourceDto.builder()
+                        .columnName("model_answer")
+                        .jsonataExpression("$[(")
+                        .build()));
+
+        ValidationResult result = service.validate(
+                List.of(),
+                inputBindings,
+                "{}",
+                SCHEMA_WITH_REQUIRED,
+                TEST_CASE_SCHEMA,
+                RESPONSE_COLUMNS,
+                VALID_OUTPUT_SCHEMA);
+
+        assertThat(result.isValid()).isFalse();
+        assertThat(result.getWarnings())
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.INVALID_EXPRESSION
+                        && "actual".equals(w.getFieldName())
+                        && "$.inputBindings".equals(w.getPath()));
+    }
+
+    @Test
+    @DisplayName("Response binding with valid jsonataExpression produces no INVALID_EXPRESSION warning")
+    void responseBinding_validJsonataExpression_noWarning() {
+        List<MetricParameterBindingDto> inputBindings = List.of(
+                binding(
+                        "reference",
+                        TestCaseBindingSourceDto.builder()
+                                .columnName("expected_output")
+                                .build()),
+                binding(
+                        "actual",
+                        ResponseBindingSourceDto.builder()
+                                .columnName("model_answer")
+                                .jsonataExpression("$[-1]")
+                                .build()));
+
+        ValidationResult result = service.validate(
+                List.of(),
+                inputBindings,
+                "{}",
+                SCHEMA_WITH_REQUIRED,
+                TEST_CASE_SCHEMA,
+                RESPONSE_COLUMNS,
+                VALID_OUTPUT_SCHEMA);
+
+        assertThat(result.getWarnings()).noneMatch(w -> w.getCode() == ValidationWarningCode.INVALID_EXPRESSION);
+    }
+
+    @Test
+    @DisplayName("Response binding without jsonataExpression produces no INVALID_EXPRESSION warning")
+    void responseBinding_absentJsonataExpression_noWarning() {
+        List<MetricParameterBindingDto> inputBindings = List.of(binding(
+                "actual",
+                ResponseBindingSourceDto.builder().columnName("model_answer").build()));
+
+        ValidationResult result = service.validate(
+                List.of(),
+                inputBindings,
+                "{}",
+                SCHEMA_WITH_REQUIRED,
+                TEST_CASE_SCHEMA,
+                RESPONSE_COLUMNS,
+                VALID_OUTPUT_SCHEMA);
+
+        assertThat(result.getWarnings()).noneMatch(w -> w.getCode() == ValidationWarningCode.INVALID_EXPRESSION);
     }
 
     private static MetricParameterBindingDto binding(

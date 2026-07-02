@@ -22,9 +22,9 @@
 
 ## 5. Config-time validation
 
-- [ ] 5.1 In `service/domain/MetricDefinitionValidationService.java`, inject `JsonataEvaluationService` (done: constructor updated).
-- [ ] 5.2 In `validateBindings`, for a `ResponseBindingSourceDto` with a non-blank `jsonataExpression`, call `validateExpression(...)`; on `ValidationException` add a warning via `buildWarning(...)` with the new `INVALID_EXPRESSION` code and the correct `$.configBindings`/`$.inputBindings` path (done: matches the `tsmd-validation` scenarios).
-- [ ] 5.3 Add `INVALID_EXPRESSION` to the `ValidationWarningCode` enum with description "A JSONata expression that is syntactically invalid" (done: enum value present and referenced).
+- [x] 5.1 In `service/domain/MetricDefinitionValidationService.java`, inject `JsonataEvaluationService` (done: constructor updated).
+- [x] 5.2 In `validateBindings`, for a `ResponseBindingSourceDto` with a non-blank `jsonataExpression`, call `validateExpression(...)`; on `ValidationException` add a warning via `buildWarning(...)` with the new `INVALID_EXPRESSION` code and the correct `$.configBindings`/`$.inputBindings` path (done: matches the `tsmd-validation` scenarios).
+- [x] 5.3 Add `INVALID_EXPRESSION` to the `ValidationWarningCode` enum with description "A JSONata expression that is syntactically invalid" (done: enum value present and referenced).
 
 ## 6. Export / filter verification pass
 
@@ -35,7 +35,7 @@
 
 - [ ] 7.1 `MultiStepConversationExecutorTest` — column-major output `{col:[...]}`; per-step `null` index alignment; fail-fast partial arrays (length = completed turns); fail-at-step-0 → `{}` (done: `./gradlew test --tests "...MultiStepConversationExecutorTest"` passes).
 - [ ] 7.2 `BindingResolverTest` — Response binding: `jsonataExpression` array index (`$[0]`, `$[-1]`), object path; no-expr → whole array; no-match → `null`; missing column → throws (done: test class passes).
-- [ ] 7.3 `MetricDefinitionValidationServiceTest` — invalid `jsonataExpression` → `INVALID_EXPRESSION` warning; valid/absent → none (done: test class passes).
+- [x] 7.3 `MetricDefinitionValidationServiceTest` — invalid `jsonataExpression` → `INVALID_EXPRESSION` warning; valid/absent → none (done: test class passes — 3 new cases green).
 - [ ] 7.4 Remove or repurpose `ExtractedColumnsNormalizerTest` (done: no dangling references).
 - [ ] 7.5 Functional `PostgresFunctionalTests$MultiStepConversationRunTests` — assert column-major `extractedColumns`; a metric whose Response binding uses `jsonataExpression` to score a specific turn end-to-end (done: `./gradlew test --tests "com.epam.aidial.evaluation.functional.PostgresFunctionalTests\$MultiStepConversationRunTests"` passes).
 

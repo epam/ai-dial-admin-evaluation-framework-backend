@@ -5,11 +5,13 @@ import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.experimental.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
+import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.model.FilterNode;
 import com.epam.aidial.evaluation.experimental.query.model.LogicalNode;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
+import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +19,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.JSONB;
 import org.jooq.impl.DSL;
 import org.springframework.stereotype.Component;
 
@@ -82,9 +85,22 @@ public class FilterTranslator {
         if (args.size() != 2) {
             throw new ValidationException("comparison '" + node.op().code() + "' expects exactly two arguments");
         }
-        final Field left = exprTranslator.toField(args.get(0), bindings);
+        final Expr leftExpr = args.get(0);
         final Expr right = args.get(1);
         final ComparisonOp op = node.op();
+
+        // Array-element containment: `co`/`nc` on a bare array-typed field means "the JSONB array
+        // contains this element", not substring LIKE. Precondition: the left operand is a bare
+        // FieldExpr whose binding type is ARRAY (a function-wrapped or non-array left keeps LIKE).
+        if ((op == ComparisonOp.CO || op == ComparisonOp.NC)
+                && !isNullLiteral(right)
+                && isArrayField(leftExpr, bindings)) {
+            final Condition contains =
+                    arrayContains((Field<JSONB>) exprTranslator.toField(leftExpr, bindings), right, bindings);
+            return op == ComparisonOp.CO ? contains : DSL.not(contains);
+        }
+
+        final Field left = exprTranslator.toField(leftExpr, bindings);
 
         if (op == ComparisonOp.IN) {
             return left.in(inValues(right, bindings));
@@ -126,6 +142,31 @@ public class FilterTranslator {
             values.add(exprTranslator.toField(value, bindings));
         }
         return values;
+    }
+
+    /** True only for a bare {@link FieldExpr} bound to an {@code ARRAY}-typed field. */
+    private static boolean isArrayField(Expr expr, Map<String, QueryFieldBinding> bindings) {
+        if (!(expr instanceof FieldExpr field)) {
+            return false;
+        }
+        final QueryFieldBinding binding = bindings.get(field.name());
+        return binding != null && binding.type() == QueryFieldType.ARRAY;
+    }
+
+    /**
+     * Builds a JSONB array-element containment condition over {@code column}. A string element uses
+     * the {@code ?} element-existence operator ({@code ??} escapes the jOOQ bind placeholder); any
+     * other scalar literal uses {@code @>} against the element promoted to JSONB via {@code to_jsonb}.
+     * The operand is always a bound parameter — never concatenated into SQL.
+     */
+    private Condition arrayContains(Field<JSONB> column, Expr right, Map<String, QueryFieldBinding> bindings) {
+        if (right instanceof ValueExpr value && value.valueType() == ValueType.STRING && value.value() != null) {
+            return DSL.condition("{0} ?? {1}", column, DSL.val(value.value()));
+        }
+        if (!(right instanceof ValueExpr)) {
+            throw new ValidationException("'co'/'nc' on an array field require a scalar literal right operand");
+        }
+        return DSL.condition("{0} @> to_jsonb({1})", column, exprTranslator.toField(right, bindings));
     }
 
     private static boolean isNullLiteral(Expr expr) {

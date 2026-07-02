@@ -253,6 +253,57 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("snapshot honors the suite's testCaseFilter — only matching test cases are materialized")
+    void snapshotHonorsTestCaseFilter() {
+        TestSuiteResponseDto suite = createTestSuiteWithTestCase("Snapshot Filter Suite");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+
+        // Seed a second test case the filter will exclude
+        restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("Filtered Out")
+                        .data(Map.of("query", "excluded query"))
+                        .build()),
+                TestCaseResponseDto.class);
+
+        // Keep only the test case whose data::query equals "test query"
+        metaTestDataHelper.setSuiteTestCaseFilter(
+                suite.getId(),
+                "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"data::query\"},"
+                        + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"test query\"}]}");
+
+        mockDeploymentSuccess();
+        UUID runId = createRun(suite.getId());
+        TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 15);
+        assertThat(terminal.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        var inputs = testCaseRunInputRepository.findByRunId(runId, 0, 100);
+        assertThat(inputs).hasSize(1);
+        assertThat(inputs.get(0).getTestCaseData()).contains("test query").doesNotContain("excluded query");
+        assertThat(terminal.getNumberOfTestCases()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("run creation returns 409 when the testCaseFilter matches no test case")
+    void runRejectedWhenFilterMatchesNothing() {
+        TestSuiteResponseDto suite = createTestSuiteWithTestCase("Filter Zero Match Suite");
+        metaTestDataHelper.setSuiteTestCaseFilter(
+                suite.getId(),
+                "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"data::query\"},"
+                        + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"no-such-value\"}]}");
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/runs"),
+                jsonEntity(TestSuiteRunRequestDto.builder()
+                        .runConfig(RunConfigDto.builder().numberOfRuns(1).build())
+                        .build()),
+                String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("no valid and enabled test cases");
+    }
+
+    @Test
     @DisplayName("V1.22 backfill rewrites v1 snapshot to v2 with synthesized datasetRef")
     void shouldBackfillLegacySnapshotsWithDatasetRef() throws Exception {
         String suiteName = "Legacy Snapshot Backfill " + UUID.randomUUID();

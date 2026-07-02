@@ -51,6 +51,21 @@ public class StructuredQueryExecutor {
      *     against the data (e.g. aggregating a non-numeric JSONB field) — all client errors (HTTP 400)
      */
     public QueryResultPage execute(String entity, DSLContext dsl, Table<?> table, StructuredQuery query) {
+        return execute(entity, dsl, table, query, bindings(table));
+    }
+
+    /**
+     * As {@link #execute(String, DSLContext, Table, StructuredQuery)} but with caller-supplied field
+     * bindings, bypassing the per-{@link Table} binding cache. Instance-aware entities (e.g.
+     * {@code test_cases}, whose flattened {@code data::<field>} typing depends on a dataset) build
+     * bindings per request and pass them here.
+     */
+    public QueryResultPage execute(
+            String entity,
+            DSLContext dsl,
+            Table<?> table,
+            StructuredQuery query,
+            Map<String, QueryFieldBinding> bindings) {
         if (query == null) {
             throw new ValidationException("query must not be null");
         }
@@ -59,7 +74,6 @@ public class StructuredQueryExecutor {
                     + entity + "', got '" + query.entity() + "'");
         }
 
-        final Map<String, QueryFieldBinding> bindings = bindings(table);
         // build() validates fields/functions/features and may throw ValidationException — let it propagate.
         final SelectQuery<Record> select = queryBuilder.build(dsl, table, bindings, query);
         try {

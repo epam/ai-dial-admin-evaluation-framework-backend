@@ -72,4 +72,10 @@ public class TestSuiteResponseDto {
             description = "Per-suite definition of the run-level `overall` metric score (a structured-query "
                     + "expression), as a JSON object. Null when the suite uses the built-in default.")
     private Map<String, Object> overallScore;
+
+    @Schema(
+            description = "Per-suite test-case filter (a Structured Query DSL filter subtree), as a JSON object. "
+                    + "Selects which of the bound dataset's test cases run (combined with `disabledTestCaseIds` and "
+                    + "validity). Null when the suite applies no filter.")
+    private Map<String, Object> testCaseFilter;
 }

@@ -76,6 +76,7 @@ import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchCapsFunction
 import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseConvenienceApiFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseQueryAndFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseRunInputsRetentionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteCloneFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTests;
@@ -481,6 +482,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class StructuredQueryExecuteTests extends StructuredQueryExecuteFunctionalTests {}
+
+    @Nested
+    class TestCaseQueryAndFilterTests extends TestCaseQueryAndFilterFunctionalTests {}
 
     @Nested
     @DisplayName("Metric provider sync job")

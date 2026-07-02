@@ -313,6 +313,20 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         return (JSONB) get(20);
     }
 
+    /**
+     * Setter for <code>meta.test_suites.test_case_filter</code>.
+     */
+    public void setTestCaseFilter(JSONB value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suites.test_case_filter</code>.
+     */
+    public JSONB getTestCaseFilter() {
+        return (JSONB) get(21);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -336,7 +350,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     /**
      * Create a detached, initialised TestSuitesRecord
      */
-    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore) {
+    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, JSONB testCaseFilter) {
         super(TestSuites.TEST_SUITES);
 
         setId(id);
@@ -360,6 +374,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         setDatasetId(datasetId);
         setDisabledTestCaseIds(disabledTestCaseIds);
         setOverallScore(overallScore);
+        setTestCaseFilter(testCaseFilter);
         resetTouchedOnNotNull();
     }
 }

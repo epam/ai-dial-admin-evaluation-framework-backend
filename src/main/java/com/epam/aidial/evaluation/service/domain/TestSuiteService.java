@@ -31,6 +31,7 @@ import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViola
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
+import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
@@ -70,6 +71,7 @@ public class TestSuiteService {
     private final EndpointSchemaRefResolver endpointSchemaRefResolver;
     private final SuiteValidationService suiteValidationService;
     private final DatasetSchemaProvider datasetSchemaProvider;
+    private final RunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final FileService fileService;
     private final Clock clock;
@@ -139,6 +141,7 @@ public class TestSuiteService {
                 : List.of();
         String createdBy = authorResolver.getCreatedBy(jwt);
         TestSuiteRequestDto normalized = normalizeRequest(testSuiteRequestDto);
+        validateTestCaseFilter(testSuiteRequestDto.getDatasetId(), normalized.getTestCaseFilter());
         TestSuite testSuite = testSuiteMapper.toEntity(normalized, createdBy);
 
         ValidationResult suiteValidation = suiteValidationService.validateSuite(normalized, null, datasetSchema);
@@ -182,6 +185,7 @@ public class TestSuiteService {
                 ? datasetSchemaProvider.getSchema(testSuiteRequestDto.getDatasetId())
                 : List.of();
         TestSuiteRequestDto normalized = normalizeRequest(testSuiteRequestDto);
+        validateTestCaseFilter(testSuiteRequestDto.getDatasetId(), normalized.getTestCaseFilter());
 
         boolean tsmdResponseColumnsChanged = isResponseColumnsChanged(existing, normalized);
         testSuiteMapper.update(existing, normalized);
@@ -442,6 +446,24 @@ public class TestSuiteService {
             throw new ValidationException("Suite type cannot be changed. Current: " + existingType.getValue()
                     + ", requested: " + requestType.getValue());
         }
+    }
+
+    /**
+     * Validates a suite's {@code testCaseFilter} at write time against the bound dataset's test-case
+     * schema. A null filter is a no-op. A non-null filter on an unbound suite ({@code datasetId == null})
+     * is rejected because it can be neither validated nor applied. Otherwise the filter is translated
+     * against the dataset's typed bindings via {@link RunnableTestCaseSelector#validateFilter}, which
+     * throws {@link ValidationException} (→ HTTP 400) on an unknown field, type error, or malformed filter.
+     */
+    private void validateTestCaseFilter(UUID datasetId, Map<String, Object> testCaseFilter) {
+        if (testCaseFilter == null) {
+            return;
+        }
+        if (datasetId == null) {
+            throw new ValidationException(
+                    "testCaseFilter requires the suite to be bound to a dataset (datasetId must be set)");
+        }
+        runnableTestCaseSelector.validateFilter(datasetId, jsonbMapper.mapTestCaseFilter(testCaseFilter));
     }
 
     private TestSuiteRequestDto normalizeRequest(TestSuiteRequestDto dto) {

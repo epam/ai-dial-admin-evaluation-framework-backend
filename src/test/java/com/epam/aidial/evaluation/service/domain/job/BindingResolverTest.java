@@ -257,6 +257,47 @@ class BindingResolverTest {
     }
 
     @Test
+    @DisplayName("Response binding jsonataExpression that errors at runtime resolves to null (not a hard failure)")
+    void responseBinding_jsonataExpression_runtimeError_resolvesToNull() {
+        // "$ + 1" is valid JSONata syntax (passes config-time validation) but throws at evaluation
+        // time when the resolved column value is a non-numeric string. Per the "matches nothing ->
+        // null" contract, this must degrade to null rather than propagate and fail the whole metric.
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("score")
+                .source(ResponseBindingSourceDto.builder()
+                        .columnName("answer")
+                        .jsonataExpression("$ + 1")
+                        .build())
+                .build();
+
+        Map<String, Object> extractedColumns = Map.of("answer", "not-a-number");
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), Map.of(), extractedColumns);
+
+        assertThat(result).containsKey("score");
+        assertThat(result.get("score")).isNull();
+    }
+
+    @Test
+    @DisplayName("TestCase binding jsonataExpression that errors at runtime resolves to null (not a hard failure)")
+    void testCaseBinding_jsonataExpression_runtimeError_resolvesToNull() {
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("score")
+                .source(TestCaseBindingSourceDto.builder()
+                        .columnName("label")
+                        .jsonataExpression("$ + 1")
+                        .build())
+                .build();
+
+        Map<String, Object> testCaseData = Map.of("label", "not-a-number");
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), testCaseData, Map.of());
+
+        assertThat(result).containsKey("score");
+        assertThat(result.get("score")).isNull();
+    }
+
+    @Test
     @DisplayName("Should return null when column exists but has null value")
     void shouldReturnNullForPresentButNullColumn() {
         MetricParameterBindingDto binding = MetricParameterBindingDto.builder()

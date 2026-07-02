@@ -119,7 +119,16 @@ public class BindingResolver {
         if (jsonataExpression == null || jsonataExpression.isBlank()) {
             return columnValue;
         }
-        return jsonataEvaluationService.evaluate(jsonataExpression, serializeToJson(columnValue));
+        try {
+            return jsonataEvaluationService.evaluate(jsonataExpression, serializeToJson(columnValue));
+        } catch (IllegalStateException e) {
+            log.warn(
+                    "JSONata selector '{}' failed at evaluation time; resolving binding to null: {}",
+                    jsonataExpression,
+                    e.getMessage(),
+                    e);
+            return null;
+        }
     }
 
     private String serializeToJson(Object value) {

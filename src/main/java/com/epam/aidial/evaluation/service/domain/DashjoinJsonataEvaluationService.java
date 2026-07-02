@@ -55,10 +55,8 @@ public class DashjoinJsonataEvaluationService implements JsonataEvaluationServic
         }
     }
 
-    /** Returns the compiled expression, reusing a cached instance when available. */
     private Jsonata compile(String expression) {
         try {
-            // JException (RuntimeException, thrown on invalid syntax) propagates out without caching a mapping.
             return compiledCache.computeIfAbsent(expression, Jsonata::jsonata);
         } catch (JException ex) {
             throw new ValidationException("Invalid JSONata expression: " + ex.getMessage());

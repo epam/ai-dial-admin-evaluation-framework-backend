@@ -300,20 +300,6 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     }
 
     /**
-     * Setter for <code>meta.test_suites.multi_step</code>.
-     */
-    public void setMultiStep(Boolean value) {
-        set(20, value);
-    }
-
-    /**
-     * Getter for <code>meta.test_suites.multi_step</code>.
-     */
-    public Boolean getMultiStep() {
-        return (Boolean) get(20);
-    }
-
-    /**
      * Setter for <code>meta.test_suites.overall_score</code>.
      */
     public void setOverallScore(JSONB value) {
@@ -325,6 +311,20 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
      */
     public JSONB getOverallScore() {
         return (JSONB) get(20);
+    }
+
+    /**
+     * Setter for <code>meta.test_suites.multi_step</code>.
+     */
+    public void setMultiStep(Boolean value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suites.multi_step</code>.
+     */
+    public Boolean getMultiStep() {
+        return (Boolean) get(21);
     }
 
     // -------------------------------------------------------------------------
@@ -350,8 +350,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     /**
      * Create a detached, initialised TestSuitesRecord
      */
-    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs,
-                            Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, Boolean multiStep, JSONB overallScore) {
+    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, Boolean multiStep) {
         super(TestSuites.TEST_SUITES);
 
         setId(id);

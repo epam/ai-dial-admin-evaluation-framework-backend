@@ -52,9 +52,9 @@ import com.epam.aidial.evaluation.functional.tests.McpEvaluationRunFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.McpTestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
-import com.epam.aidial.evaluation.functional.tests.MultiStepConversationRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiStepConversationRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;

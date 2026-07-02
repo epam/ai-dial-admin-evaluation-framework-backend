@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -106,5 +108,45 @@ class DashjoinJsonataEvaluationServiceTest {
     @DisplayName("throws ValidationException for invalid expression even during evaluate")
     void evaluate_invalidExpression_throwsValidationException() {
         assertThatThrownBy(() -> service.evaluate("choices[0.message", "{}")).isInstanceOf(ValidationException.class);
+    }
+
+    // --- compiled-expression reuse / thread-safety (compilation cache) ---
+
+    @Test
+    @DisplayName("same expression reused across different inputs returns the correct per-input result")
+    void evaluate_sameExpressionReused_returnsPerInputResult() {
+        assertThat(service.evaluate("value", "{\"value\": 1}")).isEqualTo(1);
+        assertThat(service.evaluate("value", "{\"value\": 2}")).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("same expression evaluated concurrently with distinct inputs yields each correct result")
+    void evaluate_sharedExpressionConcurrentDistinctInputs_correct() throws Exception {
+        final int n = 300;
+        final var errors = new CopyOnWriteArrayList<Throwable>();
+        final var mismatches = new CopyOnWriteArrayList<String>();
+
+        // "$.value" reads the evaluation root, exercising the library's per-evaluation instance state — the
+        // field that would race if compiled expressions were cached and shared without synchronization.
+        final var threads = IntStream.range(0, n)
+                .mapToObj(i -> new Thread(() -> {
+                    try {
+                        Object result = service.evaluate("$.value", "{\"value\": " + i + "}");
+                        if (!Integer.valueOf(i).equals(result)) {
+                            mismatches.add("expected " + i + " got " + result);
+                        }
+                    } catch (Throwable e) {
+                        errors.add(e);
+                    }
+                }))
+                .toList();
+
+        threads.forEach(Thread::start);
+        for (Thread t : threads) {
+            t.join();
+        }
+
+        assertThat(errors).isEmpty();
+        assertThat(mismatches).isEmpty();
     }
 }

@@ -1,7 +1,7 @@
 ## 1. DTO + persistence
 
-- [ ] 1.1 Add optional `@Size(max = 2000) private String jsonataExpression;` to `service/domain/dto/ResponseBindingSourceDto.java` with a `@Schema` description + example `"$[-1]"` (done: field present, compiles, `@EqualsAndHashCode(callSuper=false)` auto-includes it).
-- [ ] 1.2 Verify metric bindings round-trip the new field: confirm `JsonbMapper` / `TestSuiteMetricDefinitionMapper` serialize the whole `MetricBindingSourceDto` polymorphically (not a field allowlist). Add a mapping only if a field is dropped (done: a save→load of a TSMD with `jsonataExpression` returns it intact — covered by task 5.3).
+- [x] 1.1 Add optional `@Size(max = 2000) private String jsonataExpression;` to `service/domain/dto/ResponseBindingSourceDto.java` with a `@Schema` description + example `"$[-1]"` (done: field present, compiles, `@EqualsAndHashCode(callSuper=false)` auto-includes it).
+- [x] 1.2 Verify metric bindings round-trip the new field: `JsonbMapper.mapMetricBindings` serializes the whole `List<MetricParameterBindingDto>` via `objectMapper.writeValueAsString`/`readValue` (no field allowlist) and the polymorphic `$type` lives on the base `MetricBindingSourceDto`, so the new field round-trips automatically — no mapping change needed (final round-trip assertion covered by the functional test in group 7).
 
 ## 2. Column-major multi-step extraction
 

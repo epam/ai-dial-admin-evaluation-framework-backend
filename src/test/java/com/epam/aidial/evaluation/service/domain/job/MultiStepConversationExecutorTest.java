@@ -357,6 +357,30 @@ class MultiStepConversationExecutorTest {
         verifyNoInteractions(deploymentInvoker);
     }
 
+    @Test
+    @DisplayName("a turn whose resolved 'messages' is not an array fails only that test case with no call")
+    void nonListMessagesError() throws Exception {
+        when(resolvedRequestService.resolve(any(), any(), any())).thenReturn(resolvedTurnWithNonListMessages());
+
+        TestCaseRunResult result =
+                executor.execute(inputWithTurns(1), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(result.getExtractedColumns()).isEqualTo("{}");
+        verifyNoInteractions(deploymentInvoker);
+    }
+
+    private ResolvedRequestDto resolvedTurnWithNonListMessages() {
+        Map<String, Object> content = new HashMap<>();
+        content.put("model", "gpt-4");
+        // Not a JSON array — e.g. a full-value placeholder resolved to a scalar/object.
+        content.put("messages", "not-an-array");
+        return ResolvedRequestDto.builder()
+                .url("/chat")
+                .body(ResolvedJsonBodyDto.builder().content(content).build())
+                .build();
+    }
+
     private ResolvedRequestDto resolvedTurn(String userContent) {
         Map<String, Object> userMsg = new LinkedHashMap<>();
         userMsg.put("role", "user");

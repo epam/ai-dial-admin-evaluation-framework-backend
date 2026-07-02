@@ -161,9 +161,16 @@ public class MultiStepConversationExecutor {
                 // (2) Append this step's new turn (template messages) verbatim to the running history.
                 final Map<String, Object> content = jsonBody.getContent();
                 final Object turnMessages = content.get(MESSAGES_FIELD);
-                if (turnMessages instanceof List<?> turn) {
-                    history.addAll(turn);
+                if (!(turnMessages instanceof List<?> turn)) {
+                    log.warn(
+                            "Multi-step step {} for test case {} resolved a non-array 'messages'; "
+                                    + "failing this test case",
+                            i,
+                            input.getTestCaseId());
+                    finalStatus = ExecutionStatus.ERROR;
+                    break;
                 }
+                history.addAll(turn);
                 // (3) Overwrite messages with the full history; force non-streaming.
                 content.put(MESSAGES_FIELD, new ArrayList<>(history));
                 content.put("stream", false);

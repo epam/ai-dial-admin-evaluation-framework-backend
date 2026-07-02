@@ -57,6 +57,36 @@ The `ValidationWarningCode` enum SHALL include a value `UNRESOLVED_REFERENCE` wi
 - **WHEN** a TSMD has a binding source referencing a non-existent column
 - **THEN** the validation warning in `validationWarnings` SHALL have `code = "UNRESOLVED_REFERENCE"`
 
+### Requirement: INVALID_EXPRESSION validation warning code
+
+The `ValidationWarningCode` enum SHALL include a value `INVALID_EXPRESSION` with the description "A JSONata expression that is syntactically invalid".
+
+#### Scenario: Code appears in TSMD validation warnings
+- **WHEN** a TSMD has a `Response` or `TestCase` binding with a syntactically invalid `jsonataExpression`
+- **THEN** the validation warning in `validationWarnings` SHALL have `code = "INVALID_EXPRESSION"`
+
+### Requirement: Response binding jsonataExpression syntax validation
+When a TSMD's `Response` binding source carries a non-blank `jsonataExpression`, `MetricDefinitionValidationService` SHALL validate its JSONata syntax via `JsonataEvaluationService.validateExpression`. On a syntax error the service SHALL set `is_valid = false` and add a validation warning with `code = INVALID_EXPRESSION`, `path = "$.configBindings"` (when the binding is in `configBindings`) or `"$.inputBindings"` (when in `inputBindings`), and a `message` identifying the invalid expression. A syntactically valid or absent `jsonataExpression` SHALL NOT add a warning. This validation SHALL NOT block the save (soft validation, consistent with binding reference validation).
+
+#### Scenario: Invalid Response jsonataExpression adds a warning
+- **WHEN** a TSMD is created with a `Response` binding whose `jsonataExpression` is syntactically invalid (e.g. `"$[("`)
+- **THEN** the system SHALL set `is_valid = false` and add a warning with `code = INVALID_EXPRESSION`, the appropriate `path`, and a message identifying the invalid expression
+
+#### Scenario: Valid Response jsonataExpression adds no warning
+- **WHEN** a TSMD is created with a `Response` binding whose `jsonataExpression` is syntactically valid (e.g. `"$[-1]"`) and all references resolve
+- **THEN** the system SHALL NOT add an `INVALID_EXPRESSION` warning for that binding
+
+### Requirement: TestCase binding jsonataExpression syntax validation
+When a TSMD's `TestCase` binding source carries a non-blank `jsonataExpression`, `MetricDefinitionValidationService` SHALL validate its JSONata syntax via `JsonataEvaluationService.validateExpression`. On a syntax error the service SHALL set `is_valid = false` and add a validation warning with `code = INVALID_EXPRESSION`, `path = "$.configBindings"` (when the binding is in `configBindings`) or `"$.inputBindings"` (when in `inputBindings`), and a `message` identifying the invalid expression. A syntactically valid or absent `jsonataExpression` SHALL NOT add a warning. This validation SHALL NOT block the save (soft validation), matching the equivalent `Response` binding rule.
+
+#### Scenario: Invalid TestCase jsonataExpression adds a warning
+- **WHEN** a TSMD is created with a `TestCase` binding whose `jsonataExpression` is syntactically invalid (e.g. `"$[("`)
+- **THEN** the system SHALL set `is_valid = false` and add a warning with `code = INVALID_EXPRESSION`, the appropriate `path`, and a message identifying the invalid expression
+
+#### Scenario: Valid TestCase jsonataExpression adds no warning
+- **WHEN** a TSMD is created with a `TestCase` binding whose `jsonataExpression` is syntactically valid (e.g. `"$[0]"`) and all references resolve
+- **THEN** the system SHALL NOT add an `INVALID_EXPRESSION` warning for that binding
+
 ### Requirement: Hard validation — duplicate binding property names
 
 The system SHALL reject create and update requests where `configBindings` or `inputBindings` contain more than one entry with the same `property` value. The check is applied independently per list — the same `property` name MAY appear once in `configBindings` and once in `inputBindings`. On violation the system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`.

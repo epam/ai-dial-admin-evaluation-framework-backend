@@ -23,4 +23,4 @@
 
 ## 6. Spec sync (archive time)
 
-- [ ] 6.1 At archive time, sync the two delta specs (`metric-evaluation`, `tsmd-validation`) into `openspec/specs/` via `/opsx:archive` (intelligent merge). Archive `multistep-per-turn-column-selection` FIRST so its Response-binding delta is in main before this change extends it to TestCase.
+- [x] 6.1 At archive time, sync the two delta specs (`metric-evaluation`, `tsmd-validation`) into `openspec/specs/` via `/opsx:archive` (intelligent merge). Archive `multistep-per-turn-column-selection` FIRST so its Response-binding delta is in main before this change extends it to TestCase.

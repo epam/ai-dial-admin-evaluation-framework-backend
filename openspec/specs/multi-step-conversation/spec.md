@@ -1,7 +1,7 @@
 # Multi-Step Conversation
 
 ## Purpose
-This spec defines the multi-step (conversational) evaluation contract for `DEPLOYMENT` suites: how a single chat-completions `requestTemplate` is reused across sequential turns, how conversation history accumulates and is re-sent each step, how assistant replies are extracted, fail-fast behavior on step failure, the per-result shape (array-valued `extractedColumns`, accumulated `responseBody`), and how the metric phase normalizes multi-step columns to the last step. This is a POC capability.
+This spec defines the multi-step (conversational) evaluation contract for `DEPLOYMENT` suites: how a single chat-completions `requestTemplate` is reused across sequential turns, how conversation history accumulates and is re-sent each step, how assistant replies are extracted, fail-fast behavior on step failure, the per-result shape (column-major `extractedColumns` — one per-turn array per response column — and accumulated last-turn `responseBody`), and how the metric phase reads those columns raw (turn selection is a per-binding `jsonataExpression` concern). This is a POC capability.
 
 Status: **Planned**
 
@@ -91,21 +91,26 @@ Status: **Planned**
 - **AND** the result `executionStatus` SHALL be the failing step's status
 - **AND** `responseStatusCode` SHALL be the failing step's status code
 - **AND** `responseBody` SHALL contain the failing turn's raw response body (or be absent when no response was received)
-- **AND** `extractedColumns` SHALL contain the per-step maps for the steps completed before the failure
+- **AND** `extractedColumns` SHALL be a column-major object whose per-column arrays each contain one element per step completed before the failure
 
-#### Scenario: Failure at step 0 yields an empty extractedColumns array
+#### Scenario: Failure at step 0 yields an empty extractedColumns object
 - **WHEN** a conversation fails at step 0 (before any step completes)
-- **THEN** `extractedColumns` SHALL be an empty JSON array `[]`
-- **AND** the metric phase SHALL normalize that empty array to an empty JSON object `{}` (see the metric-normalization requirement)
+- **THEN** `extractedColumns` SHALL be an empty JSON object `{}`
+- **AND** metric bindings SHALL resolve against that empty object with no normalization step
 
 ### Requirement: Multi-step result shape reuses existing columns
-A multi-step run SHALL persist exactly one `TestCaseRunResult` per `(runId, testCaseId, runIndex)`, reusing existing columns: `responseBody` SHALL hold the last attempted turn's raw response body (preserving its technical fields, e.g. `id`/`usage`/`model`) — mirroring `requestBody`, which holds that turn's raw request — and `extractedColumns` SHALL hold a JSON array of per-step extraction maps (one element per completed step). The full conversation remains recoverable from the last request body (which carries the whole message history through the final user turn) plus the final response. Single-step runs SHALL keep the existing object shape for `extractedColumns`. The `multiStep` flag is the indicator readers use to interpret the shape.
+A multi-step run SHALL persist exactly one `TestCaseRunResult` per `(runId, testCaseId, runIndex)`, reusing existing columns: `responseBody` SHALL hold the last attempted turn's raw response body (preserving its technical fields, e.g. `id`/`usage`/`model`) — mirroring `requestBody`, which holds that turn's raw request — and `extractedColumns` SHALL hold a **column-major JSON object** mapping each response column name to an array of that column's per-step extracted values (one element per completed step, each element type-reconciled per step). The full conversation remains recoverable from the last request body (which carries the whole message history through the final user turn) plus the final response. Single-step runs SHALL keep the existing object-of-scalars shape for `extractedColumns`. The `multiStep` flag is the indicator readers use to interpret the shape.
 Status: **Planned**
 
-#### Scenario: Multi-step extractedColumns is an array
-- **WHEN** a 3-step conversation completes successfully
-- **THEN** `extractedColumns` SHALL be a JSON array of length 3
-- **AND** element `i` SHALL be the extraction map for step `i`
+#### Scenario: Multi-step extractedColumns is a column-major object
+- **WHEN** a 3-step conversation with response columns `answer` and `score` completes successfully
+- **THEN** `extractedColumns` SHALL be a JSON object
+- **AND** `extractedColumns.answer` SHALL be an array of length 3 whose element `i` is `answer` extracted at step `i`
+- **AND** `extractedColumns.score` SHALL be an array of length 3 whose element `i` is `score` extracted at step `i`
+
+#### Scenario: Per-step extraction failure preserves index alignment
+- **WHEN** a 3-step conversation completes but extraction of column `answer` fails at step 1
+- **THEN** `extractedColumns.answer` SHALL be an array of length 3 whose element at index 1 is JSON `null`
 
 #### Scenario: responseBody holds the last turn's raw response
 - **WHEN** a multi-step conversation completes
@@ -113,31 +118,23 @@ Status: **Planned**
 
 #### Scenario: Single-step result shape unchanged
 - **WHEN** a suite has `multiStep == false`
-- **THEN** `extractedColumns` SHALL be a JSON object and `responseBody` SHALL be the single response, exactly as before
+- **THEN** `extractedColumns` SHALL be a JSON object of scalar values and `responseBody` SHALL be the single response, exactly as before
 
-### Requirement: Metric evaluation normalizes multi-step columns to the last step
-When the metric evaluation phase reads a result's `extractedColumns`, it SHALL normalize by shape: if the value is a JSON array, it SHALL use the last element (`array[n-1]`); if the array is empty (`n == 0`), it SHALL yield an empty JSON object `{}` (it SHALL NOT throw and SHALL NOT produce an array); if it is a JSON object, it SHALL use it as-is. Metric input/config bindings SHALL resolve against the normalized object, and the value copied into the `EvalSummary` SHALL be the normalized (last-step) object.
+### Requirement: Metric evaluation reads raw multi-step columns (no normalization)
+The metric evaluation phase SHALL read a result's `extractedColumns` **as stored**, with no shape normalization. Both single-step (object of scalars) and multi-step (column-major object of per-column arrays) values are used directly: metric config/input bindings resolve against the raw object, and the value copied into the `EvalSummary` is the raw object. Turn/element selection for a multi-step column is a per-binding concern, done via a `Response` binding's optional `jsonataExpression` (see the metric-evaluation binding-resolution requirement).
 Status: **Planned**
 
-#### Scenario: Metrics score the last turn for multi-step
-- **WHEN** the metric phase processes a multi-step result whose `extractedColumns` is an array of length `n`
-- **THEN** metric bindings SHALL resolve against element `n-1`
-- **AND** `EvalSummary.extractedColumns` SHALL store element `n-1` as a JSON object
-
-#### Scenario: Empty extractedColumns array normalizes to an empty object
-- **WHEN** the metric phase processes a result whose `extractedColumns` is an empty JSON array `[]` (e.g. a conversation that failed at step 0 before any step completed)
-- **THEN** normalization SHALL yield an empty JSON object `{}` rather than throwing or producing an array
-- **AND** `EvalSummary.extractedColumns` SHALL store `{}`
+#### Scenario: Metric bindings resolve against the raw multi-step object
+- **WHEN** the metric phase processes a multi-step result whose `extractedColumns` is `{ "answer": ["Paris","Tokio"] }`
+- **THEN** a `Response` binding to `answer` SHALL resolve against `["Paris","Tokio"]` (selecting a turn only if it carries a `jsonataExpression`)
+- **AND** `EvalSummary.extractedColumns` SHALL store `{ "answer": ["Paris","Tokio"] }` unchanged
 
 #### Scenario: Single-step metric behavior unchanged
-- **WHEN** the metric phase processes a single-step result whose `extractedColumns` is a JSON object
+- **WHEN** the metric phase processes a single-step result whose `extractedColumns` is a JSON object of scalars
 - **THEN** metric bindings SHALL resolve against that object unchanged
-- **AND** the downstream summary, CSV export, and query-filter layer SHALL operate on an object shape as before
+- **AND** the downstream summary, CSV export, and query-filter layer SHALL operate on the object shape (array-valued cells for multi-step render as compact JSON)
 
 ## Implementation Notes
 - Turn loop lives in a new `service.domain.job.MultiStepConversationExecutor`, delegated to from `EvaluationWorker.execute`.
-- Template resolution reuses `service.domain.ResolvedRequestService.resolve`; per-step extraction reuses `service.domain.ResponseColumnExtractor.extract`.
-- Metric normalization is applied at the result→metric boundary at **two distinct call sites** via a single shared injectable component (e.g. `service.domain.job.ExtractedColumnsNormalizer`):
-  - **Metric binding resolution**: `MetricEvaluationWorker.buildRequest` normalizes the `extractedColumns` value it passes to `BindingResolver.resolveBindings` (the `parseJsonMap(result.getExtractedColumns())` call); the sibling `testCaseData` parse is left untouched.
-  - **EvalSummary copy**: `InProcessMetricEvaluationExecutor.buildItem` normalizes the `extractedColumns` value (its private `parseJsonNode(result.getExtractedColumns())` path) before storing it into `EvalSummary`; this path runs for both SUCCESS and propagated non-SUCCESS results.
-- Empty-array (`n == 0`) extractedColumns normalize to an empty JSON object `{}` at both sites.
+- Template resolution reuses `service.domain.ResolvedRequestService.resolve`; per-step extraction reuses `service.domain.ResponseColumnExtractor.extract`, transposed into a column-major object by `MultiStepConversationExecutor`.
+- There is **no** metric-boundary normalization (the former `ExtractedColumnsNormalizer` was removed): `MetricEvaluationWorker.buildRequest` and `InProcessMetricEvaluationExecutor.buildItem` read `extractedColumns` as stored. Turn/element selection is a per-binding concern via a `Response` binding's optional `jsonataExpression` (see metric-evaluation).

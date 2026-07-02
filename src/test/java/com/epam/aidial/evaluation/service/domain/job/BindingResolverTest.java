@@ -108,6 +108,78 @@ class BindingResolverTest {
     }
 
     @Test
+    @DisplayName("TestCase binding jsonataExpression selects an array element (per-turn data column)")
+    void testCaseBinding_jsonataExpression_selectsArrayElement() {
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("user_message")
+                .source(TestCaseBindingSourceDto.builder()
+                        .columnName("user_turns")
+                        .jsonataExpression("$[1]")
+                        .build())
+                .build();
+
+        Map<String, Object> testCaseData = Map.of("user_turns", List.of("hi", "and then?"));
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), testCaseData, Map.of());
+
+        assertThat(result).containsEntry("user_message", "and then?");
+    }
+
+    @Test
+    @DisplayName("TestCase binding without jsonataExpression returns the whole column value")
+    void testCaseBinding_noExpression_returnsWholeValue() {
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("turns")
+                .source(TestCaseBindingSourceDto.builder()
+                        .columnName("user_turns")
+                        .build())
+                .build();
+
+        Map<String, Object> testCaseData = Map.of("user_turns", List.of("hi", "and then?"));
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), testCaseData, Map.of());
+
+        assertThat(result).containsEntry("turns", List.of("hi", "and then?"));
+    }
+
+    @Test
+    @DisplayName("TestCase binding jsonataExpression selects a nested object path")
+    void testCaseBinding_jsonataExpression_selectsObjectPath() {
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("topic")
+                .source(TestCaseBindingSourceDto.builder()
+                        .columnName("meta")
+                        .jsonataExpression("labels.topic")
+                        .build())
+                .build();
+
+        Map<String, Object> testCaseData = Map.of("meta", Map.of("labels", Map.of("topic", "geography")));
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), testCaseData, Map.of());
+
+        assertThat(result).containsEntry("topic", "geography");
+    }
+
+    @Test
+    @DisplayName("TestCase binding jsonataExpression matching nothing resolves to null")
+    void testCaseBinding_jsonataExpression_noMatch_resolvesToNull() {
+        MetricParameterBindingDto binding = MetricParameterBindingDto.builder()
+                .property("fifth")
+                .source(TestCaseBindingSourceDto.builder()
+                        .columnName("user_turns")
+                        .jsonataExpression("$[5]")
+                        .build())
+                .build();
+
+        Map<String, Object> testCaseData = Map.of("user_turns", List.of("hi", "and then?"));
+
+        Map<String, Object> result = resolver.resolveBindings(List.of(binding), testCaseData, Map.of());
+
+        assertThat(result).containsKey("fifth");
+        assertThat(result.get("fifth")).isNull();
+    }
+
+    @Test
     @DisplayName("Response binding without jsonataExpression returns the whole multi-step array")
     void responseBinding_noExpression_returnsWholeArray() {
         MetricParameterBindingDto binding = MetricParameterBindingDto.builder()

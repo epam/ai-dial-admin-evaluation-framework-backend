@@ -98,7 +98,8 @@ public class BindingResolver {
                 throw new IllegalArgumentException(
                         "TestCase binding references missing column '" + columnName + "' in test case data");
             }
-            return testCaseData.get(columnName);
+            Object columnValue = testCaseData.get(columnName);
+            return applyJsonataSelector(columnValue, testCaseSource.getJsonataExpression());
         } else if (source instanceof ResponseBindingSourceDto responseSource) {
             String columnName = responseSource.getColumnName();
             if (!extractedColumns.containsKey(columnName)) {
@@ -114,11 +115,6 @@ public class BindingResolver {
                 "Unknown binding source type: " + source.getClass().getSimpleName());
     }
 
-    /**
-     * Applies an optional JSONata selector to a resolved column value. With no expression the raw value is
-     * returned unchanged (the whole per-turn array for a multi-step column). With an expression, it is
-     * evaluated against the column value's JSON form; an expression that matches nothing yields {@code null}.
-     */
     private Object applyJsonataSelector(Object columnValue, String jsonataExpression) {
         if (jsonataExpression == null || jsonataExpression.isBlank()) {
             return columnValue;

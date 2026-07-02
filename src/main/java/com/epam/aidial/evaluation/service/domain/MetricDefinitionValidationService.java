@@ -154,6 +154,20 @@ public class MetricDefinitionValidationService {
                             bindingListPath,
                             "TestCase column '" + columnName + "' does not exist in the suite's testCaseSchema"));
                 }
+
+                // Check 3b: INVALID_EXPRESSION — optional jsonataExpression must be syntactically valid JSONata
+                String jsonataExpression = testCaseSource.getJsonataExpression();
+                if (jsonataExpression != null && !jsonataExpression.isBlank()) {
+                    try {
+                        jsonataEvaluationService.validateExpression(jsonataExpression);
+                    } catch (ValidationException e) {
+                        warnings.add(buildWarning(
+                                property,
+                                ValidationWarningCode.INVALID_EXPRESSION,
+                                bindingListPath,
+                                "Invalid JSONata expression for test case binding: " + e.getMessage()));
+                    }
+                }
             }
 
             // Check 4: UNRESOLVED_REFERENCE (response)

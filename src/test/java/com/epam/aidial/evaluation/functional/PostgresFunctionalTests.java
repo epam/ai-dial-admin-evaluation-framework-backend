@@ -53,6 +53,8 @@ import com.epam.aidial.evaluation.functional.tests.McpTestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiStepConversationRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
@@ -257,6 +259,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
     public static PostgreSQLContainer getContainer() {
         return POSTGRES;
     }
+
+    @Nested
+    class MetricScoreComputationTests extends MetricScoreComputationFunctionalTests {}
 
     @Nested
     class DatasetCrudTests extends DatasetCrudFunctionalTests {}
@@ -474,6 +479,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class EvalSummaryStructuredQueryTests extends EvalSummaryStructuredQueryFunctionalTests {}
+
+    @Nested
+    class MetricScoreResultStructuredQueryTests extends MetricScoreResultStructuredQueryFunctionalTests {}
 
     @Nested
     class StructuredQueryExecuteTests extends StructuredQueryExecuteFunctionalTests {}

@@ -29,7 +29,9 @@ public class SuiteSnapshotBuilder {
                 .suiteType(suite.getSuiteType() != null ? suite.getSuiteType().name() : null)
                 .datasetRef(toDatasetRef(dataset))
                 .responseColumns(jsonbMapper.mapResponseColumns(suite.getResponseColumns()))
-                .testCaseSchema(jsonbMapper.mapFieldDefinitions(dataset.getTestCaseSchema()));
+                .testCaseSchema(jsonbMapper.mapFieldDefinitions(dataset.getTestCaseSchema()))
+                // Stored verbatim (null = system default); the single-metric default is resolved at Phase 3.
+                .overallScore(jsonbMapper.mapOverallScore(suite.getOverallScore()));
 
         if (suite.getSuiteType() == SuiteType.MCP_TOOL) {
             builder.mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))

@@ -102,7 +102,8 @@ context: |
   For detailed feature specs, requirements, and API contracts see: openspec/specs/README.md
   Domain areas: TestSuites, TestCases, Metrics, Deployments, Sorting, Filtering,
   Request Templates, Observability, Security, OpenAPI Examples, Analytics Results,
-  Eval Summaries (metric-enriched results), Run Metric Snapshots.
+  Eval Summaries (metric-enriched results), Run Metric Snapshots,
+  Metric Score Statistics (code-defined per-metric aggregates via Query DSL, Phase-3 computation, `metric_score_results` query entity).
   Infrastructure: Analytics Datasource (dual datasource — meta + analytics),
   Typed SQL DSL (jOOQ 3.20 — all repositories use DSLContext; generated sources in data.db.jooq.{meta,analytics}; drift guard via JooqSchemaDriftTest),
   DIAL File Storage (file upload/download proxy via DialFileClient, EF service key bucket management, alias-based file references).

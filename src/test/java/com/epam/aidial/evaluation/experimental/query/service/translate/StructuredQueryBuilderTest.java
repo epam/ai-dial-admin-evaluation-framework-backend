@@ -48,9 +48,11 @@ class StructuredQueryBuilderTest {
 
     private final ValueExprToObjectMapper valueExprToObjectMapper = new ValueExprToObjectMapper();
     private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(new PostgresJsonPathAccessor());
-    private final ExprTranslator exprTranslator = new ExprTranslator(valueExprToObjectMapper, jsonbFieldResolver);
+    private final ExprTranslator exprTranslator = new ExprTranslator(
+            valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
     private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
     private final StructuredQueryBuilder builder = new StructuredQueryBuilder(exprTranslator, filterTranslator);
+    private final QueryParameterResolver parameterResolver = new QueryParameterResolver();
 
     private String render(StructuredQuery query) {
         return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, query))
@@ -316,11 +318,54 @@ class StructuredQueryBuilderTest {
     }
 
     @Test
-    @DisplayName("rejects a param expression (no server-side registry in the demo)")
-    void rejectsParamExpression() {
+    @DisplayName("rejects an unbound param expression when no binding is supplied")
+    void rejectsUnboundParamExpression() {
         StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("p")), null, null);
         assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("param expressions");
+                .hasMessageContaining("unbound query parameter 'p'");
+    }
+
+    @Test
+    @DisplayName("substitutes a value-bound param as a literal operand")
+    void substitutesValueBoundParam() {
+        StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("p")), null, null);
+        String sql = renderWithParams(query, Map.of("p", value(ValueType.STRING, "demo")));
+        assertThat(sql).contains("\"name\" = 'demo'");
+    }
+
+    @Test
+    @DisplayName("substitutes a field-bound param as the bound column")
+    void substitutesFieldBoundParam() {
+        StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("col")), null, null);
+        String sql = renderWithParams(query, Map.of("col", field("description")));
+        assertThat(sql).contains("\"name\" = ").contains("\"description\"");
+    }
+
+    @Test
+    @DisplayName("substitutes a field-bound param inside percentile_cont's ordering column")
+    void substitutesParamInsidePercentile() {
+        StructuredQuery query = new StructuredQuery(
+                "test_suites",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(
+                        new FnExpr(
+                                "percentile_cont",
+                                false,
+                                List.of(value(ValueType.DECIMAL, "0.5"), new ParamExpr("metricField"))),
+                        "med")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 50, false));
+        String sql = renderWithParams(query, Map.of("metricField", field("version")));
+        assertThat(sql).contains("percentile_cont(").contains("within group").contains("\"version\"");
+    }
+
+    private String renderWithParams(StructuredQuery query, Map<String, Expr> params) {
+        return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, parameterResolver.resolve(query, params)))
+                .toLowerCase(Locale.ROOT);
     }
 }

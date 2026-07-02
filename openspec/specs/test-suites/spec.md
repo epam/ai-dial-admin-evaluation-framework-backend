@@ -537,6 +537,41 @@ The system SHALL expose a `detach-dataset` action endpoint on the test-suite res
 - **WHEN** a client calls `POST /api/v1/test-suites/{id}/detach-dataset`
 - **THEN** the system processes the request according to the `detach-dataset` capability spec and returns `TestSuiteResponseDto`
 
+### Requirement: Per-suite `overallScore` on the suite API
+The suite create and update request bodies SHALL accept an optional `overallScore` field — a JSON object holding a structured-query `StructuredQuery` expression that defines the run-level `overall` metric score for the suite. The system SHALL persist it verbatim to `test_suites.overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL, preserving the built-in default behavior (see `metric-score-statistics`). `overallScore` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. The expression SHALL be stored opaquely and SHALL NOT be validated as a runnable query at write time (a malformed or non-runnable expression surfaces at run-level computation, not at suite persistence).
+Status: **Implemented**
+
+#### Scenario: Set overallScore on update and read it back
+- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with an `overallScore` object referencing one specific metric column (`metric::<metricName>::<outputField>`)
+- **THEN** system SHALL respond HTTP 200 with the updated suite whose `overallScore` equals the submitted object, and a subsequent `GET /api/v1/test-suites/{id}` SHALL return the same `overallScore`
+
+#### Scenario: Set overallScore on create
+- **WHEN** client calls `POST /api/v1/test-suites` with a valid body including an `overallScore` object
+- **THEN** system SHALL create the suite persisting `overall_score` and return it in the response body
+
+#### Scenario: Omitted overallScore leaves the column null
+- **WHEN** client creates or updates a suite without an `overallScore` field
+- **THEN** system SHALL store `overall_score` as NULL and the suite response SHALL omit `overallScore` (or return it as null)
+
+#### Scenario: overallScore does not affect suite validity
+- **WHEN** client sets `overallScore` on an otherwise valid suite
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `overallScore`
+
+## Implementation Notes
+- REST API: `com.epam.aidial.evaluation.web.controller.TestSuiteController`
+- Service: `com.epam.aidial.evaluation.service.domain.TestSuiteService`
+- Repository: `com.epam.aidial.evaluation.data.db.repository.PostgresTestSuiteRepository`
+- DB migrations: `V1.1__InitTestSuitesTable.sql`, `V1.2__TestSuiteAggregateTables.sql` (deployment_ref, endpoint_ref, test_cases_definition, version; test_cases, revalidation_tasks).
+- Flyway migration: `V1.14__AddMcpFieldsToTestSuites.sql` — adds `suite_type`, `mcp_deployment_ref`, `tool_ref`, `argument_template` columns
+- Modified model: `TestSuite` — add `suiteType`, `mcpDeploymentRef`, `toolRef`, `argumentTemplate` fields
+- Modified DTOs: `TestSuiteRequestDto`, `TestSuiteResponseDto` — add new fields with type-specific validation
+- Modified mapper: `TestSuiteMapper` — map new fields
+- Modified repository: `PostgresTestSuiteRepository` — include new columns in SELECT/INSERT/UPDATE
+- Modified service: `TestSuiteService` — type-specific validation and field handling
+- FilterWhitelists: `TEST_SUITES` — `suiteType` (EQ, IN), `id` (EQ, IN), `description` (CO), `updatedAt` (GT, GTE, LT, LTE), plus existing `name`, `createdBy`, `createdAt`
+- Multi-step: a `multiStep` boolean field on `data.db.model.TestSuite`, `TestSuiteRequestDto`, `TestSuiteResponseDto`, `SuiteSnapshotDto`. There is no per-turn binding field; the suite's single `inputBindings` and `requestTemplate` are reused per turn, and per-turn variation comes from array-valued test-case columns at execution time (see multi-step-conversation). Validation extends `service.domain.SuiteValidationService.validateDeploymentSuite` (messages-array body check + normal `inputBindings` cross-validation via the existing `BindingValidator`). Turn count is derived per test case at execution time and capped at `ValidationConstants.MAX_CONVERSATION_STEPS`.
+- `overallScore` (per-suite): DTO fields `TestSuiteRequestDto.overallScore` / `TestSuiteResponseDto.overallScore` (`Map<String, Object>`), per the JSONB-as-object convention. Conversion via `JsonbMapper.mapOverallScore(Map)` (write) / `mapOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` (clone already preserves it via `toCloneEntity`). Column pre-exists: `V1.23__AddOverallScoreToTestSuites.sql` (no new migration).
+
 ### Requirement: Multi-step suite configuration fields
 A `DEPLOYMENT` `TestSuite` SHALL support a `multiStep` boolean (default `false`). When `multiStep == true`, the suite uses its regular single `inputBindings` and `requestTemplate`, exactly like a single-step suite; per-turn variation comes from array-valued test-case columns at execution time (see multi-step-conversation). The `multiStep` flag SHALL be accepted on create/update, persisted, returned in the suite response, and captured in the suite snapshot. There SHALL be no suite-level per-turn binding configuration.
 Status: **Planned**
@@ -566,20 +601,6 @@ Status: **Planned**
 #### Scenario: Valid multi-step suite
 - **WHEN** a suite has `multiStep == true`, a JSON body with a top-level `messages` array, and `inputBindings` that pass cross-validation
 - **THEN** the suite SHALL be valid
-
-## Implementation Notes
-- REST API: `com.epam.aidial.evaluation.web.controller.TestSuiteController`
-- Service: `com.epam.aidial.evaluation.service.domain.TestSuiteService`
-- Repository: `com.epam.aidial.evaluation.data.db.repository.PostgresTestSuiteRepository`
-- DB migrations: `V1.1__InitTestSuitesTable.sql`, `V1.2__TestSuiteAggregateTables.sql` (deployment_ref, endpoint_ref, test_cases_definition, version; test_cases, revalidation_tasks).
-- Flyway migration: `V1.14__AddMcpFieldsToTestSuites.sql` — adds `suite_type`, `mcp_deployment_ref`, `tool_ref`, `argument_template` columns
-- Modified model: `TestSuite` — add `suiteType`, `mcpDeploymentRef`, `toolRef`, `argumentTemplate` fields
-- Modified DTOs: `TestSuiteRequestDto`, `TestSuiteResponseDto` — add new fields with type-specific validation
-- Modified mapper: `TestSuiteMapper` — map new fields
-- Modified repository: `PostgresTestSuiteRepository` — include new columns in SELECT/INSERT/UPDATE
-- Modified service: `TestSuiteService` — type-specific validation and field handling
-- FilterWhitelists: `TEST_SUITES` — `suiteType` (EQ, IN), `id` (EQ, IN), `description` (CO), `updatedAt` (GT, GTE, LT, LTE), plus existing `name`, `createdBy`, `createdAt`
-- Multi-step: a `multiStep` boolean field on `data.db.model.TestSuite`, `TestSuiteRequestDto`, `TestSuiteResponseDto`, `SuiteSnapshotDto`. There is no per-turn binding field; the suite's single `inputBindings` and `requestTemplate` are reused per turn, and per-turn variation comes from array-valued test-case columns at execution time (see multi-step-conversation). Validation extends `service.domain.SuiteValidationService.validateDeploymentSuite` (messages-array body check + normal `inputBindings` cross-validation via the existing `BindingValidator`). Turn count is derived per test case at execution time and capped at `ValidationConstants.MAX_CONVERSATION_STEPS`.
 
 ## Open Questions / TODO
 - Add explicit validation rules for `name`/`description` in DTOs (current behavior depends on DTO constraints).

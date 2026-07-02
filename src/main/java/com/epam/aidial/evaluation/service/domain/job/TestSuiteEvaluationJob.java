@@ -73,6 +73,7 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final MetricEvaluationProperties metricEvaluationProperties;
     private final MetricEvaluationExecutor metricEvaluationExecutor;
+    private final MetricScoreComputation metricScoreComputation;
     private final Clock clock;
 
     @Qualifier("metaTransactionManager")
@@ -157,6 +158,12 @@ public class TestSuiteEvaluationJob {
             if (!cancellationSignal.get()) {
                 MetricEvaluationContext metricContext = buildMetricEvaluationContext(run, cancellationSignal);
                 metricEvaluationExecutor.execute(metricContext);
+
+                // Phase 3: Metric score statistics — reuses Phase 2's computationId. Non-fatal: a
+                // failure here must not fail an otherwise-good run (scores are regenerable).
+                if (!cancellationSignal.get()) {
+                    computeMetricScores(run, metricContext, cancellationSignal);
+                }
             }
 
             now = clock.millis();
@@ -347,6 +354,41 @@ public class TestSuiteEvaluationJob {
                 .batchSize(metricEvaluationProperties.getBatchSize())
                 .perResultTimeoutMs(metricEvaluationProperties.getPerResultTimeoutMs())
                 .build();
+    }
+
+    /**
+     * Phase 3: computes aggregated metric-score statistics, reusing the metric-evaluation
+     * {@code computationId} so the scores join that computation. Non-fatal — any failure is logged and
+     * the run still completes, because scores are a regenerable projection over the eval summaries.
+     */
+    private void computeMetricScores(
+            TestSuiteRun run, MetricEvaluationContext metricContext, AtomicBoolean cancellationSignal) {
+        try {
+            MetricScoreComputationContext ctx = MetricScoreComputationContext.builder()
+                    .testSuiteRunId(run.getId())
+                    .testSuiteId(run.getTestSuiteId())
+                    .computationId(metricContext.getComputationId())
+                    .overallExpression(resolveOverallExpression(run))
+                    .cancellationSignal(cancellationSignal)
+                    .build();
+            metricScoreComputation.execute(ctx);
+        } catch (RuntimeException e) {
+            log.error(
+                    "Metric score computation failed for run {}; run will still complete: {}",
+                    run.getId(),
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+    /**
+     * The run's {@code overall} score definition from the suite snapshot, as a structured-query
+     * expression JSON, or {@code null} when the suite has no custom definition (the executor then
+     * applies the single-metric default).
+     */
+    private String resolveOverallExpression(TestSuiteRun run) {
+        Map<String, Object> overallScore = resolveSnapshot(run).getOverallScore();
+        return overallScore == null ? null : objectMapper.writeValueAsString(overallScore);
     }
 
     private EvaluationContext buildContext(TestSuiteRun run, AtomicBoolean cancellationSignal, String token) {

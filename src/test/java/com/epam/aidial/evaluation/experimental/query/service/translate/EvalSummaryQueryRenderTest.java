@@ -45,7 +45,8 @@ class EvalSummaryQueryRenderTest {
 
     private final ValueExprToObjectMapper valueExprToObjectMapper = new ValueExprToObjectMapper();
     private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(new PostgresJsonPathAccessor());
-    private final ExprTranslator exprTranslator = new ExprTranslator(valueExprToObjectMapper, jsonbFieldResolver);
+    private final ExprTranslator exprTranslator = new ExprTranslator(
+            valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
     private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
     private final StructuredQueryBuilder builder = new StructuredQueryBuilder(exprTranslator, filterTranslator);
 

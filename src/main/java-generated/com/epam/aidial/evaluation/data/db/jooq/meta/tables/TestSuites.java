@@ -163,6 +163,11 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
     public final TableField<TestSuitesRecord, JSONB> DISABLED_TEST_CASE_IDS = createField(DSL.name("disabled_test_case_ids"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'::jsonb"), SQLDataType.JSONB)), this, "");
 
     /**
+     * The column <code>meta.test_suites.overall_score</code>.
+     */
+    public final TableField<TestSuitesRecord, JSONB> OVERALL_SCORE = createField(DSL.name("overall_score"), SQLDataType.JSONB, this, "");
+
+    /**
      * The column <code>meta.test_suites.multi_step</code>.
      */
     public final TableField<TestSuitesRecord, Boolean> MULTI_STEP = createField(DSL.name("multi_step"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");

@@ -69,26 +69,32 @@ public class DatasetCloneService {
     }
 
     /**
-     * Inserts the cloned dataset row (PRIVATE, name set to the caller-supplied {@code name},
-     * copying schema and validation state verbatim — no re-validation) and copies its test cases with
-     * freshly generated ids, repointed {@code datasetId}, and {@code @ef/datasets/{source}/} →
-     * {@code @ef/datasets/{new}/} rewrites in each test case's {@code data}. Joins the caller's active
-     * meta transaction ({@code REQUIRED}).
+     * Inserts the cloned dataset row (name, {@code description}, and {@code visibility} set from the
+     * caller-supplied arguments, copying schema and validation state verbatim — no re-validation) and
+     * copies its test cases with freshly generated ids, repointed {@code datasetId}, and
+     * {@code @ef/datasets/{source}/} → {@code @ef/datasets/{new}/} rewrites in each test case's
+     * {@code data}. Joins the caller's active meta transaction ({@code REQUIRED}).
      *
      * @return old → new test-case id map, used by the caller to remap the suite's
      *     {@code disabledTestCaseIds}
      */
     @Transactional("metaTransactionManager")
     public Map<UUID, UUID> cloneRowAndTestCases(
-            Dataset source, UUID newDatasetId, String name, String createdBy, long timestamp) {
+            Dataset source,
+            UUID newDatasetId,
+            String name,
+            String description,
+            String createdBy,
+            long timestamp,
+            DatasetVisibility visibility) {
         Dataset clone = Dataset.builder()
                 .id(newDatasetId)
                 .name(name)
-                .description(source.getDescription())
+                .description(description)
                 .testCaseSchema(source.getTestCaseSchema())
                 .valid(source.isValid())
                 .validationWarnings(source.getValidationWarnings())
-                .visibility(DatasetVisibility.PRIVATE)
+                .visibility(visibility)
                 .version(0L)
                 .createdBy(createdBy)
                 .build();

@@ -133,6 +133,55 @@ public class JsonbMapper {
     }
 
     /**
+     * Serializes the per-suite {@code overall} score definition (an opaque {@code StructuredQuery}
+     * JSON object) from the request DTO into the entity's JSONB column. Returns {@code null} for a
+     * null input so the column stays null (meaning "use the system default").
+     */
+    public String mapOverallScore(Map<String, Object> value) {
+        return write(value, "overallScore");
+    }
+
+    /**
+     * The per-suite {@code overall} score definition (an opaque {@code StructuredQuery} JSON object),
+     * read from the entity into the suite snapshot or the suite response. A null column means the
+     * run-level {@code overall} falls back to the system default.
+     */
+    public Map<String, Object> mapOverallScore(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, MAP_TYPE);
+        } catch (JacksonException ex) {
+            throw new IllegalArgumentException("Failed to deserialize overallScore", ex);
+        }
+    }
+
+    /**
+     * Serializes the per-suite {@code testCaseFilter} (an opaque Structured Query DSL filter subtree)
+     * from the request DTO into the entity's JSONB column. Returns {@code null} for a null input so the
+     * column stays null (meaning "no filter").
+     */
+    public String mapTestCaseFilter(Map<String, Object> value) {
+        return write(value, "testCaseFilter");
+    }
+
+    /**
+     * The per-suite {@code testCaseFilter} (an opaque filter subtree), read from the entity into the
+     * suite response. A null column means the suite applies no test-case filter.
+     */
+    public Map<String, Object> mapTestCaseFilter(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, MAP_TYPE);
+        } catch (JacksonException ex) {
+            throw new IllegalArgumentException("Failed to deserialize testCaseFilter", ex);
+        }
+    }
+
+    /**
      * Extracts deployment ID from serialized deploymentRef JSONB.
      */
     public String extractDeploymentId(String deploymentRefJson) {
@@ -142,7 +191,7 @@ public class JsonbMapper {
         try {
             JsonNode node = objectMapper.readTree(deploymentRefJson);
             JsonNode idNode = node.get("id");
-            return idNode != null ? idNode.asText() : null;
+            return idNode != null ? idNode.asString() : null;
         } catch (JacksonException e) {
             log.warn("Failed to extract deploymentId: {}", e.getMessage(), e);
             return null;
@@ -161,7 +210,7 @@ public class JsonbMapper {
             JsonNode node = objectMapper.readTree(endpointRefJson);
             JsonNode methodNode = node.get("method");
             if (methodNode != null && !methodNode.isNull()) {
-                return HttpMethod.valueOf(methodNode.asText().toUpperCase());
+                return HttpMethod.valueOf(methodNode.asString().toUpperCase());
             }
             return HttpMethod.POST;
         } catch (JacksonException e) {

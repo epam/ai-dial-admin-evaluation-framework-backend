@@ -26,6 +26,8 @@ public class TestSuite {
     private String mcpDeploymentRef;
     private String toolRef;
     private String argumentTemplate;
+    private String overallScore;
+    private String testCaseFilter;
     private boolean valid;
     private String validationWarnings;
     private Long version;

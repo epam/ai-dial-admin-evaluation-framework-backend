@@ -81,7 +81,8 @@ public class TestSuiteRunService {
         }
 
         List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());
-        long numberOfTestCases = runnableTestCaseCounter.countRunnable(testSuite.getDatasetId(), disabledIds);
+        long numberOfTestCases = runnableTestCaseCounter.countRunnable(
+                testSuite.getDatasetId(), testSuite.getTestCaseFilter(), disabledIds);
         if (numberOfTestCases == 0) {
             throw new InvalidOperationException("Suite has no valid and enabled test cases");
         }
@@ -185,6 +186,14 @@ public class TestSuiteRunService {
         TestSuiteRun run = testSuiteRunRepository
                 .findById(runId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId));
+        return mapper.toDto(run);
+    }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public TestSuiteRunResponseDto getLatestRun(UUID suiteId) {
+        TestSuiteRun run = testSuiteRunRepository
+                .findLatestByTestSuiteId(suiteId)
+                .orElseThrow(() -> new EntityNotFoundException("No runs found for test suite with id: " + suiteId));
         return mapper.toDto(run);
     }
 

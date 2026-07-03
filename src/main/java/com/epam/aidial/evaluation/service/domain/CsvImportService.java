@@ -855,9 +855,9 @@ public class CsvImportService {
                 .setQuote('"')
                 .setTrim(true)
                 .setIgnoreEmptyLines(false)
-                .build();
+                .get();
         InputStreamReader reader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
-        return new CSVParser(reader, format);
+        return CSVParser.builder().setFormat(format).setReader(reader).get();
     }
 
     private List<String> parseHeader(CSVParser parser) throws IOException {

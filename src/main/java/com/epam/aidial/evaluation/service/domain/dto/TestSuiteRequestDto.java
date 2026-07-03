@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -79,4 +80,30 @@ public class TestSuiteRequestDto {
     @Size(max = 255)
     @Schema(example = "maintainer@example.com")
     private String createdBy;
+
+    @Schema(
+            description =
+                    "Optional per-suite definition of the run-level `overall` metric score, as a structured-query "
+                            + "expression (StructuredQuery). References configured metric columns by their flattened name "
+                            + "`metric::<metricName>::<outputField>`. When omitted, `overall` falls back to the built-in "
+                            + "default (single-metric only). Stored verbatim; not validated as a runnable query at write time.",
+            example = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\",\"select\":[{\"expr\":{\"type\":\"fn\","
+                    + "\"name\":\"avg\",\"args\":[{\"type\":\"field\",\"name\":\"metric::Relevancy::score\"}]},"
+                    + "\"as\":\"value\"}]}")
+    private Map<String, Object> overallScore;
+
+    @Schema(
+            description =
+                    "Optional per-suite test-case filter, as a Structured Query DSL filter subtree "
+                            + "(the `filter` of a `test_cases` query). Selects which of the bound dataset's test cases run: "
+                            + "combined (AND) with `is_valid` and `disabledTestCaseIds` at run-creation count and snapshot. "
+                            + "References base columns and flattened `data::<field>` fields. Validated at write time against "
+                            + "the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). Null = no filter.",
+            example =
+                    "{\"op\":\"or\",\"args\":[{\"op\":\"in\",\"args\":[{\"type\":\"field\",\"name\":\"data::category\"},"
+                            + "{\"type\":\"array\",\"items\":[{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"A\"},"
+                            + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"B\"}]}]},"
+                            + "{\"op\":\"co\",\"args\":[{\"type\":\"field\",\"name\":\"data::tags\"},"
+                            + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"text\"}]}]}")
+    private Map<String, Object> testCaseFilter;
 }

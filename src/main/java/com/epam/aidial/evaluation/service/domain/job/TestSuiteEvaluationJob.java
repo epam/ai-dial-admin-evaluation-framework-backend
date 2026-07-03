@@ -11,7 +11,6 @@ import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
-import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
@@ -63,7 +62,7 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteRunRepository repository;
     private final TestSuiteRepository testSuiteRepository;
     private final DatasetRepository datasetRepository;
-    private final TestCaseRepository testCaseRepository;
+    private final RunnableTestCaseSelector runnableTestCaseSelector;
     private final TestCaseRunInputRepository testCaseRunInputRepository;
     private final TestSuiteRunSseService sseService;
     private final EvaluationRunProperties evaluationRunProperties;
@@ -73,6 +72,7 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final MetricEvaluationProperties metricEvaluationProperties;
     private final MetricEvaluationExecutor metricEvaluationExecutor;
+    private final MetricScoreComputation metricScoreComputation;
     private final Clock clock;
 
     @Qualifier("metaTransactionManager")
@@ -105,14 +105,13 @@ public class TestSuiteEvaluationJob {
 
     @Async("testSuiteRunExecutor")
     public void executeRunAsync(UUID runId, String token) {
-        AtomicBoolean cancellationSignal = activeCancellationSignals.get(runId);
-        if (cancellationSignal == null) {
-            cancellationSignal = new AtomicBoolean(false);
-            activeCancellationSignals.put(runId, cancellationSignal);
-        }
+        final AtomicBoolean cancellationSignal =
+                activeCancellationSignals.computeIfAbsent(runId, _ -> new AtomicBoolean(false));
         try {
+            log.info("Starting test suite run {}", runId);
             long now = clock.millis();
             if (cancellationSignal.get()) {
+                log.info("Run {} cancelled before start", runId);
                 repository.updateToCancelled(runId, now, now);
                 notifySse(runId);
                 return;
@@ -158,12 +157,20 @@ public class TestSuiteEvaluationJob {
             if (!cancellationSignal.get()) {
                 MetricEvaluationContext metricContext = buildMetricEvaluationContext(run, cancellationSignal);
                 metricEvaluationExecutor.execute(metricContext);
+
+                // Phase 3: Metric score statistics — reuses Phase 2's computationId. Non-fatal: a
+                // failure here must not fail an otherwise-good run (scores are regenerable).
+                if (!cancellationSignal.get()) {
+                    computeMetricScores(run, metricContext, cancellationSignal);
+                }
             }
 
             now = clock.millis();
             if (cancellationSignal.get()) {
+                log.info("Run {} cancelled", runId);
                 repository.updateToCancelled(runId, now, now);
             } else {
+                log.info("Run {} completed", runId);
                 repository.updateToCompleted(runId, now, now);
             }
             notifySse(runId);
@@ -252,8 +259,8 @@ public class TestSuiteEvaluationJob {
             int offset = 0;
             List<TestCase> page;
             do {
-                page = testCaseRepository.findValidByDatasetIdExcludingIds(
-                        suite.getDatasetId(), disabledIds, offset, SNAPSHOT_PAGE_SIZE);
+                page = runnableTestCaseSelector.loadRunnablePage(
+                        suite.getDatasetId(), suite.getTestCaseFilter(), disabledIds, offset, SNAPSHOT_PAGE_SIZE);
                 for (TestCase tc : page) {
                     batch.add(TestCaseRunInput.builder()
                             .runId(runId)
@@ -274,6 +281,7 @@ public class TestSuiteEvaluationJob {
             long now = clock.millis();
             repository.updateSuiteSnapshot(runId, snapshotJson, now);
             repository.updateNumberOfTestCases(runId, totalInputs, now);
+            log.info("Created suite snapshot for run {}: {} test case input(s)", runId, totalInputs);
             return null;
         });
     }
@@ -347,6 +355,41 @@ public class TestSuiteEvaluationJob {
                 .build();
     }
 
+    /**
+     * Phase 3: computes aggregated metric-score statistics, reusing the metric-evaluation
+     * {@code computationId} so the scores join that computation. Non-fatal — any failure is logged and
+     * the run still completes, because scores are a regenerable projection over the eval summaries.
+     */
+    private void computeMetricScores(
+            TestSuiteRun run, MetricEvaluationContext metricContext, AtomicBoolean cancellationSignal) {
+        try {
+            MetricScoreComputationContext ctx = MetricScoreComputationContext.builder()
+                    .testSuiteRunId(run.getId())
+                    .testSuiteId(run.getTestSuiteId())
+                    .computationId(metricContext.getComputationId())
+                    .overallExpression(resolveOverallExpression(run))
+                    .cancellationSignal(cancellationSignal)
+                    .build();
+            metricScoreComputation.execute(ctx);
+        } catch (RuntimeException e) {
+            log.error(
+                    "Metric score computation failed for run {}; run will still complete: {}",
+                    run.getId(),
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+    /**
+     * The run's {@code overall} score definition from the suite snapshot, as a structured-query
+     * expression JSON, or {@code null} when the suite has no custom definition (the executor then
+     * applies the single-metric default).
+     */
+    private String resolveOverallExpression(TestSuiteRun run) {
+        Map<String, Object> overallScore = resolveSnapshot(run).getOverallScore();
+        return overallScore == null ? null : objectMapper.writeValueAsString(overallScore);
+    }
+
     private EvaluationContext buildContext(TestSuiteRun run, AtomicBoolean cancellationSignal, String token) {
         RunConfigDto config = parseRunConfig(run.getRunConfig(), run.getId());
         EvaluationRunProperties.Execution execProps = evaluationRunProperties.getExecution();
@@ -371,16 +414,16 @@ public class TestSuiteEvaluationJob {
                 .testSuiteRun(run)
                 .numberOfRuns(config.getNumberOfRuns())
                 .numberOfTestCases(run.getNumberOfTestCases())
-                .concurrencyLevel(ObjectUtils.defaultIfNull(
+                .concurrencyLevel(ObjectUtils.getIfNull(
                         exec != null ? exec.getConcurrencyLevel() : null, execProps.getDefaultConcurrencyLevel()))
-                .requestTimeoutMs(ObjectUtils.defaultIfNull(
+                .requestTimeoutMs(ObjectUtils.getIfNull(
                         exec != null ? exec.getRequestTimeoutMs() : null, execProps.getDefaultRequestTimeoutMs()))
                 .rateLimitRps(exec != null ? exec.getRateLimitRps() : execProps.getDefaultRateLimitRps())
-                .maxRetries(ObjectUtils.defaultIfNull(
+                .maxRetries(ObjectUtils.getIfNull(
                         retry != null ? retry.getMaxRetries() : null, retryProps.getDefaultMaxRetries()))
-                .retryDelayMs(ObjectUtils.defaultIfNull(
+                .retryDelayMs(ObjectUtils.getIfNull(
                         retry != null ? retry.getRetryDelayMs() : null, retryProps.getDefaultRetryDelayMs()))
-                .retryBackoffMultiplier(ObjectUtils.defaultIfNull(
+                .retryBackoffMultiplier(ObjectUtils.getIfNull(
                         retry != null ? retry.getRetryBackoffMultiplier() : null,
                         retryProps.getDefaultRetryBackoffMultiplier()))
                 .maxRetryDelayMs(retryProps.getMaxRetryDelayMs())

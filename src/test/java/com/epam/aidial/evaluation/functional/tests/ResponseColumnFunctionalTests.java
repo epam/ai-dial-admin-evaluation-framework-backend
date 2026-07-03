@@ -291,7 +291,8 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).getExtractedColumns()).isNotNull();
         assertThat(results.get(0).getExtractedColumns().has("answer")).isTrue();
-        assertThat(results.get(0).getExtractedColumns().get("answer").asText()).isEqualTo("Mocked answer.");
+        assertThat(results.get(0).getExtractedColumns().get("answer").asString())
+                .isEqualTo("Mocked answer.");
         assertThat(results.get(0).getExtractionWarnings()).isEmpty();
     }
 
@@ -390,7 +391,7 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).getExtractedColumns().get("files").isArray()).isTrue();
         assertThat(results.get(0).getExtractedColumns().get("files").size()).isEqualTo(1);
-        assertThat(results.get(0).getExtractedColumns().get("files").get(0).asText())
+        assertThat(results.get(0).getExtractedColumns().get("files").get(0).asString())
                 .isEqualTo("Mocked answer.");
         assertThat(results.get(0).getExtractionWarnings()).isEmpty();
     }

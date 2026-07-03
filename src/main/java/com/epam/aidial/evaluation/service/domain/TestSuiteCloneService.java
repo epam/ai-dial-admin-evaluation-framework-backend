@@ -275,8 +275,10 @@ public class TestSuiteCloneService {
                             datasetToClone,
                             newDatasetId,
                             datasetCloneService.deriveCloneName(datasetToClone.getName()),
+                            datasetToClone.getDescription(),
                             createdBy,
-                            cloneTimestamp);
+                            cloneTimestamp,
+                            DatasetVisibility.PRIVATE);
                     newSuiteEntity.setDisabledTestCaseIds(
                             testSuiteMapper.remapDisabledIds(newSuiteEntity.getDisabledTestCaseIds(), testCaseIdMap));
                 }

@@ -24,6 +24,7 @@ import com.epam.aidial.evaluation.functional.tests.AnalyticsResultGetByIdFunctio
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultListFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsRetryFieldsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.CsvImportModeFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.DatasetCloneFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetCrudFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetDetachFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetFileFunctionalTests;
@@ -35,6 +36,7 @@ import com.epam.aidial.evaluation.functional.tests.EvalSummaryAggregationFunctio
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportPageSizeFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalSummaryStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvaluationExecutorFailureModesFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvaluationMultipartFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ExecutionSettingsFunctionalTests;
@@ -50,15 +52,19 @@ import com.epam.aidial.evaluation.functional.tests.McpEvaluationRunFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.McpTestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseRunInputRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestSuiteRunRepositoryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.QuerySchemaDiscoveryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ResponseColumnFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RevalidationCoercionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RevalidationTaskFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationBindingFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteValidationFileRefFunctionalTests;
@@ -70,12 +76,15 @@ import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchCapsFunction
 import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseConvenienceApiFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseQueryAndFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseRunInputsRetentionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteCloneFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TryItOutFunctionalTests;
 import com.epam.aidial.evaluation.service.domain.MetricProviderSyncJob;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
@@ -252,6 +261,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
     }
 
     @Nested
+    class MetricScoreComputationTests extends MetricScoreComputationFunctionalTests {}
+
+    @Nested
     class DatasetCrudTests extends DatasetCrudFunctionalTests {}
 
     @Nested
@@ -259,6 +271,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class DatasetDetachTests extends DatasetDetachFunctionalTests {}
+
+    @Nested
+    class DatasetCloneTests extends DatasetCloneFunctionalTests {}
 
     @Nested
     class DatasetScopedTestCaseTests extends DatasetScopedTestCaseFunctionalTests {}
@@ -317,6 +332,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestSuiteRunTests extends TestSuiteRunFunctionalTests {}
+
+    @Nested
+    class TestSuiteRunSseTests extends TestSuiteRunSseFunctionalTests {}
 
     @Nested
     class AnalyticsResultBatchWriteTests extends AnalyticsResultBatchWriteFunctionalTests {}
@@ -451,6 +469,24 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class RevalidationCoercionTests extends RevalidationCoercionFunctionalTests {}
 
     @Nested
+    class QuerySchemaDiscoveryTests extends QuerySchemaDiscoveryFunctionalTests {}
+
+    @Nested
+    class TestSuiteStructuredQueryTests extends TestSuiteStructuredQueryFunctionalTests {}
+
+    @Nested
+    class EvalSummaryStructuredQueryTests extends EvalSummaryStructuredQueryFunctionalTests {}
+
+    @Nested
+    class MetricScoreResultStructuredQueryTests extends MetricScoreResultStructuredQueryFunctionalTests {}
+
+    @Nested
+    class StructuredQueryExecuteTests extends StructuredQueryExecuteFunctionalTests {}
+
+    @Nested
+    class TestCaseQueryAndFilterTests extends TestCaseQueryAndFilterFunctionalTests {}
+
+    @Nested
     @DisplayName("Metric provider sync job")
     @TestPropertySource(
             properties = {
@@ -498,8 +534,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
             assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().getContent()).hasSize(1);
-            assertThat(response.getBody().getContent().get(0).getName()).isEqualTo("SyncedMetric");
-            assertThat(response.getBody().getContent().get(0).getProviderId()).isEqualTo("sync-test-provider");
+            assertThat(response.getBody().getContent().getFirst().getName()).isEqualTo("SyncedMetric");
+            assertThat(response.getBody().getContent().getFirst().getProviderId())
+                    .isEqualTo("sync-test-provider");
         }
     }
 }

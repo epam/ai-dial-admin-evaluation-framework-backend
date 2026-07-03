@@ -313,7 +313,7 @@ public class EvalSummaryExportService {
             if (node.isObject() || node.isArray()) {
                 return node.toString();
             }
-            return node.asText();
+            return node.asString();
         }
         if (value instanceof Map<?, ?> || value instanceof Collection<?>) {
             try {

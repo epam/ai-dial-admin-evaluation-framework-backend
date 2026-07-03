@@ -7,9 +7,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.MDC;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -35,7 +36,7 @@ public class CorrelationIdInterceptor implements HandlerInterceptor {
             @NotNull final HttpServletRequest request,
             @NotNull final HttpServletResponse response,
             @NotNull final Object handler,
-            @NotNull final Exception ex) {
+            @Nullable final Exception ex) {
         // do nothing
     }
 
@@ -71,6 +72,6 @@ public class CorrelationIdInterceptor implements HandlerInterceptor {
     }
 
     private static String generateRandomCorrelationId() {
-        return RandomStringUtils.randomAlphanumeric(CORRELATION_ID_LENGTH);
+        return RandomStringUtils.secure().nextAlphanumeric(CORRELATION_ID_LENGTH);
     }
 }

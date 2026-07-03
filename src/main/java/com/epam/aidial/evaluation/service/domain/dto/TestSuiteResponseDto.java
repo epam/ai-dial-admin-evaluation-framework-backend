@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.dto;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -66,4 +67,15 @@ public class TestSuiteResponseDto {
 
     @Schema(example = "1704067200000")
     private Long updatedAt;
+
+    @Schema(
+            description = "Per-suite definition of the run-level `overall` metric score (a structured-query "
+                    + "expression), as a JSON object. Null when the suite uses the built-in default.")
+    private Map<String, Object> overallScore;
+
+    @Schema(
+            description = "Per-suite test-case filter (a Structured Query DSL filter subtree), as a JSON object. "
+                    + "Selects which of the bound dataset's test cases run (combined with `disabledTestCaseIds` and "
+                    + "validity). Null when the suite applies no filter.")
+    private Map<String, Object> testCaseFilter;
 }

@@ -190,7 +190,7 @@ public class ZipExportService {
                 .builder()
                 .setDelimiter(delimiter)
                 .setRecordSeparator("\n")
-                .build();
+                .get();
 
         OutputStreamWriter writer = new OutputStreamWriter(zos, StandardCharsets.UTF_8);
         CSVPrinter printer = new CSVPrinter(writer, format);

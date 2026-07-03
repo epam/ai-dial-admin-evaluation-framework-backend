@@ -80,12 +80,20 @@ class DatasetCloneServiceTest {
                 .thenReturn(List.of());
 
         UUID newDatasetId = UUID.randomUUID();
-        datasetCloneService.cloneRowAndTestCases(source, newDatasetId, "Src (clone)", "cloner@example.com", 123L);
+        datasetCloneService.cloneRowAndTestCases(
+                source,
+                newDatasetId,
+                "Src (clone)",
+                source.getDescription(),
+                "cloner@example.com",
+                123L,
+                DatasetVisibility.PRIVATE);
 
         verify(datasetRepository).createWithId(datasetCaptor.capture(), eq(123L));
         Dataset inserted = datasetCaptor.getValue();
         assertThat(inserted.getId()).isEqualTo(newDatasetId);
         assertThat(inserted.getName()).isEqualTo("Src (clone)");
+        assertThat(inserted.getDescription()).isEqualTo(source.getDescription());
         assertThat(inserted.getVisibility()).isEqualTo(DatasetVisibility.PRIVATE);
         assertThat(inserted.getTestCaseSchema()).isEqualTo(source.getTestCaseSchema());
         assertThat(inserted.isValid()).isEqualTo(source.isValid());
@@ -116,7 +124,13 @@ class DatasetCloneServiceTest {
 
         UUID newDatasetId = UUID.randomUUID();
         Map<UUID, UUID> idMap = datasetCloneService.cloneRowAndTestCases(
-                source, newDatasetId, "Src (clone)", "cloner@example.com", 123L);
+                source,
+                newDatasetId,
+                "Src (clone)",
+                source.getDescription(),
+                "cloner@example.com",
+                123L,
+                DatasetVisibility.PRIVATE);
 
         verify(testCaseRepository).batchInsert(testCasesCaptor.capture(), eq(123L));
         List<TestCase> inserted = testCasesCaptor.getValue();

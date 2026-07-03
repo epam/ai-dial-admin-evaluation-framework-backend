@@ -51,6 +51,12 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
         List<ResponseColumnDefinitionDto> responseColumns = context.getSnapshotResponseColumns();
 
         int concurrency = context.getConcurrencyLevel();
+        log.info(
+                "Starting deployment evaluation for run {}: {} test case(s), {} run(s) each, concurrency={}",
+                context.getRunId(),
+                context.getNumberOfTestCases(),
+                context.getNumberOfRuns(),
+                concurrency);
         Semaphore semaphore = new Semaphore(concurrency);
         ExecutorService executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
 
@@ -81,6 +87,14 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                         if (context.getCancellationSignal().get()) {
                             break;
                         }
+
+                        log.debug(
+                                "Run {}: evaluating test case {} (name={}), run {}/{}",
+                                context.getRunId(),
+                                input.getTestCaseId(),
+                                input.getTestCaseName(),
+                                runIndex + 1,
+                                context.getNumberOfRuns());
 
                         if (rateLimitBucket != null) {
                             rateLimitBucket.asBlocking().consume(1);

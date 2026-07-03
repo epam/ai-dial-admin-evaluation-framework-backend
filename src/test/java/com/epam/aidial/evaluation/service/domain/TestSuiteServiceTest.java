@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
+import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
@@ -67,6 +68,9 @@ class TestSuiteServiceTest {
     private DatasetSchemaProvider datasetSchemaProvider;
 
     @Mock
+    private RunnableTestCaseSelector runnableTestCaseSelector;
+
+    @Mock
     private TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
 
     @Mock
@@ -108,6 +112,7 @@ class TestSuiteServiceTest {
                 endpointSchemaRefResolver,
                 suiteValidationService,
                 datasetSchemaProvider,
+                runnableTestCaseSelector,
                 testSuiteMetricDefinitionService,
                 fileService,
                 clock,
@@ -141,7 +146,7 @@ class TestSuiteServiceTest {
         when(datasetQueryService.findById(sourceDatasetId)).thenReturn(Optional.of(source));
         // The in-transaction clone blows up, so the surrounding TransactionTemplate.execute(...)
         // rethrows, leaving txSucceeded=false and triggering the file-cleanup branch.
-        when(datasetCloneService.cloneRowAndTestCases(any(), any(), any(), any(), anyLong()))
+        when(datasetCloneService.cloneRowAndTestCases(any(), any(), any(), any(), any(), anyLong(), any()))
                 .thenThrow(new RuntimeException("boom"));
 
         assertThatThrownBy(() -> service.detachDataset(

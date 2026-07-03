@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
+import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
@@ -34,6 +35,9 @@ public abstract class DatasetCrudFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private DatasetRepository datasetRepository;
+
+    @Autowired
+    private TestSuiteRepository testSuiteRepository;
 
     // -----------------------------------------------------------------------
     // create
@@ -278,6 +282,46 @@ public abstract class DatasetCrudFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody()).contains(suite.getName());
+    }
+
+    @Test
+    @DisplayName("DELETE /datasets/{id}?force=true returns 204 and unbinds the single referencing suite")
+    void deleteWithForceUnbindsSingleSuite() {
+        Dataset seed = metaTestDataHelper.createDataset("Delete-Force-One-" + UUID.randomUUID());
+        TestSuite suite = metaTestDataHelper.createTestSuite("Suite-Force-One-" + UUID.randomUUID(), seed.getId());
+        assertThat(suite.getDatasetId()).isEqualTo(seed.getId());
+
+        ResponseEntity<Void> response = restTemplate.exchange(
+                apiUrl("/datasets/" + seed.getId() + "?force=true"), HttpMethod.DELETE, null, Void.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(datasetRepository.findById(seed.getId())).isEmpty();
+        TestSuite refreshed = testSuiteRepository.findById(suite.getId()).orElseThrow();
+        assertThat(refreshed.getDatasetId())
+                .as("forced delete must unbind the referencing suite, not delete it")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("DELETE /datasets/{id}?force=true returns 204 and unbinds both referencing suites")
+    void deleteWithForceUnbindsTwoSuites() {
+        Dataset seed = metaTestDataHelper.createDataset("Delete-Force-Two-" + UUID.randomUUID());
+        TestSuite suiteA = metaTestDataHelper.createTestSuite("Suite-Force-Two-A-" + UUID.randomUUID(), seed.getId());
+        TestSuite suiteB = metaTestDataHelper.createTestSuite("Suite-Force-Two-B-" + UUID.randomUUID(), seed.getId());
+        assertThat(suiteA.getDatasetId()).isEqualTo(seed.getId());
+        assertThat(suiteB.getDatasetId()).isEqualTo(seed.getId());
+
+        ResponseEntity<Void> response = restTemplate.exchange(
+                apiUrl("/datasets/" + seed.getId() + "?force=true"), HttpMethod.DELETE, null, Void.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(datasetRepository.findById(seed.getId())).isEmpty();
+        assertThat(testSuiteRepository.findById(suiteA.getId()).orElseThrow().getDatasetId())
+                .as("forced delete must unbind suite A, not delete it")
+                .isNull();
+        assertThat(testSuiteRepository.findById(suiteB.getId()).orElseThrow().getDatasetId())
+                .as("forced delete must unbind suite B, not delete it")
+                .isNull();
     }
 
     @Test

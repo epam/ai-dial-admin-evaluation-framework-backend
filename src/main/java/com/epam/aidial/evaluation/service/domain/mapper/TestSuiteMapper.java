@@ -74,6 +74,8 @@ public class TestSuiteMapper {
                 .createdBy(entity.getCreatedBy())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
+                .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
+                .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();
     }
 
@@ -96,6 +98,8 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(dto.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()))
+                .overallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()))
+                .testCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()))
                 .valid(true)
                 .validationWarnings("[]")
                 .createdBy(createdBy)
@@ -118,6 +122,8 @@ public class TestSuiteMapper {
         entity.setMcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()));
         entity.setToolRef(jsonbMapper.mapToolRef(dto.getToolRef()));
         entity.setArgumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()));
+        entity.setOverallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()));
+        entity.setTestCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()));
     }
 
     /**
@@ -187,6 +193,8 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(mcpDeploymentRef)
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
+                .overallScore(source.getOverallScore())
+                .testCaseFilter(source.getTestCaseFilter())
                 .version(0L)
                 .createdBy(createdBy)
                 .build();
@@ -221,6 +229,8 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(entity.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(entity.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(entity.getArgumentTemplate()))
+                .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
+                .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();
     }
 

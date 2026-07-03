@@ -205,12 +205,9 @@ class CsvImportServiceSchemaTest {
 
         ArgumentCaptor<TestCase> captor = ArgumentCaptor.forClass(TestCase.class);
         verify(testCaseRepository).save(captor.capture());
-        // warningsSerializer.serializeMap captures the data Map — check via side-effect
-        ArgumentCaptor<Object> mapCaptor = ArgumentCaptor.forClass(Object.class);
-        //noinspection unchecked
-        verify(warningsSerializer).serializeMap((java.util.Map<String, Object>) mapCaptor.capture());
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> data = (java.util.Map<String, Object>) mapCaptor.getValue();
+        ArgumentCaptor<Map<String, Object>> mapCaptor = ArgumentCaptor.captor();
+        verify(warningsSerializer).serializeMap(mapCaptor.capture());
+        java.util.Map<String, Object> data = mapCaptor.getValue();
         assertThat(data).containsKey("prompt");
         assertThat(data).doesNotContainKey("unknownCol");
     }
@@ -224,11 +221,9 @@ class CsvImportServiceSchemaTest {
         String csv = "testCaseName,col1,col2\nRow1,v1,v2";
         importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<Object> mapCaptor = ArgumentCaptor.forClass(Object.class);
-        //noinspection unchecked
-        verify(warningsSerializer).serializeMap((java.util.Map<String, Object>) mapCaptor.capture());
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> data = (java.util.Map<String, Object>) mapCaptor.getValue();
+        ArgumentCaptor<Map<String, Object>> mapCaptor = ArgumentCaptor.captor();
+        verify(warningsSerializer).serializeMap(mapCaptor.capture());
+        java.util.Map<String, Object> data = mapCaptor.getValue();
         assertThat(data).containsKey("col1");
         assertThat(data).containsKey("col2");
     }
@@ -242,11 +237,9 @@ class CsvImportServiceSchemaTest {
         String csv = "testCaseName,prompt,newField\nRow1,hello,world";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<Object> mapCaptor = ArgumentCaptor.forClass(Object.class);
-        //noinspection unchecked
-        verify(warningsSerializer).serializeMap((java.util.Map<String, Object>) mapCaptor.capture());
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> data = (java.util.Map<String, Object>) mapCaptor.getValue();
+        ArgumentCaptor<Map<String, Object>> mapCaptor = ArgumentCaptor.captor();
+        verify(warningsSerializer).serializeMap(mapCaptor.capture());
+        java.util.Map<String, Object> data = mapCaptor.getValue();
         assertThat(data).containsKey("prompt");
         assertThat(data).containsKey("newField");
     }
@@ -261,11 +254,9 @@ class CsvImportServiceSchemaTest {
         String csv = "testCaseName,prompt,extra\nRow1,hello,world";
         importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<Object> mapCaptor = ArgumentCaptor.forClass(Object.class);
-        //noinspection unchecked
-        verify(warningsSerializer).serializeMap((java.util.Map<String, Object>) mapCaptor.capture());
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> data = (java.util.Map<String, Object>) mapCaptor.getValue();
+        var mapCaptor = ArgumentCaptor.<Map<String, Object>>captor();
+        verify(warningsSerializer).serializeMap(mapCaptor.capture());
+        java.util.Map<String, Object> data = mapCaptor.getValue();
         assertThat(data).containsKey("prompt");
         assertThat(data).containsKey("extra");
     }
@@ -336,8 +327,8 @@ class CsvImportServiceSchemaTest {
         ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
         List<FieldDefinitionDto> validationSchema = schemaCaptor.getValue();
         assertThat(validationSchema).hasSize(1);
-        assertThat(validationSchema.get(0).getName()).isEqualTo("newField");
-        assertThat(validationSchema.get(0).isRequired()).isFalse();
+        assertThat(validationSchema.getFirst().getName()).isEqualTo("newField");
+        assertThat(validationSchema.getFirst().isRequired()).isFalse();
     }
 
     @Test
@@ -369,7 +360,7 @@ class CsvImportServiceSchemaTest {
         List<FieldDefinitionDto> validationSchema = schemaCaptor.getValue();
         assertThat(validationSchema).extracting(FieldDefinitionDto::getName).containsExactly("prompt", "newMetric");
         // Existing field retains required=true
-        assertThat(validationSchema.get(0).isRequired()).isTrue();
+        assertThat(validationSchema.getFirst().isRequired()).isTrue();
         // New field is required=false
         assertThat(validationSchema.get(1).isRequired()).isFalse();
     }
@@ -386,8 +377,8 @@ class CsvImportServiceSchemaTest {
         ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
         List<FieldDefinitionDto> validationSchema = schemaCaptor.getValue();
         assertThat(validationSchema).hasSize(1);
-        assertThat(validationSchema.get(0).getName()).isEqualTo("prompt");
-        assertThat(validationSchema.get(0).isRequired()).isTrue();
+        assertThat(validationSchema.getFirst().getName()).isEqualTo("prompt");
+        assertThat(validationSchema.getFirst().isRequired()).isTrue();
     }
 
     @Test
@@ -417,8 +408,8 @@ class CsvImportServiceSchemaTest {
         ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
         List<FieldDefinitionDto> validationSchema = schemaCaptor.getValue();
         assertThat(validationSchema).hasSize(1);
-        assertThat(validationSchema.get(0).getName()).isEqualTo("col1");
-        assertThat(validationSchema.get(0).isRequired()).isFalse();
+        assertThat(validationSchema.getFirst().getName()).isEqualTo("col1");
+        assertThat(validationSchema.getFirst().isRequired()).isFalse();
     }
 
     @Test
@@ -433,8 +424,8 @@ class CsvImportServiceSchemaTest {
         ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
         List<FieldDefinitionDto> validationSchema = schemaCaptor.getValue();
         assertThat(validationSchema).hasSize(1);
-        assertThat(validationSchema.get(0).getName()).isEqualTo("prompt");
-        assertThat(validationSchema.get(0).isRequired()).isTrue();
+        assertThat(validationSchema.getFirst().getName()).isEqualTo("prompt");
+        assertThat(validationSchema.getFirst().isRequired()).isTrue();
     }
 
     @SuppressWarnings("unchecked")
@@ -489,7 +480,7 @@ class CsvImportServiceSchemaTest {
         verify(testCaseRepository).batchUpdate(batchCaptor.capture());
         List<TestCase> updated = batchCaptor.getValue();
         assertThat(updated).hasSize(1);
-        assertThat(updated.get(0).getData()).contains("\"42\"");
+        assertThat(updated.getFirst().getData()).contains("\"42\"");
     }
 
     @Test

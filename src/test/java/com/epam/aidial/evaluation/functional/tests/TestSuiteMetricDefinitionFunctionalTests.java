@@ -545,30 +545,30 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     }
 
     @Test
-    @DisplayName("Should return 400 when TSMD name contains a colon on create")
-    void shouldReturn400_whenNameContainsColonOnCreate() {
-        TestSuiteMetricDefinitionRequestDto request = validRequest("Acc:uracy");
+    @DisplayName("Should return 400 when TSMD name contains a double colon on create")
+    void shouldReturn400_whenNameContainsDoubleColonOnCreate() {
+        TestSuiteMetricDefinitionRequestDto request = validRequest("Acc::uracy");
 
         ResponseEntity<String> response = restTemplate.postForEntity(tsmdUrl(), jsonEntity(request), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).contains("':'");
+        assertThat(response.getBody()).contains("'::'");
     }
 
     @Test
-    @DisplayName("Should return 400 when TSMD name contains a colon on update")
-    void shouldReturn400_whenNameContainsColonOnUpdate() {
+    @DisplayName("Should return 400 when TSMD name contains a double colon on update")
+    void shouldReturn400_whenNameContainsDoubleColonOnUpdate() {
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> createResponse = restTemplate.postForEntity(
                 tsmdUrl(), jsonEntity(validRequest("To Rename")), TestSuiteMetricDefinitionResponseDto.class);
         UUID createdId = createResponse.getBody().getId();
 
-        TestSuiteMetricDefinitionRequestDto updateRequest = validRequest("Acc:uracy");
+        TestSuiteMetricDefinitionRequestDto updateRequest = validRequest("Acc::uracy");
 
         ResponseEntity<String> response =
                 restTemplate.exchange(tsmdUrl(createdId), HttpMethod.PUT, jsonEntity(updateRequest), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).contains("':'");
+        assertThat(response.getBody()).contains("'::'");
     }
 
     @SuppressWarnings("unchecked")

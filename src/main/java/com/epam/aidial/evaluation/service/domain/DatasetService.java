@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
@@ -59,6 +60,7 @@ public class DatasetService {
 
     private final DatasetRepository datasetRepository;
     private final DatasetCascadeService datasetCascadeService;
+    private final DatasetCloneService datasetCloneService;
     private final TestSuiteService testSuiteService;
     private final TestCaseService testCaseService;
     private final DatasetMapper datasetMapper;
@@ -149,6 +151,72 @@ public class DatasetService {
         }
     }
 
+    /**
+     * Deep-copies the dataset {@code id} (row + all test cases with fresh ids and
+     * {@code @ef/datasets/{id}/} file-ref rewrites) into a new unbound PUBLIC dataset, starting at
+     * {@code version} 0. {@code name} and {@code description} are taken from the request when present,
+     * otherwise derived/copied from the source.
+     *
+     * <p>Only PUBLIC datasets may be cloned here: the clone is unbound, and a PRIVATE dataset must be
+     * bound to exactly one suite. Cloning a PRIVATE source therefore fails fast with
+     * {@code PRIVATE_DATASET_REQUIRES_SUITE_BINDING} (HTTP 400) before any side effect — clone the
+     * owning suite instead, which clones its PRIVATE dataset alongside it.
+     *
+     * <p>DIAL files are copied before the DB transaction (non-transactional I/O). On transaction
+     * failure the just-copied files are deleted best-effort. A duplicate name surfaces as a 409.
+     */
+    public DatasetResponseDto clone(UUID id, DatasetCloneRequestDto dto, Jwt jwt) {
+        log.info("Cloning Dataset {}", id);
+        final Dataset source = datasetRepository
+                .findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Dataset not found with id: " + id));
+        if (source.getVisibility() == DatasetVisibility.PRIVATE) {
+            throw new DatasetVisibilityRuleException(
+                    DatasetVisibilityErrorCode.PRIVATE_DATASET_REQUIRES_SUITE_BINDING,
+                    "PRIVATE dataset " + id + " cannot be cloned standalone (the clone would be unbound); "
+                            + "clone the owning suite instead, which clones its PRIVATE dataset");
+        }
+        final UUID newDatasetId = UUID.randomUUID();
+
+        // Pre-TX: DIAL file I/O is not transactional and must not run inside the meta tx.
+        datasetCloneService.copyDatasetFiles(id, newDatasetId);
+
+        boolean txSucceeded = false;
+        try {
+            final TransactionTemplate txTemplate = new TransactionTemplate(metaTransactionManager);
+            try {
+                txTemplate.execute(status -> {
+                    performCloneTransaction(source, newDatasetId, dto, jwt);
+                    return null;
+                });
+            } catch (DataIntegrityViolationException ex) {
+                UniqueConstraintViolationDetector.rethrowIfUniqueViolation(
+                        ex, "A dataset with name '" + dto.getName() + "' already exists", dto.getName());
+                throw ex;
+            }
+            txSucceeded = true;
+        } finally {
+            if (!txSucceeded) {
+                fileService.deleteAllByDatasetId(newDatasetId);
+            }
+        }
+
+        return datasetMapper.toDto(datasetRepository
+                .findById(newDatasetId)
+                .orElseThrow(() -> new EntityNotFoundException("Dataset disappeared during clone: " + newDatasetId)));
+    }
+
+    private void performCloneTransaction(Dataset source, UUID newDatasetId, DatasetCloneRequestDto dto, Jwt jwt) {
+        transactionTimestampContext.initializeIfAbsent();
+        final long timestamp = transactionTimestampContext.getTimestamp();
+        final String createdBy = authorResolver.getCreatedBy(jwt);
+        final String name =
+                dto.getName() != null ? dto.getName() : datasetCloneService.deriveCloneName(source.getName());
+        final String description = dto.getDescription() != null ? dto.getDescription() : source.getDescription();
+        datasetCloneService.cloneRowAndTestCases(
+                source, newDatasetId, name, description, createdBy, timestamp, source.getVisibility());
+    }
+
     private void validateVisibilityBinding(DatasetRequestDto requestDto) {
         DatasetVisibility visibility = requestDto.getVisibility();
         if (visibility == null) {
@@ -221,28 +289,28 @@ public class DatasetService {
         }
     }
 
-    public void delete(UUID id) {
-        log.info("Deleting Dataset with id: {}", id);
-        TransactionTemplate txTemplate = new TransactionTemplate(metaTransactionManager);
-        txTemplate.execute(status -> {
+    public void delete(UUID id, boolean force) {
+        log.info("Deleting Dataset with id: {} (force={})", id, force);
+
+        final var txTemplate = new TransactionTemplate(metaTransactionManager);
+        txTemplate.execute(_ -> {
             transactionTimestampContext.initializeIfAbsent();
-            Dataset dataset = datasetRepository
+
+            final Dataset dataset = datasetRepository
                     .findById(id)
                     .orElseThrow(() -> new EntityNotFoundException("Dataset not found with id: " + id));
-            if (dataset.getVisibility() == DatasetVisibility.PRIVATE) {
-                // PRIVATE: atomically unbind the (at most one) bound suite then delete the dataset.
-                // The trigger early-returns on dataset_id = NULL, so the unbind step is unblocked.
-                // Test cases cascade via existing FK.
+
+            if (force || dataset.getVisibility() == DatasetVisibility.PRIVATE) {
                 testSuiteService.unbindAllFromDataset(id);
                 datasetCascadeService.deleteById(id);
                 return null;
             }
-            // PUBLIC: preserve the existing FK-RESTRICT behavior — surface a 409 listing
-            // dependent suite names if any are bound.
-            List<TestSuiteResponseDto> referencingSuites = testSuiteService.getReferencingDataset(id);
+
+            final List<TestSuiteResponseDto> referencingSuites = testSuiteService.getReferencingDataset(id);
             if (!referencingSuites.isEmpty()) {
                 throw datasetInUseException(id, referencingSuites);
             }
+
             try {
                 datasetCascadeService.deleteById(id);
             } catch (DataIntegrityViolationException ex) {
@@ -257,8 +325,7 @@ public class DatasetService {
             return null;
         });
         schemaValidationService.invalidateSchemaCache(id);
-        // After commit, best-effort DIAL file cleanup for both PUBLIC explicit delete and
-        // PRIVATE explicit delete (suite-cascade flow is handled by TestSuiteService).
+
         fileService.deleteAllByDatasetId(id);
     }
 

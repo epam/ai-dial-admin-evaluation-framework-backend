@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -16,6 +19,7 @@ import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetUpdateResultDto;
@@ -42,6 +46,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -58,6 +63,9 @@ class DatasetServiceTest {
 
     @Mock
     private DatasetCascadeService datasetCascadeService;
+
+    @Mock
+    private DatasetCloneService datasetCloneService;
 
     @Mock
     private TestSuiteService testSuiteService;
@@ -100,6 +108,7 @@ class DatasetServiceTest {
         service = new DatasetService(
                 datasetRepository,
                 datasetCascadeService,
+                datasetCloneService,
                 testSuiteService,
                 testCaseService,
                 datasetMapper,
@@ -354,7 +363,7 @@ class DatasetServiceTest {
                                 .name("suiteB")
                                 .build()));
 
-        assertThatThrownBy(() -> service.delete(id))
+        assertThatThrownBy(() -> service.delete(id, false))
                 .isInstanceOf(InvalidOperationException.class)
                 .hasMessageContaining("suiteA")
                 .hasMessageContaining("suiteB")
@@ -377,7 +386,7 @@ class DatasetServiceTest {
                         .build()));
         when(testSuiteService.getReferencingDataset(id)).thenReturn(List.of());
 
-        service.delete(id);
+        service.delete(id, false);
 
         verify(datasetCascadeService).deleteById(id);
         verify(schemaValidationService).invalidateSchemaCache(id);
@@ -390,7 +399,7 @@ class DatasetServiceTest {
         wireTxTemplate();
         when(datasetRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.delete(id))
+        assertThatThrownBy(() -> service.delete(id, false))
                 .isInstanceOf(EntityNotFoundException.class)
                 .hasMessageContaining(id.toString());
 
@@ -419,7 +428,7 @@ class DatasetServiceTest {
                 .when(datasetCascadeService)
                 .deleteById(id);
 
-        assertThatThrownBy(() -> service.delete(id))
+        assertThatThrownBy(() -> service.delete(id, false))
                 .isInstanceOf(InvalidOperationException.class)
                 .hasMessageContaining("raceSuite");
 
@@ -439,7 +448,7 @@ class DatasetServiceTest {
                         .validationWarnings("[]")
                         .build()));
 
-        service.delete(id);
+        service.delete(id, false);
 
         verify(testSuiteService).unbindAllFromDataset(id);
         verify(datasetCascadeService).deleteById(id);
@@ -693,8 +702,180 @@ class DatasetServiceTest {
     }
 
     // -----------------------------------------------------------------------
+    // clone
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "clone without name/description derives the name, copies the source description, and inherits source visibility")
+    void cloneDerivesNameAndInheritsVisibility() {
+        UUID id = UUID.randomUUID();
+        wireTxTemplate();
+        Dataset source = Dataset.builder()
+                .id(id)
+                .name("Src")
+                .description("src-desc")
+                .visibility(DatasetVisibility.PUBLIC)
+                .validationWarnings("[]")
+                .build();
+        stubCloneReads(id, source, DatasetVisibility.PUBLIC);
+        when(authorResolver.getCreatedBy(any())).thenReturn("alice");
+        when(datasetCloneService.deriveCloneName("Src")).thenReturn("Src (clone)");
+        when(transactionTimestampContext.getTimestamp()).thenReturn(1_700_000_000_000L);
+
+        DatasetResponseDto dto = service.clone(id, new DatasetCloneRequestDto(), null);
+
+        assertThat(dto.getVisibility()).isEqualTo(DatasetVisibility.PUBLIC);
+        verify(datasetCloneService)
+                .cloneRowAndTestCases(
+                        eq(source),
+                        any(UUID.class),
+                        eq("Src (clone)"),
+                        eq("src-desc"),
+                        eq("alice"),
+                        eq(1_700_000_000_000L),
+                        eq(DatasetVisibility.PUBLIC));
+    }
+
+    @Test
+    @DisplayName("clone with explicit name and description uses them verbatim and does not derive a name")
+    void cloneUsesExplicitNameAndDescription() {
+        UUID id = UUID.randomUUID();
+        wireTxTemplate();
+        Dataset source = Dataset.builder()
+                .id(id)
+                .name("Src")
+                .description("src-desc")
+                .visibility(DatasetVisibility.PUBLIC)
+                .validationWarnings("[]")
+                .build();
+        stubCloneReads(id, source, DatasetVisibility.PUBLIC);
+        when(authorResolver.getCreatedBy(any())).thenReturn("bob");
+        when(transactionTimestampContext.getTimestamp()).thenReturn(42L);
+
+        DatasetCloneRequestDto request = DatasetCloneRequestDto.builder()
+                .name("Custom")
+                .description("Overridden")
+                .build();
+        service.clone(id, request, null);
+
+        verify(datasetCloneService, never()).deriveCloneName(any());
+        verify(datasetCloneService)
+                .cloneRowAndTestCases(
+                        eq(source),
+                        any(UUID.class),
+                        eq("Custom"),
+                        eq("Overridden"),
+                        eq("bob"),
+                        eq(42L),
+                        eq(DatasetVisibility.PUBLIC));
+    }
+
+    @Test
+    @DisplayName("clone copies DIAL files before the transactional row/test-case write")
+    void cloneCopiesFilesBeforeDbWrite() {
+        UUID id = UUID.randomUUID();
+        wireTxTemplate();
+        Dataset source = Dataset.builder()
+                .id(id)
+                .name("Src")
+                .visibility(DatasetVisibility.PUBLIC)
+                .validationWarnings("[]")
+                .build();
+        stubCloneReads(id, source, DatasetVisibility.PUBLIC);
+        when(authorResolver.getCreatedBy(any())).thenReturn("alice");
+        when(datasetCloneService.deriveCloneName(any())).thenReturn("Src (clone)");
+        when(transactionTimestampContext.getTimestamp()).thenReturn(1L);
+
+        service.clone(id, new DatasetCloneRequestDto(), null);
+
+        InOrder order = inOrder(datasetCloneService);
+        order.verify(datasetCloneService).copyDatasetFiles(eq(id), any(UUID.class));
+        order.verify(datasetCloneService)
+                .cloneRowAndTestCases(
+                        any(), any(), anyString(), any(), anyString(), anyLong(), eq(DatasetVisibility.PUBLIC));
+    }
+
+    @Test
+    @DisplayName("clone deletes the copied files when the DB transaction fails")
+    void cloneCleansUpFilesWhenTransactionFails() {
+        UUID id = UUID.randomUUID();
+        wireTxTemplate();
+        Dataset source = Dataset.builder()
+                .id(id)
+                .name("Src")
+                .visibility(DatasetVisibility.PUBLIC)
+                .validationWarnings("[]")
+                .build();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(source));
+        when(authorResolver.getCreatedBy(any())).thenReturn("alice");
+        when(datasetCloneService.deriveCloneName(any())).thenReturn("Src (clone)");
+        when(transactionTimestampContext.getTimestamp()).thenReturn(1L);
+        when(datasetCloneService.cloneRowAndTestCases(any(), any(), anyString(), any(), anyString(), anyLong(), any()))
+                .thenThrow(new RuntimeException("write failed"));
+
+        assertThatThrownBy(() -> service.clone(id, new DatasetCloneRequestDto(), null))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("write failed");
+
+        verify(fileService).deleteAllByDatasetId(any(UUID.class));
+    }
+
+    @Test
+    @DisplayName("clone on missing source throws EntityNotFoundException and copies no files")
+    void cloneMissingSourceThrows() {
+        UUID id = UUID.randomUUID();
+        when(datasetRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.clone(id, new DatasetCloneRequestDto(), null))
+                .isInstanceOf(EntityNotFoundException.class)
+                .hasMessageContaining(id.toString());
+
+        verify(datasetCloneService, never()).copyDatasetFiles(any(), any());
+        verify(datasetCloneService, never()).cloneRowAndTestCases(any(), any(), any(), any(), any(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "clone on a PRIVATE source throws PRIVATE_DATASET_REQUIRES_SUITE_BINDING before copying files or writing")
+    void cloneRejectsPrivateSource() {
+        UUID id = UUID.randomUUID();
+        Dataset source = Dataset.builder()
+                .id(id)
+                .name("Src")
+                .visibility(DatasetVisibility.PRIVATE)
+                .validationWarnings("[]")
+                .build();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(source));
+
+        assertThatThrownBy(() -> service.clone(id, new DatasetCloneRequestDto(), null))
+                .isInstanceOf(DatasetVisibilityRuleException.class)
+                .satisfies(ex -> assertThat(((DatasetVisibilityRuleException) ex).getErrorCode())
+                        .isEqualTo(DatasetVisibilityErrorCode.PRIVATE_DATASET_REQUIRES_SUITE_BINDING));
+
+        verify(datasetCloneService, never()).copyDatasetFiles(any(), any());
+        verify(datasetCloneService, never()).cloneRowAndTestCases(any(), any(), any(), any(), any(), anyLong(), any());
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private void stubCloneReads(UUID sourceId, Dataset source, DatasetVisibility cloneVisibility) {
+        when(datasetRepository.findById(any())).thenAnswer(inv -> {
+            UUID arg = inv.getArgument(0);
+            if (arg.equals(sourceId)) {
+                return Optional.of(source);
+            }
+            return Optional.of(Dataset.builder()
+                    .id(arg)
+                    .name("clone")
+                    .visibility(cloneVisibility)
+                    .version(0L)
+                    .validationWarnings("[]")
+                    .build());
+        });
+    }
 
     private void wireTxTemplate() {
         TransactionStatus status = mock(TransactionStatus.class);

@@ -184,10 +184,10 @@ class ResponseColumnDefinitionDtoValidationTest {
     }
 
     @Test
-    @DisplayName("name containing colon fails validation with colon-pattern message")
-    void nameContainingColon_failsValidation() {
+    @DisplayName("name containing double colon fails validation with double-colon-pattern message")
+    void nameContainingDoubleColon_failsValidation() {
         var dto = ResponseColumnDefinitionDto.builder()
-                .name("with:colon")
+                .name("with::colon")
                 .expression("choices[0]")
                 .build();
 
@@ -196,14 +196,25 @@ class ResponseColumnDefinitionDtoValidationTest {
         ConstraintViolation<ResponseColumnDefinitionDto> v =
                 violations.iterator().next();
         assertThat(v.getPropertyPath().toString()).isEqualTo("name");
-        assertThat(v.getMessage()).contains("':'");
+        assertThat(v.getMessage()).contains("'::'");
     }
 
     @Test
-    @DisplayName("name with family-prefix collision fails validation")
-    void nameWithFamilyPrefix_failsValidation() {
+    @DisplayName("name containing a single colon passes validation")
+    void nameContainingSingleColon_passesValidation() {
         var dto = ResponseColumnDefinitionDto.builder()
-                .name("response:foo")
+                .name("with:colon")
+                .expression("choices[0]")
+                .build();
+
+        assertThat(validator.validate(dto)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("name with family-separator collision fails validation")
+    void nameWithFamilySeparator_failsValidation() {
+        var dto = ResponseColumnDefinitionDto.builder()
+                .name("response::foo")
                 .expression("choices[0]")
                 .build();
 
@@ -213,7 +224,7 @@ class ResponseColumnDefinitionDtoValidationTest {
     }
 
     @Test
-    @DisplayName("blank name fails only NotBlank, not the colon pattern")
+    @DisplayName("blank name fails only NotBlank, not the double-colon pattern")
     void blankName_failsOnlyNotBlank() {
         var dto = ResponseColumnDefinitionDto.builder()
                 .name("")
@@ -222,6 +233,6 @@ class ResponseColumnDefinitionDtoValidationTest {
 
         Set<ConstraintViolation<ResponseColumnDefinitionDto>> violations = validator.validate(dto);
         assertThat(violations).extracting(v -> v.getPropertyPath().toString()).containsOnly("name");
-        assertThat(violations).extracting(ConstraintViolation::getMessage).noneMatch(msg -> msg.contains("':'"));
+        assertThat(violations).extracting(ConstraintViolation::getMessage).noneMatch(msg -> msg.contains("'::'"));
     }
 }

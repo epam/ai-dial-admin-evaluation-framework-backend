@@ -12,7 +12,7 @@ public class HttpMethodDeserializer extends ValueDeserializer<HttpMethod> {
 
     @Override
     public HttpMethod deserialize(JsonParser p, DeserializationContext ctxt) {
-        String value = p.getText();
+        String value = p.getString();
         return value == null || value.isBlank()
                 ? null
                 : HttpMethod.valueOf(value.trim().toUpperCase());

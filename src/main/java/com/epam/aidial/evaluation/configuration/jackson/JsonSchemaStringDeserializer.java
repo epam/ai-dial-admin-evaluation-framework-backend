@@ -20,7 +20,7 @@ public class JsonSchemaStringDeserializer extends ValueDeserializer<String> {
             return null;
         }
         if (token == JsonToken.VALUE_STRING) {
-            return p.getText();
+            return p.getString();
         }
         if (token == JsonToken.START_OBJECT || token == JsonToken.START_ARRAY) {
             JsonNode tree = p.readValueAsTree();
@@ -28,7 +28,7 @@ public class JsonSchemaStringDeserializer extends ValueDeserializer<String> {
         }
         // Scalar (number, boolean) - coerce to string for robustness
         if (token != null && token.isScalarValue()) {
-            return p.getText();
+            return p.getString();
         }
         return ctxt.reportInputMismatch(
                 this, "Cannot deserialize schema field: expected string or JSON object/array, got %s", token);

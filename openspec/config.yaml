@@ -7,7 +7,7 @@ context: |
   # Tech Stack
   - Java 25
   - Spring Boot 4.0.6
-  - Build: Gradle 9.5.1
+  - Build: Gradle 9.6.0
   - Database: PostgreSQL via JDBC only (NO JPA/Hibernate)
   - Migrations: Flyway (src/main/resources/db/migration/POSTGRES/), naming: V{major}.{minor}__{Description}.sql
   - Security: OIDC/JWT multi-issuer (configurable; can be disabled for local/tests)
@@ -102,7 +102,8 @@ context: |
   For detailed feature specs, requirements, and API contracts see: openspec/specs/README.md
   Domain areas: TestSuites, TestCases, Metrics, Deployments, Sorting, Filtering,
   Request Templates, Observability, Security, OpenAPI Examples, Analytics Results,
-  Eval Summaries (metric-enriched results), Run Metric Snapshots.
+  Eval Summaries (metric-enriched results), Run Metric Snapshots,
+  Metric Score Statistics (code-defined per-metric aggregates via Query DSL, Phase-3 computation, `metric_score_results` query entity).
   Infrastructure: Analytics Datasource (dual datasource — meta + analytics),
   Typed SQL DSL (jOOQ 3.20 — all repositories use DSLContext; generated sources in data.db.jooq.{meta,analytics}; drift guard via JooqSchemaDriftTest),
   DIAL File Storage (file upload/download proxy via DialFileClient, EF service key bucket management, alias-based file references).

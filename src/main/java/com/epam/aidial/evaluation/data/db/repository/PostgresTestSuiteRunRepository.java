@@ -97,6 +97,16 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
     }
 
     @Override
+    public Optional<TestSuiteRun> findLatestByTestSuiteId(UUID testSuiteId) {
+        // Full-row select (incl. suite_snapshot) so callers can derive run schema from the snapshot.
+        return dsl.selectFrom(TEST_SUITE_RUNS)
+                .where(TEST_SUITE_RUNS.TEST_SUITE_ID.eq(testSuiteId.toString()))
+                .orderBy(TEST_SUITE_RUNS.CREATED_AT_MS.desc(), TEST_SUITE_RUNS.ID.desc())
+                .limit(1)
+                .fetchOptional(recordMapper::map);
+    }
+
+    @Override
     public Page<TestSuiteRun> findAll(
             PageRequest pageRequest, List<FilterCondition> filters, boolean includeTotalCount) {
         if (pageRequest == null) {

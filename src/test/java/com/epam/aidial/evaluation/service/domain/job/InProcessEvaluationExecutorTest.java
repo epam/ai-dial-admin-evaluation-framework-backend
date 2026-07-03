@@ -449,9 +449,9 @@ class InProcessEvaluationExecutorTest {
 
         ObjectMapper om = new ObjectMapper();
         JsonNode envelope = om.readTree(synthetic.getResponseBody());
-        assertThat(envelope.get("error").get("type").asText()).isEqualTo("RuntimeException");
-        assertThat(envelope.get("error").get("message").asText()).isEqualTo("boom");
-        assertThat(envelope.get("error").get("origin").asText()).isEqualTo("executor");
+        assertThat(envelope.get("error").get("type").asString()).isEqualTo("RuntimeException");
+        assertThat(envelope.get("error").get("message").asString()).isEqualTo("boom");
+        assertThat(envelope.get("error").get("origin").asString()).isEqualTo("executor");
 
         verify(resultBatchWriter).flush(eq(buffer));
     }

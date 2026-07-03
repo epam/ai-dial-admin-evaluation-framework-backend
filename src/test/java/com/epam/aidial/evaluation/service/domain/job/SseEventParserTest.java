@@ -42,7 +42,7 @@ class SseEventParserTest {
         SseEvent event = result.events().get(0);
         assertThat(event.event()).isEqualTo("process_rules");
         assertThat(event.data()).isInstanceOf(JsonNode.class);
-        assertThat(((JsonNode) event.data()).get("status").asText()).isEqualTo("FAILED");
+        assertThat(((JsonNode) event.data()).get("status").asString()).isEqualTo("FAILED");
     }
 
     // ---- Unnamed events (default type) --------------------------------------

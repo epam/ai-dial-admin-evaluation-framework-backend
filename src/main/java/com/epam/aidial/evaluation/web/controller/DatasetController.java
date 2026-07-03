@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.service.domain.DatasetService;
 import com.epam.aidial.evaluation.service.domain.RevalidationService;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
@@ -169,6 +170,57 @@ public class DatasetController {
                 .body(dto);
     }
 
+    @PostMapping("/{id}/clone")
+    @Operation(
+            summary = "Clone a dataset",
+            description = "Deep-copies a PUBLIC dataset (row + all test cases with fresh ids and "
+                    + "`@ef/datasets/{id}/` file-reference rewrites) into a new unbound PUBLIC dataset. Both `name` "
+                    + "and `description` are optional — an omitted `name` is auto-derived as `\"<source> (clone)\"` "
+                    + "and an omitted `description` is copied verbatim from the source. An empty body is valid. "
+                    + "Cloning a PRIVATE dataset is rejected with 400 (PRIVATE_DATASET_REQUIRES_SUITE_BINDING) — the "
+                    + "clone would be unbound, and a PRIVATE dataset must be bound to a suite; clone the owning suite "
+                    + "instead. The source is never modified.",
+            requestBody =
+                    @RequestBody(
+                            description = "Optional name and description overrides for the clone",
+                            content =
+                                    @Content(
+                                            mediaType = "application/json",
+                                            schema = @Schema(implementation = DatasetCloneRequestDto.class),
+                                            examples = {
+                                                @ExampleObject(name = "Derived name", value = "{}"),
+                                                @ExampleObject(
+                                                        name = "Custom name and description",
+                                                        value =
+                                                                "{\"name\": \"My Dataset (clone)\", \"description\": \"Clone for experimentation\"}")
+                                            })))
+    @ApiResponse(
+            responseCode = "201",
+            description = "Dataset cloned successfully",
+            content =
+                    @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = DatasetResponseDto.class)))
+    @ApiResponse(
+            responseCode = "400",
+            description = "Validation error (name or description too long), or the source dataset is PRIVATE "
+                    + "(PRIVATE_DATASET_REQUIRES_SUITE_BINDING)")
+    @ApiResponse(responseCode = "404", description = "Source dataset not found")
+    @ApiResponse(responseCode = "409", description = "A dataset with the resolved name already exists")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResponseEntity<DatasetResponseDto> clone(
+            @Parameter(description = "Source dataset ID") @PathVariable UUID id,
+            @Valid @org.springframework.web.bind.annotation.RequestBody(required = false)
+                    DatasetCloneRequestDto requestDto,
+            @AuthenticationPrincipal Jwt jwt) {
+
+        DatasetCloneRequestDto effective = requestDto != null ? requestDto : new DatasetCloneRequestDto();
+        DatasetResponseDto dto = datasetService.clone(id, effective, jwt);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .eTag(etag(dto.getVersion()))
+                .body(dto);
+    }
+
     @PutMapping("/{id}")
     @Operation(
             summary = "Update a dataset",
@@ -257,16 +309,27 @@ public class DatasetController {
     @DeleteMapping("/{id}")
     @Operation(
             summary = "Delete a dataset",
-            description = "Deletes a dataset. Behavior depends on visibility: "
+            description = "Deletes a dataset. Default behavior (force=false) depends on visibility: "
                     + "PUBLIC datasets enforce FK RESTRICT — returns 409 if any test suite still references the dataset; "
                     + "PRIVATE datasets cascade — atomically unbinds the bound suite (sets datasetId=null) and deletes "
-                    + "the dataset plus its test cases in one transaction.")
+                    + "the dataset plus its test cases in one transaction. "
+                    + "When force=true, the dataset is deleted regardless of visibility: every referencing test suite "
+                    + "is unbound (datasetId=null) and the dataset plus its test cases are deleted in one transaction.")
     @ApiResponse(responseCode = "204", description = "Dataset deleted successfully")
     @ApiResponse(responseCode = "404", description = "Dataset not found")
-    @ApiResponse(responseCode = "409", description = "PUBLIC dataset is referenced by one or more test suites")
-    public ResponseEntity<Void> delete(@Parameter(description = "Dataset ID") @PathVariable UUID id) {
+    @ApiResponse(
+            responseCode = "409",
+            description = "PUBLIC dataset is referenced by one or more test suites (only when force=false)")
+    public ResponseEntity<Void> delete(
+            @Parameter(description = "Dataset ID") @PathVariable UUID id,
+            @Parameter(
+                            description =
+                                    "When true, unbind all referencing test suites (datasetId=null) and delete the "
+                                            + "dataset regardless of visibility, instead of returning 409. Default: false.")
+                    @RequestParam(defaultValue = "false")
+                    boolean force) {
 
-        datasetService.delete(id);
+        datasetService.delete(id, force);
         return ResponseEntity.noContent().build();
     }
 

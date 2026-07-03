@@ -63,7 +63,7 @@ class EvalSummaryExportColumnPlannerTest {
     }
 
     @Test
-    @DisplayName("data:<field> columns are derived from testCaseSchema in declaration order")
+    @DisplayName("data::<field> columns are derived from testCaseSchema in declaration order")
     void dataColumnsDerivedFromTestCaseSchema() {
         SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
                 .testCaseSchema(List.of(
@@ -79,8 +79,8 @@ class EvalSummaryExportColumnPlannerTest {
 
         List<ColumnDescriptor> result = planner.plan(snapshot, List.of());
 
-        assertThat(result).extracting(ColumnDescriptor::name).contains("data:prompt", "data:attachment");
-        assertThat(indexOf(result, "data:prompt")).isLessThan(indexOf(result, "data:attachment"));
+        assertThat(result).extracting(ColumnDescriptor::name).contains("data::prompt", "data::attachment");
+        assertThat(indexOf(result, "data::prompt")).isLessThan(indexOf(result, "data::attachment"));
     }
 
     @Test
@@ -95,11 +95,11 @@ class EvalSummaryExportColumnPlannerTest {
 
         List<ColumnDescriptor> result = planner.plan(snapshot, List.of());
 
-        assertThat(result).extracting(ColumnDescriptor::name).contains("data:meta.tags");
+        assertThat(result).extracting(ColumnDescriptor::name).contains("data::meta.tags");
     }
 
     @Test
-    @DisplayName("response:<column> columns are derived from responseColumns in declaration order")
+    @DisplayName("response::<column> columns are derived from responseColumns in declaration order")
     void responseColumnsDerivedFromSnapshot() {
         SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
                 .responseColumns(List.of(
@@ -115,12 +115,12 @@ class EvalSummaryExportColumnPlannerTest {
 
         List<ColumnDescriptor> result = planner.plan(snapshot, List.of());
 
-        assertThat(result).extracting(ColumnDescriptor::name).contains("response:answer", "response:file");
-        assertThat(indexOf(result, "response:answer")).isLessThan(indexOf(result, "response:file"));
+        assertThat(result).extracting(ColumnDescriptor::name).contains("response::answer", "response::file");
+        assertThat(indexOf(result, "response::answer")).isLessThan(indexOf(result, "response::file"));
     }
 
     @Test
-    @DisplayName("metric:<m>:<field> value columns preserve the OutputSchemaFieldExtractor's insertion order")
+    @DisplayName("metric::<m>::<field> value columns preserve the OutputSchemaFieldExtractor's insertion order")
     void metricColumnsPreserveExtractorOrder() {
         SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder().build();
         RunMetricSnapshot metric = RunMetricSnapshot.builder()
@@ -134,7 +134,8 @@ class EvalSummaryExportColumnPlannerTest {
 
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
-                .containsSubsequence("metric:Accuracy:z_score", "metric:Accuracy:a_metric", "metric:Accuracy:m_value");
+                .containsSubsequence(
+                        "metric::Accuracy::z_score", "metric::Accuracy::a_metric", "metric::Accuracy::m_value");
     }
 
     @Test
@@ -153,11 +154,11 @@ class EvalSummaryExportColumnPlannerTest {
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
                 .containsSubsequence(
-                        "metric:Accuracy:score",
-                        "metric:Accuracy:explanation",
-                        "metricInfo:Accuracy:score",
-                        "metricInfo:Accuracy:explanation",
-                        "metricError:Accuracy");
+                        "metric::Accuracy::score",
+                        "metric::Accuracy::explanation",
+                        "metricInfo::Accuracy::score",
+                        "metricInfo::Accuracy::explanation",
+                        "metricError::Accuracy");
     }
 
     @Test
@@ -176,7 +177,9 @@ class EvalSummaryExportColumnPlannerTest {
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
                 .containsSubsequence(
-                        "metric:bert.score:precision", "metricInfo:bert.score:precision", "metricError:bert.score");
+                        "metric::bert.score::precision",
+                        "metricInfo::bert.score::precision",
+                        "metricError::bert.score");
     }
 
     @Test
@@ -201,16 +204,16 @@ class EvalSummaryExportColumnPlannerTest {
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
                 .containsSubsequence(
-                        "metric:Accuracy:z_score",
-                        "metric:Accuracy:a_metric",
-                        "metricInfo:Accuracy:z_score",
-                        "metricInfo:Accuracy:a_metric",
-                        "metricError:Accuracy",
-                        "metric:Relevance:score",
-                        "metric:Relevance:explanation",
-                        "metricInfo:Relevance:score",
-                        "metricInfo:Relevance:explanation",
-                        "metricError:Relevance");
+                        "metric::Accuracy::z_score",
+                        "metric::Accuracy::a_metric",
+                        "metricInfo::Accuracy::z_score",
+                        "metricInfo::Accuracy::a_metric",
+                        "metricError::Accuracy",
+                        "metric::Relevance::score",
+                        "metric::Relevance::explanation",
+                        "metricInfo::Relevance::score",
+                        "metricInfo::Relevance::explanation",
+                        "metricError::Relevance");
     }
 
     @Test
@@ -337,8 +340,9 @@ class EvalSummaryExportColumnPlannerTest {
         List<ColumnDescriptor> result = planner.plan(snapshot, List.of(metric));
         long metricBlockColumns = result.stream()
                 .map(ColumnDescriptor::name)
-                .filter(n ->
-                        n.startsWith("metric:M:") || n.startsWith("metricInfo:M:") || n.startsWith("metricError:M"))
+                .filter(n -> n.startsWith("metric::M::")
+                        || n.startsWith("metricInfo::M::")
+                        || n.startsWith("metricError::M"))
                 .count();
 
         assertThat(metricBlockColumns).isEqualTo(2L * 2 + 1);
@@ -354,10 +358,12 @@ class EvalSummaryExportColumnPlannerTest {
 
         assertThat(nullResult)
                 .extracting(ColumnDescriptor::name)
-                .noneMatch(n -> n.startsWith("metric:") || n.startsWith("metricInfo:") || n.startsWith("metricError:"));
+                .noneMatch(
+                        n -> n.startsWith("metric::") || n.startsWith("metricInfo::") || n.startsWith("metricError::"));
         assertThat(emptyResult)
                 .extracting(ColumnDescriptor::name)
-                .noneMatch(n -> n.startsWith("metric:") || n.startsWith("metricInfo:") || n.startsWith("metricError:"));
+                .noneMatch(
+                        n -> n.startsWith("metric::") || n.startsWith("metricInfo::") || n.startsWith("metricError::"));
     }
 
     @Test
@@ -377,11 +383,11 @@ class EvalSummaryExportColumnPlannerTest {
         assertThat(result)
                 .extracting(ColumnDescriptor::name)
                 .contains(
-                        "metric:MyMetric:score",
-                        "metric:MyMetric:explanation",
-                        "metricInfo:MyMetric:score",
-                        "metricInfo:MyMetric:explanation",
-                        "metricError:MyMetric");
+                        "metric::MyMetric::score",
+                        "metric::MyMetric::explanation",
+                        "metricInfo::MyMetric::score",
+                        "metricInfo::MyMetric::explanation",
+                        "metricError::MyMetric");
     }
 
     private static int indexOf(List<ColumnDescriptor> descriptors, String name) {

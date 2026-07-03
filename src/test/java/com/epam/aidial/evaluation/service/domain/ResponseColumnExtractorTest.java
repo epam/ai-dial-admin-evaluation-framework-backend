@@ -47,7 +47,7 @@ class ResponseColumnExtractorTest {
                         .readTree(result.extractedColumns())
                         .get("files")
                         .get(0)
-                        .asText())
+                        .asString())
                 .isEqualTo("DECATHLON_map.pdf#page=1");
         assertThat(warningsSerializer.deserializeExtractionWarnings(result.extractionWarnings()))
                 .isEmpty();

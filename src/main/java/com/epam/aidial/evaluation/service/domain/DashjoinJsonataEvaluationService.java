@@ -1,11 +1,11 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import static com.dashjoin.jsonata.Jsonata.jsonata;
+
 import com.dashjoin.jsonata.JException;
 import com.dashjoin.jsonata.Jsonata;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,19 +25,23 @@ public class DashjoinJsonataEvaluationService implements JsonataEvaluationServic
 
     private final ObjectMapper objectMapper;
 
-    // Compilation (parsing an expression into an AST) is the expensive step and is safe to reuse. A dashjoin
-    // Jsonata instance, however, holds mutable per-evaluation state (input/timestamp/errors), so a cached
-    // instance is NOT thread-safe to evaluate concurrently — evaluate() below synchronizes on the instance.
-    private final Map<String, Jsonata> compiledCache = new ConcurrentHashMap<>();
-
     @Override
     public void validateExpression(String expression) {
-        compile(expression);
+        try {
+            jsonata(expression);
+        } catch (JException ex) {
+            throw new ValidationException("Invalid JSONata expression: " + ex.getMessage());
+        }
     }
 
     @Override
     public Object evaluate(String expression, String jsonData) {
-        Jsonata compiled = compile(expression);
+        Jsonata compiled;
+        try {
+            compiled = jsonata(expression);
+        } catch (JException ex) {
+            throw new ValidationException("Invalid JSONata expression: " + ex.getMessage());
+        }
 
         if (jsonData == null || jsonData.isBlank()) {
             return null;
@@ -45,21 +49,11 @@ public class DashjoinJsonataEvaluationService implements JsonataEvaluationServic
 
         try {
             Object data = objectMapper.readValue(jsonData, Object.class);
-            synchronized (compiled) {
-                return compiled.evaluate(data);
-            }
+            return compiled.evaluate(data);
         } catch (JException ex) {
             throw new IllegalStateException("JSONata evaluation failed: " + ex.getMessage(), ex);
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to evaluate JSONata expression: " + ex.getMessage(), ex);
-        }
-    }
-
-    private Jsonata compile(String expression) {
-        try {
-            return compiledCache.computeIfAbsent(expression, Jsonata::jsonata);
-        } catch (JException ex) {
-            throw new ValidationException("Invalid JSONata expression: " + ex.getMessage());
         }
     }
 }

@@ -92,27 +92,30 @@ public class BindingResolver {
 
     private Object resolveSource(
             MetricBindingSourceDto source, Map<String, Object> testCaseData, Map<String, Object> extractedColumns) {
-        if (source instanceof TestCaseBindingSourceDto testCaseSource) {
-            String columnName = testCaseSource.getColumnName();
-            if (!testCaseData.containsKey(columnName)) {
-                throw new IllegalArgumentException(
-                        "TestCase binding references missing column '" + columnName + "' in test case data");
+        return switch (source) {
+            case TestCaseBindingSourceDto testCase -> {
+                String columnName = testCase.getColumnName();
+                if (!testCaseData.containsKey(columnName)) {
+                    throw new IllegalArgumentException(
+                            "TestCase binding references missing column '" + columnName + "' in test case data");
+                }
+                Object columnValue = testCaseData.get(columnName);
+
+                yield applyJsonataSelector(columnValue, testCase.getJsonataExpression());
             }
-            Object columnValue = testCaseData.get(columnName);
-            return applyJsonataSelector(columnValue, testCaseSource.getJsonataExpression());
-        } else if (source instanceof ResponseBindingSourceDto responseSource) {
-            String columnName = responseSource.getColumnName();
-            if (!extractedColumns.containsKey(columnName)) {
-                throw new IllegalArgumentException(
-                        "Response binding references missing column '" + columnName + "' in extracted columns");
+            case ResponseBindingSourceDto response -> {
+                String columnName = response.getColumnName();
+                if (!extractedColumns.containsKey(columnName)) {
+                    throw new IllegalArgumentException(
+                            "Response binding references missing column '" + columnName + "' in extracted columns");
+                }
+                Object columnValue = extractedColumns.get(columnName);
+
+                yield applyJsonataSelector(columnValue, response.getJsonataExpression());
             }
-            Object columnValue = extractedColumns.get(columnName);
-            return applyJsonataSelector(columnValue, responseSource.getJsonataExpression());
-        } else if (source instanceof ConstantBindingSourceDto constantSource) {
-            return constantSource.getValue();
-        }
-        throw new IllegalArgumentException(
-                "Unknown binding source type: " + source.getClass().getSimpleName());
+            case ConstantBindingSourceDto constantSource -> constantSource.getValue();
+            case null -> throw new IllegalArgumentException("Missing binding");
+        };
     }
 
     private Object applyJsonataSelector(Object columnValue, String jsonataExpression) {

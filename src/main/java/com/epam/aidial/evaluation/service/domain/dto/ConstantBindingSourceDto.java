@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @EqualsAndHashCode(callSuper = false)
 @Schema(description = "Binds a metric parameter to a constant value")
-public class ConstantBindingSourceDto extends MetricBindingSourceDto {
+public non-sealed class ConstantBindingSourceDto implements MetricBindingSourceDto {
 
     @Schema(
             description = "Constant value (any JSON value: string, number, boolean, object, array, or null). "

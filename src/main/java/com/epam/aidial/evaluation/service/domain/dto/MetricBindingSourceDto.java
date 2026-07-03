@@ -14,4 +14,5 @@ import io.swagger.v3.oas.annotations.media.Schema;
         description = "Polymorphic binding source. Discriminated by $type.",
         discriminatorProperty = "$type",
         subTypes = {TestCaseBindingSourceDto.class, ResponseBindingSourceDto.class, ConstantBindingSourceDto.class})
-public abstract class MetricBindingSourceDto {}
+public sealed interface MetricBindingSourceDto
+        permits ConstantBindingSourceDto, ResponseBindingSourceDto, TestCaseBindingSourceDto {}

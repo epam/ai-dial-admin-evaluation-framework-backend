@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @EqualsAndHashCode(callSuper = false)
 @Schema(description = "Binds a metric parameter to a test case column")
-public class TestCaseBindingSourceDto extends MetricBindingSourceDto {
+public non-sealed class TestCaseBindingSourceDto implements MetricBindingSourceDto {
 
     @NotBlank(message = "Column name is required")
     @Schema(description = "Column name from the test suite's testCaseSchema", example = "expected_output")

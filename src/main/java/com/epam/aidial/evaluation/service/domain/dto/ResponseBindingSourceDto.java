@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @EqualsAndHashCode(callSuper = false)
 @Schema(description = "Binds a metric parameter to a response column")
-public class ResponseBindingSourceDto extends MetricBindingSourceDto {
+public non-sealed class ResponseBindingSourceDto implements MetricBindingSourceDto {
 
     @NotBlank(message = "Column name is required")
     @Schema(description = "Column name from the test suite's responseColumns", example = "model_answer")

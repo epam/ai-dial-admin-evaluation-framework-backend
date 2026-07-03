@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -121,9 +122,6 @@ public class MultiStepConversationExecutor {
                 ? jsonbMapper.mapRequestTemplate(input.getRequestTemplateOverride())
                 : context.getSnapshotRequestTemplate();
 
-        final var turnInputs = new TurnInputs(
-                context, input, template, bindings, testCaseData, turnPlan, deploymentId, method, responseColumns);
-
         ExecutionStatus finalStatus = ExecutionStatus.SUCCESS;
         Integer lastStatusCode = null;
         String lastRequestBodyJson = null;
@@ -134,17 +132,32 @@ public class MultiStepConversationExecutor {
         final var columnAccumulator = new MultiStepColumnAccumulator(objectMapper);
         try {
             for (int i = 0; i < turnPlan.turnCount(); i++) {
-                final TurnStep step = runTurn(turnInputs, i, history, columnAccumulator);
-                // Once a turn issued its HTTP request, the last-turn trackers reflect that turn verbatim
-                // (including nulls, e.g. a timeout); a turn that aborts before the request leaves them untouched.
-                if (step.httpAttempted()) {
-                    lastRequestBodyJson = step.requestBodyJson();
-                    lastStatusCode = step.statusCode();
-                    lastResponseBodyJson = step.responseBodyJson();
-                    lastRetryCount = step.retryCount();
+                final var turn = new TurnDefinition(
+                        i,
+                        input.getTestCaseId(),
+                        context,
+                        template,
+                        bindings,
+                        turnPlan.project(testCaseData, i),
+                        deploymentId,
+                        method,
+                        responseColumns);
+                final TurnResult result = runTurn(turn, history);
+
+                history.addAll(result.messagesToAppend());
+                if (result.control() == TurnControl.CONTINUE) {
+                    columnAccumulator.addStep(responseColumns, result.extractedColumnsJson());
                 }
-                if (step.control() == TurnControl.ABORT) {
-                    finalStatus = step.status();
+
+                if (result.outcome() != null) {
+                    lastRequestBodyJson = result.requestBodyJson();
+                    lastStatusCode = result.outcome().statusCode();
+                    lastResponseBodyJson = result.outcome().responseBody();
+                    lastRetryCount = result.outcome().retryCount();
+                }
+
+                if (result.control() == TurnControl.ABORT) {
+                    finalStatus = result.status();
                     break;
                 }
             }
@@ -168,14 +181,14 @@ public class MultiStepConversationExecutor {
         return resultAssembler.success(input, context, runIndex, traceId, execStartedAtMs, outcome);
     }
 
-    /** Per-conversation invariants shared by every turn (everything except the running history / step index). */
-    private record TurnInputs(
+    /** Everything one turn needs, ready to execute: its index, the projected per-turn data, and the send context. */
+    private record TurnDefinition(
+            int index,
+            UUID testCaseId,
             EvaluationContext context,
-            TestCaseRunInput input,
             RequestTemplateDto template,
             List<InputBindingDto> bindings,
-            Map<String, Object> testCaseData,
-            TurnPlan turnPlan,
+            Map<String, Object> turnData,
             String deploymentId,
             HttpMethod method,
             List<ResponseColumnDefinitionDto> responseColumns) {}
@@ -186,92 +199,88 @@ public class MultiStepConversationExecutor {
     }
 
     /**
-     * Outcome of a single turn. {@code control} tells the loop whether to continue or abort (with the
-     * terminal {@code status}). {@code httpAttempted} is true once the turn issued its HTTP request — the
-     * caller then adopts this turn's request/response/status/retry verbatim; a turn that aborts earlier
-     * leaves the last-turn trackers untouched.
+     * Result of one turn, applied by the caller: {@code messagesToAppend} is added to the running history and,
+     * for a completed turn, {@code extractedColumnsJson} is appended to the column-major accumulator.
+     * {@code control} tells the loop whether to continue or abort (with the terminal {@code status}). When
+     * {@code outcome} is non-null the turn issued its HTTP request, so the caller adopts its
+     * request/response/status/retry verbatim; an earlier abort leaves the last-turn trackers untouched.
      */
-    private record TurnStep(
+    private record TurnResult(
             TurnControl control,
             ExecutionStatus status,
-            boolean httpAttempted,
             String requestBodyJson,
-            Integer statusCode,
-            String responseBodyJson,
-            Integer retryCount) {
+            StepOutcome outcome,
+            List<Object> messagesToAppend,
+            String extractedColumnsJson) {
 
-        /** Aborted before any HTTP request (cancellation, missing JSON body, non-array messages). */
-        static TurnStep abortBeforeRequest(ExecutionStatus status) {
-            return new TurnStep(TurnControl.ABORT, status, false, null, null, null, null);
+        /** Aborted before any HTTP request (cancellation, missing JSON body, non-array messages); nothing to append. */
+        static TurnResult abortBeforeRequest(ExecutionStatus status) {
+            return new TurnResult(TurnControl.ABORT, status, null, null, List.of(), null);
         }
 
-        /** Aborted after the HTTP request (non-success response, or 2xx with no assistant message). */
-        static TurnStep abortAfterRequest(ExecutionStatus status, String requestBodyJson, StepOutcome outcome) {
-            return new TurnStep(
-                    TurnControl.ABORT,
-                    status,
-                    true,
-                    requestBodyJson,
-                    outcome.statusCode(),
-                    outcome.responseBody(),
-                    outcome.retryCount());
+        /** Aborted after the request (non-success response, or 2xx with no assistant message); the user turn is kept. */
+        static TurnResult abortAfterRequest(
+                ExecutionStatus status, String requestBodyJson, List<Object> messagesToAppend, StepOutcome outcome) {
+            return new TurnResult(TurnControl.ABORT, status, requestBodyJson, outcome, messagesToAppend, null);
         }
 
-        /** Turn completed: assistant reply appended and response columns extracted. */
-        static TurnStep completed(String requestBodyJson, StepOutcome outcome) {
-            return new TurnStep(
+        /** Turn completed: the user turn plus assistant reply to append, and this step's extracted columns. */
+        static TurnResult completed(
+                String requestBodyJson,
+                List<Object> messagesToAppend,
+                StepOutcome outcome,
+                String extractedColumnsJson) {
+            return new TurnResult(
                     TurnControl.CONTINUE,
                     ExecutionStatus.SUCCESS,
-                    true,
                     requestBodyJson,
-                    outcome.statusCode(),
-                    outcome.responseBody(),
-                    outcome.retryCount());
+                    outcome,
+                    messagesToAppend,
+                    extractedColumnsJson);
         }
     }
 
     /**
-     * Runs one conversation turn: projects turn {@code i}'s data, appends the new user turn to {@code history},
-     * re-sends the full history non-streaming, and on a 2xx appends the assistant reply and extracts response
-     * columns into {@code columnAccumulator}. Mutates the shared {@code history} and {@code columnAccumulator};
-     * returns a {@link TurnStep} describing whether the conversation should continue.
+     * Runs one conversation turn without mutating shared state: it re-sends the accumulated {@code history} plus
+     * this turn's new user message(s) non-streaming, and on a 2xx reads the assistant reply and extracts response
+     * columns. The messages to append and the extracted columns are returned in the {@link TurnResult} for the
+     * caller to apply; {@code history} is read only to build the request body.
      */
-    private TurnStep runTurn(
-            TurnInputs turnInputs, int i, List<Object> history, MultiStepColumnAccumulator columnAccumulator) {
-        if (turnInputs.context().getCancellationSignal().get()) {
-            return TurnStep.abortBeforeRequest(ExecutionStatus.ERROR);
+    private TurnResult runTurn(TurnDefinition turn, List<Object> history) {
+        if (turn.context().getCancellationSignal().get()) {
+            return TurnResult.abortBeforeRequest(ExecutionStatus.ERROR);
         }
 
-        // (1) Project this turn's data: array-valued bound columns → element i; scalars/constants broadcast.
-        final Map<String, Object> perTurnData = turnInputs.turnPlan().project(turnInputs.testCaseData(), i);
         final ResolvedRequestDto resolved =
-                resolvedRequestService.resolve(turnInputs.template(), turnInputs.bindings(), perTurnData);
+                resolvedRequestService.resolve(turn.template(), turn.bindings(), turn.turnData());
         final ResolvedBodyDto resolvedBody = resolved.getBody();
         if (!(resolvedBody instanceof ResolvedJsonBodyDto jsonBody) || jsonBody.getContent() == null) {
             log.warn(
                     "Multi-step step {} for test case {} has no JSON body with a messages array",
-                    i,
-                    turnInputs.input().getTestCaseId());
-            return TurnStep.abortBeforeRequest(ExecutionStatus.ERROR);
+                    turn.index(),
+                    turn.testCaseId());
+            return TurnResult.abortBeforeRequest(ExecutionStatus.ERROR);
         }
 
-        // (2) Append this step's new turn (template messages) verbatim to the running history.
         final Map<String, Object> content = jsonBody.getContent();
         final Object turnMessages = content.get(MESSAGES_FIELD);
         if (!(turnMessages instanceof List<?> messages)) {
             log.warn(
                     "Multi-step step {} for test case {} resolved a non-array 'messages'; failing this test case",
-                    i,
-                    turnInputs.input().getTestCaseId());
-            return TurnStep.abortBeforeRequest(ExecutionStatus.ERROR);
+                    turn.index(),
+                    turn.testCaseId());
+            return TurnResult.abortBeforeRequest(ExecutionStatus.ERROR);
         }
-        history.addAll(messages);
-        // (3) Overwrite messages with the full history; force non-streaming.
-        content.put(MESSAGES_FIELD, new ArrayList<>(history));
-        content.put("stream", false);
-        final String requestBodyJson = serializeBody(content);
 
-        final String path = urlBuilder.buildUrl(turnInputs.deploymentId(), resolved.getUrl());
+        // Re-send the full accumulated history plus this turn's new user message(s); force non-streaming.
+        final List<Object> newMessages = new ArrayList<>(messages);
+        final List<Object> fullMessages = new ArrayList<>(history);
+        fullMessages.addAll(newMessages);
+        content.put(MESSAGES_FIELD, fullMessages);
+        content.put("stream", false);
+
+        final String requestBodyJson = serializeBody(content);
+        final String path = urlBuilder.buildUrl(turn.deploymentId(), resolved.getUrl());
         final HttpHeaders headers = buildHeaders(resolved.getHeaders());
         final MultiValueMap<String, String> queryParams = buildQueryParams(resolved.getQueryParams());
         final SerializedBody serialized = serializerRegistry.serialize(jsonBody);
@@ -280,30 +289,28 @@ public class MultiStepConversationExecutor {
         }
 
         final StepOutcome outcome = deploymentTurnInvoker.invoke(
-                turnInputs.context(), turnInputs.method(), path, headers, queryParams, serialized.body());
+                turn.context(), turn.method(), path, headers, queryParams, serialized.body());
         if (outcome.status() != ExecutionStatus.SUCCESS) {
             // Fail-fast: keep the partial history (incl. this failed turn's user message); no extraction.
-            return TurnStep.abortAfterRequest(outcome.status(), requestBodyJson, outcome);
+            return TurnResult.abortAfterRequest(outcome.status(), requestBodyJson, newMessages, outcome);
         }
 
-        // (4) Append the assistant reply — the full choices[0].message object, verbatim — to history.
         // Absence of a message object (not merely missing content) aborts the conversation.
         final JsonNode assistantMessage = extractAssistantMessage(outcome.responseBody());
         if (assistantMessage == null) {
             log.warn(
                     "Multi-step step {} for test case {} returned 2xx with no assistant message object",
-                    i,
-                    turnInputs.input().getTestCaseId());
-            return TurnStep.abortAfterRequest(ExecutionStatus.ERROR, requestBodyJson, outcome);
+                    turn.index(),
+                    turn.testCaseId());
+            return TurnResult.abortAfterRequest(ExecutionStatus.ERROR, requestBodyJson, newMessages, outcome);
         }
-        history.add(assistantMessage);
 
-        // (5) Extract response columns for this completed step and append each column's value to its array.
+        // Append the assistant reply (the full choices[0].message object, verbatim) after the user turn.
+        final List<Object> messagesToAppend = new ArrayList<>(newMessages);
+        messagesToAppend.add(assistantMessage);
         final ResponseColumnExtractor.ExtractionResult extraction =
-                responseColumnExtractor.extract(turnInputs.responseColumns(), outcome.responseBody());
-        columnAccumulator.addStep(turnInputs.responseColumns(), extraction.extractedColumns());
-
-        return TurnStep.completed(requestBodyJson, outcome);
+                responseColumnExtractor.extract(turn.responseColumns(), outcome.responseBody());
+        return TurnResult.completed(requestBodyJson, messagesToAppend, outcome, extraction.extractedColumns());
     }
 
     /**

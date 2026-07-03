@@ -34,7 +34,10 @@ class TestCaseFieldBindingsBuilderTest {
 
     private Map<String, QueryFieldBinding> buildFor(List<FieldDefinitionDto> schema) {
         builder = new TestCaseFieldBindingsBuilder(
-                new JooqTableSchemaResolver(), new PostgresJsonPathAccessor(), datasetSchemaProvider);
+                new JooqTableSchemaResolver(),
+                new PostgresJsonPathAccessor(),
+                datasetSchemaProvider,
+                new SchemaFieldTypeMapper());
         when(datasetSchemaProvider.getSchema(datasetId)).thenReturn(schema);
         return builder.build(datasetId);
     }
@@ -52,24 +55,5 @@ class TestCaseFieldBindingsBuilderTest {
         // flattened data::<field> entries carry the dataset-declared type
         assertThat(bindings.get("data::category").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("data::tags").type()).isEqualTo(QueryFieldType.ARRAY);
-    }
-
-    @Test
-    @DisplayName("maps dataset schema types to the DSL field-type vocabulary")
-    void mapsFieldTypes() {
-        assertThat(TestCaseFieldBindingsBuilder.mapFieldType(SchemaFieldType.STRING))
-                .isEqualTo(QueryFieldType.STRING);
-        assertThat(TestCaseFieldBindingsBuilder.mapFieldType(SchemaFieldType.INTEGER))
-                .isEqualTo(QueryFieldType.LONG);
-        assertThat(TestCaseFieldBindingsBuilder.mapFieldType(SchemaFieldType.NUMBER))
-                .isEqualTo(QueryFieldType.DECIMAL);
-        assertThat(TestCaseFieldBindingsBuilder.mapFieldType(SchemaFieldType.BOOLEAN))
-                .isEqualTo(QueryFieldType.BOOLEAN);
-        assertThat(TestCaseFieldBindingsBuilder.mapFieldType(SchemaFieldType.ARRAY))
-                .isEqualTo(QueryFieldType.ARRAY);
-        assertThat(TestCaseFieldBindingsBuilder.mapFieldType(SchemaFieldType.OBJECT))
-                .isEqualTo(QueryFieldType.OBJECT);
-        assertThat(TestCaseFieldBindingsBuilder.mapFieldType(SchemaFieldType.FILE))
-                .isEqualTo(QueryFieldType.STRING);
     }
 }

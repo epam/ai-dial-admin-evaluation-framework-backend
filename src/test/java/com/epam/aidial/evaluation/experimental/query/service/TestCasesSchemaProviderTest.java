@@ -34,7 +34,8 @@ class TestCasesSchemaProviderTest {
 
     @BeforeEach
     void setUp() {
-        provider = new TestCasesSchemaProvider(datasetSchemaProvider, new JooqTableSchemaResolver());
+        provider = new TestCasesSchemaProvider(
+                datasetSchemaProvider, new SchemaFieldTypeMapper(), new JooqTableSchemaResolver());
     }
 
     @Test

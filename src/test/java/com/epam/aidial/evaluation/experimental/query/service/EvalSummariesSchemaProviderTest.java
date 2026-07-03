@@ -190,6 +190,7 @@ class EvalSummariesSchemaProviderTest {
                 testSuiteRunService,
                 runMetricSnapshotRepository,
                 outputSchemaFieldExtractor,
+                new SchemaFieldTypeMapper(),
                 new JooqTableSchemaResolver());
     }
 

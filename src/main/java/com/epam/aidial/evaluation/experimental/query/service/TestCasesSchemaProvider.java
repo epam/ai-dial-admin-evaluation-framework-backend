@@ -35,11 +35,15 @@ public class TestCasesSchemaProvider implements QueryableEntitySchemaProvider {
     private static final QueryEntityDto DESCRIPTOR = new QueryEntityDto(ENTITY_NAME, true, DATASET_ID_FIELD);
 
     private final DatasetSchemaProvider datasetSchemaProvider;
+    private final SchemaFieldTypeMapper schemaFieldTypeMapper;
     private final List<QuerySchemaFieldDto> baseSchema;
 
     public TestCasesSchemaProvider(
-            DatasetSchemaProvider datasetSchemaProvider, JooqTableSchemaResolver schemaResolver) {
+            DatasetSchemaProvider datasetSchemaProvider,
+            SchemaFieldTypeMapper schemaFieldTypeMapper,
+            JooqTableSchemaResolver schemaResolver) {
         this.datasetSchemaProvider = datasetSchemaProvider;
+        this.schemaFieldTypeMapper = schemaFieldTypeMapper;
         this.baseSchema = schemaResolver.resolve(TEST_CASES);
     }
 
@@ -62,9 +66,7 @@ public class TestCasesSchemaProvider implements QueryableEntitySchemaProvider {
                 .toList());
         for (final FieldDefinitionDto field : schema) {
             fields.add(new QuerySchemaFieldDto(
-                    DATA_COLUMN_PREFIX + field.getName(),
-                    TestCaseFieldBindingsBuilder.mapFieldType(field.getType()),
-                    DATA_FIELD));
+                    DATA_COLUMN_PREFIX + field.getName(), schemaFieldTypeMapper.map(field.getType()), DATA_FIELD));
         }
         return List.copyOf(fields);
     }

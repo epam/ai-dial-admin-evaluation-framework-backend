@@ -30,4 +30,9 @@ public enum QueryFieldType {
     public String code() {
         return code;
     }
+
+    /** Whether this type is a JSONB field surfaced as-is (an {@code object} or {@code array}). */
+    public boolean isJsonb() {
+        return this == OBJECT || this == ARRAY;
+    }
 }

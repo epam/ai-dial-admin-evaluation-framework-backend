@@ -167,6 +167,11 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
      */
     public final TableField<TestSuitesRecord, JSONB> OVERALL_SCORE = createField(DSL.name("overall_score"), SQLDataType.JSONB, this, "");
 
+    /**
+     * The column <code>meta.test_suites.test_case_filter</code>.
+     */
+    public final TableField<TestSuitesRecord, JSONB> TEST_CASE_FILTER = createField(DSL.name("test_case_filter"), SQLDataType.JSONB, this, "");
+
     private TestSuites(Name alias, Table<TestSuitesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

@@ -81,7 +81,8 @@ public class TestSuiteRunService {
         }
 
         List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());
-        long numberOfTestCases = runnableTestCaseCounter.countRunnable(testSuite.getDatasetId(), disabledIds);
+        long numberOfTestCases = runnableTestCaseCounter.countRunnable(
+                testSuite.getDatasetId(), testSuite.getTestCaseFilter(), disabledIds);
         if (numberOfTestCases == 0) {
             throw new InvalidOperationException("Suite has no valid and enabled test cases");
         }

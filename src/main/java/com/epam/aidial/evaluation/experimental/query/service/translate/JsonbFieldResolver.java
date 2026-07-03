@@ -9,7 +9,6 @@ import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConsta
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.repository.sql.json.JsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
-import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -116,7 +115,7 @@ public class JsonbFieldResolver {
     @SuppressWarnings("unchecked")
     private static Field<JSONB> jsonbColumn(Map<String, QueryFieldBinding> bindings, String baseField) {
         final QueryFieldBinding binding = bindings.get(baseField);
-        if (binding == null || (binding.type() != QueryFieldType.OBJECT && binding.type() != QueryFieldType.ARRAY)) {
+        if (binding == null || !binding.type().isJsonb()) {
             return null;
         }
         return (Field<JSONB>) binding.field();

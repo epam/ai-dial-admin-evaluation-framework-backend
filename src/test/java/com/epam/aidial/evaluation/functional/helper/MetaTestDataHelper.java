@@ -325,6 +325,18 @@ public class MetaTestDataHelper {
         testSuiteRepository.updateIsValid(suiteId, false);
     }
 
+    /**
+     * Sets the suite's {@code test_case_filter} JSONB directly, bypassing the write-time validation on
+     * the suite API so tests can pin a filter on an already-configured runnable suite (whose dataset
+     * and test cases must be preserved — the suite PUT path would rebind the dataset).
+     */
+    public void setSuiteTestCaseFilter(UUID suiteId, String filterJson) {
+        metaDsl.update(TEST_SUITES)
+                .set(TEST_SUITES.TEST_CASE_FILTER, filterJson != null ? toJsonb(filterJson) : null)
+                .where(TEST_SUITES.ID.eq(suiteId.toString()))
+                .execute();
+    }
+
     public void backdateRunUpdatedAt(UUID runId, long updatedAtMs) {
         metaDsl.update(TEST_SUITE_RUNS)
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, updatedAtMs)

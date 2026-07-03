@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
+import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -19,7 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class RunnableTestCaseCounterTest {
 
     @Mock
-    private TestCaseRepository testCaseRepository;
+    private RunnableTestCaseSelector runnableTestCaseSelector;
 
     @InjectMocks
     private RunnableTestCaseCounter counter;
@@ -27,21 +27,22 @@ class RunnableTestCaseCounterTest {
     private final UUID datasetId = UUID.randomUUID();
 
     @Test
-    @DisplayName("countRunnable delegates to the repository with the disabled-id exclusion")
+    @DisplayName("countRunnable delegates to the selector with the filter and disabled-id exclusion")
     void countRunnableDelegates() {
         List<UUID> disabled = List.of(UUID.randomUUID());
-        when(testCaseRepository.countValidByDatasetIdExcludingIds(datasetId, disabled))
+        String filterJson = "{\"op\":\"co\",\"args\":[]}";
+        when(runnableTestCaseSelector.countRunnable(datasetId, filterJson, disabled))
                 .thenReturn(5L);
 
-        assertThat(counter.countRunnable(datasetId, disabled)).isEqualTo(5L);
+        assertThat(counter.countRunnable(datasetId, filterJson, disabled)).isEqualTo(5L);
     }
 
     @Test
     @DisplayName("countRunnable treats null disabled ids as an empty exclusion list")
     void countRunnableNullDisabled() {
-        when(testCaseRepository.countValidByDatasetIdExcludingIds(eq(datasetId), eq(List.of())))
+        when(runnableTestCaseSelector.countRunnable(eq(datasetId), eq(null), eq(List.of())))
                 .thenReturn(2L);
 
-        assertThat(counter.countRunnable(datasetId, null)).isEqualTo(2L);
+        assertThat(counter.countRunnable(datasetId, null, null)).isEqualTo(2L);
     }
 }

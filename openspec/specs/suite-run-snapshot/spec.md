@@ -38,7 +38,7 @@ Status: **Planned**
 - **THEN** `TestSuiteEvaluationJob.resolveSnapshot()` SHALL log a warning and throw `UnsupportedSnapshotVersionException`; the run execution SHALL halt. This is defense-in-depth — no stored snapshot reaches this branch after the V1.22 backfill, but a future producer writing `"3"` (or a corrupted row) would.
 
 ### Requirement: Snapshot phase execution
-The snapshot phase SHALL execute atomically before the run transitions to RUNNING. The phase reads the live `TestSuite` and the live `Dataset` referenced by the suite, and pages through the dataset's test cases excluding those in the suite's `disabledTestCaseIds`.
+The snapshot phase SHALL execute atomically before the run transitions to RUNNING. The phase reads the live `TestSuite` and the live `Dataset` referenced by the suite, and pages through the dataset's test cases excluding those in the suite's `disabledTestCaseIds` and, when the suite has a `testCaseFilter`, keeping only the test cases that match it.
 Status: **Planned**
 
 #### Scenario: Snapshot phase sequence
@@ -49,12 +49,16 @@ Status: **Planned**
   3. Load the live `Dataset` referenced by `testSuite.datasetId`; throw `SnapshotDatasetMissingException` (new error code) if absent
   4. Build `SuiteSnapshotDto` via `SuiteSnapshotBuilder.build(testSuite, dataset)`; the builder sources `testCaseSchema` from the dataset and populates `datasetRef = {id: dataset.id, version: dataset.version, name: dataset.name}`
   5. Serialize snapshot to JSON; throw `IllegalStateException` on serialization error
-  6. Page through valid test cases in the dataset (`findValidByDatasetIdExcludingIds(datasetId, testSuite.disabledTestCaseIds, offset, SNAPSHOT_PAGE_SIZE = 100)`) and batch-insert into `test_case_run_inputs`
+  6. Page through the runnable test cases in the dataset — valid, excluded by `testSuite.disabledTestCaseIds`, and matching `testSuite.testCaseFilter` when set — and batch-insert into `test_case_run_inputs`
   7. Call `updateSuiteSnapshot(runId, snapshotJson)` and `updateNumberOfTestCases(runId, totalInputs)`
 
 #### Scenario: Snapshot excludes disabled test cases
 - **WHEN** the suite's `disabledTestCaseIds = [tc-2, tc-5]` and the dataset has test cases `[tc-1, tc-2, tc-3, tc-4, tc-5]`
 - **THEN** `test_case_run_inputs` for the run SHALL contain rows for `[tc-1, tc-3, tc-4]` only; `numberOfTestCases = 3`
+
+#### Scenario: Snapshot honors the suite testCaseFilter
+- **WHEN** the suite has `testCaseFilter` matching only `[tc-1, tc-4]` among the valid, non-excluded test cases `[tc-1, tc-3, tc-4]`
+- **THEN** `test_case_run_inputs` SHALL contain rows for `[tc-1, tc-4]` only; `numberOfTestCases = 2`; a null `testCaseFilter` SHALL impose no additional restriction
 
 #### Scenario: Stale disabled ID is silently ignored
 - **WHEN** the suite's `disabledTestCaseIds = [tc-deleted]` and `tc-deleted` is no longer in the dataset
@@ -65,8 +69,8 @@ Status: **Planned**
 - **THEN** it SHALL NOT appear in `test_case_run_inputs` (only `valid = true` rows are materialized)
 
 #### Scenario: Snapshot row ordering is deterministic
-- **WHEN** the snapshot phase pages through valid test cases via `TestCaseRepository.findValidByDatasetIdExcludingIds(datasetId, disabledIds, offset, pageSize)`
-- **THEN** the implementation SHALL `ORDER BY created_at_ms ASC, id ASC` so that `test_case_run_inputs.position` is assigned in a stable, repeatable order across attempts; this matches the legacy behavior of `findEnabledValidByTestSuiteId` (which ordered by `CREATED_AT_MS asc, ID asc`) so the snapshot of a given (suite, dataset) pair has the same row ordering before and after the migration. See task 10.4 (and 7.3/7.4a for the repository signatures).
+- **WHEN** the snapshot phase pages through runnable test cases
+- **THEN** the implementation SHALL `ORDER BY created_at_ms ASC, id ASC` so that `test_case_run_inputs.position` is assigned in a stable, repeatable order across attempts; this matches the legacy behavior of `findEnabledValidByTestSuiteId` (which ordered by `CREATED_AT_MS asc, ID asc`) so the snapshot of a given (suite, dataset) pair has the same row ordering before and after the migration.
 
 #### Scenario: Retry on serialization failure
 - **WHEN** snapshot transaction fails with SQL state `40001`
@@ -154,3 +158,9 @@ Status: **Planned**
 #### Scenario: Run with NULL suite_snapshot is unaffected by backfill
 - **WHEN** a `test_suite_runs` row has `suite_snapshot IS NULL` (created before the snapshot feature existed)
 - **THEN** the backfill step SHALL leave it as NULL; the legacy-fallback synthesis path in `resolveSnapshot` (which builds a transient v2 snapshot from the live suite + dataset) continues to handle it
+
+## Implementation Notes
+- `TestSuiteEvaluationJob.attemptSnapshot` selects via `RunnableTestCaseSelector.loadRunnablePage`
+  (translation-layer reuse), replacing the direct
+  `TestCaseRepository.findValidByDatasetIdExcludingIds` call; null `testCaseFilter` short-circuits to
+  the prior valid + excluded predicate. See `suite-test-case-filter`.

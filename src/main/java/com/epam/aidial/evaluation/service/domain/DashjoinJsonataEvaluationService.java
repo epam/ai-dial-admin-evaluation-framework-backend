@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -27,28 +28,31 @@ public class DashjoinJsonataEvaluationService implements JsonataEvaluationServic
 
     @Override
     public void validateExpression(String expression) {
-        try {
-            jsonata(expression);
-        } catch (JException ex) {
-            throw new ValidationException("Invalid JSONata expression: " + ex.getMessage());
-        }
+        tryCompile(expression);
     }
 
     @Override
     public Object evaluate(String expression, String jsonData) {
-        Jsonata compiled;
-        try {
-            compiled = jsonata(expression);
-        } catch (JException ex) {
-            throw new ValidationException("Invalid JSONata expression: " + ex.getMessage());
-        }
+        final Jsonata compiled = tryCompile(expression);
 
         if (jsonData == null || jsonData.isBlank()) {
             return null;
         }
 
+        return tryEvaluate(jsonData, compiled);
+    }
+
+    private static @NonNull Jsonata tryCompile(String expression) {
         try {
-            Object data = objectMapper.readValue(jsonData, Object.class);
+            return jsonata(expression);
+        } catch (JException ex) {
+            throw new ValidationException("Invalid JSONata expression: " + ex.getMessage());
+        }
+    }
+
+    private Object tryEvaluate(String jsonData, Jsonata compiled) {
+        try {
+            final Object data = objectMapper.readValue(jsonData, Object.class);
             return compiled.evaluate(data);
         } catch (JException ex) {
             throw new IllegalStateException("JSONata evaluation failed: " + ex.getMessage(), ex);

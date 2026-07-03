@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -157,17 +158,7 @@ public class MetricDefinitionValidationService {
 
                 // Check 3b: INVALID_EXPRESSION — optional jsonataExpression must be syntactically valid JSONata
                 String jsonataExpression = testCaseSource.getJsonataExpression();
-                if (jsonataExpression != null && !jsonataExpression.isBlank()) {
-                    try {
-                        jsonataEvaluationService.validateExpression(jsonataExpression);
-                    } catch (ValidationException e) {
-                        warnings.add(buildWarning(
-                                property,
-                                ValidationWarningCode.INVALID_EXPRESSION,
-                                bindingListPath,
-                                "Invalid JSONata expression for test case binding: " + e.getMessage()));
-                    }
-                }
+                validateJsonata(jsonataExpression, property, bindingListPath).ifPresent(warnings::add);
             }
 
             // Check 4: UNRESOLVED_REFERENCE (response)
@@ -183,17 +174,7 @@ public class MetricDefinitionValidationService {
 
                 // Check 4b: INVALID_EXPRESSION — optional jsonataExpression must be syntactically valid JSONata
                 String jsonataExpression = responseSource.getJsonataExpression();
-                if (jsonataExpression != null && !jsonataExpression.isBlank()) {
-                    try {
-                        jsonataEvaluationService.validateExpression(jsonataExpression);
-                    } catch (ValidationException e) {
-                        warnings.add(buildWarning(
-                                property,
-                                ValidationWarningCode.INVALID_EXPRESSION,
-                                bindingListPath,
-                                "Invalid JSONata expression for response binding: " + e.getMessage()));
-                    }
-                }
+                validateJsonata(jsonataExpression, property, bindingListPath).ifPresent(warnings::add);
             }
         }
 
@@ -209,6 +190,22 @@ public class MetricDefinitionValidationService {
                 }
             }
         }
+    }
+
+    private Optional<ValidationWarningDto> validateJsonata(String expression, String property, String path) {
+        if (expression != null && !expression.isBlank()) {
+            try {
+                jsonataEvaluationService.validateExpression(expression);
+            } catch (ValidationException e) {
+                return Optional.of(buildWarning(
+                        property,
+                        ValidationWarningCode.INVALID_EXPRESSION,
+                        path,
+                        "Invalid JSONata expression for binding: " + e.getMessage()));
+            }
+        }
+
+        return Optional.empty();
     }
 
     private Set<String> extractSchemaPropertyNames(String schemaJson) {

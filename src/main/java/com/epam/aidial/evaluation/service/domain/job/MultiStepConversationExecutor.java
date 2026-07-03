@@ -1,10 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
-import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
-import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
-import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
@@ -21,15 +18,10 @@ import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import java.nio.charset.StandardCharsets;
-import java.time.Clock;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,8 +34,6 @@ import org.springframework.util.MultiValueMap;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Multi-step (multi-turn) conversation executor (POC). Drives a data-driven sequence of chat-completions
@@ -79,14 +69,15 @@ public class MultiStepConversationExecutor {
     private static final String MESSAGES_FIELD = "messages";
 
     private final ResolvedRequestService resolvedRequestService;
-    private final DialCoreDeploymentInvoker deploymentInvoker;
     private final DialCoreUrlBuilder urlBuilder;
     private final RequestBodySerializerRegistry serializerRegistry;
     private final ResponseColumnExtractor responseColumnExtractor;
     private final EvaluationRunProperties evaluationRunProperties;
     private final JsonbMapper jsonbMapper;
     private final ObjectMapper objectMapper;
-    private final Clock clock;
+    private final ConversationTurnPlanner turnPlanner;
+    private final MultiStepResultAssembler resultAssembler;
+    private final DeploymentTurnInvoker deploymentTurnInvoker;
 
     /**
      * Runs the full conversation for one test case. The whole conversation executes inside the caller's
@@ -105,20 +96,17 @@ public class MultiStepConversationExecutor {
                 ? jsonbMapper.mapInputBindings(input.getInputBindingsOverride())
                 : context.getSnapshotInputBindings();
         final Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
-        final RequestTemplateDto template = input.getRequestTemplateOverride() != null
-                ? jsonbMapper.mapRequestTemplate(input.getRequestTemplateOverride())
-                : context.getSnapshotRequestTemplate();
 
         // Turn count is derived per test case from the array-valued bound columns. A data problem here
         // (no array column, mismatched lengths, over the cap) fails only this test case.
-        final TurnPlan turnPlan = resolveTurnCount(bindings, testCaseData);
+        final TurnPlan turnPlan = turnPlanner.plan(bindings, testCaseData);
         if (turnPlan.hasError()) {
             log.warn(
                     "Multi-step turn resolution failed for test case {} in suite {}: {}",
                     input.getTestCaseId(),
                     context.getSuiteId(),
                     turnPlan.error());
-            return errorResult(input, context, runIndex, traceId, execStartedAtMs, turnPlan.error());
+            return resultAssembler.dataError(input, context, runIndex, traceId, execStartedAtMs, turnPlan.error());
         }
 
         final String deploymentId = context.getSnapshotDeploymentRef() != null
@@ -128,9 +116,13 @@ public class MultiStepConversationExecutor {
                 ? context.getSnapshotEndpointRef().getMethod()
                 : null;
 
-        final List<Object> history = new ArrayList<>();
         // Column-major accumulation: column name → array of that column's per-step extracted values.
-        final Map<String, ArrayNode> columnArrays = new LinkedHashMap<>();
+        final RequestTemplateDto template = input.getRequestTemplateOverride() != null
+                ? jsonbMapper.mapRequestTemplate(input.getRequestTemplateOverride())
+                : context.getSnapshotRequestTemplate();
+
+        final var turnInputs = new TurnInputs(
+                context, input, template, bindings, testCaseData, turnPlan, deploymentId, method, responseColumns);
 
         ExecutionStatus finalStatus = ExecutionStatus.SUCCESS;
         Integer lastStatusCode = null;
@@ -138,81 +130,23 @@ public class MultiStepConversationExecutor {
         String lastResponseBodyJson = null;
         int lastRetryCount = 0;
 
+        final List<Object> history = new ArrayList<>();
+        final var columnAccumulator = new MultiStepColumnAccumulator(objectMapper);
         try {
             for (int i = 0; i < turnPlan.turnCount(); i++) {
-                if (context.getCancellationSignal().get()) {
-                    finalStatus = ExecutionStatus.ERROR;
+                final TurnStep step = runTurn(turnInputs, i, history, columnAccumulator);
+                // Once a turn issued its HTTP request, the last-turn trackers reflect that turn verbatim
+                // (including nulls, e.g. a timeout); a turn that aborts before the request leaves them untouched.
+                if (step.httpAttempted()) {
+                    lastRequestBodyJson = step.requestBodyJson();
+                    lastStatusCode = step.statusCode();
+                    lastResponseBodyJson = step.responseBodyJson();
+                    lastRetryCount = step.retryCount();
+                }
+                if (step.control() == TurnControl.ABORT) {
+                    finalStatus = step.status();
                     break;
                 }
-
-                // (1) Project this turn's data: array-valued bound columns → element i; scalars/constants broadcast.
-                final Map<String, Object> perTurnData = projectTurnData(testCaseData, turnPlan.iteratingFields(), i);
-                final ResolvedRequestDto resolved = resolvedRequestService.resolve(template, bindings, perTurnData);
-                final ResolvedBodyDto resolvedBody = resolved.getBody();
-                if (!(resolvedBody instanceof ResolvedJsonBodyDto jsonBody) || jsonBody.getContent() == null) {
-                    log.warn(
-                            "Multi-step step {} for test case {} has no JSON body with a messages array",
-                            i,
-                            input.getTestCaseId());
-                    finalStatus = ExecutionStatus.ERROR;
-                    break;
-                }
-
-                // (2) Append this step's new turn (template messages) verbatim to the running history.
-                final Map<String, Object> content = jsonBody.getContent();
-                final Object turnMessages = content.get(MESSAGES_FIELD);
-                if (!(turnMessages instanceof List<?> turn)) {
-                    log.warn(
-                            "Multi-step step {} for test case {} resolved a non-array 'messages'; "
-                                    + "failing this test case",
-                            i,
-                            input.getTestCaseId());
-                    finalStatus = ExecutionStatus.ERROR;
-                    break;
-                }
-                history.addAll(turn);
-                // (3) Overwrite messages with the full history; force non-streaming.
-                content.put(MESSAGES_FIELD, new ArrayList<>(history));
-                content.put("stream", false);
-                lastRequestBodyJson = serializeBody(content);
-
-                final String path = urlBuilder.buildUrl(deploymentId, resolved.getUrl());
-                final HttpHeaders headers = buildHeaders(resolved.getHeaders());
-                final MultiValueMap<String, String> queryParams = buildQueryParams(resolved.getQueryParams());
-                final SerializedBody serialized = serializerRegistry.serialize(jsonBody);
-                if (!MediaType.MULTIPART_FORM_DATA.equals(serialized.contentType())) {
-                    headers.setContentType(serialized.contentType());
-                }
-
-                final StepOutcome outcome =
-                        invokeWithRetries(context, method, path, headers, queryParams, serialized.body());
-                lastStatusCode = outcome.statusCode();
-                lastRetryCount = outcome.retryCount();
-                lastResponseBodyJson = outcome.responseBody();
-
-                if (outcome.status() != ExecutionStatus.SUCCESS) {
-                    // Fail-fast: keep the partial history (incl. this failed turn's user message); no extraction.
-                    finalStatus = outcome.status();
-                    break;
-                }
-
-                // (4) Append the assistant reply — the full choices[0].message object, verbatim — to history.
-                // Absence of a message object (not merely missing content) aborts the conversation.
-                final JsonNode assistantMessage = extractAssistantMessage(outcome.responseBody());
-                if (assistantMessage == null) {
-                    log.warn(
-                            "Multi-step step {} for test case {} returned 2xx with no assistant message object",
-                            i,
-                            input.getTestCaseId());
-                    finalStatus = ExecutionStatus.ERROR;
-                    break;
-                }
-                history.add(assistantMessage);
-
-                // (5) Extract response columns for this completed step and append each column's value to its array.
-                final ResponseColumnExtractor.ExtractionResult extraction =
-                        responseColumnExtractor.extract(responseColumns, outcome.responseBody());
-                accumulateStep(columnArrays, responseColumns, extraction.extractedColumns());
             }
         } catch (RuntimeException e) {
             log.warn(
@@ -224,231 +158,152 @@ public class MultiStepConversationExecutor {
             finalStatus = ExecutionStatus.ERROR;
         }
 
-        final long execCompletedAtMs = clock.millis();
-        return TestCaseRunResult.builder()
-                .id(UUID.randomUUID())
-                .testSuiteRunId(context.getRunId())
-                .testSuiteId(context.getSuiteId())
-                .testCaseId(input.getTestCaseId())
-                .testCaseName(input.getTestCaseName())
-                .runIndex(runIndex)
-                .testCaseData(input.getTestCaseData())
-                .requestBody(lastRequestBodyJson)
-                .responseBody(lastResponseBodyJson)
-                .responseStatusCode(lastStatusCode)
-                .executionStatus(finalStatus)
-                .execStartedAtMs(execStartedAtMs)
-                .execCompletedAtMs(execCompletedAtMs)
-                .execDurationMs(execCompletedAtMs - execStartedAtMs)
-                .traceId(traceId)
-                .extractedColumns(serializeColumnMajor(columnArrays))
-                .extractionWarnings("[]")
-                .retryCount(lastRetryCount)
-                .logDetails(null)
-                .createdAtMs(context.getCreatedAtMs())
-                .build();
+        final var outcome = new ConversationOutcome(
+                finalStatus,
+                lastStatusCode,
+                lastRequestBodyJson,
+                lastResponseBodyJson,
+                lastRetryCount,
+                columnAccumulator.toJson());
+        return resultAssembler.success(input, context, runIndex, traceId, execStartedAtMs, outcome);
     }
 
-    /** Resolved turn count for a test case: a valid count with the iterating field names, or an error message. */
-    private record TurnPlan(int turnCount, Set<String> iteratingFields, String error) {
-        static TurnPlan of(int turnCount, Set<String> iteratingFields) {
-            return new TurnPlan(turnCount, iteratingFields, null);
+    /** Per-conversation invariants shared by every turn (everything except the running history / step index). */
+    private record TurnInputs(
+            EvaluationContext context,
+            TestCaseRunInput input,
+            RequestTemplateDto template,
+            List<InputBindingDto> bindings,
+            Map<String, Object> testCaseData,
+            TurnPlan turnPlan,
+            String deploymentId,
+            HttpMethod method,
+            List<ResponseColumnDefinitionDto> responseColumns) {}
+
+    private enum TurnControl {
+        CONTINUE,
+        ABORT
+    }
+
+    /**
+     * Outcome of a single turn. {@code control} tells the loop whether to continue or abort (with the
+     * terminal {@code status}). {@code httpAttempted} is true once the turn issued its HTTP request — the
+     * caller then adopts this turn's request/response/status/retry verbatim; a turn that aborts earlier
+     * leaves the last-turn trackers untouched.
+     */
+    private record TurnStep(
+            TurnControl control,
+            ExecutionStatus status,
+            boolean httpAttempted,
+            String requestBodyJson,
+            Integer statusCode,
+            String responseBodyJson,
+            Integer retryCount) {
+
+        /** Aborted before any HTTP request (cancellation, missing JSON body, non-array messages). */
+        static TurnStep abortBeforeRequest(ExecutionStatus status) {
+            return new TurnStep(TurnControl.ABORT, status, false, null, null, null, null);
         }
 
-        static TurnPlan error(String message) {
-            return new TurnPlan(0, Set.of(), message);
+        /** Aborted after the HTTP request (non-success response, or 2xx with no assistant message). */
+        static TurnStep abortAfterRequest(ExecutionStatus status, String requestBodyJson, StepOutcome outcome) {
+            return new TurnStep(
+                    TurnControl.ABORT,
+                    status,
+                    true,
+                    requestBodyJson,
+                    outcome.statusCode(),
+                    outcome.responseBody(),
+                    outcome.retryCount());
         }
 
-        boolean hasError() {
-            return error != null;
+        /** Turn completed: assistant reply appended and response columns extracted. */
+        static TurnStep completed(String requestBodyJson, StepOutcome outcome) {
+            return new TurnStep(
+                    TurnControl.CONTINUE,
+                    ExecutionStatus.SUCCESS,
+                    true,
+                    requestBodyJson,
+                    outcome.statusCode(),
+                    outcome.responseBody(),
+                    outcome.retryCount());
         }
     }
 
     /**
-     * Derives the per-test-case turn count from the array-valued columns referenced by {@code dataField}
-     * bindings. All such columns must share a single non-zero length within the cap; scalar columns and
-     * {@code constantValue} bindings are ignored here (they broadcast). Returns an error plan for a
-     * length mismatch, an empty/absent array column, or a count over {@code MAX_CONVERSATION_STEPS}.
+     * Runs one conversation turn: projects turn {@code i}'s data, appends the new user turn to {@code history},
+     * re-sends the full history non-streaming, and on a 2xx appends the assistant reply and extracts response
+     * columns into {@code columnAccumulator}. Mutates the shared {@code history} and {@code columnAccumulator};
+     * returns a {@link TurnStep} describing whether the conversation should continue.
      */
-    private TurnPlan resolveTurnCount(List<InputBindingDto> bindings, Map<String, Object> data) {
-        final Map<String, Integer> arrayFieldLengths = new LinkedHashMap<>();
-        if (bindings != null) {
-            for (InputBindingDto binding : bindings) {
-                if (binding == null
-                        || binding.getDataField() == null
-                        || binding.getDataField().isBlank()) {
-                    continue;
-                }
-                if (data.get(binding.getDataField()) instanceof List<?> list) {
-                    arrayFieldLengths.put(binding.getDataField(), list.size());
-                }
-            }
+    private TurnStep runTurn(
+            TurnInputs turnInputs, int i, List<Object> history, MultiStepColumnAccumulator columnAccumulator) {
+        if (turnInputs.context().getCancellationSignal().get()) {
+            return TurnStep.abortBeforeRequest(ExecutionStatus.ERROR);
         }
-        if (arrayFieldLengths.isEmpty()) {
-            return TurnPlan.error(
-                    "Multi-step suite requires at least one array-valued bound column; none found in test-case data");
+
+        // (1) Project this turn's data: array-valued bound columns → element i; scalars/constants broadcast.
+        final Map<String, Object> perTurnData = turnInputs.turnPlan().project(turnInputs.testCaseData(), i);
+        final ResolvedRequestDto resolved =
+                resolvedRequestService.resolve(turnInputs.template(), turnInputs.bindings(), perTurnData);
+        final ResolvedBodyDto resolvedBody = resolved.getBody();
+        if (!(resolvedBody instanceof ResolvedJsonBodyDto jsonBody) || jsonBody.getContent() == null) {
+            log.warn(
+                    "Multi-step step {} for test case {} has no JSON body with a messages array",
+                    i,
+                    turnInputs.input().getTestCaseId());
+            return TurnStep.abortBeforeRequest(ExecutionStatus.ERROR);
         }
-        final Set<Integer> distinctLengths = new HashSet<>(arrayFieldLengths.values());
-        if (distinctLengths.size() > 1) {
-            return TurnPlan.error("Array-valued bound columns must have equal length; got " + arrayFieldLengths);
+
+        // (2) Append this step's new turn (template messages) verbatim to the running history.
+        final Map<String, Object> content = jsonBody.getContent();
+        final Object turnMessages = content.get(MESSAGES_FIELD);
+        if (!(turnMessages instanceof List<?> messages)) {
+            log.warn(
+                    "Multi-step step {} for test case {} resolved a non-array 'messages'; failing this test case",
+                    i,
+                    turnInputs.input().getTestCaseId());
+            return TurnStep.abortBeforeRequest(ExecutionStatus.ERROR);
         }
-        final int turnCount = distinctLengths.iterator().next();
-        if (turnCount == 0) {
-            return TurnPlan.error("Array-valued bound columns are empty; no conversation turns to run");
+        history.addAll(messages);
+        // (3) Overwrite messages with the full history; force non-streaming.
+        content.put(MESSAGES_FIELD, new ArrayList<>(history));
+        content.put("stream", false);
+        final String requestBodyJson = serializeBody(content);
+
+        final String path = urlBuilder.buildUrl(turnInputs.deploymentId(), resolved.getUrl());
+        final HttpHeaders headers = buildHeaders(resolved.getHeaders());
+        final MultiValueMap<String, String> queryParams = buildQueryParams(resolved.getQueryParams());
+        final SerializedBody serialized = serializerRegistry.serialize(jsonBody);
+        if (!MediaType.MULTIPART_FORM_DATA.equals(serialized.contentType())) {
+            headers.setContentType(serialized.contentType());
         }
-        if (turnCount > ValidationConstants.MAX_CONVERSATION_STEPS) {
-            return TurnPlan.error("Conversation turn count " + turnCount + " exceeds the maximum of "
-                    + ValidationConstants.MAX_CONVERSATION_STEPS);
+
+        final StepOutcome outcome = deploymentTurnInvoker.invoke(
+                turnInputs.context(), turnInputs.method(), path, headers, queryParams, serialized.body());
+        if (outcome.status() != ExecutionStatus.SUCCESS) {
+            // Fail-fast: keep the partial history (incl. this failed turn's user message); no extraction.
+            return TurnStep.abortAfterRequest(outcome.status(), requestBodyJson, outcome);
         }
-        return TurnPlan.of(turnCount, arrayFieldLengths.keySet());
-    }
 
-    /** Builds turn {@code i}'s data: iterating (array-valued) fields → element {@code i}; all others unchanged. */
-    private Map<String, Object> projectTurnData(Map<String, Object> data, Set<String> iteratingFields, int i) {
-        final Map<String, Object> perTurn = new LinkedHashMap<>(data);
-        for (String field : iteratingFields) {
-            if (data.get(field) instanceof List<?> list) {
-                perTurn.put(field, list.get(i));
-            }
+        // (4) Append the assistant reply — the full choices[0].message object, verbatim — to history.
+        // Absence of a message object (not merely missing content) aborts the conversation.
+        final JsonNode assistantMessage = extractAssistantMessage(outcome.responseBody());
+        if (assistantMessage == null) {
+            log.warn(
+                    "Multi-step step {} for test case {} returned 2xx with no assistant message object",
+                    i,
+                    turnInputs.input().getTestCaseId());
+            return TurnStep.abortAfterRequest(ExecutionStatus.ERROR, requestBodyJson, outcome);
         }
-        return perTurn;
-    }
+        history.add(assistantMessage);
 
-    /** Persists a single {@code ERROR} result for a per-test-case data problem, without aborting the run. */
-    private TestCaseRunResult errorResult(
-            TestCaseRunInput input,
-            EvaluationContext context,
-            int runIndex,
-            String traceId,
-            long execStartedAtMs,
-            String message) {
-        final long execCompletedAtMs = clock.millis();
-        return TestCaseRunResult.builder()
-                .id(UUID.randomUUID())
-                .testSuiteRunId(context.getRunId())
-                .testSuiteId(context.getSuiteId())
-                .testCaseId(input.getTestCaseId())
-                .testCaseName(input.getTestCaseName())
-                .runIndex(runIndex)
-                .testCaseData(input.getTestCaseData())
-                .requestBody(null)
-                .responseBody(null)
-                .responseStatusCode(null)
-                .executionStatus(ExecutionStatus.ERROR)
-                .execStartedAtMs(execStartedAtMs)
-                .execCompletedAtMs(execCompletedAtMs)
-                .execDurationMs(execCompletedAtMs - execStartedAtMs)
-                .traceId(traceId)
-                .extractedColumns("{}")
-                .extractionWarnings("[]")
-                .retryCount(0)
-                .logDetails(buildErrorLogDetails(message))
-                .createdAtMs(context.getCreatedAtMs())
-                .build();
-    }
+        // (5) Extract response columns for this completed step and append each column's value to its array.
+        final ResponseColumnExtractor.ExtractionResult extraction =
+                responseColumnExtractor.extract(turnInputs.responseColumns(), outcome.responseBody());
+        columnAccumulator.addStep(turnInputs.responseColumns(), extraction.extractedColumns());
 
-    private String buildErrorLogDetails(String message) {
-        final ObjectNode node = objectMapper.createObjectNode();
-        node.put("error", message);
-        return serializeBody(node);
-    }
-
-    /** Per-step outcome carrier (one HTTP turn after retries). */
-    private record StepOutcome(ExecutionStatus status, Integer statusCode, String responseBody, int retryCount) {}
-
-    private StepOutcome invokeWithRetries(
-            EvaluationContext context,
-            HttpMethod method,
-            String path,
-            HttpHeaders headers,
-            MultiValueMap<String, String> queryParams,
-            Object body) {
-
-        final int maxRetries = context.getMaxRetries();
-        final long retryDelayMs = context.getRetryDelayMs();
-        final double multiplier = context.getRetryBackoffMultiplier();
-        final long maxRetryDelay = context.getMaxRetryDelayMs();
-
-        StepOutcome last = null;
-        int retries = 0;
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
-            if (attempt > 0) {
-                if (context.getCancellationSignal().get()) {
-                    break;
-                }
-                final long delay = Math.min((long) (retryDelayMs * Math.pow(multiplier, attempt - 1)), maxRetryDelay);
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-                if (context.getCancellationSignal().get()) {
-                    break;
-                }
-                retries++;
-            }
-
-            last = invokeSingle(context, method, path, headers, queryParams, body);
-            if (!shouldRetry(last, attempt, maxRetries)) {
-                break;
-            }
-        }
-        return new StepOutcome(last.status(), last.statusCode(), last.responseBody(), retries);
-    }
-
-    private StepOutcome invokeSingle(
-            EvaluationContext context,
-            HttpMethod method,
-            String path,
-            HttpHeaders headers,
-            MultiValueMap<String, String> queryParams,
-            Object body) {
-        try (DeploymentInvocationResult result =
-                deploymentInvoker.invokeWithStreaming(method, path, headers, queryParams, body)) {
-            final int statusCode = result.statusCode();
-            ExecutionStatus status = resolveExecutionStatus(statusCode);
-
-            // Multi-step is non-streaming only: a streaming response cannot be consumed here.
-            if (result.streaming()) {
-                return new StepOutcome(ExecutionStatus.ERROR, statusCode, null, 0);
-            }
-
-            String responseBody = serializeBody(result.body());
-            if (responseBody != null
-                    && responseBody.getBytes(StandardCharsets.UTF_8).length > context.getMaxResponseSizeBytes()) {
-                status = ExecutionStatus.ERROR;
-            }
-            return new StepOutcome(status, statusCode, responseBody, 0);
-        } catch (Exception e) {
-            final ExecutionStatus status = isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
-            return new StepOutcome(status, null, null, 0);
-        }
-    }
-
-    private boolean shouldRetry(StepOutcome outcome, int attempt, int maxRetries) {
-        if (attempt >= maxRetries) {
-            return false;
-        }
-        final ExecutionStatus status = outcome.status();
-        final Integer statusCode = outcome.statusCode();
-        if (status == ExecutionStatus.TIMEOUT) {
-            return true;
-        }
-        if (status == ExecutionStatus.ERROR && statusCode == null) {
-            return true;
-        }
-        return statusCode != null && (statusCode == 429 || statusCode >= 500);
-    }
-
-    private ExecutionStatus resolveExecutionStatus(int statusCode) {
-        if (statusCode >= 200 && statusCode < 300) {
-            return ExecutionStatus.SUCCESS;
-        }
-        if (statusCode == 401 || statusCode == 403) {
-            return ExecutionStatus.ERROR;
-        }
-        return ExecutionStatus.FAILED;
+        return TurnStep.completed(requestBodyJson, outcome);
     }
 
     /**
@@ -468,18 +323,6 @@ public class MultiStepConversationExecutor {
             log.warn("Failed to parse multi-step response body for assistant message: {}", e.getMessage(), e);
             return null;
         }
-    }
-
-    private boolean isTimeoutException(Exception e) {
-        Throwable cause = e;
-        while (cause != null) {
-            final String name = cause.getClass().getSimpleName();
-            if (name.contains("Timeout") || name.contains("timeout")) {
-                return true;
-            }
-            cause = cause.getCause();
-        }
-        return false;
     }
 
     private HttpHeaders buildHeaders(List<KeyValueTemplateDto> resolvedHeaders) {
@@ -521,47 +364,6 @@ public class MultiStepConversationExecutor {
             log.warn("Failed to parse test case data: {}", e.getMessage(), e);
             return Map.of();
         }
-    }
-
-    private JsonNode readTree(String json) {
-        try {
-            return objectMapper.readTree(json);
-        } catch (JacksonException e) {
-            log.warn("Failed to parse extracted columns JSON: {}", e.getMessage(), e);
-            return objectMapper.createObjectNode();
-        }
-    }
-
-    /**
-     * Appends one completed step's extracted values to the column-major accumulator: for each response
-     * column, the step's value is added to that column's array ({@code null} when the step lacked it), so
-     * every column's array stays aligned to the completed-step count.
-     */
-    private void accumulateStep(
-            Map<String, ArrayNode> columnArrays,
-            List<ResponseColumnDefinitionDto> responseColumns,
-            String stepExtractedColumnsJson) {
-        if (responseColumns == null || responseColumns.isEmpty()) {
-            return;
-        }
-        final JsonNode stepObject = readTree(stepExtractedColumnsJson);
-        for (ResponseColumnDefinitionDto column : responseColumns) {
-            final ArrayNode columnArray =
-                    columnArrays.computeIfAbsent(column.getName(), name -> objectMapper.createArrayNode());
-            final JsonNode value = stepObject.get(column.getName());
-            if (value == null || value.isNull()) {
-                columnArray.addNull();
-            } else {
-                columnArray.add(value);
-            }
-        }
-    }
-
-    /** Serializes the column-major accumulator to a JSON object {@code {col: [step0, step1, ...]}}. */
-    private String serializeColumnMajor(Map<String, ArrayNode> columnArrays) {
-        final ObjectNode node = objectMapper.createObjectNode();
-        columnArrays.forEach(node::set);
-        return serializeBody(node);
     }
 
     private String serializeBody(Object body) {

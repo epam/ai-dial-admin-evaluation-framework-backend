@@ -882,6 +882,12 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 
 ---
 
+## Stored Function: `roc_auc_score` (Analytics DB)
+
+`roc_auc_score(y double precision[], p double precision[]) RETURNS double precision` — computes the ROC AUC score (rank-sum / Mann-Whitney formulation) for a binary classifier. `y` holds the actual class (0/1) and `p` the predicted probability, paired positionally by array index (both arrays must be built from the same row scan, e.g. `array_agg(y)`/`array_agg(p)` in the same `SELECT`). Returns `NULL` when either class is absent (no positive/negative pair to rank). Introduced in `V1.11__CreateRocAucScoreFunction.sql`; invoked from the Query DSL's `roc_auc(label, probability)` function (`experimental.query.service.translate.function.BuiltInQueryFunctions`), usable anywhere a `FnExpr` is valid, including a suite's custom `overallScore` expression.
+
+---
+
 ## Migration History
 
 ### Meta Database (`db/migration/meta/POSTGRES/`)
@@ -925,6 +931,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.7 | `V1.7__AddExtractionWarningsToEvalSummaries.sql` | Added extraction_warnings JSONB NOT NULL DEFAULT '[]' to test_case_eval_summaries |
 | V1.8 | `V1.8__NormalizeErrorShapedMetricValues.sql` | Normalized transport-failure metric_values from synthetic `{"error": null}` to real output field names; updated corresponding metric_infos entries |
 | V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |
+| V1.11 | `V1.11__CreateRocAucScoreFunction.sql` | Created `roc_auc_score(double precision[], double precision[])` SQL function computing the rank-sum ROC AUC score over paired label/probability arrays |
 
 ---
 

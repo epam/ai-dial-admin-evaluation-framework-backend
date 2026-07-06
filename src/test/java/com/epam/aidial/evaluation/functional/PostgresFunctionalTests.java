@@ -63,6 +63,7 @@ import com.epam.aidial.evaluation.functional.tests.QuerySchemaDiscoveryFunctiona
 import com.epam.aidial.evaluation.functional.tests.ResponseColumnFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RevalidationCoercionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RevalidationTaskFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RocAucScoreFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
@@ -479,6 +480,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class MetricScoreResultStructuredQueryTests extends MetricScoreResultStructuredQueryFunctionalTests {}
+
+    @Nested
+    class RocAucScoreTests extends RocAucScoreFunctionalTests {}
 
     @Nested
     class StructuredQueryExecuteTests extends StructuredQueryExecuteFunctionalTests {}

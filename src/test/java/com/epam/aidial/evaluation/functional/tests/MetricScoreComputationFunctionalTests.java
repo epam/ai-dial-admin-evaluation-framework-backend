@@ -26,6 +26,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 public abstract class MetricScoreComputationFunctionalTests extends BaseFunctionalTest {
 
     private static final String OUTPUT_SCHEMA = "{\"properties\":{\"score\":{\"type\":\"number\"}}}";
+    private static final String CLASSIFIER_OUTPUT_SCHEMA =
+            "{\"properties\":{\"label\":{\"type\":\"number\"},\"probability\":{\"type\":\"number\"}}}";
 
     /**
      * A self-contained custom overall averaging exactly one of two metric columns (Relevancy), run-scoped
@@ -40,6 +42,20 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
             + "{\"type\":\"param\",\"name\":\"computationId\"}]}]},"
             + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"avg\","
             + "\"args\":[{\"type\":\"field\",\"name\":\"metric::Relevancy::score\"}]},\"as\":\"value\"}]}";
+
+    /**
+     * A custom overall computing ROC AUC over a classifier metric's {@code label} (ground truth 0/1) and
+     * {@code probability} (predicted score) outputs, run-scoped the same way as {@link #CUSTOM_OVERALL_RELEVANCY}.
+     */
+    private static final String CUSTOM_OVERALL_ROC_AUC = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
+            + "\"filter\":{\"op\":\"and\",\"args\":["
+            + "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"test_suite_run_id\"},"
+            + "{\"type\":\"param\",\"name\":\"runId\"}]},"
+            + "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"computation_id\"},"
+            + "{\"type\":\"param\",\"name\":\"computationId\"}]}]},"
+            + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"roc_auc\",\"args\":["
+            + "{\"type\":\"field\",\"name\":\"metric::Classifier::label\"},"
+            + "{\"type\":\"field\",\"name\":\"metric::Classifier::probability\"}]},\"as\":\"value\"}]}";
 
     @Autowired
     private MetricScoreComputation executor;
@@ -116,6 +132,53 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         assertThat(results).hasSize(11);
         // overall is Relevancy's average alone (0.5) — NOT Accuracy (0.7) and NOT the two-metric mean (0.6).
         assertThat(value(results, "overall", "overall")).isCloseTo(0.5, within(1e-6));
+    }
+
+    @Test
+    @DisplayName("custom overall computes ROC AUC over a classifier's label/probability outputs end-to-end")
+    void computesCustomOverallRocAuc() {
+        final UUID suiteId = UUID.randomUUID();
+        final UUID runId = UUID.randomUUID();
+        final UUID computationId = UUID.randomUUID();
+        final long createdAt = 1_700_000_000_000L;
+        final long computedAt = 1_700_000_500_000L;
+
+        // label/probability pairs: (0, 0.1), (0, 0.4), (1, 0.35), (1, 0.8) -> AUC = 0.75 (one discordant pair).
+        seedClassifierRun(suiteId, runId, computationId, createdAt, computedAt);
+
+        executor.execute(context(suiteId, runId, computationId, CUSTOM_OVERALL_ROC_AUC));
+
+        final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
+        assertThat(value(results, "overall", "overall")).isCloseTo(0.75, within(1e-9));
+    }
+
+    private void seedClassifierRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
+        analyticsTestDataHelper.createRunMetricSnapshot(
+                runId, computationId, "Classifier", CLASSIFIER_OUTPUT_SCHEMA, computedAt);
+        seedClassifierSummary(suiteId, runId, computationId, "case-a", createdAt, 0, 0.1);
+        seedClassifierSummary(suiteId, runId, computationId, "case-b", createdAt, 0, 0.4);
+        seedClassifierSummary(suiteId, runId, computationId, "case-c", createdAt, 1, 0.35);
+        seedClassifierSummary(suiteId, runId, computationId, "case-d", createdAt, 1, 0.8);
+    }
+
+    private void seedClassifierSummary(
+            UUID suiteId,
+            UUID runId,
+            UUID computationId,
+            String caseId,
+            long createdAt,
+            int label,
+            double probability) {
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                caseId,
+                ExecutionStatus.SUCCESS.name(),
+                100L,
+                createdAt,
+                "{}",
+                "{\"Classifier\":{\"label\":" + label + ",\"probability\":" + probability + "}}");
     }
 
     private void seedRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {

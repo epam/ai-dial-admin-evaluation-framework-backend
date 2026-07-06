@@ -377,6 +377,78 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
     }
 
     @Test
+    @DisplayName("computes roc_auc over a classifier's label/probability outputs across all matching test cases")
+    void computesRocAucOverLabelAndProbability() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        // label/probability pairs: (0, 0.1), (0, 0.4), (1, 0.35), (1, 0.8) -> one discordant pair -> AUC = 0.75.
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                "case-a",
+                ExecutionStatus.SUCCESS.name(),
+                100L,
+                1_000L,
+                "{}",
+                "{\"Classifier\":{\"label\":0,\"probability\":0.1}}");
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                "case-b",
+                ExecutionStatus.SUCCESS.name(),
+                200L,
+                2_000L,
+                "{}",
+                "{\"Classifier\":{\"label\":0,\"probability\":0.4}}");
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                "case-c",
+                ExecutionStatus.SUCCESS.name(),
+                300L,
+                3_000L,
+                "{}",
+                "{\"Classifier\":{\"label\":1,\"probability\":0.35}}");
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                runId,
+                computationId,
+                "case-d",
+                ExecutionStatus.SUCCESS.name(),
+                400L,
+                4_000L,
+                "{}",
+                "{\"Classifier\":{\"label\":1,\"probability\":0.8}}");
+
+        StructuredQuery query = new StructuredQuery(
+                "eval_summaries",
+                runIdEq(runId),
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(
+                        new FnExpr(
+                                "roc_auc",
+                                false,
+                                List.of(
+                                        new FieldExpr("metric::Classifier::label"),
+                                        new FieldExpr("metric::Classifier::probability"))),
+                        "value")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        QueryResultPage page = queryRepository.execute(query);
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(((Number) page.rows().get(0).get("value")).doubleValue()).isCloseTo(0.75, within(1e-9));
+    }
+
+    @Test
     @DisplayName("rejects a percentile fraction outside [0, 1] with a validation error")
     void rejectsPercentileFractionOutOfRange() {
         StructuredQuery query = new StructuredQuery(

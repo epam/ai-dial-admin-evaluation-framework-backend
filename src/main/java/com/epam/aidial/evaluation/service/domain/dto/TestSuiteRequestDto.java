@@ -98,4 +98,19 @@ public class TestSuiteRequestDto {
                     + "\"name\":\"avg\",\"args\":[{\"type\":\"field\",\"name\":\"metric::Relevancy::score\"}]},"
                     + "\"as\":\"value\"}]}")
     private Map<String, Object> overallScore;
+
+    @Schema(
+            description =
+                    "Optional per-suite test-case filter, as a Structured Query DSL filter subtree "
+                            + "(the `filter` of a `test_cases` query). Selects which of the bound dataset's test cases run: "
+                            + "combined (AND) with `is_valid` and `disabledTestCaseIds` at run-creation count and snapshot. "
+                            + "References base columns and flattened `data::<field>` fields. Validated at write time against "
+                            + "the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). Null = no filter.",
+            example =
+                    "{\"op\":\"or\",\"args\":[{\"op\":\"in\",\"args\":[{\"type\":\"field\",\"name\":\"data::category\"},"
+                            + "{\"type\":\"array\",\"items\":[{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"A\"},"
+                            + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"B\"}]}]},"
+                            + "{\"op\":\"co\",\"args\":[{\"type\":\"field\",\"name\":\"data::tags\"},"
+                            + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"text\"}]}]}")
+    private Map<String, Object> testCaseFilter;
 }

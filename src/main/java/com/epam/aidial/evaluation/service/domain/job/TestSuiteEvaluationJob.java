@@ -11,7 +11,6 @@ import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
-import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
@@ -63,7 +62,7 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteRunRepository repository;
     private final TestSuiteRepository testSuiteRepository;
     private final DatasetRepository datasetRepository;
-    private final TestCaseRepository testCaseRepository;
+    private final RunnableTestCaseSelector runnableTestCaseSelector;
     private final TestCaseRunInputRepository testCaseRunInputRepository;
     private final TestSuiteRunSseService sseService;
     private final EvaluationRunProperties evaluationRunProperties;
@@ -260,8 +259,8 @@ public class TestSuiteEvaluationJob {
             int offset = 0;
             List<TestCase> page;
             do {
-                page = testCaseRepository.findValidByDatasetIdExcludingIds(
-                        suite.getDatasetId(), disabledIds, offset, SNAPSHOT_PAGE_SIZE);
+                page = runnableTestCaseSelector.loadRunnablePage(
+                        suite.getDatasetId(), suite.getTestCaseFilter(), disabledIds, offset, SNAPSHOT_PAGE_SIZE);
                 for (TestCase tc : page) {
                     batch.add(TestCaseRunInput.builder()
                             .runId(runId)

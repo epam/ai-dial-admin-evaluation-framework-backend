@@ -64,6 +64,7 @@ import com.epam.aidial.evaluation.functional.tests.QuerySchemaDiscoveryFunctiona
 import com.epam.aidial.evaluation.functional.tests.ResponseColumnFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RevalidationCoercionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RevalidationTaskFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RocAucScoreFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
@@ -77,6 +78,7 @@ import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchCapsFunction
 import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseConvenienceApiFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseQueryAndFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseRunInputsRetentionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteCloneFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTests;
@@ -484,7 +486,13 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class MetricScoreResultStructuredQueryTests extends MetricScoreResultStructuredQueryFunctionalTests {}
 
     @Nested
+    class RocAucScoreTests extends RocAucScoreFunctionalTests {}
+
+    @Nested
     class StructuredQueryExecuteTests extends StructuredQueryExecuteFunctionalTests {}
+
+    @Nested
+    class TestCaseQueryAndFilterTests extends TestCaseQueryAndFilterFunctionalTests {}
 
     @Nested
     @DisplayName("Metric provider sync job")

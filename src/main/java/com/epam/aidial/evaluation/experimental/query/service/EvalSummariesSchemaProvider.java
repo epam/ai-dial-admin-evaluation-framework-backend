@@ -16,7 +16,6 @@ import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFiel
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -69,16 +68,19 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
     private final TestSuiteRunService testSuiteRunService;
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
+    private final SchemaFieldTypeMapper schemaFieldTypeMapper;
     private final List<QuerySchemaFieldDto> baseSchema;
 
     public EvalSummariesSchemaProvider(
             TestSuiteRunService testSuiteRunService,
             RunMetricSnapshotRepository runMetricSnapshotRepository,
             OutputSchemaFieldExtractor outputSchemaFieldExtractor,
+            SchemaFieldTypeMapper schemaFieldTypeMapper,
             JooqTableSchemaResolver schemaResolver) {
         this.testSuiteRunService = testSuiteRunService;
         this.runMetricSnapshotRepository = runMetricSnapshotRepository;
         this.outputSchemaFieldExtractor = outputSchemaFieldExtractor;
+        this.schemaFieldTypeMapper = schemaFieldTypeMapper;
         this.baseSchema = schemaResolver.resolve(TEST_CASE_EVAL_SUMMARIES);
     }
 
@@ -148,7 +150,7 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
         return snapshot.getTestCaseSchema().stream()
                 .map(field -> new QuerySchemaFieldDto(
                         DATA_COLUMN_PREFIX + field.getName(),
-                        mapSchemaFieldType(field.getType()),
+                        schemaFieldTypeMapper.map(field.getType()),
                         TEST_CASE_DATA_FIELD))
                 .toList();
     }
@@ -161,7 +163,7 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
         return responseColumns.stream()
                 .map(column -> new QuerySchemaFieldDto(
                         RESPONSE_COLUMN_PREFIX + column.getName(),
-                        mapSchemaFieldType(column.getType()),
+                        schemaFieldTypeMapper.map(column.getType()),
                         EXTRACTED_COLUMNS_FIELD))
                 .toList();
     }
@@ -191,20 +193,5 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
             throw new ValidationException(
                     "Value of '" + fieldName + "' for entity '" + ENTITY_NAME + "' must be a UUID");
         }
-    }
-
-    /** Maps a dataset/response-column declared type onto the DSL-aligned field type vocabulary. */
-    private static QueryFieldType mapSchemaFieldType(SchemaFieldType type) {
-        if (type == null) {
-            return QueryFieldType.STRING;
-        }
-        return switch (type) {
-            case STRING, FILE -> QueryFieldType.STRING;
-            case INTEGER -> QueryFieldType.LONG;
-            case NUMBER -> QueryFieldType.DECIMAL;
-            case BOOLEAN -> QueryFieldType.BOOLEAN;
-            case OBJECT -> QueryFieldType.OBJECT;
-            case ARRAY -> QueryFieldType.ARRAY;
-        };
     }
 }

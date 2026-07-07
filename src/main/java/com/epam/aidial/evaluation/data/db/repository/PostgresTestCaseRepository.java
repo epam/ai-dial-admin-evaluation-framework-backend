@@ -267,7 +267,13 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     @Override
     public List<TestCase> findValidByDatasetIdExcludingIds(
             UUID datasetId, Collection<UUID> excludedIds, int offset, int limit) {
-        Condition combined = validNotExcludedCondition(datasetId, excludedIds);
+        return findValidByDatasetIdExcludingIdsMatching(datasetId, excludedIds, null, offset, limit);
+    }
+
+    @Override
+    public List<TestCase> findValidByDatasetIdExcludingIdsMatching(
+            UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit) {
+        Condition combined = withExtra(validNotExcludedCondition(datasetId, excludedIds), extraCondition);
         return dsl.selectFrom(TEST_CASES)
                 .where(combined)
                 .orderBy(TEST_CASES.CREATED_AT_MS.asc(), TEST_CASES.ID.asc())
@@ -278,11 +284,21 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
 
     @Override
     public long countValidByDatasetIdExcludingIds(UUID datasetId, Collection<UUID> excludedIds) {
+        return countValidByDatasetIdExcludingIdsMatching(datasetId, excludedIds, null);
+    }
+
+    @Override
+    public long countValidByDatasetIdExcludingIdsMatching(
+            UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition) {
         Long count = dsl.selectCount()
                 .from(TEST_CASES)
-                .where(validNotExcludedCondition(datasetId, excludedIds))
+                .where(withExtra(validNotExcludedCondition(datasetId, excludedIds), extraCondition))
                 .fetchOne(0, Long.class);
         return count != null ? count : 0L;
+    }
+
+    private static Condition withExtra(Condition base, Condition extraCondition) {
+        return extraCondition == null ? base : base.and(extraCondition);
     }
 
     /**

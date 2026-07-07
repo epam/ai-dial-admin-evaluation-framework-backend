@@ -314,17 +314,17 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     }
 
     /**
-     * Setter for <code>meta.test_suites.multi_step</code>.
+     * Setter for <code>meta.test_suites.test_case_filter</code>.
      */
-    public void setMultiStep(Boolean value) {
+    public void setTestCaseFilter(JSONB value) {
         set(21, value);
     }
 
     /**
-     * Getter for <code>meta.test_suites.multi_step</code>.
+     * Getter for <code>meta.test_suites.test_case_filter</code>.
      */
-    public Boolean getMultiStep() {
-        return (Boolean) get(21);
+    public JSONB getTestCaseFilter() {
+        return (JSONB) get(21);
     }
 
     // -------------------------------------------------------------------------
@@ -350,7 +350,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     /**
      * Create a detached, initialised TestSuitesRecord
      */
-    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, Boolean multiStep) {
+    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, JSONB testCaseFilter) {
         super(TestSuites.TEST_SUITES);
 
         setId(id);
@@ -374,7 +374,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         setDatasetId(datasetId);
         setDisabledTestCaseIds(disabledTestCaseIds);
         setOverallScore(overallScore);
-        setMultiStep(multiStep);
+        setTestCaseFilter(testCaseFilter);
         resetTouchedOnNotNull();
     }
 }

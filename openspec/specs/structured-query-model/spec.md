@@ -178,10 +178,16 @@ catalog is:
 | `max` | aggregate | `max(col)` | col type |
 | `percentile_cont` | ordered-set aggregate | `percentile_cont(fraction, column)` | numeric (interpolated) |
 | `percentile_disc` | ordered-set aggregate | `percentile_disc(fraction, column)` | type of `column` (an actual member) |
+| `roc_auc` | aggregate | `roc_auc(label, probability)` (2 args) | numeric (0-1) or null |
 For `percentile_cont`/`percentile_disc`, `fraction` SHALL be a decimal literal in the closed interval
 `[0, 1]` and `column` SHALL be any resolvable field expression; the call SHALL be evaluated as an
 ordered-set aggregate over `column`. Ordered-set aggregates SHALL be used in aggregate mode (the
-GROUP-BY-less whole-table form is permitted, yielding a single row). Arithmetic functions
+GROUP-BY-less whole-table form is permitted, yielding a single row). `roc_auc(label, probability)`
+SHALL compute the ROC AUC score (rank-sum / Mann–Whitney formulation) over the matching rows: `label`
+is a 0/1-valued field and `probability` is a field in `[0, 1]`; the function SHALL aggregate both
+columns (via `array_agg`, index-aligned so `label[i]`/`probability[i]` correspond to the same row) and
+delegate the rank-sum computation to a database-side stored function, returning `NULL` when the matched
+rows contain only one class (no positive/negative pair exists to rank). Arithmetic functions
 (`add`/`subtract`/`multiply`/`divide`) are the planned extension, each added as a further `QueryFunction` component.
 Status: **Implemented**
 
@@ -204,13 +210,31 @@ Status: **Implemented**
   non-literal `fraction`, or with other than two arguments
 - **THEN** the query is rejected with HTTP 400
 
+#### Scenario: ROC AUC computes over label and probability columns
+- **WHEN** an aggregate-mode query with no `group_by` selects
+  `roc_auc("data:y", "metric:Classifier:probability")` aliased `value`, over rows containing both
+  positive (`y = 1`) and negative (`y = 0`) examples
+- **THEN** the response is a single row whose `value` is the ROC AUC score computed by ranking rows by
+  `probability` and summing ranks of the positive class, matching the standard rank-sum/Mann–Whitney
+  formula
+
+#### Scenario: ROC AUC with a single class returns null
+- **WHEN** a `roc_auc(label, probability)` query's matching rows contain only one distinct `label`
+  value (all positive or all negative)
+- **THEN** the response's aggregated value is `NULL`, since no positive/negative pair exists to rank
+
+#### Scenario: ROC AUC with wrong arity is rejected
+- **WHEN** a query calls `roc_auc` with a number of arguments other than two
+- **THEN** the query is rejected with HTTP 400
+
 ### Requirement: Query validation and allowlist
 The system SHALL validate a structured query before and during translation against the entity's
 **discovered schema**, rejecting invalid queries with HTTP 400. Validation SHALL cover: entity
 resolution (unknown entity rejected), field resolution (every referenced field — flat column or
 `data:`/`response:`/`metric:`/`metricInfo:` JSONB path — must resolve against the entity's schema),
 function resolution against the closed **Supported function catalog** (including arity and, for
-`percentile_cont`/`percentile_disc`, a `fraction` decimal literal in `[0, 1]`), `in` operand shape (an
+`percentile_cont`/`percentile_disc`, a `fraction` decimal literal in `[0, 1]`, and for `roc_auc`, exactly
+two arguments), `in` operand shape (an
 array of value literals), literal parsing per `value_type`, and pagination governance (offset ≥ 0;
 cursor pagination rejected; limit clamped to its bounds). Semantically invalid queries that
 nonetheless translate SHALL surface the database's grammar/type error as HTTP 400 rather than 500.
@@ -240,8 +264,13 @@ The system SHALL translate a validated structured query into parameterized jOOQ 
 properties SHALL expand to their physical sources — plain columns or JSONB navigation/casts, with
 metric-value paths cast to numeric — using bind parameters rather than string concatenation. Comparison
 operators SHALL map to SQL per the wire contract: `eq`/`ne`/`lt`/`gt`/`le`/`ge` to direct comparisons,
-`co`/`nc` to case-insensitive `LIKE`/`NOT LIKE` with wildcards, `in` to `IN`, and `eq`/`ne` against a
-null literal to `IS NULL`/`IS NOT NULL`. Aggregate functions SHALL translate to their SQL aggregates;
+`co`/`nc` to case-insensitive `LIKE`/`NOT LIKE` with wildcards **when the left operand is a scalar
+(text/numeric) field**, `in` to `IN`, and `eq`/`ne` against a null literal to `IS NULL`/`IS NOT NULL`.
+When the left operand of `co`/`nc` is an **array-typed field** (a JSONB field declared `array`),
+`co`/`nc` SHALL instead translate to JSONB array-element containment / its negation rather than
+`LIKE`: a string right operand SHALL use the JSONB `?` element-existence operator, and a non-string
+literal SHALL use `@>` against a one-element JSON array, with the operand bound as a parameter (never
+concatenated). Aggregate functions SHALL translate to their SQL aggregates;
 ordered-set aggregates `percentile_cont`/`percentile_disc` SHALL translate to
 `percentile_cont(fraction) WITHIN GROUP (ORDER BY column)` /
 `percentile_disc(fraction) WITHIN GROUP (ORDER BY column)` with the `fraction` bound as a parameter.
@@ -258,6 +287,18 @@ Status: **Implemented**
 #### Scenario: Contains operator maps to case-insensitive LIKE
 - **WHEN** a query uses the `co` operator on a string field
 - **THEN** the translator emits a case-insensitive `LIKE '%value%'` predicate with a bind parameter
+
+#### Scenario: Contains operator on an array field maps to JSONB containment
+- **WHEN** a query uses the `co` operator on an array-typed field with a string right operand (e.g.
+  `tags CONTAINS 'text'`)
+- **THEN** the translator emits a JSONB element-existence predicate (the `?` operator) with the
+  operand bound as a parameter, not a `LIKE`, and `nc` emits its negation
+
+#### Scenario: Contains on a non-array left operand falls through to LIKE
+- **WHEN** a query uses the `co` operator whose left operand is NOT a bare array-typed field (e.g. a
+  scalar field, or a function-wrapped expression)
+- **THEN** the translator does not apply array detection and emits the case-insensitive `LIKE`
+  predicate (its scalar `co`/`nc` behavior)
 
 #### Scenario: Aggregate query groups by base field and select alias
 - **WHEN** an aggregate-mode query groups by a field and selects an aliased aggregate
@@ -354,3 +395,8 @@ Status: **Implemented**
   (p10/p90 over metric scores).
 - Discovery of queryable entities and their flat field schemas is a separate capability —
   see [query-schema-discovery](../query-schema-discovery/spec.md).
+- `FilterTranslator.toComparison`: array-field detection triggers ONLY when the left operand is a bare
+  `FieldExpr` whose `QueryFieldBinding` type is `QueryFieldType.ARRAY` (looked up via `bindings.get(name)`,
+  which wins over the `JsonbFieldResolver` fallback); a non-`FieldExpr` left operand keeps scalar LIKE.
+  jOOQ plain SQL escapes the `?` operator as `??`. Array-typed flattened `data::<field>` bindings are
+  produced by `TestCaseFieldBindingsBuilder` (see `query-schema-discovery`).

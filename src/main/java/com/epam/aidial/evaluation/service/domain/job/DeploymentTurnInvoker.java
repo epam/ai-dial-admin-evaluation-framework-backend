@@ -50,7 +50,8 @@ public class DeploymentTurnInvoker {
                 if (context.getCancellationSignal().get()) {
                     break;
                 }
-                final long delay = Math.min((long) (retryDelayMs * Math.pow(multiplier, attempt - 1)), maxRetryDelay);
+                final long delay = DeploymentInvocationSupport.nextBackoffDelayMs(
+                        attempt, retryDelayMs, multiplier, maxRetryDelay);
                 try {
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
@@ -64,7 +65,7 @@ public class DeploymentTurnInvoker {
             }
 
             last = invokeSingle(context, method, path, headers, queryParams, body);
-            if (!shouldRetry(last, attempt, maxRetries)) {
+            if (!DeploymentInvocationSupport.isRetryable(last.status(), last.statusCode(), attempt, maxRetries)) {
                 break;
             }
         }
@@ -81,7 +82,7 @@ public class DeploymentTurnInvoker {
         try (DeploymentInvocationResult result =
                 deploymentInvoker.invokeWithStreaming(method, path, headers, queryParams, body)) {
             final int statusCode = result.statusCode();
-            ExecutionStatus status = resolveExecutionStatus(statusCode);
+            ExecutionStatus status = DeploymentInvocationSupport.resolveExecutionStatus(statusCode);
 
             // Multi-step is non-streaming only: a streaming response cannot be consumed here.
             if (result.streaming()) {
@@ -95,46 +96,10 @@ public class DeploymentTurnInvoker {
             }
             return new StepOutcome(status, statusCode, responseBody, 0);
         } catch (Exception e) {
-            final ExecutionStatus status = isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
+            final ExecutionStatus status =
+                    DeploymentInvocationSupport.isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
             return new StepOutcome(status, null, null, 0);
         }
-    }
-
-    private boolean shouldRetry(StepOutcome outcome, int attempt, int maxRetries) {
-        if (attempt >= maxRetries) {
-            return false;
-        }
-        final ExecutionStatus status = outcome.status();
-        final Integer statusCode = outcome.statusCode();
-        if (status == ExecutionStatus.TIMEOUT) {
-            return true;
-        }
-        if (status == ExecutionStatus.ERROR && statusCode == null) {
-            return true;
-        }
-        return statusCode != null && (statusCode == 429 || statusCode >= 500);
-    }
-
-    private ExecutionStatus resolveExecutionStatus(int statusCode) {
-        if (statusCode >= 200 && statusCode < 300) {
-            return ExecutionStatus.SUCCESS;
-        }
-        if (statusCode == 401 || statusCode == 403) {
-            return ExecutionStatus.ERROR;
-        }
-        return ExecutionStatus.FAILED;
-    }
-
-    private boolean isTimeoutException(Exception e) {
-        Throwable cause = e;
-        while (cause != null) {
-            final String name = cause.getClass().getSimpleName();
-            if (name.contains("Timeout") || name.contains("timeout")) {
-                return true;
-            }
-            cause = cause.getCause();
-        }
-        return false;
     }
 
     private String serialize(Object body) {

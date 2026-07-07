@@ -30,7 +30,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -282,7 +281,8 @@ public class MultiStepConversationExecutor {
         final String requestBodyJson = serializeBody(content);
         final String path = urlBuilder.buildUrl(turn.deploymentId(), resolved.getUrl());
         final HttpHeaders headers = buildHeaders(resolved.getHeaders());
-        final MultiValueMap<String, String> queryParams = buildQueryParams(resolved.getQueryParams());
+        final MultiValueMap<String, String> queryParams =
+                DeploymentInvocationSupport.buildQueryParams(resolved.getQueryParams());
         final SerializedBody serialized = serializerRegistry.serialize(jsonBody);
         if (!MediaType.MULTIPART_FORM_DATA.equals(serialized.contentType())) {
             headers.setContentType(serialized.contentType());
@@ -347,18 +347,6 @@ public class MultiStepConversationExecutor {
             }
         }
         return headers;
-    }
-
-    private MultiValueMap<String, String> buildQueryParams(List<KeyValueTemplateDto> resolvedParams) {
-        final MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
-        if (resolvedParams != null) {
-            for (KeyValueTemplateDto kv : resolvedParams) {
-                if (kv.getKey() != null && kv.getValue() != null) {
-                    queryParams.add(kv.getKey(), kv.getValue());
-                }
-            }
-        }
-        return queryParams;
     }
 
     private Map<String, Object> parseTestCaseData(String data) {

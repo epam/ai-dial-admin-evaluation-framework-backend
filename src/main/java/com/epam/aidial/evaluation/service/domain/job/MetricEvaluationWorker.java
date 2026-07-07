@@ -99,7 +99,11 @@ public class MetricEvaluationWorker {
             }
 
             if (attempt > 0) {
-                long delay = computeBackoffDelay(attempt, retryConfig);
+                long delay = DeploymentInvocationSupport.nextBackoffDelayMs(
+                        attempt,
+                        retryConfig.getRetryDelayMs(),
+                        retryConfig.getRetryBackoffMultiplier(),
+                        retryConfig.getMaxRetryDelayMs());
                 log.debug(
                         "Retrying /evaluate for TSMD {} (attempt {}/{}), backoff {}ms",
                         tsmd.getName(),
@@ -208,11 +212,5 @@ public class MetricEvaluationWorker {
             Thread.sleep(Math.min(step, remaining));
             remaining -= step;
         }
-    }
-
-    private long computeBackoffDelay(int attempt, MetricEvaluationProperties.Retry retryConfig) {
-        long delay =
-                (long) (retryConfig.getRetryDelayMs() * Math.pow(retryConfig.getRetryBackoffMultiplier(), attempt - 1));
-        return Math.min(delay, retryConfig.getMaxRetryDelayMs());
     }
 }

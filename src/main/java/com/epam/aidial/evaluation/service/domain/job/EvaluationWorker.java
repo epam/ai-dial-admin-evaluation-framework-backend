@@ -49,7 +49,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
@@ -142,7 +141,8 @@ public class EvaluationWorker {
             HttpHeaders headers = buildHeaders(resolved.getHeaders(), context);
 
             // Build query params
-            MultiValueMap<String, String> queryParams = buildQueryParams(resolved.getQueryParams());
+            MultiValueMap<String, String> queryParams =
+                    DeploymentInvocationSupport.buildQueryParams(resolved.getQueryParams());
 
             // Serialize body via content-type-aware registry
             ResolvedBodyDto resolvedBody = resolved.getBody();
@@ -231,7 +231,8 @@ public class EvaluationWorker {
                     break;
                 }
 
-                long delay = Math.min((long) (retryDelayMs * Math.pow(multiplier, attempt - 1)), maxRetryDelay);
+                long delay = DeploymentInvocationSupport.nextBackoffDelayMs(
+                        attempt, retryDelayMs, multiplier, maxRetryDelay);
                 try {
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
@@ -258,7 +259,8 @@ public class EvaluationWorker {
                     queryParams,
                     body);
 
-            if (!shouldRetry(lastResult, attempt, maxRetries)) {
+            if (!DeploymentInvocationSupport.isRetryable(
+                    lastResult.getExecutionStatus(), lastResult.getResponseStatusCode(), attempt, maxRetries)) {
                 break;
             }
 
@@ -323,33 +325,6 @@ public class EvaluationWorker {
     }
 
     private record RetryAttemptLog(int attemptIndex, Integer statusCode, String errorType, long durationMs) {}
-
-    private boolean shouldRetry(TestCaseRunResult result, int attempt, int maxRetries) {
-        if (attempt >= maxRetries) {
-            return false;
-        }
-        ExecutionStatus status = result.getExecutionStatus();
-        Integer statusCode = result.getResponseStatusCode();
-
-        // Retryable: TIMEOUT, ERROR (network), 429, 5xx
-        if (status == ExecutionStatus.TIMEOUT) {
-            return true;
-        }
-        if (status == ExecutionStatus.ERROR && statusCode == null) {
-            // Network error (no status code)
-            return true;
-        }
-        if (statusCode != null) {
-            if (statusCode == 429) {
-                return true;
-            }
-            if (statusCode >= 500) {
-                return true;
-            }
-            // 401/403 not retried
-        }
-        return false;
-    }
 
     // ---- MCP execution path ----
 
@@ -444,7 +419,8 @@ public class EvaluationWorker {
                 if (context.getCancellationSignal().get()) {
                     break;
                 }
-                long delay = Math.min((long) (retryDelayMs * Math.pow(multiplier, attempt - 1)), maxRetryDelay);
+                long delay = DeploymentInvocationSupport.nextBackoffDelayMs(
+                        attempt, retryDelayMs, multiplier, maxRetryDelay);
                 try {
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
@@ -574,7 +550,8 @@ public class EvaluationWorker {
                     responseColumns);
         } catch (RuntimeException e) {
             long now = clock.millis();
-            ExecutionStatus status = isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
+            ExecutionStatus status =
+                    DeploymentInvocationSupport.isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
             String errorBody = buildErrorEnvelope("MCP_INVOCATION_ERROR", e.getMessage());
             return buildResult(
                     input,
@@ -634,7 +611,7 @@ public class EvaluationWorker {
                 deploymentInvoker.invokeWithStreaming(method, path, headers, queryParams, body)) {
 
             int statusCode = result.statusCode();
-            ExecutionStatus execStatus = resolveExecutionStatus(statusCode);
+            ExecutionStatus execStatus = DeploymentInvocationSupport.resolveExecutionStatus(statusCode);
 
             String responseBody;
 
@@ -688,7 +665,7 @@ public class EvaluationWorker {
             long duration = now - callStartMs;
 
             ExecutionStatus status;
-            if (isTimeoutException(e)) {
+            if (DeploymentInvocationSupport.isTimeoutException(e)) {
                 status = ExecutionStatus.TIMEOUT;
             } else {
                 status = ExecutionStatus.ERROR;
@@ -710,28 +687,6 @@ public class EvaluationWorker {
         }
     }
 
-    private ExecutionStatus resolveExecutionStatus(int statusCode) {
-        if (statusCode >= 200 && statusCode < 300) {
-            return ExecutionStatus.SUCCESS;
-        }
-        if (statusCode == 401 || statusCode == 403) {
-            return ExecutionStatus.ERROR;
-        }
-        return ExecutionStatus.FAILED;
-    }
-
-    private boolean isTimeoutException(Exception e) {
-        Throwable cause = e;
-        while (cause != null) {
-            String name = cause.getClass().getSimpleName();
-            if (name.contains("Timeout") || name.contains("timeout")) {
-                return true;
-            }
-            cause = cause.getCause();
-        }
-        return false;
-    }
-
     private HttpHeaders buildHeaders(List<KeyValueTemplateDto> resolvedHeaders, EvaluationContext context) {
         HttpHeaders headers = new HttpHeaders();
         Set<String> blacklist = evaluationRunProperties.getExecution().getHeaderBlacklist().stream()
@@ -750,18 +705,6 @@ public class EvaluationWorker {
             }
         }
         return headers;
-    }
-
-    private MultiValueMap<String, String> buildQueryParams(List<KeyValueTemplateDto> resolvedParams) {
-        MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
-        if (resolvedParams != null) {
-            for (KeyValueTemplateDto kv : resolvedParams) {
-                if (kv.getKey() != null && kv.getValue() != null) {
-                    queryParams.add(kv.getKey(), kv.getValue());
-                }
-            }
-        }
-        return queryParams;
     }
 
     private TestCaseRunResult buildResult(

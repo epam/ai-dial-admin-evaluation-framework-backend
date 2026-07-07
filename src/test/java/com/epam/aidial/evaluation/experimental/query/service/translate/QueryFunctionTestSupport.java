@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.experimental.query.service.translate;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.BuiltInQueryFunctions;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.QueryFunction;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.QueryFunctionRegistry;
+import com.epam.aidial.evaluation.experimental.query.service.translate.function.RocAucFunction;
 import java.util.List;
 
 /** Assembles a {@link QueryFunctionRegistry} with the full function catalog for non-Spring unit tests. */
@@ -25,7 +26,8 @@ final class QueryFunctionTestSupport {
                 builtIns.minFunction(),
                 builtIns.maxFunction(),
                 builtIns.percentileContFunction(),
-                builtIns.percentileDiscFunction());
+                builtIns.percentileDiscFunction(),
+                new RocAucFunction());
         return new QueryFunctionRegistry(functions);
     }
 }

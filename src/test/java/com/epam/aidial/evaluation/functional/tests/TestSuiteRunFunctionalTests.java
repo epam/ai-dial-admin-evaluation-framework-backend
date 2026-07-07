@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -11,6 +12,8 @@ import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
+import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
+import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
@@ -53,6 +56,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestSuiteRun Functional Tests")
@@ -75,6 +79,9 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private MetricDeclarationTestDataProvider metricDeclarationTestDataProvider;
+
+    @Autowired
+    private MetricScoreResultRepository metricScoreResultRepository;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -884,6 +891,92 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         assertThat(evalSummaries.get(0).get("execution_status")).isEqualTo("SUCCESS");
     }
 
+    @Test
+    @DisplayName("Should compute a suite's custom overall roc_auc score over a dataset label and a metric probability")
+    void shouldComputeCustomOverallRocAucFromDatasetLabelAndMetricProbability() {
+        // roc_auc(data::y, metric::Classifier::probability), stored as the suite's overallScore.
+        String overallScoreJson = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
+                + "\"filter\":{\"op\":\"and\",\"args\":["
+                + "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"test_suite_run_id\"},"
+                + "{\"type\":\"param\",\"name\":\"runId\"}]},"
+                + "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"computation_id\"},"
+                + "{\"type\":\"param\",\"name\":\"computationId\"}]}]},"
+                + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"roc_auc\",\"args\":["
+                + "{\"type\":\"field\",\"name\":\"data::y\"},"
+                + "{\"type\":\"field\",\"name\":\"metric::Classifier::probability\"}]},\"as\":\"value\"}]}";
+
+        TestSuiteResponseDto suite =
+                createTestSuiteWithRocAucOverallScore("Suite For ROC AUC Overall", overallScoreJson);
+
+        // label/probabilityHint pairs: (0, 0.1), (0, 0.4), (1, 0.35), (1, 0.8) -> one discordant pair -> AUC = 0.75.
+        createTestCaseForSuite(suite.getId(), "case-a", Map.of("y", 0, "probabilityHint", 0.1));
+        createTestCaseForSuite(suite.getId(), "case-b", Map.of("y", 0, "probabilityHint", 0.4));
+        createTestCaseForSuite(suite.getId(), "case-c", Map.of("y", 1, "probabilityHint", 0.35));
+        createTestCaseForSuite(suite.getId(), "case-d", Map.of("y", 1, "probabilityHint", 0.8));
+
+        // Classifier metric declaration + version whose output is a single "probability" field.
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        String classifierVersionId = UUID.randomUUID().toString();
+        metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                classifierVersionId,
+                "00000000-0000-0000-0000-000000000001",
+                1,
+                "{}",
+                "{}",
+                "{\"properties\":{\"probability\":{\"type\":\"number\"}}}");
+
+        // TSMD binds the dataset's probabilityHint column into the metric input; the mock echoes it
+        // back as the metric's "probability" output, simulating a classifier scoring each test case.
+        String inputBindings = """
+                [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
+                """;
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                suite.getId(),
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                UUID.fromString(classifierVersionId),
+                "Classifier",
+                "[]",
+                inputBindings.trim());
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200,
+                        false,
+                        Map.of("id", "mock", "choices", List.of(Map.of("message", Map.of("content", "answer")))),
+                        null,
+                        new HttpHeaders()));
+        when(metricProviderClient.evaluate(anyString(), any(EvaluationRequestDto.class)))
+                .thenAnswer(invocation -> {
+                    EvaluationRequestDto request = invocation.getArgument(1);
+                    BigDecimal probability =
+                            new BigDecimal(request.getInput().get("phint").toString());
+                    return EvaluationResponseDto.builder()
+                            .metricName("Classifier")
+                            .output(Map.of(
+                                    "probability",
+                                    MetricOutputFieldDto.builder()
+                                            .type("value")
+                                            .value(probability)
+                                            .build()))
+                            .build();
+                });
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
+        assertThat(snapshots).hasSize(1);
+        UUID computationId = UUID.fromString((String) snapshots.get(0).get("computation_id"));
+
+        List<MetricScoreResult> results =
+                metricScoreResultRepository.findByRunAndComputation(run.getId(), computationId);
+        MetricScoreResult overall = results.stream()
+                .filter(r -> "overall".equals(r.getMetricScoreName()) && "overall".equals(r.getMetricName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("missing overall metric score result"));
+        assertThat(overall.getValue()).isCloseTo(0.75, within(1e-9));
+    }
+
     // --- Helper Methods ---
 
     private TestSuiteRunResponseDto createRunAndAwaitTerminal(UUID testSuiteId, int numberOfRuns, String name) {
@@ -1009,6 +1102,54 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                         .expression("choices[0].message.content")
                         .type(SchemaFieldType.STRING)
                         .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    private TestSuiteResponseDto createTestSuiteWithRocAucOverallScore(String name, String overallScoreJson) {
+        Map<String, Object> overallScore = objectMapper.readValue(overallScoreJson, new TypeReference<>() {});
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name)
+                .description("Description for " + name)
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .parameters(List.of(ParameterDefinitionDto.builder()
+                                .name("query")
+                                .in(ParameterLocation.QUERY)
+                                .required(true)
+                                .schema(Map.of("type", "string"))
+                                .build()))
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of(
+                                        "type", "object",
+                                        "required", List.of("prompt"),
+                                        "properties", Map.of("prompt", Map.of("type", "string"))))
+                                .build())
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(
+                        FieldDefinitionDto.builder()
+                                .name("y")
+                                .type(SchemaFieldType.NUMBER)
+                                .required(true)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("probabilityHint")
+                                .type(SchemaFieldType.NUMBER)
+                                .required(true)
+                                .build())))
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .overallScore(overallScore)
                 .build();
 
         ResponseEntity<TestSuiteResponseDto> response =

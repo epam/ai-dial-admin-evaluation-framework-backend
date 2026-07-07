@@ -291,6 +291,33 @@ class EvalSummaryQueryRenderTest {
     }
 
     @Test
+    @DisplayName("renders roc_auc(label, probability) as a stored-function call over array_agg'd columns")
+    void rendersRocAucOverLabelAndProbability() {
+        StructuredQuery query = aggregateSelecting(new FnExpr(
+                "roc_auc",
+                false,
+                List.of(new FieldExpr("metric::Classifier::label"), new FieldExpr("metric::Classifier::probability"))));
+
+        String sql = render(query);
+        assertThat(sql)
+                .contains("roc_auc_score(")
+                .contains("array_agg(")
+                .contains("\"metric_values\"")
+                .contains("\"value\"");
+    }
+
+    @Test
+    @DisplayName("rejects a roc_auc call that does not have exactly two arguments")
+    void rejectsRocAucWrongArity() {
+        StructuredQuery query =
+                aggregateSelecting(new FnExpr("roc_auc", false, List.of(new FieldExpr("exec_duration_ms"))));
+
+        assertThatThrownBy(() -> render(query))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("two arguments (label, probability)");
+    }
+
+    @Test
     @DisplayName("rejects a percentile call that does not have exactly two arguments")
     void rejectsPercentileWrongArity() {
         StructuredQuery query = aggregateSelecting(

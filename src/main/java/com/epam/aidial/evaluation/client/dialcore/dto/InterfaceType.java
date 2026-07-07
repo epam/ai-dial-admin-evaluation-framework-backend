@@ -9,7 +9,10 @@ public enum InterfaceType {
     CHAT("chat"),
     EMBEDDING("embedding"),
     MCP("mcp"),
-    CUSTOM_UI("custom_ui");
+    CUSTOM_UI("custom_ui"),
+    OPEN_AI_CHAT_COMPLETIONS("openaiChatCompletions"),
+    OPEN_AI_RESPONSES("openaiResponses"),
+    ANTHROPIC_MESSAGES("anthropicMessages");
 
     private final String value;
 

@@ -3,7 +3,7 @@
 -- positionally by array index (both arrays MUST be built from the same row scan, e.g. via
 -- array_agg(y), array_agg(p) in the same SELECT). Returns NULL when either class is absent, since
 -- no positive/negative pair exists to rank.
-CREATE FUNCTION roc_auc_score(y double precision[], p double precision[])
+CREATE OR REPLACE FUNCTION roc_auc_score(y double precision[], p double precision[])
 RETURNS double precision
 LANGUAGE sql
 IMMUTABLE

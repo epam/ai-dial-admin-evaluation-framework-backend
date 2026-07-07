@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.experimental.query.service.translate.function;
 
+import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
  * expressed as a single jOOQ-built-in {@link Field}.
  */
 @Component
+@LogExecution
 public class RocAucFunction implements QueryFunction {
 
     @Override

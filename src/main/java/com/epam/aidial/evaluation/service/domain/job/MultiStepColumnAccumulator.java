@@ -4,10 +4,7 @@ import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.extern.slf4j.Slf4j;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -20,24 +17,23 @@ import tools.jackson.databind.node.ObjectNode;
  *
  * <p>Not a Spring bean — it holds mutable per-conversation state and is instantiated once per {@code execute()}.
  */
-@Slf4j
 public class MultiStepColumnAccumulator {
 
-    private final ObjectMapper objectMapper;
+    private final JobJsonService jsonService;
     private final Map<String, ArrayNode> columnArrays = new LinkedHashMap<>();
 
-    public MultiStepColumnAccumulator(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public MultiStepColumnAccumulator(JobJsonService jsonService) {
+        this.jsonService = jsonService;
     }
 
     public void addStep(List<ResponseColumnDefinitionDto> responseColumns, String stepExtractedColumnsJson) {
         if (responseColumns == null || responseColumns.isEmpty()) {
             return;
         }
-        final JsonNode stepObject = readTree(stepExtractedColumnsJson);
+        final JsonNode stepObject = jsonService.readTreeOrEmpty(stepExtractedColumnsJson);
         for (ResponseColumnDefinitionDto column : responseColumns) {
             final ArrayNode columnArray =
-                    columnArrays.computeIfAbsent(column.getName(), name -> objectMapper.createArrayNode());
+                    columnArrays.computeIfAbsent(column.getName(), name -> jsonService.createArrayNode());
             final JsonNode value = stepObject.get(column.getName());
             if (value == null || value.isNull()) {
                 columnArray.addNull();
@@ -48,25 +44,8 @@ public class MultiStepColumnAccumulator {
     }
 
     public String toJson() {
-        final ObjectNode node = objectMapper.createObjectNode();
+        final ObjectNode node = jsonService.createObjectNode();
         columnArrays.forEach(node::set);
-        return serialize(node);
-    }
-
-    private JsonNode readTree(String json) {
-        try {
-            return objectMapper.readTree(json);
-        } catch (JacksonException e) {
-            log.warn("Failed to parse extracted columns JSON: {}", e.getMessage(), e);
-            return objectMapper.createObjectNode();
-        }
-    }
-
-    private String serialize(Object body) {
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (JacksonException e) {
-            return body.toString();
-        }
+        return jsonService.writeOrToString(node);
     }
 }

@@ -31,9 +31,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Multi-step (multi-turn) conversation executor (POC). Drives a data-driven sequence of chat-completions
@@ -74,7 +72,7 @@ public class MultiStepConversationExecutor {
     private final ResponseColumnExtractor responseColumnExtractor;
     private final EvaluationRunProperties evaluationRunProperties;
     private final JsonbMapper jsonbMapper;
-    private final ObjectMapper objectMapper;
+    private final JobJsonService jsonService;
     private final ConversationTurnPlanner turnPlanner;
     private final MultiStepResultAssembler resultAssembler;
     private final DeploymentTurnInvoker deploymentTurnInvoker;
@@ -95,7 +93,7 @@ public class MultiStepConversationExecutor {
         final List<InputBindingDto> bindings = input.getInputBindingsOverride() != null
                 ? jsonbMapper.mapInputBindings(input.getInputBindingsOverride())
                 : context.getSnapshotInputBindings();
-        final Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
+        final Map<String, Object> testCaseData = jsonService.readMapOrEmpty(input.getTestCaseData());
 
         // Turn count is derived per test case from the array-valued bound columns. A data problem here
         // (no array column, mismatched lengths, over the cap) fails only this test case.
@@ -128,7 +126,7 @@ public class MultiStepConversationExecutor {
         int lastRetryCount = 0;
 
         final List<Object> history = new ArrayList<>();
-        final var columnAccumulator = new MultiStepColumnAccumulator(objectMapper);
+        final var columnAccumulator = new MultiStepColumnAccumulator(jsonService);
         try {
             for (int i = 0; i < turnPlan.turnCount(); i++) {
                 final var turn = new TurnDefinition(
@@ -278,7 +276,7 @@ public class MultiStepConversationExecutor {
         content.put(MESSAGES_FIELD, fullMessages);
         content.put("stream", false);
 
-        final String requestBodyJson = serializeBody(content);
+        final String requestBodyJson = jsonService.writeOrToString(content);
         final String path = urlBuilder.buildUrl(turn.deploymentId(), resolved.getUrl());
         final HttpHeaders headers = buildHeaders(resolved.getHeaders());
         final MultiValueMap<String, String> queryParams =
@@ -322,14 +320,9 @@ public class MultiStepConversationExecutor {
         if (responseBody == null || responseBody.isBlank()) {
             return null;
         }
-        try {
-            final JsonNode root = objectMapper.readTree(responseBody);
-            final JsonNode message = root.path("choices").path(0).path("message");
-            return message.isObject() ? message : null;
-        } catch (JacksonException e) {
-            log.warn("Failed to parse multi-step response body for assistant message: {}", e.getMessage(), e);
-            return null;
-        }
+        final JsonNode root = jsonService.readTreeOrEmpty(responseBody);
+        final JsonNode message = root.path("choices").path(0).path("message");
+        return message.isObject() ? message : null;
     }
 
     private HttpHeaders buildHeaders(List<KeyValueTemplateDto> resolvedHeaders) {
@@ -347,28 +340,5 @@ public class MultiStepConversationExecutor {
             }
         }
         return headers;
-    }
-
-    private Map<String, Object> parseTestCaseData(String data) {
-        if (data == null || data.isBlank()) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(data, new tools.jackson.core.type.TypeReference<Map<String, Object>>() {});
-        } catch (JacksonException e) {
-            log.warn("Failed to parse test case data: {}", e.getMessage(), e);
-            return Map.of();
-        }
-    }
-
-    private String serializeBody(Object body) {
-        if (body == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (JacksonException e) {
-            return body.toString();
-        }
     }
 }

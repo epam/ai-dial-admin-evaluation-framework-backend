@@ -134,7 +134,8 @@ class EvaluationWorkerTest {
                 FIXED_CLOCK,
                 sseEventParser,
                 sseEventProcessingProperties,
-                multiStepConversationExecutor);
+                multiStepConversationExecutor,
+                new JobJsonService(objectMapper));
     }
 
     @Test

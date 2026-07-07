@@ -36,7 +36,7 @@ class DeploymentTurnInvokerTest {
     private final MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
 
     private DeploymentTurnInvoker invoker() {
-        return new DeploymentTurnInvoker(deploymentInvoker, objectMapper);
+        return new DeploymentTurnInvoker(deploymentInvoker, new JobJsonService(objectMapper));
     }
 
     private static EvaluationContext context(int maxRetries, long maxResponseSizeBytes) {

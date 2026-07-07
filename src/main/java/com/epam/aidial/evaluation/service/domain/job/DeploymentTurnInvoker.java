@@ -11,8 +11,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Non-streaming per-turn deployment invoker with retry/backoff for the multi-step conversation executor.
@@ -28,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 public class DeploymentTurnInvoker {
 
     private final DialCoreDeploymentInvoker deploymentInvoker;
-    private final ObjectMapper objectMapper;
+    private final JobJsonService jsonService;
 
     public StepOutcome invoke(
             EvaluationContext context,
@@ -89,7 +87,7 @@ public class DeploymentTurnInvoker {
                 return new StepOutcome(ExecutionStatus.ERROR, statusCode, null, 0);
             }
 
-            String responseBody = serialize(result.body());
+            String responseBody = jsonService.writeOrToString(result.body());
             if (responseBody != null
                     && responseBody.getBytes(StandardCharsets.UTF_8).length > context.getMaxResponseSizeBytes()) {
                 status = ExecutionStatus.ERROR;
@@ -99,17 +97,6 @@ public class DeploymentTurnInvoker {
             final ExecutionStatus status =
                     DeploymentInvocationSupport.isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
             return new StepOutcome(status, null, null, 0);
-        }
-    }
-
-    private String serialize(Object body) {
-        if (body == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (JacksonException e) {
-            return body.toString();
         }
     }
 }

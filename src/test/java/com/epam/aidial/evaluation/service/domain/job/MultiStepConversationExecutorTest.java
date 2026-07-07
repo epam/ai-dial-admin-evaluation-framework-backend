@@ -86,6 +86,7 @@ class MultiStepConversationExecutorTest {
 
     @BeforeEach
     void setUp() {
+        final JobJsonService jsonService = new JobJsonService(objectMapper);
         executor = new MultiStepConversationExecutor(
                 resolvedRequestService,
                 urlBuilder,
@@ -93,10 +94,10 @@ class MultiStepConversationExecutorTest {
                 responseColumnExtractor,
                 evaluationRunProperties,
                 jsonbMapper,
-                objectMapper,
+                jsonService,
                 new ConversationTurnPlanner(),
-                new MultiStepResultAssembler(objectMapper, FIXED_CLOCK),
-                new DeploymentTurnInvoker(deploymentInvoker, objectMapper));
+                new MultiStepResultAssembler(jsonService, FIXED_CLOCK),
+                new DeploymentTurnInvoker(deploymentInvoker, jsonService));
         lenient().when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/dep/chat/completions");
         lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
         lenient().when(execution.getHeaderBlacklist()).thenReturn(List.of());

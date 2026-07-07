@@ -20,7 +20,8 @@ class MultiStepResultAssemblerTest {
     private static final long NOW_MS = FIXED_CLOCK.millis();
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final MultiStepResultAssembler assembler = new MultiStepResultAssembler(objectMapper, FIXED_CLOCK);
+    private final MultiStepResultAssembler assembler =
+            new MultiStepResultAssembler(new JobJsonService(objectMapper), FIXED_CLOCK);
 
     private static TestCaseRunInput input() {
         return TestCaseRunInput.builder()

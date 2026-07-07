@@ -20,7 +20,7 @@ class MultiStepColumnAccumulatorTest {
     @Test
     @DisplayName("transposes two steps into a column-major array")
     void twoStepsColumnMajor() {
-        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(objectMapper);
+        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(new JobJsonService(objectMapper));
         final List<ResponseColumnDefinitionDto> columns = List.of(column("answer"));
 
         accumulator.addStep(columns, "{\"answer\":\"Paris\"}");
@@ -32,7 +32,7 @@ class MultiStepColumnAccumulatorTest {
     @Test
     @DisplayName("keeps indices aligned by inserting null for a step missing a column")
     void perStepNullAlignment() {
-        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(objectMapper);
+        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(new JobJsonService(objectMapper));
         final List<ResponseColumnDefinitionDto> columns = List.of(column("answer"), column("score"));
 
         accumulator.addStep(columns, "{\"answer\":\"Paris\",\"score\":0.9}");
@@ -44,7 +44,7 @@ class MultiStepColumnAccumulatorTest {
     @Test
     @DisplayName("contributes null for every column when a step's JSON is malformed")
     void malformedStepJsonYieldsNull() {
-        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(objectMapper);
+        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(new JobJsonService(objectMapper));
         final List<ResponseColumnDefinitionDto> columns = List.of(column("answer"));
 
         accumulator.addStep(columns, "not-json");
@@ -55,7 +55,7 @@ class MultiStepColumnAccumulatorTest {
     @Test
     @DisplayName("yields an empty object when no steps were accumulated")
     void noStepsYieldsEmptyObject() {
-        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(objectMapper);
+        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(new JobJsonService(objectMapper));
 
         assertThat(accumulator.toJson()).isEqualTo("{}");
     }
@@ -63,7 +63,7 @@ class MultiStepColumnAccumulatorTest {
     @Test
     @DisplayName("adds nothing when there are no response columns")
     void emptyResponseColumnsAddsNothing() {
-        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(objectMapper);
+        final MultiStepColumnAccumulator accumulator = new MultiStepColumnAccumulator(new JobJsonService(objectMapper));
 
         accumulator.addStep(List.of(), "{\"answer\":\"Paris\"}");
 

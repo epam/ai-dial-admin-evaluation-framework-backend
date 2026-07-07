@@ -51,7 +51,6 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -80,6 +79,7 @@ public class EvaluationWorker {
     private final SseEventParser sseEventParser;
     private final SseEventProcessingProperties sseEventProcessingProperties;
     private final MultiStepConversationExecutor multiStepConversationExecutor;
+    private final JobJsonService jsonService;
 
     public TestCaseRunResult execute(
             TestCaseRunInput input,
@@ -111,7 +111,7 @@ public class EvaluationWorker {
             }
 
             // Parse test case data for template resolution
-            Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
+            Map<String, Object> testCaseData = jsonService.readMapOrEmpty(input.getTestCaseData());
 
             // Resolve effective template and bindings (per-test-case overrides take priority)
             RequestTemplateDto effectiveTemplate = input.getRequestTemplateOverride() != null
@@ -348,13 +348,13 @@ public class EvaluationWorker {
                     : context.getInputBindings();
 
             // Parse test case data
-            Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
+            Map<String, Object> testCaseData = jsonService.readMapOrEmpty(input.getTestCaseData());
 
             // Resolve arguments
             McpRequestResolver.ResolutionResult resolutionResult =
                     mcpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData);
             Map<String, Object> resolvedArgs = resolutionResult.getArguments();
-            String requestBodyJson = serializeBody(resolvedArgs);
+            String requestBodyJson = jsonService.writeOrToString(resolvedArgs);
 
             // Invoke with retries
             return invokeMcpWithRetries(
@@ -578,18 +578,6 @@ public class EvaluationWorker {
         return status == ExecutionStatus.TIMEOUT || status == ExecutionStatus.ERROR;
     }
 
-    private Map<String, Object> parseTestCaseData(String data) {
-        if (data == null || data.isBlank()) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(data, new TypeReference<Map<String, Object>>() {});
-        } catch (JacksonException e) {
-            log.warn("Failed to parse test case data: {}", e.getMessage(), e);
-            return Map.of();
-        }
-    }
-
     // ---- HTTP/Deployment execution path ----
 
     private TestCaseRunResult invokeSingle(
@@ -632,7 +620,7 @@ public class EvaluationWorker {
                 }
             } else {
                 // Non-streaming response
-                responseBody = serializeBody(result.body());
+                responseBody = jsonService.writeOrToString(result.body());
 
                 // Check size limit
                 if (responseBody != null) {
@@ -785,18 +773,7 @@ public class EvaluationWorker {
         }
         // For JSON bodies, store just the content map (no contentType wrapper)
         Object toSerialize = body instanceof ResolvedJsonBodyDto jsonBody ? jsonBody.getContent() : body;
-        return serializeBody(toSerialize);
-    }
-
-    private String serializeBody(Object body) {
-        if (body == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (JacksonException e) {
-            return body.toString();
-        }
+        return jsonService.writeOrToString(toSerialize);
     }
 
     private String truncateResponse(String responseBody, long maxBytes) {

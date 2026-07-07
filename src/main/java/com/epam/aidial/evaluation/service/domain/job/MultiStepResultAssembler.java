@@ -8,8 +8,6 @@ import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
@@ -24,7 +22,7 @@ import tools.jackson.databind.node.ObjectNode;
 @RequiredArgsConstructor
 public class MultiStepResultAssembler {
 
-    private final ObjectMapper objectMapper;
+    private final JobJsonService jsonService;
     private final Clock clock;
 
     public TestCaseRunResult success(
@@ -92,12 +90,8 @@ public class MultiStepResultAssembler {
     }
 
     private String buildErrorLogDetails(String message) {
-        final ObjectNode node = objectMapper.createObjectNode();
+        final ObjectNode node = jsonService.createObjectNode();
         node.put("error", message);
-        try {
-            return objectMapper.writeValueAsString(node);
-        } catch (JacksonException e) {
-            return node.toString();
-        }
+        return jsonService.writeOrToString(node);
     }
 }

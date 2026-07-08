@@ -45,8 +45,15 @@ class MultiStepResultAssemblerTest {
     void successMapsAllFields() {
         final TestCaseRunInput input = input();
         final EvaluationContext context = context();
+        final String warningsJson = "[{\"column\":\"answer\",\"error\":\"boom\",\"stepIndex\":0}]";
         final ConversationOutcome outcome = new ConversationOutcome(
-                ExecutionStatus.SUCCESS, 200, "{\"req\":1}", "{\"resp\":2}", 2, "{\"answer\":[\"Paris\"]}");
+                ExecutionStatus.SUCCESS,
+                200,
+                "{\"req\":1}",
+                "{\"resp\":2}",
+                2,
+                "{\"answer\":[\"Paris\"]}",
+                warningsJson);
 
         final TestCaseRunResult result = assembler.success(input, context, 3, "trace-1", NOW_MS - 100, outcome);
 
@@ -56,7 +63,7 @@ class MultiStepResultAssemblerTest {
         assertThat(result.getResponseBody()).isEqualTo("{\"resp\":2}");
         assertThat(result.getRetryCount()).isEqualTo(2);
         assertThat(result.getExtractedColumns()).isEqualTo("{\"answer\":[\"Paris\"]}");
-        assertThat(result.getExtractionWarnings()).isEqualTo("[]");
+        assertThat(result.getExtractionWarnings()).isEqualTo(warningsJson);
         assertThat(result.getLogDetails()).isNull();
         assertThat(result.getRunIndex()).isEqualTo(3);
         assertThat(result.getTraceId()).isEqualTo("trace-1");

@@ -27,7 +27,9 @@ import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.ExtractionWarningDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
+import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -87,6 +89,7 @@ class MultiStepConversationExecutorTest {
     @BeforeEach
     void setUp() {
         final JobJsonService jsonService = new JobJsonService(objectMapper);
+        final ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
         executor = new MultiStepConversationExecutor(
                 resolvedRequestService,
                 urlBuilder,
@@ -95,6 +98,7 @@ class MultiStepConversationExecutorTest {
                 evaluationRunProperties,
                 jsonbMapper,
                 jsonService,
+                warningsSerializer,
                 new ConversationTurnPlanner(),
                 new MultiStepResultAssembler(jsonService, FIXED_CLOCK),
                 new DeploymentTurnInvoker(deploymentInvoker, jsonService));
@@ -159,6 +163,32 @@ class MultiStepConversationExecutorTest {
         assertThat(answers.size()).isEqualTo(2);
         assertThat(answers.get(0).asString()).isEqualTo("answer-0");
         assertThat(answers.get(1).asString()).isEqualTo("answer-1");
+    }
+
+    @Test
+    @DisplayName("per-step extraction warnings are aggregated and tagged with their step index")
+    void extractionWarningsTaggedByStep() {
+        when(resolvedRequestService.resolve(any(), any(), any()))
+                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(response(200, "assistant-0"), response(200, "assistant-1"));
+        // step 0 produces a warning; step 1 extracts cleanly
+        when(responseColumnExtractor.extract(any(), any()))
+                .thenReturn(
+                        new ResponseColumnExtractor.ExtractionResult(
+                                "{\"a\":null}", "[{\"column\":\"a\",\"error\":\"boom-0\"}]"),
+                        new ResponseColumnExtractor.ExtractionResult("{\"a\":\"answer-1\"}", "[]"));
+
+        TestCaseRunResult result =
+                executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
+
+        final List<ExtractionWarningDto> warnings = new ValidationWarningsSerializer(objectMapper)
+                .deserializeExtractionWarnings(result.getExtractionWarnings());
+        assertThat(warnings).singleElement().satisfies(w -> {
+            assertThat(w.getColumn()).isEqualTo("a");
+            assertThat(w.getError()).isEqualTo("boom-0");
+            assertThat(w.getStepIndex()).isEqualTo(0);
+        });
     }
 
     @Test

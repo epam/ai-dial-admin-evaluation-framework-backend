@@ -50,7 +50,7 @@ public class MultiStepResultAssembler {
                 .execDurationMs(execCompletedAtMs - execStartedAtMs)
                 .traceId(traceId)
                 .extractedColumns(outcome.extractedColumnsJson())
-                .extractionWarnings("[]")
+                .extractionWarnings(outcome.extractionWarningsJson())
                 .retryCount(outcome.lastRetryCount())
                 .logDetails(null)
                 .createdAtMs(context.getCreatedAtMs())

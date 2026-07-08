@@ -128,6 +128,19 @@ Status: **Planned**
 - **WHEN** a suite has `multiStep == false`
 - **THEN** `extractedColumns` SHALL be a JSON object of scalar values and `responseBody` SHALL be the single response, exactly as before
 
+### Requirement: Per-step extraction warnings carry a step index
+A multi-step run SHALL aggregate the extraction warnings produced for each completed step into `TestCaseRunResult.extractionWarnings` as a flat JSON array, where each warning carries a 0-based `stepIndex` identifying the turn it came from. The warning conditions SHALL be exactly those of the single-step path (absent/blank response body, JSONata-evaluation or type-reconciliation failure); a column that legitimately resolves to null/no-match SHALL NOT produce a warning. `stepIndex` SHALL be omitted for single-step warnings, so single-step output is unchanged. A run that persists an `ERROR` result for a data-shape problem (no turn executed) SHALL have an empty `[]` warnings array.
+Status: **Planned**
+
+#### Scenario: Multi-step warnings are tagged by step
+- **WHEN** a 2-step conversation completes, extraction of column `answer` fails at step 0, and step 1 extracts cleanly
+- **THEN** `extractionWarnings` SHALL be a JSON array containing one warning for column `answer` with `stepIndex` `0`
+- **AND** no warning SHALL be present for step 1
+
+#### Scenario: Single-step warnings omit stepIndex
+- **WHEN** a suite has `multiStep == false` and a column's extraction fails
+- **THEN** the persisted `extractionWarnings` entry SHALL NOT include a `stepIndex` key
+
 ### Requirement: Metric evaluation reads raw multi-step columns (no normalization)
 The metric evaluation phase SHALL read a result's `extractedColumns` **as stored**, with no shape normalization. Both single-step (object of scalars) and multi-step (column-major object of per-column arrays) values are used directly: metric config/input bindings resolve against the raw object, and the value copied into the `EvalSummary` is the raw object. Turn/element selection for a multi-step column is a per-binding concern, done via a `Response` binding's optional `jsonataExpression` (see the metric-evaluation binding-resolution requirement).
 Status: **Planned**
@@ -145,4 +158,5 @@ Status: **Planned**
 ## Implementation Notes
 - Turn loop lives in a new `service.domain.job.MultiStepConversationExecutor`, delegated to from `EvaluationWorker.execute`.
 - Template resolution reuses `service.domain.ResolvedRequestService.resolve`; per-step extraction reuses `service.domain.ResponseColumnExtractor.extract`, transposed into a column-major object by `MultiStepConversationExecutor`.
+- Per-step extraction warnings reuse the extractor's output verbatim and are aggregated by `service.domain.job.MultiStepWarningAccumulator` (sibling of `MultiStepColumnAccumulator`), stamping each with its `stepIndex`; ser/deser reuses `service.domain.mapper.ValidationWarningsSerializer`. `ExtractionWarningDto` gains a nullable, `NON_NULL`-omitted `stepIndex` so single-step output is unchanged.
 - There is **no** metric-boundary normalization (the former `ExtractedColumnsNormalizer` was removed): `MetricEvaluationWorker.buildRequest` and `InProcessMetricEvaluationExecutor.buildItem` read `extractedColumns` as stored. Turn/element selection is a per-binding concern via a `Response` binding's optional `jsonataExpression` (see metric-evaluation).

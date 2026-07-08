@@ -18,6 +18,7 @@ import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
+import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +74,7 @@ public class MultiStepConversationExecutor {
     private final EvaluationRunProperties evaluationRunProperties;
     private final JsonbMapper jsonbMapper;
     private final JobJsonService jsonService;
+    private final ValidationWarningsSerializer warningsSerializer;
     private final ConversationTurnPlanner turnPlanner;
     private final MultiStepResultAssembler resultAssembler;
     private final DeploymentTurnInvoker deploymentTurnInvoker;
@@ -127,6 +129,7 @@ public class MultiStepConversationExecutor {
 
         final List<Object> history = new ArrayList<>();
         final var columnAccumulator = new MultiStepColumnAccumulator(jsonService);
+        final var warningAccumulator = new MultiStepWarningAccumulator(warningsSerializer);
         try {
             for (int i = 0; i < turnPlan.turnCount(); i++) {
                 final var turn = new TurnDefinition(
@@ -144,6 +147,7 @@ public class MultiStepConversationExecutor {
                 history.addAll(result.messagesToAppend());
                 if (result.control() == TurnControl.CONTINUE) {
                     columnAccumulator.addStep(responseColumns, result.extractedColumnsJson());
+                    warningAccumulator.addStep(i, result.extractionWarningsJson());
                 }
 
                 if (result.outcome() != null) {
@@ -174,7 +178,8 @@ public class MultiStepConversationExecutor {
                 lastRequestBodyJson,
                 lastResponseBodyJson,
                 lastRetryCount,
-                columnAccumulator.toJson());
+                columnAccumulator.toJson(),
+                warningAccumulator.toJson());
         return resultAssembler.success(input, context, runIndex, traceId, execStartedAtMs, outcome);
     }
 
@@ -197,7 +202,8 @@ public class MultiStepConversationExecutor {
 
     /**
      * Result of one turn, applied by the caller: {@code messagesToAppend} is added to the running history and,
-     * for a completed turn, {@code extractedColumnsJson} is appended to the column-major accumulator.
+     * for a completed turn, {@code extractedColumnsJson} is appended to the column-major accumulator and
+     * {@code extractionWarningsJson} (this turn's extractor warnings) to the warning accumulator.
      * {@code control} tells the loop whether to continue or abort (with the terminal {@code status}). When
      * {@code outcome} is non-null the turn issued its HTTP request, so the caller adopts its
      * request/response/status/retry verbatim; an earlier abort leaves the last-turn trackers untouched.
@@ -208,32 +214,35 @@ public class MultiStepConversationExecutor {
             String requestBodyJson,
             StepOutcome outcome,
             List<Object> messagesToAppend,
-            String extractedColumnsJson) {
+            String extractedColumnsJson,
+            String extractionWarningsJson) {
 
         /** Aborted before any HTTP request (cancellation, missing JSON body, non-array messages); nothing to append. */
         static TurnResult abortBeforeRequest(ExecutionStatus status) {
-            return new TurnResult(TurnControl.ABORT, status, null, null, List.of(), null);
+            return new TurnResult(TurnControl.ABORT, status, null, null, List.of(), null, null);
         }
 
         /** Aborted after the request (non-success response, or 2xx with no assistant message); the user turn is kept. */
         static TurnResult abortAfterRequest(
                 ExecutionStatus status, String requestBodyJson, List<Object> messagesToAppend, StepOutcome outcome) {
-            return new TurnResult(TurnControl.ABORT, status, requestBodyJson, outcome, messagesToAppend, null);
+            return new TurnResult(TurnControl.ABORT, status, requestBodyJson, outcome, messagesToAppend, null, null);
         }
 
-        /** Turn completed: the user turn plus assistant reply to append, and this step's extracted columns. */
+        /** Turn completed: the user turn plus assistant reply to append, this step's extracted columns and warnings. */
         static TurnResult completed(
                 String requestBodyJson,
                 List<Object> messagesToAppend,
                 StepOutcome outcome,
-                String extractedColumnsJson) {
+                String extractedColumnsJson,
+                String extractionWarningsJson) {
             return new TurnResult(
                     TurnControl.CONTINUE,
                     ExecutionStatus.SUCCESS,
                     requestBodyJson,
                     outcome,
                     messagesToAppend,
-                    extractedColumnsJson);
+                    extractedColumnsJson,
+                    extractionWarningsJson);
         }
     }
 
@@ -308,7 +317,12 @@ public class MultiStepConversationExecutor {
         messagesToAppend.add(assistantMessage);
         final ResponseColumnExtractor.ExtractionResult extraction =
                 responseColumnExtractor.extract(turn.responseColumns(), outcome.responseBody());
-        return TurnResult.completed(requestBodyJson, messagesToAppend, outcome, extraction.extractedColumns());
+        return TurnResult.completed(
+                requestBodyJson,
+                messagesToAppend,
+                outcome,
+                extraction.extractedColumns(),
+                extraction.extractionWarnings());
     }
 
     /**

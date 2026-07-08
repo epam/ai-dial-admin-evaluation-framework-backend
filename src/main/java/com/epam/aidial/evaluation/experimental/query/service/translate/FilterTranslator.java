@@ -8,6 +8,8 @@ import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.model.FilterNode;
 import com.epam.aidial.evaluation.experimental.query.model.LogicalNode;
+import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
@@ -20,18 +22,31 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.JSONB;
+import org.jooq.Record;
+import org.jooq.Record1;
+import org.jooq.Select;
+import org.jooq.SelectQuery;
+import org.jooq.Table;
 import org.jooq.impl.DSL;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
  * Translates the recursive filter tree (§3) into a jOOQ {@link Condition}. Logical nodes map to
  * {@code AND}/{@code OR}/{@code NOT}; comparison nodes are treated as binary {@code left op right}
- * where the left operand is any translatable expression and the right is a literal, field, or — for
- * {@code in} — an array of literals. A {@code null} tree means "no filter" ({@code TRUE}).
+ * where the left operand is any translatable expression and the right is a literal, field, an array
+ * (for {@code in}), or a {@code subquery} (for {@code in}). A {@code null} tree means "no filter"
+ * ({@code TRUE}).
  *
  * <p>Used for both {@code filter} (against base-field bindings) and {@code having} (against bindings
  * augmented with aggregate aliases) — the binding map supplied by the caller decides which names are
  * resolvable.
+ *
+ * <p>A {@code subquery}-valued {@code in} is compiled to a nested {@code SELECT} ({@code left IN
+ * (SELECT …)}). The enclosing {@link TranslationContext} (datasource, table, entity) needed to build
+ * that nested select is passed to the {@code TranslationContext} overload and held for the duration of
+ * the call in a {@link ThreadLocal} (mirroring {@code AuthorizationTokenHolder}), so the recursive walk
+ * keeps its plain {@code (node, bindings)} signatures and only {@link #subquerySelect} reads it.
  */
 @Component
 @LogExecution
@@ -43,7 +58,25 @@ public class FilterTranslator {
 
     private final ExprTranslator exprTranslator;
 
-    /** Translates a filter tree into a jOOQ {@link Condition} ({@code null} tree → {@code TRUE}). */
+    /**
+     * Lazy reference to the query builder, used to compile a {@code subquery}-valued {@code in} operand
+     * into a nested select. {@link ObjectProvider} breaks the {@code StructuredQueryBuilder →
+     * FilterTranslator} constructor cycle (resolved on first use, not at construction).
+     */
+    private final ObjectProvider<StructuredQueryBuilder> queryBuilderProvider;
+
+    /**
+     * Enclosing context for the current translation, set only by the {@link TranslationContext} overload
+     * and read only when compiling a {@code subquery}-valued {@code in}. {@code null} means "no subquery
+     * support in this context" (the plain {@link #toCondition(FilterNode, Map)} entry).
+     */
+    private final ThreadLocal<TranslationContext> subqueryContext = new ThreadLocal<>();
+
+    /**
+     * Translates a filter tree into a jOOQ {@link Condition} ({@code null} tree → {@code TRUE}) in a
+     * context that does not support {@code subquery}-valued {@code in} operands (a subquery operand is
+     * rejected). Callers that need subqueries use the {@link TranslationContext} overload.
+     */
     public Condition toCondition(FilterNode node, Map<String, QueryFieldBinding> bindings) {
         if (node == null) {
             return DSL.trueCondition();
@@ -52,6 +85,26 @@ public class FilterTranslator {
             case LogicalNode logical -> toLogical(logical, bindings);
             case ComparisonNode comparison -> toComparison(comparison, bindings);
         };
+    }
+
+    /**
+     * Translates a filter tree, making {@code ctx} available to compile a {@code subquery}-valued
+     * {@code in}. The context is held in a {@link ThreadLocal} for the duration of the call and restored
+     * afterwards, so nested/sibling subquery compilations see the correct enclosing context and nothing
+     * leaks across calls.
+     */
+    public Condition toCondition(FilterNode node, Map<String, QueryFieldBinding> bindings, TranslationContext ctx) {
+        final TranslationContext previous = subqueryContext.get();
+        subqueryContext.set(ctx);
+        try {
+            return toCondition(node, bindings);
+        } finally {
+            if (previous == null) {
+                subqueryContext.remove();
+            } else {
+                subqueryContext.set(previous);
+            }
+        }
     }
 
     private Condition toLogical(LogicalNode node, Map<String, QueryFieldBinding> bindings) {
@@ -103,6 +156,9 @@ public class FilterTranslator {
         final Field left = exprTranslator.toField(leftExpr, bindings);
 
         if (op == ComparisonOp.IN) {
+            if (right instanceof SubqueryExpr subquery) {
+                return left.in(subquerySelect(subquery, bindings));
+            }
             return left.in(inValues(right, bindings));
         }
         if (isNullLiteral(right)) {
@@ -142,6 +198,39 @@ public class FilterTranslator {
             values.add(exprTranslator.toField(value, bindings));
         }
         return values;
+    }
+
+    /**
+     * Compiles a {@code subquery}-valued {@code in} operand into a nested single-column select. Requires
+     * an enclosing {@link TranslationContext} (from the {@code TranslationContext} overload); the subquery
+     * must target the enclosing entity (same-entity only) so it reuses the enclosing table and field
+     * bindings. Its <b>first</b> select column is the membership key: the built select is wrapped in a
+     * derived table and only that first column is projected into the {@code IN}, so the subquery may
+     * additionally select aggregates purely to drive its own {@code ORDER BY}/{@code LIMIT} (e.g.
+     * {@code max(computed_at_ms)} to take the latest N groups).
+     */
+    private Select<? extends Record1<?>> subquerySelect(
+            SubqueryExpr subquery, Map<String, QueryFieldBinding> bindings) {
+        final TranslationContext ctx = subqueryContext.get();
+        if (ctx == null) {
+            throw new ValidationException("'in' subquery is not supported in this context");
+        }
+        final StructuredQuery inner = subquery.query();
+        if (inner == null) {
+            throw new ValidationException("'in' subquery requires a 'query'");
+        }
+        if (!ctx.entity().equals(inner.entity())) {
+            throw new ValidationException(
+                    "'in' subquery must target the same entity ('" + ctx.entity() + "'), not '" + inner.entity() + "'");
+        }
+        final SelectQuery<Record> subselect =
+                queryBuilderProvider.getObject().build(ctx.dsl(), ctx.table(), bindings, inner);
+        final Table<?> derived = subselect.asTable(DSL.name("in_subquery"));
+        final Field<?> membershipKey = derived.field(0);
+        if (membershipKey == null) {
+            throw new ValidationException("'in' subquery must select at least one column (the membership key)");
+        }
+        return ctx.dsl().select(membershipKey).from(derived);
     }
 
     /** True only for a bare {@link FieldExpr} bound to an {@code ARRAY}-typed field. */

@@ -20,6 +20,7 @@ import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -64,12 +65,15 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
     private final StructuredQueryService structuredQueryService;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     @Override
     public void execute(MetricScoreComputationContext ctx) {
         if (isCancelled(ctx)) {
             return;
         }
+        // One timestamp shared by every result of this computation.
+        final long computedAtMs = clock.millis();
         final List<RunMetricSnapshot> snapshots = runMetricSnapshotRepository.findByRunIdAndComputationId(
                 ctx.getTestSuiteRunId(), ctx.getComputationId());
         final List<MetricField> metricFields = discoverMetricFields(snapshots);
@@ -88,12 +92,12 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
             if (isCancelled(ctx)) {
                 return;
             }
-            results.addAll(computePerMetric(statistic.query(), statistic.name(), metricFields, ctx));
+            results.addAll(computePerMetric(statistic.query(), statistic.name(), metricFields, ctx, computedAtMs));
         }
 
         // Run-level overall, from the suite's (snapshot) definition or the single-metric default.
         if (!isCancelled(ctx)) {
-            results.addAll(computeOverall(ctx, metricFields));
+            results.addAll(computeOverall(ctx, metricFields, computedAtMs));
         }
 
         metricScoreService.saveAll(results);
@@ -109,14 +113,15 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
             StructuredQuery query,
             String scoreName,
             List<MetricField> metricFields,
-            MetricScoreComputationContext ctx) {
+            MetricScoreComputationContext ctx,
+            long computedAtMs) {
         final List<MetricScoreResult> results = new ArrayList<>();
         for (final MetricField metricField : metricFields) {
             final Map<String, Expr> params = baseParams(ctx);
             params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
             final Double value = executeScalar(query, params, scoreName, metricField.flattenedName(), ctx);
             if (value != null) {
-                results.add(buildResult(ctx, scoreName, metricField.metricName(), value));
+                results.add(buildResult(ctx, scoreName, metricField.metricName(), value, computedAtMs));
             }
         }
         return results;
@@ -127,7 +132,8 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
      * default — computed only when the run has exactly one numeric metric field (then {@code overall} is
      * that metric's average), otherwise skipped (no {@code overall} row).
      */
-    private List<MetricScoreResult> computeOverall(MetricScoreComputationContext ctx, List<MetricField> metricFields) {
+    private List<MetricScoreResult> computeOverall(
+            MetricScoreComputationContext ctx, List<MetricField> metricFields, long computedAtMs) {
         final boolean isDefault = ctx.getOverallExpression() == null;
         if (isDefault && metricFields.size() != 1) {
             log.debug(
@@ -153,8 +159,12 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         final Double value = executeScalar(
                 query, params, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, ctx);
         return value != null
-                ? List.of(
-                        buildResult(ctx, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, value))
+                ? List.of(buildResult(
+                        ctx,
+                        MetricScoreConstants.SCORE_OVERALL,
+                        MetricScoreConstants.SCORE_OVERALL,
+                        value,
+                        computedAtMs))
                 : List.of();
     }
 
@@ -219,14 +229,16 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
     }
 
     private MetricScoreResult buildResult(
-            MetricScoreComputationContext ctx, String scoreName, String metricName, Double value) {
+            MetricScoreComputationContext ctx, String scoreName, String metricName, Double value, long computedAtMs) {
         return MetricScoreResult.builder()
                 .id(UUID.randomUUID())
                 .testSuiteRunId(ctx.getTestSuiteRunId())
+                .testSuiteId(ctx.getTestSuiteId())
                 .computationId(ctx.getComputationId())
                 .metricScoreName(scoreName)
                 .metricName(metricName)
                 .value(value)
+                .computedAtMs(computedAtMs)
                 .build();
     }
 

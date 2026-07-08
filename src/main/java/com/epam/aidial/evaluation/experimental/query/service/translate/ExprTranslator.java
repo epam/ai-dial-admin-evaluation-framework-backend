@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ParamExpr;
+import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.FunctionContext;
@@ -88,6 +89,8 @@ public class ExprTranslator {
             case ParamExpr param -> throw new ValidationException("unbound query parameter '" + param.name() + "'");
             case ArrayExpr ignored ->
                 throw new ValidationException("array expressions are only valid as the right operand of 'in'");
+            case SubqueryExpr ignored ->
+                throw new ValidationException("subquery expressions are only valid as the right operand of 'in'");
         };
     }
 }

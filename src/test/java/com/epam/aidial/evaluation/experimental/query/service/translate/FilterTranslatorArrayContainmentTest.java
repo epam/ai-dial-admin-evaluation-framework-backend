@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.experimental.query.service.translate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.model.ComparisonNode;
@@ -24,6 +25,7 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Renders the SQL produced by {@link FilterTranslator} for {@code co}/{@code nc} on array-typed vs
@@ -39,7 +41,11 @@ class FilterTranslatorArrayContainmentTest {
     private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(jsonPathAccessor);
     private final ExprTranslator exprTranslator = new ExprTranslator(
             valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
-    private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
+
+    @SuppressWarnings("unchecked")
+    private final ObjectProvider<StructuredQueryBuilder> builderProvider = mock(ObjectProvider.class);
+
+    private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator, builderProvider);
 
     private final Field<JSONB> dataColumn = DSL.field(DSL.name("data"), SQLDataType.JSONB);
 

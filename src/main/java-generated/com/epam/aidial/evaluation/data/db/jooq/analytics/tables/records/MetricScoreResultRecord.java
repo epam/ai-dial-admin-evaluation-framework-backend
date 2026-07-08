@@ -102,6 +102,34 @@ public class MetricScoreResultRecord extends UpdatableRecordImpl<MetricScoreResu
         return (Double) get(5);
     }
 
+    /**
+     * Setter for <code>analytics.metric_score_result.test_suite_id</code>.
+     */
+    public void setTestSuiteId(String value) {
+        set(6, value);
+    }
+
+    /**
+     * Getter for <code>analytics.metric_score_result.test_suite_id</code>.
+     */
+    public String getTestSuiteId() {
+        return (String) get(6);
+    }
+
+    /**
+     * Setter for <code>analytics.metric_score_result.computed_at_ms</code>.
+     */
+    public void setComputedAtMs(Long value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>analytics.metric_score_result.computed_at_ms</code>.
+     */
+    public Long getComputedAtMs() {
+        return (Long) get(7);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -125,7 +153,7 @@ public class MetricScoreResultRecord extends UpdatableRecordImpl<MetricScoreResu
     /**
      * Create a detached, initialised MetricScoreResultRecord
      */
-    public MetricScoreResultRecord(String id, String testSuiteRunId, String computationId, String metricScoreName, String metricName, Double value) {
+    public MetricScoreResultRecord(String id, String testSuiteRunId, String computationId, String metricScoreName, String metricName, Double value, String testSuiteId, Long computedAtMs) {
         super(MetricScoreResult.METRIC_SCORE_RESULT);
 
         setId(id);
@@ -134,6 +162,8 @@ public class MetricScoreResultRecord extends UpdatableRecordImpl<MetricScoreResu
         setMetricScoreName(metricScoreName);
         setMetricName(metricName);
         setValue(value);
+        setTestSuiteId(testSuiteId);
+        setComputedAtMs(computedAtMs);
         resetTouchedOnNotNull();
     }
 }

@@ -3,7 +3,6 @@ package com.epam.aidial.evaluation.experimental.query.service.translate;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
 
 import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
@@ -24,6 +23,7 @@ import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
 import com.epam.aidial.evaluation.experimental.query.model.SortDir;
 import com.epam.aidial.evaluation.experimental.query.model.SortItem;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.JooqTableSchemaResolver;
@@ -37,7 +37,6 @@ import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Renders the SQL produced by the model → jOOQ translation layer for {@code test_suites} without a
@@ -53,10 +52,7 @@ class StructuredQueryBuilderTest {
     private final ExprTranslator exprTranslator = new ExprTranslator(
             valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
 
-    @SuppressWarnings("unchecked")
-    private final ObjectProvider<StructuredQueryBuilder> builderProvider = mock(ObjectProvider.class);
-
-    private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator, builderProvider);
+    private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
     private final StructuredQueryBuilder builder = new StructuredQueryBuilder(exprTranslator, filterTranslator);
     private final QueryParameterResolver parameterResolver = new QueryParameterResolver();
 
@@ -102,6 +98,36 @@ class StructuredQueryBuilderTest {
                 new ArrayExpr(List.of(value(ValueType.STRING, "DEPLOYMENT"), value(ValueType.STRING, "ENDPOINT"))));
         String sql = render(rowQuery(filter, null, null));
         assertThat(sql).contains("\"suite_type\" in (").contains("'deployment'").contains("'endpoint'");
+    }
+
+    @Test
+    @DisplayName("translates a subquery-valued 'in' into a nested SELECT in one statement")
+    void translatesInSubquery() {
+        StructuredQuery subquery = rowQuery(
+                cmp(ComparisonOp.EQ, field("is_valid"), value(ValueType.BOOLEAN, "true")),
+                List.of(col(field("id"))),
+                null);
+        FilterNode filter = cmp(ComparisonOp.IN, field("id"), new SubqueryExpr(subquery));
+        String sql = render(rowQuery(filter, null, null));
+        assertThat(sql).contains("\"id\" in (select").contains("in_subquery");
+    }
+
+    @Test
+    @DisplayName("rejects an 'in' subquery targeting a different entity than the enclosing query")
+    void rejectsCrossEntitySubquery() {
+        StructuredQuery subquery = new StructuredQuery(
+                "eval_summaries",
+                null,
+                QueryMode.ROW,
+                false,
+                List.of(col(field("id"))),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 10, false));
+        FilterNode filter = cmp(ComparisonOp.IN, field("id"), new SubqueryExpr(subquery));
+        StructuredQuery query = rowQuery(filter, null, null);
+        assertThatThrownBy(() -> render(query)).isInstanceOf(ValidationException.class);
     }
 
     @Test

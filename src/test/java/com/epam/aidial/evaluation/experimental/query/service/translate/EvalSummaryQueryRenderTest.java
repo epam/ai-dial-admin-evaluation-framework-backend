@@ -3,7 +3,6 @@ package com.epam.aidial.evaluation.experimental.query.service.translate;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
 
 import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
@@ -32,7 +31,6 @@ import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Renders the SQL produced for the analytics {@code eval_summaries} entity without a database. The
@@ -50,10 +48,7 @@ class EvalSummaryQueryRenderTest {
     private final ExprTranslator exprTranslator = new ExprTranslator(
             valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
 
-    @SuppressWarnings("unchecked")
-    private final ObjectProvider<StructuredQueryBuilder> builderProvider = mock(ObjectProvider.class);
-
-    private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator, builderProvider);
+    private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
     private final StructuredQueryBuilder builder = new StructuredQueryBuilder(exprTranslator, filterTranslator);
 
     private String render(StructuredQuery query) {

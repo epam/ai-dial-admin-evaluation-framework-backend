@@ -38,7 +38,7 @@
 ## 8. DSL translation — subquery-valued `in` (nested SQL)
 
 - [x] 8.1 `SubqueryExpr` in `experimental.query.model` (`"subquery"` Jackson subtype); `ExprTranslator.toField` rejects a bare `subquery` (defensive, like `array`) (done: compiles).
-- [x] 8.2 `TranslationContext(dsl, table, entity)` reaches `FilterTranslator` via a `ThreadLocal` (set/restore in the 3-arg `toCondition` `finally`, mirroring `AuthorizationTokenHolder`) — recursive methods keep their plain `(node, bindings)` signatures. `subquerySelect` reads the ThreadLocal, validates same-entity (else 400), builds the nested query via a lazy `ObjectProvider<StructuredQueryBuilder>` (breaks the builder↔translator cycle), and wraps it in a derived table selecting the **first** column → `left.in(select(firstCol).from(derived))`. `StructuredQueryBuilder.build`/`buildAggregate`/`countRows` create and pass the context; the 2-arg overload stays for non-DSL callers (reject subqueries) (done: compiles).
+- [x] 8.2 `QueryCompiler` (`@FunctionalInterface`, `StructuredQuery -> SelectQuery<Record>`, never a Spring bean) and `SubqueryContext(dsl, entity, compiler)` are plain values passed as a method parameter — `StructuredQueryBuilder.build`/`countRows`/`buildAggregate` each construct one with a one-line closure (`inner -> build(dsl, table, bindings, inner)`, or `aliasBindings` for `having`) and pass it to `FilterTranslator.toCondition(node, bindings, subqueryContext)`, threaded through the translator's existing recursive `(node, bindings)` methods. `FilterTranslator.subquerySelect` (same-entity check, else 400; derived-table wrap; **first**-column extraction → `left.in(select(firstCol).from(derived))`) is unchanged from the original design — only the source of the nested select moved from a builder callback to the supplied `QueryCompiler`. The builder does no filter-tree walking and has no knowledge of `SubqueryExpr`/`ComparisonNode`/`IN`. `FilterTranslator` depends only on `ExprTranslator` (no `ObjectProvider`, no `ThreadLocal`, no `TranslationContext` — that record is deleted). The 2-arg `toCondition(node, bindings)` overload stays for non-DSL callers (`null` context → subquery rejected) (done: compiles).
 
 ## 9. Parameter resolver
 
@@ -46,17 +46,17 @@
 
 ## 10. Tests (subquery)
 
-- [x] 10.1 Unit: the `...translate.*` render tests construct `FilterTranslator` with a mock `ObjectProvider<StructuredQueryBuilder>`; they still pass (translation behavior unchanged for non-subquery filters) (done: unit tests pass).
+- [x] 10.1 Unit: `StructuredQueryBuilderTest` constructs a real `FilterTranslator`/`StructuredQueryBuilder` (no bean cycle, no mocking needed) and asserts subquery rendering directly — `translatesInSubquery` (same-entity subquery renders `left IN (SELECT … in_subquery)`) and `rejectsCrossEntitySubquery` (`ValidationException`); the other `...translate.*` render tests (`FilterTranslatorArrayContainmentTest`, `EvalSummaryQueryRenderTest`) construct `FilterTranslator` with just its single `ExprTranslator` dependency and still pass (translation behavior unchanged for non-subquery filters) (done: unit tests pass).
 - [x] 10.2 Functional: `MetricScoreResultStructuredQueryFunctionalTests` — a **single-request** case (seed one suite, 3 runs with distinct `computed_at_ms`; `test_suite_run_id in (<same-entity aggregate subquery: test_suite_run_id + max(computed_at_ms), group by run, order by max desc, limit 2>)`) asserts all rows belong to exactly the latest 2 runs (compiles to nested `IN (SELECT …)`); plus empty-subquery→no-rows, subquery-outside-`in`→400, and cross-entity→400 cases (done: functional tests pass).
 - [x] 10.3 Functional (REST/JSON): `StructuredQueryExecuteFunctionalTests` — POST a raw JSON `metric_score_results` query with an `in`-subquery to `/api/v1/queries/execute`, seeding all six score names (AVG/MAX/MIN/P10/P90/overall) for 2 runs (+1 older, excluded); assert HTTP 200, 12 rows, every score name present, only the latest 2 run ids — proving the subquery wire format parses and nested SQL returns all aggregations end-to-end (done: functional test passes).
 
 ## 11. DSL docs
 
 - [x] 11.1 Document the `subquery` operand of `in` in the query-DSL OpenAPI docs — extended the `POST /queries/execute` `@Operation` description and added a `@Schema` to `SubqueryExpr` (the execute body is documented via `@Operation`/`@Schema`, not the list-endpoint `OpenApiQueryParamCustomizer`) (done: docs mention subquery membership).
-- [x] 11.2 Update AGENTS.md inline Query-DSL conventions to note subquery-valued `in` (nested `SELECT` via lazy builder + per-call worker, same-entity, first-column membership) (done: convention documented).
+- [x] 11.2 Update AGENTS.md inline Query-DSL conventions to note subquery-valued `in` (nested `SELECT` compiled by `FilterTranslator` via a supplied `QueryCompiler` function, same-entity, first-column membership) (done: convention documented).
 - [x] 11.3 Checked `openspec/specs/README.md` per Spec Index Maintenance Policy — the `structured-query-model` summary does not enumerate operators, so the subquery addition does not make it materially inaccurate; no change needed (done: index accurate).
 
 ## 12. Verification (subquery)
 
 - [x] 12.1 `./gradlew spotlessApply` then `./gradlew clean build` passes (done: build green).
-- [x] 12.2 Run the touched suites: `…MetricScoreResultStructuredQueryFunctionalTests` and the translate unit tests (done: all pass).
+- [x] 12.2 Run the touched suites: `…MetricScoreResultStructuredQueryFunctionalTests`, `…StructuredQueryExecuteFunctionalTests` (`PostgresFunctionalTests$MetricScoreResultStructuredQueryTests` / `$StructuredQueryExecuteTests`), and the translate unit tests (`StructuredQueryBuilderTest`, `FilterTranslatorArrayContainmentTest`, `EvalSummaryQueryRenderTest`) (done: all pass).

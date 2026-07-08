@@ -28,7 +28,6 @@ import org.jooq.Select;
 import org.jooq.SelectQuery;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
@@ -42,11 +41,10 @@ import org.springframework.stereotype.Component;
  * augmented with aggregate aliases) — the binding map supplied by the caller decides which names are
  * resolvable.
  *
- * <p>A {@code subquery}-valued {@code in} is compiled to a nested {@code SELECT} ({@code left IN
- * (SELECT …)}). The enclosing {@link TranslationContext} (datasource, table, entity) needed to build
- * that nested select is passed to the {@code TranslationContext} overload and held for the duration of
- * the call in a {@link ThreadLocal} (mirroring {@code AuthorizationTokenHolder}), so the recursive walk
- * keeps its plain {@code (node, bindings)} signatures and only {@link #subquerySelect} reads it.
+ * <p>A {@code subquery}-valued {@code in} compiles to a nested {@code SELECT} ({@code left IN (SELECT
+ * …)}): the caller supplies a {@link SubqueryContext} carrying a {@link QueryCompiler} — a plain function
+ * that turns a nested {@link StructuredQuery} into a select — which this class uses to build and wrap the
+ * nested query itself (same-entity check, derived-table wrap, first-column extraction).
  */
 @Component
 @LogExecution
@@ -59,81 +57,59 @@ public class FilterTranslator {
     private final ExprTranslator exprTranslator;
 
     /**
-     * Lazy reference to the query builder, used to compile a {@code subquery}-valued {@code in} operand
-     * into a nested select. {@link ObjectProvider} breaks the {@code StructuredQueryBuilder →
-     * FilterTranslator} constructor cycle (resolved on first use, not at construction).
-     */
-    private final ObjectProvider<StructuredQueryBuilder> queryBuilderProvider;
-
-    /**
-     * Enclosing context for the current translation, set only by the {@link TranslationContext} overload
-     * and read only when compiling a {@code subquery}-valued {@code in}. {@code null} means "no subquery
-     * support in this context" (the plain {@link #toCondition(FilterNode, Map)} entry).
-     */
-    private final ThreadLocal<TranslationContext> subqueryContext = new ThreadLocal<>();
-
-    /**
-     * Translates a filter tree into a jOOQ {@link Condition} ({@code null} tree → {@code TRUE}) in a
-     * context that does not support {@code subquery}-valued {@code in} operands (a subquery operand is
-     * rejected). Callers that need subqueries use the {@link TranslationContext} overload.
+     * Translates a filter tree into a jOOQ {@link Condition} ({@code null} tree → {@code TRUE}) with no
+     * {@code subquery}-valued {@code in} operands available (a subquery operand is rejected). Callers
+     * that need subqueries use the overload taking a {@link SubqueryContext}.
      */
     public Condition toCondition(FilterNode node, Map<String, QueryFieldBinding> bindings) {
+        return toCondition(node, bindings, null);
+    }
+
+    /**
+     * Translates a filter tree, compiling each {@code subquery}-valued {@code in} operand via
+     * {@code subqueryContext} (or rejecting it if {@code subqueryContext} is {@code null}).
+     */
+    public Condition toCondition(
+            FilterNode node, Map<String, QueryFieldBinding> bindings, SubqueryContext subqueryContext) {
         if (node == null) {
             return DSL.trueCondition();
         }
         return switch (node) {
-            case LogicalNode logical -> toLogical(logical, bindings);
-            case ComparisonNode comparison -> toComparison(comparison, bindings);
+            case LogicalNode logical -> toLogical(logical, bindings, subqueryContext);
+            case ComparisonNode comparison -> toComparison(comparison, bindings, subqueryContext);
         };
     }
 
-    /**
-     * Translates a filter tree, making {@code ctx} available to compile a {@code subquery}-valued
-     * {@code in}. The context is held in a {@link ThreadLocal} for the duration of the call and restored
-     * afterwards, so nested/sibling subquery compilations see the correct enclosing context and nothing
-     * leaks across calls.
-     */
-    public Condition toCondition(FilterNode node, Map<String, QueryFieldBinding> bindings, TranslationContext ctx) {
-        final TranslationContext previous = subqueryContext.get();
-        subqueryContext.set(ctx);
-        try {
-            return toCondition(node, bindings);
-        } finally {
-            if (previous == null) {
-                subqueryContext.remove();
-            } else {
-                subqueryContext.set(previous);
-            }
-        }
-    }
-
-    private Condition toLogical(LogicalNode node, Map<String, QueryFieldBinding> bindings) {
+    private Condition toLogical(
+            LogicalNode node, Map<String, QueryFieldBinding> bindings, SubqueryContext subqueryContext) {
         final List<FilterNode> args = node.args() == null ? List.of() : node.args();
         return switch (node.op()) {
-            case AND -> DSL.and(translateAll(args, bindings));
-            case OR -> DSL.or(translateAll(args, bindings));
+            case AND -> DSL.and(translateAll(args, bindings, subqueryContext));
+            case OR -> DSL.or(translateAll(args, bindings, subqueryContext));
             case NOT -> {
                 if (args.size() != 1) {
                     throw new ValidationException("'not' expects exactly one child node");
                 }
-                yield DSL.not(toCondition(args.get(0), bindings));
+                yield DSL.not(toCondition(args.get(0), bindings, subqueryContext));
             }
         };
     }
 
-    private List<Condition> translateAll(List<FilterNode> nodes, Map<String, QueryFieldBinding> bindings) {
+    private List<Condition> translateAll(
+            List<FilterNode> nodes, Map<String, QueryFieldBinding> bindings, SubqueryContext subqueryContext) {
         if (nodes.isEmpty()) {
             throw new ValidationException("'and'/'or' require at least one child node");
         }
         final List<Condition> conditions = new ArrayList<>(nodes.size());
         for (final FilterNode child : nodes) {
-            conditions.add(toCondition(child, bindings));
+            conditions.add(toCondition(child, bindings, subqueryContext));
         }
         return conditions;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private Condition toComparison(ComparisonNode node, Map<String, QueryFieldBinding> bindings) {
+    private Condition toComparison(
+            ComparisonNode node, Map<String, QueryFieldBinding> bindings, SubqueryContext subqueryContext) {
         final List<Expr> args = node.args() == null ? List.of() : node.args();
         if (args.size() != 2) {
             throw new ValidationException("comparison '" + node.op().code() + "' expects exactly two arguments");
@@ -157,7 +133,10 @@ public class FilterTranslator {
 
         if (op == ComparisonOp.IN) {
             if (right instanceof SubqueryExpr subquery) {
-                return left.in(subquerySelect(subquery, bindings));
+                if (subqueryContext == null) {
+                    throw new ValidationException("'in' subquery is not supported in this context");
+                }
+                return left.in(subquerySelect(subquery, subqueryContext));
             }
             return left.in(inValues(right, bindings));
         }
@@ -201,20 +180,13 @@ public class FilterTranslator {
     }
 
     /**
-     * Compiles a {@code subquery}-valued {@code in} operand into a nested single-column select. Requires
-     * an enclosing {@link TranslationContext} (from the {@code TranslationContext} overload); the subquery
-     * must target the enclosing entity (same-entity only) so it reuses the enclosing table and field
-     * bindings. Its <b>first</b> select column is the membership key: the built select is wrapped in a
-     * derived table and only that first column is projected into the {@code IN}, so the subquery may
-     * additionally select aggregates purely to drive its own {@code ORDER BY}/{@code LIMIT} (e.g.
-     * {@code max(computed_at_ms)} to take the latest N groups).
+     * Compiles a {@code subquery}-valued {@code in} operand into a nested single-column select: the
+     * subquery must target the enclosing entity (same-entity only); its first select column is the
+     * membership key, wrapped in a derived table so the subquery may additionally select aggregates
+     * purely to drive its own {@code ORDER BY}/{@code LIMIT} (e.g. {@code max(computed_at_ms)} to take
+     * the latest N groups).
      */
-    private Select<? extends Record1<?>> subquerySelect(
-            SubqueryExpr subquery, Map<String, QueryFieldBinding> bindings) {
-        final TranslationContext ctx = subqueryContext.get();
-        if (ctx == null) {
-            throw new ValidationException("'in' subquery is not supported in this context");
-        }
+    private Select<? extends Record1<?>> subquerySelect(SubqueryExpr subquery, SubqueryContext ctx) {
         final StructuredQuery inner = subquery.query();
         if (inner == null) {
             throw new ValidationException("'in' subquery requires a 'query'");
@@ -223,8 +195,7 @@ public class FilterTranslator {
             throw new ValidationException(
                     "'in' subquery must target the same entity ('" + ctx.entity() + "'), not '" + inner.entity() + "'");
         }
-        final SelectQuery<Record> subselect =
-                queryBuilderProvider.getObject().build(ctx.dsl(), ctx.table(), bindings, inner);
+        final SelectQuery<Record> subselect = ctx.compiler().compile(inner);
         final Table<?> derived = subselect.asTable(DSL.name("in_subquery"));
         final Field<?> membershipKey = derived.field(0);
         if (membershipKey == null) {

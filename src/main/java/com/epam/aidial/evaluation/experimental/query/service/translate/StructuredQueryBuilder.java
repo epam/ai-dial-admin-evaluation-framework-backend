@@ -67,15 +67,16 @@ public class StructuredQueryBuilder {
             DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
         final SelectQuery<Record> select = dsl.selectQuery();
         select.addFrom(table);
-        final TranslationContext ctx = new TranslationContext(dsl, table, query.entity());
-        select.addConditions(filterTranslator.toCondition(query.filter(), bindings, ctx));
+        final SubqueryContext filterContext =
+                new SubqueryContext(dsl, query.entity(), inner -> build(dsl, table, bindings, inner));
+        select.addConditions(filterTranslator.toCondition(query.filter(), bindings, filterContext));
 
         final QueryMode mode = query.mode();
         // Names that are select outputs (aliases / projected fields), so sort can reference the output
         // column instead of re-translating its expression.
         final Set<String> selectAliases = new HashSet<>();
         final Map<String, QueryFieldBinding> sortBindings = mode == QueryMode.AGGREGATE
-                ? buildAggregate(select, bindings, query, selectAliases, ctx)
+                ? buildAggregate(select, dsl, table, bindings, query, selectAliases)
                 : buildRow(select, table, bindings, query, selectAliases);
 
         if (query.distinct()) {
@@ -89,8 +90,9 @@ public class StructuredQueryBuilder {
     /** Counts matching rows for offset {@code include_total} (row mode only; ignores paging). */
     public int countRows(
             DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
-        final TranslationContext ctx = new TranslationContext(dsl, table, query.entity());
-        final Condition where = filterTranslator.toCondition(query.filter(), bindings, ctx);
+        final SubqueryContext context =
+                new SubqueryContext(dsl, query.entity(), inner -> build(dsl, table, bindings, inner));
+        final Condition where = filterTranslator.toCondition(query.filter(), bindings, context);
         final Integer count = dsl.selectCount().from(table).where(where).fetchOne(0, Integer.class);
         return count == null ? 0 : count;
     }
@@ -125,10 +127,11 @@ public class StructuredQueryBuilder {
 
     private Map<String, QueryFieldBinding> buildAggregate(
             SelectQuery<Record> select,
+            DSLContext dsl,
+            Table<?> table,
             Map<String, QueryFieldBinding> bindings,
             StructuredQuery query,
-            Set<String> selectAliases,
-            TranslationContext ctx) {
+            Set<String> selectAliases) {
         final List<String> groupBy = query.groupBy() == null ? List.of() : query.groupBy();
         final List<OutputColumn> selectEntries = query.select() == null ? List.of() : query.select();
         if (selectEntries.isEmpty()) {
@@ -164,7 +167,9 @@ public class StructuredQueryBuilder {
         select.addSelect(selectFields);
         select.addGroupBy(groupFields);
         if (query.having() != null) {
-            select.addHaving(filterTranslator.toCondition(query.having(), aliasBindings, ctx));
+            final SubqueryContext havingContext =
+                    new SubqueryContext(dsl, query.entity(), inner -> build(dsl, table, aliasBindings, inner));
+            select.addHaving(filterTranslator.toCondition(query.having(), aliasBindings, havingContext));
         }
         return aliasBindings;
     }

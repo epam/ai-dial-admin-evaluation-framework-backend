@@ -44,6 +44,14 @@ column and an extracted column can collide; namespacing is unambiguous and match
 see in exports. Multi-step `response.*` values remain column-major arrays (same shape metric bindings
 see); a condition can index a turn with JSONata (`response.answer[-1]`).
 
+`JsonataEvaluationService.evaluate(expression, jsonData)` takes a **JSON string** (it does
+`objectMapper.readValue(jsonData, Object.class)`), so the evaluator MUST serialize the `ConditionContext`
+dictionary to `{data:…, response:…}` before delegating. That serialization **must preserve explicit
+JSON nulls** — it MUST NOT go through the shared `NON_NULL` `ObjectMapper` path, which silently drops
+null-valued keys (see AGENTS.md JSONB-null caveat). Otherwise `$exists(response.answer)` on a
+present-but-null `answer` would wrongly resolve to false. Build the two namespace objects with typed
+`ObjectNode` (`putNull` for null entries) or a mapper configured to keep nulls.
+
 ### D4. Detection: bare `name()` = custom function, else JSONata
 If the whole trimmed condition matches `^[A-Za-z_][A-Za-z0-9_]*\(\)$` it is a custom-function call;
 otherwise it is JSONata. Safe because JSONata's own functions are always `$`-prefixed, so bare
@@ -71,17 +79,22 @@ the signature and all call sites.
 warnings are not surfaced in any UI, so a persisted warning has no value; reject eagerly.
 
 ### D8. Runtime outcome mapping (RUN / SKIP-omit / error-surface)
-In the TSMD loop, before dispatch, build one `ConditionContext` per result and call `evaluate`:
+Condition evaluation runs **synchronously on the orchestrating thread, before any `runAsync`
+dispatch** — the `ConditionContext` is read-only and never touched by worker threads, so there is no
+concurrency concern. In the TSMD loop, before dispatch, build one `ConditionContext` per result (reuse
+it across that result's TSMDs) and call `evaluate`:
 - **RUN** (clean boolean true) → existing dispatch path unchanged.
 - **SKIP** (clean boolean false) → `continue`; put nothing in the results map → metric omitted from
   `metricValues` and `metricInfos` ("absent = intentionally skipped").
 - **error** (throws, non-boolean, or null) → put a new
   `TsmdEvaluationResult.ConditionError(message, outputFieldNames)`; **no** async dispatch.
 `MetricOutputMapper` handles `ConditionError` by writing **no** `metricValues` node and a metric-level
-`metricInfos[tsmd] = {"error": message}` (→ `metricError::<name>` column). `checkForErrors` **ignores**
-`ConditionError`, so the test-case result stays `SUCCESS`. *Alternative:* reuse `Failure` — rejected;
-it renders per-field nulls and flips the result to FAILED, inflating failure counts for a per-metric
-config issue.
+`metricInfos[tsmd] = {"error": message}` (→ `metricError::<name>` column). This reuses the existing
+wholesale-error shape and therefore relies on `error` not being one of the metric's output-schema
+field names (same assumption as today's empty-output-schema transport fallback). `checkForErrors`
+**ignores** `ConditionError`, so the test-case result stays `SUCCESS`. *Alternative:* reuse `Failure`
+— rejected; it renders per-field nulls and flips the result to FAILED, inflating failure counts for a
+per-metric config issue.
 
 ### D9. Strict boolean interpretation
 Only a real boolean counts: `true` → RUN, `false` → SKIP. Anything else (non-boolean, null, throw) →
@@ -93,7 +106,10 @@ error. Predictable and avoids surprising truthiness coercion.
   (syntax/unknown-function rejected at write time with 400) and D8 error path (runtime errors are
   surfaced under `metricError::`, not silently swallowed).
 - **"Absent = skipped" is an implicit signal.** → Documented; consistent with the existing
-  present-with-null = error convention and the export's `metric::`/`metricError::` split.
+  present-with-null = error convention and the export's `metric::`/`metricError::` split. Phase-3
+  aggregate exclusion is **emergent, not a code change**: an absent metric key yields NULL on JSONB
+  numeric extraction and SQL `AVG/MIN/MAX/percentile` skip NULLs — no `experimental.query.service`
+  edit is made or needed.
 - **Detection heuristic could misclassify an exotic JSONata expression as a custom function.** →
   Only a *bare* `name()` (no `$`, no args, nothing else) is treated as custom; valid JSONata function
   calls are `$`-prefixed, so real expressions are unaffected.

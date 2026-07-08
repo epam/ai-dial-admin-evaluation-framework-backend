@@ -20,7 +20,10 @@ Status: **Planned**
 The condition SHALL be evaluated against a single dictionary with two top-level namespaces: `data`
 (the test case's data columns) and `response` (the extracted/response columns), reusing the same
 namespace tokens as the CSV export. For multi-step conversations the `response` values SHALL be the
-column-major per-turn arrays (the same shape metric bindings resolve against).
+column-major per-turn arrays (the same shape metric bindings resolve against). The dictionary
+serialization passed to the JSONata evaluator SHALL preserve explicit JSON nulls (it MUST NOT use the
+shared `NON_NULL` mapper path, which would drop null-valued keys and make a present-but-null column
+appear absent).
 Status: **Planned**
 
 #### Scenario: Reference a response column
@@ -36,6 +39,12 @@ Status: **Planned**
 - **THEN** the condition SHALL be able to address each unambiguously via `data.<name>` and
   `response.<name>`
 
+#### Scenario: Present-but-null column preserved
+- **WHEN** a condition is `$exists(response.answer)` and the extracted `answer` column is present with
+  an explicit null value
+- **THEN** `response.answer` SHALL be a JSON null (not absent), so the condition can distinguish a
+  present-null column from a missing one
+
 ### Requirement: JSONata vs custom-function detection
 The system SHALL treat a condition whose whole trimmed value matches a bare identifier followed by
 `()` (e.g. `isLastTurn()`) as a custom-function call, and every other condition as a JSONata
@@ -46,6 +55,11 @@ Status: **Planned**
 #### Scenario: JSONata expression
 - **WHEN** a condition is `$exists(response.answer)`
 - **THEN** it SHALL be evaluated as JSONata against the namespaced dictionary
+
+#### Scenario: Condition is trimmed before detection
+- **WHEN** a condition has leading or trailing whitespace around a bare `name()` (e.g. `" isLastTurn() "`)
+- **THEN** the value SHALL be trimmed before the pattern test so it is still recognized as a
+  custom-function call
 
 #### Scenario: Custom-function call
 - **WHEN** a condition is exactly `someFn()` and `someFn` is a registered custom function

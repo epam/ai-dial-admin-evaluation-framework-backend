@@ -20,6 +20,7 @@ public class TestSuiteMetricDefinitionRecordMapper {
                 .name(r.getName())
                 .configBindings(toJsonString(r.getConfigBindings()))
                 .inputBindings(toJsonString(r.getInputBindings()))
+                .condition(r.getCondition())
                 .enabled(r.getIsEnabled())
                 .valid(r.getIsValid())
                 .validationWarnings(toJsonString(r.getValidationWarnings()))

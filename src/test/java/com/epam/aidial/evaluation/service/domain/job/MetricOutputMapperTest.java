@@ -152,6 +152,42 @@ class MetricOutputMapperTest {
     }
 
     @Test
+    @DisplayName("ConditionError — omitted from metricValues, wholesale error in metricInfos")
+    void shouldMapConditionErrorAsWholesaleError() {
+        Map<String, TsmdEvaluationResult> tsmdResults = Map.of(
+                "Relevancy",
+                new TsmdEvaluationResult.ConditionError(
+                        "Condition did not evaluate to a boolean: response.score", List.of("score")));
+
+        ObjectNode values = mapper.buildMetricValues(tsmdResults);
+        ObjectNode infos = mapper.buildMetricInfos(tsmdResults);
+
+        // Absent from metricValues (absent = skipped), no per-field null entry
+        assertThat(values.has("Relevancy")).isFalse();
+        // Wholesale metric-level {error} → metricError::Relevancy export column (no per-field wrapper)
+        assertThat(infos).isNotNull();
+        assertThat(infos.path("Relevancy").path("error").asString())
+                .isEqualTo("Condition did not evaluate to a boolean: response.score");
+        assertThat(infos.path("Relevancy").has("score")).isFalse();
+    }
+
+    @Test
+    @DisplayName("Success alongside ConditionError — only the successful metric has a value")
+    void shouldMixSuccessAndConditionError() {
+        Map<String, TsmdEvaluationResult> tsmdResults = new LinkedHashMap<>();
+        tsmdResults.put("Accuracy", success("exact_match", Map.of("score", valueOutput(new BigDecimal("0.9"), null))));
+        tsmdResults.put("Relevancy", new TsmdEvaluationResult.ConditionError("boom", List.of("relevance_score")));
+
+        ObjectNode values = mapper.buildMetricValues(tsmdResults);
+        ObjectNode infos = mapper.buildMetricInfos(tsmdResults);
+
+        assertThat(values.has("Accuracy")).isTrue();
+        assertThat(values.has("Relevancy")).isFalse();
+        assertThat(infos).isNotNull();
+        assertThat(infos.path("Relevancy").path("error").asString()).isEqualTo("boom");
+    }
+
+    @Test
     @DisplayName("Should return null metricInfos when all details are empty")
     void shouldReturnNullInfosWhenAllEmpty() {
         Map<String, TsmdEvaluationResult> tsmdResults = Map.of(

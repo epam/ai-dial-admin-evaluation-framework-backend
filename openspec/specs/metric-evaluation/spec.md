@@ -175,7 +175,7 @@ Status: **Implemented**
 - **THEN** `metric_name` SHALL be taken from `AggregatedMetricDefinition.metricDeclarationName` (the provider's metric name), NOT from the TSMD's display name
 
 ### Requirement: Output mapping to metricValues and metricInfos
-The system SHALL map `EvaluationResponse` output fields to EvalSummary's `metricValues` and `metricInfos` JSONB columns, keyed by TSMD name. Output field names SHALL always come from the metric's actual output schema, never from synthetic placeholder keys.
+The system SHALL map `EvaluationResponse` output fields to EvalSummary's `metricValues` and `metricInfos` JSONB columns, keyed by TSMD name. Output field names SHALL always come from the metric's actual output schema, never from synthetic placeholder keys. A metric skipped by a false condition SHALL have no entry in either column; a metric with a `ConditionError` SHALL have no `metricValues` entry and a wholesale metric-level `metricInfos` error entry.
 Status: **Implemented**
 
 #### Scenario: Value output without details
@@ -204,6 +204,14 @@ Status: **Implemented**
 - **WHEN** a test case has TSMDs "Accuracy" and "RAG Quality" both evaluated
 - **THEN** `metricValues` SHALL contain keys for both TSMD names: `{"Accuracy": {...}, "RAG Quality": {...}}`
 
+#### Scenario: Metric skipped by false condition has no entry
+- **WHEN** a metric's condition evaluates to `false` for a test-case result
+- **THEN** neither `metricValues` nor `metricInfos` SHALL contain a key for that TSMD
+
+#### Scenario: ConditionError renders as a wholesale metricError
+- **WHEN** a metric's evaluation result is a `ConditionError` with message `M`
+- **THEN** `metricValues` SHALL contain no key for that TSMD, and `metricInfos[tsmdName]` SHALL be the wholesale node `{"error": M}` (no per-field wrapper), which the export renders as the `metricError::<tsmdName>` column. This reuses the existing wholesale-error shape and therefore relies on `error` not being one of the metric's output-schema field names.
+
 ### Requirement: Output schema field extraction
 The system SHALL provide an injectable `OutputSchemaFieldExtractor` component (in `service.domain`) that extracts output field names from a metric's output schema JSON string. This component SHALL be used by both the metric evaluation executor (to resolve field names for transport failure mapping) and the TSMD validation service (to validate output schema structure).
 Status: **Implemented**
@@ -228,25 +236,60 @@ Status: **Implemented**
 - **WHEN** `extractFieldNames()` is called with invalid JSON
 - **THEN** the method SHALL log a WARN and return an empty list (graceful degradation)
 
-### Requirement: Typed TSMD evaluation result carrier
-The system SHALL replace the untyped `Map<String, Object>` (where values are `EvaluationResponseDto | Exception`) with a sealed interface `TsmdEvaluationResult` in `service.domain.job`. Both variants SHALL carry `outputFieldNames` (`List<String>`) extracted from the TSMD's output schema.
+### Requirement: Metric evaluation honors the metric's execution condition
+The system SHALL, before dispatching a metric for a test-case result, evaluate that metric's
+`condition` (when non-blank) against the namespaced dictionary and gate evaluation on the result: run
+on clean boolean `true`, omit on clean boolean `false`, and on any other outcome
+skip-with-surfaced-error. A blank/null condition SHALL always run. Condition evaluation SHALL run
+synchronously on the orchestrating thread before any async dispatch (the `ConditionContext` is
+read-only and never accessed from worker threads).
 Status: **Implemented**
 
-#### Scenario: Sealed interface with two variants
+#### Scenario: Metric runs when condition is true
+- **WHEN** a metric's condition evaluates to `true` for a test-case result
+- **THEN** the metric SHALL be dispatched and its output SHALL appear in that result's `metricValues`
+
+#### Scenario: Skipped metric is omitted from the eval summary
+- **WHEN** a metric's condition evaluates to `false` for a test-case result
+- **THEN** that metric SHALL have no entry in the result's `metricValues` or `metricInfos`; because the
+  metric key is absent, JSONB numeric extraction yields NULL and the metric is naturally excluded from
+  the NULL-skipping Phase-3 SQL aggregates — no Phase-3 code change is made
+
+#### Scenario: Condition error does not fail the test-case result
+- **WHEN** a metric's condition throws, returns a non-boolean, or returns null at runtime
+- **THEN** the metric SHALL NOT be evaluated, a metric-level `{error}` SHALL be recorded under
+  `metricInfos` (rendered as `metricError::<name>`), no `metricValues` entry SHALL be written for it,
+  and the summary's `executionStatus` SHALL remain `SUCCESS`
+
+#### Scenario: Blank condition preserves prior behavior
+- **WHEN** a metric has a null or blank condition
+- **THEN** it SHALL be evaluated for every test-case result as before
+
+### Requirement: Typed TSMD evaluation result carrier
+The system SHALL represent a per-TSMD evaluation outcome with a sealed interface `TsmdEvaluationResult`
+in `service.domain.job`. It SHALL permit three variants — `Success`, `Failure`, and `ConditionError` —
+each carrying `outputFieldNames` (`List<String>`) extracted from the TSMD's output schema.
+Status: **Implemented**
+
+#### Scenario: Sealed interface with three variants
 - **WHEN** a TSMD evaluation completes
-- **THEN** the result SHALL be represented as either `TsmdEvaluationResult.Success(EvaluationResponseDto response, List<String> outputFieldNames)` or `TsmdEvaluationResult.Failure(Exception error, List<String> outputFieldNames)`
+- **THEN** the result SHALL be represented as `TsmdEvaluationResult.Success(EvaluationResponseDto response, List<String> outputFieldNames)`, `TsmdEvaluationResult.Failure(Exception error, List<String> outputFieldNames)`, or `TsmdEvaluationResult.ConditionError(String message, List<String> outputFieldNames)`
+
+#### Scenario: ConditionError produced when a condition fails
+- **WHEN** a metric's `condition` throws, returns a non-boolean, or returns null
+- **THEN** the executor SHALL record a `ConditionError(message, outputFieldNames)` for that TSMD and SHALL NOT dispatch the `/evaluate` call
 
 #### Scenario: Output field names extracted before evaluation dispatch
 - **WHEN** the metric evaluation executor starts execution
-- **THEN** it SHALL extract output field names for each TSMD using `OutputSchemaFieldExtractor` before dispatching async evaluations, and include them in every `TsmdEvaluationResult` (both success and failure)
+- **THEN** it SHALL extract output field names for each TSMD using `OutputSchemaFieldExtractor` before dispatching async evaluations, and include them in every `TsmdEvaluationResult`
 
 #### Scenario: MetricOutputMapper consumes typed results
 - **WHEN** `MetricOutputMapper.buildMetricValues()` and `buildMetricInfos()` are called
 - **THEN** they SHALL accept `Map<String, TsmdEvaluationResult>` and use pattern matching on the sealed type (no `instanceof Object` checks)
 
-#### Scenario: checkForErrors uses typed results
+#### Scenario: checkForErrors uses typed results and ignores ConditionError
 - **WHEN** `checkForErrors()` determines whether any TSMD evaluation failed
-- **THEN** it SHALL accept `Map<String, TsmdEvaluationResult>` and check for `Failure` instances or `Success` instances containing error-type metric outputs
+- **THEN** it SHALL accept `Map<String, TsmdEvaluationResult>` and count `Failure` instances or `Success` instances containing error-type metric outputs, and it SHALL NOT treat a `ConditionError` as a failure
 
 #### Scenario: TSMD with empty field names (defense-in-depth)
 - **WHEN** a TSMD's output schema yields an empty field name list (should not happen after validation)
@@ -279,6 +322,10 @@ Status: **Implemented**
 #### Scenario: Any metric error or transport failure fails the summary
 - **WHEN** at least one metric output field has `type: "error"` OR at least one TSMD evaluation fails with a transport error (worker exception)
 - **THEN** the EvalSummary SHALL have `executionStatus = FAILED`
+
+#### Scenario: Condition skip or ConditionError does not fail the summary
+- **WHEN** the only non-successful outcomes for a result are metrics skipped by a false condition (absent) and/or `ConditionError` entries
+- **THEN** the EvalSummary `executionStatus` SHALL remain `SUCCESS`
 
 ### Requirement: EvalSummary batch writing via service-layer client
 The `EvalSummaryBatchWriteClient` SHALL convert internal EvalSummary models to the existing `EvalSummaryBatchWriteRequestDto` and delegate to `EvalSummaryService.batchCreate()`. The executor SHALL buffer EvalSummary records and flush them through the client at configurable thresholds.

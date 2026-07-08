@@ -42,12 +42,15 @@ public class MetricOutputMapper {
         ObjectNode root = objectMapper.createObjectNode();
         for (Map.Entry<String, TsmdEvaluationResult> entry : tsmdResults.entrySet()) {
             String tsmdName = entry.getKey();
-            ObjectNode tsmdNode = objectMapper.createObjectNode();
 
             switch (entry.getValue()) {
-                case TsmdEvaluationResult.Success success ->
+                case TsmdEvaluationResult.Success success -> {
+                    ObjectNode tsmdNode = objectMapper.createObjectNode();
                     mapResponseValues(tsmdNode, success.response().getOutput());
+                    root.set(tsmdName, tsmdNode);
+                }
                 case TsmdEvaluationResult.Failure failure -> {
+                    ObjectNode tsmdNode = objectMapper.createObjectNode();
                     List<String> fieldNames = failure.outputFieldNames();
                     if (fieldNames.isEmpty()) {
                         log.warn("TSMD '{}' has no output field names — producing empty metricValues", tsmdName);
@@ -56,10 +59,13 @@ public class MetricOutputMapper {
                             tsmdNode.putNull(fieldName);
                         }
                     }
+                    root.set(tsmdName, tsmdNode);
+                }
+                // Condition skipped/errored: omit the metric entirely from metricValues (absent = skipped).
+                case TsmdEvaluationResult.ConditionError ignored -> {
+                    /* no metricValues entry */
                 }
             }
-
-            root.set(tsmdName, tsmdNode);
         }
         return root;
     }
@@ -106,6 +112,13 @@ public class MetricOutputMapper {
                             tsmdInfoNode.set(fieldName, errorNode);
                         }
                     }
+                    root.set(tsmdName, tsmdInfoNode);
+                    hasAnyInfo = true;
+                }
+                // Condition error: wholesale metric-level {error} (no per-field wrapper) → metricError::<name>.
+                case TsmdEvaluationResult.ConditionError conditionError -> {
+                    ObjectNode tsmdInfoNode = objectMapper.createObjectNode();
+                    tsmdInfoNode.put("error", conditionError.message());
                     root.set(tsmdName, tsmdInfoNode);
                     hasAnyInfo = true;
                 }

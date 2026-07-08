@@ -9,6 +9,9 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResult
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
+import com.epam.aidial.evaluation.service.domain.ConditionContext;
+import com.epam.aidial.evaluation.service.domain.ConditionDecision;
+import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
@@ -55,6 +58,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private final RunMetricSnapshotBatchWriteClient runMetricSnapshotBatchWriteClient;
     private final ObjectMapper objectMapper;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
+    private final ConditionExpressionEvaluator conditionExpressionEvaluator;
 
     @Override
     public void execute(MetricEvaluationContext context) {
@@ -174,9 +178,39 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
 
         Map<String, TsmdEvaluationResult> tsmdResults = new ConcurrentHashMap<>();
 
+        // Conditions are evaluated synchronously here, on the orchestrating thread, before any async
+        // dispatch. The context is read-only and never accessed from worker threads.
+        ConditionContext conditionContext = ConditionContext.builder()
+                .dataJson(result.getTestCaseData())
+                .responseJson(result.getExtractedColumns())
+                .build();
+
+        List<AggregatedMetricDefinition> dispatchedTsmds = new ArrayList<>();
         List<CompletableFuture<Void>> tsmdFutures = new ArrayList<>();
         for (AggregatedMetricDefinition tsmd : context.getAggregatedTsmds()) {
             List<String> fieldNames = outputFieldNamesMap.get(tsmd.getName());
+
+            ConditionDecision decision = conditionExpressionEvaluator.evaluate(tsmd.getCondition(), conditionContext);
+            if (decision.isSkip()) {
+                log.debug(
+                        "Run {}: skipping metric '{}' for result {} — condition false (omitted)",
+                        context.getTestSuiteRunId(),
+                        tsmd.getName(),
+                        result.getId());
+                continue;
+            }
+            if (decision.isError()) {
+                log.debug(
+                        "Run {}: skipping metric '{}' for result {} — condition error: {}",
+                        context.getTestSuiteRunId(),
+                        tsmd.getName(),
+                        result.getId(),
+                        decision.errorMessage());
+                tsmdResults.put(
+                        tsmd.getName(), new TsmdEvaluationResult.ConditionError(decision.errorMessage(), fieldNames));
+                continue;
+            }
+
             Semaphore semaphore = providerSemaphores.get(tsmd.getDeclarationProviderId());
             log.debug(
                     "Run {}: dispatching metric '{}' for result {}",
@@ -210,6 +244,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     },
                     executor);
 
+            dispatchedTsmds.add(tsmd);
             tsmdFutures.add(tsmdFuture);
         }
 
@@ -230,8 +265,10 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             log.warn("Metric evaluation interrupted while waiting for result {}", result.getId(), e);
         }
 
-        // Record timeout/missing TSMDs as Failure so the summary reflects incomplete evaluation
-        for (AggregatedMetricDefinition tsmd : context.getAggregatedTsmds()) {
+        // Record timeout/missing TSMDs as Failure so the summary reflects incomplete evaluation. Only
+        // dispatched TSMDs are considered — condition-skipped ones must stay absent, condition-errored
+        // ones already carry a ConditionError.
+        for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
             tsmdResults.putIfAbsent(
                     tsmd.getName(),
                     new TsmdEvaluationResult.Failure(
@@ -253,6 +290,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     private boolean checkForErrors(Map<String, TsmdEvaluationResult> tsmdResults) {
+        // ConditionError is intentionally NOT counted: a failed metric condition is a per-metric concern
+        // and must not flip the test-case result to FAILED.
         for (TsmdEvaluationResult value : tsmdResults.values()) {
             if (value instanceof TsmdEvaluationResult.Failure) {
                 return true;

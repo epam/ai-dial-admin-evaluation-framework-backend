@@ -127,6 +127,11 @@ public class TestSuiteMetricDefinitions extends TableImpl<TestSuiteMetricDefinit
      */
     public final TableField<TestSuiteMetricDefinitionsRecord, JSONB> VALIDATION_WARNINGS = createField(DSL.name("validation_warnings"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'::jsonb"), SQLDataType.JSONB)), this, "");
 
+    /**
+     * The column <code>meta.test_suite_metric_definitions.condition</code>.
+     */
+    public final TableField<TestSuiteMetricDefinitionsRecord, String> CONDITION = createField(DSL.name("condition"), SQLDataType.VARCHAR(2000), this, "");
+
     private TestSuiteMetricDefinitions(Name alias, Table<TestSuiteMetricDefinitionsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

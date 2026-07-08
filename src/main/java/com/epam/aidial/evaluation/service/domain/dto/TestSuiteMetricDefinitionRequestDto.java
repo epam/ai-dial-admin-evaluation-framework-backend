@@ -61,4 +61,14 @@ public class TestSuiteMetricDefinitionRequestDto {
     @Valid
     @Schema(description = "Bindings for metric input schema properties")
     private List<MetricParameterBindingDto> inputBindings;
+
+    @Size(max = 2000, message = "Condition must be less than 2000 characters")
+    @Schema(
+            description = "Optional execution condition evaluated per test case against a namespaced dictionary "
+                    + "{ data: <test-case columns>, response: <extracted columns> }. A bare name() (e.g. "
+                    + "isLastTurn()) is a custom/system function; anything else is a JSONata expression. When it "
+                    + "evaluates to boolean true the metric runs; false skips it. Omit or leave blank to always run. "
+                    + "Rejected with 400 if malformed.",
+            example = "$exists(response.answer)")
+    private String condition;
 }

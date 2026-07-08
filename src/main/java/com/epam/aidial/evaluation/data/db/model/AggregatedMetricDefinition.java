@@ -26,6 +26,8 @@ public class AggregatedMetricDefinition {
     private String configBindings;
     /** JSONB array of parameter bindings for metric input. */
     private String inputBindings;
+    /** Optional per-metric execution condition; null/blank ⇒ always run. */
+    private String condition;
 
     private boolean enabled;
     private boolean valid;

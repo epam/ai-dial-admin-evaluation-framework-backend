@@ -48,6 +48,11 @@ public class TestSuiteMetricDefinitionResponseDto {
     @Schema(description = "Bindings for metric input schema properties")
     private List<MetricParameterBindingDto> inputBindings;
 
+    @Schema(
+            description = "Optional execution condition evaluated per test case; null when the metric always runs",
+            example = "$exists(response.answer)")
+    private String condition;
+
     @Schema(example = "1704067200000")
     private Long createdAt;
 

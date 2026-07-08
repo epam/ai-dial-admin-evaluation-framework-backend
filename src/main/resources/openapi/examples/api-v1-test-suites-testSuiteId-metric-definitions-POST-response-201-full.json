@@ -6,6 +6,7 @@
   "name": "Accuracy Check",
   "metricDeclarationName": "Accuracy",
   "enabled": true,
+  "condition": "$exists(response.model_answer)",
   "valid": true,
   "validationWarnings": [],
   "configBindings": [

@@ -21,6 +21,11 @@ public class TestSuiteMetricDefinition {
     private String configBindings;
     /** JSONB array of parameter bindings for metric input. */
     private String inputBindings;
+    /**
+     * Optional execution condition. Null/blank ⇒ metric always runs. Otherwise a bare {@code name()}
+     * custom-function call or a JSONata expression, evaluated per test-case result.
+     */
+    private String condition;
 
     private boolean enabled;
     private boolean valid;

@@ -1100,6 +1100,131 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     // moved to DatasetService after task group 4 of introduce-dataset-entity. Suite PUT no longer
     // observes schema changes, so the original premise of these two tests is gone.
 
+    @Test
+    @DisplayName("Should create metric definition with a condition and round-trip it")
+    void shouldCreateMetricDefinitionWithCondition() {
+        TestSuiteMetricDefinitionRequestDto request = validRequest("Conditional Metric");
+        request.setCondition("$exists(response.answer)");
+
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> response =
+                restTemplate.postForEntity(tsmdUrl(), jsonEntity(request), TestSuiteMetricDefinitionResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().getCondition()).isEqualTo("$exists(response.answer)");
+
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> get = restTemplate.getForEntity(
+                tsmdUrl(response.getBody().getId()), TestSuiteMetricDefinitionResponseDto.class);
+        assertThat(get.getBody().getCondition()).isEqualTo("$exists(response.answer)");
+    }
+
+    @Test
+    @DisplayName("Should return 400 when condition is invalid JSONata on create")
+    void shouldReturn400_whenConditionInvalidJsonata() {
+        TestSuiteMetricDefinitionRequestDto request = validRequest("Bad JSONata Condition");
+        request.setCondition("$exists(");
+
+        ResponseEntity<String> response = restTemplate.postForEntity(tsmdUrl(), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when condition is an unregistered custom function on create")
+    void shouldReturn400_whenConditionUnknownFunction() {
+        TestSuiteMetricDefinitionRequestDto request = validRequest("Unknown Fn Condition");
+        request.setCondition("isLastTurn()");
+
+        ResponseEntity<String> response = restTemplate.postForEntity(tsmdUrl(), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when condition is invalid JSONata on update")
+    void shouldReturn400_whenConditionInvalidJsonataOnUpdate() {
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> createResponse = restTemplate.postForEntity(
+                tsmdUrl(), jsonEntity(validRequest("To Update")), TestSuiteMetricDefinitionResponseDto.class);
+        UUID createdId = createResponse.getBody().getId();
+
+        TestSuiteMetricDefinitionRequestDto updateRequest = validRequest("To Update");
+        updateRequest.setCondition("$exists(");
+
+        ResponseEntity<String> response =
+                restTemplate.exchange(tsmdUrl(createdId), HttpMethod.PUT, jsonEntity(updateRequest), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should omit a metric whose condition is false and keep the eval summary SUCCESS")
+    void shouldOmitMetric_whenConditionFalse_andKeepSuccess() {
+        TestSuiteResponseDto suite = createSuiteViaApi(
+                "Condition Skip Suite " + UUID.randomUUID(),
+                List.of(FieldDefinitionDto.builder()
+                        .name("expected")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build()),
+                List.of());
+
+        restTemplate.postForEntity(
+                apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("tc-1")
+                        .data(Map.of("expected", "hello"))
+                        .build()),
+                String.class);
+
+        // Enabled + valid metric whose condition references an absent response column → false → skipped.
+        TestSuiteMetricDefinitionRequestDto tsmd = TestSuiteMetricDefinitionRequestDto.builder()
+                .name("Latency With Condition")
+                .metricDeclarationId(SEED_LATENCY_ID)
+                .metricDeclarationVersionId(UUID.fromString(SEED_LATENCY_VERSION_ID))
+                .enabled(true)
+                .configBindings(List.of())
+                .inputBindings(List.of())
+                .build();
+        tsmd.setCondition("$exists(response.model_answer)");
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> tsmdResponse = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/metric-definitions"),
+                jsonEntity(tsmd),
+                TestSuiteMetricDefinitionResponseDto.class);
+        assertThat(tsmdResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(tsmdResponse.getBody().isValid()).isTrue();
+
+        when(dialCoreDeploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200,
+                        false,
+                        Map.of(
+                                "id",
+                                "mock-1",
+                                "choices",
+                                List.of(Map.of("message", Map.of("content", "Mocked answer.")))),
+                        null,
+                        new HttpHeaders()));
+
+        ResponseEntity<TestSuiteRunResponseDto> runResponse = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/runs"),
+                jsonEntity(TestSuiteRunRequestDto.builder()
+                        .runConfig(RunConfigDto.builder().numberOfRuns(1).build())
+                        .build()),
+                TestSuiteRunResponseDto.class);
+        assertThat(runResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        TestSuiteRunResponseDto completedRun =
+                awaitRunTerminal(runResponse.getBody().getId(), 15);
+        assertThat(completedRun.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        // The metric-evaluation phase ran (one enabled+valid TSMD), producing one eval summary; the
+        // condition evaluated false, so the metric is omitted from metricValues and the summary is SUCCESS.
+        List<Map<String, Object>> summaries = analyticsTestDataHelper.findEvalSummariesByRunId(
+                runResponse.getBody().getId());
+        assertThat(summaries).hasSize(1);
+        assertThat(String.valueOf(summaries.get(0).get("execution_status"))).isEqualTo("SUCCESS");
+        assertThat(String.valueOf(summaries.get(0).get("metric_values"))).doesNotContain("Latency With Condition");
+    }
+
     // --- Helper Methods ---
 
     private TestSuiteResponseDto createSuiteViaApi(

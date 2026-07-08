@@ -197,6 +197,20 @@ public class TestSuiteMetricDefinitionsRecord extends UpdatableRecordImpl<TestSu
         return (JSONB) get(11);
     }
 
+    /**
+     * Setter for <code>meta.test_suite_metric_definitions.condition</code>.
+     */
+    public void setCondition(String value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suite_metric_definitions.condition</code>.
+     */
+    public String getCondition() {
+        return (String) get(12);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -220,7 +234,7 @@ public class TestSuiteMetricDefinitionsRecord extends UpdatableRecordImpl<TestSu
     /**
      * Create a detached, initialised TestSuiteMetricDefinitionsRecord
      */
-    public TestSuiteMetricDefinitionsRecord(String id, String testSuiteId, String metricDeclarationId, String metricDeclarationVersionId, String name, JSONB configBindings, JSONB inputBindings, Long createdAtMs, Long updatedAtMs, Boolean isEnabled, Boolean isValid, JSONB validationWarnings) {
+    public TestSuiteMetricDefinitionsRecord(String id, String testSuiteId, String metricDeclarationId, String metricDeclarationVersionId, String name, JSONB configBindings, JSONB inputBindings, Long createdAtMs, Long updatedAtMs, Boolean isEnabled, Boolean isValid, JSONB validationWarnings, String condition) {
         super(TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS);
 
         setId(id);
@@ -235,6 +249,7 @@ public class TestSuiteMetricDefinitionsRecord extends UpdatableRecordImpl<TestSu
         setIsEnabled(isEnabled);
         setIsValid(isValid);
         setValidationWarnings(validationWarnings);
+        setCondition(condition);
         resetTouchedOnNotNull();
     }
 }

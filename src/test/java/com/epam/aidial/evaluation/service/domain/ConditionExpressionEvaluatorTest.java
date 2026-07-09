@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,14 +18,22 @@ class ConditionExpressionEvaluatorTest {
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
         JsonataEvaluationService jsonata = new DashjoinJsonataEvaluationService(objectMapper);
-        ConditionFunctionRegistry registry = new ConditionFunctionRegistry(List.of());
-        evaluator = new ConditionExpressionEvaluator(jsonata, registry, objectMapper);
+        evaluator = new ConditionExpressionEvaluator(jsonata, objectMapper);
     }
 
     private ConditionContext ctx(String dataJson, String responseJson) {
         return ConditionContext.builder()
                 .dataJson(dataJson)
                 .responseJson(responseJson)
+                .build();
+    }
+
+    private ConditionContext ctx(String dataJson, String responseJson, int turnIndex, int totalTurns) {
+        return ConditionContext.builder()
+                .dataJson(dataJson)
+                .responseJson(responseJson)
+                .turnIndex(turnIndex)
+                .totalTurns(totalTurns)
                 .build();
     }
 
@@ -49,14 +56,6 @@ class ConditionExpressionEvaluatorTest {
     @DisplayName("Invalid JSONata syntax is rejected")
     void validateInvalidJsonata() {
         assertThatThrownBy(() -> evaluator.validate("$exists(")).isInstanceOf(ValidationException.class);
-    }
-
-    @Test
-    @DisplayName("Unregistered bare name() is rejected")
-    void validateUnknownFunction() {
-        assertThatThrownBy(() -> evaluator.validate("isLastTurn()"))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("isLastTurn");
     }
 
     // ---- evaluate (runtime, never throws) ----
@@ -117,10 +116,57 @@ class ConditionExpressionEvaluatorTest {
     }
 
     @Test
-    @DisplayName("Condition is trimmed before custom-function detection")
-    void evaluateTrimsBeforeDetection() {
-        ConditionDecision decision = evaluator.evaluate("  isLastTurn()  ", ctx("{}", "{}"));
-        assertThat(decision.isError()).isTrue();
-        assertThat(decision.errorMessage()).contains("isLastTurn");
+    @DisplayName("Whitespace around a condition is trimmed before evaluation")
+    void evaluateTrimsWhitespace() {
+        ConditionDecision decision = evaluator.evaluate("  response.score > 0.5  ", ctx("{}", "{\"score\":0.8}"));
+        assertThat(decision.isRun()).isTrue();
+    }
+
+    // ---- turn namespace ----
+
+    @Test
+    @DisplayName("turn.last is true on the final turn → RUN")
+    void evaluateTurnLastOnFinalTurn() {
+        ConditionDecision decision = evaluator.evaluate("turn.last", ctx("{}", "{}", 2, 3));
+        assertThat(decision.isRun()).isTrue();
+    }
+
+    @Test
+    @DisplayName("turn.last is false on a non-final turn → SKIP")
+    void evaluateTurnLastOnNonFinalTurn() {
+        ConditionDecision decision = evaluator.evaluate("turn.last", ctx("{}", "{}", 1, 3));
+        assertThat(decision.isSkip()).isTrue();
+    }
+
+    @Test
+    @DisplayName("A single-turn result is the last turn → RUN")
+    void evaluateTurnLastSingleTurn() {
+        ConditionDecision decision = evaluator.evaluate("turn.last", ctx("{}", "{}", 0, 1));
+        assertThat(decision.isRun()).isTrue();
+    }
+
+    @Test
+    @DisplayName("turn.index and turn.total are addressable")
+    void evaluateTurnIndexAndTotal() {
+        assertThat(evaluator.evaluate("turn.index = 2", ctx("{}", "{}", 2, 3)).isRun())
+                .isTrue();
+        assertThat(evaluator.evaluate("turn.total = 3", ctx("{}", "{}", 2, 3)).isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate("turn.index = turn.total - 1", ctx("{}", "{}", 2, 3))
+                        .isRun())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("turn.last composes with a response predicate")
+    void evaluateTurnLastComposedWithResponse() {
+        ConditionDecision lastAndHigh =
+                evaluator.evaluate("response.score > 0.5 and turn.last", ctx("{}", "{\"score\":0.8}", 2, 3));
+        ConditionDecision notLast =
+                evaluator.evaluate("response.score > 0.5 and turn.last", ctx("{}", "{\"score\":0.8}", 1, 3));
+
+        assertThat(lastAndHigh.isRun()).isTrue();
+        assertThat(notLast.isSkip()).isTrue();
     }
 }

@@ -10,10 +10,9 @@ import lombok.Builder;
  * {@code 0}/{@code 1}). The last turn of a conversation is {@code turnIndex == totalTurns - 1}.
  *
  * <p>The carrier exists so that new inputs can be added without changing
- * {@link ConditionExpressionEvaluator#evaluate} or {@link ConditionFunction#evaluate} — additive
- * builder fields only, no signature churn for callers or custom-function implementors. The turn
- * position is populated for every result but consumed only once last-turn condition functions land
- * (out of scope here).
+ * {@link ConditionExpressionEvaluator#evaluate} — additive builder fields only, no signature churn.
+ * The turn position is exposed to conditions through the {@code turn} namespace of the evaluation
+ * dictionary (e.g. {@code turn.last}, {@code turn.index}, {@code turn.total}).
  */
 @Builder
 public record ConditionContext(String dataJson, String responseJson, int turnIndex, int totalTurns) {}

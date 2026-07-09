@@ -1129,17 +1129,6 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     }
 
     @Test
-    @DisplayName("Should return 400 when condition is an unregistered custom function on create")
-    void shouldReturn400_whenConditionUnknownFunction() {
-        TestSuiteMetricDefinitionRequestDto request = validRequest("Unknown Fn Condition");
-        request.setCondition("isLastTurn()");
-
-        ResponseEntity<String> response = restTemplate.postForEntity(tsmdUrl(), jsonEntity(request), String.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-    }
-
-    @Test
     @DisplayName("Should return 400 when condition is invalid JSONata on update")
     void shouldReturn400_whenConditionInvalidJsonataOnUpdate() {
         ResponseEntity<TestSuiteMetricDefinitionResponseDto> createResponse = restTemplate.postForEntity(

@@ -64,11 +64,11 @@ public class TestSuiteMetricDefinitionRequestDto {
 
     @Size(max = 2000, message = "Condition must be less than 2000 characters")
     @Schema(
-            description = "Optional execution condition evaluated per test case against a namespaced dictionary "
-                    + "{ data: <test-case columns>, response: <extracted columns> }. A bare name() (e.g. "
-                    + "isLastTurn()) is a custom/system function; anything else is a JSONata expression. When it "
-                    + "evaluates to boolean true the metric runs; false skips it. Omit or leave blank to always run. "
-                    + "Rejected with 400 if malformed.",
-            example = "$exists(response.answer)")
+            description = "Optional execution condition evaluated per test-case result (per turn) as a JSONata "
+                    + "expression against a namespaced dictionary { data: <test-case columns>, "
+                    + "response: <extracted columns>, turn: { index, total, last } }. When it evaluates to "
+                    + "boolean true the metric runs; false skips it; use turn.last to run only on the final turn. "
+                    + "Omit or leave blank to always run. Rejected with 400 if the JSONata is malformed.",
+            example = "response.score > 0.5 and turn.last")
     private String condition;
 }

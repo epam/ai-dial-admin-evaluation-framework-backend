@@ -54,6 +54,8 @@ class EvalSummaryExportColumnPlannerTest {
                         "testCaseId",
                         "testCaseName",
                         "runIndex",
+                        "turnIndex",
+                        "totalTurns",
                         "computationId",
                         "createdAt",
                         "computedAt",

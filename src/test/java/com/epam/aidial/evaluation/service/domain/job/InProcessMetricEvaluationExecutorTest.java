@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.service.domain.ConditionContext;
 import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
@@ -132,6 +133,68 @@ class InProcessMetricEvaluationExecutorTest {
         assertThat(items).hasSize(1);
         assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(items.get(0).getMetricValues()).isNotNull();
+    }
+
+    @Test
+    @DisplayName(
+            "Condition context carries the result row's turn position, and the summary inherits turn_index/total_turns")
+    void conditionContextAndSummaryCarryTurnPosition() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .build();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L);
+
+        // A single per-turn result row: turn 2 of a 3-turn conversation.
+        TestCaseRunResult result = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .turnIndex(2)
+                .totalTurns(3)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+        EvaluationResponseDto response = EvaluationResponseDto.builder()
+                .metricName("exact_match")
+                .output(Map.of())
+                .build();
+        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context)))
+                .thenReturn(response);
+        ObjectNode emptyValues = objectMapper.createObjectNode();
+        when(outputMapper.buildMetricValues(any())).thenReturn(emptyValues);
+        when(outputMapper.buildMetricInfos(any())).thenReturn(null);
+
+        when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.run());
+
+        executor.execute(context);
+
+        // The condition is evaluated against the row's turn position.
+        ArgumentCaptor<ConditionContext> conditionCaptor = ArgumentCaptor.forClass(ConditionContext.class);
+        verify(conditionExpressionEvaluator).evaluate(any(), conditionCaptor.capture());
+        assertThat(conditionCaptor.getValue().turnIndex()).isEqualTo(2);
+        assertThat(conditionCaptor.getValue().totalTurns()).isEqualTo(3);
+
+        // The produced summary item inherits the same turn position.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());
+        EvalSummaryBatchWriteItemDto item = captor.getValue().get(0);
+        assertThat(item.getTurnIndex()).isEqualTo(2);
+        assertThat(item.getTotalTurns()).isEqualTo(3);
     }
 
     @Test

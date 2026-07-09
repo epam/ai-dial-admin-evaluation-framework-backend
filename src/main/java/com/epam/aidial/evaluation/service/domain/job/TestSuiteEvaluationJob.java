@@ -438,7 +438,7 @@ public class TestSuiteEvaluationJob {
                 .snapshotEndpointRef(snapshot.getEndpointRef())
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
-                .snapshotMultiStep(snapshot.isMultiStep())
+                .snapshotMultiTurn(snapshot.isMultiTurn())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())

@@ -17,7 +17,6 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
-import com.epam.aidial.evaluation.service.domain.DashjoinJsonataEvaluationService;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.SpanBuilder;
 import java.math.BigDecimal;
@@ -52,13 +51,8 @@ class MetricEvaluationWorkerTest {
 
     @BeforeEach
     void setUp() {
-        BindingResolver bindingResolver =
-                new BindingResolver(new ObjectMapper(), new DashjoinJsonataEvaluationService(new ObjectMapper()));
-        worker = new MetricEvaluationWorker(
-                metricProviderClient,
-                bindingResolver,
-                new ArrayBindingTypeMismatchDetector(new ObjectMapper()),
-                OpenTelemetry.noop());
+        BindingResolver bindingResolver = new BindingResolver(new ObjectMapper());
+        worker = new MetricEvaluationWorker(metricProviderClient, bindingResolver, OpenTelemetry.noop());
     }
 
     @Test
@@ -199,13 +193,9 @@ class MetricEvaluationWorkerTest {
             UUID testSuiteId = UUID.fromString("33333333-3333-3333-3333-333333333333");
             UUID resultId = UUID.fromString("44444444-4444-4444-4444-444444444444");
 
-            BindingResolver bindingResolver =
-                    new BindingResolver(new ObjectMapper(), new DashjoinJsonataEvaluationService(new ObjectMapper()));
-            MetricEvaluationWorker spanWorker = new MetricEvaluationWorker(
-                    mockMetricProviderClient,
-                    bindingResolver,
-                    new ArrayBindingTypeMismatchDetector(new ObjectMapper()),
-                    mockOpenTelemetry);
+            BindingResolver bindingResolver = new BindingResolver(new ObjectMapper());
+            MetricEvaluationWorker spanWorker =
+                    new MetricEvaluationWorker(mockMetricProviderClient, bindingResolver, mockOpenTelemetry);
 
             AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
                     .id(UUID.randomUUID())

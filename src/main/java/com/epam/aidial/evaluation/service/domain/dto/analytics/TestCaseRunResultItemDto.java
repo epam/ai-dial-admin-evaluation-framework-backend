@@ -32,6 +32,24 @@ public class TestCaseRunResultItemDto {
     @Max(value = 99999, message = "runIndex must be <= 99999")
     private Integer runIndex;
 
+    /**
+     * 0-based conversation turn index. Optional: external single-turn callers may omit it, in which case it
+     * defaults to {@code 0} at write time (a primitive {@code int} would send {@code 0} regardless and could
+     * not be distinguished from "omitted", so this stays a nullable {@link Integer}). Importing a multi-turn
+     * conversation requires distinct {@code turnIndex} values per row: it is part of the natural key, so
+     * omitting it would collapse every turn onto the same key and silently drop all but one row.
+     */
+    @Min(value = 0, message = "turnIndex must be >= 0")
+    private Integer turnIndex;
+
+    /**
+     * Conversation length (turn count). Optional: external single-turn callers may omit it, in which case it
+     * defaults to {@code 1} at write time, matching the DB column default and keeping single-turn payloads
+     * byte-compatible. The degenerate data-shape ERROR row is {@code 0/0}, so the lower bound is {@code 0}.
+     */
+    @Min(value = 0, message = "totalTurns must be >= 0")
+    private Integer totalTurns;
+
     @NotNull(message = "testCaseData is required")
     private JsonNode testCaseData;
 

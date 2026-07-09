@@ -81,7 +81,7 @@ public class SuiteValidationService {
                 .responseColumns(jsonbMapper.mapResponseColumns(suite.getResponseColumns()))
                 .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
                 .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()))
-                .multiStep(suite.isMultiStep())
+                .multiTurn(suite.isMultiTurn())
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
@@ -160,13 +160,13 @@ public class SuiteValidationService {
             warnings.add(warning(null, "$.requestTemplate", typeHintWarning, ValidationWarningCode.TYPE));
         }
 
-        // Shared binding cross-validation against the single inputBindings (multi-step and single-step alike).
+        // Shared binding cross-validation against the single inputBindings (multi-turn and single-turn alike).
         warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId));
 
-        // Multi-step additionally requires a chat-completions body (top-level messages array). Turn count and
+        // Multi-turn additionally requires a chat-completions body (top-level messages array). Turn count and
         // array-shape are per-test-case data concerns evaluated at execution time, not suite-validation concerns.
-        if (dto.isMultiStep()) {
-            warnings.addAll(validateMultiStepBody(template));
+        if (dto.isMultiTurn()) {
+            warnings.addAll(validateMultiTurnBody(template));
         }
 
         // Multipart FILE part constant value validation (deployment-specific)
@@ -245,12 +245,12 @@ public class SuiteValidationService {
     }
 
     /**
-     * Multi-step ({@code multiStep == true}) body validation. A multi-step suite uses its single
+     * Multi-turn ({@code multiTurn == true}) body validation. A multi-turn suite uses its single
      * {@code inputBindings} (validated by the shared {@link BindingValidator}); the only additional config-time
      * requirement is that the request body is JSON with a top-level {@code messages} array (chat-completions
      * contract). Turn count and array-shape are per-test-case data concerns resolved at execution time, not here.
      */
-    private List<ValidationWarningDto> validateMultiStepBody(RequestTemplateDto template) {
+    private List<ValidationWarningDto> validateMultiTurnBody(RequestTemplateDto template) {
         if (template == null
                 || !(template.getBody() instanceof JsonRequestBodyDto jsonBody)
                 || jsonBody.getContent() == null
@@ -258,7 +258,7 @@ public class SuiteValidationService {
             return List.of(warning(
                     null,
                     "$.requestTemplate.body",
-                    "Multi-step suite requires a JSON request body with a top-level 'messages' array",
+                    "Multi-turn suite requires a JSON request body with a top-level 'messages' array",
                     ValidationWarningCode.REQUIRED));
         }
         return List.of();

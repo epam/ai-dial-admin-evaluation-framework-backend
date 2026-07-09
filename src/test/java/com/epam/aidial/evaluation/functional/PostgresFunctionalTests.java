@@ -54,7 +54,7 @@ import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
-import com.epam.aidial.evaluation.functional.tests.MultiStepConversationRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiTurnConversationRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
@@ -367,7 +367,7 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class EvaluationExecutorFailureModesTests extends EvaluationExecutorFailureModesFunctionalTests {}
 
     @Nested
-    class MultiStepConversationRunTests extends MultiStepConversationRunFunctionalTests {}
+    class MultiTurnConversationRunTests extends MultiTurnConversationRunFunctionalTests {}
 
     @Nested
     class AnalyticsRetryFieldsTests extends AnalyticsRetryFieldsFunctionalTests {}

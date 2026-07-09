@@ -43,7 +43,7 @@ public class TestSuiteResponseDto {
     private List<InputBindingDto> inputBindings;
 
     @Schema(description = "Whether this suite is multi-turn (POC)", example = "true")
-    private boolean multiStep;
+    private boolean multiTurn;
 
     @Schema(description = "MCP deployment reference (MCP_TOOL suites only)")
     private McpDeploymentReferenceDto mcpDeploymentRef;

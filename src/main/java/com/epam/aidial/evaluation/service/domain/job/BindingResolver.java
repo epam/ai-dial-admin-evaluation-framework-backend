@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.service.domain.JsonataEvaluationService;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
@@ -31,7 +30,6 @@ public class BindingResolver {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final ObjectMapper objectMapper;
-    private final JsonataEvaluationService jsonataEvaluationService;
 
     /**
      * Parses a JSON string of metric parameter bindings.
@@ -99,9 +97,7 @@ public class BindingResolver {
                     throw new IllegalArgumentException(
                             "TestCase binding references missing column '" + columnName + "' in test case data");
                 }
-                Object columnValue = testCaseData.get(columnName);
-
-                yield applyJsonataSelector(columnValue, testCase.getJsonataExpression());
+                yield testCaseData.get(columnName);
             }
             case ResponseBindingSourceDto response -> {
                 String columnName = response.getColumnName();
@@ -109,37 +105,10 @@ public class BindingResolver {
                     throw new IllegalArgumentException(
                             "Response binding references missing column '" + columnName + "' in extracted columns");
                 }
-                Object columnValue = extractedColumns.get(columnName);
-
-                yield applyJsonataSelector(columnValue, response.getJsonataExpression());
+                yield extractedColumns.get(columnName);
             }
             case ConstantBindingSourceDto constantSource -> constantSource.getValue();
             case null -> throw new IllegalArgumentException("Missing binding");
         };
-    }
-
-    private Object applyJsonataSelector(Object columnValue, String jsonataExpression) {
-        if (jsonataExpression == null || jsonataExpression.isBlank()) {
-            return columnValue;
-        }
-        try {
-            return jsonataEvaluationService.evaluate(jsonataExpression, serializeToJson(columnValue));
-        } catch (IllegalStateException e) {
-            log.warn(
-                    "JSONata selector '{}' failed at evaluation time; resolving binding to null: {}",
-                    jsonataExpression,
-                    e.getMessage(),
-                    e);
-            return null;
-        }
-    }
-
-    private String serializeToJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JacksonException e) {
-            throw new IllegalArgumentException(
-                    "Failed to serialize column value for JSONata selection: " + e.getMessage(), e);
-        }
     }
 }

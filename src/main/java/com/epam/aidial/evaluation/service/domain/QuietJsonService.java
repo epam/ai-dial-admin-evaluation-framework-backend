@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.service.domain.job;
+package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import java.util.Map;
@@ -24,7 +24,7 @@ import tools.jackson.databind.node.ObjectNode;
 @Component
 @LogExecution
 @RequiredArgsConstructor
-public class JobJsonService {
+public class QuietJsonService {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 

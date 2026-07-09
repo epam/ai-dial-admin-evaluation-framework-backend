@@ -26,6 +26,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,15 +45,14 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * End-to-end functional test for the multi-step conversation POC: create → run a multi-step suite (single
+ * End-to-end functional test for multi-turn conversations: create → run a multi-turn suite (single
  * {@code inputBindings} bound to an array-valued dataset column) against a mocked DIAL Core deployment. The
- * number of turns is derived per test case from the array-column length. Asserts the single persisted result
- * reuses the existing columns ({@code response_body} = the last turn's raw response, {@code extracted_columns}
- * = a column-major object of per-column arrays), and that two test cases in the same run can execute
- * different turn counts.
+ * number of turns is derived per test case from the array-column length. Each turn is persisted as its own
+ * scalar result row carrying {@code turn_index}/{@code total_turns} (its raw per-turn {@code response_body}
+ * and scalar {@code extracted_columns}), and two test cases in the same run can execute different turn counts.
  */
-@DisplayName("Multi-step Conversation Run Functional Tests")
-public abstract class MultiStepConversationRunFunctionalTests extends BaseFunctionalTest {
+@DisplayName("Multi-turn Conversation Run Functional Tests")
+public abstract class MultiTurnConversationRunFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private DialCoreDeploymentInvoker deploymentInvoker;
@@ -67,14 +67,14 @@ public abstract class MultiStepConversationRunFunctionalTests extends BaseFuncti
     private ObjectMapper objectMapper;
 
     @Test
-    @DisplayName("Should persist last-turn response and column-major per-turn extraction for a 2-turn conversation")
-    void shouldRunTwoStepConversation() throws JacksonException {
-        TestSuiteResponseDto suite = createMultiStepSuite();
-        assertThat(suite.isMultiStep()).isTrue();
+    @DisplayName("Should persist one scalar result row per turn with turn_index/total_turns for a 2-turn conversation")
+    void shouldRunTwoTurnConversation() throws JacksonException {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
+        assertThat(suite.isMultiTurn()).isTrue();
         assertThat(suite.isValid()).isTrue();
         createTestCase(suite.getId(), "TC1", Map.of("turns", List.of("hello", "how are you")));
 
-        // Each step returns a distinct assistant reply so we can verify per-step accumulation/extraction.
+        // Each turn returns a distinct assistant reply so we can verify per-turn rows/extraction.
         AtomicInteger callCount = new AtomicInteger();
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenAnswer(inv -> {
@@ -94,40 +94,44 @@ public abstract class MultiStepConversationRunFunctionalTests extends BaseFuncti
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
+        // Two turns → two per-turn result rows and two deployment calls
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
-        assertThat(results).hasSize(1);
-        Map<String, Object> row = results.get(0);
-        assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("SUCCESS");
-
-        // Two steps → two deployment calls
+        assertThat(results).hasSize(2);
         assertThat(callCount.get()).isEqualTo(2);
 
-        // response_body = the last turn's raw chat-completion response (technical fields preserved,
-        // e.g. the "id" field), with the final assistant reply
-        JsonNode responseBody = objectMapper.readTree(String.valueOf(row.get("response_body")));
-        assertThat(responseBody.get("id").asString()).isEqualTo("mock");
-        assertThat(responseBody
-                        .path("choices")
-                        .get(0)
-                        .path("message")
-                        .get("content")
+        results.sort(Comparator.comparingInt(r -> ((Number) r.get("turn_index")).intValue()));
+
+        Map<String, Object> turn0 = results.get(0);
+        assertThat(String.valueOf(turn0.get("execution_status"))).isEqualTo("SUCCESS");
+        assertThat(((Number) turn0.get("turn_index")).intValue()).isEqualTo(0);
+        assertThat(((Number) turn0.get("total_turns")).intValue()).isEqualTo(2);
+        // scalar extraction per turn: {"answer":"reply-0"}
+        assertThat(objectMapper
+                        .readTree(String.valueOf(turn0.get("extracted_columns")))
+                        .get("answer")
+                        .asString())
+                .isEqualTo("reply-0");
+        // response_body = that turn's raw chat-completion response (technical "id" preserved)
+        JsonNode turn0Response = objectMapper.readTree(String.valueOf(turn0.get("response_body")));
+        assertThat(turn0Response.get("id").asString()).isEqualTo("mock");
+        assertThat(contentOf(turn0Response)).isEqualTo("reply-0");
+
+        Map<String, Object> turn1 = results.get(1);
+        assertThat(((Number) turn1.get("turn_index")).intValue()).isEqualTo(1);
+        assertThat(((Number) turn1.get("total_turns")).intValue()).isEqualTo(2);
+        assertThat(objectMapper
+                        .readTree(String.valueOf(turn1.get("extracted_columns")))
+                        .get("answer")
                         .asString())
                 .isEqualTo("reply-1");
-
-        // extracted_columns = column-major object: {"answer": ["reply-0", "reply-1"]}
-        JsonNode extracted = objectMapper.readTree(String.valueOf(row.get("extracted_columns")));
-        assertThat(extracted.isObject()).isTrue();
-        JsonNode answers = extracted.get("answer");
-        assertThat(answers.isArray()).isTrue();
-        assertThat(answers.size()).isEqualTo(2);
-        assertThat(answers.get(0).asString()).isEqualTo("reply-0");
-        assertThat(answers.get(1).asString()).isEqualTo("reply-1");
+        assertThat(contentOf(objectMapper.readTree(String.valueOf(turn1.get("response_body")))))
+                .isEqualTo("reply-1");
     }
 
     @Test
-    @DisplayName("Should derive turn count per test case from the array-column length (2 vs 3 turns)")
-    void shouldRunPerTestCaseTurnCounts() throws JacksonException {
-        TestSuiteResponseDto suite = createMultiStepSuite();
+    @DisplayName("Should derive turn count per test case: 2 vs 3 turns yields 2 vs 3 per-turn rows")
+    void shouldRunPerTestCaseTurnCounts() {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
         createTestCase(suite.getId(), "TC2", Map.of("turns", List.of("a", "b")));
         createTestCase(suite.getId(), "TC3", Map.of("turns", List.of("a", "b", "c")));
 
@@ -146,35 +150,49 @@ public abstract class MultiStepConversationRunFunctionalTests extends BaseFuncti
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
+        // TC2 → 2 per-turn rows, TC3 → 3 per-turn rows: 5 rows total
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
-        assertThat(results).hasSize(2);
+        assertThat(results).hasSize(5);
 
-        Map<String, Integer> extractedSizeByName = new HashMap<>();
+        Map<String, Integer> rowCountByName = new HashMap<>();
         for (Map<String, Object> row : results) {
             assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("SUCCESS");
-            JsonNode extracted = objectMapper.readTree(String.valueOf(row.get("extracted_columns")));
-            // column-major: the turn count is the length of the per-column array
-            extractedSizeByName.put(
-                    String.valueOf(row.get("test_case_name")),
-                    extracted.get("answer").size());
+            String name = String.valueOf(row.get("test_case_name"));
+            rowCountByName.merge(name, 1, Integer::sum);
+            // total_turns on each row equals that test case's turn count
+            int expectedTurns = "TC2".equals(name) ? 2 : 3;
+            assertThat(((Number) row.get("total_turns")).intValue()).isEqualTo(expectedTurns);
         }
-        // TC2's 2-element array → 2 turns; TC3's 3-element array → 3 turns
-        assertThat(extractedSizeByName).containsEntry("TC2", 2).containsEntry("TC3", 3);
+        assertThat(rowCountByName).containsEntry("TC2", 2).containsEntry("TC3", 3);
     }
 
-    private TestSuiteResponseDto createMultiStepSuite() throws JacksonException {
-        String schemaJson = objectMapper.writeValueAsString(List.of(FieldDefinitionDto.builder()
-                .name("turns")
-                .type(SchemaFieldType.ARRAY)
-                .required(true)
-                .build()));
-        Dataset dataset = metaTestDataHelper.createDataset("multistep-" + UUID.randomUUID(), schemaJson);
+    private String contentOf(JsonNode responseBody) {
+        return responseBody
+                .path("choices")
+                .get(0)
+                .path("message")
+                .get("content")
+                .asString();
+    }
+
+    private TestSuiteResponseDto createMultiTurnSuite() {
+        String schemaJson;
+        try {
+            schemaJson = objectMapper.writeValueAsString(List.of(FieldDefinitionDto.builder()
+                    .name("turns")
+                    .type(SchemaFieldType.ARRAY)
+                    .required(true)
+                    .build()));
+        } catch (JacksonException e) {
+            throw new AssertionError("Failed to serialize test-case schema", e);
+        }
+        Dataset dataset = metaTestDataHelper.createDataset("multiturn-" + UUID.randomUUID(), schemaJson);
 
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
-                .name("Multi-step Suite " + UUID.randomUUID())
-                .description("multi-step POC")
+                .name("Multi-turn Suite " + UUID.randomUUID())
+                .description("multi-turn POC")
                 .datasetId(dataset.getId())
-                .multiStep(true)
+                .multiTurn(true)
                 .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("turn")
                         .dataField("turns")

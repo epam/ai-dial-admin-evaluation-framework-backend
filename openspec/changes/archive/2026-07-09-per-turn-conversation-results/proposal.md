@@ -102,9 +102,10 @@ response-column extraction still need it).
 - Add `turnIndex` / `totalTurns` to both list response DTOs (test-case-run-results and
   eval-summaries). **Flat rows** carry the fields; the frontend groups by `(testCaseId, runIndex)`.
   No grouped/nested API — keyset cursor pagination, filtering, sorting untouched.
-- CSV export (already per-turn, since it rides on `EvalSummary`) gains two columns: `turn`,
+- CSV export (already per-turn, since it rides on `EvalSummary`) gains two columns: `turnIndex`,
   `totalTurns`.
-- Add `turn_index ASC` to the default within-conversation ordering so grouped display is ordered.
+- Within-conversation ordering is client-side: the frontend groups by `(testCaseId, runIndex)` and
+  sorts each group by `turnIndex`. The repository ordering / keyset spine is left untouched (see design D6).
 - **No** new `FilterWhitelists` / `SortWhitelists` entries (deferred until the frontend needs them).
 
 Not changing: response extraction semantics, the `is_valid` soft-validation model, RunMetricSnapshot
@@ -132,8 +133,9 @@ artifact.)_
   `jsonataExpression` (branch-only, never shipped). List payloads for a multi-turn conversation
   become N flat rows. OpenAPI schema + examples updated for all touched DTOs.
 - **Data** (Flyway): analytics —
-  `V1.12__AddTurnColumnsToTestCaseRunResults.sql`,
-  `V1.13__AddTurnColumnsToEvalSummaries.sql` (add columns + recreate unique index). Meta —
+  `V1.13__AddTurnColumnsToTestCaseRunResults.sql`,
+  `V1.14__AddTurnColumnsToEvalSummaries.sql` (add columns + recreate unique index; V1.12 left free for
+  development's incoming analytics migration). Meta —
   `multi_step` → `multi_turn` on `test_suites` (see Rollout for in-place vs rename-migration). jOOQ
   regenerated (`./gradlew generateJooq`); `docs/database-schema.md` updated.
 - **Config**: none.

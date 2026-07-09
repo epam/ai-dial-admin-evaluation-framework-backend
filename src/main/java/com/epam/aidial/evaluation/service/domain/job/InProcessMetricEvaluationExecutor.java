@@ -183,6 +183,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
         ConditionContext conditionContext = ConditionContext.builder()
                 .dataJson(result.getTestCaseData())
                 .responseJson(result.getExtractedColumns())
+                .turnIndex(result.getTurnIndex())
+                .totalTurns(result.getTotalTurns())
                 .build();
 
         List<AggregatedMetricDefinition> dispatchedTsmds = new ArrayList<>();
@@ -325,9 +327,11 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .testCaseId(result.getTestCaseId())
                 .testCaseName(result.getTestCaseName())
                 .runIndex(result.getRunIndex())
+                .turnIndex(result.getTurnIndex())
+                .totalTurns(result.getTotalTurns())
                 .testCaseData(parseJsonNode(result.getTestCaseData()))
-                // extractedColumns is stored verbatim: single-step results carry scalar values, multi-step
-                // results carry per-column arrays. No normalization — turn selection is a per-binding concern.
+                // extractedColumns is stored verbatim as a scalar-valued JSON object: one summary is produced
+                // per result row (single-turn or one per-turn row of a multi-turn conversation).
                 .extractedColumns(parseJsonNode(result.getExtractedColumns()))
                 .executionStatus(executionStatus)
                 .execDurationMs(result.getExecDurationMs())

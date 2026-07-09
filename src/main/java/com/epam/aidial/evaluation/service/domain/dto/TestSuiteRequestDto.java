@@ -69,7 +69,7 @@ public class TestSuiteRequestDto {
                     + "inputBindings; per-turn variation comes from array-valued test-case columns bound by those "
                     + "bindings, and the number of turns is derived per test case from those arrays' length.",
             example = "true")
-    private boolean multiStep;
+    private boolean multiTurn;
 
     @Valid
     @Schema(description = "MCP deployment reference (required for MCP_TOOL suites)")

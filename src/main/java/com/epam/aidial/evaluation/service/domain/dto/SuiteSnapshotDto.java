@@ -54,7 +54,7 @@ public class SuiteSnapshotDto {
 
     @Builder.Default
     @Schema(description = "Whether the suite was multi-turn at snapshot time (POC)")
-    private boolean multiStep = false;
+    private boolean multiTurn = false;
 
     @Schema(description = "Response column definitions")
     private List<ResponseColumnDefinitionDto> responseColumns;

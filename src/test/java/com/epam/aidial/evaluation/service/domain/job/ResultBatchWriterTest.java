@@ -14,6 +14,7 @@ import static org.mockito.Mockito.verify;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +54,8 @@ class ResultBatchWriterTest {
                 .testCaseId(UUID.randomUUID())
                 .testCaseName("test")
                 .runIndex(0)
+                .turnIndex(0)
+                .totalTurns(1)
                 .testCaseData("{}")
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execStartedAtMs(1000L)
@@ -62,14 +65,28 @@ class ResultBatchWriterTest {
                 .build();
     }
 
+    /** Adds one single-turn conversation (one row). */
+    private void addOneConversation(ResultBatchWriter.RunBuffer buffer) {
+        writer.addResults(buffer, List.of(buildResult()));
+    }
+
+    /** Builds a multi-turn conversation of {@code turns} per-turn rows. */
+    private List<TestCaseRunResult> conversationOf(int turns) {
+        List<TestCaseRunResult> rows = new ArrayList<>();
+        for (int i = 0; i < turns; i++) {
+            rows.add(buildResult());
+        }
+        return rows;
+    }
+
     @Test
-    @DisplayName("addResult below threshold does not flush")
-    void addResult_belowThreshold_doesNotFlush() {
+    @DisplayName("addResults below row threshold does not flush")
+    void addResults_belowThreshold_doesNotFlush() {
         int batchSize = 5;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
         for (int i = 0; i < batchSize - 1; i++) {
-            writer.addResult(buffer, buildResult());
+            addOneConversation(buffer);
         }
 
         verify(transactionalWriter, never()).saveBatch(anyList());
@@ -78,13 +95,13 @@ class ResultBatchWriterTest {
     }
 
     @Test
-    @DisplayName("addResult at threshold triggers flush")
-    void addResult_atThreshold_flushes() {
+    @DisplayName("addResults at row threshold triggers flush; progress counts completed conversations")
+    void addResults_atThreshold_flushes() {
         int batchSize = 3;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
         for (int i = 0; i < batchSize; i++) {
-            writer.addResult(buffer, buildResult());
+            addOneConversation(buffer);
         }
 
         verify(transactionalWriter, times(1)).saveBatch(anyList());
@@ -93,18 +110,18 @@ class ResultBatchWriterTest {
     }
 
     @Test
-    @DisplayName("addResult with multiple flushes increments total flushed correctly")
-    void addResult_multipleFlushes_incrementsTotalFlushed() {
+    @DisplayName("addResults with multiple flushes increments total flushed and conversation progress correctly")
+    void addResults_multipleFlushes_incrementsTotalFlushed() {
         int batchSize = 2;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        // First batch of 2
-        writer.addResult(buffer, buildResult());
-        writer.addResult(buffer, buildResult());
+        // First batch of 2 conversations
+        addOneConversation(buffer);
+        addOneConversation(buffer);
 
-        // Second batch of 2
-        writer.addResult(buffer, buildResult());
-        writer.addResult(buffer, buildResult());
+        // Second batch of 2 conversations
+        addOneConversation(buffer);
+        addOneConversation(buffer);
 
         verify(transactionalWriter, times(2)).saveBatch(anyList());
         verify(sseService, times(1)).notifyProgress(eq(RUN_ID), eq(SUITE_ID), eq(2), eq(TOTAL_CASES));
@@ -113,14 +130,32 @@ class ResultBatchWriterTest {
     }
 
     @Test
+    @DisplayName("a multi-turn conversation buffers all its per-turn rows but advances progress by one")
+    void addResults_multiTurnConversation_buffersRowsAdvancesProgressByOne() {
+        int batchSize = 10;
+        ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
+
+        // One conversation contributing three per-turn rows (below the row threshold → no flush yet).
+        writer.addResults(buffer, conversationOf(3));
+        verify(transactionalWriter, never()).saveBatch(anyList());
+        assertThat(buffer.getConversationsCompleted()).isEqualTo(1);
+
+        writer.flush(buffer);
+
+        // All 3 rows persisted, but progress counts the single completed conversation.
+        assertThat(buffer.getTotalFlushed()).isEqualTo(3);
+        verify(sseService, times(1)).notifyProgress(eq(RUN_ID), eq(SUITE_ID), eq(1), eq(TOTAL_CASES));
+    }
+
+    @Test
     @DisplayName("flush with buffered results writes all remaining")
     void flush_withBufferedResults_writesAll() {
         int batchSize = 10;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        writer.addResult(buffer, buildResult());
-        writer.addResult(buffer, buildResult());
-        writer.addResult(buffer, buildResult());
+        addOneConversation(buffer);
+        addOneConversation(buffer);
+        addOneConversation(buffer);
 
         // No flush yet because below threshold
         verify(transactionalWriter, never()).saveBatch(anyList());
@@ -146,25 +181,24 @@ class ResultBatchWriterTest {
     }
 
     @Test
-    @DisplayName("addResult sends progress SSE after flush")
-    void addResult_sendsProgressSseAfterFlush() {
+    @DisplayName("addResults sends progress SSE after flush")
+    void addResults_sendsProgressSseAfterFlush() {
         int batchSize = 2;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        writer.addResult(buffer, buildResult());
-        writer.addResult(buffer, buildResult());
+        addOneConversation(buffer);
+        addOneConversation(buffer);
 
         verify(sseService, times(1)).notifyProgress(eq(RUN_ID), eq(SUITE_ID), eq(2), eq(TOTAL_CASES));
     }
 
     @Test
     @DisplayName("flush when SSE fails does not throw exception")
-    @SuppressWarnings("unchecked")
     void flush_sseFailure_doesNotThrow() {
         int batchSize = 10;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        writer.addResult(buffer, buildResult());
+        addOneConversation(buffer);
 
         doThrow(new RuntimeException("SSE connection lost"))
                 .when(sseService)
@@ -180,15 +214,15 @@ class ResultBatchWriterTest {
     @Test
     @DisplayName("saveBatch receives correct batch contents")
     @SuppressWarnings("unchecked")
-    void addResult_saveBatchReceivesCorrectBatch() {
+    void addResults_saveBatchReceivesCorrectBatch() {
         int batchSize = 2;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
         TestCaseRunResult result1 = buildResult();
         TestCaseRunResult result2 = buildResult();
 
-        writer.addResult(buffer, result1);
-        writer.addResult(buffer, result2);
+        writer.addResults(buffer, List.of(result1));
+        writer.addResults(buffer, List.of(result2));
 
         ArgumentCaptor<List<TestCaseRunResult>> captor = ArgumentCaptor.forClass(List.class);
         verify(transactionalWriter).saveBatch(captor.capture());

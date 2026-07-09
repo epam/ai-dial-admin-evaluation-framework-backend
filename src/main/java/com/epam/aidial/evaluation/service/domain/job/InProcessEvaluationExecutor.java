@@ -113,9 +113,9 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                         CompletableFuture<Void> future = CompletableFuture.runAsync(
                                 TokenPropagationHelper.withTokenRunnable(token, () -> {
                                     try {
-                                        TestCaseRunResult result =
+                                        List<TestCaseRunResult> results =
                                                 evaluationWorker.execute(capturedInput, context, ri, responseColumns);
-                                        resultBatchWriter.addResult(buffer, result);
+                                        resultBatchWriter.addResults(buffer, results);
                                         // Intentionally broad: the worker is the last line of defense for a
                                         // single test case. Any failure (including unchecked) MUST be turned
                                         // into a synthetic ERROR row so per-case bugs are visible instead of
@@ -137,7 +137,7 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                                             try {
                                                 TestCaseRunResult synthetic = testCaseRunResultFactory.errorResult(
                                                         capturedInput, ri, e, clock.millis());
-                                                resultBatchWriter.addResult(buffer, synthetic);
+                                                resultBatchWriter.addResults(buffer, List.of(synthetic));
                                             } catch (Exception synthEx) {
                                                 log.error(
                                                         "Failed to record synthetic ERROR for test case {} run {}: {}",

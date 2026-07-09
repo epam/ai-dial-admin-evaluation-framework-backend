@@ -44,6 +44,46 @@
           ]
         }
       }
+    },
+    {
+      "testCaseId": "990e8400-e29b-41d4-a716-446655440004",
+      "testCaseName": "multi-turn-case",
+      "runIndex": 0,
+      "turnIndex": 0,
+      "totalTurns": 2,
+      "testCaseData": {"prompt": "Book a flight to Paris"},
+      "requestBody": {"messages": [{"role": "user", "content": "Book a flight to Paris"}]},
+      "responseBody": {"choices": [{"message": {"content": "Sure, what date?"}}]},
+      "responseStatusCode": 200,
+      "executionInfo": {
+        "status": "SUCCESS",
+        "startedAt": 1739750404000,
+        "completedAt": 1739750404500,
+        "traceId": "trace-ghi-789",
+        "retryCount": 0
+      },
+      "extractedColumns": {"answer": "Sure, what date?"},
+      "extractionWarnings": []
+    },
+    {
+      "testCaseId": "990e8400-e29b-41d4-a716-446655440004",
+      "testCaseName": "multi-turn-case",
+      "runIndex": 0,
+      "turnIndex": 1,
+      "totalTurns": 2,
+      "testCaseData": {"prompt": "Tomorrow"},
+      "requestBody": {"messages": [{"role": "user", "content": "Book a flight to Paris"}, {"role": "assistant", "content": "Sure, what date?"}, {"role": "user", "content": "Tomorrow"}]},
+      "responseBody": {"choices": [{"message": {"content": "Booked for tomorrow."}}]},
+      "responseStatusCode": 200,
+      "executionInfo": {
+        "status": "SUCCESS",
+        "startedAt": 1739750405000,
+        "completedAt": 1739750405600,
+        "traceId": "trace-ghi-790",
+        "retryCount": 0
+      },
+      "extractedColumns": {"answer": "Booked for tomorrow."},
+      "extractionWarnings": []
     }
   ]
 }

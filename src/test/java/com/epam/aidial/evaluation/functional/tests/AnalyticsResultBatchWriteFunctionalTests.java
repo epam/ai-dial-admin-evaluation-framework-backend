@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.ExecutionInfoRequ
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultItemDto;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -263,6 +264,59 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
         assertThat(response.getBody().getTotalItems()).isEqualTo(2);
 
         assertThat(analyticsTestDataHelper.countAll()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("Should import a multi-turn conversation as distinct per-turn rows")
+    void shouldImportMultiTurnConversationAsDistinctRows() {
+        UUID conversationCaseId = UUID.randomUUID();
+        List<TestCaseRunResultItemDto> turns = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            TestCaseRunResultItemDto turn = buildItem(conversationCaseId, "multi-turn-case", 0);
+            turn.setTurnIndex(i);
+            turn.setTotalTurns(3);
+            turns.add(turn);
+        }
+        BatchWriteRequestDto request = BatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .results(turns)
+                .build();
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().getTotalItems()).isEqualTo(3);
+
+        // All three turns must coexist — turn_index is part of the natural key, so they are NOT duplicates.
+        assertThat(analyticsTestDataHelper.countAll()).isEqualTo(3L);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findResultsByRunId(testSuiteRunId);
+        assertThat(rows).extracting(row -> row.get("turn_index")).containsExactlyInAnyOrder(0, 1, 2);
+        assertThat(rows).allSatisfy(row -> assertThat(row.get("total_turns")).isEqualTo(3));
+    }
+
+    @Test
+    @DisplayName("Should default turn fields to 0/1 when omitted by single-turn callers")
+    void shouldDefaultTurnFieldsWhenOmitted() {
+        TestCaseRunResultItemDto item = buildItem(UUID.randomUUID(), "single-turn-case", 0);
+        // turnIndex/totalTurns intentionally left null (omitted by the caller)
+
+        BatchWriteRequestDto request = BatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .results(List.of(item))
+                .build();
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findResultsByRunId(testSuiteRunId);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst().get("turn_index")).isEqualTo(0);
+        assertThat(rows.getFirst().get("total_turns")).isEqualTo(1);
     }
 
     // --- helpers ---

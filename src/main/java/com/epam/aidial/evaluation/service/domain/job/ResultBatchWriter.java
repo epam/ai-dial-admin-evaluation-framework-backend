@@ -32,6 +32,7 @@ public class ResultBatchWriter {
         private final List<TestCaseRunResult> buffer = new ArrayList<>();
         private final ReentrantLock lock = new ReentrantLock();
         private final AtomicInteger totalFlushed = new AtomicInteger(0);
+        private final AtomicInteger conversationsCompleted = new AtomicInteger(0);
         private final int batchSize;
         private final UUID runId;
         private final UUID suiteId;
@@ -47,6 +48,10 @@ public class ResultBatchWriter {
         public int getTotalFlushed() {
             return totalFlushed.get();
         }
+
+        public int getConversationsCompleted() {
+            return conversationsCompleted.get();
+        }
     }
 
     public RunBuffer createBuffer(int batchSize, UUID runId, UUID suiteId, int totalCases) {
@@ -54,14 +59,20 @@ public class ResultBatchWriter {
     }
 
     /**
-     * Adds a result to the buffer. Flushes when batch size is reached.
-     * Thread-safe via ReentrantLock.
+     * Adds one conversation's results to the buffer — one row for a single-turn case, N rows for a
+     * multi-turn conversation. Each call counts as exactly one completed conversation (the progress
+     * numerator), independent of how many rows it contributes. Flushes when the buffered row count reaches
+     * the batch size. Thread-safe via ReentrantLock.
      */
-    public void addResult(RunBuffer buffer, TestCaseRunResult result) {
+    public void addResults(RunBuffer buffer, List<TestCaseRunResult> results) {
+        if (results == null || results.isEmpty()) {
+            return;
+        }
         List<TestCaseRunResult> toFlush = null;
         buffer.lock.lock();
         try {
-            buffer.buffer.add(result);
+            buffer.buffer.addAll(results);
+            buffer.conversationsCompleted.incrementAndGet();
             if (buffer.buffer.size() >= buffer.batchSize) {
                 toFlush = new ArrayList<>(buffer.buffer);
                 buffer.buffer.clear();
@@ -100,7 +111,10 @@ public class ResultBatchWriter {
         log.debug("Flushed {} results for run {} (total: {})", batch.size(), buffer.runId, flushed);
 
         try {
-            sseService.notifyProgress(buffer.runId, buffer.suiteId, flushed, buffer.totalCases);
+            // Conversation-granular progress: numerator counts completed conversations (one per
+            // addResults call), not rows — so multi-turn runs stay within 0–totalCases.
+            sseService.notifyProgress(
+                    buffer.runId, buffer.suiteId, buffer.conversationsCompleted.get(), buffer.totalCases);
         } catch (Exception e) {
             log.debug("Failed to send progress SSE for run {}: {}", buffer.runId, e.getMessage(), e);
         }

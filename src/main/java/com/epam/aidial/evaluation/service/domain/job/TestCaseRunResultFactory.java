@@ -40,6 +40,8 @@ public class TestCaseRunResultFactory {
                 .testCaseId(input.getTestCaseId())
                 .testCaseName(input.getTestCaseName())
                 .runIndex(runIndex)
+                .turnIndex(0)
+                .totalTurns(1)
                 .testCaseData(input.getTestCaseData())
                 .executionStatus(ExecutionStatus.ERROR)
                 .responseBody(envelope)

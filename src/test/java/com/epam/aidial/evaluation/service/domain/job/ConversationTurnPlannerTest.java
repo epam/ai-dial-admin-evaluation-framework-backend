@@ -58,9 +58,9 @@ class ConversationTurnPlannerTest {
     }
 
     @Test
-    @DisplayName("errors when the turn count exceeds MAX_CONVERSATION_STEPS")
+    @DisplayName("errors when the turn count exceeds MAX_CONVERSATION_TURNS")
     void turnCountOverCapError() {
-        final List<Object> tooMany = IntStream.range(0, ValidationConstants.MAX_CONVERSATION_STEPS + 1)
+        final List<Object> tooMany = IntStream.range(0, ValidationConstants.MAX_CONVERSATION_TURNS + 1)
                 .mapToObj(i -> (Object) ("turn-" + i))
                 .toList();
 

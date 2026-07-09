@@ -17,6 +17,8 @@ public class TestCaseRunResult {
     private UUID testCaseId;
     private String testCaseName;
     private int runIndex;
+    private int turnIndex;
+    private int totalTurns;
     private String testCaseData;
     private String requestBody;
     private String responseBody;

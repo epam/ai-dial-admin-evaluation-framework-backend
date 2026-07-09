@@ -15,6 +15,7 @@ import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.service.domain.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.service.domain.McpRequestResolver;
 import com.epam.aidial.evaluation.service.domain.McpResponseSerializer;
+import com.epam.aidial.evaluation.service.domain.QuietJsonService;
 import com.epam.aidial.evaluation.service.domain.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.service.domain.ResolvedRequestService;
 import com.epam.aidial.evaluation.service.domain.ResponseColumnExtractor;
@@ -78,10 +79,10 @@ public class EvaluationWorker {
     private final Clock clock;
     private final SseEventParser sseEventParser;
     private final SseEventProcessingProperties sseEventProcessingProperties;
-    private final MultiStepConversationExecutor multiStepConversationExecutor;
-    private final JobJsonService jsonService;
+    private final MultiTurnConversationExecutor multiTurnConversationExecutor;
+    private final QuietJsonService jsonService;
 
-    public TestCaseRunResult execute(
+    public List<TestCaseRunResult> execute(
             TestCaseRunInput input,
             EvaluationContext context,
             int runIndex,
@@ -101,12 +102,13 @@ public class EvaluationWorker {
         try (Scope scope = span.makeCurrent()) {
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {
-                return executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs);
+                return List.of(executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs));
             }
 
-            // Multi-step conversation suites delegate to the turn-loop executor (single permit per conversation)
-            if (context.isSnapshotMultiStep()) {
-                return multiStepConversationExecutor.execute(
+            // Multi-turn conversation suites delegate to the turn-loop executor (single permit per conversation),
+            // returning one result row per turn.
+            if (context.isSnapshotMultiTurn()) {
+                return multiTurnConversationExecutor.execute(
                         input, context, runIndex, responseColumns, traceId, execStartedAtMs);
             }
 
@@ -157,7 +159,7 @@ public class EvaluationWorker {
             }
 
             // Invoke deployment with retries
-            return invokeWithRetries(
+            return List.of(invokeWithRetries(
                     input,
                     context,
                     runIndex,
@@ -169,7 +171,7 @@ public class EvaluationWorker {
                     headers,
                     queryParams,
                     body,
-                    resolvedBody);
+                    resolvedBody));
 
         } catch (Exception e) {
             // Request resolution error
@@ -183,7 +185,7 @@ public class EvaluationWorker {
             String errorBody = buildErrorEnvelope("REQUEST_RESOLUTION_ERROR", e.getMessage());
             span.recordException(e);
             span.setStatus(StatusCode.ERROR, e.getMessage());
-            return buildResult(
+            return List.of(buildResult(
                     input,
                     context,
                     runIndex,
@@ -194,7 +196,7 @@ public class EvaluationWorker {
                     ExecutionStatus.ERROR,
                     null,
                     errorBody,
-                    responseColumns);
+                    responseColumns));
         } finally {
             span.end();
         }
@@ -750,6 +752,8 @@ public class EvaluationWorker {
                 .testCaseId(input.getTestCaseId())
                 .testCaseName(input.getTestCaseName())
                 .runIndex(runIndex)
+                .turnIndex(0)
+                .totalTurns(1)
                 .testCaseData(input.getTestCaseData())
                 .requestBody(requestBodyJson)
                 .responseBody(responseBody)

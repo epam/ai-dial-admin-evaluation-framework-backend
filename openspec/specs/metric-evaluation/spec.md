@@ -111,52 +111,36 @@ Status: **Implemented**
 - **THEN** the executor SHALL catch the per-TSMD exception via `CompletableFuture` error handling and map it to error entries in metricValues (null) and metricInfos (error message)
 
 ### Requirement: Binding resolution
-The `BindingResolver` SHALL resolve TSMD config and input bindings against test case data and the **raw** `extractedColumns` from a `TestCaseRunResult` (no shape normalization), producing `Map<String, Object>` for config and input. Resolution SHALL fail fast when a binding references a column that does not exist in the data map. A `Response` **or** `TestCase` binding source MAY carry an optional `jsonataExpression`; when it is non-blank, the resolver SHALL evaluate it (via `JsonataEvaluationService`) against the **resolved column value** and use the result — which MAY be `null` when the expression matches nothing. When `jsonataExpression` is absent or blank, the resolver SHALL use the raw column value unchanged (the whole per-column array for a multi-step response column, or an array-valued test-case data column, a scalar otherwise). `Constant` binding sources SHALL NOT carry `jsonataExpression`.
+The `BindingResolver` SHALL resolve TSMD config and input bindings against test case data and the `extractedColumns` from a `TestCaseRunResult`, producing `Map<String, Object>` for config and input. Because each result row is now a single turn carrying scalar `test_case_data` and scalar `extracted_columns`, resolution SHALL use the column value **directly** — there is no turn/element selection. A `Response` or `TestCase` binding source carries only a `columnName`; a `Constant` binding source carries a literal `value`. Binding sources SHALL NOT carry a `jsonataExpression`. Resolution SHALL fail fast when a `Response`/`TestCase` binding references a column that does not exist in the corresponding map; a column present with a `null` value SHALL resolve to `null`.
 Status: **Implemented**
 
 #### Scenario: TestCase binding source
-- **WHEN** a binding has `source: { $type: "TestCase", columnName: "expected" }` and the test case data contains `{"expected": "A planet"}`
-- **THEN** the resolver SHALL produce `{"expected": "A planet"}` for that binding's property
+- **WHEN** a binding has `source: { $type: "TestCase", columnName: "expected" }` and the (per-turn) test case data contains `{"expected": "A planet"}`
+- **THEN** the resolver SHALL produce the value `"A planet"` for that binding's property
 
 #### Scenario: Response binding source
-- **WHEN** a binding has `source: { $type: "Response", columnName: "model_answer" }` and the extracted columns contain `{"model_answer": "Earth is the third planet"}`
+- **WHEN** a binding has `source: { $type: "Response", columnName: "model_answer" }` and the (per-turn) extracted columns contain `{"model_answer": "Earth is the third planet"}`
 - **THEN** the resolver SHALL produce the value `"Earth is the third planet"` for that binding's property
 
 #### Scenario: Constant binding source
 - **WHEN** a binding has `source: { $type: "Constant", value: "gemini-2.5-flash-lite" }`
 - **THEN** the resolver SHALL produce the literal value `"gemini-2.5-flash-lite"` for that binding's property
 
-#### Scenario: Response binding without jsonataExpression yields the whole column value
-- **WHEN** a binding has `source: { $type: "Response", columnName: "answer" }` with no `jsonataExpression` and the multi-step extracted columns contain `{"answer": ["Paris","Tokio"]}`
-- **THEN** the resolver SHALL produce the array `["Paris","Tokio"]` for that binding's property
-
-#### Scenario: Response binding jsonataExpression selects an array element
-- **WHEN** a binding has `source: { $type: "Response", columnName: "answer", jsonataExpression: "$[0]" }` and the extracted columns contain `{"answer": ["Paris","Tokio"]}`
-- **THEN** the resolver SHALL produce the value `"Paris"` for that binding's property
-
-#### Scenario: TestCase binding jsonataExpression selects an array element
-- **WHEN** a binding has `source: { $type: "TestCase", columnName: "user_turns", jsonataExpression: "$[1]" }` and the test case data contains `{"user_turns": ["hi", "and then?"]}`
-- **THEN** the resolver SHALL produce the value `"and then?"` for that binding's property
-
-#### Scenario: TestCase binding jsonataExpression selects a nested object path
-- **WHEN** a binding has `source: { $type: "TestCase", columnName: "meta", jsonataExpression: "labels.topic" }` and the test case data contains `{"meta": {"labels": {"topic": "geography"}}}`
-- **THEN** the resolver SHALL produce the value `"geography"` for that binding's property
-
-#### Scenario: jsonataExpression matching nothing resolves to null
-- **WHEN** a binding has `source: { $type: "Response", columnName: "answer", jsonataExpression: "$[2]" }` and the extracted columns contain `{"answer": ["Paris","Tokio"]}` (only indices 0 and 1 exist)
-- **THEN** the resolver SHALL produce `null` for that binding's property (no exception thrown)
+#### Scenario: No jsonataExpression on any binding source
+- **WHEN** a binding source is deserialized
+- **THEN** `Response`, `TestCase`, and `Constant` sources SHALL have no `jsonataExpression` field, and the resolver SHALL contain no JSONata-selection step and no array/scalar mismatch guard
 
 #### Scenario: Missing column in test case data fails fast
-- **WHEN** a binding has `source: { $type: "TestCase", columnName: "score" }` and the test case `data` map does NOT contain the key `"score"` (i.e. `data.containsKey("score")` is false)
-- **THEN** the resolver SHALL throw `IllegalArgumentException` with a message identifying the missing column and source type
+- **WHEN** a `TestCase` binding references a column key absent from the per-turn data map
+- **THEN** the resolver SHALL throw `IllegalArgumentException` identifying the missing column and source type
 
 #### Scenario: Missing column in extracted columns fails fast
-- **WHEN** a binding has `source: { $type: "Response", columnName: "model_answer" }` and the extracted columns map does NOT contain the key `"model_answer"`
-- **THEN** the resolver SHALL throw `IllegalArgumentException` with a message identifying the missing column and source type
+- **WHEN** a `Response` binding references a column key absent from the per-turn extracted columns map
+- **THEN** the resolver SHALL throw `IllegalArgumentException` identifying the missing column and source type
 
 #### Scenario: Present column with null value resolves to null
-- **WHEN** a binding references a column that IS present in the data map (i.e. `data.containsKey(columnName)` is true) but its value is `null`
-- **THEN** the resolver SHALL produce `null` for that binding's property (no exception thrown)
+- **WHEN** a binding references a column present in its map but whose value is `null`
+- **THEN** the resolver SHALL produce `null` for that binding's property (no exception)
 
 #### Scenario: Multiple bindings merged into single map
 - **WHEN** input bindings contain `[{property: "actual", source: Response/model_answer}, {property: "ground_truth", source: TestCase/expected}]`
@@ -300,20 +284,24 @@ Status: **Implemented**
 - **THEN** the executor SHALL record a `Failure` with a `RuntimeException` and the pre-extracted output field names for that TSMD
 
 ### Requirement: EvalSummary assembly from TestCaseRunResult
-The system SHALL build one EvalSummary per TestCaseRunResult, copying context fields from the result and adding computed metric values. The `extractedColumns` value SHALL be copied from the result in its stored shape without normalization (a column-major object of per-column arrays for a multi-step result; an object of scalars for a single-step result).
+The system SHALL build one EvalSummary per `TestCaseRunResult`, copying context fields from the result and adding computed metric values. Because a multi-turn conversation now produces one result row per turn, it likewise produces one EvalSummary per turn. The `extractedColumns` value SHALL be copied from the result **verbatim** — a scalar object for every result (single-turn and per-turn alike; there is no longer a column-major array shape). Each summary SHALL carry `turnIndex` and `totalTurns` copied from the source result.
 Status: **Implemented**
 
 #### Scenario: Field mapping from result to summary
 - **WHEN** an EvalSummary is built for a TestCaseRunResult
-- **THEN** the batch write envelope SHALL carry `testSuiteId`, `testSuiteRunId`, `computationId`, and `computedAtMs` from the MetricEvaluationContext. Each item SHALL carry: `testCaseRunResultId` = result.id, `testCaseId`, `testCaseName`, `runIndex`, `testCaseData`, `extractedColumns`, `execDurationMs`, `responseStatusCode` from result. The `createdAtMs` is derived by the service from the run's creation timestamp (not set per-item).
+- **THEN** the batch write envelope SHALL carry `testSuiteId`, `testSuiteRunId`, `computationId`, and `computedAtMs` from the MetricEvaluationContext. Each item SHALL carry: `testCaseRunResultId` = result.id, `testCaseId`, `testCaseName`, `runIndex`, `turnIndex`, `totalTurns`, `testCaseData`, `extractedColumns`, `execDurationMs`, `responseStatusCode` from result. The `createdAtMs` is derived by the service from the run's creation timestamp (not set per-item).
 
-#### Scenario: Multi-step extractedColumns stored verbatim
-- **WHEN** an EvalSummary is built for a multi-step result whose `extractedColumns` is `{"answer": ["Paris","Tokio"]}`
-- **THEN** `EvalSummary.extractedColumns` SHALL store `{"answer": ["Paris","Tokio"]}` unchanged (no collapse to a single step)
+#### Scenario: extractedColumns stored verbatim as a scalar object
+- **WHEN** an EvalSummary is built for any result whose `extractedColumns` is `{"answer": "Paris"}`
+- **THEN** `EvalSummary.extractedColumns` SHALL store `{"answer": "Paris"}` unchanged, with no normalization step and no array handling
+
+#### Scenario: One summary per turn
+- **WHEN** a 3-turn conversation is evaluated
+- **THEN** three EvalSummary rows SHALL be produced, with `turnIndex` `0`,`1`,`2` and `totalTurns` `3`
 
 #### Scenario: Non-SUCCESS result propagation
-- **WHEN** a TestCaseRunResult has `executionStatus != SUCCESS`
-- **THEN** the EvalSummary SHALL have `executionStatus` propagated from the result, `metricValues = {}`, `metricInfos = null` — no metric evaluation SHALL be attempted
+- **WHEN** a `TestCaseRunResult` has `executionStatus != SUCCESS` (including a failing turn row or a `0/0` data-error row)
+- **THEN** the EvalSummary SHALL propagate that status, set `metricValues = {}` and `metricInfos = null`, and SHALL NOT attempt metric or condition evaluation
 
 #### Scenario: Metric error determines executionStatus
 - **WHEN** all metrics evaluate successfully (no `type: "error"` outputs)

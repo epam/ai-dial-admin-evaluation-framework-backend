@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.QuietJsonService;
 import java.net.SocketTimeoutException;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,7 +37,7 @@ class DeploymentTurnInvokerTest {
     private final MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
 
     private DeploymentTurnInvoker invoker() {
-        return new DeploymentTurnInvoker(deploymentInvoker, new JobJsonService(objectMapper));
+        return new DeploymentTurnInvoker(deploymentInvoker, new QuietJsonService(objectMapper));
     }
 
     private static EvaluationContext context(int maxRetries, long maxResponseSizeBytes) {
@@ -54,7 +55,7 @@ class DeploymentTurnInvokerTest {
         return new DeploymentInvocationResult(status, streaming, body, null, new HttpHeaders());
     }
 
-    private StepOutcome invoke(EvaluationContext context) {
+    private TurnOutcome invoke(EvaluationContext context) {
         invoker = invoker();
         return invoker.invoke(context, HttpMethod.POST, "/chat", new HttpHeaders(), queryParams, "body");
     }
@@ -65,7 +66,7 @@ class DeploymentTurnInvokerTest {
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenReturn(result(200, Map.of("ok", true), false));
 
-        final StepOutcome outcome = invoke(context(0, 10_000L));
+        final TurnOutcome outcome = invoke(context(0, 10_000L));
 
         assertThat(outcome.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(outcome.statusCode()).isEqualTo(200);
@@ -80,7 +81,7 @@ class DeploymentTurnInvokerTest {
                 .thenReturn(result(429, Map.of("err", "rate"), false))
                 .thenReturn(result(200, Map.of("ok", true), false));
 
-        final StepOutcome outcome = invoke(context(1, 10_000L));
+        final TurnOutcome outcome = invoke(context(1, 10_000L));
 
         assertThat(outcome.status()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(outcome.retryCount()).isEqualTo(1);
@@ -93,7 +94,7 @@ class DeploymentTurnInvokerTest {
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenReturn(result(500, Map.of("err", "boom"), false));
 
-        final StepOutcome outcome = invoke(context(2, 10_000L));
+        final TurnOutcome outcome = invoke(context(2, 10_000L));
 
         assertThat(outcome.status()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(outcome.retryCount()).isEqualTo(2);
@@ -106,7 +107,7 @@ class DeploymentTurnInvokerTest {
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("wrap", new SocketTimeoutException("t")));
 
-        final StepOutcome outcome = invoke(context(1, 10_000L));
+        final TurnOutcome outcome = invoke(context(1, 10_000L));
 
         assertThat(outcome.status()).isEqualTo(ExecutionStatus.TIMEOUT);
         assertThat(outcome.retryCount()).isEqualTo(1);
@@ -119,7 +120,7 @@ class DeploymentTurnInvokerTest {
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenReturn(result(200, null, true));
 
-        final StepOutcome outcome = invoke(context(0, 10_000L));
+        final TurnOutcome outcome = invoke(context(0, 10_000L));
 
         assertThat(outcome.status()).isEqualTo(ExecutionStatus.ERROR);
         verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
@@ -131,7 +132,7 @@ class DeploymentTurnInvokerTest {
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenReturn(result(200, Map.of("data", "x".repeat(100)), false));
 
-        final StepOutcome outcome = invoke(context(0, 10L));
+        final TurnOutcome outcome = invoke(context(0, 10L));
 
         assertThat(outcome.status()).isEqualTo(ExecutionStatus.ERROR);
     }
@@ -142,7 +143,7 @@ class DeploymentTurnInvokerTest {
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenReturn(result(401, Map.of("err", "auth"), false));
 
-        final StepOutcome outcome = invoke(context(2, 10_000L));
+        final TurnOutcome outcome = invoke(context(2, 10_000L));
 
         assertThat(outcome.status()).isEqualTo(ExecutionStatus.ERROR);
         assertThat(outcome.retryCount()).isZero();
@@ -157,7 +158,7 @@ class DeploymentTurnInvokerTest {
         final EvaluationContext context = context(2, 10_000L);
         context.getCancellationSignal().set(true);
 
-        final StepOutcome outcome =
+        final TurnOutcome outcome =
                 invoker().invoke(context, HttpMethod.POST, "/chat", new HttpHeaders(), queryParams, "body");
 
         assertThat(outcome.retryCount()).isZero();

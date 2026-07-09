@@ -59,8 +59,16 @@ Status: **Implemented**
 - **THEN** the executor SHALL read inputs using paginated queries
 
 ### Requirement: Single test case evaluation (worker)
-The `EvaluationWorker` SHALL accept a `TestCaseRunInput` (carrying frozen test case data and optional overrides) plus an `EvaluationContext` (carrying snapshot fields). It SHALL resolve the request body using snapshot fields from context + test case data + per-case overrides (no DB read), call the target deployment endpoint, capture the response (including streaming), extract response columns, and build a `TestCaseRunResult`.
+The `EvaluationWorker` SHALL accept a `TestCaseRunInput` (carrying frozen test case data and optional overrides) plus an `EvaluationContext` (carrying snapshot fields), resolve the request without DB reads, invoke the target, extract response columns, and return a **`List<TestCaseRunResult>`**. A single-turn (non-multi-turn) execution SHALL return a one-element list. A multi-turn execution SHALL delegate to `MultiTurnConversationExecutor` and return one result per turn, per the multi-turn-conversation spec.
 Status: **Implemented**
+
+#### Scenario: Single-turn worker returns one result
+- **WHEN** a non-multi-turn test case is dispatched
+- **THEN** the worker SHALL return a list containing exactly one `TestCaseRunResult` with `turnIndex = 0`, `totalTurns = 1`
+
+#### Scenario: Multi-turn worker returns one result per turn
+- **WHEN** a multi-turn test case with `N` turns is dispatched
+- **THEN** the worker SHALL delegate to `MultiTurnConversationExecutor` and return `N` results (fewer on early abort — see the multi-turn-conversation fail-fast requirement), each carrying its `turnIndex` and `totalTurns`
 
 #### Scenario: Snapshot-based request resolution
 - **WHEN** a test case is dispatched for execution
@@ -265,12 +273,20 @@ Status: **Implemented**
 - **THEN** the retry attempt SHALL acquire a rate limit token before making the HTTP call, same as a first attempt. This prevents retry storms from bypassing the rate limiter after a burst of failures (e.g., 429 responses).
 
 ### Requirement: Batch result writing
-The executor SHALL buffer completed `TestCaseRunResult` records and flush them to the analytics database in configurable batches. The executor SHALL perform exactly one final flush at the end of execution, after all virtual threads have terminated (or been interrupted via `shutdownNow()`) — eliminating the race where late-arriving worker writes land in a buffer already drained by the final flush.
+The executor SHALL buffer completed `TestCaseRunResult` records and flush them to the analytics database in configurable row batches, performing exactly one final flush after all virtual threads terminate. Results SHALL be added per conversation via `addResults(buffer, List<TestCaseRunResult>)`: each call buffers all of one conversation's turn rows and increments a **completed-conversation** counter by one (a single-turn conversation is a one-element list). Progress SHALL be reported as `notifyProgress(conversationsCompleted, totalCases)` where `totalCases = numberOfTestCases * numberOfRuns`, keeping progress in the 0–100% range even though a conversation contributes multiple rows.
 Status: **Implemented**
 
-#### Scenario: Batch flush on size
-- **WHEN** the result buffer reaches `result-batch-size` (system config, default 100)
-- **THEN** the executor SHALL flush the buffer to the analytics DB via `TestCaseRunResultRepository.saveAll()` in an analytics transaction
+#### Scenario: Row-batch flush on size
+- **WHEN** the buffered row count reaches `result-batch-size` (default 100)
+- **THEN** the executor SHALL flush the buffered rows to the analytics DB in an analytics transaction
+
+#### Scenario: Conversation-granular progress
+- **WHEN** a 3-turn conversation completes in a run of 5 conversations
+- **THEN** three rows SHALL be buffered but the progress numerator SHALL advance by exactly one (e.g. `1/5`), never exceeding `totalCases`
+
+#### Scenario: Single-turn progress unchanged
+- **WHEN** a non-multi-turn run of 5 test cases (1 run each) completes
+- **THEN** progress SHALL advance `1/5 … 5/5`, identical to prior behavior
 
 #### Scenario: Final flush on completion
 - **WHEN** all test cases have been executed (run completes)
@@ -661,40 +677,37 @@ Status: **Implemented**
 - **WHEN** response columns use MCP-specific JSONata paths (e.g., `$.isError`, `$.content[0].text`, `$.structuredContent.results`)
 - **THEN** the extraction SHALL work correctly because the serialized JSON preserves the MCP envelope structure
 
-### Requirement: Multi-step execution branch
-When executing a test case whose snapshot has `multiStep == true`, `EvaluationWorker` SHALL delegate to a dedicated `MultiStepConversationExecutor` that runs the conversation turn loop and returns a single `TestCaseRunResult`. When `multiStep == false`, `EvaluationWorker` SHALL follow the existing single-request path unchanged.
-Status: **Planned**
+### Requirement: Multi-turn execution branch
+When the snapshot indicates a multi-turn suite, the worker SHALL delegate to `MultiTurnConversationExecutor` and return a **`List<TestCaseRunResult>` with one element per turn**, per the multi-turn-conversation spec. A single-turn (non-multi-turn) execution SHALL return a one-element list; a multi-turn execution SHALL return `N` results for a conversation of `N` turns (fewer on early abort — see the multi-turn-conversation fail-fast requirement). The engine no longer collapses a conversation into a single aggregated row.
+Status: **Implemented**
 
-#### Scenario: Worker delegates multi-step conversations
-- **WHEN** the worker executes a test case for a suite snapshot with `multiStep == true`
-- **THEN** it SHALL delegate the conversation loop to `MultiStepConversationExecutor`
-- **AND** it SHALL produce exactly one `TestCaseRunResult` for that `(runId, testCaseId, runIndex)`
-
-#### Scenario: Single-step path unaffected
-- **WHEN** the worker executes a test case for a suite snapshot with `multiStep == false`
-- **THEN** it SHALL use the existing single-request execution path with no behavior change
+#### Scenario: Multi-turn branch returns one result per turn
+- **WHEN** a multi-turn test case with `N` turns is dispatched
+- **THEN** the worker SHALL delegate to `MultiTurnConversationExecutor` and return a `List<TestCaseRunResult>` of `N` elements, each carrying its own `turnIndex` (0-based) and `totalTurns = N`
+- **AND** on an abort at turn `k` the list SHALL contain `k` SUCCESS rows plus one ERROR row (fewer than `N`)
 
 ### Requirement: One concurrency permit per conversation
-A multi-step conversation SHALL execute within a single worker task holding a single concurrency permit for the entire conversation; its steps SHALL run sequentially within that task. Per-step call pacing relies on the existing per-call retry and upstream 429 handling. Each step's retries SHALL reuse the existing retry policy independently.
-Status: **Planned**
+A multi-turn conversation SHALL execute within a single worker task holding a single concurrency permit for the entire conversation; its turns SHALL run sequentially within that task. Per-turn call pacing relies on the existing per-call retry and upstream 429 handling. Each turn's retries SHALL reuse the existing retry policy independently.
+Status: **Implemented**
 
 #### Scenario: Conversation holds one permit
-- **WHEN** a multi-step conversation with multiple steps executes
+- **WHEN** a multi-turn conversation with multiple turns executes
 - **THEN** the engine SHALL acquire exactly one concurrency permit for the whole conversation
-- **AND** the steps SHALL execute sequentially without acquiring additional permits per step
+- **AND** the turns SHALL execute sequentially without acquiring additional permits per turn
 
-#### Scenario: Per-step retries reuse existing policy
-- **WHEN** a step receives a retryable status (e.g. 429 or 5xx)
-- **THEN** that step SHALL be retried per the existing retry policy
-- **AND** retry exhaustion SHALL trigger the multi-step fail-fast behavior
+#### Scenario: Per-turn retries reuse existing policy
+- **WHEN** a turn receives a retryable status (e.g. 429 or 5xx)
+- **THEN** that turn SHALL be retried per the existing retry policy
+- **AND** retry exhaustion SHALL trigger the multi-turn fail-fast behavior
 
-### Requirement: Multi-step result carries the last step's trace id
-For a multi-step result, the persisted `traceId` SHALL be the trace id of the last attempted step. (Per-step trace correlation is out of scope for the POC.)
-Status: **Planned**
+### Requirement: Multi-turn result carries the shared conversation trace id
+Each per-turn `TestCaseRunResult` of a multi-turn conversation SHALL carry the **shared conversation trace id** — the single conversation span id — on every turn row (not "the last attempted turn's trace id"). Because a conversation now produces one row per turn rather than one aggregated row, the trace id is not collapsed to a single final value; every turn row references the same conversation span, per the multi-turn-conversation "Each turn is persisted as its own result row" requirement.
+Status: **Implemented**
 
-#### Scenario: Last step's trace id persisted
-- **WHEN** a multi-step conversation attempts several steps
-- **THEN** the resulting `TestCaseRunResult.traceId` SHALL be the last attempted step's trace id
+#### Scenario: Every turn row carries the shared conversation trace id
+- **WHEN** a 3-turn conversation completes with conversation span id `T`
+- **THEN** each of the three `TestCaseRunResult` rows SHALL have `trace_id = T`
+- **AND** an abort at turn `k` SHALL still stamp `trace_id = T` on all persisted rows (the completed SUCCESS rows and the failing ERROR row)
 
 ## Implementation Notes
 - Executor interface: `com.epam.aidial.evaluation.service.domain.job.EvaluationExecutor`
@@ -712,4 +725,4 @@ Status: **Planned**
 - MCP field loading chain: `TestSuiteEvaluationJob` deserializes MCP fields from the suite's JSONB strings and passes them into `EvaluationContext.builder()` as typed objects (conditionally for `MCP_TOOL` suites only). `inputBindings` is loaded alongside other MCP fields.
 - MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `context.getInputBindings()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
 - DTOs: `ExecutionSettingsDto`, `RetryPolicyDto` (in `service.domain.dto`)
-- Multi-step: new injectable `service.domain.job.MultiStepConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the `multiStep` flag. `EvaluationWorker` reads discrete `context.getSnapshotX()` getters off `EvaluationContext`, not `SuiteSnapshotDto` directly. The `multiStep` flag therefore travels via `EvaluationContext`: it gains `snapshotMultiStep`, populated in `TestSuiteEvaluationJob.buildContext` from the resolved snapshot. There is no per-turn binding field — the suite's single `inputBindings` are reused each turn and per-turn variation comes from array-valued test-case columns (see multi-step-conversation). The worker branches on `context.isSnapshotMultiStep()`. Concurrency permit acquisition remains in `InProcessEvaluationExecutor` at the per-(test case, run index) task granularity — multi-step changes only what happens inside the task, not the permit model.
+- Multi-turn: new injectable `service.domain.job.MultiTurnConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the `multiTurn` flag. `EvaluationWorker` reads discrete `context.getSnapshotX()` getters off `EvaluationContext`, not `SuiteSnapshotDto` directly. The `multiTurn` flag therefore travels via `EvaluationContext`: it gains `snapshotMultiTurn`, populated in `TestSuiteEvaluationJob.buildContext` from the resolved snapshot. There is no per-turn binding field — the suite's single `inputBindings` are reused each turn and per-turn variation comes from array-valued test-case columns (see multi-turn-conversation). The worker branches on `context.isSnapshotMultiTurn()` and returns a `List<TestCaseRunResult>`, one element per turn. Concurrency permit acquisition remains in `InProcessEvaluationExecutor` at the per-(test case, run index) task granularity — multi-turn changes only what happens inside the task, not the permit model.

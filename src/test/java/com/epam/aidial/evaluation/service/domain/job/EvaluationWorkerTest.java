@@ -22,6 +22,7 @@ import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.service.domain.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.service.domain.McpRequestResolver;
 import com.epam.aidial.evaluation.service.domain.McpResponseSerializer;
+import com.epam.aidial.evaluation.service.domain.QuietJsonService;
 import com.epam.aidial.evaluation.service.domain.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.service.domain.ResolvedRequestService;
 import com.epam.aidial.evaluation.service.domain.ResponseColumnExtractor;
@@ -106,7 +107,7 @@ class EvaluationWorkerTest {
     private McpResponseSerializer mcpResponseSerializer;
 
     @Mock
-    private MultiStepConversationExecutor multiStepConversationExecutor;
+    private MultiTurnConversationExecutor multiTurnConversationExecutor;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneId.of("UTC"));
@@ -134,8 +135,8 @@ class EvaluationWorkerTest {
                 FIXED_CLOCK,
                 sseEventParser,
                 sseEventProcessingProperties,
-                multiStepConversationExecutor,
-                new JobJsonService(objectMapper));
+                multiTurnConversationExecutor,
+                new QuietJsonService(objectMapper));
     }
 
     @Test
@@ -160,9 +161,11 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        List<TestCaseRunResult> results = worker.execute(input, context, 0, responseColumns);
 
         // then
+        assertThat(results).hasSize(1);
+        TestCaseRunResult result = results.get(0);
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(result.getResponseStatusCode()).isEqualTo(200);
         assertThat(result.getResponseBody()).isNotNull();
@@ -174,6 +177,8 @@ class EvaluationWorkerTest {
         assertThat(result.getRetryCount()).isEqualTo(0);
         assertThat(result.getLogDetails()).isNull();
         assertThat(result.getRequestBody()).isNotNull();
+        assertThat(result.getTurnIndex()).isEqualTo(0);
+        assertThat(result.getTotalTurns()).isEqualTo(1);
     }
 
     @Test
@@ -197,7 +202,8 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).get(0);
 
         // then
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
@@ -225,7 +231,8 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).get(0);
 
         // then
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
@@ -250,7 +257,8 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).get(0);
 
         // then
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.TIMEOUT);
@@ -276,7 +284,8 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).get(0);
 
         // then
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
@@ -306,7 +315,8 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).get(0);
 
         // then
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
@@ -337,7 +347,8 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).get(0);
 
         // then
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
@@ -372,7 +383,8 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).get(0);
 
         // then
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
@@ -430,7 +442,8 @@ class EvaluationWorkerTest {
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
         // when
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns);
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).get(0);
 
         // then
         assertThat(result.getTraceId()).isEqualTo(expectedTraceId);
@@ -523,7 +536,8 @@ class EvaluationWorkerTest {
             when(responseColumnExtractor.extract(anyList(), anyString()))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
-            TestCaseRunResult result = worker.execute(input, context, 0, List.of());
+            TestCaseRunResult result =
+                    worker.execute(input, context, 0, List.of()).get(0);
 
             assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
             assertThat(result.getResponseBody()).contains("result text");
@@ -550,7 +564,8 @@ class EvaluationWorkerTest {
             when(responseColumnExtractor.extract(anyList(), anyString()))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
-            TestCaseRunResult result = worker.execute(input, context, 0, List.of());
+            TestCaseRunResult result =
+                    worker.execute(input, context, 0, List.of()).get(0);
 
             assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
         }
@@ -571,7 +586,8 @@ class EvaluationWorkerTest {
             when(responseColumnExtractor.extract(anyList(), anyString()))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
-            TestCaseRunResult result = worker.execute(input, context, 0, List.of());
+            TestCaseRunResult result =
+                    worker.execute(input, context, 0, List.of()).get(0);
 
             assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.TIMEOUT);
             assertThat(result.getResponseBody()).contains("MCP_INVOCATION_ERROR");
@@ -594,7 +610,8 @@ class EvaluationWorkerTest {
             when(responseColumnExtractor.extract(anyList(), anyString()))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
-            TestCaseRunResult result = worker.execute(input, context, 0, List.of());
+            TestCaseRunResult result =
+                    worker.execute(input, context, 0, List.of()).get(0);
 
             assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
             assertThat(result.getResponseBody()).contains("MCP_INVOCATION_ERROR");
@@ -618,7 +635,8 @@ class EvaluationWorkerTest {
             when(responseColumnExtractor.extract(anyList(), anyString()))
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
 
-            TestCaseRunResult result = worker.execute(input, context, 0, List.of());
+            TestCaseRunResult result =
+                    worker.execute(input, context, 0, List.of()).get(0);
 
             assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
             assertThat(result.getResponseBody()).contains("MCP_INVOCATION_ERROR");

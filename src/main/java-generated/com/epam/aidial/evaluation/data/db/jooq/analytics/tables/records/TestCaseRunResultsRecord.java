@@ -311,6 +311,34 @@ public class TestCaseRunResultsRecord extends UpdatableRecordImpl<TestCaseRunRes
         return (JSONB) get(19);
     }
 
+    /**
+     * Setter for <code>analytics.test_case_run_results.turn_index</code>.
+     */
+    public void setTurnIndex(Integer value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_run_results.turn_index</code>.
+     */
+    public Integer getTurnIndex() {
+        return (Integer) get(20);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_run_results.total_turns</code>.
+     */
+    public void setTotalTurns(Integer value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_run_results.total_turns</code>.
+     */
+    public Integer getTotalTurns() {
+        return (Integer) get(21);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -334,7 +362,7 @@ public class TestCaseRunResultsRecord extends UpdatableRecordImpl<TestCaseRunRes
     /**
      * Create a detached, initialised TestCaseRunResultsRecord
      */
-    public TestCaseRunResultsRecord(String id, String testSuiteRunId, String testSuiteId, String testCaseId, String testCaseName, Integer runIndex, JSONB testCaseData, JSONB requestBody, JSONB responseBody, Integer responseStatusCode, String executionStatus, Long execStartedAtMs, Long execCompletedAtMs, Long execDurationMs, String traceId, Long createdAtMs, JSONB extractedColumns, JSONB extractionWarnings, Integer retryCount, JSONB logDetails) {
+    public TestCaseRunResultsRecord(String id, String testSuiteRunId, String testSuiteId, String testCaseId, String testCaseName, Integer runIndex, JSONB testCaseData, JSONB requestBody, JSONB responseBody, Integer responseStatusCode, String executionStatus, Long execStartedAtMs, Long execCompletedAtMs, Long execDurationMs, String traceId, Long createdAtMs, JSONB extractedColumns, JSONB extractionWarnings, Integer retryCount, JSONB logDetails, Integer turnIndex, Integer totalTurns) {
         super(TestCaseRunResults.TEST_CASE_RUN_RESULTS);
 
         setId(id);
@@ -357,6 +385,8 @@ public class TestCaseRunResultsRecord extends UpdatableRecordImpl<TestCaseRunRes
         setExtractionWarnings(extractionWarnings);
         setRetryCount(retryCount);
         setLogDetails(logDetails);
+        setTurnIndex(turnIndex);
+        setTotalTurns(totalTurns);
         resetTouchedOnNotNull();
     }
 }

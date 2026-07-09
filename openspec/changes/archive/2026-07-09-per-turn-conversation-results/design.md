@@ -91,8 +91,17 @@ numberOfTestCases * numberOfRuns` unchanged. Keeps progress 0–100%.
 
 ### D6 — Minimal API/export surface
 Add `turnIndex`/`totalTurns` to both list response DTOs (flat rows; frontend groups by
-`(testCaseId, runIndex)`) and as CSV identity columns after `runIndex`. Add `turn_index ASC` to the
-within-conversation ordering. No new filter/sort whitelist entries; no grouped API.
+`(testCaseId, runIndex)`) and as CSV identity columns after `runIndex`. No new filter/sort whitelist
+entries; no grouped API.
+
+**Within-conversation turn ordering is a client-side concern (chosen over a DB-side keyset change).**
+Every result/summary row of a run shares one `created_at_ms`, so the keyset spine
+`(created_at DESC, id DESC)` orders a run's rows by (random) `id`; turns of a conversation are not
+contiguous in the flat page. Making the DB return turn-ordered rows would require threading
+`turn_index` into the shared `Cursor` record + opaque `CursorCodec` and a mixed-direction keyset
+comparison. We deliberately keep the keyset spine and opaque-cursor wire format unchanged: the
+frontend already groups by `(testCaseId, runIndex)` and sorts each group by `turnIndex` client-side
+(the DTO/CSV carry both fields). No repository `ORDER BY` change.
 
 ### D7 — "turn" vocabulary; rename handling
 New surfaces use "turn": `turn_index`/`total_turns`, `ConditionContext.turnIndex/totalTurns`, DTO
@@ -125,8 +134,9 @@ recreate due to the checksum change.
 
 ## Migration Plan
 
-1. Analytics migrations: `V1.12__AddTurnColumnsToTestCaseRunResults.sql`,
-   `V1.13__AddTurnColumnsToEvalSummaries.sql` — `ADD COLUMN` (backfill) + unique-index swap
+1. Analytics migrations: `V1.13__AddTurnColumnsToTestCaseRunResults.sql`,
+   `V1.14__AddTurnColumnsToEvalSummaries.sql` (V1.12 is intentionally left free for development's
+   incoming analytics migration, to avoid a rebase/merge collision) — `ADD COLUMN` (backfill) + unique-index swap
    (`CONCURRENTLY` if non-transactional). Meta: edit `V1.25` in place `multi_step`→`multi_turn`.
 2. `./gradlew generateJooq`; commit generated diff; update `docs/database-schema.md`.
 3. Model/mapper/repo (result + summary): add turn columns, update INSERT column list + `ON CONFLICT`

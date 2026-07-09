@@ -104,7 +104,7 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
 | `overall_score` | JSONB | NULL | - | Per-suite `overall` metric-score definition — a serialized `StructuredQuery` expression. Settable and readable via the suite API (`overallScore` on `POST`/`PUT`/`GET /api/v1/test-suites`); references configured metric columns by their flattened name `metric::<metricName>::<outputField>`. NULL = system default (the single metric's average — `avg(:metricField)` — computed only when the run has exactly one numeric metric field). Captured verbatim into the suite snapshot per run; Phase 3 honors a non-null value for any metric count. See V1.23. |
 | `test_case_filter` | JSONB | NULL | - | Per-suite test-case selection filter — a serialized Structured Query DSL `filter` subtree authored over the dataset's test-case fields (base columns and flattened `data::<field>` fields). Settable and readable via the suite API (`testCaseFilter` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time against the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). NULL = no filter (run every valid, non-disabled test case). When set, it is AND-combined with `is_valid` and `disabled_test_case_ids` to select the runnable test cases at run-creation count and snapshot. Does not affect suite validity. See V1.24. |
-| `multi_step` | BOOLEAN | NOT NULL | `false` | Multi-step (multi-turn) conversation flag. When `true` on a DEPLOYMENT suite, the suite reuses its single regular `input_bindings`, but the bound test-case columns hold arrays and each turn resolves the template with element `i` of the array-valued bound columns (scalars/constants broadcast). Turn count is per-test-case. Captured verbatim into the suite snapshot per run (additive `SuiteSnapshotDto` field, snapshot version stays `"2"`). See V1.25. |
+| `multi_turn` | BOOLEAN | NOT NULL | `false` | Multi-turn conversation flag. When `true` on a DEPLOYMENT suite, the suite reuses its single regular `input_bindings`, but the bound test-case columns hold arrays and each turn resolves the template with element `i` of the array-valued bound columns (scalars/constants broadcast). Turn count is per-test-case. Each turn is persisted as its own `test_case_run_results` row (see `turn_index`/`total_turns`). Captured verbatim into the suite snapshot per run (additive `SuiteSnapshotDto` field, snapshot version stays `"2"`). See V1.25. |
 | `is_valid` | BOOLEAN | NOT NULL | TRUE | Suite-level validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `version` | BIGINT | NOT NULL | 0 | Optimistic locking version |
@@ -626,7 +626,9 @@ Test case execution results stored in the analytics database. Each row represent
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Test case ID |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index (0-based) |
-| `test_case_data` | JSONB | NOT NULL | - | Test case input data |
+| `turn_index` | INTEGER | NOT NULL | 0 | Conversation turn index (0-based). Single-turn results are `0`. |
+| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the conversation (single-turn = `1`; `0` marks a data-shape failure where no turn ran). Last turn ⇔ `turn_index == total_turns - 1`. |
+| `test_case_data` | JSONB | NOT NULL | - | Test case input data (per-turn projected scalar view for multi-turn rows) |
 | `request_body` | JSONB | NULL | - | HTTP request body sent to endpoint |
 | `response_body` | JSONB | NULL | - | HTTP response body received |
 | `response_status_code` | INTEGER | NULL | - | HTTP response status code |
@@ -649,7 +651,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Includes `created_at_ms` for future partitioning. |
+| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING); `turn_index` keys each turn of a multi-turn conversation. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -732,6 +734,8 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Reference to test case (soft FK) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case name at execution time |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index |
+| `turn_index` | INTEGER | NOT NULL | 0 | Conversation turn index (0-based, denormalized from test_case_run_results). Single-turn = `0`. |
+| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count (denormalized). Single-turn = `1`. |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (denormalized from test_case_run_results) |
 | `extracted_columns` | JSONB | NOT NULL | `'{}'::jsonb` | Extracted column values (denormalized) |
@@ -752,7 +756,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_eval_summaries_run_case_comp` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, computation_id, created_at_ms)` | Idempotent writes. Includes `created_at_ms` for future partitioning. |
+| `uq_eval_summaries_natural_key` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, computation_id, created_at_ms)` | Idempotent writes; `turn_index` keys each turn's summary per computation. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -920,7 +924,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.22 | `V1.22__IntroduceDataset.sql` | Introduced datasets table; rebound test_cases and revalidation_tasks FKs from test_suites to datasets; backfilled per-suite datasets; relaxed `test_suites.dataset_id` to nullable (unbound state); added `datasets.visibility` (`'PUBLIC'`/`'PRIVATE'`) with CHECK constraint; added `tg_test_suites_private_binding_guard` trigger raising `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` for concurrent PRIVATE-binding violations; backfilled `suite_snapshot` JSON to v2 (`snapshotVersion`, `datasetRef`) |
 | V1.23 | `V1.23__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs)                                                                                                                                                                                                                                                                                                                                                        |
 | V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` and `disabled_test_case_ids` at run-creation count and snapshot)                                                                                                                                                                                                                                           |
-| V1.25 | `V1.25__AddMultiStepToTestSuites.sql` | Added `multi_step` (BOOLEAN NOT NULL DEFAULT false) to test_suites for multi-turn conversation                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| V1.25 | `V1.25__AddMultiStepToTestSuites.sql` | Added `multi_turn` (BOOLEAN NOT NULL DEFAULT false) to test_suites for multi-turn conversation                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 
@@ -936,6 +940,8 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.8 | `V1.8__NormalizeErrorShapedMetricValues.sql` | Normalized transport-failure metric_values from synthetic `{"error": null}` to real output field names; updated corresponding metric_infos entries |
 | V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |
 | V1.11 | `V1.11__CreateRocAucScoreFunction.sql` | Created `roc_auc_score(double precision[], double precision[])` SQL function computing the rank-sum ROC AUC score over paired label/probability arrays |
+| V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index` (INTEGER NOT NULL DEFAULT 0) and `total_turns` (INTEGER NOT NULL DEFAULT 1) to test_case_run_results; recreated `uq_results_run_case_index` including `turn_index` (per-turn result rows) |
+| V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index` (INTEGER NOT NULL DEFAULT 0) and `total_turns` (INTEGER NOT NULL DEFAULT 1) to test_case_eval_summaries; recreated `uq_eval_summaries_natural_key` including `turn_index` (per-turn summary rows) |
 
 ---
 

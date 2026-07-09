@@ -23,8 +23,6 @@ public enum ValidationWarningCode {
     UNRESOLVED_REFERENCE,
     @Schema(description = "Metric output schema is missing, empty, or malformed")
     INVALID_OUTPUT_SCHEMA,
-    @Schema(description = "A JSONata expression that is syntactically invalid")
-    INVALID_EXPRESSION,
     @Schema(description = "Unmapped validation error")
     UNKNOWN
 }

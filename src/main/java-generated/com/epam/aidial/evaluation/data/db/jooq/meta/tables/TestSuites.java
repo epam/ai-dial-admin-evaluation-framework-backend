@@ -173,9 +173,9 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
     public final TableField<TestSuitesRecord, JSONB> TEST_CASE_FILTER = createField(DSL.name("test_case_filter"), SQLDataType.JSONB, this, "");
 
     /**
-     * The column <code>meta.test_suites.multi_step</code>.
+     * The column <code>meta.test_suites.multi_turn</code>.
      */
-    public final TableField<TestSuitesRecord, Boolean> MULTI_STEP = createField(DSL.name("multi_step"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
+    public final TableField<TestSuitesRecord, Boolean> MULTI_TURN = createField(DSL.name("multi_turn"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
 
     private TestSuites(Name alias, Table<TestSuitesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);

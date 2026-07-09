@@ -21,6 +21,11 @@ public abstract class TestCaseRunResultMapper {
     protected GrafanaLinkBuilder grafanaLinkBuilder;
 
     @Mapping(target = "id", expression = "java(java.util.UUID.randomUUID())")
+    // Turn fields are optional on the batch-write DTO: single-turn callers omit them and get the DB defaults
+    // (turnIndex=0, totalTurns=1); a multi-turn import supplies distinct turnIndex values per row (turn_index
+    // is part of the natural key). Mirrors EvalSummaryMapper's null-coalescing.
+    @Mapping(target = "turnIndex", expression = "java(item.getTurnIndex() == null ? 0 : item.getTurnIndex())")
+    @Mapping(target = "totalTurns", expression = "java(item.getTotalTurns() == null ? 1 : item.getTotalTurns())")
     @Mapping(source = "item.executionInfo.status", target = "executionStatus")
     @Mapping(source = "item.executionInfo.startedAt", target = "execStartedAtMs")
     @Mapping(source = "item.executionInfo.completedAt", target = "execCompletedAtMs")

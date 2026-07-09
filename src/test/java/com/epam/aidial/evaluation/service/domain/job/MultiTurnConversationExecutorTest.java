@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.service.domain.DialCoreUrlBuilder;
+import com.epam.aidial.evaluation.service.domain.QuietJsonService;
 import com.epam.aidial.evaluation.service.domain.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.service.domain.ResolvedRequestService;
 import com.epam.aidial.evaluation.service.domain.ResponseColumnExtractor;
@@ -27,9 +28,7 @@ import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.ExtractionWarningDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -53,8 +52,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("MultiStepConversationExecutor turn loop")
-class MultiStepConversationExecutorTest {
+@DisplayName("MultiTurnConversationExecutor per-turn emission")
+class MultiTurnConversationExecutorTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
@@ -84,13 +83,12 @@ class MultiStepConversationExecutorTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private MultiStepConversationExecutor executor;
+    private MultiTurnConversationExecutor executor;
 
     @BeforeEach
     void setUp() {
-        final JobJsonService jsonService = new JobJsonService(objectMapper);
-        final ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
-        executor = new MultiStepConversationExecutor(
+        final QuietJsonService jsonService = new QuietJsonService(objectMapper);
+        executor = new MultiTurnConversationExecutor(
                 resolvedRequestService,
                 urlBuilder,
                 serializerRegistry,
@@ -98,10 +96,9 @@ class MultiStepConversationExecutorTest {
                 evaluationRunProperties,
                 jsonbMapper,
                 jsonService,
-                warningsSerializer,
                 new ConversationTurnPlanner(),
-                new MultiStepResultAssembler(jsonService, FIXED_CLOCK),
-                new DeploymentTurnInvoker(deploymentInvoker, jsonService));
+                new DeploymentTurnInvoker(deploymentInvoker, jsonService),
+                FIXED_CLOCK);
         lenient().when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/dep/chat/completions");
         lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
         lenient().when(execution.getHeaderBlacklist()).thenReturn(List.of());
@@ -113,8 +110,8 @@ class MultiStepConversationExecutorTest {
     }
 
     @Test
-    @DisplayName("happy path accumulates history, resends full history, appends assistant, and extracts per step")
-    void happyPathTwoSteps() throws Exception {
+    @DisplayName("happy path emits one scalar SUCCESS row per turn with turnIndex/totalTurns and per-turn extraction")
+    void happyPathTwoTurns() throws Exception {
         when(resolvedRequestService.resolve(any(), any(), any()))
                 .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -126,96 +123,50 @@ class MultiStepConversationExecutorTest {
 
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
 
-        TestCaseRunResult result =
+        List<TestCaseRunResult> results =
                 executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(results).hasSize(2);
 
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), bodyCaptor.capture());
         List<Object> sentBodies = bodyCaptor.getAllValues();
-
-        // Full-history resend: step 0 sends [user-0]; step 1 sends [user-0, assistant-0, user-1]
+        // Full-history resend: turn 0 sends [user-0]; turn 1 sends [user-0, assistant-0, user-1]
         assertThat(messagesOf(sentBodies.get(0))).hasSize(1);
         assertThat(roleOf(messagesOf(sentBodies.get(0)).get(0))).isEqualTo("user");
-        List<Object> step1Sent = messagesOf(sentBodies.get(1));
-        assertThat(step1Sent).hasSize(3);
-        assertThat(roleOf(step1Sent.get(0))).isEqualTo("user");
-        assertThat(roleOf(step1Sent.get(1))).isEqualTo("assistant");
-        assertThat(roleOf(step1Sent.get(2))).isEqualTo("user");
+        List<Object> turn1Sent = messagesOf(sentBodies.get(1));
+        assertThat(turn1Sent).hasSize(3);
+        assertThat(roleOf(turn1Sent.get(0))).isEqualTo("user");
+        assertThat(roleOf(turn1Sent.get(1))).isEqualTo("assistant");
+        assertThat(roleOf(turn1Sent.get(2))).isEqualTo("user");
 
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
-        assertThat(result.getResponseStatusCode()).isEqualTo(200);
-        assertThat(result.getTraceId()).isEqualTo("trace-1");
+        TestCaseRunResult row0 = results.get(0);
+        assertThat(row0.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(row0.getTurnIndex()).isEqualTo(0);
+        assertThat(row0.getTotalTurns()).isEqualTo(2);
+        assertThat(row0.getTraceId()).isEqualTo("trace-1");
+        assertThat(row0.getResponseStatusCode()).isEqualTo(200);
+        // each row carries that turn's scalar extractedColumns object
+        assertThat(objectMapper.readTree(row0.getExtractedColumns()).get("a").asString())
+                .isEqualTo("answer-0");
+        // each row carries that turn's projected scalar testCaseData
+        assertThat(objectMapper.readTree(row0.getTestCaseData()).get("turns").asString())
+                .isEqualTo("q0");
+        // each row carries that turn's raw response body
+        assertThat(contentOf(row0.getResponseBody())).isEqualTo("assistant-0");
 
-        // responseBody = the last turn's raw response body (not the reconstructed history)
-        JsonNode responseBody = objectMapper.readTree(result.getResponseBody());
-        assertThat(responseBody
-                        .path("choices")
-                        .get(0)
-                        .path("message")
-                        .get("content")
-                        .asString())
-                .isEqualTo("assistant-1");
-
-        // extractedColumns = column-major object: {"a": ["answer-0", "answer-1"]}
-        JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
-        assertThat(extracted.isObject()).isTrue();
-        JsonNode answers = extracted.get("a");
-        assertThat(answers.isArray()).isTrue();
-        assertThat(answers.size()).isEqualTo(2);
-        assertThat(answers.get(0).asString()).isEqualTo("answer-0");
-        assertThat(answers.get(1).asString()).isEqualTo("answer-1");
+        TestCaseRunResult row1 = results.get(1);
+        assertThat(row1.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(row1.getTurnIndex()).isEqualTo(1);
+        assertThat(row1.getTotalTurns()).isEqualTo(2);
+        assertThat(objectMapper.readTree(row1.getExtractedColumns()).get("a").asString())
+                .isEqualTo("answer-1");
+        assertThat(objectMapper.readTree(row1.getTestCaseData()).get("turns").asString())
+                .isEqualTo("q1");
+        assertThat(contentOf(row1.getResponseBody())).isEqualTo("assistant-1");
     }
 
     @Test
-    @DisplayName("per-step extraction warnings are aggregated and tagged with their step index")
-    void extractionWarningsTaggedByStep() {
-        when(resolvedRequestService.resolve(any(), any(), any()))
-                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
-        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
-                .thenReturn(response(200, "assistant-0"), response(200, "assistant-1"));
-        // step 0 produces a warning; step 1 extracts cleanly
-        when(responseColumnExtractor.extract(any(), any()))
-                .thenReturn(
-                        new ResponseColumnExtractor.ExtractionResult(
-                                "{\"a\":null}", "[{\"column\":\"a\",\"error\":\"boom-0\"}]"),
-                        new ResponseColumnExtractor.ExtractionResult("{\"a\":\"answer-1\"}", "[]"));
-
-        TestCaseRunResult result =
-                executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
-
-        final List<ExtractionWarningDto> warnings = new ValidationWarningsSerializer(objectMapper)
-                .deserializeExtractionWarnings(result.getExtractionWarnings());
-        assertThat(warnings).singleElement().satisfies(w -> {
-            assertThat(w.getColumn()).isEqualTo("a");
-            assertThat(w.getError()).isEqualTo("boom-0");
-            assertThat(w.getStepIndex()).isEqualTo(0);
-        });
-    }
-
-    @Test
-    @DisplayName("per-step extraction failure keeps index alignment with a null element in the column array")
-    void perStepNullAlignment() throws Exception {
-        when(resolvedRequestService.resolve(any(), any(), any()))
-                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
-        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
-                .thenReturn(response(200, "assistant-0"), response(200, "assistant-1"));
-        // step 0 extracts "a"; step 1's extraction yields null for "a"
-        when(responseColumnExtractor.extract(any(), any()))
-                .thenReturn(
-                        new ResponseColumnExtractor.ExtractionResult("{\"a\":\"answer-0\"}", "[]"),
-                        new ResponseColumnExtractor.ExtractionResult("{\"a\":null}", "[]"));
-
-        TestCaseRunResult result =
-                executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
-
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
-        JsonNode answers = objectMapper.readTree(result.getExtractedColumns()).get("a");
-        assertThat(answers.size()).isEqualTo(2);
-        assertThat(answers.get(0).asString()).isEqualTo("answer-0");
-        assertThat(answers.get(1).isNull()).isTrue();
-    }
-
-    @Test
-    @DisplayName("fail-fast on a mid-conversation HTTP failure stops remaining steps with partial persistence")
+    @DisplayName("fail-fast on a mid-conversation HTTP failure: k SUCCESS rows + 1 ERROR row, remaining turns skipped")
     void failFastOnHttpFailure() throws Exception {
         when(resolvedRequestService.resolve(any(), any(), any()))
                 .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
@@ -224,58 +175,50 @@ class MultiStepConversationExecutorTest {
         when(responseColumnExtractor.extract(any(), any()))
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{\"a\":\"answer-0\"}", "[]"));
 
-        TestCaseRunResult result =
-                executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(inputWithTurns(3), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
 
-        // step 1 (index 1) failed; step 2 would not exist anyway, but no third invocation
+        // turn 2 (index 1) failed → no third invocation, and only two rows persisted
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), any());
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
-        assertThat(result.getResponseStatusCode()).isEqualTo(500);
+        assertThat(results).hasSize(2);
 
-        // responseBody = the failed last turn's raw response body
-        JsonNode responseBody = objectMapper.readTree(result.getResponseBody());
-        assertThat(responseBody
-                        .path("choices")
-                        .get(0)
-                        .path("message")
-                        .get("role")
-                        .asString())
-                .isEqualTo("assistant");
+        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(results.get(0).getTurnIndex()).isEqualTo(0);
 
-        // only the completed step's extraction is kept: {"a": ["answer-0"]}
-        JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
-        assertThat(extracted.isObject()).isTrue();
-        assertThat(extracted.get("a").size()).isEqualTo(1);
-        assertThat(extracted.get("a").get(0).asString()).isEqualTo("answer-0");
+        TestCaseRunResult errorRow = results.get(1);
+        assertThat(errorRow.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(errorRow.getTurnIndex()).isEqualTo(1);
+        // total_turns stays the planned N even on abort
+        assertThat(errorRow.getTotalTurns()).isEqualTo(3);
+        assertThat(errorRow.getResponseStatusCode()).isEqualTo(500);
+        // the failing turn persists an empty extraction object
+        assertThat(errorRow.getExtractedColumns()).isEqualTo("{}");
     }
 
     @Test
-    @DisplayName("fail-fast when a 2xx response has no choices[0].message object; empty extractedColumns object")
-    void failFastOnNoMessageObject() throws Exception {
+    @DisplayName("a 2xx response with no choices[0].message object yields one ERROR row for that turn")
+    void failFastOnNoMessageObject() {
         when(resolvedRequestService.resolve(any(), any(), any())).thenReturn(resolvedTurn("turn-0"));
-        // 200 but choices[0] carries no message object → no usable reply
         DeploymentInvocationResult noMessage = new DeploymentInvocationResult(
                 200, false, Map.of("choices", List.of(Map.of())), null, new HttpHeaders());
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenReturn(noMessage);
 
-        TestCaseRunResult result =
+        List<TestCaseRunResult> results =
                 executor.execute(inputWithTurns(1), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        // step 0 never completed → empty column-major object
-        JsonNode extracted = objectMapper.readTree(result.getExtractedColumns());
-        assertThat(extracted.isObject()).isTrue();
-        assertThat(extracted.isEmpty()).isTrue();
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(results.get(0).getTurnIndex()).isEqualTo(0);
+        assertThat(results.get(0).getTotalTurns()).isEqualTo(1);
+        assertThat(results.get(0).getExtractedColumns()).isEqualTo("{}");
     }
 
     @Test
-    @DisplayName(
-            "appends the full assistant message verbatim (extra fields preserved) for a tool-call turn with no content")
-    void appendsFullAssistantMessageVerbatim() throws Exception {
+    @DisplayName("appends the full assistant message verbatim (extra fields preserved) for a tool-call turn")
+    void appendsFullAssistantMessageVerbatim() {
         when(resolvedRequestService.resolve(any(), any(), any()))
                 .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
-        // Turn 0's reply is a tool-call message: no string content, but it carries tool_calls + refusal.
         Map<String, Object> toolCall = Map.of(
                 "id", "call_1", "type", "function", "function", Map.of("name", "get_weather", "arguments", "{}"));
         Map<String, Object> toolCallMessage =
@@ -289,21 +232,18 @@ class MultiStepConversationExecutorTest {
 
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
 
-        TestCaseRunResult result =
+        List<TestCaseRunResult> results =
                 executor.execute(inputWithTurns(2), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
-        // Previously this turn would have aborted (no string content); now it is a valid turn.
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(results).hasSize(2);
+        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
 
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), bodyCaptor.capture());
         // Turn 1's resent history: [user-0, assistant-0 (verbatim tool-call message), user-1]
-        List<Object> step1Sent = messagesOf(bodyCaptor.getAllValues().get(1));
-        assertThat(step1Sent).hasSize(3);
-        Object assistant = step1Sent.get(1);
-        assertThat(assistant).isInstanceOf(JsonNode.class);
-        JsonNode assistantNode = (JsonNode) assistant;
+        List<Object> turn1Sent = messagesOf(bodyCaptor.getAllValues().get(1));
+        assertThat(turn1Sent).hasSize(3);
+        JsonNode assistantNode = (JsonNode) turn1Sent.get(1);
         assertThat(assistantNode.get("role").asString()).isEqualTo("assistant");
-        // extra fields preserved verbatim (not stripped by a {role, content} reconstruction)
         assertThat(assistantNode
                         .path("tool_calls")
                         .get(0)
@@ -316,7 +256,7 @@ class MultiStepConversationExecutorTest {
 
     @Test
     @DisplayName("array columns iterate per turn while scalar columns broadcast unchanged")
-    void scalarBroadcastAcrossTurns() throws Exception {
+    void scalarBroadcastAcrossTurns() {
         when(resolvedRequestService.resolve(any(), any(), any()))
                 .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -339,9 +279,10 @@ class MultiStepConversationExecutorTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> dataCaptor = ArgumentCaptor.forClass(Map.class);
 
-        TestCaseRunResult result = executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(results).hasSize(2);
         verify(resolvedRequestService, times(2)).resolve(any(), any(), dataCaptor.capture());
         List<Map<String, Object>> perTurnData = dataCaptor.getAllValues();
         // array column iterates: element i per turn
@@ -353,59 +294,71 @@ class MultiStepConversationExecutorTest {
     }
 
     @Test
-    @DisplayName("mismatched array lengths fail only that test case with an ERROR result and no calls")
+    @DisplayName("mismatched array lengths fail only that test case with one degenerate 0/0 ERROR row and no calls")
     void mismatchedArrayLengthsError() {
         EvaluationContext context = contextWithBindings(List.of(
                 InputBindingDto.builder().templateVariable("a").dataField("as").build(),
                 InputBindingDto.builder().templateVariable("b").dataField("bs").build()));
         TestCaseRunInput input = inputWithData(Map.<String, Object>of("as", List.of("x", "y"), "bs", List.of("z")));
 
-        TestCaseRunResult result = executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        assertThat(result.getExtractedColumns()).isEqualTo("{}");
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(results.get(0).getTurnIndex()).isEqualTo(0);
+        assertThat(results.get(0).getTotalTurns()).isEqualTo(0);
+        assertThat(results.get(0).getExtractedColumns()).isEqualTo("{}");
         verifyNoInteractions(deploymentInvoker);
     }
 
     @Test
-    @DisplayName("no array-valued bound column fails only that test case with an ERROR result and no calls")
+    @DisplayName("no array-valued bound column fails only that test case with a degenerate 0/0 ERROR row and no calls")
     void noArrayColumnError() {
         TestCaseRunInput input = inputWithData(Map.<String, Object>of("turns", "just a string"));
 
-        TestCaseRunResult result = executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(results.get(0).getTotalTurns()).isEqualTo(0);
         verifyNoInteractions(deploymentInvoker);
     }
 
     @Test
-    @DisplayName("turn count over the cap fails only that test case with an ERROR result and no calls")
+    @DisplayName("turn count over the cap fails only that test case with a degenerate 0/0 ERROR row and no calls")
     void turnCountOverCapError() {
-        TestCaseRunInput input = inputWithTurns(ValidationConstants.MAX_CONVERSATION_STEPS + 1);
+        TestCaseRunInput input = inputWithTurns(ValidationConstants.MAX_CONVERSATION_TURNS + 1);
 
-        TestCaseRunResult result = executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(results.get(0).getTotalTurns()).isEqualTo(0);
         verifyNoInteractions(deploymentInvoker);
     }
 
     @Test
-    @DisplayName("a turn whose resolved 'messages' is not an array fails only that test case with no call")
-    void nonListMessagesError() throws Exception {
+    @DisplayName("a turn whose resolved 'messages' is not an array yields one ERROR row and no HTTP call")
+    void nonListMessagesError() {
         when(resolvedRequestService.resolve(any(), any(), any())).thenReturn(resolvedTurnWithNonListMessages());
 
-        TestCaseRunResult result =
+        List<TestCaseRunResult> results =
                 executor.execute(inputWithTurns(1), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
-        assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        assertThat(result.getExtractedColumns()).isEqualTo("{}");
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        // this turn's plan is a real single turn (1), not the 0/0 data-shape sentinel
+        assertThat(results.get(0).getTotalTurns()).isEqualTo(1);
+        assertThat(results.get(0).getExtractedColumns()).isEqualTo("{}");
         verifyNoInteractions(deploymentInvoker);
     }
 
     private ResolvedRequestDto resolvedTurnWithNonListMessages() {
         Map<String, Object> content = new HashMap<>();
         content.put("model", "gpt-4");
-        // Not a JSON array — e.g. a full-value placeholder resolved to a scalar/object.
         content.put("messages", "not-an-array");
         return ResolvedRequestDto.builder()
                 .url("/chat")
@@ -436,6 +389,16 @@ class MultiStepConversationExecutorTest {
         return new DeploymentInvocationResult(status, false, body, null, new HttpHeaders());
     }
 
+    private String contentOf(String responseBodyJson) throws Exception {
+        return objectMapper
+                .readTree(responseBodyJson)
+                .path("choices")
+                .get(0)
+                .path("message")
+                .get("content")
+                .asString();
+    }
+
     @SuppressWarnings("unchecked")
     private List<Object> messagesOf(Object sentBody) {
         return (List<Object>) ((Map<String, Object>) sentBody).get("messages");
@@ -450,7 +413,7 @@ class MultiStepConversationExecutorTest {
         return (String) ((Map<String, Object>) message).get("role");
     }
 
-    /** A single response column {@code a} so the executor accumulates a per-column array under that name. */
+    /** A single response column {@code a} so each turn's scalar extraction is keyed under that name. */
     private List<ResponseColumnDefinitionDto> columnsA() {
         return List.of(ResponseColumnDefinitionDto.builder()
                 .name("a")
@@ -476,7 +439,7 @@ class MultiStepConversationExecutorTest {
                 .build();
     }
 
-    /** Single-step-shaped bindings: one {@code turn} variable bound to the array-valued {@code turns} column. */
+    /** Single bindings shape: one {@code turn} variable bound to the array-valued {@code turns} column. */
     private EvaluationContext context() {
         return contextWithBindings(List.of(InputBindingDto.builder()
                 .templateVariable("turn")
@@ -495,7 +458,7 @@ class MultiStepConversationExecutorTest {
                 .maxRetryDelayMs(0)
                 .maxResponseSizeBytes(10_000_000L)
                 .createdAtMs(FIXED_CLOCK.millis())
-                .snapshotMultiStep(true)
+                .snapshotMultiTurn(true)
                 .snapshotInputBindings(bindings)
                 .snapshotRequestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/chat").build())

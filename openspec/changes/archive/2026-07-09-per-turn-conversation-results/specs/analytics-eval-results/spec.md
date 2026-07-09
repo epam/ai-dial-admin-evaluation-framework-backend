@@ -49,12 +49,12 @@ Status: **Planned**
 ## ADDED Requirements
 
 ### Requirement: Turn fields exposed on the test case run result API
-The test-case-run-results list and detail responses SHALL expose `turnIndex` (0-based) and `totalTurns` (count) so clients can group flat rows into conversations and identify a turn's position. Within a conversation the default result ordering SHALL be ascending by `turn_index` so grouped rendering is naturally ordered. Single-turn results SHALL report `turnIndex = 0, totalTurns = 1`.
+The test-case-run-results list and detail responses SHALL expose `turnIndex` (0-based) and `totalTurns` (count) so clients can group flat rows into conversations and identify a turn's position. Within a conversation, clients group rows by `(testCaseId, runIndex)` and sort each group by `turnIndex`; the server does NOT guarantee within-conversation ordering (the keyset pagination spine `ORDER BY created_at_ms DESC, id DESC` and the opaque cursor wire format are unchanged). Single-turn results SHALL report `turnIndex = 0, totalTurns = 1`.
 Status: **Planned**
 
 #### Scenario: Multi-turn result rows carry turn fields
 - **WHEN** a 3-turn conversation's results are listed
-- **THEN** three rows SHALL be returned for the same `(testCaseId, runIndex)`, with `turnIndex` `0`, `1`, `2` and `totalTurns` `3`, ordered by `turnIndex` ascending
+- **THEN** three rows SHALL be returned for the same `(testCaseId, runIndex)`, with `turnIndex` `0`, `1`, `2` and `totalTurns` `3` (clients sort each group by `turnIndex`; the server does not impose a turn order)
 
 #### Scenario: Single-turn result row is unchanged in shape
 - **WHEN** a non-multi-turn suite's result is listed

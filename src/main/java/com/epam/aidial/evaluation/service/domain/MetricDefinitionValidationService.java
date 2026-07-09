@@ -8,31 +8,22 @@ import com.epam.aidial.evaluation.service.domain.dto.TestCaseBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
-import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
-@Slf4j
 @Service
 @LogExecution
 @RequiredArgsConstructor
 public class MetricDefinitionValidationService {
 
-    private final ObjectMapper objectMapper;
-    private final ValidationWarningsSerializer warningsSerializer;
+    private final QuietJsonService quietJsonService;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
-    private final JsonataEvaluationService jsonataEvaluationService;
 
     /**
      * Validates config and input bindings against their respective metric schemas and the suite context.
@@ -73,8 +64,8 @@ public class MetricDefinitionValidationService {
                     .build());
         }
 
-        Set<String> testCaseColumns = extractTestCaseColumnNames(testCaseSchemaJson);
-        Set<String> responseColumns = extractResponseColumnNames(responseColumnsJson);
+        Set<String> testCaseColumns = extractNameFieldFromArray(testCaseSchemaJson);
+        Set<String> responseColumns = extractNameFieldFromArray(responseColumnsJson);
 
         validateBindings(
                 configBindings, configSchemaJson, testCaseColumns, responseColumns, "$.configBindings", warnings);
@@ -155,10 +146,6 @@ public class MetricDefinitionValidationService {
                             bindingListPath,
                             "TestCase column '" + columnName + "' does not exist in the suite's testCaseSchema"));
                 }
-
-                // Check 3b: INVALID_EXPRESSION — optional jsonataExpression must be syntactically valid JSONata
-                String jsonataExpression = testCaseSource.getJsonataExpression();
-                validateJsonata(jsonataExpression, property, bindingListPath).ifPresent(warnings::add);
             }
 
             // Check 4: UNRESOLVED_REFERENCE (response)
@@ -171,10 +158,6 @@ public class MetricDefinitionValidationService {
                             bindingListPath,
                             "Response column '" + columnName + "' does not exist in the suite's responseColumns"));
                 }
-
-                // Check 4b: INVALID_EXPRESSION — optional jsonataExpression must be syntactically valid JSONata
-                String jsonataExpression = responseSource.getJsonataExpression();
-                validateJsonata(jsonataExpression, property, bindingListPath).ifPresent(warnings::add);
             }
         }
 
@@ -192,108 +175,48 @@ public class MetricDefinitionValidationService {
         }
     }
 
-    private Optional<ValidationWarningDto> validateJsonata(String expression, String property, String path) {
-        if (expression != null && !expression.isBlank()) {
-            try {
-                jsonataEvaluationService.validateExpression(expression);
-            } catch (ValidationException e) {
-                return Optional.of(buildWarning(
-                        property,
-                        ValidationWarningCode.INVALID_EXPRESSION,
-                        path,
-                        "Invalid JSONata expression for binding: " + e.getMessage()));
-            }
-        }
-
-        return Optional.empty();
-    }
-
     private Set<String> extractSchemaPropertyNames(String schemaJson) {
-        if (schemaJson == null || schemaJson.isBlank()) {
+        JsonNode properties = quietJsonService.readTreeOrEmpty(schemaJson).get("properties");
+        if (properties == null || !properties.isObject()) {
             return Collections.emptySet();
         }
-        try {
-            JsonNode schema = objectMapper.readTree(schemaJson);
-            JsonNode properties = schema.get("properties");
-            if (properties == null || !properties.isObject()) {
-                return Collections.emptySet();
-            }
-            Set<String> names = new HashSet<>();
-            properties.propertyNames().forEach(names::add);
-            return names;
-        } catch (JacksonException e) {
-            log.warn("Failed to parse metric schema JSON, skipping property checks: {}", e.getMessage(), e);
-            return Collections.emptySet();
-        }
+        Set<String> names = new HashSet<>();
+        properties.propertyNames().forEach(names::add);
+        return names;
     }
 
     private Set<String> extractRequiredPropertyNames(String schemaJson) {
-        if (schemaJson == null || schemaJson.isBlank()) {
+        JsonNode required = quietJsonService.readTreeOrEmpty(schemaJson).get("required");
+        if (required == null || !required.isArray()) {
             return Collections.emptySet();
         }
-        try {
-            JsonNode schema = objectMapper.readTree(schemaJson);
-            JsonNode required = schema.get("required");
-            if (required == null || !required.isArray()) {
-                return Collections.emptySet();
+        Set<String> names = new HashSet<>();
+        required.forEach(node -> {
+            if (node.isString()) {
+                names.add(node.asString());
             }
-            Set<String> names = new HashSet<>();
-            required.forEach(node -> {
-                if (node.isString()) {
-                    names.add(node.asString());
-                }
-            });
-            return names;
-        } catch (JacksonException e) {
-            log.warn("Failed to parse metric schema required array: {}", e.getMessage(), e);
-            return Collections.emptySet();
-        }
+        });
+        return names;
     }
 
-    private Set<String> extractTestCaseColumnNames(String testCaseSchemaJson) {
-        if (testCaseSchemaJson == null || testCaseSchemaJson.isBlank()) {
+    /**
+     * Collects the {@code name} field of each object in a JSON array of field/column definitions
+     * (shared by testCaseSchema and responseColumns, which have the same {@code [{"name": ...}, ...]} shape).
+     * Returns an empty set for blank/malformed/non-array input.
+     */
+    private Set<String> extractNameFieldFromArray(String json) {
+        JsonNode array = quietJsonService.readTreeOrEmpty(json);
+        if (!array.isArray()) {
             return Collections.emptySet();
         }
-        try {
-            JsonNode schema = objectMapper.readTree(testCaseSchemaJson);
-            if (!schema.isArray()) {
-                return Collections.emptySet();
+        Set<String> names = new HashSet<>();
+        array.forEach(element -> {
+            JsonNode nameNode = element.get("name");
+            if (nameNode != null && nameNode.isString()) {
+                names.add(nameNode.asString());
             }
-            Set<String> names = new HashSet<>();
-            schema.forEach(field -> {
-                JsonNode nameNode = field.get("name");
-                if (nameNode != null && nameNode.isString()) {
-                    names.add(nameNode.asString());
-                }
-            });
-            return names;
-        } catch (JacksonException e) {
-            log.warn("Failed to parse testCaseSchema JSON: {}", e.getMessage(), e);
-            return Collections.emptySet();
-        }
-    }
-
-    private Set<String> extractResponseColumnNames(String responseColumnsJson) {
-        if (responseColumnsJson == null || responseColumnsJson.isBlank()) {
-            return Collections.emptySet();
-        }
-        try {
-            JsonNode schema = objectMapper.readTree(responseColumnsJson);
-            if (!schema.isArray()) {
-                return Collections.emptySet();
-            }
-            Set<String> names = new HashSet<>();
-            schema.forEach(col -> {
-                JsonNode nameNode = col.get("name");
-                if (nameNode != null && nameNode.isString()) {
-                    names.add(nameNode.asString());
-                }
-            });
-            return names;
-        } catch (JacksonException e) {
-            log.warn("Failed to parse responseColumns JSON: {}", e.getMessage(), e);
-            return Collections.emptySet();
-        }
+        });
+        return names;
     }
 
     private static ValidationWarningDto buildWarning(

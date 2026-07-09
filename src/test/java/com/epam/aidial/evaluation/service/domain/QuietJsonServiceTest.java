@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.service.domain.job;
+package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -9,10 +9,10 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-@DisplayName("JsonService")
-class JobJsonServiceTest {
+@DisplayName("QuietJsonService")
+class QuietJsonServiceTest {
 
-    private final JobJsonService jsonService = new JobJsonService(new ObjectMapper());
+    private final QuietJsonService jsonService = new QuietJsonService(new ObjectMapper());
 
     @Nested
     @DisplayName("writeOrToString")

@@ -11,9 +11,9 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Derives the per-test-case conversation turn plan for a multi-step suite. The number of turns comes from
+ * Derives the per-test-case conversation turn plan for a multi-turn suite. The number of turns comes from
  * the array-valued columns referenced by {@code dataField} bindings: all such columns must share a single
- * non-zero length within {@link ValidationConstants#MAX_CONVERSATION_STEPS}. Scalar columns and
+ * non-zero length within {@link ValidationConstants#MAX_CONVERSATION_TURNS}. Scalar columns and
  * {@code constantValue} bindings are ignored here — they broadcast unchanged on every turn (see
  * {@link TurnPlan#project(Map, int)}). A length mismatch, an empty/absent array column, or a count over the
  * cap yields an error plan that fails only the owning test case.
@@ -39,7 +39,7 @@ public class ConversationTurnPlanner {
 
         if (arrayFieldLengths.isEmpty()) {
             return TurnPlan.error(
-                    "Multi-step suite requires at least one array-valued bound column; none found in test-case data");
+                    "Multi-turn suite requires at least one array-valued bound column; none found in test-case data");
         }
 
         final Set<Integer> distinctLengths = new HashSet<>(arrayFieldLengths.values());
@@ -52,9 +52,9 @@ public class ConversationTurnPlanner {
             return TurnPlan.error("Array-valued bound columns are empty; no conversation turns to run");
         }
 
-        if (turnCount > ValidationConstants.MAX_CONVERSATION_STEPS) {
+        if (turnCount > ValidationConstants.MAX_CONVERSATION_TURNS) {
             return TurnPlan.error("Conversation turn count " + turnCount + " exceeds the maximum of "
-                    + ValidationConstants.MAX_CONVERSATION_STEPS);
+                    + ValidationConstants.MAX_CONVERSATION_TURNS);
         }
 
         return TurnPlan.of(turnCount, arrayFieldLengths.keySet());

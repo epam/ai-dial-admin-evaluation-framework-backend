@@ -14,13 +14,12 @@ class ValidationWarningsSerializerTest {
     private final ValidationWarningsSerializer serializer = new ValidationWarningsSerializer(new ObjectMapper());
 
     @Test
-    @DisplayName("round-trips an extraction warning preserving its stepIndex")
-    void roundTripPreservesStepIndex() {
+    @DisplayName("round-trips an extraction warning preserving its column, expression and error")
+    void roundTripPreservesFields() {
         final ExtractionWarningDto warning = ExtractionWarningDto.builder()
                 .column("answer")
                 .expression("$.choices[0]")
                 .error("boom")
-                .stepIndex(2)
                 .build();
 
         final String json = serializer.serializeExtractionWarnings(List.of(warning));
@@ -30,33 +29,19 @@ class ValidationWarningsSerializerTest {
             assertThat(w.getColumn()).isEqualTo("answer");
             assertThat(w.getExpression()).isEqualTo("$.choices[0]");
             assertThat(w.getError()).isEqualTo("boom");
-            assertThat(w.getStepIndex()).isEqualTo(2);
         });
     }
 
     @Test
-    @DisplayName("omits the stepIndex key when it is null (single-step warnings unchanged)")
-    void omitsNullStepIndex() {
-        final ExtractionWarningDto warning = ExtractionWarningDto.builder()
-                .column("answer")
-                .expression("$.choices[0]")
-                .error("boom")
-                .build();
+    @DisplayName("deserializes a warnings array back into DTOs")
+    void deserializesWarningsArray() {
+        final String json = "[{\"column\":\"answer\",\"expression\":\"$.choices[0]\",\"error\":\"boom\"}]";
 
-        final String json = serializer.serializeExtractionWarnings(List.of(warning));
+        final List<ExtractionWarningDto> restored = serializer.deserializeExtractionWarnings(json);
 
-        assertThat(json).doesNotContain("stepIndex");
-    }
-
-    @Test
-    @DisplayName("deserializes legacy warnings without a stepIndex to a null stepIndex")
-    void legacyWarningsDeserializeToNullStepIndex() {
-        final String legacyJson = "[{\"column\":\"answer\",\"expression\":\"$.choices[0]\",\"error\":\"boom\"}]";
-
-        final List<ExtractionWarningDto> restored = serializer.deserializeExtractionWarnings(legacyJson);
-
-        assertThat(restored)
-                .singleElement()
-                .satisfies(w -> assertThat(w.getStepIndex()).isNull());
+        assertThat(restored).singleElement().satisfies(w -> {
+            assertThat(w.getColumn()).isEqualTo("answer");
+            assertThat(w.getError()).isEqualTo("boom");
+        });
     }
 }

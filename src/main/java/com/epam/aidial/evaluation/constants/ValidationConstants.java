@@ -23,11 +23,11 @@ public final class ValidationConstants {
     public static final int MAX_DISABLED_TC_IDS = 10000;
 
     /**
-     * Maximum number of conversation turns in a multi-step ({@code multiStep == true}) suite. In the array-driven
+     * Maximum number of conversation turns in a multi-turn ({@code multiTurn == true}) suite. In the array-driven
      * model the per-test-case turn count is the length of the array-valued bound columns; this caps that length.
      * Bounds per-test-case deployment calls (one call per turn).
      */
-    public static final int MAX_CONVERSATION_STEPS = 10;
+    public static final int MAX_CONVERSATION_TURNS = 10;
 
     /**
      * Regex enforced on test-case schema field names ({@code FieldDefinitionDto}).

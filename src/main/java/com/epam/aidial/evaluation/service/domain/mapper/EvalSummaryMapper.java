@@ -26,6 +26,11 @@ public abstract class EvalSummaryMapper {
     @Mapping(source = "item.testCaseId", target = "testCaseId")
     @Mapping(source = "item.testCaseName", target = "testCaseName")
     @Mapping(source = "item.runIndex", target = "runIndex")
+    // Turn fields are optional on the DTO (nullable Integer). External single-turn callers may omit them,
+    // in which case they default to 0/1 — matching the DB column defaults and keeping single-turn payloads
+    // byte-compatible.
+    @Mapping(target = "turnIndex", expression = "java(item.getTurnIndex() == null ? 0 : item.getTurnIndex())")
+    @Mapping(target = "totalTurns", expression = "java(item.getTotalTurns() == null ? 1 : item.getTotalTurns())")
     @Mapping(source = "item.testCaseData", target = "testCaseData")
     @Mapping(source = "item.extractedColumns", target = "extractedColumns")
     @Mapping(source = "item.executionStatus", target = "executionStatus")

@@ -29,8 +29,9 @@ Status: **Implemented**
 ### Requirement: Condition evaluates against a namespaced dictionary
 The condition SHALL be evaluated against a single dictionary with two top-level namespaces: `data`
 (the test case's data columns) and `response` (the extracted/response columns), reusing the same
-namespace tokens as the CSV export. For multi-step conversations the `response` values SHALL be the
-column-major per-turn arrays (the same shape metric bindings resolve against). The dictionary
+namespace tokens as the CSV export. Because each turn of a multi-turn conversation is its own
+test-case result, the `data` and `response` values SHALL be that turn's scalar columns (the same shape
+metric bindings resolve against). The dictionary
 serialization passed to the JSONata evaluator SHALL preserve explicit JSON nulls (it MUST NOT use the
 shared `NON_NULL` mapper path, which would drop null-valued keys and make a present-but-null column
 appear absent).
@@ -90,14 +91,32 @@ Status: **Implemented**
 - **THEN** the condition SHALL be rejected (see write-time validation) and never run
 
 ### Requirement: Condition context is an extensible carrier
-The condition evaluator and every custom function SHALL receive a single `ConditionContext` object
-carrying the evaluation inputs, so future fields (e.g. per-turn metadata) can be added without
-changing method signatures.
+The condition evaluator and every custom function SHALL receive a single `ConditionContext` object carrying the evaluation inputs, so future fields can be added without changing method signatures. The context SHALL expose the `data` and `response` inputs and, additionally, the current turn's position: `turnIndex` (0-based) and `totalTurns` (count). These are populated from the `TestCaseRunResult` being evaluated; for a single-turn result they are `0` and `1`. Populating these fields is the enabling step for a future last-turn condition function (e.g. `isLastTurn()`), which remains out of scope here.
 Status: **Implemented**
 
 #### Scenario: Context carries the evaluation dictionary
 - **WHEN** the evaluator or a custom function runs
 - **THEN** it SHALL receive a context exposing the `data` and `response` inputs
+
+#### Scenario: Context carries turn position
+- **WHEN** the evaluator or a custom function runs for a result at turn `i` of a conversation of `N` turns
+- **THEN** the context SHALL expose `turnIndex = i` and `totalTurns = N`
+
+#### Scenario: Single-turn context turn position
+- **WHEN** the evaluator runs for a non-multi-turn result
+- **THEN** the context SHALL expose `turnIndex = 0` and `totalTurns = 1`
+
+### Requirement: Conditions evaluate per turn
+Because each turn of a multi-turn conversation is its own `TestCaseRunResult`, a metric's `condition` SHALL be evaluated once per turn-result — the `data` and `response` inputs are that turn's scalar values, and `turnIndex`/`totalTurns` identify the turn. No condition function is required for this granularity; it is a consequence of per-turn result rows. The condition SHALL NOT be evaluated on non-SUCCESS rows (a failing turn or a `0/0` data-error row), which propagate without metric evaluation.
+Status: **Implemented**
+
+#### Scenario: Condition runs on each successful turn
+- **WHEN** a 3-turn conversation completes successfully and a TSMD carries a condition referencing `response`
+- **THEN** the condition SHALL be evaluated three times, once per turn-result, each against that turn's scalar `data`/`response`
+
+#### Scenario: Condition not evaluated on a failed turn
+- **WHEN** turn `k` of a conversation is an ERROR result
+- **THEN** no condition SHALL be evaluated for that turn-result and no metric SHALL be dispatched for it
 
 ### Requirement: Runtime condition outcome determines metric result
 For each test-case result, the condition outcome SHALL map to exactly one behavior: a clean boolean

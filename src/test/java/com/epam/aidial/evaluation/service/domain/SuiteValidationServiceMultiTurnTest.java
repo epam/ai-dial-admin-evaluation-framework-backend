@@ -25,13 +25,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpMethod;
 
 /**
- * Multi-step suite validation: a multi-step suite uses its single {@code inputBindings} (validated by the
- * shared {@link BindingValidator}); the only multi-step-specific config requirement is a chat-completions
+ * Multi-turn suite validation: a multi-turn suite uses its single {@code inputBindings} (validated by the
+ * shared {@link BindingValidator}); the only multi-turn-specific config requirement is a chat-completions
  * body (top-level {@code messages} array). Turn count / array-shape are per-test-case runtime concerns.
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("SuiteValidationService multi-step validation")
-class SuiteValidationServiceMultiStepTest {
+@DisplayName("SuiteValidationService multi-turn validation")
+class SuiteValidationServiceMultiTurnTest {
 
     @Mock
     private EvaluationRunProperties evaluationRunProperties;
@@ -62,9 +62,9 @@ class SuiteValidationServiceMultiStepTest {
     }
 
     @Test
-    @DisplayName("a well-formed multi-step suite (single bindings + messages body) is valid")
-    void wellFormedMultiStepSuiteIsValid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(binding("q1")));
+    @DisplayName("a well-formed multi-turn suite (single bindings + messages body) is valid")
+    void wellFormedMultiTurnSuiteIsValid() {
+        TestSuiteRequestDto dto = baseMultiTurnSuite(List.of(binding("q1")));
 
         ValidationResult result = service.validateSuite(dto, null, SCHEMA);
 
@@ -75,7 +75,7 @@ class SuiteValidationServiceMultiStepTest {
     @Test
     @DisplayName("non-messages JSON body is invalid")
     void nonMessagesJsonBodyIsInvalid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(binding("q1")));
+        TestSuiteRequestDto dto = baseMultiTurnSuite(List.of(binding("q1")));
         dto.setRequestTemplate(RequestTemplateDto.builder()
                 .urlTemplate("/chat")
                 .body(JsonRequestBodyDto.builder()
@@ -90,9 +90,9 @@ class SuiteValidationServiceMultiStepTest {
     }
 
     @Test
-    @DisplayName("multipart body is invalid for multi-step")
+    @DisplayName("multipart body is invalid for multi-turn")
     void multipartBodyIsInvalid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(binding("q1")));
+        TestSuiteRequestDto dto = baseMultiTurnSuite(List.of(binding("q1")));
         dto.setRequestTemplate(RequestTemplateDto.builder()
                 .urlTemplate("/chat")
                 .body(MultipartFormDataRequestBodyDto.builder()
@@ -109,7 +109,7 @@ class SuiteValidationServiceMultiStepTest {
     @Test
     @DisplayName("binding to an unknown field is invalid (shared binding validation)")
     void bindingToUnknownFieldIsInvalid() {
-        TestSuiteRequestDto dto = baseMultiStepSuite(List.of(binding("unknown_field")));
+        TestSuiteRequestDto dto = baseMultiTurnSuite(List.of(binding("unknown_field")));
 
         ValidationResult result = service.validateSuite(dto, null, SCHEMA);
 
@@ -117,10 +117,10 @@ class SuiteValidationServiceMultiStepTest {
         assertThat(result.getWarnings()).anyMatch(w -> w.getMessage().contains("unknown field 'unknown_field'"));
     }
 
-    private TestSuiteRequestDto baseMultiStepSuite(List<InputBindingDto> inputBindings) {
+    private TestSuiteRequestDto baseMultiTurnSuite(List<InputBindingDto> inputBindings) {
         return TestSuiteRequestDto.builder()
-                .name("multi-step suite")
-                .multiStep(true)
+                .name("multi-turn suite")
+                .multiTurn(true)
                 .inputBindings(inputBindings)
                 .endpointRef(
                         EndpointContractDto.builder().method(HttpMethod.POST).build())

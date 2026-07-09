@@ -106,16 +106,16 @@ Status: **Implemented**
 - **THEN** the row's column header SHALL be `data::meta.tags` (the embedded dot is preserved unmodified because `::` is the separator)
 
 ### Requirement: Inlined extractedColumns columns
-For each `ResponseColumnDefinitionDto` in `SuiteSnapshotDto.responseColumns` (preserving snapshot order), the CSV SHALL include one column named `response::<columnName>` (with `::` as the family-separator). The cell value SHALL be `extractedColumns[columnName]` rendered per the cell-serialization rules. For a multi-step result the value is a per-column array, which the cell-serialization rules render as a compact JSON string (e.g. `["Paris","Tokio"]`); for a single-step result it is a scalar. When extraction failed for a column (recorded in `extractionWarnings`), the cell SHALL be empty.
+For each `ResponseColumnDefinitionDto` in `SuiteSnapshotDto.responseColumns` (preserving snapshot order), the CSV SHALL include one column named `response::<columnName>` (with `::` as the family-separator). The cell value SHALL be `extractedColumns[columnName]` rendered per the cell-serialization rules. Because every result row is now a single turn, `extractedColumns` is always an object of **scalars** — the cell is the scalar value (a multi-turn conversation is exported as one CSV row per turn, each with its own scalar cell). When extraction failed for a column (recorded in `extractionWarnings`), the cell SHALL be empty.
 Status: **Implemented**
 
 #### Scenario: Successful extraction
 - **WHEN** the snapshot response columns include `answer` and a row has `extractedColumns.answer = "42"`
 - **THEN** the row's `response::answer` cell SHALL be `42`
 
-#### Scenario: Multi-step array-valued extraction
-- **WHEN** the snapshot response columns include `answer` and a multi-step row has `extractedColumns.answer = ["Paris","Tokio"]`
-- **THEN** the row's `response::answer` cell SHALL be the compact JSON string `["Paris","Tokio"]`
+#### Scenario: Multi-turn conversation exports one row per turn
+- **WHEN** a 3-turn conversation has response column `answer` with per-turn values `"Paris"`, `"Berlin"`, `"Tokio"`
+- **THEN** the export SHALL contain three rows for that conversation with `response::answer` cells `Paris`, `Berlin`, `Tokio` and `turnIndex` `0`,`1`,`2`
 
 #### Scenario: Failed extraction
 - **WHEN** the snapshot response columns include `answer` and a row has `extractedColumns.answer = null` and a warning for `answer` in `extractionWarnings`
@@ -215,12 +215,16 @@ Status: **Implemented**
 - **THEN** the header SHALL NOT contain a column named `metricInfos` (the JSON blob from earlier versions is replaced by the per-field `metricInfo::<m>::<f>` columns and the per-metric `metricError::<m>` columns)
 
 ### Requirement: Identity and execution columns
-The CSV SHALL include the following columns in this order before the inlined columns: `id`, `testSuiteId`, `testSuiteRunId`, `testCaseRunResultId`, `testCaseId`, `testCaseName`, `runIndex`, `computationId`, `createdAt`, `computedAt`, `executionStatus`, `execDurationMs`, `responseStatusCode`. These names use camelCase without a family-separator prefix — they are not derived from snapshot/metric data and therefore do not participate in the `<family>::<name>` convention.
+The CSV SHALL include the following columns in this order before the inlined columns: `id`, `testSuiteId`, `testSuiteRunId`, `testCaseRunResultId`, `testCaseId`, `testCaseName`, `runIndex`, `turnIndex`, `totalTurns`, `computationId`, `createdAt`, `computedAt`, `executionStatus`, `execDurationMs`, `responseStatusCode`. These names use camelCase without a family-separator prefix — they are not derived from snapshot/metric data and therefore do not participate in the `<family>::<name>` convention. `turnIndex`/`totalTurns` are `0`/`1` for single-turn results.
 Status: **Implemented**
 
 #### Scenario: Identity columns present in default export
 - **WHEN** any successful export is invoked
-- **THEN** all listed identity and execution columns SHALL appear in the header row before any `data::*`, `response::*`, `metric::*`, `metricInfo::*`, `metricError::*`, or `extractionWarnings` columns
+- **THEN** all listed identity and execution columns — including `turnIndex` and `totalTurns` immediately after `runIndex` — SHALL appear in the header row before any `data::*`, `response::*`, `metric::*`, `metricInfo::*`, `metricError::*`, or `extractionWarnings` columns
+
+#### Scenario: Turn columns populated per row
+- **WHEN** a multi-turn conversation of 3 turns is exported
+- **THEN** the three rows SHALL carry `turnIndex` `0`,`1`,`2` and `totalTurns` `3`; a single-turn suite's row SHALL carry `turnIndex` `0` and `totalTurns` `1`
 
 ### Requirement: Request and response bodies via explicit columns
 `requestBody` and `responseBody` SHALL be excluded from the **default** column set (the set emitted when the request's `columns` array is empty or omitted). They SHALL be included in the CSV **only** when the caller explicitly names them in `columns`. When at least one body column is named, the repository projection SHALL be the LEFT JOIN to `test_case_run_results`; otherwise the projection SHALL be the non-JOIN list projection.

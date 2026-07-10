@@ -64,8 +64,8 @@ public class MetricDefinitionValidationService {
                     .build());
         }
 
-        Set<String> testCaseColumns = extractNameFieldFromArray(testCaseSchemaJson);
-        Set<String> responseColumns = extractNameFieldFromArray(responseColumnsJson);
+        Set<String> testCaseColumns = extractColumnNames(testCaseSchemaJson);
+        Set<String> responseColumns = extractColumnNames(responseColumnsJson);
 
         validateBindings(
                 configBindings, configSchemaJson, testCaseColumns, responseColumns, "$.configBindings", warnings);
@@ -204,7 +204,7 @@ public class MetricDefinitionValidationService {
      * (shared by testCaseSchema and responseColumns, which have the same {@code [{"name": ...}, ...]} shape).
      * Returns an empty set for blank/malformed/non-array input.
      */
-    private Set<String> extractNameFieldFromArray(String json) {
+    private Set<String> extractColumnNames(String json) {
         JsonNode array = quietJsonService.readTreeOrEmpty(json);
         if (!array.isArray()) {
             return Collections.emptySet();

@@ -25,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @DisplayName("Metric Score Computation (Phase 3) Functional Tests")
 public abstract class MetricScoreComputationFunctionalTests extends BaseFunctionalTest {
 
+    private static final long COMPUTED_AT_MS = 1_700_000_600_000L;
     private static final String OUTPUT_SCHEMA = "{\"properties\":{\"score\":{\"type\":\"number\"}}}";
     private static final String CLASSIFIER_OUTPUT_SCHEMA =
             "{\"properties\":{\"label\":{\"type\":\"number\"},\"probability\":{\"type\":\"number\"}}}";
@@ -262,6 +263,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
                 .testSuiteId(suiteId)
                 .computationId(computationId)
                 .overallExpression(overallExpression)
+                .computedAtMs(COMPUTED_AT_MS)
                 .cancellationSignal(new AtomicBoolean(false))
                 .build();
     }

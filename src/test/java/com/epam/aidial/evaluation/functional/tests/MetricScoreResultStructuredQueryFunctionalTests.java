@@ -27,8 +27,8 @@ import com.epam.aidial.evaluation.experimental.query.service.MetricScoreResultSc
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
-import com.epam.aidial.evaluation.experimental.query.service.repository.MetricScoreResultQueryRepository;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryExecutor;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -56,7 +56,7 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
     private static final long DEFAULT_COMPUTED_AT_MS = 1_000L;
 
     @Autowired
-    private MetricScoreResultQueryRepository queryRepository;
+    private StructuredQueryExecutor queryRepository;
 
     @Autowired
     private MetricScoreService metricScoreService;
@@ -371,30 +371,101 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
         assertThat(structuredQueryService.execute(query).rows()).isEmpty();
     }
 
+    /** An aggregate subquery: this suite's own max {@code computed_at_ms} (a single scalar value). */
+    private static StructuredQuery latestComputedAtSubquery(UUID suiteId) {
+        return new StructuredQuery(
+                "metric_score_results",
+                eq("test_suite_id", suiteId.toString()),
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(new FnExpr("max", false, List.of(new FieldExpr("computed_at_ms"))), "latest")),
+                List.of(),
+                null,
+                null,
+                new OffsetPage(0, 1, false));
+    }
+
     @Test
-    @DisplayName("rejects a subquery used outside an 'in' predicate")
-    void rejectsSubqueryOutsideIn() {
+    @DisplayName("filters using a subquery as a scalar comparison operand, not just 'in'")
+    void filtersUsingScalarSubqueryComparison() {
+        UUID suiteId = UUID.randomUUID();
+        UUID run1 = UUID.randomUUID();
+        UUID run2 = UUID.randomUUID();
+        UUID c1 = UUID.randomUUID();
+        UUID c2 = UUID.randomUUID();
+        metricScoreService.saveAll(List.of(
+                result(run1, suiteId, c1, "AVG", "Relevancy.score", 0.1, 1_000L),
+                result(run1, suiteId, c1, "overall", "overall", 0.15, 1_000L),
+                result(run2, suiteId, c2, "AVG", "Relevancy.score", 0.5, 2_000L),
+                result(run2, suiteId, c2, "overall", "overall", 0.55, 2_000L)));
+
+        // Only rows computed at this suite's own latest compute time (2000, run2's) should match.
+        // Also scoped to this suite explicitly: metric_score_result is shared across every test method
+        // in this class, so an unscoped computed_at_ms match alone could pick up unrelated rows from
+        // other tests that happen to share the same literal timestamp.
+        FilterNode filter = new LogicalNode(
+                LogicalOp.AND,
+                List.of(
+                        eq("test_suite_id", suiteId.toString()),
+                        new ComparisonNode(
+                                ComparisonOp.EQ,
+                                List.of(
+                                        new FieldExpr("computed_at_ms"),
+                                        new SubqueryExpr(latestComputedAtSubquery(suiteId))))));
         StructuredQuery query = new StructuredQuery(
                 "metric_score_results",
-                new ComparisonNode(
-                        ComparisonOp.EQ,
-                        List.of(
-                                new FieldExpr("test_suite_run_id"),
-                                new SubqueryExpr(latestRunsSubquery(UUID.randomUUID(), 1)))),
+                filter,
                 QueryMode.ROW,
                 false,
-                List.of(col("value")),
+                List.of(col("test_suite_run_id"), col("metric_score_name"), col("computed_at_ms")),
                 null,
                 null,
                 null,
                 new OffsetPage(0, 100, false));
 
-        assertThatThrownBy(() -> structuredQueryService.execute(query)).isInstanceOf(ValidationException.class);
+        QueryResultPage page = structuredQueryService.execute(query);
+
+        assertThat(page.rows()).hasSize(2);
+        assertThat(page.rows()).extracting(row -> row.get("test_suite_run_id")).containsOnly(run2.toString());
     }
 
     @Test
-    @DisplayName("rejects an 'in' subquery targeting a different entity (same-entity only)")
-    void rejectsCrossEntitySubquery() {
+    @DisplayName("projects a subquery as a select column")
+    void projectsSubqueryAsSelectColumn() {
+        UUID suiteId = UUID.randomUUID();
+        UUID run1 = UUID.randomUUID();
+        UUID c1 = UUID.randomUUID();
+        metricScoreService.saveAll(List.of(result(run1, suiteId, c1, "AVG", "Relevancy.score", 0.1, 1_000L)));
+
+        StructuredQuery query = new StructuredQuery(
+                "metric_score_results",
+                eq("test_suite_run_id", run1.toString()),
+                QueryMode.ROW,
+                false,
+                List.of(
+                        col("metric_score_name"),
+                        new OutputColumn(new SubqueryExpr(latestComputedAtSubquery(suiteId)), "suite_latest")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        QueryResultPage page = structuredQueryService.execute(query);
+
+        assertThat(page.rows()).isNotEmpty();
+        assertThat(page.rows())
+                .allSatisfy(row -> assertThat(((Number) row.get("suite_latest")).longValue())
+                        .isEqualTo(1_000L));
+    }
+
+    @Test
+    @DisplayName("an 'in' subquery targeting a different, cross-datasource entity fails at the database")
+    void rejectsCrossDatasourceSubquery() {
+        // test_suites lives on the meta datasource; metric_score_results on analytics — nesting one
+        // inside the other is not a structural rule anymore (same-entity check was removed), but it
+        // still can't succeed: Postgres rejects the nested SQL referencing a table from a different
+        // connection/schema, surfaced as a normal grammar error and mapped to 400 like any other
+        // database-level type/grammar mismatch.
         StructuredQuery inner = new StructuredQuery(
                 "test_suites",
                 null,

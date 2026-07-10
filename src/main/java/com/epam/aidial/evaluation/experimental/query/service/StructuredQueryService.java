@@ -4,68 +4,51 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
-import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryRepository;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityRegistry;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryExecutor;
 import com.epam.aidial.evaluation.experimental.query.service.translate.QueryParameterResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * Entry point for executing a {@link StructuredQuery} against any queryable entity. Collects every
- * {@link StructuredQueryRepository} bean and dispatches by {@code entity} to the one that serves it,
- * giving the API a single, entity-agnostic execute surface. Which repositories exist depends on the
- * configured datasources ({@code @ConditionalOnProperty}), so the set of queryable entities is the
- * set of present repositories.
+ * Entry point for executing a {@link StructuredQuery} against any queryable entity. Delegates entity
+ * resolution to {@link StructuredQueryEntityRegistry} and translation/execution to
+ * {@link StructuredQueryExecutor}, giving the API a single, entity-agnostic execute surface. Which
+ * entities are queryable depends on which {@code StructuredQueryEntityResolver} beans are present
+ * (gated by {@code @ConditionalOnProperty} per datasource).
  */
 @Component
 @LogExecution
+@RequiredArgsConstructor
 public class StructuredQueryService {
 
-    private final Map<String, StructuredQueryRepository> repositoriesByEntity;
+    private final StructuredQueryExecutor executor;
+    private final StructuredQueryEntityRegistry entityRegistry;
     private final QueryParameterResolver parameterResolver;
 
-    public StructuredQueryService(
-            List<StructuredQueryRepository> repositories, QueryParameterResolver parameterResolver) {
-        final Map<String, StructuredQueryRepository> byEntity = new TreeMap<>();
-        for (final StructuredQueryRepository repository : repositories) {
-            final StructuredQueryRepository duplicate = byEntity.put(repository.supportedEntity(), repository);
-            if (duplicate != null) {
-                throw new IllegalStateException(
-                        "Duplicate structured query repository for entity: " + repository.supportedEntity());
-            }
-        }
-        this.repositoriesByEntity = byEntity;
-        this.parameterResolver = parameterResolver;
-    }
-
-    /** Routes {@code query} to the repository for {@code query.entity()} and executes it (no params). */
+    /** Executes {@code query} against its entity's resolver (no params). */
     public QueryResultPage execute(StructuredQuery query) {
         return execute(query, Map.of());
     }
 
     /**
-     * Routes {@code query} to the repository for {@code query.entity()} and executes it. Any
-     * {@code param} expressions are resolved against {@code params} in a single pre-pass
-     * ({@link QueryParameterResolver}) before dispatch, so the repository/translator never see a
-     * {@code param}.
+     * Executes {@code query} against its entity's resolver. Any {@code param} expressions are
+     * resolved against {@code params} in a single pre-pass ({@link QueryParameterResolver}) before
+     * dispatch, so the resolver/translator never see a {@code param}.
      */
     public QueryResultPage execute(StructuredQuery query, Map<String, Expr> params) {
         if (query == null) {
             throw new ValidationException("query must not be null");
         }
-        final StructuredQueryRepository repository = repositoriesByEntity.get(query.entity());
-        if (repository == null) {
-            throw new ValidationException("entity '" + query.entity() + "' is not queryable; supported entities: "
-                    + repositoriesByEntity.keySet());
-        }
-        return repository.execute(parameterResolver.resolve(query, params));
+        entityRegistry.require(query.entity());
+        return executor.execute(parameterResolver.resolve(query, params));
     }
 
     /** The entities this service can currently query, in stable order. */
     public Set<String> supportedEntities() {
-        return Set.copyOf(repositoriesByEntity.keySet());
+        return entityRegistry.supportedEntities();
     }
 }

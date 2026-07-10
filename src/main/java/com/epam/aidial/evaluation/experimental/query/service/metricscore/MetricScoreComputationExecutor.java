@@ -20,7 +20,6 @@ import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
-import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -65,15 +64,13 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
     private final StructuredQueryService structuredQueryService;
     private final ObjectMapper objectMapper;
-    private final Clock clock;
 
     @Override
     public void execute(MetricScoreComputationContext ctx) {
         if (isCancelled(ctx)) {
             return;
         }
-        // One timestamp shared by every result of this computation.
-        final long computedAtMs = clock.millis();
+        final long computedAtMs = ctx.getComputedAtMs();
         final List<RunMetricSnapshot> snapshots = runMetricSnapshotRepository.findByRunIdAndComputationId(
                 ctx.getTestSuiteRunId(), ctx.getComputationId());
         final List<MetricField> metricFields = discoverMetricFields(snapshots);

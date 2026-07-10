@@ -21,9 +21,6 @@ import com.epam.aidial.evaluation.experimental.query.service.repository.QueryRes
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -63,8 +60,7 @@ class MetricScoreComputationExecutorTest {
             metricScoreService,
             outputSchemaFieldExtractor,
             structuredQueryService,
-            new JsonMapperConfiguration().objectMapper(),
-            Clock.fixed(Instant.ofEpochMilli(FIXED_MILLIS), ZoneOffset.UTC));
+            new JsonMapperConfiguration().objectMapper());
 
     private MetricScoreComputationContext context(String overallExpression) {
         return MetricScoreComputationContext.builder()
@@ -72,6 +68,7 @@ class MetricScoreComputationExecutorTest {
                 .testSuiteId(SUITE_ID)
                 .computationId(COMPUTATION_ID)
                 .overallExpression(overallExpression)
+                .computedAtMs(FIXED_MILLIS)
                 .cancellationSignal(new AtomicBoolean(false))
                 .build();
     }

@@ -11,8 +11,11 @@ import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
 import com.epam.aidial.evaluation.experimental.query.model.SortDir;
 import com.epam.aidial.evaluation.experimental.query.model.SortItem;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityRegistry;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,6 +28,8 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
+import org.jooq.Record1;
+import org.jooq.Select;
 import org.jooq.SelectQuery;
 import org.jooq.SortField;
 import org.jooq.Table;
@@ -58,25 +63,29 @@ public class StructuredQueryBuilder {
 
     private final ExprTranslator exprTranslator;
     private final FilterTranslator filterTranslator;
+    private final StructuredQueryEntityRegistry entityRegistry;
 
     /**
-     * Builds the executable select for {@code query} against {@code table} using {@code bindings}.
-     * The query must already be parameter-free ({@code QueryParameterResolver} runs before this).
+     * Builds the executable select for {@code query}, resolving its {@code dsl}/{@code table}/
+     * {@code bindings} from {@code query.entity()} via {@link StructuredQueryEntityRegistry}. The
+     * query must already be parameter-free ({@code QueryParameterResolver} runs before this).
      */
-    public SelectQuery<Record> build(
-            DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
+    public SelectQuery<Record> build(StructuredQuery query) {
+        final StructuredQueryEntityResolver resolver = entityRegistry.require(query.entity());
+        final DSLContext dsl = resolver.dsl();
+        final Table<?> table = resolver.table();
+        final Map<String, QueryFieldBinding> bindings = resolver.bindings(query);
+
         final SelectQuery<Record> select = dsl.selectQuery();
         select.addFrom(table);
-        final SubqueryContext filterContext =
-                new SubqueryContext(dsl, query.entity(), inner -> build(dsl, table, bindings, inner));
-        select.addConditions(filterTranslator.toCondition(query.filter(), bindings, filterContext));
+        select.addConditions(filterTranslator.toCondition(query.filter(), bindings));
 
         final QueryMode mode = query.mode();
         // Names that are select outputs (aliases / projected fields), so sort can reference the output
         // column instead of re-translating its expression.
         final Set<String> selectAliases = new HashSet<>();
         final Map<String, QueryFieldBinding> sortBindings = mode == QueryMode.AGGREGATE
-                ? buildAggregate(select, dsl, table, bindings, query, selectAliases)
+                ? buildAggregate(select, bindings, query, selectAliases)
                 : buildRow(select, table, bindings, query, selectAliases);
 
         if (query.distinct()) {
@@ -88,13 +97,36 @@ public class StructuredQueryBuilder {
     }
 
     /** Counts matching rows for offset {@code include_total} (row mode only; ignores paging). */
-    public int countRows(
-            DSLContext dsl, Table<?> table, Map<String, QueryFieldBinding> bindings, StructuredQuery query) {
-        final SubqueryContext context =
-                new SubqueryContext(dsl, query.entity(), inner -> build(dsl, table, bindings, inner));
-        final Condition where = filterTranslator.toCondition(query.filter(), bindings, context);
+    public int countRows(StructuredQuery query) {
+        final StructuredQueryEntityResolver resolver = entityRegistry.require(query.entity());
+        final DSLContext dsl = resolver.dsl();
+        final Table<?> table = resolver.table();
+        final Map<String, QueryFieldBinding> bindings = resolver.bindings(query);
+        final Condition where = filterTranslator.toCondition(query.filter(), bindings);
         final Integer count = dsl.selectCount().from(table).where(where).fetchOne(0, Integer.class);
         return count == null ? 0 : count;
+    }
+
+    /**
+     * Compiles {@code subquery} into a nested single-column select — its first select column is the
+     * value/membership key; any additional columns exist only to drive the inner query's own
+     * {@code ORDER BY}/{@code LIMIT}. Called (via {@link ExprTranslator}'s lazy reference to this
+     * bean) from anywhere a {@code subquery} expression appears. No same-entity check: a
+     * cross-datasource subquery fails naturally at the database with a normal SQL error, already
+     * mapped to HTTP 400 by {@code StructuredQueryExecutor}.
+     */
+    Select<? extends Record1<?>> compileSubqueryMembership(SubqueryExpr subquery) {
+        final StructuredQuery inner = subquery.query();
+        if (inner == null) {
+            throw new ValidationException("'subquery' requires a 'query'");
+        }
+        final SelectQuery<Record> subselect = build(inner);
+        final Table<?> derived = subselect.asTable(DSL.name("in_subquery"));
+        final Field<?> key = derived.field(0);
+        if (key == null) {
+            throw new ValidationException("'subquery' must select at least one column");
+        }
+        return subselect.configuration().dsl().select(key).from(derived);
     }
 
     private Map<String, QueryFieldBinding> buildRow(
@@ -127,8 +159,6 @@ public class StructuredQueryBuilder {
 
     private Map<String, QueryFieldBinding> buildAggregate(
             SelectQuery<Record> select,
-            DSLContext dsl,
-            Table<?> table,
             Map<String, QueryFieldBinding> bindings,
             StructuredQuery query,
             Set<String> selectAliases) {
@@ -167,9 +197,7 @@ public class StructuredQueryBuilder {
         select.addSelect(selectFields);
         select.addGroupBy(groupFields);
         if (query.having() != null) {
-            final SubqueryContext havingContext =
-                    new SubqueryContext(dsl, query.entity(), inner -> build(dsl, table, aliasBindings, inner));
-            select.addHaving(filterTranslator.toCondition(query.having(), aliasBindings, havingContext));
+            select.addHaving(filterTranslator.toCondition(query.having(), aliasBindings));
         }
         return aliasBindings;
     }

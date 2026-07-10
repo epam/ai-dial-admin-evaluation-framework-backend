@@ -20,8 +20,8 @@ import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
-import com.epam.aidial.evaluation.experimental.query.service.repository.EvalSummaryQueryRepository;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryExecutor;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
@@ -35,7 +35,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
-    private EvalSummaryQueryRepository queryRepository;
+    private StructuredQueryExecutor queryRepository;
 
     @Autowired
     private AnalyticsTestDataHelper analyticsTestDataHelper;
@@ -308,12 +308,15 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
     @Test
     @DisplayName("rejects a query targeting an unsupported entity")
     void rejectsUnsupportedEntity() {
+        // "test_suites" is itself a valid, registered entity (just not this test's focus), so the
+        // shared, entity-agnostic executor would route it successfully rather than reject it; use an
+        // entity name that has no registered resolver anywhere to exercise the true rejection path.
         StructuredQuery query = new StructuredQuery(
-                "test_suites", null, QueryMode.ROW, false, null, null, null, null, new OffsetPage(0, 10, false));
+                "not_a_real_entity", null, QueryMode.ROW, false, null, null, null, null, new OffsetPage(0, 10, false));
 
         assertThatThrownBy(() -> queryRepository.execute(query))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("eval_summaries");
+                .hasMessageContaining("not_a_real_entity");
     }
 
     @Test

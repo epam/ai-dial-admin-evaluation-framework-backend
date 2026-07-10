@@ -170,12 +170,13 @@
 </ul>
 </li>
 <li><a href="#4-expression-grammar">4. Expression grammar</a><ul>
-<li><a href="#41-the-five-kinds">4.1 The five kinds</a></li>
+<li><a href="#41-the-six-kinds">4.1 The six kinds</a></li>
 <li><a href="#42-literals-and-value_type">4.2 Literals and value_type</a></li>
 <li><a href="#43-runtime-parameters-param">4.3 Runtime parameters (param)</a></li>
 <li><a href="#44-functions-fn-and-the-safety-boundary">4.4 Functions (fn) — and the safety boundary</a></li>
 <li><a href="#45-flat-property-abstraction-field-references-and-physical-sources">4.5 Flat property abstraction (field references and physical sources)</a></li>
 <li><a href="#46-arrays">4.6 Arrays</a></li>
+<li><a href="#47-subqueries-subquery">4.7 Subqueries (subquery)</a></li>
 </ul>
 </li>
 <li><a href="#5-output-columns-select-group_by-distinct-and-having">5. Output columns (select), group_by, distinct, and having</a><ul>
@@ -200,6 +201,8 @@
 <li><a href="#83-null-handling-on-a-metric-derived-column">8.3 Null handling on a metric-derived column</a></li>
 <li><a href="#84-computed-operand-function-on-the-left-of-a-comparison">8.4 Computed operand: function on the left of a comparison</a></li>
 <li><a href="#85-set-membership-in-with-an-array-operand">8.5 Set membership: in with an array operand</a></li>
+<li><a href="#86-set-membership-in-with-a-subquery-operand">8.6 Set membership: in with a subquery operand (latest N groups)</a></li>
+<li><a href="#87-subquery-as-a-scalar-operand">8.7 Subquery as a scalar comparison operand</a></li>
 </ul>
 </li>
 <li><a href="#9-validation-allowlist-hooks">9. Validation / allowlist hooks</a></li>
@@ -337,16 +340,20 @@ what is <em>legal inside</em> a <code>select</code> entry differs by mode.</p>
 <pre><code class="language-jsonc">{ &quot;op&quot;: &quot;&lt;code&gt;&quot;, &quot;args&quot;: [ &lt;expr&gt;, &lt;expr&gt; ] }
 </code></pre>
 <ul>
-<li>Both operands are <strong>expressions</strong> (§4) — <code>field</code>, <code>value</code>, <code>param</code>, <code>fn</code>, or <code>array</code>.
-  There is no separate "property" node: a column reference is just a <code>field</code> expression
-  (<code>{ "type": "field", "name": "amount" }</code>).</li>
+<li>Both operands are <strong>expressions</strong> (§4) — <code>field</code>, <code>value</code>, <code>param</code>, <code>fn</code>, <code>array</code>,
+  or <code>subquery</code>. There is no separate "property" node: a column reference is just a
+  <code>field</code> expression (<code>{ "type": "field", "name": "amount" }</code>).</li>
 <li>Because operands are full expressions, either side may be computed. The left operand is
   not required to be a bare column — e.g. <code>length(test_suite_id) = 3</code> puts a <code>fn</code> on the
   left and a <code>value</code> on the right (see §8.4).</li>
 <li><code>in</code> is structurally an ordinary binary predicate; its right operand is typically an
-  <code>array</code> expression (§4.6). The model does not encode "left must be scalar / right must be
+  <code>array</code> expression (§4.6) or a <code>subquery</code> expression (§4.7) for set membership over a
+  nested query's result (§8.6). The model does not encode "left must be scalar / right must be
   a set" — that is a type/semantic constraint validated at a later stage, not part of the
   grammar.</li>
+<li>A <code>subquery</code> is not restricted to <code>in</code>'s right operand — it is an ordinary expression
+  kind and may appear anywhere any other expression may, including as a scalar comparison
+  operand (§8.7), a <code>select</code> projection, or a function argument (§4.7).</li>
 </ul>
 <h3 id="operator-codes">Operator codes</h3>
 <table>
@@ -436,9 +443,9 @@ the underscore-keyed GraphQL shape.</p>
 <hr />
 <h2 id="4-expression-grammar">4. Expression grammar</h2>
 <p>A uniform grammar used wherever a value can appear: <code>select</code> entries, function arguments,
-filter/<code>having</code> operands, and sort targets. An expression is one of five kinds, discriminated
+filter/<code>having</code> operands, and sort targets. An expression is one of six kinds, discriminated
 by <strong><code>type</code></strong>.</p>
-<h3 id="41-the-five-kinds">4.1 The five kinds</h3>
+<h3 id="41-the-six-kinds">4.1 The six kinds</h3>
 <pre><code class="language-jsonc">// column reference
 { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;amount&quot; }
 
@@ -467,25 +474,31 @@ by <strong><code>type</code></strong>.</p>
     { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;, &quot;value&quot;: &quot;SUCCESS&quot; },
     { &quot;type&quot;: &quot;value&quot;, &quot;value_type&quot;: &quot;string&quot;, &quot;value&quot;: &quot;PARTIAL&quot; }
 ]}
+
+// subquery — a nested structured query; usable anywhere any other expression is valid,
+// not only as the right operand of `in` (§4.7)
+{ &quot;type&quot;: &quot;subquery&quot;, &quot;query&quot;: { &quot;entity&quot;: &quot;…&quot;, &quot;mode&quot;: &quot;row&quot;, &quot;select&quot;: [ &lt;output_column&gt; ] } }
 </code></pre>
 <p>Java mapping (sealed interface + records ⇒ recursive Jackson deserialization via
 <code>@JsonTypeInfo(use = NAME, property = "type")</code> + <code>@JsonSubTypes</code>, and exhaustive <code>switch</code>
 in the translator):</p>
 <pre><code class="language-java">@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = &quot;type&quot;)
 @JsonSubTypes({
-    @JsonSubTypes.Type(value = FieldExpr.class, name = &quot;field&quot;),
-    @JsonSubTypes.Type(value = ValueExpr.class, name = &quot;value&quot;),
-    @JsonSubTypes.Type(value = ParamExpr.class, name = &quot;param&quot;),
-    @JsonSubTypes.Type(value = FnExpr.class,    name = &quot;fn&quot;),
-    @JsonSubTypes.Type(value = ArrayExpr.class, name = &quot;array&quot;)
+    @JsonSubTypes.Type(value = FieldExpr.class,    name = &quot;field&quot;),
+    @JsonSubTypes.Type(value = ValueExpr.class,    name = &quot;value&quot;),
+    @JsonSubTypes.Type(value = ParamExpr.class,    name = &quot;param&quot;),
+    @JsonSubTypes.Type(value = FnExpr.class,       name = &quot;fn&quot;),
+    @JsonSubTypes.Type(value = ArrayExpr.class,    name = &quot;array&quot;),
+    @JsonSubTypes.Type(value = SubqueryExpr.class, name = &quot;subquery&quot;)
 })
-public sealed interface Expr permits FieldExpr, ValueExpr, ParamExpr, FnExpr, ArrayExpr {}
+public sealed interface Expr permits FieldExpr, ValueExpr, ParamExpr, FnExpr, ArrayExpr, SubqueryExpr {}
 
 public record FieldExpr(String name) implements Expr {}
 public record ValueExpr(ValueType valueType, String value) implements Expr {} // value: always String
 public record ParamExpr(String name) implements Expr {}
 public record FnExpr(String name, boolean distinct, List&lt;Expr&gt; args) implements Expr {}
 public record ArrayExpr(List&lt;Expr&gt; items) implements Expr {}
+public record SubqueryExpr(StructuredQuery query) implements Expr {}
 </code></pre>
 <h3 id="42-literals-and-value_type">4.2 Literals and <code>value_type</code></h3>
 <ul>
@@ -587,6 +600,26 @@ works in this flat namespace and never expresses how a property is physically st
 <li>Which expression <em>kinds</em> are admissible as items in a given position (e.g. literals only
   vs. also <code>field</code>/<code>param</code>/<code>fn</code>), and how an <strong>empty</strong> array is handled, are determined by
   the DSL processor at query construction and are <strong>not specified here</strong>.</li>
+</ul>
+<h3 id="47-subqueries-subquery">4.7 Subqueries (<code>subquery</code>)</h3>
+<pre><code class="language-jsonc">{ &quot;type&quot;: &quot;subquery&quot;, &quot;query&quot;: { &lt;StructuredQuery&gt; } }
+</code></pre>
+<ul>
+<li>A <code>subquery</code> is an ordinary expression kind carrying a nested <code>StructuredQuery</code> (§1) under
+  the <code>query</code> key. Like <code>array</code> (§4.6), it is <strong>not restricted to a single position</strong> — it
+  may appear wherever any other expression may: as the right operand of <code>in</code> (set membership,
+  §8.6), as a scalar comparison operand (§8.7), as a <code>select</code> projection, or as a function
+  argument.</li>
+<li>It is translated to a nested <code>SELECT</code> — one SQL statement, not a separate round trip. The
+  subquery's <strong>first</strong> select column is the resulting value: the membership key when used as
+  <code>in</code>'s right operand, the scalar result everywhere else. The subquery may select
+  <strong>additional</strong> columns purely to drive its own <code>sort</code>/<code>page</code> (e.g. an aggregate to take
+  the latest N groups by some timestamp).</li>
+<li>The nested query may target <strong>any</strong> queryable entity, not only the entity of the enclosing
+  query — there is no same-entity restriction in the grammar or its validation. If the two
+  entities happen to live on different physical datasources, the resulting SQL is rejected by
+  the database itself (surfaced as an ordinary validation error) rather than by a structural
+  check in the model.</li>
 </ul>
 <hr />
 <h2 id="5-output-columns-select-group_by-distinct-and-having">5. Output columns (<code>select</code>), <code>group_by</code>, <code>distinct</code>, and <code>having</code></h2>
@@ -939,6 +972,54 @@ right operand is an <code>array</code> expression (§4.6):</p>
 }
 </code></pre>
 <p>→ <code>WHERE execution_status IN (?, ?)</code> — each array item bound as a parameter.</p>
+<h3 id="86-set-membership-in-with-a-subquery-operand">8.6 Set membership: <code>in</code> with a <code>subquery</code> operand (latest N groups)</h3>
+<p>Members of the 2 most-recently-computed <code>test_suite_run_id</code> groups of
+<code>metric_score_results</code>, in one statement — the subquery aggregates by
+<code>test_suite_run_id</code>, orders by the latest <code>computed_at_ms</code> per group descending, and takes 2:</p>
+<pre><code class="language-jsonc">{
+  &quot;op&quot;: &quot;in&quot;,
+  &quot;args&quot;: [
+    { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_suite_run_id&quot; },
+    { &quot;type&quot;: &quot;subquery&quot;, &quot;query&quot;: {
+        &quot;entity&quot;: &quot;metric_score_results&quot;,
+        &quot;mode&quot;: &quot;aggregate&quot;,
+        &quot;select&quot;: [
+          { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_suite_run_id&quot; } },
+          { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;max&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;computed_at_ms&quot; } ] }, &quot;as&quot;: &quot;latest&quot; }
+        ],
+        &quot;group_by&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;test_suite_run_id&quot; } ],
+        &quot;sort&quot;: [ { &quot;expr&quot;: { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;latest&quot; }, &quot;dir&quot;: &quot;desc&quot; } ],
+        &quot;page&quot;: { &quot;limit&quot;: 2 }
+    }}
+  ]
+}
+</code></pre>
+<p>→ <code>WHERE test_suite_run_id IN (SELECT test_suite_run_id FROM (SELECT test_suite_run_id,
+max(computed_at_ms) AS latest FROM metric_score_results GROUP BY test_suite_run_id ORDER BY
+latest DESC LIMIT 2) …)</code> — the subquery's <strong>first</strong> select column (<code>test_suite_run_id</code>) is
+the membership key; <code>latest</code> exists only to drive the subquery's own <code>ORDER BY</code>/<code>LIMIT</code>. An
+empty result from the subquery (e.g. no scored runs yet) means the enclosing <code>IN</code> matches
+nothing, so the outer query returns no rows.</p>
+<h3 id="87-subquery-as-a-scalar-operand">8.7 Subquery as a scalar comparison operand</h3>
+<p>A <code>subquery</code> is not limited to <code>in</code>'s right operand — here it supplies the right operand of an
+ordinary <code>eq</code>, matching only the row(s) at a run's single latest compute timestamp:</p>
+<pre><code class="language-jsonc">{
+  &quot;op&quot;: &quot;eq&quot;,
+  &quot;args&quot;: [
+    { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;computed_at_ms&quot; },
+    { &quot;type&quot;: &quot;subquery&quot;, &quot;query&quot;: {
+        &quot;entity&quot;: &quot;metric_score_results&quot;,
+        &quot;mode&quot;: &quot;aggregate&quot;,
+        &quot;select&quot;: [
+          { &quot;expr&quot;: { &quot;type&quot;: &quot;fn&quot;, &quot;name&quot;: &quot;max&quot;, &quot;args&quot;: [ { &quot;type&quot;: &quot;field&quot;, &quot;name&quot;: &quot;computed_at_ms&quot; } ] } }
+        ]
+    }}
+  ]
+}
+</code></pre>
+<p>→ <code>WHERE computed_at_ms = (SELECT max(computed_at_ms) FROM metric_score_results …)</code> — the
+subquery's single select column is used as a plain scalar value, not a membership set. The same
+<code>subquery</code> expression could equally appear as a <code>select</code> projection or a function argument.</p>
 <hr />
 <h2 id="9-validation-allowlist-hooks">9. Validation / allowlist hooks</h2>
 <p>Checked <strong>before execution</strong> — in the current implementation the checks are interleaved
@@ -960,8 +1041,9 @@ SQL runs unless the whole query translates. The list below describes the checks 
    rejected with <code>unknown field '&lt;name&gt;'</code>. <strong>There are no per-capability flags</strong>
    (<code>filterable</code>/<code>projectable</code>/<code>groupable</code>/<code>aggregatable</code>/<code>sortable</code>) and no
    per-field operator allowlist in the current model — a resolvable field may be used in any
-   position. Each <code>fn</code> resolves in the function allowlist (item 4); each <code>value</code>/<code>param</code>/<code>array</code>
-   is checked per items 5–7. A <code>field</code> reference may sit anywhere in the tree (e.g. inside
+   position. Each <code>fn</code> resolves in the function allowlist (item 4); each
+   <code>value</code>/<code>array</code>/<code>subquery</code> is checked per items 5–7; <code>param</code> is checked separately
+   below (currently rejected). A <code>field</code> reference may sit anywhere in the tree (e.g. inside
    <code>length(test_suite_id)</code>), not only as a top-level operand.</li>
 <li><strong>Functions</strong> — every <code>fn name</code> resolves in the function allowlist (item 4 of §4.4),
    else reject with <code>unsupported function '…'</code>; arity is checked (e.g. single-arg scalars,
@@ -975,6 +1057,13 @@ SQL runs unless the whole query translates. The list below describes the checks 
    used anywhere else it is rejected (<code>array expressions are only valid as the right operand of
    'in'</code>). The <code>in</code> operator requires a <strong>non-empty</strong> array whose items are <code>value</code>
    literals. Item homogeneity is not separately enforced beyond the per-item literal parse (§4.6).</li>
+<li><strong>Subqueries</strong> — unlike <code>array</code>, a <code>subquery</code> is <strong>not</strong> restricted to a single
+   position; it is valid anywhere any other expression is (§4.7, §8.6, §8.7). Its nested
+   <code>StructuredQuery</code> is validated by recursively applying this same checklist to it (entity
+   resolution, expression trees, functions, etc.). There is no same-entity restriction between
+   the subquery and its enclosing query; a subquery targeting an entity on a different physical
+   datasource than the enclosing query fails at the database with an ordinary SQL error rather
+   than a structural check in the model.</li>
 <li><strong>Output columns (<code>select</code>)</strong> — in <strong>aggregate mode</strong>, <code>select</code> is required
    (non-empty, else reject) and every entry that is not a <code>group_by</code>-member <code>field</code> requires
    an <code>as</code> alias (<code>aggregate output column requires an 'as' alias</code>). <strong>Not currently
@@ -1026,6 +1115,10 @@ target, not yet fully config-only).</p>
   item-kind and empty-array handling left to the DSL processor.</li>
 <li><strong>D10</strong> — runtime-parameter (<code>param</code>) source/registry definition and its trust
   boundary are an implementation detail, out of this spec's scope.</li>
+<li><strong>D11</strong> — <code>subquery</code> is a sixth expression kind (§4.7), usable anywhere any other
+  expression is (not restricted to <code>in</code>'s right operand, unlike <code>array</code>/D9); there is no
+  same-entity restriction between a subquery and its enclosing query — a cross-datasource
+  subquery simply fails at the database, mapped to the ordinary SQL-error validation path.</li>
 </ul>
 <h4 id="103-other-settled-design-choices">Other settled design choices</h4>
 <ul>

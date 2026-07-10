@@ -368,6 +368,7 @@ public class TestSuiteEvaluationJob {
                     .testSuiteId(run.getTestSuiteId())
                     .computationId(metricContext.getComputationId())
                     .overallExpression(resolveOverallExpression(run))
+                    .computedAtMs(clock.millis())
                     .cancellationSignal(cancellationSignal)
                     .build();
             metricScoreComputation.execute(ctx);

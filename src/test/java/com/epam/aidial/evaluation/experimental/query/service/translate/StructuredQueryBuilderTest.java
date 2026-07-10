@@ -1,8 +1,11 @@
 package com.epam.aidial.evaluation.experimental.query.service.translate;
 
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
@@ -28,15 +31,19 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityRegistry;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
+import org.jooq.Table;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Renders the SQL produced by the model → jOOQ translation layer for {@code test_suites} without a
@@ -46,19 +53,82 @@ class StructuredQueryBuilderTest {
 
     private final DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
     private final Map<String, QueryFieldBinding> bindings = new JooqTableSchemaResolver().bindings(TEST_SUITES);
+    private final Map<String, QueryFieldBinding> evalSummaryBindings =
+            new JooqTableSchemaResolver().bindings(TEST_CASE_EVAL_SUMMARIES);
 
     private final ValueExprToObjectMapper valueExprToObjectMapper = new ValueExprToObjectMapper();
     private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(new PostgresJsonPathAccessor());
+
+    @SuppressWarnings("unchecked")
+    private final ObjectProvider<StructuredQueryBuilder> queryBuilderProvider = mock(ObjectProvider.class);
+
     private final ExprTranslator exprTranslator = new ExprTranslator(
-            valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
+            valueExprToObjectMapper,
+            jsonbFieldResolver,
+            QueryFunctionTestSupport.registry(valueExprToObjectMapper),
+            queryBuilderProvider);
 
     private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
-    private final StructuredQueryBuilder builder = new StructuredQueryBuilder(exprTranslator, filterTranslator);
+
+    private final StructuredQueryEntityResolver testSuitesResolver = new StructuredQueryEntityResolver() {
+        @Override
+        public String entity() {
+            return "test_suites";
+        }
+
+        @Override
+        public DSLContext dsl() {
+            return dsl;
+        }
+
+        @Override
+        public Table<?> table() {
+            return TEST_SUITES;
+        }
+
+        @Override
+        public Map<String, QueryFieldBinding> bindings(StructuredQuery query) {
+            return bindings;
+        }
+    };
+
+    private final StructuredQueryEntityResolver evalSummariesResolver = new StructuredQueryEntityResolver() {
+        @Override
+        public String entity() {
+            return "eval_summaries";
+        }
+
+        @Override
+        public DSLContext dsl() {
+            return dsl;
+        }
+
+        @Override
+        public Table<?> table() {
+            return TEST_CASE_EVAL_SUMMARIES;
+        }
+
+        @Override
+        public Map<String, QueryFieldBinding> bindings(StructuredQuery query) {
+            return evalSummaryBindings;
+        }
+    };
+
+    private final StructuredQueryEntityRegistry entityRegistry =
+            new StructuredQueryEntityRegistry(List.of(testSuitesResolver, evalSummariesResolver));
+
+    private final StructuredQueryBuilder builder =
+            new StructuredQueryBuilder(exprTranslator, filterTranslator, entityRegistry);
     private final QueryParameterResolver parameterResolver = new QueryParameterResolver();
 
+    {
+        // Stubbed here, after `builder` exists, since ExprTranslator needs the provider before
+        // StructuredQueryBuilder can be constructed (breaks the constructor cycle in production too).
+        when(queryBuilderProvider.getObject()).thenReturn(builder);
+    }
+
     private String render(StructuredQuery query) {
-        return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, query))
-                .toLowerCase(Locale.ROOT);
+        return dsl.renderInlined(builder.build(query)).toLowerCase(Locale.ROOT);
     }
 
     private static FieldExpr field(String name) {
@@ -113,8 +183,8 @@ class StructuredQueryBuilderTest {
     }
 
     @Test
-    @DisplayName("rejects an 'in' subquery targeting a different entity than the enclosing query")
-    void rejectsCrossEntitySubquery() {
+    @DisplayName("allows an 'in' subquery to target a different, registered entity")
+    void allowsCrossEntitySubquery() {
         StructuredQuery subquery = new StructuredQuery(
                 "eval_summaries",
                 null,
@@ -126,8 +196,62 @@ class StructuredQueryBuilderTest {
                 null,
                 new OffsetPage(0, 10, false));
         FilterNode filter = cmp(ComparisonOp.IN, field("id"), new SubqueryExpr(subquery));
+        String sql = render(rowQuery(filter, null, null));
+        assertThat(sql).contains("\"id\" in (select").contains("in_subquery");
+    }
+
+    @Test
+    @DisplayName("rejects an 'in' subquery targeting an entity with no registered resolver")
+    void rejectsUnregisteredEntitySubquery() {
+        StructuredQuery subquery = new StructuredQuery(
+                "metric_score_results",
+                null,
+                QueryMode.ROW,
+                false,
+                List.of(col(field("id"))),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 10, false));
+        FilterNode filter = cmp(ComparisonOp.IN, field("id"), new SubqueryExpr(subquery));
         StructuredQuery query = rowQuery(filter, null, null);
         assertThatThrownBy(() -> render(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("translates a subquery used as a scalar comparison operand, not just 'in'")
+    void translatesScalarSubqueryComparison() {
+        StructuredQuery subquery = new StructuredQuery(
+                "test_suites",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(new FnExpr("max", false, List.of(field("created_at_ms"))), "latest")),
+                List.of(),
+                null,
+                null,
+                new OffsetPage(0, 1, false));
+        FilterNode filter = cmp(ComparisonOp.EQ, field("created_at_ms"), new SubqueryExpr(subquery));
+        String sql = render(rowQuery(filter, null, null));
+        assertThat(sql).contains("\"created_at_ms\" = (select").contains("in_subquery");
+    }
+
+    @Test
+    @DisplayName("translates a subquery used as a select projection")
+    void translatesSubqueryAsSelectProjection() {
+        StructuredQuery subquery = new StructuredQuery(
+                "test_suites",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(new FnExpr("max", false, List.of(field("created_at_ms"))), "latest")),
+                List.of(),
+                null,
+                null,
+                new OffsetPage(0, 1, false));
+        StructuredQuery query = rowQuery(null, List.of(col(field("id")), col(new SubqueryExpr(subquery))), null);
+        String sql = render(query);
+        assertThat(sql).contains("in_subquery");
     }
 
     @Test
@@ -258,7 +382,7 @@ class StructuredQueryBuilderTest {
     @DisplayName("rejects a select entry with a missing expression as a validation error, not a server fault")
     void rejectsSelectEntryWithMissingExpr() {
         StructuredQuery query = rowQuery(null, List.of(new OutputColumn(null, "x")), null);
-        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query))
+        assertThatThrownBy(() -> builder.build(query))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("expr");
     }
@@ -324,7 +448,7 @@ class StructuredQueryBuilderTest {
     void rejectsUnknownField() {
         StructuredQuery query =
                 rowQuery(cmp(ComparisonOp.EQ, field("nonExisting"), value(ValueType.STRING, "x")), null, null);
-        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query))
+        assertThatThrownBy(() -> builder.build(query))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("unknown field 'nonExisting'");
     }
@@ -334,7 +458,7 @@ class StructuredQueryBuilderTest {
     void rejectsFlattenedFieldWithoutBackingColumn() {
         // test_suites has no metric_values column, so the published metric: family is not resolvable here.
         StructuredQuery query = rowQuery(null, List.of(col(field("metric::Accuracy::score"))), null);
-        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query))
+        assertThatThrownBy(() -> builder.build(query))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("unknown field 'metric::Accuracy::score'");
     }
@@ -344,7 +468,7 @@ class StructuredQueryBuilderTest {
     void rejectsCursorPaging() {
         StructuredQuery query = new StructuredQuery(
                 "test_suites", null, QueryMode.ROW, false, null, null, null, null, new CursorPage(null, 25));
-        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query))
+        assertThatThrownBy(() -> builder.build(query))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("cursor pagination");
     }
@@ -353,7 +477,7 @@ class StructuredQueryBuilderTest {
     @DisplayName("rejects an unbound param expression when no binding is supplied")
     void rejectsUnboundParamExpression() {
         StructuredQuery query = rowQuery(cmp(ComparisonOp.EQ, field("name"), new ParamExpr("p")), null, null);
-        assertThatThrownBy(() -> builder.build(dsl, TEST_SUITES, bindings, query))
+        assertThatThrownBy(() -> builder.build(query))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("unbound query parameter 'p'");
     }
@@ -397,7 +521,7 @@ class StructuredQueryBuilderTest {
     }
 
     private String renderWithParams(StructuredQuery query, Map<String, Expr> params) {
-        return dsl.renderInlined(builder.build(dsl, TEST_SUITES, bindings, parameterResolver.resolve(query, params)))
+        return dsl.renderInlined(builder.build(parameterResolver.resolve(query, params)))
                 .toLowerCase(Locale.ROOT);
     }
 }

@@ -74,7 +74,7 @@ configurations {
 }
 
 checkstyle {
-    toolVersion = "13.6.0"
+    toolVersion = "13.7.0"
     configDirectory = file("$rootProject.projectDir/checkstyle")
 
     configProperties['org.checkstyle.google.suppressionfilter.config'] =
@@ -246,6 +246,10 @@ tasks.named('test') {
         excludeEngines 'archunit'
     }
     maxHeapSize = '1g'
+    // The forked test JVM does NOT inherit org.gradle.jvmargs from gradle.properties.
+    // Netty calls System.loadLibrary, which triggers a JDK 25 restricted-native-access
+    // warning unless the (unnamed-module) caller is granted native access explicitly.
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
 }
 
 tasks.withType(JavaCompile).configureEach {

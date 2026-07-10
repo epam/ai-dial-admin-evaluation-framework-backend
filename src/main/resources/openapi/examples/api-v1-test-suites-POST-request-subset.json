@@ -3,7 +3,8 @@
   "datasetId": null,
   "deploymentRef": {
     "id": "deploy-001",
-    "name": "Production"
+    "name": "Production",
+    "type": "dial-application"
   },
   "endpointRef": {
     "method": "POST",

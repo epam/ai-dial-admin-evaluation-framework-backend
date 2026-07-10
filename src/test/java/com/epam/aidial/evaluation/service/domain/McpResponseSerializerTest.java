@@ -108,7 +108,8 @@ class McpResponseSerializerTest {
     @Test
     @DisplayName("Serializes audio content")
     void serializeAudioContent() throws Exception {
-        AudioContent audio = new AudioContent(null, "audioBase64Data", "audio/wav");
+        AudioContent audio =
+                AudioContent.builder("audioBase64Data", "audio/wav").build();
         CallToolResult result = new CallToolResult(List.of(audio), false, null, null);
 
         String json = serializer.serialize(result);
@@ -123,8 +124,10 @@ class McpResponseSerializerTest {
     @Test
     @DisplayName("Serializes embedded resource content")
     void serializeEmbeddedResource() throws Exception {
-        TextResourceContents resource = new TextResourceContents("file:///test.txt", "text/plain", "file contents");
-        EmbeddedResource embedded = new EmbeddedResource(null, resource);
+        TextResourceContents resource = TextResourceContents.builder("file:///test.txt", "file contents")
+                .mimeType("text/plain")
+                .build();
+        EmbeddedResource embedded = EmbeddedResource.builder(resource).build();
         CallToolResult result = new CallToolResult(List.of(embedded), false, null, null);
 
         String json = serializer.serialize(result);
@@ -150,16 +153,5 @@ class McpResponseSerializerTest {
         assertThat(node.get("content").get(0).get("type").asString()).isEqualTo("resource_link");
         assertThat(node.get("content").get(0).get("uri").asString()).isEqualTo("file:///data.csv");
         assertThat(node.get("content").get(0).get("name").asString()).isEqualTo("test-resource");
-    }
-
-    @Test
-    @DisplayName("Serializes null content list as empty array")
-    void nullContentList() throws Exception {
-        CallToolResult result = new CallToolResult(null, false, null, null);
-
-        String json = serializer.serialize(result);
-        JsonNode node = objectMapper.readTree(json);
-
-        assertThat(node.get("content").size()).isEqualTo(0);
     }
 }

@@ -197,6 +197,29 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("snapshot preserves deploymentRef.type set on the suite")
+    void snapshotPreservesDeploymentRefType() throws Exception {
+        // Create a suite whose deploymentRef carries a type, plus a runnable test case
+        TestSuiteResponseDto suite = createTestSuiteWithTestCase("Snapshot Deployment Type Suite", "dial-model");
+
+        mockDeploymentSuccess();
+        UUID runId = createRun(suite.getId());
+        TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 15);
+        assertThat(terminal.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        // The frozen snapshot returned over HTTP carries the deployment type
+        assertThat(terminal.getSuiteSnapshot()).isNotNull();
+        assertThat(terminal.getSuiteSnapshot().getDeploymentRef()).isNotNull();
+        assertThat(terminal.getSuiteSnapshot().getDeploymentRef().getType()).isEqualTo("dial-model");
+
+        // And it is present in the persisted snapshot JSON
+        String snapshotJson =
+                testSuiteRunRepository.findById(runId).orElseThrow().getSuiteSnapshot();
+        JsonNode snapshotNode = objectMapper.readTree(snapshotJson);
+        assertThat(snapshotNode.path("deploymentRef").path("type").asString()).isEqualTo("dial-model");
+    }
+
+    @Test
     @DisplayName("snapshot includes datasetRef with id, version, and name of the bound dataset")
     void snapshotIncludesDatasetRef() throws Exception {
         TestSuiteResponseDto suite = createTestSuiteWithTestCase("Snapshot DatasetRef Suite");
@@ -403,6 +426,10 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
     // --- Helper Methods ---
 
     private TestSuiteResponseDto createTestSuiteWithTestCase(String name) {
+        return createTestSuiteWithTestCase(name, null);
+    }
+
+    private TestSuiteResponseDto createTestSuiteWithTestCase(String name, String deploymentType) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name)
                 .description("Description for " + name)
@@ -410,6 +437,7 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
                         .id("deployment-1")
                         .name("Deployment One")
                         .version("v1")
+                        .type(deploymentType)
                         .build())
                 .endpointRef(EndpointContractDto.builder()
                         .method(HttpMethod.POST)

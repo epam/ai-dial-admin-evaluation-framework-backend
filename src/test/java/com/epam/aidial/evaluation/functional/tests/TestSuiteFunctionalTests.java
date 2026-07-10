@@ -110,6 +110,46 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should persist and return deploymentRef.type")
+    void shouldPersistAndReturnDeploymentRefType() {
+        // Given: a suite whose deploymentRef carries an application type
+        TestSuiteRequestDto request = buildTestSuiteRequest("Deployment Type Suite", "Desc");
+        request.getDeploymentRef().setType("dial-application");
+
+        // When
+        ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        // Then: the create response echoes the type
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        assertThat(created.getBody().getDeploymentRef().getType()).isEqualTo("dial-application");
+
+        // And: a fresh GET returns the persisted type
+        ResponseEntity<TestSuiteResponseDto> fetched = restTemplate.getForEntity(
+                apiUrl("/test-suites/" + created.getBody().getId()), TestSuiteResponseDto.class);
+        assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fetched.getBody()).isNotNull();
+        assertThat(fetched.getBody().getDeploymentRef().getType()).isEqualTo("dial-application");
+    }
+
+    @Test
+    @DisplayName("Should return null deploymentRef.type when omitted")
+    void shouldReturnNullDeploymentRefTypeWhenOmitted() {
+        // Given: buildTestSuiteRequest leaves deploymentRef.type unset
+        TestSuiteResponseDto created = createTestSuite("No Deployment Type Suite");
+
+        // When
+        ResponseEntity<TestSuiteResponseDto> fetched =
+                restTemplate.getForEntity(apiUrl("/test-suites/" + created.getId()), TestSuiteResponseDto.class);
+
+        // Then: type reads back as null (optional field)
+        assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fetched.getBody()).isNotNull();
+        assertThat(fetched.getBody().getDeploymentRef().getType()).isNull();
+    }
+
+    @Test
     @DisplayName("Should return 404 for non-existent test suite")
     void shouldReturn404ForNonExistentTestSuite() {
         // Given

@@ -55,7 +55,11 @@ public abstract class McpEvaluationRunFunctionalTests extends AbstractMcpFunctio
         createTestCase(suite.getId(), "TC2", Map.of("userQuery", "Explain ML"));
 
         CallToolResult callResult = new CallToolResult(
-                List.of(new TextContent("{\"answer\": \"AI is artificial intelligence\"}")), false, null, null);
+                List.of(TextContent.builder("{\"answer\": \"AI is artificial intelligence\"}")
+                        .build()),
+                false,
+                null,
+                null);
         when(mcpToolInvoker.callTool(eq("my-toolset"), eq("search"), any(), any(), any()))
                 .thenReturn(callResult);
 
@@ -114,8 +118,12 @@ public abstract class McpEvaluationRunFunctionalTests extends AbstractMcpFunctio
         TestSuiteResponseDto suite = createMcpSuite();
         createTestCase(suite.getId(), "TC1", Map.of("userQuery", "bad query"));
 
-        CallToolResult errorResult =
-                new CallToolResult(List.of(new TextContent("Tool execution failed: invalid input")), true, null, null);
+        CallToolResult errorResult = new CallToolResult(
+                List.of(TextContent.builder("Tool execution failed: invalid input")
+                        .build()),
+                true,
+                null,
+                null);
         when(mcpToolInvoker.callTool(any(), any(), any(), any(), any())).thenReturn(errorResult);
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
@@ -134,7 +142,11 @@ public abstract class McpEvaluationRunFunctionalTests extends AbstractMcpFunctio
         createTestCase(suite.getId(), "TC1", Map.of("userQuery", "What is AI?"));
 
         CallToolResult callResult = new CallToolResult(
-                List.of(new TextContent("{\"answer\": \"AI is artificial intelligence\"}")), false, null, null);
+                List.of(TextContent.builder("{\"answer\": \"AI is artificial intelligence\"}")
+                        .build()),
+                false,
+                null,
+                null);
         when(mcpToolInvoker.callTool(any(), any(), any(), any(), any())).thenReturn(callResult);
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);

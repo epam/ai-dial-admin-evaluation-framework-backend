@@ -41,7 +41,8 @@ public class McpToolInvoker {
         McpSyncClient client = createClient(deploymentId, token, transport);
         try {
             client.initialize();
-            return client.callTool(new CallToolRequest(toolName, arguments));
+            return client.callTool(
+                    CallToolRequest.builder(toolName).arguments(arguments).build());
         } catch (McpInvocationException e) {
             throw e;
         } catch (Exception e) { // MCP SDK boundary: reactor block() and transport throw diverse exception types
@@ -84,13 +85,13 @@ public class McpToolInvoker {
                         configuration.getMcpProxyBaseUrl())
                 .endpoint(buildMcpEndpoint(deploymentId))
                 .clientBuilder(httpClientBuilder)
-                .customizeRequest(requestBuilder -> requestBuilder
+                .httpRequestCustomizer((requestBuilder, _, _, _, _) -> requestBuilder
                         .header("Authorization", "Bearer " + token)
                         .timeout(Duration.ofMillis(configuration.getReadTimeoutMs())))
                 .build();
 
         return McpClient.sync(transport)
-                .clientInfo(new Implementation(CLIENT_NAME, CLIENT_VERSION))
+                .clientInfo(Implementation.builder(CLIENT_NAME, CLIENT_VERSION).build())
                 .capabilities(ClientCapabilities.builder().build())
                 .jsonSchemaValidator(noOpSchemaValidator())
                 .build();
@@ -99,17 +100,18 @@ public class McpToolInvoker {
     private McpSyncClient createSseClient(String deploymentId, String token) {
         // HttpClientSseClientTransport applies connectTimeout via the builder (not the HttpClient.Builder),
         // because its build() method calls clientBuilder.connectTimeout(this.connectTimeout) itself.
+        @SuppressWarnings("deprecation")
         HttpClientSseClientTransport transport = HttpClientSseClientTransport.builder(
                         configuration.getMcpProxyBaseUrl())
                 .sseEndpoint(buildSseEndpoint(deploymentId))
                 .connectTimeout(Duration.ofMillis(configuration.getConnectTimeoutMs()))
-                .customizeRequest(requestBuilder -> requestBuilder
+                .httpRequestCustomizer((requestBuilder, _, _, _, _) -> requestBuilder
                         .header("Authorization", "Bearer " + token)
                         .timeout(Duration.ofMillis(configuration.getReadTimeoutMs())))
                 .build();
 
         return McpClient.sync(transport)
-                .clientInfo(new Implementation(CLIENT_NAME, CLIENT_VERSION))
+                .clientInfo(Implementation.builder(CLIENT_NAME, CLIENT_VERSION).build())
                 .capabilities(ClientCapabilities.builder().build())
                 .jsonSchemaValidator(noOpSchemaValidator())
                 .build();

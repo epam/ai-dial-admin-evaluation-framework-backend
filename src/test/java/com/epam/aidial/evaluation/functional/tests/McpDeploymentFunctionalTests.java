@@ -216,11 +216,14 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("GET /deployments/tools?deploymentId=... returns tool list with input schema")
     void listToolsReturnsTools() {
-        McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
-                "object", Map.of("query", Map.of("type", "string")), List.of("query"), null, null, null);
+        Map<String, Object> inputSchema = Map.of(
+                "type", "object",
+                "properties", Map.of("query", Map.of("type", "string")),
+                "required", List.of("query"));
         when(mcpToolInvoker.listTools(eq("my-toolset"), any(), any()))
-                .thenReturn(
-                        List.of(new McpSchema.Tool("search", null, "Search the web", inputSchema, null, null, null)));
+                .thenReturn(List.of(McpSchema.Tool.builder("search", inputSchema)
+                        .description("Search the web")
+                        .build()));
 
         ResponseEntity<List<ToolDefinitionDto>> response = restTemplate.exchange(
                 apiUrl("/deployments/tools?deploymentId=my-toolset"),
@@ -240,8 +243,9 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
     void listToolsWithSlashContainingIdWorks() {
         String deploymentId = "toolsets/public/3DMolVisualizer_(copy)__0.0.2";
         when(mcpToolInvoker.listTools(eq(deploymentId), any(), any()))
-                .thenReturn(
-                        List.of(new McpSchema.Tool("visualize", null, "Visualize molecule", null, null, null, null)));
+                .thenReturn(List.of(McpSchema.Tool.builder("visualize", Map.of())
+                        .description("Visualize molecule")
+                        .build()));
 
         URI uri = UriComponentsBuilder.fromUriString(apiUrl("/deployments/tools"))
                 .queryParam("deploymentId", deploymentId)

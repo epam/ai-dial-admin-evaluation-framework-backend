@@ -504,7 +504,8 @@ class EvaluationWorkerTest {
             TestCaseRunInput input = buildTestCaseRunInput();
             EvaluationContext context = buildMcpContext();
 
-            CallToolResult callResult = new CallToolResult(List.of(new TextContent("result text")), false, null, null);
+            CallToolResult callResult = new CallToolResult(
+                    List.of(TextContent.builder("result text").build()), false, null, null);
 
             when(mcpRequestResolver.resolve(any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
@@ -532,7 +533,8 @@ class EvaluationWorkerTest {
             TestCaseRunInput input = buildTestCaseRunInput();
             EvaluationContext context = buildMcpContext();
 
-            CallToolResult errorResult = new CallToolResult(List.of(new TextContent("tool error")), true, null, null);
+            CallToolResult errorResult =
+                    new CallToolResult(List.of(TextContent.builder("tool error").build()), true, null, null);
 
             when(mcpRequestResolver.resolve(any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
@@ -601,7 +603,8 @@ class EvaluationWorkerTest {
             TestCaseRunInput input = buildTestCaseRunInput();
             EvaluationContext context = buildMcpContext();
 
-            CallToolResult callResult = new CallToolResult(List.of(new TextContent("result")), false, null, null);
+            CallToolResult callResult =
+                    new CallToolResult(List.of(TextContent.builder("result").build()), false, null, null);
 
             when(mcpRequestResolver.resolve(any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()

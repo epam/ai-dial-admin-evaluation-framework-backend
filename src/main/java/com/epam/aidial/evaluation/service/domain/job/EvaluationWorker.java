@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
+import com.epam.aidial.evaluation.constants.TracingConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
@@ -30,6 +31,7 @@ import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
+import com.epam.aidial.evaluation.utils.EvalBaggage;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
@@ -92,13 +94,15 @@ public class EvaluationWorker {
                 .setAttribute("testcase.id", input.getTestCaseId().toString())
                 .setAttribute("testcase.name", input.getTestCaseName())
                 .setAttribute("run.index", String.valueOf(runIndex))
-                .setAttribute("eval.run.id", context.getRunId().toString())
-                .setAttribute("eval.suite.id", context.getSuiteId().toString())
+                .setAttribute(TracingConstants.EVAL_RUN_ID, context.getRunId().toString())
+                .setAttribute(
+                        TracingConstants.EVAL_SUITE_ID, context.getSuiteId().toString())
                 .startSpan();
         long execStartedAtMs = clock.millis();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 
-        try (Scope scope = span.makeCurrent()) {
+        try (Scope scope = span.makeCurrent();
+                Scope baggageScope = EvalBaggage.withRunContext(context.getRunId(), context.getSuiteId())) {
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {
                 return executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs);

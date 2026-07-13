@@ -5,9 +5,11 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
+import com.epam.aidial.evaluation.constants.TracingConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
+import com.epam.aidial.evaluation.utils.EvalBaggage;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
@@ -59,15 +61,20 @@ public class MetricEvaluationWorker {
                 .spanBuilder("metric.tsmd.evaluate")
                 .setAttribute("tsmd.name", tsmd.getName())
                 .setAttribute("tsmd.provider.id", tsmd.getDeclarationProviderId())
-                .setAttribute("eval.run.id", context.getTestSuiteRunId().toString())
+                .setAttribute(
+                        TracingConstants.EVAL_RUN_ID,
+                        context.getTestSuiteRunId().toString())
                 .setAttribute("result.id", result.getId().toString())
                 .setAttribute("testcase.id", result.getTestCaseId().toString())
                 .setAttribute("testcase.name", result.getTestCaseName())
-                .setAttribute("eval.suite.id", context.getTestSuiteId().toString())
+                .setAttribute(
+                        TracingConstants.EVAL_SUITE_ID, context.getTestSuiteId().toString())
                 .setAttribute("metric.declaration.name", tsmd.getMetricDeclarationName())
                 .startSpan();
 
-        try (Scope scope = span.makeCurrent()) {
+        try (Scope scope = span.makeCurrent();
+                Scope baggageScope =
+                        EvalBaggage.withRunContext(context.getTestSuiteRunId(), context.getTestSuiteId())) {
             providerSemaphore.acquire();
             try {
                 return invokeWithRetries(tsmd, result, context);

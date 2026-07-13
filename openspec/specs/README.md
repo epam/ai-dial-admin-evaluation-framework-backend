@@ -134,7 +134,7 @@ Specs for database, observability, and operational concerns.
 - **[database-and-migrations](database-and-migrations/spec.md)** — Implemented
   PostgreSQL JDBC + Flyway migration conventions.
 - **[observability-and-logging](observability-and-logging/spec.md)** — Implemented
-  Correlation IDs, request logging, dynamic log levels, OTel distributed tracing (W3C traceparent propagation, OTLP export, span attributes on eval and metric spans for Grafana Tempo navigation).
+  Correlation IDs, request logging, dynamic log levels, OTel distributed tracing (W3C traceparent propagation, OTLP export, span attributes on eval and metric spans for Grafana Tempo navigation, and OTel Baggage propagation of eval run/suite id on run-scoped outbound calls for downstream analytics grouping).
 - **[health](health/spec.md)** — Implemented
   Health endpoint surface.
 - **[configuration-docs](configuration-docs/spec.md)** — Implemented

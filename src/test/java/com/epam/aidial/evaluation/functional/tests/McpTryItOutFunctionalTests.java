@@ -50,8 +50,8 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
         TestSuiteResponseDto suite = createMcpSuiteWithTestCaseSchema();
         TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("userQuery", "What is AI?"));
 
-        CallToolResult result =
-                new CallToolResult(List.of(new TextContent("AI is artificial intelligence")), false, null, null);
+        CallToolResult result = new CallToolResult(
+                List.of(TextContent.builder("AI is artificial intelligence").build()), false, null, null);
         when(mcpToolInvoker.callTool(eq("my-toolset"), eq("search"), any(), any(), any()))
                 .thenReturn(result);
 
@@ -74,7 +74,8 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
     void shouldTryItOutWithMcpVariables() {
         TestSuiteResponseDto suite = createMcpSuiteWithTestCaseSchema();
 
-        CallToolResult result = new CallToolResult(List.of(new TextContent("Variable result")), false, null, null);
+        CallToolResult result = new CallToolResult(
+                List.of(TextContent.builder("Variable result").build()), false, null, null);
         when(mcpToolInvoker.callTool(eq("my-toolset"), eq("search"), any(), any(), any()))
                 .thenReturn(result);
 

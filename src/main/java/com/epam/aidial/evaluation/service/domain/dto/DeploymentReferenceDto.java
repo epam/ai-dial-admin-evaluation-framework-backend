@@ -27,4 +27,8 @@ public class DeploymentReferenceDto {
     @Size(max = 50)
     @Schema(example = "1.0")
     private String version;
+
+    @Size(max = 50)
+    @Schema(example = "dial-application", description = "Deployment type: dial-model or dial-application")
+    private String type;
 }

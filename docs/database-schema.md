@@ -131,7 +131,8 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 {
   "id": "string",
   "name": "string",
-  "version": "string"
+  "version": "string",
+  "type": "string (optional, e.g. dial-model / dial-application)"
 }
 ```
 
@@ -420,7 +421,7 @@ Tracks async test suite evaluation runs.
   "snapshotVersion": "2",
   "suiteType": "DEPLOYMENT|MCP_TOOL",
   "datasetRef": { "id": "uuid", "version": 0, "name": "string" },
-  "deploymentRef": { "id": "string", "name": "string", "version": "string" },
+  "deploymentRef": { "id": "string", "name": "string", "version": "string", "type": "string (optional)" },
   "endpointRef": { /* EndpointContractDto */ },
   "requestTemplate": { /* RequestTemplateDto */ },
   "inputBindings": [ /* List of InputBindingDto */ ],

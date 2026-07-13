@@ -6,7 +6,8 @@
   "deploymentRef": {
     "id": "deploy-001",
     "name": "Production",
-    "version": "1.0"
+    "version": "1.0",
+    "type": "dial-application"
   },
   "endpointRef": {
     "method": "POST",

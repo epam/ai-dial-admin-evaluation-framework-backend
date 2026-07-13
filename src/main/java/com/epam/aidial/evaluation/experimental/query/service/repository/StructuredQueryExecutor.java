@@ -37,29 +37,26 @@ public class StructuredQueryExecutor {
      *     unsupported field/function/feature, or is rejected by the database as not type-checking
      *     against the data (e.g. aggregating a non-numeric JSONB field) — all client errors (HTTP 400)
      */
-    public QueryResultPage execute(StructuredQuery query) {
-        if (query == null) {
+    public QueryResultPage execute(StructuredQuery rawQuery) {
+        if (rawQuery == null) {
             throw new ValidationException("query must not be null");
         }
-        final StructuredQueryEntityResolver resolver = entityRegistry.require(query.entity());
-        final StructuredQuery rewritten = resolver.rewrite(query);
+        final StructuredQueryEntityResolver resolver = entityRegistry.require(rawQuery.entity());
+        final StructuredQuery query = resolver.rewrite(rawQuery);
 
         // build() validates fields/functions/features and may throw ValidationException — let it propagate.
-        final SelectQuery<Record> select = queryBuilder.build(rewritten);
+        final SelectQuery<Record> select = queryBuilder.build(query);
         try {
             final List<Map<String, Object>> rows = select.fetch().intoMaps();
-            final Long totalCount = totalCount(rewritten);
+            final Long totalCount = totalCount(query);
             log.debug(
-                    "Executed structured {} query: {} row(s), totalCount={}",
-                    rewritten.entity(),
-                    rows.size(),
-                    totalCount);
+                    "Executed structured {} query: {} row(s), totalCount={}", query.entity(), rows.size(), totalCount);
             return new QueryResultPage(rows, totalCount);
         } catch (BadSqlGrammarException | DataIntegrityViolationException e) {
             // The SQL is well-formed but does not type-check against the data (e.g. avg() of a JSONB
             // object, or casting a non-numeric value to numeric). That is a client query error, not a
             // server fault, so surface it as HTTP 400 rather than a 500.
-            log.warn("Structured {} query rejected by the database: {}", rewritten.entity(), e.getMessage(), e);
+            log.warn("Structured {} query rejected by the database: {}", query.entity(), e.getMessage(), e);
             throw new ValidationException(
                     "the structured query could not be executed; check field/function/type compatibility: "
                             + mostSpecificMessage(e));

@@ -3,6 +3,8 @@ package com.epam.aidial.evaluation.experimental.query.service.translate;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
@@ -22,15 +24,19 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityRegistry;
+import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
+import org.jooq.Table;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Renders the SQL produced for the analytics {@code eval_summaries} entity without a database. The
@@ -45,14 +51,54 @@ class EvalSummaryQueryRenderTest {
 
     private final ValueExprToObjectMapper valueExprToObjectMapper = new ValueExprToObjectMapper();
     private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(new PostgresJsonPathAccessor());
+
+    @SuppressWarnings("unchecked")
+    private final ObjectProvider<StructuredQueryBuilder> queryBuilderProvider = mock(ObjectProvider.class);
+
     private final ExprTranslator exprTranslator = new ExprTranslator(
-            valueExprToObjectMapper, jsonbFieldResolver, QueryFunctionTestSupport.registry(valueExprToObjectMapper));
+            valueExprToObjectMapper,
+            jsonbFieldResolver,
+            QueryFunctionTestSupport.registry(valueExprToObjectMapper),
+            queryBuilderProvider);
+
     private final FilterTranslator filterTranslator = new FilterTranslator(exprTranslator);
-    private final StructuredQueryBuilder builder = new StructuredQueryBuilder(exprTranslator, filterTranslator);
+
+    private final StructuredQueryEntityResolver evalSummariesResolver = new StructuredQueryEntityResolver() {
+        @Override
+        public String entity() {
+            return "eval_summaries";
+        }
+
+        @Override
+        public DSLContext dsl() {
+            return dsl;
+        }
+
+        @Override
+        public Table<?> table() {
+            return TEST_CASE_EVAL_SUMMARIES;
+        }
+
+        @Override
+        public Map<String, QueryFieldBinding> bindings(StructuredQuery query) {
+            return bindings;
+        }
+    };
+
+    private final StructuredQueryEntityRegistry entityRegistry =
+            new StructuredQueryEntityRegistry(List.of(evalSummariesResolver));
+
+    private final StructuredQueryBuilder builder =
+            new StructuredQueryBuilder(exprTranslator, filterTranslator, entityRegistry);
+
+    {
+        // Stubbed here, after `builder` exists, since ExprTranslator needs the provider before
+        // StructuredQueryBuilder can be constructed (breaks the constructor cycle in production too).
+        when(queryBuilderProvider.getObject()).thenReturn(builder);
+    }
 
     private String render(StructuredQuery query) {
-        return dsl.renderInlined(builder.build(dsl, TEST_CASE_EVAL_SUMMARIES, bindings, query))
-                .toLowerCase(Locale.ROOT);
+        return dsl.renderInlined(builder.build(query)).toLowerCase(Locale.ROOT);
     }
 
     @Test

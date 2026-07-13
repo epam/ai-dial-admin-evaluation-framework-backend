@@ -14,6 +14,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = ValueExpr.class, name = "value"),
     @JsonSubTypes.Type(value = ParamExpr.class, name = "param"),
     @JsonSubTypes.Type(value = FnExpr.class, name = "fn"),
-    @JsonSubTypes.Type(value = ArrayExpr.class, name = "array")
+    @JsonSubTypes.Type(value = ArrayExpr.class, name = "array"),
+    @JsonSubTypes.Type(value = SubqueryExpr.class, name = "subquery")
 })
-public sealed interface Expr permits FieldExpr, ValueExpr, ParamExpr, FnExpr, ArrayExpr {}
+public sealed interface Expr permits FieldExpr, ValueExpr, ParamExpr, FnExpr, ArrayExpr, SubqueryExpr {}

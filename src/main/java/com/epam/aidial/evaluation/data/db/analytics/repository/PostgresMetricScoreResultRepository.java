@@ -39,11 +39,15 @@ public class PostgresMetricScoreResultRepository implements MetricScoreResultRep
                                 METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID,
                                 r.getTestSuiteRunId().toString())
                         .set(
+                                METRIC_SCORE_RESULT.TEST_SUITE_ID,
+                                r.getTestSuiteId().toString())
+                        .set(
                                 METRIC_SCORE_RESULT.COMPUTATION_ID,
                                 r.getComputationId().toString())
                         .set(METRIC_SCORE_RESULT.METRIC_SCORE_NAME, r.getMetricScoreName())
                         .set(METRIC_SCORE_RESULT.METRIC_NAME, r.getMetricName())
                         .set(METRIC_SCORE_RESULT.VALUE, r.getValue())
+                        .set(METRIC_SCORE_RESULT.COMPUTED_AT_MS, r.getComputedAtMs())
                         .onConflict(
                                 METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID,
                                 METRIC_SCORE_RESULT.COMPUTATION_ID,

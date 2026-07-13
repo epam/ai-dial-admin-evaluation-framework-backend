@@ -39,6 +39,8 @@ class MetricScoreComputationExecutorTest {
     /** The built-in per-metric statistic names (AVG/P10/P90/MIN/MAX), all run per metric field. */
     private static final List<String> PER_METRIC_NAMES = List.of("AVG", "P10", "P90", "MIN", "MAX");
 
+    private static final long FIXED_MILLIS = 1_700_000_000_000L;
+
     /**
      * A custom (non-default) overall expression in JSON, exercising the snapshot-driven parse path. It is
      * self-contained — it references a real metric column directly and binds no executor placeholders.
@@ -66,6 +68,7 @@ class MetricScoreComputationExecutorTest {
                 .testSuiteId(SUITE_ID)
                 .computationId(COMPUTATION_ID)
                 .overallExpression(overallExpression)
+                .computedAtMs(FIXED_MILLIS)
                 .cancellationSignal(new AtomicBoolean(false))
                 .build();
     }
@@ -115,6 +118,11 @@ class MetricScoreComputationExecutorTest {
         final List<MetricScoreResult> saved = captureSaved();
         // 5 built-in stats over the single field, plus the default overall (single-metric → computed).
         assertThat(saved).hasSize(6);
+        // Every result carries the run's suite and the fixed compute timestamp (shared across the computation).
+        assertThat(saved).allSatisfy(r -> {
+            assertThat(r.getTestSuiteId()).isEqualTo(SUITE_ID);
+            assertThat(r.getComputedAtMs()).isEqualTo(FIXED_MILLIS);
+        });
         assertThat(saved)
                 .filteredOn(r -> PER_METRIC_NAMES.contains(r.getMetricScoreName()))
                 .extracting(

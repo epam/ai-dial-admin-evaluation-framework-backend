@@ -860,10 +860,12 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 |--------|------|----------|---------|-------------|
 | `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
 | `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | Reference to test suite run (soft FK) |
+| `test_suite_id` | VARCHAR(36) | NOT NULL | - | Reference to the run's owning test suite (soft FK, denormalized for suite-scoped queries) |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `metric_score_name` | VARCHAR(255) | NOT NULL | - | Statistic / definition name (e.g. `AVG`, `P90`, `overall`) |
 | `metric_name` | VARCHAR(255) | NOT NULL | - | Metric output field as `<metricName>.<outputField>` |
 | `value` | DOUBLE PRECISION | NULL | - | Computed numeric value |
+| `computed_at_ms` | BIGINT | NOT NULL | - | Epoch-millisecond compute timestamp; shared by all results of a computation |
 
 ### Primary Key
 
@@ -880,6 +882,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
 | `idx_metric_score_result_run_computation` | `(test_suite_run_id, computation_id)` | BTREE | Lookup results for a run's computation |
+| `idx_metric_score_result_suite_computed` | `(test_suite_id, computed_at_ms)` | BTREE | Suite-scoped, time-ordered retrieval (latest N results for a suite) |
 
 ---
 
@@ -933,6 +936,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.8 | `V1.8__NormalizeErrorShapedMetricValues.sql` | Normalized transport-failure metric_values from synthetic `{"error": null}` to real output field names; updated corresponding metric_infos entries |
 | V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |
 | V1.11 | `V1.11__CreateRocAucScoreFunction.sql` | Created `roc_auc_score(double precision[], double precision[])` SQL function computing the rank-sum ROC AUC score over paired label/probability arrays |
+| V1.12 | `V1.12__AddSuiteAndTimestampToMetricScoreResult.sql` | Added `test_suite_id` and `computed_at_ms` to metric_score_result (backfilled, NOT NULL) with index `idx_metric_score_result_suite_computed` for suite-scoped latest-N retrieval |
 
 ---
 

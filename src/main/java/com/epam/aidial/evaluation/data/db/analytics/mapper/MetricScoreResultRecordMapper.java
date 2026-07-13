@@ -14,10 +14,12 @@ public class MetricScoreResultRecordMapper {
         return MetricScoreResult.builder()
                 .id(UUID.fromString(r.getId()))
                 .testSuiteRunId(UUID.fromString(r.getTestSuiteRunId()))
+                .testSuiteId(UUID.fromString(r.getTestSuiteId()))
                 .computationId(UUID.fromString(r.getComputationId()))
                 .metricScoreName(r.getMetricScoreName())
                 .metricName(r.getMetricName())
                 .value(r.getValue())
+                .computedAtMs(r.getComputedAtMs())
                 .build();
     }
 }

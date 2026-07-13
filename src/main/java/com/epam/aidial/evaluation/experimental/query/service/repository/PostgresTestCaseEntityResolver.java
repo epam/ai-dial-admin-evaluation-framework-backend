@@ -19,24 +19,24 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
+import org.jooq.Table;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 /**
- * Postgres implementation of {@link TestCaseQueryRepository}: binds the complex {@code test_cases}
- * entity to the generated {@code TEST_CASES} table on the meta datasource ({@code metaDsl}). Because
- * the flattened {@code data::<field>} typing is dataset-specific, this repository requires the query
- * to carry a {@code dataset_id} equality filter (used both to scope the returned rows and to build
- * typed field bindings), builds instance bindings via {@link TestCaseFieldBindingsBuilder}, and passes
- * them to the {@link StructuredQueryExecutor} overload that bypasses the per-table binding cache. A
- * missing or non-UUID {@code dataset_id} filter is rejected as a client error (HTTP 400).
+ * Resolves the complex {@code test_cases} entity to the generated {@code TEST_CASES} table on the meta
+ * datasource ({@code metaDsl}). Because the flattened {@code data::<field>} typing is dataset-specific,
+ * {@link #bindings} requires the query to carry a {@code dataset_id} equality filter (used both to
+ * scope the returned rows and to build typed field bindings) and builds instance bindings via
+ * {@link TestCaseFieldBindingsBuilder}. A missing or non-UUID {@code dataset_id} filter is rejected as
+ * a client error (HTTP 400).
  */
 @Repository
 @LogExecution
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "datasource.meta.vendor", havingValue = "POSTGRES")
-public class PostgresTestCaseQueryRepository implements TestCaseQueryRepository {
+public class PostgresTestCaseEntityResolver implements StructuredQueryEntityResolver {
 
     private static final String ENTITY = "test_cases";
     private static final String DATASET_ID_FIELD = "dataset_id";
@@ -44,19 +44,26 @@ public class PostgresTestCaseQueryRepository implements TestCaseQueryRepository 
     @Qualifier("metaDsl")
     private final DSLContext dsl;
 
-    private final StructuredQueryExecutor executor;
     private final TestCaseFieldBindingsBuilder bindingsBuilder;
 
     @Override
-    public String supportedEntity() {
+    public String entity() {
         return ENTITY;
     }
 
     @Override
-    public QueryResultPage execute(StructuredQuery query) {
-        final UUID datasetId = requireDatasetId(query);
-        final Map<String, QueryFieldBinding> bindings = bindingsBuilder.build(datasetId);
-        return executor.execute(ENTITY, dsl, TEST_CASES, query, bindings);
+    public DSLContext dsl() {
+        return dsl;
+    }
+
+    @Override
+    public Table<?> table() {
+        return TEST_CASES;
+    }
+
+    @Override
+    public Map<String, QueryFieldBinding> bindings(StructuredQuery query) {
+        return bindingsBuilder.build(requireDatasetId(query));
     }
 
     /**

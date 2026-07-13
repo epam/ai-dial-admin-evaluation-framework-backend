@@ -25,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 @DisplayName("Metric Score Computation (Phase 3) Functional Tests")
 public abstract class MetricScoreComputationFunctionalTests extends BaseFunctionalTest {
 
+    private static final long COMPUTED_AT_MS = 1_700_000_600_000L;
     private static final String OUTPUT_SCHEMA = "{\"properties\":{\"score\":{\"type\":\"number\"}}}";
     private static final String CLASSIFIER_OUTPUT_SCHEMA =
             "{\"properties\":{\"label\":{\"type\":\"number\"},\"probability\":{\"type\":\"number\"}}}";
@@ -90,8 +91,16 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         // overall = unweighted mean of the per-metric averages; one metric whose AVG is 0.5.
         assertThat(value(results, "overall", "overall")).isCloseTo(0.5, within(1e-6));
 
+        assertThat(results).allSatisfy(result -> {
+            assertThat(result.getComputationId()).isEqualTo(computationId);
+            // The suite is denormalized onto every result, and each carries a compute timestamp.
+            assertThat(result.getTestSuiteId()).isEqualTo(suiteId);
+            assertThat(result.getComputedAtMs()).isNotNull().isPositive();
+        });
+        // All results of one computation share a single compute timestamp.
         assertThat(results)
-                .allSatisfy(result -> assertThat(result.getComputationId()).isEqualTo(computationId));
+                .extracting(MetricScoreResult::getComputedAtMs)
+                .containsOnly(results.getFirst().getComputedAtMs());
     }
 
     @Test
@@ -254,6 +263,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
                 .testSuiteId(suiteId)
                 .computationId(computationId)
                 .overallExpression(overallExpression)
+                .computedAtMs(COMPUTED_AT_MS)
                 .cancellationSignal(new AtomicBoolean(false))
                 .build();
     }

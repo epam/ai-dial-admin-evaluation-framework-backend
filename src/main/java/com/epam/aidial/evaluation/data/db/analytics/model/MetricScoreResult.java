@@ -13,8 +13,10 @@ import lombok.NoArgsConstructor;
 public class MetricScoreResult {
     private UUID id;
     private UUID testSuiteRunId;
+    private UUID testSuiteId;
     private UUID computationId;
     private String metricScoreName;
     private String metricName;
     private Double value;
+    private Long computedAtMs;
 }

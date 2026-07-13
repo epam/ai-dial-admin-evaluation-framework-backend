@@ -53,6 +53,9 @@ class TestSuiteEvaluationJobTest {
     private RunnableTestCaseSelector runnableTestCaseSelector;
 
     @Mock
+    private ConversationAssembler conversationAssembler;
+
+    @Mock
     private TestCaseRunInputRepository testCaseRunInputRepository;
 
     @Mock
@@ -96,6 +99,7 @@ class TestSuiteEvaluationJobTest {
                 testSuiteRepository,
                 datasetRepository,
                 runnableTestCaseSelector,
+                conversationAssembler,
                 testCaseRunInputRepository,
                 sseService,
                 evaluationRunProperties,

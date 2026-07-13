@@ -23,7 +23,6 @@ public class TestSuite {
     private String responseColumns;
     private String requestTemplate;
     private String inputBindings;
-    private boolean multiTurn;
     private String mcpDeploymentRef;
     private String toolRef;
     private String argumentTemplate;

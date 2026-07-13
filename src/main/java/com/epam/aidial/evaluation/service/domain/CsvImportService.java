@@ -57,6 +57,8 @@ import tools.jackson.databind.ObjectMapper;
 public class CsvImportService {
 
     private static final String TEST_CASE_NAME_HEADER = "testCaseName";
+    private static final String CONVERSATION_ID_HEADER = "conversationId";
+    private static final String TURN_INDEX_HEADER = "turnIndex";
     private static final int SAMPLE_ROWS_LIMIT = 10;
 
     private final DatasetRepository datasetRepository;
@@ -69,6 +71,7 @@ public class CsvImportService {
     private final SchemaTypeCoercer schemaTypeCoercer;
     private final ObjectMapper objectMapper;
     private final ValidationWarningsSerializer warningsSerializer;
+    private final ConversationFieldsValidator conversationFieldsValidator;
 
     /**
      * Dry-run: parse and validate without persisting. Returns preview with detected columns and sample rows.
@@ -886,6 +889,12 @@ public class CsvImportService {
             if (TEST_CASE_NAME_HEADER.equalsIgnoreCase(header)) {
                 mappedTo = "testCaseName";
                 fieldName = "testCaseName";
+            } else if (CONVERSATION_ID_HEADER.equalsIgnoreCase(header)) {
+                mappedTo = "conversationId";
+                fieldName = "conversationId";
+            } else if (TURN_INDEX_HEADER.equalsIgnoreCase(header)) {
+                mappedTo = "turnIndex";
+                fieldName = "turnIndex";
             } else {
                 mappedTo = "data";
                 fieldName = header;
@@ -970,6 +979,9 @@ public class CsvImportService {
         String testCaseName = null;
         Map<String, Object> data = new LinkedHashMap<>();
         boolean hasJsonParseErrors = false;
+        UUID conversationId = null;
+        Integer turnIndex = null;
+        List<String> conversationErrors = new ArrayList<>();
 
         for (int i = 0; i < bindings.size() && i < record.size(); i++) {
             ColumnBinding b = bindings.get(i);
@@ -978,6 +990,24 @@ public class CsvImportService {
 
             switch (b.mappedTo()) {
                 case "testCaseName" -> testCaseName = value != null ? value.toString() : null;
+                case "conversationId" -> {
+                    if (raw != null && !raw.isBlank()) {
+                        try {
+                            conversationId = UUID.fromString(raw.trim());
+                        } catch (IllegalArgumentException e) {
+                            conversationErrors.add("conversationId is not a valid UUID: '" + raw.trim() + "'");
+                        }
+                    }
+                }
+                case "turnIndex" -> {
+                    if (raw != null && !raw.isBlank()) {
+                        try {
+                            turnIndex = Integer.valueOf(raw.trim());
+                        } catch (NumberFormatException e) {
+                            conversationErrors.add("turnIndex is not a valid integer: '" + raw.trim() + "'");
+                        }
+                    }
+                }
                 case "data" -> {
                     if (b.fieldName() != null && !b.fieldName().isBlank()) {
                         // APPEND + non-empty schema: discard unknown columns
@@ -1014,7 +1044,24 @@ public class CsvImportService {
             testCaseName = String.format("Row %0" + padWidth + "d", dataRowIndex);
         }
 
-        return new ParsedRow(rowNumber, testCaseName, data, hasJsonParseErrors);
+        // Only apply structural (both-or-neither, bounds) validation when both cells parsed cleanly;
+        // a parse error already invalidates the row and could otherwise mask the real cause.
+        if (conversationErrors.isEmpty()) {
+            try {
+                conversationFieldsValidator.validate(conversationId, turnIndex);
+            } catch (ValidationException e) {
+                conversationErrors.add(e.getMessage());
+            }
+        }
+        // A row with malformed grouping fields is persisted as invalid without grouping, so it cannot
+        // corrupt conversation assembly at snapshot time.
+        if (!conversationErrors.isEmpty()) {
+            conversationId = null;
+            turnIndex = null;
+        }
+
+        return new ParsedRow(
+                rowNumber, testCaseName, data, hasJsonParseErrors, conversationId, turnIndex, conversationErrors);
     }
 
     /**
@@ -1049,11 +1096,19 @@ public class CsvImportService {
     }
 
     private static ValidationResult combineWithJsonParseErrors(ValidationResult vr, ParsedRow row) {
-        boolean valid = vr.isValid() && !row.hasJsonParseErrors();
+        boolean valid = vr.isValid()
+                && !row.hasJsonParseErrors()
+                && row.conversationErrors().isEmpty();
         List<ValidationWarningDto> warnings = new ArrayList<>(vr.getWarnings() != null ? vr.getWarnings() : List.of());
         if (row.hasJsonParseErrors()) {
             warnings.add(ValidationWarningDto.builder()
                     .message("Cell could not be parsed as JSON for OBJECT/ARRAY field")
+                    .code(ValidationWarningCode.UNKNOWN)
+                    .build());
+        }
+        for (String conversationError : row.conversationErrors()) {
+            warnings.add(ValidationWarningDto.builder()
+                    .message(conversationError)
                     .code(ValidationWarningCode.UNKNOWN)
                     .build());
         }
@@ -1121,6 +1176,8 @@ public class CsvImportService {
                 .id(null)
                 .testCaseName(row.testCaseName())
                 .data(row.data())
+                .conversationId(row.conversationId())
+                .turnIndex(row.turnIndex())
                 .valid(vr.isValid())
                 .validationWarnings(vr.getWarnings())
                 .createdAt(null)
@@ -1133,6 +1190,8 @@ public class CsvImportService {
                 .datasetId(datasetId)
                 .testCaseName(row.testCaseName())
                 .data(warningsSerializer.serializeMap(row.data()))
+                .conversationId(row.conversationId())
+                .turnIndex(row.turnIndex())
                 .valid(vr.isValid())
                 .validationWarnings(warningsSerializer.serializeWarnings(vr.getWarnings()))
                 .build();
@@ -1145,7 +1204,13 @@ public class CsvImportService {
     private record ColumnBinding(String headerName, String mappedTo, String fieldName) {}
 
     private record ParsedRow(
-            int rowNumber, String testCaseName, Map<String, Object> data, boolean hasJsonParseErrors) {}
+            int rowNumber,
+            String testCaseName,
+            Map<String, Object> data,
+            boolean hasJsonParseErrors,
+            UUID conversationId,
+            Integer turnIndex,
+            List<String> conversationErrors) {}
 
     private record InsertResult(int validCount, int invalidCount, int skippedCount, int overriddenCount) {}
 }

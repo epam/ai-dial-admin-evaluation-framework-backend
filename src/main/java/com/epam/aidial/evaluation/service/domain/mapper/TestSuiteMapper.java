@@ -65,7 +65,6 @@ public class TestSuiteMapper {
                 .responseColumns(responseColumns)
                 .requestTemplate(requestTemplate)
                 .inputBindings(inputBindings)
-                .multiTurn(entity.isMultiTurn())
                 .mcpDeploymentRef(mcpDeploymentRef)
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
@@ -96,7 +95,6 @@ public class TestSuiteMapper {
                 .responseColumns(jsonbMapper.mapResponseColumns(dto.getResponseColumns()))
                 .requestTemplate(jsonbMapper.map(dto.getRequestTemplate()))
                 .inputBindings(jsonbMapper.mapInputBindings(dto.getInputBindings()))
-                .multiTurn(dto.isMultiTurn())
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(dto.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()))
@@ -121,7 +119,6 @@ public class TestSuiteMapper {
         entity.setResponseColumns(jsonbMapper.mapResponseColumns(dto.getResponseColumns()));
         entity.setRequestTemplate(jsonbMapper.map(dto.getRequestTemplate()));
         entity.setInputBindings(jsonbMapper.mapInputBindings(dto.getInputBindings()));
-        entity.setMultiTurn(dto.isMultiTurn());
         entity.setMcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()));
         entity.setToolRef(jsonbMapper.mapToolRef(dto.getToolRef()));
         entity.setArgumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()));
@@ -193,7 +190,6 @@ public class TestSuiteMapper {
                 .responseColumns(responseColumns)
                 .requestTemplate(requestTemplate)
                 .inputBindings(inputBindings)
-                .multiTurn(source.isMultiTurn())
                 .mcpDeploymentRef(mcpDeploymentRef)
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
@@ -230,7 +226,6 @@ public class TestSuiteMapper {
                         entity.getInputBindings() != null
                                 ? jsonbMapper.mapInputBindings(entity.getInputBindings())
                                 : null)
-                .multiTurn(entity.isMultiTurn())
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(entity.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(entity.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(entity.getArgumentTemplate()))

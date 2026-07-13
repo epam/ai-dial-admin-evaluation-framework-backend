@@ -8,7 +8,6 @@ import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.FormPartType;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestBodyDto;
@@ -81,7 +80,6 @@ public class SuiteValidationService {
                 .responseColumns(jsonbMapper.mapResponseColumns(suite.getResponseColumns()))
                 .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
                 .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()))
-                .multiTurn(suite.isMultiTurn())
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
@@ -160,14 +158,10 @@ public class SuiteValidationService {
             warnings.add(warning(null, "$.requestTemplate", typeHintWarning, ValidationWarningCode.TYPE));
         }
 
-        // Shared binding cross-validation against the single inputBindings (multi-turn and single-turn alike).
+        // Shared binding cross-validation against the single inputBindings. Multi-turn is emergent from the
+        // dataset's conversation rows (row-based) — there is no suite-level flag or multi-turn body check here;
+        // a body lacking a top-level messages array fails per-conversation at run time as an ERROR row.
         warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId));
-
-        // Multi-turn additionally requires a chat-completions body (top-level messages array). Turn count and
-        // array-shape are per-test-case data concerns evaluated at execution time, not suite-validation concerns.
-        if (dto.isMultiTurn()) {
-            warnings.addAll(validateMultiTurnBody(template));
-        }
 
         // Multipart FILE part constant value validation (deployment-specific)
         if (template != null
@@ -242,26 +236,6 @@ public class SuiteValidationService {
                 .valid(warnings.isEmpty())
                 .warnings(warnings)
                 .build();
-    }
-
-    /**
-     * Multi-turn ({@code multiTurn == true}) body validation. A multi-turn suite uses its single
-     * {@code inputBindings} (validated by the shared {@link BindingValidator}); the only additional config-time
-     * requirement is that the request body is JSON with a top-level {@code messages} array (chat-completions
-     * contract). Turn count and array-shape are per-test-case data concerns resolved at execution time, not here.
-     */
-    private List<ValidationWarningDto> validateMultiTurnBody(RequestTemplateDto template) {
-        if (template == null
-                || !(template.getBody() instanceof JsonRequestBodyDto jsonBody)
-                || jsonBody.getContent() == null
-                || !(jsonBody.getContent().get("messages") instanceof List)) {
-            return List.of(warning(
-                    null,
-                    "$.requestTemplate.body",
-                    "Multi-turn suite requires a JSON request body with a top-level 'messages' array",
-                    ValidationWarningCode.REQUIRED));
-        }
-        return List.of();
     }
 
     private static ValidationWarningDto warning(

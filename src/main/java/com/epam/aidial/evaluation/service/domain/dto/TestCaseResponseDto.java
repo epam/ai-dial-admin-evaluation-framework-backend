@@ -24,6 +24,19 @@ public class TestCaseResponseDto {
 
     private Map<String, Object> data;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "Row-based multi-turn grouping key. Present only for turns of a conversation; omitted for "
+                    + "single-turn test cases.",
+            example = "7b1c9f2e-3a4d-4c5b-8e6f-1a2b3c4d5e6f")
+    private UUID conversationId;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "0-based turn position within the conversation. Omitted for single-turn test cases.",
+            example = "0")
+    private Integer turnIndex;
+
     @Schema(example = "true")
     private boolean valid;
 

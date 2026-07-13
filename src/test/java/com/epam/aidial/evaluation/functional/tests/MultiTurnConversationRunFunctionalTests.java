@@ -27,7 +27,6 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,13 +44,15 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * End-to-end functional test for multi-turn conversations: create → run a multi-turn suite (single
- * {@code inputBindings} bound to an array-valued dataset column) against a mocked DIAL Core deployment. The
- * number of turns is derived per test case from the array-column length. Each turn is persisted as its own
- * scalar result row carrying {@code turn_index}/{@code total_turns} (its raw per-turn {@code response_body}
- * and scalar {@code extracted_columns}), and two test cases in the same run can execute different turn counts.
+ * End-to-end functional test for row-based multi-turn conversations: create → run a DEPLOYMENT suite against
+ * a mocked DIAL Core deployment where a conversation is an ordered group of discrete {@code test_cases} rows
+ * (one row per turn, sharing a {@code conversationId} with contiguous {@code turnIndex} from 0). Multi-turn is
+ * emergent from the data — there is no suite-level flag. Each turn is persisted as its own scalar result row
+ * carrying {@code turn_index}/{@code total_turns}, its raw per-turn {@code response_body}, and scalar
+ * {@code extracted_columns}; a broken conversation surfaces as one degenerate {@code 0/0} ERROR row and the
+ * run still completes.
  */
-@DisplayName("Multi-turn Conversation Run Functional Tests")
+@DisplayName("Multi-turn Conversation Run Functional Tests (row-based)")
 public abstract class MultiTurnConversationRunFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
@@ -69,10 +70,11 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     @Test
     @DisplayName("Should persist one scalar result row per turn with turn_index/total_turns for a 2-turn conversation")
     void shouldRunTwoTurnConversation() throws JacksonException {
-        TestSuiteResponseDto suite = createMultiTurnSuite();
-        assertThat(suite.isMultiTurn()).isTrue();
+        TestSuiteResponseDto suite = createConversationSuite();
         assertThat(suite.isValid()).isTrue();
-        createTestCase(suite.getId(), "TC1", Map.of("turns", List.of("hello", "how are you")));
+        UUID conversationId = UUID.randomUUID();
+        createTurn(suite.getId(), "conv1 / turn 0", conversationId, 0, "hello");
+        createTurn(suite.getId(), "conv1 / turn 1", conversationId, 1, "how are you");
 
         // Each turn returns a distinct assistant reply so we can verify per-turn rows/extraction.
         AtomicInteger callCount = new AtomicInteger();
@@ -129,11 +131,16 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("Should derive turn count per test case: 2 vs 3 turns yields 2 vs 3 per-turn rows")
-    void shouldRunPerTestCaseTurnCounts() {
-        TestSuiteResponseDto suite = createMultiTurnSuite();
-        createTestCase(suite.getId(), "TC2", Map.of("turns", List.of("a", "b")));
-        createTestCase(suite.getId(), "TC3", Map.of("turns", List.of("a", "b", "c")));
+    @DisplayName("Should run per-conversation turn counts: 2-turn and 3-turn conversations yield 2 and 3 per-turn rows")
+    void shouldRunPerConversationTurnCounts() {
+        TestSuiteResponseDto suite = createConversationSuite();
+        UUID convA = UUID.randomUUID();
+        createTurn(suite.getId(), "convA / turn 0", convA, 0, "a");
+        createTurn(suite.getId(), "convA / turn 1", convA, 1, "b");
+        UUID convB = UUID.randomUUID();
+        createTurn(suite.getId(), "convB / turn 0", convB, 0, "a");
+        createTurn(suite.getId(), "convB / turn 1", convB, 1, "b");
+        createTurn(suite.getId(), "convB / turn 2", convB, 2, "c");
 
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenAnswer(inv -> new DeploymentInvocationResult(
@@ -149,21 +156,107 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+        // Counting is conversation-granular: 2 runnable conversations (not 5 turn rows).
+        assertThat(run.getNumberOfTestCases()).isEqualTo(2);
 
-        // TC2 → 2 per-turn rows, TC3 → 3 per-turn rows: 5 rows total
+        // convA → 2 per-turn rows (total_turns=2), convB → 3 per-turn rows (total_turns=3): 5 rows total
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
         assertThat(results).hasSize(5);
 
-        Map<String, Integer> rowCountByName = new HashMap<>();
-        for (Map<String, Object> row : results) {
-            assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("SUCCESS");
-            String name = String.valueOf(row.get("test_case_name"));
-            rowCountByName.merge(name, 1, Integer::sum);
-            // total_turns on each row equals that test case's turn count
-            int expectedTurns = "TC2".equals(name) ? 2 : 3;
-            assertThat(((Number) row.get("total_turns")).intValue()).isEqualTo(expectedTurns);
-        }
-        assertThat(rowCountByName).containsEntry("TC2", 2).containsEntry("TC3", 3);
+        long twoTurnRows = results.stream()
+                .peek(row ->
+                        assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("SUCCESS"))
+                .filter(row -> ((Number) row.get("total_turns")).intValue() == 2)
+                .count();
+        long threeTurnRows = results.stream()
+                .filter(row -> ((Number) row.get("total_turns")).intValue() == 3)
+                .count();
+        assertThat(twoTurnRows).isEqualTo(2);
+        assertThat(threeTurnRows).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Should surface a broken conversation (gap in turn indexes) as one 0/0 ERROR row; run completes")
+    void shouldSurfaceBrokenConversationAsErrorRow() {
+        TestSuiteResponseDto suite = createConversationSuite();
+        UUID conversationId = UUID.randomUUID();
+        // Missing turn 1 → non-contiguous prefix → broken conversation.
+        createTurn(suite.getId(), "broken / turn 0", conversationId, 0, "hello");
+        createTurn(suite.getId(), "broken / turn 2", conversationId, 2, "third");
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(1);
+        Map<String, Object> row = results.get(0);
+        assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("ERROR");
+        assertThat(((Number) row.get("turn_index")).intValue()).isEqualTo(0);
+        assertThat(((Number) row.get("total_turns")).intValue()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("Tail-only disable truncates the conversation to its surviving prefix (2 of 3 turns run)")
+    void shouldTruncateConversationOnTailDisable() {
+        TestSuiteResponseDto suite = createConversationSuite();
+        UUID conversationId = UUID.randomUUID();
+        createTurn(suite.getId(), "conv / turn 0", conversationId, 0, "a");
+        createTurn(suite.getId(), "conv / turn 1", conversationId, 1, "b");
+        TestCaseResponseDto lastTurn = createTurn(suite.getId(), "conv / turn 2", conversationId, 2, "c");
+        // Disable the trailing turn — the enabled turns still form a contiguous prefix 0..1.
+        metaTestDataHelper.appendDisabledTestCaseIds(suite.getId(), List.of(lastTurn.getId()));
+
+        stubConstantReply();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(2);
+        assertThat(results).allMatch(r -> ((Number) r.get("total_turns")).intValue() == 2);
+        assertThat(results).allMatch(r -> "SUCCESS".equals(String.valueOf(r.get("execution_status"))));
+    }
+
+    @Test
+    @DisplayName("testCaseFilter includes a conversation only when ALL its turns match")
+    void shouldIncludeConversationOnlyWhenAllTurnsMatchFilter() {
+        TestSuiteResponseDto suite = createConversationSuite();
+        UUID matching = UUID.randomUUID();
+        createTurn(suite.getId(), "match / turn 0", matching, 0, Map.of("question", "a", "topic", "keep"));
+        createTurn(suite.getId(), "match / turn 1", matching, 1, Map.of("question", "b", "topic", "keep"));
+        UUID partial = UUID.randomUUID();
+        createTurn(suite.getId(), "partial / turn 0", partial, 0, Map.of("question", "a", "topic", "keep"));
+        createTurn(suite.getId(), "partial / turn 1", partial, 1, Map.of("question", "b", "topic", "drop"));
+        // All-match filter: only the conversation whose EVERY turn has topic == "keep" is runnable.
+        metaTestDataHelper.setSuiteTestCaseFilter(
+                suite.getId(),
+                "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"data::topic\"},"
+                        + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"keep\"}]}");
+
+        stubConstantReply();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+        // Only the fully-matching conversation counts / runs (2 turns); the partial one is excluded.
+        assertThat(run.getNumberOfTestCases()).isEqualTo(1);
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(2);
+        assertThat(results).allMatch(r -> ((Number) r.get("total_turns")).intValue() == 2);
+    }
+
+    private void stubConstantReply() {
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenAnswer(inv -> new DeploymentInvocationResult(
+                        200,
+                        false,
+                        Map.of(
+                                "id",
+                                "mock",
+                                "choices",
+                                List.of(Map.of("message", Map.of("role", "assistant", "content", "reply")))),
+                        null,
+                        new HttpHeaders()));
     }
 
     private String contentOf(JsonNode responseBody) {
@@ -175,27 +268,32 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
                 .asString();
     }
 
-    private TestSuiteResponseDto createMultiTurnSuite() {
+    private TestSuiteResponseDto createConversationSuite() {
         String schemaJson;
         try {
-            schemaJson = objectMapper.writeValueAsString(List.of(FieldDefinitionDto.builder()
-                    .name("turns")
-                    .type(SchemaFieldType.ARRAY)
-                    .required(true)
-                    .build()));
+            schemaJson = objectMapper.writeValueAsString(List.of(
+                    FieldDefinitionDto.builder()
+                            .name("question")
+                            .type(SchemaFieldType.STRING)
+                            .required(true)
+                            .build(),
+                    FieldDefinitionDto.builder()
+                            .name("topic")
+                            .type(SchemaFieldType.STRING)
+                            .required(false)
+                            .build()));
         } catch (JacksonException e) {
             throw new AssertionError("Failed to serialize test-case schema", e);
         }
-        Dataset dataset = metaTestDataHelper.createDataset("multiturn-" + UUID.randomUUID(), schemaJson);
+        Dataset dataset = metaTestDataHelper.createDataset("conversation-" + UUID.randomUUID(), schemaJson);
 
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
-                .name("Multi-turn Suite " + UUID.randomUUID())
-                .description("multi-turn POC")
+                .name("Conversation Suite " + UUID.randomUUID())
+                .description("row-based multi-turn")
                 .datasetId(dataset.getId())
-                .multiTurn(true)
                 .inputBindings(List.of(InputBindingDto.builder()
-                        .templateVariable("turn")
-                        .dataField("turns")
+                        .templateVariable("question")
+                        .dataField("question")
                         .build()))
                 .deploymentRef(DeploymentReferenceDto.builder()
                         .id("deployment-1")
@@ -216,7 +314,7 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
                                         "model",
                                         "gpt-4",
                                         "messages",
-                                        List.of(Map.of("role", "user", "content", "${{turn}}"))))
+                                        List.of(Map.of("role", "user", "content", "${{question}}"))))
                                 .build())
                         .build())
                 .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
@@ -233,11 +331,19 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
         return response.getBody();
     }
 
-    private TestCaseResponseDto createTestCase(UUID suiteId, String name, Map<String, Object> data) {
+    private TestCaseResponseDto createTurn(
+            UUID suiteId, String name, UUID conversationId, int turnIndex, String question) {
+        return createTurn(suiteId, name, conversationId, turnIndex, Map.of("question", question));
+    }
+
+    private TestCaseResponseDto createTurn(
+            UUID suiteId, String name, UUID conversationId, int turnIndex, Map<String, Object> data) {
         ResponseEntity<TestCaseResponseDto> response = restTemplate.postForEntity(
                 apiUrl("/datasets/" + metaTestDataHelper.getDatasetId(suiteId) + "/test-cases"),
                 jsonEntity(TestCaseRequestDto.builder()
                         .testCaseName(name)
+                        .conversationId(conversationId)
+                        .turnIndex(turnIndex)
                         .data(data)
                         .build()),
                 TestCaseResponseDto.class);

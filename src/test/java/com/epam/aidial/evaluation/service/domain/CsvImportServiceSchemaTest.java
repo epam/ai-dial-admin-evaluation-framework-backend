@@ -86,7 +86,8 @@ class CsvImportServiceSchemaTest {
                 csvCellParser,
                 schemaTypeCoercer,
                 objectMapper,
-                warningsSerializer);
+                warningsSerializer,
+                new ConversationFieldsValidator());
         datasetId = UUID.randomUUID();
 
         when(csvImportProperties.getMaxFileSize()).thenReturn(DataSize.ofMegabytes(10));
@@ -210,6 +211,30 @@ class CsvImportServiceSchemaTest {
         java.util.Map<String, Object> data = mapCaptor.getValue();
         assertThat(data).containsKey("prompt");
         assertThat(data).doesNotContainKey("unknownCol");
+    }
+
+    @Test
+    @DisplayName("reserved conversationId/turnIndex columns parse to top-level fields, not into data")
+    void reservedConversationColumnsParseToTopLevelFields() throws Exception {
+        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+
+        UUID conversationId = UUID.randomUUID();
+        String csv = "testCaseName,conversationId,turnIndex,prompt\n" + "conv turn 0," + conversationId + ",0,hello";
+        importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<TestCase> captor = ArgumentCaptor.forClass(TestCase.class);
+        verify(testCaseRepository).save(captor.capture());
+        TestCase saved = captor.getValue();
+        assertThat(saved.getConversationId()).isEqualTo(conversationId);
+        assertThat(saved.getTurnIndex()).isEqualTo(0);
+
+        ArgumentCaptor<Map<String, Object>> mapCaptor = ArgumentCaptor.captor();
+        verify(warningsSerializer).serializeMap(mapCaptor.capture());
+        Map<String, Object> data = mapCaptor.getValue();
+        assertThat(data).containsKey("prompt");
+        assertThat(data).doesNotContainKey("conversationId");
+        assertThat(data).doesNotContainKey("turnIndex");
     }
 
     @Test

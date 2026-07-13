@@ -20,6 +20,11 @@ public class TestCase {
     private UUID datasetId;
     private String testCaseName;
     private String data;
+    /** Row-based multi-turn grouping key; {@code null} for single-turn test cases. */
+    private UUID conversationId;
+    /** 0-based turn position within the conversation; {@code null} for single-turn test cases. */
+    private Integer turnIndex;
+
     private boolean valid;
     /** JSON array of ValidationWarningDto; stored as jsonb in DB. */
     private String validationWarnings;

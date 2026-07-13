@@ -27,7 +27,7 @@ Status: **Implemented**
 - **THEN** it SHALL construct an `EvaluationContext` from the run's `RunConfigDto` (with system defaults for omitted fields) and pass it to the executor. Context construction and cancellation signal registration SHALL occur before async dispatch to prevent race conditions.
 
 ### Requirement: In-process evaluation execution
-The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (one per test case per run index) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. For legacy runs without a snapshot (no `test_case_run_inputs` rows), it SHALL fall back to reading live test cases from the suite.
+The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (**one per conversation per run index**) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. For legacy runs without a snapshot (no `test_case_run_inputs` rows), it SHALL fall back to reading live test cases from the suite, treating each live test case as a length-1 (single-turn) conversation. The **execution unit is a CONVERSATION**: one assembled `test_case_run_inputs` row holds the ordered turns of a conversation (a single-turn test case is a length-1 conversation), and one such row maps to exactly one worker task per run index.
 Status: **Implemented**
 
 #### Scenario: Snapshot path — pages from inputs table
@@ -36,46 +36,50 @@ Status: **Implemented**
 
 #### Scenario: Legacy path — falls back to live test cases
 - **WHEN** `test_case_run_inputs` rows do NOT exist for the run (legacy run without snapshot)
-- **THEN** the executor SHALL fall back to paging through live test cases from `testCaseRepository.findEnabledValidByTestSuiteId()`, wrapping each `TestCase` as a `TestCaseRunInput` struct for uniform worker interface.
+- **THEN** the executor SHALL fall back to paging through live test cases from `testCaseRepository.findEnabledValidByTestSuiteId()`, wrapping each `TestCase` as a length-1 conversation `TestCaseRunInput` struct for a uniform worker interface.
 
 #### Scenario: Sequential execution (default)
 - **WHEN** `concurrencyLevel` is 1 (default)
-- **THEN** the executor SHALL process test case calls one at a time, in order (page by page, case by case, run index by run index)
+- **THEN** the executor SHALL process conversations one at a time, in order (page by page, conversation by conversation, run index by run index); the turns within a conversation always run sequentially regardless of `concurrencyLevel`.
 
 #### Scenario: Parallel execution
 - **WHEN** `concurrencyLevel` is greater than 1 (e.g., 10)
-- **THEN** the executor SHALL process up to `concurrencyLevel` test case calls concurrently using a semaphore-bounded virtual thread executor
+- **THEN** the executor SHALL process up to `concurrencyLevel` conversation tasks concurrently using a semaphore-bounded virtual thread executor (one permit per conversation, not per turn).
 
-#### Scenario: All enabled and valid test cases are executed
-- **WHEN** the executor runs for a suite with N enabled+valid test cases and `numberOfRuns = M`
-- **THEN** the executor SHALL dispatch exactly N * M evaluation tasks (one per case per run index 0..M-1)
+#### Scenario: One assembled input is one worker task
+- **WHEN** the executor dispatches work for the run
+- **THEN** it SHALL dispatch exactly one worker task per `(conversation × runIndex)`; the worker task owns the whole conversation and emits one `TestCaseRunResult` per surviving turn.
 
-#### Scenario: Disabled and invalid test cases are skipped
-- **WHEN** the suite contains test cases with `enabled = false` or `isValid = false`
-- **THEN** those test cases SHALL NOT be dispatched for execution (they are excluded at snapshot phase)
+#### Scenario: All runnable conversations are executed
+- **WHEN** the executor runs for a suite with N runnable conversations and `numberOfRuns = M`
+- **THEN** the executor SHALL dispatch exactly N * M evaluation tasks (one per conversation per run index 0..M-1)
 
-#### Scenario: Test cases read in pages
-- **WHEN** the suite has more enabled+valid test cases than fit in a single page
-- **THEN** the executor SHALL read inputs using paginated queries
+#### Scenario: Excluded turns and conversations are skipped
+- **WHEN** the bound dataset contains test cases with `enabled = false` or `isValid = false`, or conversations excluded/truncated by disable/filter rules
+- **THEN** those rows SHALL NOT be dispatched for execution (they are excluded, truncated, or marked broken at snapshot phase — see the snapshot/selection spec)
+
+#### Scenario: Inputs read in pages
+- **WHEN** the suite has more runnable conversations than fit in a single page
+- **THEN** the executor SHALL read inputs using paginated queries (a page boundary never straddles a conversation)
 
 ### Requirement: Single test case evaluation (worker)
-The `EvaluationWorker` SHALL accept a `TestCaseRunInput` (carrying frozen test case data and optional overrides) plus an `EvaluationContext` (carrying snapshot fields), resolve the request without DB reads, invoke the target, extract response columns, and return a **`List<TestCaseRunResult>`**. A single-turn (non-multi-turn) execution SHALL return a one-element list. A multi-turn execution SHALL delegate to `MultiTurnConversationExecutor` and return one result per turn, per the multi-turn-conversation spec.
+The `EvaluationWorker` SHALL accept a `TestCaseRunInput` (a **conversation** carrying one or more ordered, frozen turns plus optional overrides) plus an `EvaluationContext` (carrying snapshot fields), resolve the request(s) without DB reads, invoke the target, extract response columns, and return a **`List<TestCaseRunResult>`** — **one element per surviving turn**. A single-turn conversation (one turn) SHALL return a one-element list. A multi-turn conversation SHALL delegate turn iteration to `MultiTurnConversationExecutor` and return one result per turn, per the multi-turn-conversation spec.
 Status: **Implemented**
 
 #### Scenario: Single-turn worker returns one result
-- **WHEN** a non-multi-turn test case is dispatched
+- **WHEN** a length-1 (single-turn) conversation is dispatched
 - **THEN** the worker SHALL return a list containing exactly one `TestCaseRunResult` with `turnIndex = 0`, `totalTurns = 1`
 
 #### Scenario: Multi-turn worker returns one result per turn
-- **WHEN** a multi-turn test case with `N` turns is dispatched
-- **THEN** the worker SHALL delegate to `MultiTurnConversationExecutor` and return `N` results (fewer on early abort — see the multi-turn-conversation fail-fast requirement), each carrying its `turnIndex` and `totalTurns`
+- **WHEN** a conversation with `N` ordered turns is dispatched
+- **THEN** the worker SHALL delegate to `MultiTurnConversationExecutor` and return `N` results (fewer on early abort — see the multi-turn-conversation fail-fast requirement), each carrying its `turnIndex` (authored, contiguous 0-based prefix) and `totalTurns` (surviving turn count)
 
 #### Scenario: Snapshot-based request resolution
-- **WHEN** a test case is dispatched for execution
-- **THEN** the worker SHALL resolve the full request using `ResolvedRequestService.resolve(effectiveTemplate, effectiveBindings, testCaseData)` where:
+- **WHEN** a conversation turn is resolved for execution
+- **THEN** the worker SHALL resolve the request using `ResolvedRequestService.resolve(effectiveTemplate, effectiveBindings, turnData)` where:
   - `effectiveTemplate` = `input.getRequestTemplateOverride()` if non-null, else `context.getSnapshotRequestTemplate()`
   - `effectiveBindings` = `input.getInputBindingsOverride()` if non-null, else `context.getSnapshotInputBindings()`
-  - `testCaseData` = deserialized from `input.getTestCaseData()`
+  - `turnData` = that turn's **scalar** `data` snapshot (deserialized from the assembled input); there is no array projection
   - `deploymentRef` and `endpointRef` read from `context.getSnapshotDeploymentRef()` and `context.getSnapshotEndpointRef()`
   - The worker SHALL NOT call `resolveRequest(suiteId, tcId)` (no DB reads during execution)
 
@@ -273,7 +277,7 @@ Status: **Implemented**
 - **THEN** the retry attempt SHALL acquire a rate limit token before making the HTTP call, same as a first attempt. This prevents retry storms from bypassing the rate limiter after a burst of failures (e.g., 429 responses).
 
 ### Requirement: Batch result writing
-The executor SHALL buffer completed `TestCaseRunResult` records and flush them to the analytics database in configurable row batches, performing exactly one final flush after all virtual threads terminate. Results SHALL be added per conversation via `addResults(buffer, List<TestCaseRunResult>)`: each call buffers all of one conversation's turn rows and increments a **completed-conversation** counter by one (a single-turn conversation is a one-element list). Progress SHALL be reported as `notifyProgress(conversationsCompleted, totalCases)` where `totalCases = numberOfTestCases * numberOfRuns`, keeping progress in the 0–100% range even though a conversation contributes multiple rows.
+The executor SHALL buffer completed `TestCaseRunResult` records and flush them to the analytics database in configurable row batches, performing exactly one final flush after all virtual threads terminate. Results SHALL be added per conversation via `addResults(buffer, List<TestCaseRunResult>)`: each call buffers all of one conversation's turn rows and increments a **completed-conversation** counter by one (a single-turn conversation is a one-element list; a broken conversation contributes a one-element ERROR list). Progress SHALL be reported as `notifyProgress(conversationsCompleted, totalCases)` where `totalCases = numberOfTestCases * numberOfRuns` and `numberOfTestCases` is the **runnable-conversation** count, keeping progress in the 0–100% range even though a conversation contributes multiple rows.
 Status: **Implemented**
 
 #### Scenario: Row-batch flush on size
@@ -285,11 +289,15 @@ Status: **Implemented**
 - **THEN** three rows SHALL be buffered but the progress numerator SHALL advance by exactly one (e.g. `1/5`), never exceeding `totalCases`
 
 #### Scenario: Single-turn progress unchanged
-- **WHEN** a non-multi-turn run of 5 test cases (1 run each) completes
+- **WHEN** a run of 5 standalone single-turn conversations (1 run each) completes
 - **THEN** progress SHALL advance `1/5 … 5/5`, identical to prior behavior
 
+#### Scenario: Broken conversation advances progress by one
+- **WHEN** a broken conversation is processed and yields a single sentinel ERROR row
+- **THEN** the completed-conversation counter SHALL advance by exactly one, the same as any other conversation
+
 #### Scenario: Final flush on completion
-- **WHEN** all test cases have been executed (run completes)
+- **WHEN** all conversations have been executed (run completes)
 - **THEN** the executor SHALL flush any remaining buffered results — exactly once, AFTER worker shutdown has completed
 
 #### Scenario: Flush on cancellation
@@ -678,13 +686,65 @@ Status: **Implemented**
 - **THEN** the extraction SHALL work correctly because the serialized JSON preserves the MCP envelope structure
 
 ### Requirement: Multi-turn execution branch
-When the snapshot indicates a multi-turn suite, the worker SHALL delegate to `MultiTurnConversationExecutor` and return a **`List<TestCaseRunResult>` with one element per turn**, per the multi-turn-conversation spec. A single-turn (non-multi-turn) execution SHALL return a one-element list; a multi-turn execution SHALL return `N` results for a conversation of `N` turns (fewer on early abort — see the multi-turn-conversation fail-fast requirement). The engine no longer collapses a conversation into a single aggregated row.
+When the assembled input carries more than one turn, the worker SHALL delegate to `MultiTurnConversationExecutor` and return a **`List<TestCaseRunResult>` with one element per surviving turn**, per the multi-turn-conversation spec. Turns run **strictly sequentially** within the single worker task: each turn re-sends the accumulated chat-completions `messages` history and appends the target's `choices[0].message` before the next turn. A single-turn conversation SHALL return a one-element list; a conversation of `N` authored turns SHALL return up to `N` results (fewer on early abort). Multi-turn is derived from the presence of ordered conversation turns in the assembled input — **not** from a suite-level `multiTurn` flag and **not** from array-valued test-case columns. Each turn's `test_case_data` and `extractedColumns` are **scalar** (one turn's row = the single-turn shape).
 Status: **Implemented**
 
 #### Scenario: Multi-turn branch returns one result per turn
-- **WHEN** a multi-turn test case with `N` turns is dispatched
-- **THEN** the worker SHALL delegate to `MultiTurnConversationExecutor` and return a `List<TestCaseRunResult>` of `N` elements, each carrying its own `turnIndex` (0-based) and `totalTurns = N`
-- **AND** on an abort at turn `k` the list SHALL contain `k` SUCCESS rows plus one ERROR row (fewer than `N`)
+- **WHEN** a conversation with `N` turns is dispatched
+- **THEN** the worker SHALL delegate to `MultiTurnConversationExecutor` and return a `List<TestCaseRunResult>` of up to `N` elements, each carrying its own `turnIndex` (0-based) and `totalTurns` (= surviving turn count)
+- **AND** on an abort at turn `k` the list SHALL contain `k` SUCCESS rows plus one ERROR row (fewer than `N`), with `total_turns` = the surviving count
+
+#### Scenario: Turns run sequentially re-sending accumulated messages
+- **WHEN** turn `i` (i > 0) of a conversation executes
+- **THEN** the request body SHALL carry the accumulated `messages` history (prior user turns plus each prior turn's appended `choices[0].message`), so the target sees the full conversation so far
+- **AND** `turn.last` SHALL be true only on the last surviving turn
+
+#### Scenario: No array projection
+- **WHEN** a multi-turn conversation executes
+- **THEN** turn variation SHALL come from distinct per-turn rows in the assembled input (each with its own scalar `data`), NOT from unwrapping array-valued columns of a single row
+
+### Requirement: Runnable-conversation counting and zero-runnable guard
+The unit of "runnable" work SHALL be a **CONVERSATION**, not an individual test-case row. A runnable conversation is either a standalone single-turn row or a multi-turn group whose enabled turns form a contiguous prefix `0..k` and pass the suite `testCaseFilter` atomically (see the selection spec). `RunnableTestCaseCounter.countRunnable(...)` SHALL count runnable **conversations**; that count drives `number_of_test_cases` on the run and the zero-runnable guard (guard #4) in `TestSuiteRunService.createRun`. Broken conversations are NOT counted as runnable (they still surface as one ERROR row at execution — see the broken-conversation requirement).
+Status: **Implemented**
+
+#### Scenario: Runnable count is conversation-granular
+- **WHEN** a bound dataset has 2 multi-turn conversations (3 turns and 4 turns) and 5 standalone single-turn rows, all runnable
+- **THEN** `RunnableTestCaseCounter.countRunnable(...)` SHALL return 7 (2 conversations + 5 single-turn), NOT 12 (turn rows)
+- **AND** the run's `number_of_test_cases` SHALL be set to 7
+
+#### Scenario: Zero-runnable guard on no runnable conversations
+- **WHEN** run creation runs guard #4 and the runnable-conversation count is zero (every row disabled/invalid/filtered/broken)
+- **THEN** `createRun` SHALL throw `InvalidOperationException("Suite has no valid and enabled test cases")` (→ 409 `INVALID_OPERATION`), preserving the existing guard order (1.not-found 2.unbound 3.config-invalid 4.zero-runnable 5.rate-limits)
+
+#### Scenario: Progress denominator uses conversation count
+- **WHEN** the run has `number_of_test_cases = 7` runnable conversations and `numberOfRuns = 2`
+- **THEN** `totalCases` for progress SHALL be `14` (7 × 2), and progress advances one per completed conversation × run index
+
+### Requirement: Broken conversation yields one sentinel ERROR row
+A conversation that the snapshot phase marked **broken** (missing turn 0, non-contiguous/gap, duplicate `turn_index`, any invalid turn, disable-created middle hole, or surviving turn count > `MAX_CONVERSATION_TURNS`) SHALL be frozen into a marker `test_case_run_inputs` row. At execution the worker SHALL turn that marker into **exactly ONE** `TestCaseRunResult` with `executionStatus = ERROR` and the sentinel `turn_index = 0, total_turns = 0`, **without invoking the model** (no HTTP/MCP call). The run SHALL continue; other conversations proceed normally.
+Status: **Implemented**
+
+#### Scenario: Broken conversation produces one ERROR row, no model call
+- **WHEN** the worker receives an assembled input flagged as a broken conversation
+- **THEN** the worker SHALL return a one-element `List<TestCaseRunResult>` with `executionStatus = ERROR`, `turnIndex = 0`, `totalTurns = 0`
+- **AND** the worker SHALL NOT resolve or send any deployment/MCP request for that conversation
+
+#### Scenario: Run continues past a broken conversation
+- **WHEN** a run contains a broken conversation alongside runnable ones
+- **THEN** the broken conversation's single ERROR row SHALL be persisted and the run SHALL still reach `COMPLETED` (the broken row does not mark the whole run FAILED)
+
+### Requirement: MCP suite rejected when dataset contains conversation rows
+Multi-turn conversations are **HTTP-deployment only** this round. `TestSuiteRunService.createRun` SHALL reject an `MCP_TOOL` suite bound to a dataset that contains ANY conversation rows (any row with a non-null `conversation_id`) with HTTP 409 `INVALID_OPERATION`. This guard is forward-compatible: it reserves multi-turn tool-call sequences for a later change rather than silently mis-executing them.
+Status: **Implemented**
+
+#### Scenario: MCP suite with conversation rows rejected at run creation
+- **WHEN** `createRun` is called for an `MCP_TOOL` suite whose bound dataset contains at least one row with a non-null `conversation_id`
+- **THEN** it SHALL throw `InvalidOperationException` (→ 409 `INVALID_OPERATION`) with a message indicating multi-turn conversations are not supported for MCP suites yet
+- **AND** no run SHALL be created and no snapshot SHALL be taken
+
+#### Scenario: MCP suite with only single-turn rows unaffected
+- **WHEN** `createRun` is called for an `MCP_TOOL` suite whose bound dataset contains only single-turn rows (all `conversation_id` NULL)
+- **THEN** run creation SHALL proceed unchanged
 
 ### Requirement: One concurrency permit per conversation
 A multi-turn conversation SHALL execute within a single worker task holding a single concurrency permit for the entire conversation; its turns SHALL run sequentially within that task. Per-turn call pacing relies on the existing per-call retry and upstream 429 handling. Each turn's retries SHALL reuse the existing retry policy independently.
@@ -725,4 +785,6 @@ Status: **Implemented**
 - MCP field loading chain: `TestSuiteEvaluationJob` deserializes MCP fields from the suite's JSONB strings and passes them into `EvaluationContext.builder()` as typed objects (conditionally for `MCP_TOOL` suites only). `inputBindings` is loaded alongside other MCP fields.
 - MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `context.getInputBindings()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
 - DTOs: `ExecutionSettingsDto`, `RetryPolicyDto` (in `service.domain.dto`)
-- Multi-turn: new injectable `service.domain.job.MultiTurnConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the `multiTurn` flag. `EvaluationWorker` reads discrete `context.getSnapshotX()` getters off `EvaluationContext`, not `SuiteSnapshotDto` directly. The `multiTurn` flag therefore travels via `EvaluationContext`: it gains `snapshotMultiTurn`, populated in `TestSuiteEvaluationJob.buildContext` from the resolved snapshot. There is no per-turn binding field — the suite's single `inputBindings` are reused each turn and per-turn variation comes from array-valued test-case columns (see multi-turn-conversation). The worker branches on `context.isSnapshotMultiTurn()` and returns a `List<TestCaseRunResult>`, one element per turn. Concurrency permit acquisition remains in `InProcessEvaluationExecutor` at the per-(test case, run index) task granularity — multi-turn changes only what happens inside the task, not the permit model.
+- Multi-turn: injectable `service.domain.job.MultiTurnConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the assembled input carrying more than one turn (there is no `multiTurn` flag and no `snapshotMultiTurn` field — multi-turn is emergent from conversation rows). The suite's single `inputBindings` are reused each turn and per-turn variation comes from each turn's discrete scalar row `data` (no array-valued columns, no `TurnPlan`/`ConversationTurnPlanner`). The worker returns a `List<TestCaseRunResult>`, one element per surviving turn; a broken conversation returns a one-element sentinel ERROR row (`turn_index=0, total_turns=0`) without a model call. Dispatch granularity moves from `(test case × runIndex)` to `(conversation × runIndex)` in `InProcessEvaluationExecutor` — one concurrency permit per conversation task; turns within a conversation run sequentially.
+- Counting / guards: `RunnableTestCaseCounter.countRunnable(...)` counts runnable conversations (multi-turn groups + standalone single-turn rows), driving `number_of_test_cases` and guard #4; `TestSuiteRunService.createRun` keeps guard order (1 not-found, 2 unbound, 3 config-invalid, 4 zero-runnable, 5 rate-limits) and adds a guard rejecting `MCP_TOOL` suites bound to datasets containing any `conversation_id` row with 409 `INVALID_OPERATION`.
+- Batch writer: `ResultBatchWriter.addResults(buffer, List<TestCaseRunResult>)` buffers a conversation's rows and advances the completed-conversation counter by one; progress denominator `totalCases = numberOfTestCases (runnable conversations) × numberOfRuns`.

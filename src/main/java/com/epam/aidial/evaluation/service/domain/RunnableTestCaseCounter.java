@@ -22,7 +22,15 @@ public class RunnableTestCaseCounter {
     private final RunnableTestCaseSelector runnableTestCaseSelector;
 
     public long countRunnable(UUID datasetId, String filterJson, Collection<UUID> disabledTestCaseIds) {
-        return runnableTestCaseSelector.countRunnable(
+        return runnableTestCaseSelector.countRunnableUnits(
                 datasetId, filterJson, disabledTestCaseIds != null ? disabledTestCaseIds : List.of());
+    }
+
+    /**
+     * Whether the dataset contains any multi-turn conversation row. The run-creation guard uses this to
+     * reject MCP suites bound to a dataset carrying conversation rows (multi-turn is HTTP-deployment only).
+     */
+    public boolean hasConversationRows(UUID datasetId) {
+        return runnableTestCaseSelector.datasetHasConversationRows(datasetId);
     }
 }

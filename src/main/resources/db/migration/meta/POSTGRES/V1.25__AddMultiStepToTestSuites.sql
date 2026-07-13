@@ -1,2 +1,0 @@
-ALTER TABLE test_suites
-    ADD COLUMN IF NOT EXISTS multi_turn BOOLEAN NOT NULL DEFAULT false;

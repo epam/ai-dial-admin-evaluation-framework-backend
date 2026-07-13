@@ -327,20 +327,6 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         return (JSONB) get(21);
     }
 
-    /**
-     * Setter for <code>meta.test_suites.multi_turn</code>.
-     */
-    public void setMultiTurn(Boolean value) {
-        set(22, value);
-    }
-
-    /**
-     * Getter for <code>meta.test_suites.multi_turn</code>.
-     */
-    public Boolean getMultiTurn() {
-        return (Boolean) get(22);
-    }
-
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -364,7 +350,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     /**
      * Create a detached, initialised TestSuitesRecord
      */
-    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, JSONB testCaseFilter, Boolean multiTurn) {
+    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, JSONB testCaseFilter) {
         super(TestSuites.TEST_SUITES);
 
         setId(id);
@@ -389,7 +375,6 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         setDisabledTestCaseIds(disabledTestCaseIds);
         setOverallScore(overallScore);
         setTestCaseFilter(testCaseFilter);
-        setMultiTurn(multiTurn);
         resetTouchedOnNotNull();
     }
 }

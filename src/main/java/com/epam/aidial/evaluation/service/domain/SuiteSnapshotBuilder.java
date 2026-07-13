@@ -42,8 +42,7 @@ public class SuiteSnapshotBuilder {
             builder.deploymentRef(jsonbMapper.map(suite.getDeploymentRef()))
                     .endpointRef(jsonbMapper.mapEndpointContract(suite.getEndpointRef()))
                     .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
-                    .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()))
-                    .multiTurn(suite.isMultiTurn());
+                    .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
         }
 
         return builder.build();

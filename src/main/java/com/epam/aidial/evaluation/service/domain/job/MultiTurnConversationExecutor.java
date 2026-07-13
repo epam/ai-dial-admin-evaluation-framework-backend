@@ -36,28 +36,27 @@ import org.springframework.util.MultiValueMap;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Multi-turn (conversational) executor for {@code DEPLOYMENT} suites. Drives a data-driven sequence of
- * chat-completions turns for a single test case, accumulating {@code messages} history and re-sending the
- * full history each turn. The suite uses its single {@code inputBindings}; per-turn variation comes from
- * array-valued test-case columns bound by those bindings. Turn count {@code N} is derived <b>per test
- * case</b> as the common length of the array-valued bound columns; scalar columns and {@code constantValue}
- * bindings are broadcast (reused unchanged) on every turn.
+ * Multi-turn (conversational) executor for {@code DEPLOYMENT} suites. Drives a sequence of chat-completions
+ * turns for one assembled conversation, accumulating {@code messages} history and re-sending the full
+ * history each turn. A conversation is an <b>ordered group of discrete test-case rows</b> (one row per turn,
+ * keyed by {@code conversation_id}/{@code turn_index}), frozen into the assembled input's {@code turns} JSON
+ * at snapshot time. Each turn resolves the suite's single {@code requestTemplate}/{@code inputBindings}
+ * against that turn's own <b>scalar</b> row {@code data} — there is no array-valued column projection.
+ * Turn count {@code N} is the number of frozen (surviving) turns.
  *
- * <p>Unlike the previous POC, each turn is persisted as its <b>own scalar</b> {@link TestCaseRunResult}
- * (turn {@code i} resolves the template with element {@code i} of each array-valued column). A row carries
- * {@code turn_index}/{@code total_turns} (planned {@code N}), the per-turn projected scalar {@code
- * testCaseData}, the full accumulated {@code requestBody} actually sent for that turn, that turn's raw
- * {@code responseBody}, and that turn's scalar {@code extractedColumns}/{@code extractionWarnings}. All
- * rows of a conversation share the conversation span's {@code traceId}.
+ * <p>Each turn is persisted as its own {@link TestCaseRunResult}, carrying that turn's own row identity
+ * ({@code testCaseId}/{@code testCaseName}), {@code turn_index} (authored 0-based) / {@code total_turns}
+ * ({@code N}), the per-turn scalar {@code testCaseData}, the full accumulated {@code requestBody} actually
+ * sent for that turn, that turn's raw {@code responseBody}, and that turn's scalar {@code extractedColumns}/
+ * {@code extractionWarnings}. All rows of a conversation share the conversation span's {@code traceId}.
  *
  * <p>Contract: the resolved request body must be JSON with a top-level {@code messages} array; the
  * assistant reply is read from the hardcoded {@code choices[0].message} OpenAI path; turns are always
  * invoked non-streaming; the loop is fail-fast — the first turn that fails after retries (or returns a 2xx
  * with no assistant message object) aborts the conversation. Completed turns are persisted as {@code
  * SUCCESS} rows; the failing turn is persisted as one {@code ERROR} row (both with {@code total_turns = N}).
- * A per-test-case data problem (no array-valued bound column, mismatched array lengths, or a turn count
- * exceeding the cap) fails only that test case with a single degenerate {@code ERROR} row
- * ({@code turn_index=0}, {@code total_turns=0}); other test cases in the run proceed.
+ * Broken conversations are detected at snapshot time and never reach this executor — they are turned into a
+ * single {@code 0/0} ERROR row by {@link EvaluationWorker}.
  */
 @Slf4j
 @Component
@@ -74,7 +73,6 @@ public class MultiTurnConversationExecutor {
     private final EvaluationRunProperties evaluationRunProperties;
     private final JsonbMapper jsonbMapper;
     private final QuietJsonService jsonService;
-    private final ConversationTurnPlanner turnPlanner;
     private final DeploymentTurnInvoker deploymentTurnInvoker;
     private final Clock clock;
 
@@ -92,24 +90,25 @@ public class MultiTurnConversationExecutor {
             String traceId,
             long execStartedAtMs) {
 
+        // Row-based multi-turn: iterate the ordered turns frozen into the assembled input at snapshot time.
+        // Each turn is a discrete test-case row carrying its own scalar data — there is no array projection.
+        final List<FrozenTurn> turns = parseTurns(input.getTurns());
+        if (turns.isEmpty()) {
+            // Defensive: a non-broken conversation always freezes at least one turn. An unreadable/empty
+            // turns payload cannot be executed, so surface it as a single 0/0 ERROR row rather than
+            // silently producing no rows.
+            log.warn(
+                    "Multi-turn conversation {} for test case {} has no readable frozen turns",
+                    input.getConversationId(),
+                    input.getTestCaseId());
+            return List.of(buildConversationErrorRow(input, context, runIndex, traceId, execStartedAtMs));
+        }
+
         final List<InputBindingDto> bindings = input.getInputBindingsOverride() != null
                 ? jsonbMapper.mapInputBindings(input.getInputBindingsOverride())
                 : context.getSnapshotInputBindings();
-        final Map<String, Object> testCaseData = jsonService.readMapOrEmpty(input.getTestCaseData());
 
-        // Turn count is derived per test case. A data problem here (no array column, mismatched lengths,
-        // over the cap) fails only this test case with a single degenerate 0/0 ERROR row.
-        final TurnPlan turnPlan = turnPlanner.plan(bindings, testCaseData);
-        if (turnPlan.hasError()) {
-            log.warn(
-                    "Multi-turn turn resolution failed for test case {} in suite {}: {}",
-                    input.getTestCaseId(),
-                    context.getSuiteId(),
-                    turnPlan.error());
-            return List.of(buildDataErrorRow(input, context, runIndex, traceId, execStartedAtMs, turnPlan.error()));
-        }
-
-        final int totalTurns = turnPlan.turnCount();
+        final int totalTurns = turns.size();
         final String deploymentId = context.getSnapshotDeploymentRef() != null
                 ? context.getSnapshotDeploymentRef().getId()
                 : null;
@@ -122,14 +121,14 @@ public class MultiTurnConversationExecutor {
 
         final List<TestCaseRunResult> results = new ArrayList<>();
         final List<Object> history = new ArrayList<>();
-        int currentTurn = 0;
+        FrozenTurn current = turns.get(0);
         try {
             for (int i = 0; i < totalTurns; i++) {
-                currentTurn = i;
-                final Map<String, Object> turnData = turnPlan.project(testCaseData, i);
+                current = turns.get(i);
+                final Map<String, Object> turnData = current.data();
                 final var turn = new TurnDefinition(
-                        i,
-                        input.getTestCaseId(),
+                        current.turnIndex(),
+                        current.testCaseId(),
                         context,
                         template,
                         bindings,
@@ -146,13 +145,13 @@ public class MultiTurnConversationExecutor {
 
                 if (result.control() == TurnControl.CONTINUE) {
                     results.add(buildTurnRow(
-                            input,
+                            current,
                             context,
                             runIndex,
                             traceId,
                             turnStart,
                             turnEnd,
-                            i,
+                            current.turnIndex(),
                             totalTurns,
                             ExecutionStatus.SUCCESS,
                             result.outcome(),
@@ -167,13 +166,13 @@ public class MultiTurnConversationExecutor {
                     final boolean requestIssued = result.outcome() != null;
                     if (requestIssued || !context.getCancellationSignal().get()) {
                         results.add(buildTurnRow(
-                                input,
+                                current,
                                 context,
                                 runIndex,
                                 traceId,
                                 turnStart,
                                 turnEnd,
-                                i,
+                                current.turnIndex(),
                                 totalTurns,
                                 result.status(),
                                 result.outcome(),
@@ -188,33 +187,33 @@ public class MultiTurnConversationExecutor {
         } catch (RuntimeException e) {
             log.warn(
                     "Multi-turn conversation failed for test case {} in suite {} at turn {}: {}",
-                    input.getTestCaseId(),
+                    current.testCaseId(),
                     context.getSuiteId(),
-                    currentTurn,
+                    current.turnIndex(),
                     e.getMessage(),
                     e);
             final long now = clock.millis();
             results.add(buildTurnRow(
-                    input,
+                    current,
                     context,
                     runIndex,
                     traceId,
                     now,
                     now,
-                    currentTurn,
+                    current.turnIndex(),
                     totalTurns,
                     ExecutionStatus.ERROR,
                     null,
                     null,
                     "{}",
                     "[]",
-                    turnPlan.project(testCaseData, currentTurn)));
+                    current.data()));
         }
         return results;
     }
 
     private TestCaseRunResult buildTurnRow(
-            TestCaseRunInput input,
+            FrozenTurn turn,
             EvaluationContext context,
             int runIndex,
             String traceId,
@@ -232,8 +231,8 @@ public class MultiTurnConversationExecutor {
                 .id(UUID.randomUUID())
                 .testSuiteRunId(context.getRunId())
                 .testSuiteId(context.getSuiteId())
-                .testCaseId(input.getTestCaseId())
-                .testCaseName(input.getTestCaseName())
+                .testCaseId(turn.testCaseId())
+                .testCaseName(turn.testCaseName())
                 .runIndex(runIndex)
                 .turnIndex(turnIndex)
                 .totalTurns(totalTurns)
@@ -333,17 +332,47 @@ public class MultiTurnConversationExecutor {
     }
 
     /**
-     * Single degenerate {@code ERROR} row for a per-test-case data-shape problem (no turn ran):
+     * Parses the assembled input's frozen {@code turns} JSON ({@code [{testCaseId, testCaseName, turnIndex,
+     * data}, ...]}) into ordered {@link FrozenTurn}s. Returns an empty list for a null/blank/non-array
+     * payload (surfaced by the caller as a single {@code 0/0} ERROR row). The snapshot phase writes the
+     * turns already ordered by {@code turn_index}.
+     */
+    private List<FrozenTurn> parseTurns(String turnsJson) {
+        if (turnsJson == null || turnsJson.isBlank()) {
+            return List.of();
+        }
+        final JsonNode root = jsonService.readTreeOrEmpty(turnsJson);
+        if (!root.isArray()) {
+            return List.of();
+        }
+        final List<FrozenTurn> turns = new ArrayList<>(root.size());
+        for (JsonNode node : root) {
+            final JsonNode idNode = node.get("testCaseId");
+            final JsonNode turnIndexNode = node.get("turnIndex");
+            if (idNode == null || turnIndexNode == null) {
+                continue;
+            }
+            final UUID testCaseId = UUID.fromString(idNode.asString());
+            final String testCaseName =
+                    node.hasNonNull("testCaseName") ? node.get("testCaseName").asString() : null;
+            final int turnIndex = turnIndexNode.asInt();
+            final JsonNode dataNode = node.get("data");
+            final Map<String, Object> data =
+                    dataNode == null || dataNode.isNull() ? Map.of() : jsonService.readMapOrEmpty(dataNode.toString());
+            turns.add(new FrozenTurn(testCaseId, testCaseName, turnIndex, data));
+        }
+        return turns;
+    }
+
+    /**
+     * Single degenerate {@code ERROR} row for a conversation that carries no readable frozen turns
+     * (defensive; the snapshot phase never emits such an input for a non-broken conversation):
      * {@code turn_index=0}, {@code total_turns=0} (distinguishing "never started" from a real single turn,
      * which is {@code 0/1}), with the failure captured in {@code logDetails}.
      */
-    private TestCaseRunResult buildDataErrorRow(
-            TestCaseRunInput input,
-            EvaluationContext context,
-            int runIndex,
-            String traceId,
-            long execStartedAtMs,
-            String message) {
+    private TestCaseRunResult buildConversationErrorRow(
+            TestCaseRunInput input, EvaluationContext context, int runIndex, String traceId, long execStartedAtMs) {
+        final String message = "Conversation has no readable turns";
         final long now = clock.millis();
         return TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
@@ -408,7 +437,10 @@ public class MultiTurnConversationExecutor {
         return headers;
     }
 
-    /** Everything one turn needs, ready to execute: its index, the projected per-turn data, and the send context. */
+    /** One frozen turn of an assembled conversation: its own row identity, authored index, and scalar data. */
+    private record FrozenTurn(UUID testCaseId, String testCaseName, int turnIndex, Map<String, Object> data) {}
+
+    /** Everything one turn needs, ready to execute: its index, the per-turn scalar data, and the send context. */
     private record TurnDefinition(
             int index,
             UUID testCaseId,

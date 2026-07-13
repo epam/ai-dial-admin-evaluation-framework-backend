@@ -97,6 +97,26 @@ public class TestCaseRunInputs extends TableImpl<TestCaseRunInputsRecord> {
      */
     public final TableField<TestCaseRunInputsRecord, JSONB> INPUT_BINDINGS_OVERRIDE = createField(DSL.name("input_bindings_override"), SQLDataType.JSONB, this, "");
 
+    /**
+     * The column <code>meta.test_case_run_inputs.conversation_id</code>.
+     */
+    public final TableField<TestCaseRunInputsRecord, String> CONVERSATION_ID = createField(DSL.name("conversation_id"), SQLDataType.VARCHAR(36), this, "");
+
+    /**
+     * The column <code>meta.test_case_run_inputs.total_turns</code>.
+     */
+    public final TableField<TestCaseRunInputsRecord, Integer> TOTAL_TURNS = createField(DSL.name("total_turns"), SQLDataType.INTEGER, this, "");
+
+    /**
+     * The column <code>meta.test_case_run_inputs.turns</code>.
+     */
+    public final TableField<TestCaseRunInputsRecord, JSONB> TURNS = createField(DSL.name("turns"), SQLDataType.JSONB, this, "");
+
+    /**
+     * The column <code>meta.test_case_run_inputs.broken</code>.
+     */
+    public final TableField<TestCaseRunInputsRecord, Boolean> BROKEN = createField(DSL.name("broken"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "");
+
     private TestCaseRunInputs(Name alias, Table<TestCaseRunInputsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

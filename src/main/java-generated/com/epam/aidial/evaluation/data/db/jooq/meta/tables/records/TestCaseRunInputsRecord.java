@@ -121,6 +121,62 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
         return (JSONB) get(6);
     }
 
+    /**
+     * Setter for <code>meta.test_case_run_inputs.conversation_id</code>.
+     */
+    public void setConversationId(String value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_case_run_inputs.conversation_id</code>.
+     */
+    public String getConversationId() {
+        return (String) get(7);
+    }
+
+    /**
+     * Setter for <code>meta.test_case_run_inputs.total_turns</code>.
+     */
+    public void setTotalTurns(Integer value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_case_run_inputs.total_turns</code>.
+     */
+    public Integer getTotalTurns() {
+        return (Integer) get(8);
+    }
+
+    /**
+     * Setter for <code>meta.test_case_run_inputs.turns</code>.
+     */
+    public void setTurns(JSONB value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_case_run_inputs.turns</code>.
+     */
+    public JSONB getTurns() {
+        return (JSONB) get(9);
+    }
+
+    /**
+     * Setter for <code>meta.test_case_run_inputs.broken</code>.
+     */
+    public void setBroken(Boolean value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_case_run_inputs.broken</code>.
+     */
+    public Boolean getBroken() {
+        return (Boolean) get(10);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -144,7 +200,7 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
     /**
      * Create a detached, initialised TestCaseRunInputsRecord
      */
-    public TestCaseRunInputsRecord(String runId, Integer position, String testCaseId, String testCaseName, JSONB testCaseData, JSONB requestTemplateOverride, JSONB inputBindingsOverride) {
+    public TestCaseRunInputsRecord(String runId, Integer position, String testCaseId, String testCaseName, JSONB testCaseData, JSONB requestTemplateOverride, JSONB inputBindingsOverride, String conversationId, Integer totalTurns, JSONB turns, Boolean broken) {
         super(TestCaseRunInputs.TEST_CASE_RUN_INPUTS);
 
         setRunId(runId);
@@ -154,6 +210,10 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
         setTestCaseData(testCaseData);
         setRequestTemplateOverride(requestTemplateOverride);
         setInputBindingsOverride(inputBindingsOverride);
+        setConversationId(conversationId);
+        setTotalTurns(totalTurns);
+        setTurns(turns);
+        setBroken(broken);
         resetTouchedOnNotNull();
     }
 }

@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
@@ -78,6 +79,15 @@ public class TestSuiteRunService {
         if (!testSuite.isValid()) {
             throw new InvalidOperationException("Cannot create a run for test suite with id: " + testSuiteId
                     + ". The test suite is not in a valid state.");
+        }
+
+        // Multi-turn conversations are HTTP-deployment only this round. Reject an MCP suite bound to a dataset
+        // that carries any conversation rows rather than silently mis-executing them (forward-compatible for
+        // future tool-call sequences).
+        if (testSuite.getSuiteType() == SuiteType.MCP_TOOL
+                && runnableTestCaseCounter.hasConversationRows(testSuite.getDatasetId())) {
+            throw new InvalidOperationException("Cannot start a run: multi-turn conversations are not supported "
+                    + "for MCP suites yet. The bound dataset contains conversation rows.");
         }
 
         List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());

@@ -62,6 +62,8 @@ public class CsvExportService {
 
         List<String> header = new ArrayList<>();
         header.add("testCaseName");
+        header.add("conversationId");
+        header.add("turnIndex");
         header.addAll(dataColumnNames);
 
         List<FilterCondition> filters = filterParser.parse(filter != null ? filter : List.of());
@@ -92,6 +94,11 @@ public class CsvExportService {
                 for (TestCase tc : cases) {
                     List<Object> row = new ArrayList<>();
                     row.add(tc.getTestCaseName() != null ? tc.getTestCaseName() : "");
+                    row.add(
+                            tc.getConversationId() != null
+                                    ? tc.getConversationId().toString()
+                                    : "");
+                    row.add(tc.getTurnIndex() != null ? tc.getTurnIndex().toString() : "");
                     Map<String, Object> data = parseJsonToMap(tc.getData());
                     for (String name : dataColumnNames) {
                         row.add(cellValue(data.get(name)));

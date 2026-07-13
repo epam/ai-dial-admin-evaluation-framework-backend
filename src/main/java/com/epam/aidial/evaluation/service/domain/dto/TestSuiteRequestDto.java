@@ -64,13 +64,6 @@ public class TestSuiteRequestDto {
     @Valid
     private List<InputBindingDto> inputBindings;
 
-    @Schema(
-            description = "Marks a DEPLOYMENT suite as multi-turn (POC). When true, the suite uses its single "
-                    + "inputBindings; per-turn variation comes from array-valued test-case columns bound by those "
-                    + "bindings, and the number of turns is derived per test case from those arrays' length.",
-            example = "true")
-    private boolean multiTurn;
-
     @Valid
     @Schema(description = "MCP deployment reference (required for MCP_TOOL suites)")
     private McpDeploymentReferenceDto mcpDeploymentRef;

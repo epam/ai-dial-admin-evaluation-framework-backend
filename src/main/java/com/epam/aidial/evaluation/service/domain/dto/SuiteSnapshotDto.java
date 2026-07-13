@@ -52,10 +52,6 @@ public class SuiteSnapshotDto {
     @Schema(description = "Input bindings")
     private List<InputBindingDto> inputBindings;
 
-    @Builder.Default
-    @Schema(description = "Whether the suite was multi-turn at snapshot time (POC)")
-    private boolean multiTurn = false;
-
     @Schema(description = "Response column definitions")
     private List<ResponseColumnDefinitionDto> responseColumns;
 

@@ -23,9 +23,11 @@ public final class ValidationConstants {
     public static final int MAX_DISABLED_TC_IDS = 10000;
 
     /**
-     * Maximum number of conversation turns in a multi-turn ({@code multiTurn == true}) suite. In the array-driven
-     * model the per-test-case turn count is the length of the array-valued bound columns; this caps that length.
-     * Bounds per-test-case deployment calls (one call per turn).
+     * Maximum number of turns in a multi-turn conversation (row-based). A conversation is an ordered group of
+     * {@code test_cases} rows sharing a {@code conversation_id}; this caps both the authored {@code turnIndex}
+     * (write-time: {@code turnIndex < MAX_CONVERSATION_TURNS}) and the surviving turn count at snapshot (a
+     * conversation with more surviving turns is marked broken). Bounds per-conversation deployment calls
+     * (one call per turn).
      */
     public static final int MAX_CONVERSATION_TURNS = 10;
 

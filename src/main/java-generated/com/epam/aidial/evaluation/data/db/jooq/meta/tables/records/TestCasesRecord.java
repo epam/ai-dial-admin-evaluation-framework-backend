@@ -131,6 +131,34 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
         return (JSONB) get(7);
     }
 
+    /**
+     * Setter for <code>meta.test_cases.conversation_id</code>.
+     */
+    public void setConversationId(String value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_cases.conversation_id</code>.
+     */
+    public String getConversationId() {
+        return (String) get(8);
+    }
+
+    /**
+     * Setter for <code>meta.test_cases.turn_index</code>.
+     */
+    public void setTurnIndex(Integer value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_cases.turn_index</code>.
+     */
+    public Integer getTurnIndex() {
+        return (Integer) get(9);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -154,7 +182,7 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
     /**
      * Create a detached, initialised TestCasesRecord
      */
-    public TestCasesRecord(String id, String datasetId, String testCaseName, Boolean isValid, JSONB validationWarnings, Long createdAtMs, Long updatedAtMs, JSONB data) {
+    public TestCasesRecord(String id, String datasetId, String testCaseName, Boolean isValid, JSONB validationWarnings, Long createdAtMs, Long updatedAtMs, JSONB data, String conversationId, Integer turnIndex) {
         super(TestCases.TEST_CASES);
 
         setId(id);
@@ -165,6 +193,8 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
         setCreatedAtMs(createdAtMs);
         setUpdatedAtMs(updatedAtMs);
         setData(data);
+        setConversationId(conversationId);
+        setTurnIndex(turnIndex);
         resetTouchedOnNotNull();
     }
 }

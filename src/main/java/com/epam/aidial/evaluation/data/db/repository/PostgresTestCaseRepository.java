@@ -98,6 +98,8 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                 .set(TEST_CASES.DATASET_ID, testCase.getDatasetId().toString())
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
+                .set(TEST_CASES.CONVERSATION_ID, toNullableString(testCase.getConversationId()))
+                .set(TEST_CASES.TURN_INDEX, testCase.getTurnIndex())
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
                         TEST_CASES.VALIDATION_WARNINGS,
@@ -116,6 +118,8 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         int updated = dsl.update(TEST_CASES)
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
+                .set(TEST_CASES.CONVERSATION_ID, toNullableString(testCase.getConversationId()))
+                .set(TEST_CASES.TURN_INDEX, testCase.getTurnIndex())
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
                         TEST_CASES.VALIDATION_WARNINGS,
@@ -152,6 +156,8 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                     return (Query) dsl.update(TEST_CASES)
                             .set(TEST_CASES.TEST_CASE_NAME, tc.getTestCaseName())
                             .set(TEST_CASES.DATA, toJsonb(tc.getData()))
+                            .set(TEST_CASES.CONVERSATION_ID, toNullableString(tc.getConversationId()))
+                            .set(TEST_CASES.TURN_INDEX, tc.getTurnIndex())
                             .set(TEST_CASES.IS_VALID, tc.isValid())
                             .set(
                                     TEST_CASES.VALIDATION_WARNINGS,
@@ -297,6 +303,79 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         return count != null ? count : 0L;
     }
 
+    @Override
+    public List<TestCase> findRunnableSingleTurnPage(
+            UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit) {
+        Condition combined = withExtra(
+                validNotExcludedCondition(datasetId, excludedIds).and(TEST_CASES.CONVERSATION_ID.isNull()),
+                extraCondition);
+        return dsl.selectFrom(TEST_CASES)
+                .where(combined)
+                .orderBy(TEST_CASES.CREATED_AT_MS.asc(), TEST_CASES.ID.asc())
+                .limit(limit)
+                .offset(offset)
+                .fetch(recordMapper::map);
+    }
+
+    @Override
+    public long countRunnableSingleTurn(UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition) {
+        Condition combined = withExtra(
+                validNotExcludedCondition(datasetId, excludedIds).and(TEST_CASES.CONVERSATION_ID.isNull()),
+                extraCondition);
+        Long count = dsl.selectCount().from(TEST_CASES).where(combined).fetchOne(0, Long.class);
+        return count != null ? count : 0L;
+    }
+
+    @Override
+    public List<String> findFilterMatchingConversationIdsPage(
+            UUID datasetId, Condition extraCondition, int offset, int limit) {
+        var grouped = dsl.select(TEST_CASES.CONVERSATION_ID)
+                .from(TEST_CASES)
+                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.isNotNull()))
+                .groupBy(TEST_CASES.CONVERSATION_ID);
+        var filtered = extraCondition == null
+                ? grouped
+                : grouped.having(DSL.count().eq(DSL.count().filterWhere(extraCondition)));
+        return filtered.orderBy(DSL.min(TEST_CASES.CREATED_AT_MS).asc(), TEST_CASES.CONVERSATION_ID.asc())
+                .limit(limit)
+                .offset(offset)
+                .fetch(TEST_CASES.CONVERSATION_ID);
+    }
+
+    @Override
+    public long countFilterMatchingConversations(UUID datasetId, Condition extraCondition) {
+        var grouped = dsl.select(TEST_CASES.CONVERSATION_ID)
+                .from(TEST_CASES)
+                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.isNotNull()))
+                .groupBy(TEST_CASES.CONVERSATION_ID);
+        var filtered = extraCondition == null
+                ? grouped
+                : grouped.having(DSL.count().eq(DSL.count().filterWhere(extraCondition)));
+        Long count = dsl.selectCount().from(filtered.asTable("c")).fetchOne(0, Long.class);
+        return count != null ? count : 0L;
+    }
+
+    @Override
+    public List<TestCase> findTurnsByConversationIds(UUID datasetId, Collection<String> conversationIds) {
+        if (conversationIds == null || conversationIds.isEmpty()) {
+            return List.of();
+        }
+        return dsl.selectFrom(TEST_CASES)
+                .where(TEST_CASES
+                        .DATASET_ID
+                        .eq(datasetId.toString())
+                        .and(TEST_CASES.CONVERSATION_ID.in(conversationIds)))
+                .orderBy(TEST_CASES.CONVERSATION_ID.asc(), TEST_CASES.TURN_INDEX.asc())
+                .fetch(recordMapper::map);
+    }
+
+    @Override
+    public boolean existsConversationRowByDatasetId(UUID datasetId) {
+        return dsl.fetchExists(dsl.selectOne()
+                .from(TEST_CASES)
+                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.isNotNull())));
+    }
+
     private static Condition withExtra(Condition base, Condition extraCondition) {
         return extraCondition == null ? base : base.and(extraCondition);
     }
@@ -331,6 +410,8 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                 .set(TEST_CASES.DATASET_ID, testCase.getDatasetId().toString())
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
+                .set(TEST_CASES.CONVERSATION_ID, toNullableString(testCase.getConversationId()))
+                .set(TEST_CASES.TURN_INDEX, testCase.getTurnIndex())
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
                         TEST_CASES.VALIDATION_WARNINGS,
@@ -354,13 +435,15 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         // expose an expression-based RETURNING clause for custom expressions like xmax.
         Integer wasUpdate = dsl.resultQuery(
                         "INSERT INTO test_cases ("
-                                + "id, dataset_id, test_case_name, data, is_valid, validation_warnings, "
-                                + "created_at_ms, updated_at_ms"
+                                + "id, dataset_id, test_case_name, data, conversation_id, turn_index, is_valid, "
+                                + "validation_warnings, created_at_ms, updated_at_ms"
                                 + ") VALUES ("
-                                + "{0}, {1}, {2}, {3}::jsonb, {4}, {5}::jsonb, {6}, {7}"
+                                + "{0}, {1}, {2}, {3}::jsonb, {4}, {5}, {6}, {7}::jsonb, {8}, {9}"
                                 + ") ON CONFLICT (dataset_id, LOWER(test_case_name)) DO UPDATE SET"
                                 + " test_case_name = EXCLUDED.test_case_name,"
                                 + " data = EXCLUDED.data,"
+                                + " conversation_id = EXCLUDED.conversation_id,"
+                                + " turn_index = EXCLUDED.turn_index,"
                                 + " is_valid = EXCLUDED.is_valid,"
                                 + " validation_warnings = EXCLUDED.validation_warnings,"
                                 + " updated_at_ms = EXCLUDED.updated_at_ms"
@@ -369,6 +452,8 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                         DSL.val(testCase.getDatasetId().toString()),
                         DSL.val(testCase.getTestCaseName()),
                         DSL.val(testCase.getData() != null ? testCase.getData() : "{}"),
+                        DSL.val(toNullableString(testCase.getConversationId())),
+                        DSL.val(testCase.getTurnIndex()),
                         DSL.val(testCase.isValid()),
                         DSL.val(testCase.getValidationWarnings() != null ? testCase.getValidationWarnings() : "[]"),
                         DSL.val(testCase.getCreatedAt()),
@@ -521,5 +606,9 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
 
     private static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
+    }
+
+    private static String toNullableString(UUID value) {
+        return value != null ? value.toString() : null;
     }
 }

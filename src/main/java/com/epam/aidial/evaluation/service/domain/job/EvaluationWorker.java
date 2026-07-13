@@ -100,14 +100,21 @@ public class EvaluationWorker {
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 
         try (Scope scope = span.makeCurrent()) {
+            // Broken conversation (marked at snapshot: missing turn 0, gap, dup index, invalid turn, over-cap):
+            // emit exactly one sentinel 0/0 ERROR row without invoking the model; the run continues.
+            if (input.isBroken()) {
+                return List.of(buildBrokenConversationResult(input, context, runIndex, traceId, execStartedAtMs));
+            }
+
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {
                 return List.of(executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs));
             }
 
-            // Multi-turn conversation suites delegate to the turn-loop executor (single permit per conversation),
-            // returning one result row per turn.
-            if (context.isSnapshotMultiTurn()) {
+            // Row-based multi-turn: an assembled input carrying frozen conversation turns delegates to the
+            // turn-loop executor (single permit per conversation), returning one result row per surviving turn.
+            // Multi-turn is emergent from the input's turns, not a suite-level flag.
+            if (input.getTurns() != null) {
                 return multiTurnConversationExecutor.execute(
                         input, context, runIndex, responseColumns, traceId, execStartedAtMs);
             }
@@ -695,6 +702,45 @@ public class EvaluationWorker {
             }
         }
         return headers;
+    }
+
+    /**
+     * Builds the single sentinel {@code ERROR} row for a broken conversation (flagged at snapshot: missing
+     * turn 0, non-contiguous/duplicate {@code turn_index}, an invalid turn, or surviving turn count over the
+     * cap). No model/MCP request is made. The row carries {@code turn_index = 0}, {@code total_turns = 0} to
+     * distinguish a broken conversation from a real single-turn result ({@code 0/1}). The run continues.
+     */
+    private TestCaseRunResult buildBrokenConversationResult(
+            TestCaseRunInput input, EvaluationContext context, int runIndex, String traceId, long execStartedAtMs) {
+        long now = clock.millis();
+        String errorBody = buildErrorEnvelope(
+                "BROKEN_CONVERSATION",
+                "Conversation is broken (missing turn 0, non-contiguous or duplicate turn index, an invalid "
+                        + "turn, or too many turns) and was skipped.");
+        return TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(context.getRunId())
+                .testSuiteId(context.getSuiteId())
+                .testCaseId(input.getTestCaseId())
+                .testCaseName(input.getTestCaseName())
+                .runIndex(runIndex)
+                .turnIndex(0)
+                .totalTurns(0)
+                .testCaseData(input.getTestCaseData())
+                .requestBody(null)
+                .responseBody(errorBody)
+                .responseStatusCode(null)
+                .executionStatus(ExecutionStatus.ERROR)
+                .execStartedAtMs(execStartedAtMs)
+                .execCompletedAtMs(now)
+                .execDurationMs(now - execStartedAtMs)
+                .traceId(traceId)
+                .extractedColumns("{}")
+                .extractionWarnings("[]")
+                .retryCount(0)
+                .logDetails(null)
+                .createdAtMs(context.getCreatedAtMs())
+                .build();
     }
 
     private TestCaseRunResult buildResult(

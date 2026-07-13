@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-07-07 (meta V1.25, analytics V1.11)
+> **Last sync**: 2026-07-13 (meta V1.28, analytics V1.11)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -104,7 +104,6 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
 | `overall_score` | JSONB | NULL | - | Per-suite `overall` metric-score definition — a serialized `StructuredQuery` expression. Settable and readable via the suite API (`overallScore` on `POST`/`PUT`/`GET /api/v1/test-suites`); references configured metric columns by their flattened name `metric::<metricName>::<outputField>`. NULL = system default (the single metric's average — `avg(:metricField)` — computed only when the run has exactly one numeric metric field). Captured verbatim into the suite snapshot per run; Phase 3 honors a non-null value for any metric count. See V1.23. |
 | `test_case_filter` | JSONB | NULL | - | Per-suite test-case selection filter — a serialized Structured Query DSL `filter` subtree authored over the dataset's test-case fields (base columns and flattened `data::<field>` fields). Settable and readable via the suite API (`testCaseFilter` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time against the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). NULL = no filter (run every valid, non-disabled test case). When set, it is AND-combined with `is_valid` and `disabled_test_case_ids` to select the runnable test cases at run-creation count and snapshot. Does not affect suite validity. See V1.24. |
-| `multi_turn` | BOOLEAN | NOT NULL | `false` | Multi-turn conversation flag. When `true` on a DEPLOYMENT suite, the suite reuses its single regular `input_bindings`, but the bound test-case columns hold arrays and each turn resolves the template with element `i` of the array-valued bound columns (scalars/constants broadcast). Turn count is per-test-case. Each turn is persisted as its own `test_case_run_results` row (see `turn_index`/`total_turns`). Captured verbatim into the suite snapshot per run (additive `SuiteSnapshotDto` field, snapshot version stays `"2"`). See V1.25. |
 | `is_valid` | BOOLEAN | NOT NULL | TRUE | Suite-level validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `version` | BIGINT | NOT NULL | 0 | Optimistic locking version |
@@ -308,6 +307,8 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
 | `dataset_id` | VARCHAR(36) | NOT NULL | - | FK to `datasets.id` (CASCADE on delete). Renamed from `test_suite_id` in V1.22. |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Display name |
 | `data` | JSONB | NOT NULL | `'{}'::jsonb` | Unified test case data map |
+| `conversation_id` | VARCHAR(36) | NULL | - | Row-based multi-turn grouping key (client-supplied UUID). `NULL` = single-turn test case. Rows sharing a `conversation_id` form one conversation, ordered by `turn_index`. Added V1.27. |
+| `turn_index` | INTEGER | NULL | - | 0-based turn position within the conversation. `NULL` for single-turn. Added V1.27. |
 | `is_valid` | BOOLEAN | NOT NULL | - | Validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
@@ -318,7 +319,9 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
 | `uq_test_cases_dataset_name` | `dataset_id`, `LOWER(test_case_name)` | UNIQUE (BTREE) | Case-insensitive unique constraint: one name per dataset |
+| `uq_test_cases_conversation_turn` | `dataset_id`, `conversation_id`, `turn_index` | UNIQUE (BTREE), partial `WHERE conversation_id IS NOT NULL` | One row per turn index within a conversation. Added V1.27. |
 | `idx_test_cases_dataset_id` | `dataset_id` | BTREE | |
+| `idx_test_cases_conversation` | `dataset_id`, `conversation_id` | BTREE | Groups a conversation's turns. Added V1.27. |
 | `idx_test_cases_created_at_ms` | `created_at_ms DESC` | BTREE | |
 | `idx_test_cases_data` | `data` | GIN | |
 
@@ -441,6 +444,8 @@ Tracks async test suite evaluation runs.
 
 Snapshot of test case data for a run; written at async phase start under a REPEATABLE READ transaction. Acts as the executor's source of truth for the run duration. Rows are automatically deleted when the parent run row is deleted (FK CASCADE). A scheduled retention job additionally purges rows for completed/failed runs older than the configured retention window.
 
+One row = one execution unit. Single-turn units use the scalar `test_case_*` columns (as before). Row-based multi-turn conversations are **assembled at snapshot** into a single unit: the scalar columns carry the representative (turn 0) snapshot and `turns` carries the full ordered turn list. Broken conversations are flagged via `broken` so the executor emits one `0/0` ERROR result row without invoking the model.
+
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | `run_id` | VARCHAR(36) | NOT NULL | - | FK to `test_suite_runs.id` (CASCADE DELETE) |
@@ -448,6 +453,10 @@ Snapshot of test case data for a run; written at async phase start under a REPEA
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Loose reference to the test case (no FK — snapshot is independent of live `test_cases`) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name at snapshot time |
 | `test_case_data` | JSONB | NOT NULL | - | Unified test case data map at snapshot time |
+| `conversation_id` | VARCHAR(36) | NULL | - | Conversation grouping key for a multi-turn unit; `NULL` for single-turn. Added V1.28. |
+| `total_turns` | INTEGER | NULL | - | Surviving (post-truncation) turn count of the assembled conversation; `NULL` for single-turn. Added V1.28. |
+| `turns` | JSONB | NULL | - | Ordered assembled turns `[{testCaseId, testCaseName, turnIndex, data}, ...]` for a multi-turn unit; `NULL` for single-turn. Added V1.28. |
+| `broken` | BOOLEAN | NOT NULL | `false` | Broken-conversation marker (missing turn 0 / gap / dup index / invalid turn / over-cap); executor emits a single `0/0` ERROR row. Added V1.28. |
 | `request_template_override` | JSONB | NULL | - | Legacy per-case request template override at snapshot time. Always NULL for runs created after V1.22 (the override surface was removed with the dataset migration); kept for backward compatibility with in-flight pre-V1.22 runs. |
 | `input_bindings_override` | JSONB | NULL | - | Legacy per-case input bindings override at snapshot time. Always NULL for runs created after V1.22; same backward-compatibility reason as above. |
 
@@ -924,7 +933,8 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.22 | `V1.22__IntroduceDataset.sql` | Introduced datasets table; rebound test_cases and revalidation_tasks FKs from test_suites to datasets; backfilled per-suite datasets; relaxed `test_suites.dataset_id` to nullable (unbound state); added `datasets.visibility` (`'PUBLIC'`/`'PRIVATE'`) with CHECK constraint; added `tg_test_suites_private_binding_guard` trigger raising `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` for concurrent PRIVATE-binding violations; backfilled `suite_snapshot` JSON to v2 (`snapshotVersion`, `datasetRef`) |
 | V1.23 | `V1.23__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs)                                                                                                                                                                                                                                                                                                                                                        |
 | V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` and `disabled_test_case_ids` at run-creation count and snapshot)                                                                                                                                                                                                                                           |
-| V1.25 | `V1.25__AddMultiStepToTestSuites.sql` | Added `multi_turn` (BOOLEAN NOT NULL DEFAULT false) to test_suites for multi-turn conversation                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| V1.27 | `V1.27__AddConversationColumnsToTestCases.sql` | Added nullable `conversation_id` (VARCHAR(36)) and `turn_index` (INTEGER) to test_cases for row-based multi-turn; added `idx_test_cases_conversation` `(dataset_id, conversation_id)` and partial unique `uq_test_cases_conversation_turn` `(dataset_id, conversation_id, turn_index) WHERE conversation_id IS NOT NULL` |
+| V1.28 | `V1.28__AddConversationColumnsToTestCaseRunInputs.sql` | Added nullable `conversation_id` (VARCHAR(36)), `total_turns` (INTEGER), `turns` (JSONB), and `broken` (BOOLEAN NOT NULL DEFAULT false) to test_case_run_inputs for snapshot-assembled per-conversation execution units |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

@@ -103,6 +103,42 @@ public interface TestCaseRepository {
     long countValidByDatasetIdExcludingIdsMatching(
             UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition);
 
+    // --- Row-based multi-turn: conversation-aware selection ---
+
+    /**
+     * Page of runnable SINGLE-TURN test cases ({@code conversation_id IS NULL}) — valid, not excluded, and
+     * (when {@code extraCondition} is non-null) matching the suite filter. Sorted by (createdAt asc, id asc).
+     */
+    List<TestCase> findRunnableSingleTurnPage(
+            UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit);
+
+    /** Count of runnable single-turn test cases (see {@link #findRunnableSingleTurnPage}). */
+    long countRunnableSingleTurn(UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition);
+
+    /**
+     * Page of distinct {@code conversation_id}s in the dataset whose turns ALL match {@code extraCondition}
+     * (the suite filter); a {@code null} condition includes every conversation. Deterministic order
+     * ({@code min(created_at_ms) asc, conversation_id asc}). Exclusion/validity/contiguity are resolved
+     * during Java-side assembly, not here.
+     */
+    List<String> findFilterMatchingConversationIdsPage(UUID datasetId, Condition extraCondition, int offset, int limit);
+
+    /** Count of conversations whose turns all match {@code extraCondition} (see above). */
+    long countFilterMatchingConversations(UUID datasetId, Condition extraCondition);
+
+    /**
+     * All turns (any validity, no exclusion applied) of the given conversations in the dataset,
+     * ordered by ({@code conversation_id asc, turn_index asc}) for grouping + assembly.
+     */
+    List<TestCase> findTurnsByConversationIds(UUID datasetId, Collection<String> conversationIds);
+
+    /**
+     * Cheap {@code EXISTS} check: whether the dataset contains ANY conversation row (any row with a non-null
+     * {@code conversation_id}). Used by the run-creation guard to reject MCP suites bound to a dataset that
+     * carries multi-turn conversation rows (multi-turn is HTTP-deployment only this round).
+     */
+    boolean existsConversationRowByDatasetId(UUID datasetId);
+
     /**
      * Inserts a test case, skipping if a row with the same (dataset_id, LOWER(test_case_name)) already exists.
      *

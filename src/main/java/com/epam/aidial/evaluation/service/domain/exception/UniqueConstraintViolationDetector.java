@@ -29,6 +29,25 @@ public final class UniqueConstraintViolationDetector {
     }
 
     /**
+     * Returns true if the given throwable or any of its causes is a unique constraint violation (23505) whose
+     * SQL error message references the named constraint. Used to distinguish which unique index was violated
+     * (e.g. the conversation/turn index vs the test-case name index).
+     */
+    public static boolean mentionsConstraint(Throwable t, String constraintName) {
+        Throwable current = t;
+        while (current != null) {
+            if (current instanceof SQLException sqlEx
+                    && UNIQUE_VIOLATION_SQL_STATE.equals(sqlEx.getSQLState())
+                    && sqlEx.getMessage() != null
+                    && sqlEx.getMessage().contains(constraintName)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    /**
      * If the given exception is a unique constraint violation, throws {@link UniqueConstraintViolationException}
      * with the given message. Callers should rethrow the original exception otherwise.
      */

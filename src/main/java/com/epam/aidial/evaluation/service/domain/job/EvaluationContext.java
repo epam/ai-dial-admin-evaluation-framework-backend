@@ -69,10 +69,6 @@ public class EvaluationContext {
     private final List<InputBindingDto> snapshotInputBindings;
     private final List<ResponseColumnDefinitionDto> snapshotResponseColumns;
 
-    // Multi-turn conversation configuration (from the snapshot; default single-turn).
-    // Per-turn variation is data-driven (array-valued bound columns), so no per-turn bindings live here.
-    private final boolean snapshotMultiTurn;
-
     // Pre-deserialized typed DTOs (deserialized once at run init, immutable for run duration)
     private final McpDeploymentReferenceDto mcpDeploymentRefDto;
     private final ToolReferenceDto toolRefDto;

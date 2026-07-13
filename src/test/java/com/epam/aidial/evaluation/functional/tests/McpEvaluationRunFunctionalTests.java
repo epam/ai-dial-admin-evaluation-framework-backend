@@ -13,6 +13,8 @@ import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
@@ -151,7 +153,41 @@ public abstract class McpEvaluationRunFunctionalTests extends AbstractMcpFunctio
         assertThat(extractedColumns).contains("AI is artificial intelligence");
     }
 
+    @Test
+    @DisplayName("Run creation on an MCP suite whose dataset has conversation rows is rejected with 409")
+    void shouldRejectRunForMcpSuiteWithConversationRows() {
+        TestSuiteResponseDto suite = createMcpSuite();
+        // A single-turn MCP test case would be fine; add a conversation row (conversationId + turnIndex)
+        // to the same dataset — multi-turn is HTTP-deployment only, so run creation must 409.
+        createConversationTurn(suite.getId(), "conv / turn 0", UUID.randomUUID(), 0, Map.of("userQuery", "hi"));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/runs"),
+                jsonEntity(TestSuiteRunRequestDto.builder()
+                        .runConfig(RunConfigDto.builder().numberOfRuns(1).build())
+                        .build()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("multi-turn");
+    }
+
     // --- Helper Methods ---
+
+    private TestCaseResponseDto createConversationTurn(
+            UUID testSuiteId, String name, UUID conversationId, int turnIndex, Map<String, Object> data) {
+        UUID datasetId = metaTestDataHelper.getDatasetId(testSuiteId);
+        TestCaseRequestDto req = TestCaseRequestDto.builder()
+                .testCaseName(name)
+                .conversationId(conversationId)
+                .turnIndex(turnIndex)
+                .data(data)
+                .build();
+        ResponseEntity<TestCaseResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases"), jsonEntity(req), TestCaseResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
 
     private TestSuiteRunResponseDto createRunAndAwaitTerminal(UUID testSuiteId, int numberOfRuns, String name) {
         ResponseEntity<TestSuiteRunResponseDto> response = restTemplate.postForEntity(

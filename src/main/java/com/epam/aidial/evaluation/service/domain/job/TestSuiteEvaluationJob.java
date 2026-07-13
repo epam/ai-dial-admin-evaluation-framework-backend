@@ -29,11 +29,15 @@ import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVe
 import java.sql.SQLException;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
@@ -63,6 +67,7 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteRepository testSuiteRepository;
     private final DatasetRepository datasetRepository;
     private final RunnableTestCaseSelector runnableTestCaseSelector;
+    private final ConversationAssembler conversationAssembler;
     private final TestCaseRunInputRepository testCaseRunInputRepository;
     private final TestSuiteRunSseService sseService;
     private final EvaluationRunProperties evaluationRunProperties;
@@ -253,14 +258,35 @@ public class TestSuiteEvaluationJob {
             }
 
             List<UUID> disabledIds = deserializeDisabledIds(suite.getDisabledTestCaseIds());
+            Set<UUID> excludedSet = new HashSet<>(disabledIds);
+            UUID datasetId = suite.getDatasetId();
+            String filterJson = suite.getTestCaseFilter();
 
-            List<TestCaseRunInput> batch = new ArrayList<>();
-            int position = 0;
-            int offset = 0;
-            List<TestCase> page;
-            do {
-                page = runnableTestCaseSelector.loadRunnablePage(
-                        suite.getDatasetId(), suite.getTestCaseFilter(), disabledIds, offset, SNAPSHOT_PAGE_SIZE);
+            int position = snapshotSingleTurnUnits(runId, datasetId, filterJson, disabledIds);
+            position = snapshotConversationUnits(runId, datasetId, filterJson, excludedSet, position);
+
+            int totalInputs = position;
+            long now = clock.millis();
+            repository.updateSuiteSnapshot(runId, snapshotJson, now);
+            repository.updateNumberOfTestCases(runId, totalInputs, now);
+            log.info("Created suite snapshot for run {}: {} test case input(s)", runId, totalInputs);
+            return null;
+        });
+    }
+
+    /**
+     * Snapshots the runnable SINGLE-TURN test cases as length-1 execution units, in deterministic order.
+     * Returns the next free {@code position}.
+     */
+    private int snapshotSingleTurnUnits(UUID runId, UUID datasetId, String filterJson, List<UUID> disabledIds) {
+        int position = 0;
+        int offset = 0;
+        List<TestCase> page;
+        do {
+            page = runnableTestCaseSelector.loadRunnableSingleTurnPage(
+                    datasetId, filterJson, disabledIds, offset, SNAPSHOT_PAGE_SIZE);
+            if (!page.isEmpty()) {
+                List<TestCaseRunInput> batch = new ArrayList<>(page.size());
                 for (TestCase tc : page) {
                     batch.add(TestCaseRunInput.builder()
                             .runId(runId)
@@ -270,20 +296,60 @@ public class TestSuiteEvaluationJob {
                             .testCaseData(tc.getData())
                             .build());
                 }
+                testCaseRunInputRepository.insertBatch(batch);
+            }
+            offset += SNAPSHOT_PAGE_SIZE;
+        } while (page.size() == SNAPSHOT_PAGE_SIZE);
+        return position;
+    }
+
+    /**
+     * Snapshots the filter-matching CONVERSATIONS as assembled per-conversation execution units (one input row
+     * each), paging by distinct {@code conversation_id} so a conversation is never split across a page. Each
+     * conversation's turns are grouped and handed to {@link ConversationAssembler}, which resolves
+     * runnable-vs-broken (contiguity, tail-only disable, validity, cap). Returns the next free {@code position}.
+     */
+    private int snapshotConversationUnits(
+            UUID runId, UUID datasetId, String filterJson, Set<UUID> excludedSet, int startPosition) {
+        int position = startPosition;
+        int offset = 0;
+        List<String> conversationIds;
+        do {
+            conversationIds = runnableTestCaseSelector.loadFilterMatchingConversationIdsPage(
+                    datasetId, filterJson, offset, SNAPSHOT_PAGE_SIZE);
+            if (!conversationIds.isEmpty()) {
+                List<TestCase> allTurns = runnableTestCaseSelector.loadConversationTurns(datasetId, conversationIds);
+                Map<UUID, List<TestCase>> turnsByConversation = allTurns.stream()
+                        .collect(Collectors.groupingBy(
+                                TestCase::getConversationId, LinkedHashMap::new, Collectors.toList()));
+
+                List<TestCaseRunInput> batch = new ArrayList<>(conversationIds.size());
+                for (String conversationId : conversationIds) {
+                    List<TestCase> turns = turnsByConversation.get(UUID.fromString(conversationId));
+                    if (turns == null || turns.isEmpty()) {
+                        continue;
+                    }
+                    ConversationAssembler.AssembledConversation assembled =
+                            conversationAssembler.assemble(turns, excludedSet);
+                    batch.add(TestCaseRunInput.builder()
+                            .runId(runId)
+                            .position(position++)
+                            .testCaseId(assembled.representativeTestCaseId())
+                            .testCaseName(assembled.representativeTestCaseName())
+                            .testCaseData(assembled.representativeTestCaseData())
+                            .conversationId(assembled.conversationId())
+                            .totalTurns(assembled.totalTurns())
+                            .turns(assembled.turnsJson())
+                            .broken(assembled.broken())
+                            .build());
+                }
                 if (!batch.isEmpty()) {
                     testCaseRunInputRepository.insertBatch(batch);
-                    batch.clear();
                 }
-                offset += SNAPSHOT_PAGE_SIZE;
-            } while (page.size() == SNAPSHOT_PAGE_SIZE);
-
-            int totalInputs = position;
-            long now = clock.millis();
-            repository.updateSuiteSnapshot(runId, snapshotJson, now);
-            repository.updateNumberOfTestCases(runId, totalInputs, now);
-            log.info("Created suite snapshot for run {}: {} test case input(s)", runId, totalInputs);
-            return null;
-        });
+            }
+            offset += SNAPSHOT_PAGE_SIZE;
+        } while (conversationIds.size() == SNAPSHOT_PAGE_SIZE);
+        return position;
     }
 
     /**
@@ -438,7 +504,6 @@ public class TestSuiteEvaluationJob {
                 .snapshotEndpointRef(snapshot.getEndpointRef())
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
-                .snapshotMultiTurn(snapshot.isMultiTurn())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())

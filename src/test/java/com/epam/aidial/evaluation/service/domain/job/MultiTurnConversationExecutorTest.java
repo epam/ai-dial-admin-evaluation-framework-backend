@@ -11,7 +11,6 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
-import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
@@ -50,9 +49,11 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("MultiTurnConversationExecutor per-turn emission")
+@DisplayName("MultiTurnConversationExecutor per-turn emission (row-based)")
 class MultiTurnConversationExecutorTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
@@ -96,7 +97,6 @@ class MultiTurnConversationExecutorTest {
                 evaluationRunProperties,
                 jsonbMapper,
                 jsonService,
-                new ConversationTurnPlanner(),
                 new DeploymentTurnInvoker(deploymentInvoker, jsonService),
                 FIXED_CLOCK);
         lenient().when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/dep/chat/completions");
@@ -148,8 +148,8 @@ class MultiTurnConversationExecutorTest {
         // each row carries that turn's scalar extractedColumns object
         assertThat(objectMapper.readTree(row0.getExtractedColumns()).get("a").asString())
                 .isEqualTo("answer-0");
-        // each row carries that turn's projected scalar testCaseData
-        assertThat(objectMapper.readTree(row0.getTestCaseData()).get("turns").asString())
+        // each row carries that turn's own scalar row data
+        assertThat(objectMapper.readTree(row0.getTestCaseData()).get("question").asString())
                 .isEqualTo("q0");
         // each row carries that turn's raw response body
         assertThat(contentOf(row0.getResponseBody())).isEqualTo("assistant-0");
@@ -160,14 +160,38 @@ class MultiTurnConversationExecutorTest {
         assertThat(row1.getTotalTurns()).isEqualTo(2);
         assertThat(objectMapper.readTree(row1.getExtractedColumns()).get("a").asString())
                 .isEqualTo("answer-1");
-        assertThat(objectMapper.readTree(row1.getTestCaseData()).get("turns").asString())
+        assertThat(objectMapper.readTree(row1.getTestCaseData()).get("question").asString())
                 .isEqualTo("q1");
         assertThat(contentOf(row1.getResponseBody())).isEqualTo("assistant-1");
     }
 
     @Test
+    @DisplayName("each turn resolves the template against its own frozen row data")
+    void eachTurnResolvesFromItsOwnRow() {
+        when(resolvedRequestService.resolve(any(), any(), any()))
+                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(response(200, "assistant-0"), response(200, "assistant-1"));
+        when(responseColumnExtractor.extract(any(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> dataCaptor = ArgumentCaptor.forClass(Map.class);
+
+        List<TestCaseRunResult> results =
+                executor.execute(inputWithTurns(2), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(results).hasSize(2);
+        verify(resolvedRequestService, times(2)).resolve(any(), any(), dataCaptor.capture());
+        List<Map<String, Object>> perTurnData = dataCaptor.getAllValues();
+        // each turn's data is that discrete row's scalar data — no array projection
+        assertThat(perTurnData.get(0).get("question")).isEqualTo("q0");
+        assertThat(perTurnData.get(1).get("question")).isEqualTo("q1");
+    }
+
+    @Test
     @DisplayName("fail-fast on a mid-conversation HTTP failure: k SUCCESS rows + 1 ERROR row, remaining turns skipped")
-    void failFastOnHttpFailure() throws Exception {
+    void failFastOnHttpFailure() {
         when(resolvedRequestService.resolve(any(), any(), any()))
                 .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -188,7 +212,7 @@ class MultiTurnConversationExecutorTest {
         TestCaseRunResult errorRow = results.get(1);
         assertThat(errorRow.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(errorRow.getTurnIndex()).isEqualTo(1);
-        // total_turns stays the planned N even on abort
+        // total_turns stays the surviving N even on abort
         assertThat(errorRow.getTotalTurns()).isEqualTo(3);
         assertThat(errorRow.getResponseStatusCode()).isEqualTo(500);
         // the failing turn persists an empty extraction object
@@ -255,92 +279,6 @@ class MultiTurnConversationExecutorTest {
     }
 
     @Test
-    @DisplayName("array columns iterate per turn while scalar columns broadcast unchanged")
-    void scalarBroadcastAcrossTurns() {
-        when(resolvedRequestService.resolve(any(), any(), any()))
-                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
-        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
-                .thenReturn(response(200, "assistant-0"), response(200, "assistant-1"));
-        when(responseColumnExtractor.extract(any(), any()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
-
-        EvaluationContext context = contextWithBindings(List.of(
-                InputBindingDto.builder()
-                        .templateVariable("turn")
-                        .dataField("turns")
-                        .build(),
-                InputBindingDto.builder()
-                        .templateVariable("sys")
-                        .dataField("system")
-                        .build()));
-        TestCaseRunInput input =
-                inputWithData(Map.<String, Object>of("turns", List.of("q0", "q1"), "system", "be concise"));
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> dataCaptor = ArgumentCaptor.forClass(Map.class);
-
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
-
-        assertThat(results).hasSize(2);
-        verify(resolvedRequestService, times(2)).resolve(any(), any(), dataCaptor.capture());
-        List<Map<String, Object>> perTurnData = dataCaptor.getAllValues();
-        // array column iterates: element i per turn
-        assertThat(perTurnData.get(0).get("turns")).isEqualTo("q0");
-        assertThat(perTurnData.get(1).get("turns")).isEqualTo("q1");
-        // scalar column broadcasts unchanged on every turn
-        assertThat(perTurnData.get(0).get("system")).isEqualTo("be concise");
-        assertThat(perTurnData.get(1).get("system")).isEqualTo("be concise");
-    }
-
-    @Test
-    @DisplayName("mismatched array lengths fail only that test case with one degenerate 0/0 ERROR row and no calls")
-    void mismatchedArrayLengthsError() {
-        EvaluationContext context = contextWithBindings(List.of(
-                InputBindingDto.builder().templateVariable("a").dataField("as").build(),
-                InputBindingDto.builder().templateVariable("b").dataField("bs").build()));
-        TestCaseRunInput input = inputWithData(Map.<String, Object>of("as", List.of("x", "y"), "bs", List.of("z")));
-
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
-
-        assertThat(results).hasSize(1);
-        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        assertThat(results.get(0).getTurnIndex()).isEqualTo(0);
-        assertThat(results.get(0).getTotalTurns()).isEqualTo(0);
-        assertThat(results.get(0).getExtractedColumns()).isEqualTo("{}");
-        verifyNoInteractions(deploymentInvoker);
-    }
-
-    @Test
-    @DisplayName("no array-valued bound column fails only that test case with a degenerate 0/0 ERROR row and no calls")
-    void noArrayColumnError() {
-        TestCaseRunInput input = inputWithData(Map.<String, Object>of("turns", "just a string"));
-
-        List<TestCaseRunResult> results =
-                executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
-
-        assertThat(results).hasSize(1);
-        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        assertThat(results.get(0).getTotalTurns()).isEqualTo(0);
-        verifyNoInteractions(deploymentInvoker);
-    }
-
-    @Test
-    @DisplayName("turn count over the cap fails only that test case with a degenerate 0/0 ERROR row and no calls")
-    void turnCountOverCapError() {
-        TestCaseRunInput input = inputWithTurns(ValidationConstants.MAX_CONVERSATION_TURNS + 1);
-
-        List<TestCaseRunResult> results =
-                executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
-
-        assertThat(results).hasSize(1);
-        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        assertThat(results.get(0).getTotalTurns()).isEqualTo(0);
-        verifyNoInteractions(deploymentInvoker);
-    }
-
-    @Test
     @DisplayName("a turn whose resolved 'messages' is not an array yields one ERROR row and no HTTP call")
     void nonListMessagesError() {
         when(resolvedRequestService.resolve(any(), any(), any())).thenReturn(resolvedTurnWithNonListMessages());
@@ -350,9 +288,30 @@ class MultiTurnConversationExecutorTest {
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        // this turn's plan is a real single turn (1), not the 0/0 data-shape sentinel
+        // a real single turn (total=1), not the 0/0 broken-conversation sentinel
         assertThat(results.get(0).getTotalTurns()).isEqualTo(1);
         assertThat(results.get(0).getExtractedColumns()).isEqualTo("{}");
+        verifyNoInteractions(deploymentInvoker);
+    }
+
+    @Test
+    @DisplayName("an input with no readable frozen turns yields one degenerate 0/0 ERROR row and no HTTP call")
+    void emptyTurnsYieldsZeroZeroError() {
+        TestCaseRunInput input = TestCaseRunInput.builder()
+                .runId(UUID.randomUUID())
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("conv-1")
+                .conversationId(UUID.randomUUID())
+                .turns("[]")
+                .build();
+
+        List<TestCaseRunResult> results =
+                executor.execute(input, context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(results.get(0).getTurnIndex()).isEqualTo(0);
+        assertThat(results.get(0).getTotalTurns()).isEqualTo(0);
         verifyNoInteractions(deploymentInvoker);
     }
 
@@ -421,33 +380,35 @@ class MultiTurnConversationExecutorTest {
                 .build());
     }
 
-    /** Builds an input whose single array-valued column {@code turns} has {@code n} elements → {@code n} turns. */
+    /**
+     * Builds a conversation input of {@code n} frozen turns (as the snapshot phase writes them): an ordered
+     * {@code turns} JSON array where each element carries a discrete row's {@code testCaseId}/{@code
+     * testCaseName}/{@code turnIndex} and scalar {@code data} ({@code {"question":"q<i>"}}).
+     */
     private TestCaseRunInput inputWithTurns(int n) {
-        List<String> values = new ArrayList<>();
+        ArrayNode turns = objectMapper.createArrayNode();
         for (int i = 0; i < n; i++) {
-            values.add("q" + i);
+            ObjectNode turn = objectMapper.createObjectNode();
+            turn.put("testCaseId", UUID.randomUUID().toString());
+            turn.put("testCaseName", "conv-1 / turn " + i);
+            turn.put("turnIndex", i);
+            ObjectNode data = objectMapper.createObjectNode();
+            data.put("question", "q" + i);
+            turn.set("data", data);
+            turns.add(turn);
         }
-        return inputWithData(Map.<String, Object>of("turns", values));
-    }
-
-    private TestCaseRunInput inputWithData(Map<String, Object> data) {
         return TestCaseRunInput.builder()
                 .runId(UUID.randomUUID())
+                .conversationId(UUID.randomUUID())
                 .testCaseId(UUID.randomUUID())
-                .testCaseName("tc-1")
-                .testCaseData(objectMapper.writeValueAsString(data))
+                .testCaseName("conv-1 / turn 0")
+                .totalTurns(n)
+                .turns(objectMapper.writeValueAsString(turns))
                 .build();
     }
 
-    /** Single bindings shape: one {@code turn} variable bound to the array-valued {@code turns} column. */
+    /** Single bindings shape: one {@code question} variable bound to the scalar {@code question} column. */
     private EvaluationContext context() {
-        return contextWithBindings(List.of(InputBindingDto.builder()
-                .templateVariable("turn")
-                .dataField("turns")
-                .build()));
-    }
-
-    private EvaluationContext contextWithBindings(List<InputBindingDto> bindings) {
         return EvaluationContext.builder()
                 .runId(UUID.randomUUID())
                 .suiteId(UUID.randomUUID())
@@ -458,8 +419,10 @@ class MultiTurnConversationExecutorTest {
                 .maxRetryDelayMs(0)
                 .maxResponseSizeBytes(10_000_000L)
                 .createdAtMs(FIXED_CLOCK.millis())
-                .snapshotMultiTurn(true)
-                .snapshotInputBindings(bindings)
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("question")
+                        .dataField("question")
+                        .build()))
                 .snapshotRequestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/chat").build())
                 .snapshotDeploymentRef(

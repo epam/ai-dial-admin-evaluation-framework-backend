@@ -24,6 +24,8 @@ public class TestCaseMapper {
                 .id(entity.getId())
                 .testCaseName(entity.getTestCaseName())
                 .data(warningsSerializer.deserializeMap(entity.getData()))
+                .conversationId(entity.getConversationId())
+                .turnIndex(entity.getTurnIndex())
                 .valid(entity.isValid())
                 .validationWarnings(
                         includeWarnings ? warningsSerializer.deserializeWarnings(entity.getValidationWarnings()) : null)
@@ -40,6 +42,8 @@ public class TestCaseMapper {
                 .datasetId(datasetId)
                 .testCaseName(dto.getTestCaseName())
                 .data(warningsSerializer.serializeMap(dto.getData()))
+                .conversationId(dto.getConversationId())
+                .turnIndex(dto.getTurnIndex())
                 .valid(false)
                 .validationWarnings("[]")
                 .build();
@@ -51,6 +55,8 @@ public class TestCaseMapper {
         }
         entity.setTestCaseName(dto.getTestCaseName());
         entity.setData(warningsSerializer.serializeMap(dto.getData()));
+        entity.setConversationId(dto.getConversationId());
+        entity.setTurnIndex(dto.getTurnIndex());
     }
 
     public void updateEntity(TestCase entity, TestCaseBatchPutItemDto dto) {
@@ -59,5 +65,7 @@ public class TestCaseMapper {
         }
         entity.setTestCaseName(dto.getTestCaseName());
         entity.setData(warningsSerializer.serializeMap(dto.getData()));
+        entity.setConversationId(dto.getConversationId());
+        entity.setTurnIndex(dto.getTurnIndex());
     }
 }

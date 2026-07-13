@@ -66,6 +66,37 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
         compile(datasetId, filterJson);
     }
 
+    @Override
+    public long countRunnableUnits(UUID datasetId, String filterJson, Collection<UUID> excludedIds) {
+        final Condition filter = compile(datasetId, filterJson);
+        return testCaseRepository.countRunnableSingleTurn(datasetId, excludedIds, filter)
+                + testCaseRepository.countFilterMatchingConversations(datasetId, filter);
+    }
+
+    @Override
+    public List<TestCase> loadRunnableSingleTurnPage(
+            UUID datasetId, String filterJson, Collection<UUID> excludedIds, int offset, int limit) {
+        final Condition filter = compile(datasetId, filterJson);
+        return testCaseRepository.findRunnableSingleTurnPage(datasetId, excludedIds, filter, offset, limit);
+    }
+
+    @Override
+    public List<String> loadFilterMatchingConversationIdsPage(
+            UUID datasetId, String filterJson, int offset, int limit) {
+        final Condition filter = compile(datasetId, filterJson);
+        return testCaseRepository.findFilterMatchingConversationIdsPage(datasetId, filter, offset, limit);
+    }
+
+    @Override
+    public List<TestCase> loadConversationTurns(UUID datasetId, Collection<String> conversationIds) {
+        return testCaseRepository.findTurnsByConversationIds(datasetId, conversationIds);
+    }
+
+    @Override
+    public boolean datasetHasConversationRows(UUID datasetId) {
+        return testCaseRepository.existsConversationRowByDatasetId(datasetId);
+    }
+
     /** Parses and translates the stored filter to a jOOQ {@link Condition}; {@code null} when there is no filter. */
     private Condition compile(UUID datasetId, String filterJson) {
         final FilterNode filter = parseFilter(filterJson);

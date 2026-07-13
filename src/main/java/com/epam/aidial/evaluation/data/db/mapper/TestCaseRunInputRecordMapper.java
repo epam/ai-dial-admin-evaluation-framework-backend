@@ -20,6 +20,10 @@ public class TestCaseRunInputRecordMapper {
                 .testCaseData(toJsonString(r.getTestCaseData()))
                 .requestTemplateOverride(toJsonString(r.getRequestTemplateOverride()))
                 .inputBindingsOverride(toJsonString(r.getInputBindingsOverride()))
+                .conversationId(r.getConversationId() != null ? UUID.fromString(r.getConversationId()) : null)
+                .totalTurns(r.getTotalTurns())
+                .turns(toJsonString(r.getTurns()))
+                .broken(r.getBroken() != null && r.getBroken())
                 .build();
     }
 

@@ -283,6 +283,40 @@ Status: **Implemented**
 - **WHEN** a user views traces in Grafana Tempo for a specific run
 - **THEN** `metric.declaration.name` SHALL be visible as a span attribute, allowing the user to identify which metric provider metric was evaluated without needing to cross-reference TSMD names
 
+### Requirement: OTel Baggage propagation of eval run and suite ids
+The service SHALL populate the OTel `Baggage` of the active OTel context with the entries `eval.run.id` and `eval.suite.id` (both UUID strings) on every run-scoped outbound execution path that already opens an OTel span carrying those attributes — the evaluation worker's DIAL Core call and the metric-evaluation worker's metric provider call. Because the default OTel propagator set includes the W3C baggage propagator, the existing tracing `RestClient` interceptor SHALL then serialize these entries into a `baggage` header on the outgoing HTTP request, allowing DIAL Core and downstream services to attribute each analytics/log event to the originating eval run and suite.
+Status: **Implemented**
+
+Baggage SHALL carry only these non-sensitive UUID identifiers. Tokens, credentials, PII, or free-form data SHALL NOT be placed into baggage, since baggage is broadcast verbatim to every downstream service including the upstream model provider.
+
+Baggage entries SHALL be scoped to the current execution: set when the per-execution OTel scope is opened and removed when it closes, so no baggage entry leaks onto a pooled or virtual thread after the execution completes.
+
+This requirement is additive: it does not alter the existing `eval.run.id`/`eval.suite.id` span attributes or the W3C `traceparent` propagation, which remain unchanged.
+
+#### Scenario: Baggage set on eval worker DIAL Core call when tracing active
+- **WHEN** the evaluation worker executes a test case with OTel enabled and opens the `eval.testcase.execute` span scope
+- **THEN** the current OTel Baggage SHALL contain `eval.run.id` = the run id and `eval.suite.id` = the suite id
+- **AND** the outgoing DIAL Core request SHALL include a `baggage` header whose members include `eval.run.id=<runId>` and `eval.suite.id=<suiteId>`
+
+#### Scenario: Baggage set on metric provider call when tracing active
+- **WHEN** the metric-evaluation worker evaluates a metric with OTel enabled and opens the `metric.tsmd.evaluate` span scope
+- **THEN** the current OTel Baggage SHALL contain `eval.run.id` and `eval.suite.id`
+- **AND** the outgoing metric provider request SHALL include a `baggage` header carrying those members
+
+#### Scenario: No baggage header when OTel disabled
+- **WHEN** OTel is disabled (default configuration) and an eval or metric execution runs
+- **THEN** the tracing interceptor's propagator SHALL be a no-op so that **no `baggage` header is injected** on the outgoing HTTP request, and no error is raised
+- **AND** this holds even though setting run/suite baggage in the OTel context is itself SDK-independent — suppression occurs at the injection layer, not at the baggage-put
+
+#### Scenario: Baggage does not leak across the async boundary
+- **WHEN** a test-case execution completes and its OTel scope closes on a pooled/virtual worker thread
+- **THEN** the `eval.run.id`/`eval.suite.id` baggage entries SHALL no longer be present on that thread's OTel context for subsequent unrelated work
+
+#### Scenario: Baggage carries only non-sensitive identifiers
+- **WHEN** the `baggage` header is constructed for an outgoing run-scoped call
+- **THEN** its members SHALL be limited to `eval.run.id` and `eval.suite.id`
+- **AND** SHALL NOT include the caller's authorization token, api-key, or any test-case content
+
 ## Implementation Notes
 - Docs: `docs/configuration.md` (Logging Configuration section)
 - Request/response logging: `com.epam.aidial.evaluation.configuration.logging.RequestResponseLoggingFilter`
@@ -293,3 +327,5 @@ Status: **Implemented**
 - AOP trace interceptor config: `com.epam.aidial.evaluation.configuration.logging.LogConfiguration`
 - Tracing interceptor factory: `DialCoreClientConfiguration.tracingInterceptor(OpenTelemetry)` (public static, reused by metric provider config)
 - Metric provider tracing: `MetricProviderRestClientConfiguration` — injects `OpenTelemetry`, attaches tracing interceptor via `buildRestClient()`
+- OTel Baggage helper: `com.epam.aidial.evaluation.utils.EvalBaggage#withRunContext(UUID, UUID)` — sets `eval.run.id`/`eval.suite.id` baggage within a try-with-resources `Scope`; opened alongside `span.makeCurrent()` in `EvaluationWorker#execute` and `MetricEvaluationWorker#evaluate`
+- Shared OTel key constants: `com.epam.aidial.evaluation.constants.TracingConstants` (`EVAL_RUN_ID`, `EVAL_SUITE_ID`) — single source of truth for both span attributes and baggage keys

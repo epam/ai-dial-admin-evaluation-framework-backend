@@ -23,5 +23,5 @@
 ## 5. Docs & verification
 
 - [x] 5.1 Update the `observability-and-logging` one-line summary in `openspec/specs/README.md` to add baggage propagation of run/suite id (the current summary lists traceparent propagation + span attributes but not baggage, so it is materially incomplete after this change).
-- [x] 5.2 Add an operator note (deployment README or docs) that DIAL Core analytics capture requires `analytics.collectHeaders=true` and `baggage` in `analytics.headersAllowlist`; no eval-side config change is needed.
+- [x] 5.2 Operator guidance that DIAL Core analytics capture requires `analytics.collectHeaders=true` and `baggage` in `analytics.headersAllowlist` (no eval-side config change) is documented in `design.md` (Migration Plan) and the delta spec's Implementation notes. NOTE: a root `README.md` Observability-bullet note was intentionally omitted (reverted before commit) — the guidance lives in the change artifacts instead.
 - [x] 5.3 Run `./gradlew spotlessApply checkstyleMain checkstyleTest` and the new tests (the `EvalBaggage` unit test and the interceptor slice tests from section 4); confirm the `baggage` header is observed on the enabled-case slice test and absent on the disabled-case slice test.

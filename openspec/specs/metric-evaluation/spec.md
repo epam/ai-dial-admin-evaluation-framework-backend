@@ -111,7 +111,7 @@ Status: **Implemented**
 - **THEN** the executor SHALL catch the per-TSMD exception via `CompletableFuture` error handling and map it to error entries in metricValues (null) and metricInfos (error message)
 
 ### Requirement: Binding resolution
-The `BindingResolver` SHALL resolve TSMD config and input bindings against test case data and the `extractedColumns` from a `TestCaseRunResult`, producing `Map<String, Object>` for config and input. Because each result row is now a single turn carrying scalar `test_case_data` and scalar `extracted_columns`, resolution SHALL use the column value **directly** — there is no turn/element selection. A `Response` or `TestCase` binding source carries only a `columnName`; a `Constant` binding source carries a literal `value`. Binding sources SHALL NOT carry a `jsonataExpression`. Resolution SHALL fail fast when a `Response`/`TestCase` binding references a column that does not exist in the corresponding map; a column present with a `null` value SHALL resolve to `null`.
+The `BindingResolver` SHALL resolve TSMD config and input bindings against a `TestCaseRunResult`'s scalar `test_case_data` and `extractedColumns`, producing `Map<String, Object>` for config and input. A `Response` or `TestCase` binding source carries a `columnName` and resolves to that column's value directly; a `Constant` binding source carries a literal `value`. Resolution SHALL fail fast when a `Response`/`TestCase` binding references a column that does not exist in the corresponding map; a column present with a `null` value SHALL resolve to `null`.
 Status: **Implemented**
 
 #### Scenario: TestCase binding source
@@ -125,10 +125,6 @@ Status: **Implemented**
 #### Scenario: Constant binding source
 - **WHEN** a binding has `source: { $type: "Constant", value: "gemini-2.5-flash-lite" }`
 - **THEN** the resolver SHALL produce the literal value `"gemini-2.5-flash-lite"` for that binding's property
-
-#### Scenario: No jsonataExpression on any binding source
-- **WHEN** a binding source is deserialized
-- **THEN** `Response`, `TestCase`, and `Constant` sources SHALL have no `jsonataExpression` field, and the resolver SHALL contain no JSONata-selection step and no array/scalar mismatch guard
 
 #### Scenario: Missing column in test case data fails fast
 - **WHEN** a `TestCase` binding references a column key absent from the per-turn data map
@@ -284,7 +280,7 @@ Status: **Implemented**
 - **THEN** the executor SHALL record a `Failure` with a `RuntimeException` and the pre-extracted output field names for that TSMD
 
 ### Requirement: EvalSummary assembly from TestCaseRunResult
-The system SHALL build one EvalSummary per `TestCaseRunResult`, copying context fields from the result and adding computed metric values. Because a multi-turn conversation now produces one result row per turn, it likewise produces one EvalSummary per turn. The `extractedColumns` value SHALL be copied from the result **verbatim** — a scalar object for every result (single-turn and per-turn alike; there is no longer a column-major array shape). Each summary SHALL carry `turnIndex` and `totalTurns` copied from the source result.
+The system SHALL build one EvalSummary per `TestCaseRunResult`, copying context fields from the result and adding computed metric values. Because a multi-turn conversation now produces one result row per turn, it likewise produces one EvalSummary per turn. The `extractedColumns` value SHALL be copied from the result **verbatim** — a scalar object for every result (single-turn and per-turn alike). Each summary SHALL carry `turnIndex` and `totalTurns` copied from the source result.
 Status: **Implemented**
 
 #### Scenario: Field mapping from result to summary
@@ -293,7 +289,7 @@ Status: **Implemented**
 
 #### Scenario: extractedColumns stored verbatim as a scalar object
 - **WHEN** an EvalSummary is built for any result whose `extractedColumns` is `{"answer": "Paris"}`
-- **THEN** `EvalSummary.extractedColumns` SHALL store `{"answer": "Paris"}` unchanged, with no normalization step and no array handling
+- **THEN** `EvalSummary.extractedColumns` SHALL store `{"answer": "Paris"}` unchanged, with no normalization step
 
 #### Scenario: One summary per turn
 - **WHEN** a 3-turn conversation is evaluated

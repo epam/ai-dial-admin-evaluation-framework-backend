@@ -56,10 +56,8 @@ Status: **Implemented**
   present-null column from a missing one
 
 ### Requirement: Condition is a JSONata expression
-Every condition SHALL be evaluated as a JSONata expression against the namespaced dictionary; there is
-no custom-function form. The condition SHALL be trimmed before evaluation. (A prior design routed a
-bare `name()` to a custom-function registry; that mechanism has been removed and MAY be re-introduced
-later if needed.)
+Every condition SHALL be evaluated as a JSONata expression against the namespaced dictionary. The
+condition SHALL be trimmed before evaluation.
 Status: **Implemented**
 
 #### Scenario: JSONata expression
@@ -152,8 +150,7 @@ Status: **Implemented**
 
 Components (service.domain): `ConditionExpressionEvaluator` (single entry point;
 `validate(condition)` and `evaluate(condition, ConditionContext)`), `ConditionContext` (builder-backed
-carrier). Every condition is JSONata — there is no custom-function SPI/registry (removed; may return
-later). Reuses `JsonataEvaluationService` for JSONata parse/eval and the `data`/`response` namespace
+carrier). Reuses `JsonataEvaluationService` for JSONata parse/eval and the `data`/`response` namespace
 tokens from `EvalSummaryExportColumnConstants`; the `turn` namespace (`index`/`total`/`last`) is built
 from the `ConditionContext` turn position. Runtime integration in
 `InProcessMetricEvaluationExecutor.evaluateAndBuild()` with a

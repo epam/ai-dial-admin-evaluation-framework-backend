@@ -229,19 +229,15 @@ Status: **Implemented**
 
 ### Requirement: Malformed condition is rejected with 400
 On TSMD create or update, a non-blank `condition` SHALL be validated eagerly and the request SHALL be
-rejected with HTTP 400 (`VALIDATION_ERROR`) when the condition is a syntactically invalid JSONata
-expression, or a bare `name()` call whose function name is not registered. The condition SHALL NOT
-contribute to the metric's soft `is_valid` flag and SHALL NOT be stored as a validation warning.
+rejected with HTTP 400 (`VALIDATION_ERROR`) when the condition is not a syntactically valid JSONata
+expression. The condition SHALL NOT contribute to the metric's soft `is_valid` flag and SHALL NOT be
+stored as a validation warning. Condition semantics are defined in the
+`conditional-metric-execution` spec.
 Status: **Implemented**
 
 #### Scenario: Invalid JSONata syntax rejected
 - **WHEN** a POST or PUT sets `condition` to a syntactically invalid JSONata expression
 - **THEN** the request SHALL fail with HTTP 400 and the TSMD SHALL NOT be created or updated
-
-#### Scenario: Unknown custom function rejected
-- **WHEN** a POST or PUT sets `condition` to a bare `name()` whose name is not a registered custom
-  function
-- **THEN** the request SHALL fail with HTTP 400
 
 #### Scenario: Valid condition accepted
 - **WHEN** a POST or PUT sets `condition` to a valid JSONata expression

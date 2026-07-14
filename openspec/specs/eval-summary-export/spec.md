@@ -106,7 +106,7 @@ Status: **Implemented**
 - **THEN** the row's column header SHALL be `data::meta.tags` (the embedded dot is preserved unmodified because `::` is the separator)
 
 ### Requirement: Inlined extractedColumns columns
-For each `ResponseColumnDefinitionDto` in `SuiteSnapshotDto.responseColumns` (preserving snapshot order), the CSV SHALL include one column named `response::<columnName>` (with `::` as the family-separator). The cell value SHALL be `extractedColumns[columnName]` rendered per the cell-serialization rules. Because every result row is now a single turn, `extractedColumns` is always an object of **scalars** — the cell is the scalar value (a multi-turn conversation is exported as one CSV row per turn, each with its own scalar cell). When extraction failed for a column (recorded in `extractionWarnings`), the cell SHALL be empty.
+For each `ResponseColumnDefinitionDto` in `SuiteSnapshotDto.responseColumns` (preserving snapshot order), the CSV SHALL include one column named `response::<columnName>` (with `::` as the family-separator). The cell value SHALL be `extractedColumns[columnName]` rendered per the cell-serialization rules — `extractedColumns` is an object of scalars, so the cell is the scalar value (a multi-turn conversation is exported as one CSV row per turn, each with its own scalar cell). When extraction failed for a column (recorded in `extractionWarnings`), the cell SHALL be empty.
 Status: **Implemented**
 
 #### Scenario: Successful extraction

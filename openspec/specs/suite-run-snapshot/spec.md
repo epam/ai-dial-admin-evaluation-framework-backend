@@ -224,6 +224,6 @@ Status: **Planned**
 - Conversation ordering for the `position` column is deterministic: `min(created_at_ms)` of the
   conversation's turns, then `conversation_id`.
 - `MAX_CONVERSATION_TURNS` is the surviving-turn cap enforced here (mirrors the cheaper write-time cap).
-- No suite `multiTurn` flag and no `SuiteSnapshotDto.multiTurn` field: multi-turn is emergent from the
-  presence of per-turn conversation rows; the `turn_index` / `total_turns` columns on the analytics
-  result and summary tables are retained. `snapshotVersion` stays `"2"`.
+- Multi-turn is emergent from the presence of per-turn conversation rows (not a suite-level setting);
+  the `turn_index` / `total_turns` columns on the analytics result and summary tables are retained.
+  `snapshotVersion` stays `"2"`.

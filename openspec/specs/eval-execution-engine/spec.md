@@ -685,24 +685,6 @@ Status: **Implemented**
 - **WHEN** response columns use MCP-specific JSONata paths (e.g., `$.isError`, `$.content[0].text`, `$.structuredContent.results`)
 - **THEN** the extraction SHALL work correctly because the serialized JSON preserves the MCP envelope structure
 
-### Requirement: Multi-turn execution branch
-When the assembled input carries more than one turn, the worker SHALL delegate to `MultiTurnConversationExecutor` and return a **`List<TestCaseRunResult>` with one element per surviving turn**, per the multi-turn-conversation spec. Turns run **strictly sequentially** within the single worker task: each turn re-sends the accumulated chat-completions `messages` history and appends the target's `choices[0].message` before the next turn. A single-turn conversation SHALL return a one-element list; a conversation of `N` authored turns SHALL return up to `N` results (fewer on early abort). Multi-turn is derived from the presence of ordered conversation turns in the assembled input — **not** from a suite-level `multiTurn` flag and **not** from array-valued test-case columns. Each turn's `test_case_data` and `extractedColumns` are **scalar** (one turn's row = the single-turn shape).
-Status: **Implemented**
-
-#### Scenario: Multi-turn branch returns one result per turn
-- **WHEN** a conversation with `N` turns is dispatched
-- **THEN** the worker SHALL delegate to `MultiTurnConversationExecutor` and return a `List<TestCaseRunResult>` of up to `N` elements, each carrying its own `turnIndex` (0-based) and `totalTurns` (= surviving turn count)
-- **AND** on an abort at turn `k` the list SHALL contain `k` SUCCESS rows plus one ERROR row (fewer than `N`), with `total_turns` = the surviving count
-
-#### Scenario: Turns run sequentially re-sending accumulated messages
-- **WHEN** turn `i` (i > 0) of a conversation executes
-- **THEN** the request body SHALL carry the accumulated `messages` history (prior user turns plus each prior turn's appended `choices[0].message`), so the target sees the full conversation so far
-- **AND** `turn.last` SHALL be true only on the last surviving turn
-
-#### Scenario: No array projection
-- **WHEN** a multi-turn conversation executes
-- **THEN** turn variation SHALL come from distinct per-turn rows in the assembled input (each with its own scalar `data`), NOT from unwrapping array-valued columns of a single row
-
 ### Requirement: Runnable-conversation counting and zero-runnable guard
 The unit of "runnable" work SHALL be a **CONVERSATION**, not an individual test-case row. A runnable conversation is either a standalone single-turn row or a multi-turn group whose enabled turns form a contiguous prefix `0..k` and pass the suite `testCaseFilter` atomically (see the selection spec). `RunnableTestCaseCounter.countRunnable(...)` SHALL count runnable **conversations**; that count drives `number_of_test_cases` on the run and the zero-runnable guard (guard #4) in `TestSuiteRunService.createRun`. Broken conversations are NOT counted as runnable (they still surface as one ERROR row at execution — see the broken-conversation requirement).
 Status: **Implemented**
@@ -721,7 +703,7 @@ Status: **Implemented**
 - **THEN** `totalCases` for progress SHALL be `14` (7 × 2), and progress advances one per completed conversation × run index
 
 ### Requirement: Broken conversation yields one sentinel ERROR row
-A conversation that the snapshot phase marked **broken** (missing turn 0, non-contiguous/gap, duplicate `turn_index`, any invalid turn, disable-created middle hole, or surviving turn count > `MAX_CONVERSATION_TURNS`) SHALL be frozen into a marker `test_case_run_inputs` row. At execution the worker SHALL turn that marker into **exactly ONE** `TestCaseRunResult` with `executionStatus = ERROR` and the sentinel `turn_index = 0, total_turns = 0`, **without invoking the model** (no HTTP/MCP call). The run SHALL continue; other conversations proceed normally.
+A conversation that the snapshot phase marked **broken** (see the suite-run-snapshot spec for the classification rules) is frozen into a marker `test_case_run_inputs` row. At execution the worker SHALL turn that marker into **exactly ONE** `TestCaseRunResult` with `executionStatus = ERROR` and the sentinel `turn_index = 0, total_turns = 0`, **without invoking the model** (no HTTP/MCP call). The run SHALL continue; other conversations proceed normally.
 Status: **Implemented**
 
 #### Scenario: Broken conversation produces one ERROR row, no model call
@@ -732,19 +714,6 @@ Status: **Implemented**
 #### Scenario: Run continues past a broken conversation
 - **WHEN** a run contains a broken conversation alongside runnable ones
 - **THEN** the broken conversation's single ERROR row SHALL be persisted and the run SHALL still reach `COMPLETED` (the broken row does not mark the whole run FAILED)
-
-### Requirement: MCP suite rejected when dataset contains conversation rows
-Multi-turn conversations are **HTTP-deployment only** this round. `TestSuiteRunService.createRun` SHALL reject an `MCP_TOOL` suite bound to a dataset that contains ANY conversation rows (any row with a non-null `conversation_id`) with HTTP 409 `INVALID_OPERATION`. This guard is forward-compatible: it reserves multi-turn tool-call sequences for a later change rather than silently mis-executing them.
-Status: **Implemented**
-
-#### Scenario: MCP suite with conversation rows rejected at run creation
-- **WHEN** `createRun` is called for an `MCP_TOOL` suite whose bound dataset contains at least one row with a non-null `conversation_id`
-- **THEN** it SHALL throw `InvalidOperationException` (→ 409 `INVALID_OPERATION`) with a message indicating multi-turn conversations are not supported for MCP suites yet
-- **AND** no run SHALL be created and no snapshot SHALL be taken
-
-#### Scenario: MCP suite with only single-turn rows unaffected
-- **WHEN** `createRun` is called for an `MCP_TOOL` suite whose bound dataset contains only single-turn rows (all `conversation_id` NULL)
-- **THEN** run creation SHALL proceed unchanged
 
 ### Requirement: One concurrency permit per conversation
 A multi-turn conversation SHALL execute within a single worker task holding a single concurrency permit for the entire conversation; its turns SHALL run sequentially within that task. Per-turn call pacing relies on the existing per-call retry and upstream 429 handling. Each turn's retries SHALL reuse the existing retry policy independently.
@@ -759,15 +728,6 @@ Status: **Implemented**
 - **WHEN** a turn receives a retryable status (e.g. 429 or 5xx)
 - **THEN** that turn SHALL be retried per the existing retry policy
 - **AND** retry exhaustion SHALL trigger the multi-turn fail-fast behavior
-
-### Requirement: Multi-turn result carries the shared conversation trace id
-Each per-turn `TestCaseRunResult` of a multi-turn conversation SHALL carry the **shared conversation trace id** — the single conversation span id — on every turn row (not "the last attempted turn's trace id"). Because a conversation now produces one row per turn rather than one aggregated row, the trace id is not collapsed to a single final value; every turn row references the same conversation span, per the multi-turn-conversation "Each turn is persisted as its own result row" requirement.
-Status: **Implemented**
-
-#### Scenario: Every turn row carries the shared conversation trace id
-- **WHEN** a 3-turn conversation completes with conversation span id `T`
-- **THEN** each of the three `TestCaseRunResult` rows SHALL have `trace_id = T`
-- **AND** an abort at turn `k` SHALL still stamp `trace_id = T` on all persisted rows (the completed SUCCESS rows and the failing ERROR row)
 
 ## Implementation Notes
 - Executor interface: `com.epam.aidial.evaluation.service.domain.job.EvaluationExecutor`
@@ -785,6 +745,6 @@ Status: **Implemented**
 - MCP field loading chain: `TestSuiteEvaluationJob` deserializes MCP fields from the suite's JSONB strings and passes them into `EvaluationContext.builder()` as typed objects (conditionally for `MCP_TOOL` suites only). `inputBindings` is loaded alongside other MCP fields.
 - MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `context.getInputBindings()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
 - DTOs: `ExecutionSettingsDto`, `RetryPolicyDto` (in `service.domain.dto`)
-- Multi-turn: injectable `service.domain.job.MultiTurnConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the assembled input carrying more than one turn (there is no `multiTurn` flag and no `snapshotMultiTurn` field — multi-turn is emergent from conversation rows). The suite's single `inputBindings` are reused each turn and per-turn variation comes from each turn's discrete scalar row `data` (no array-valued columns, no `TurnPlan`/`ConversationTurnPlanner`). The worker returns a `List<TestCaseRunResult>`, one element per surviving turn; a broken conversation returns a one-element sentinel ERROR row (`turn_index=0, total_turns=0`) without a model call. Dispatch granularity moves from `(test case × runIndex)` to `(conversation × runIndex)` in `InProcessEvaluationExecutor` — one concurrency permit per conversation task; turns within a conversation run sequentially.
+- Multi-turn: injectable `service.domain.job.MultiTurnConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the assembled input carrying more than one turn (multi-turn is emergent from conversation rows). The suite's single `inputBindings` are reused each turn and per-turn variation comes from each turn's discrete scalar row `data`. The worker returns a `List<TestCaseRunResult>`, one element per surviving turn; a broken conversation returns a one-element sentinel ERROR row (`turn_index=0, total_turns=0`) without a model call. Dispatch granularity is `(conversation × runIndex)` in `InProcessEvaluationExecutor` — one concurrency permit per conversation task; turns within a conversation run sequentially. See the multi-turn-conversation spec.
 - Counting / guards: `RunnableTestCaseCounter.countRunnable(...)` counts runnable conversations (multi-turn groups + standalone single-turn rows), driving `number_of_test_cases` and guard #4; `TestSuiteRunService.createRun` keeps guard order (1 not-found, 2 unbound, 3 config-invalid, 4 zero-runnable, 5 rate-limits) and adds a guard rejecting `MCP_TOOL` suites bound to datasets containing any `conversation_id` row with 409 `INVALID_OPERATION`.
 - Batch writer: `ResultBatchWriter.addResults(buffer, List<TestCaseRunResult>)` buffers a conversation's rows and advances the completed-conversation counter by one; progress denominator `totalCases = numberOfTestCases (runnable conversations) × numberOfRuns`.

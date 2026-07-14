@@ -1164,7 +1164,6 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
                         .build()),
                 String.class);
 
-        // Enabled + valid metric whose condition references an absent response column → false → skipped.
         TestSuiteMetricDefinitionRequestDto tsmd = TestSuiteMetricDefinitionRequestDto.builder()
                 .name("Latency With Condition")
                 .metricDeclarationId(SEED_LATENCY_ID)
@@ -1205,8 +1204,6 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
                 awaitRunTerminal(runResponse.getBody().getId(), 15);
         assertThat(completedRun.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
-        // The metric-evaluation phase ran (one enabled+valid TSMD), producing one eval summary; the
-        // condition evaluated false, so the metric is omitted from metricValues and the summary is SUCCESS.
         List<Map<String, Object>> summaries = analyticsTestDataHelper.findEvalSummariesByRunId(
                 runResponse.getBody().getId());
         assertThat(summaries).hasSize(1);

@@ -151,7 +151,6 @@ class InProcessMetricEvaluationExecutorTest {
 
         MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L);
 
-        // A single per-turn result row: turn 2 of a 3-turn conversation.
         TestCaseRunResult result = TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
                 .testSuiteRunId(runId)
@@ -182,13 +181,11 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        // The condition is evaluated against the row's turn position.
         ArgumentCaptor<ConditionContext> conditionCaptor = ArgumentCaptor.forClass(ConditionContext.class);
         verify(conditionExpressionEvaluator).evaluate(any(), conditionCaptor.capture());
         assertThat(conditionCaptor.getValue().turnIndex()).isEqualTo(2);
         assertThat(conditionCaptor.getValue().totalTurns()).isEqualTo(3);
 
-        // The produced summary item inherits the same turn position.
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
         verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());

@@ -61,7 +61,6 @@ public class MetricOutputMapper {
                     }
                     root.set(tsmdName, tsmdNode);
                 }
-                // Condition skipped/errored: omit the metric entirely from metricValues (absent = skipped).
                 case TsmdEvaluationResult.ConditionError ignored -> {
                     /* no metricValues entry */
                 }
@@ -115,7 +114,6 @@ public class MetricOutputMapper {
                     root.set(tsmdName, tsmdInfoNode);
                     hasAnyInfo = true;
                 }
-                // Condition error: wholesale metric-level {error} (no per-field wrapper) → metricError::<name>.
                 case TsmdEvaluationResult.ConditionError conditionError -> {
                     ObjectNode tsmdInfoNode = objectMapper.createObjectNode();
                     tsmdInfoNode.put("error", conditionError.message());

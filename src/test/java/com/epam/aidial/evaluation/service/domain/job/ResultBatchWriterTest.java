@@ -115,11 +115,9 @@ class ResultBatchWriterTest {
         int batchSize = 2;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        // First batch of 2 conversations
         addOneConversation(buffer);
         addOneConversation(buffer);
 
-        // Second batch of 2 conversations
         addOneConversation(buffer);
         addOneConversation(buffer);
 
@@ -135,14 +133,12 @@ class ResultBatchWriterTest {
         int batchSize = 10;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        // One conversation contributing three per-turn rows (below the row threshold → no flush yet).
         writer.addResults(buffer, conversationOf(3));
         verify(transactionalWriter, never()).saveBatch(anyList());
         assertThat(buffer.getConversationsCompleted()).isEqualTo(1);
 
         writer.flush(buffer);
 
-        // All 3 rows persisted, but progress counts the single completed conversation.
         assertThat(buffer.getTotalFlushed()).isEqualTo(3);
         verify(sseService, times(1)).notifyProgress(eq(RUN_ID), eq(SUITE_ID), eq(1), eq(TOTAL_CASES));
     }

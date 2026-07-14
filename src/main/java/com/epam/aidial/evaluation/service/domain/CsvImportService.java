@@ -1044,8 +1044,6 @@ public class CsvImportService {
             testCaseName = String.format("Row %0" + padWidth + "d", dataRowIndex);
         }
 
-        // Only apply structural (both-or-neither, bounds) validation when both cells parsed cleanly;
-        // a parse error already invalidates the row and could otherwise mask the real cause.
         if (conversationErrors.isEmpty()) {
             try {
                 conversationFieldsValidator.validate(conversationId, turnIndex);
@@ -1053,8 +1051,6 @@ public class CsvImportService {
                 conversationErrors.add(e.getMessage());
             }
         }
-        // A row with malformed grouping fields is persisted as invalid without grouping, so it cannot
-        // corrupt conversation assembly at snapshot time.
         if (!conversationErrors.isEmpty()) {
             conversationId = null;
             turnIndex = null;

@@ -154,8 +154,6 @@ public class MetricEvaluationWorker {
 
     private EvaluationRequestDto buildRequest(AggregatedMetricDefinition tsmd, TestCaseRunResult result) {
         Map<String, Object> testCaseData = bindingResolver.parseJsonMap(result.getTestCaseData());
-        // Each result row (single-turn or one per-turn row of a multi-turn conversation) stores extractedColumns
-        // as a JSON object of scalar values; bindings resolve directly against the scalar column value.
         Map<String, Object> extractedColumns = bindingResolver.parseJsonMap(result.getExtractedColumns());
 
         List<MetricParameterBindingDto> configBindings = bindingResolver.parseBindings(tsmd.getConfigBindings());

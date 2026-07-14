@@ -81,9 +81,6 @@ public class TestSuiteRunService {
                     + ". The test suite is not in a valid state.");
         }
 
-        // Multi-turn conversations are HTTP-deployment only this round. Reject an MCP suite bound to a dataset
-        // that carries any conversation rows rather than silently mis-executing them (forward-compatible for
-        // future tool-call sequences).
         if (testSuite.getSuiteType() == SuiteType.MCP_TOOL
                 && runnableTestCaseCounter.hasConversationRows(testSuite.getDatasetId())) {
             throw new InvalidOperationException("Cannot start a run: multi-turn conversations are not supported "

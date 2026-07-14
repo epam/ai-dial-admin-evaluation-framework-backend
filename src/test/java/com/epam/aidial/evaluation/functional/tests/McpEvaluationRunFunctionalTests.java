@@ -157,8 +157,6 @@ public abstract class McpEvaluationRunFunctionalTests extends AbstractMcpFunctio
     @DisplayName("Run creation on an MCP suite whose dataset has conversation rows is rejected with 409")
     void shouldRejectRunForMcpSuiteWithConversationRows() {
         TestSuiteResponseDto suite = createMcpSuite();
-        // A single-turn MCP test case would be fine; add a conversation row (conversationId + turnIndex)
-        // to the same dataset — multi-turn is HTTP-deployment only, so run creation must 409.
         createConversationTurn(suite.getId(), "conv / turn 0", UUID.randomUUID(), 0, Map.of("userQuery", "hi"));
 
         ResponseEntity<String> response = restTemplate.postForEntity(

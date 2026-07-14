@@ -76,7 +76,6 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
         createTurn(suite.getId(), "conv1 / turn 0", conversationId, 0, "hello");
         createTurn(suite.getId(), "conv1 / turn 1", conversationId, 1, "how are you");
 
-        // Each turn returns a distinct assistant reply so we can verify per-turn rows/extraction.
         AtomicInteger callCount = new AtomicInteger();
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenAnswer(inv -> {
@@ -96,7 +95,6 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
-        // Two turns → two per-turn result rows and two deployment calls
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
         assertThat(results).hasSize(2);
         assertThat(callCount.get()).isEqualTo(2);
@@ -107,13 +105,11 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
         assertThat(String.valueOf(turn0.get("execution_status"))).isEqualTo("SUCCESS");
         assertThat(((Number) turn0.get("turn_index")).intValue()).isEqualTo(0);
         assertThat(((Number) turn0.get("total_turns")).intValue()).isEqualTo(2);
-        // scalar extraction per turn: {"answer":"reply-0"}
         assertThat(objectMapper
                         .readTree(String.valueOf(turn0.get("extracted_columns")))
                         .get("answer")
                         .asString())
                 .isEqualTo("reply-0");
-        // response_body = that turn's raw chat-completion response (technical "id" preserved)
         JsonNode turn0Response = objectMapper.readTree(String.valueOf(turn0.get("response_body")));
         assertThat(turn0Response.get("id").asString()).isEqualTo("mock");
         assertThat(contentOf(turn0Response)).isEqualTo("reply-0");
@@ -156,10 +152,8 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        // Counting is conversation-granular: 2 runnable conversations (not 5 turn rows).
         assertThat(run.getNumberOfTestCases()).isEqualTo(2);
 
-        // convA → 2 per-turn rows (total_turns=2), convB → 3 per-turn rows (total_turns=3): 5 rows total
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
         assertThat(results).hasSize(5);
 
@@ -180,7 +174,6 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     void shouldSurfaceBrokenConversationAsErrorRow() {
         TestSuiteResponseDto suite = createConversationSuite();
         UUID conversationId = UUID.randomUUID();
-        // Missing turn 1 → non-contiguous prefix → broken conversation.
         createTurn(suite.getId(), "broken / turn 0", conversationId, 0, "hello");
         createTurn(suite.getId(), "broken / turn 2", conversationId, 2, "third");
 
@@ -203,7 +196,6 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
         createTurn(suite.getId(), "conv / turn 0", conversationId, 0, "a");
         createTurn(suite.getId(), "conv / turn 1", conversationId, 1, "b");
         TestCaseResponseDto lastTurn = createTurn(suite.getId(), "conv / turn 2", conversationId, 2, "c");
-        // Disable the trailing turn — the enabled turns still form a contiguous prefix 0..1.
         metaTestDataHelper.appendDisabledTestCaseIds(suite.getId(), List.of(lastTurn.getId()));
 
         stubConstantReply();
@@ -227,7 +219,6 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
         UUID partial = UUID.randomUUID();
         createTurn(suite.getId(), "partial / turn 0", partial, 0, Map.of("question", "a", "topic", "keep"));
         createTurn(suite.getId(), "partial / turn 1", partial, 1, Map.of("question", "b", "topic", "drop"));
-        // All-match filter: only the conversation whose EVERY turn has topic == "keep" is runnable.
         metaTestDataHelper.setSuiteTestCaseFilter(
                 suite.getId(),
                 "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"data::topic\"},"
@@ -237,7 +228,6 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        // Only the fully-matching conversation counts / runs (2 turns); the partial one is excluded.
         assertThat(run.getNumberOfTestCases()).isEqualTo(1);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());

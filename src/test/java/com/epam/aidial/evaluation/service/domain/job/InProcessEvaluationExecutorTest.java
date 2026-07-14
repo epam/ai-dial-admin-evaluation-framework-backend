@@ -374,7 +374,6 @@ class InProcessEvaluationExecutorTest {
         // result2 (real) is added
         verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
 
-        // Synthetic ERROR row added for input1 (in its own single-element list)
         ArgumentCaptor<List<TestCaseRunResult>> captor = resultListCaptor();
         verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResults(eq(buffer), captor.capture());
 
@@ -508,8 +507,7 @@ class InProcessEvaluationExecutorTest {
         try {
             verify(resultBatchWriter, atLeastOnce()).addResults(eq(buffer), captor.capture());
             captor.getAllValues().forEach(added::addAll);
-        } catch (AssertionError ignored) {
-            // No addResults invocations at all — that's fine; nothing was synthesized.
+        } catch (AssertionError expected) {
         }
         assertThat(added).noneMatch(r -> r.getExecutionStatus() == ExecutionStatus.ERROR);
     }
@@ -565,8 +563,6 @@ class InProcessEvaluationExecutorTest {
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenThrow(new RuntimeException("boom"));
         when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
-        // The synthetic ERROR row for input1 is added in its own single-element list; make writing
-        // any list that contains an ERROR row fail (ordering may vary).
         doAnswer(inv -> {
                     List<TestCaseRunResult> rows = inv.getArgument(1);
                     if (rows.stream().anyMatch(r -> r.getExecutionStatus() == ExecutionStatus.ERROR)) {

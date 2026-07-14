@@ -83,7 +83,6 @@ public class DeploymentTurnInvoker {
             final int statusCode = result.statusCode();
             ExecutionStatus status = DeploymentInvocationSupport.resolveExecutionStatus(statusCode);
 
-            // Multi-turn is non-streaming only: a streaming response cannot be consumed here.
             if (result.streaming()) {
                 return new TurnOutcome(ExecutionStatus.ERROR, statusCode, null, 0);
             }

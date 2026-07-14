@@ -33,8 +33,6 @@ public interface RunnableTestCaseSelector {
      */
     void validateFilter(UUID datasetId, String filterJson);
 
-    // --- Row-based multi-turn: conversation-aware selection ---
-
     /**
      * Counts runnable execution UNITS: runnable single-turn test cases plus conversations whose turns all
      * match the filter. This is the coarse run-creation guard count; per-conversation contiguity/validity is

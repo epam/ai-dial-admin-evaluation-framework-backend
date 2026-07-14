@@ -162,9 +162,7 @@ class MetricOutputMapperTest {
         ObjectNode values = mapper.buildMetricValues(tsmdResults);
         ObjectNode infos = mapper.buildMetricInfos(tsmdResults);
 
-        // Absent from metricValues (absent = skipped), no per-field null entry
         assertThat(values.has("Relevancy")).isFalse();
-        // Wholesale metric-level {error} → metricError::Relevancy export column (no per-field wrapper)
         assertThat(infos).isNotNull();
         assertThat(infos.path("Relevancy").path("error").asString())
                 .isEqualTo("Condition did not evaluate to a boolean: response.score");

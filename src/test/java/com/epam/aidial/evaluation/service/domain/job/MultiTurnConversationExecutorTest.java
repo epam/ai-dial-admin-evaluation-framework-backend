@@ -102,7 +102,6 @@ class MultiTurnConversationExecutorTest {
         lenient().when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/dep/chat/completions");
         lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
         lenient().when(execution.getHeaderBlacklist()).thenReturn(List.of());
-        // serializerRegistry returns the (already history-merged) content map so we can assert what was sent
         lenient()
                 .when(serializerRegistry.serialize(any()))
                 .thenAnswer(inv -> new SerializedBody(
@@ -130,7 +129,6 @@ class MultiTurnConversationExecutorTest {
 
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), bodyCaptor.capture());
         List<Object> sentBodies = bodyCaptor.getAllValues();
-        // Full-history resend: turn 0 sends [user-0]; turn 1 sends [user-0, assistant-0, user-1]
         assertThat(messagesOf(sentBodies.get(0))).hasSize(1);
         assertThat(roleOf(messagesOf(sentBodies.get(0)).get(0))).isEqualTo("user");
         List<Object> turn1Sent = messagesOf(sentBodies.get(1));
@@ -145,13 +143,10 @@ class MultiTurnConversationExecutorTest {
         assertThat(row0.getTotalTurns()).isEqualTo(2);
         assertThat(row0.getTraceId()).isEqualTo("trace-1");
         assertThat(row0.getResponseStatusCode()).isEqualTo(200);
-        // each row carries that turn's scalar extractedColumns object
         assertThat(objectMapper.readTree(row0.getExtractedColumns()).get("a").asString())
                 .isEqualTo("answer-0");
-        // each row carries that turn's own scalar row data
         assertThat(objectMapper.readTree(row0.getTestCaseData()).get("question").asString())
                 .isEqualTo("q0");
-        // each row carries that turn's raw response body
         assertThat(contentOf(row0.getResponseBody())).isEqualTo("assistant-0");
 
         TestCaseRunResult row1 = results.get(1);
@@ -184,7 +179,6 @@ class MultiTurnConversationExecutorTest {
         assertThat(results).hasSize(2);
         verify(resolvedRequestService, times(2)).resolve(any(), any(), dataCaptor.capture());
         List<Map<String, Object>> perTurnData = dataCaptor.getAllValues();
-        // each turn's data is that discrete row's scalar data — no array projection
         assertThat(perTurnData.get(0).get("question")).isEqualTo("q0");
         assertThat(perTurnData.get(1).get("question")).isEqualTo("q1");
     }
@@ -202,7 +196,6 @@ class MultiTurnConversationExecutorTest {
         List<TestCaseRunResult> results =
                 executor.execute(inputWithTurns(3), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
 
-        // turn 2 (index 1) failed → no third invocation, and only two rows persisted
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), any());
         assertThat(results).hasSize(2);
 
@@ -212,10 +205,8 @@ class MultiTurnConversationExecutorTest {
         TestCaseRunResult errorRow = results.get(1);
         assertThat(errorRow.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(errorRow.getTurnIndex()).isEqualTo(1);
-        // total_turns stays the surviving N even on abort
         assertThat(errorRow.getTotalTurns()).isEqualTo(3);
         assertThat(errorRow.getResponseStatusCode()).isEqualTo(500);
-        // the failing turn persists an empty extraction object
         assertThat(errorRow.getExtractedColumns()).isEqualTo("{}");
     }
 
@@ -263,7 +254,6 @@ class MultiTurnConversationExecutorTest {
         assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
 
         verify(deploymentInvoker, times(2)).invokeWithStreaming(any(), any(), any(), any(), bodyCaptor.capture());
-        // Turn 1's resent history: [user-0, assistant-0 (verbatim tool-call message), user-1]
         List<Object> turn1Sent = messagesOf(bodyCaptor.getAllValues().get(1));
         assertThat(turn1Sent).hasSize(3);
         JsonNode assistantNode = (JsonNode) turn1Sent.get(1);
@@ -288,7 +278,6 @@ class MultiTurnConversationExecutorTest {
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
-        // a real single turn (total=1), not the 0/0 broken-conversation sentinel
         assertThat(results.get(0).getTotalTurns()).isEqualTo(1);
         assertThat(results.get(0).getExtractedColumns()).isEqualTo("{}");
         verifyNoInteractions(deploymentInvoker);
@@ -365,7 +354,6 @@ class MultiTurnConversationExecutorTest {
 
     @SuppressWarnings("unchecked")
     private String roleOf(Object message) {
-        // Template (user) messages stay Maps; assistant messages are appended verbatim as JsonNode objects.
         if (message instanceof JsonNode node) {
             return node.get("role").asString();
         }

@@ -37,8 +37,6 @@ class ConditionExpressionEvaluatorTest {
                 .build();
     }
 
-    // ---- validate (write-time, hard failures) ----
-
     @Test
     @DisplayName("Blank condition validates as a no-op")
     void validateBlank() {
@@ -57,8 +55,6 @@ class ConditionExpressionEvaluatorTest {
     void validateInvalidJsonata() {
         assertThatThrownBy(() -> evaluator.validate("$exists(")).isInstanceOf(ValidationException.class);
     }
-
-    // ---- evaluate (runtime, never throws) ----
 
     @Test
     @DisplayName("Blank condition runs the metric")
@@ -88,8 +84,6 @@ class ConditionExpressionEvaluatorTest {
         ConditionDecision present = evaluator.evaluate("$exists(response.answer)", ctx("{}", "{\"answer\":null}"));
         ConditionDecision absent = evaluator.evaluate("$exists(response.answer)", ctx("{}", "{}"));
 
-        // Null is preserved (not dropped by NON_NULL), so a present-null column exists (RUN) while a
-        // missing column does not (SKIP).
         assertThat(present.isRun()).isTrue();
         assertThat(absent.isSkip()).isTrue();
     }
@@ -121,8 +115,6 @@ class ConditionExpressionEvaluatorTest {
         ConditionDecision decision = evaluator.evaluate("  response.score > 0.5  ", ctx("{}", "{\"score\":0.8}"));
         assertThat(decision.isRun()).isTrue();
     }
-
-    // ---- turn namespace ----
 
     @Test
     @DisplayName("turn.last is true on the final turn → RUN")

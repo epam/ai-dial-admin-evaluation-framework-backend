@@ -111,8 +111,6 @@ public class ResultBatchWriter {
         log.debug("Flushed {} results for run {} (total: {})", batch.size(), buffer.runId, flushed);
 
         try {
-            // Conversation-granular progress: numerator counts completed conversations (one per
-            // addResults call), not rows — so multi-turn runs stay within 0–totalCases.
             sseService.notifyProgress(
                     buffer.runId, buffer.suiteId, buffer.conversationsCompleted.get(), buffer.totalCases);
         } catch (Exception e) {

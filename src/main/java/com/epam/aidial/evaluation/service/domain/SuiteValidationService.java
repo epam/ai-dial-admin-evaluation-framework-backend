@@ -158,9 +158,6 @@ public class SuiteValidationService {
             warnings.add(warning(null, "$.requestTemplate", typeHintWarning, ValidationWarningCode.TYPE));
         }
 
-        // Shared binding cross-validation against the single inputBindings. Multi-turn is emergent from the
-        // dataset's conversation rows (row-based) — there is no suite-level flag or multi-turn body check here;
-        // a body lacking a top-level messages array fails per-conversation at run time as an ERROR row.
         warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId));
 
         // Multipart FILE part constant value validation (deployment-specific)

@@ -103,8 +103,6 @@ public interface TestCaseRepository {
     long countValidByDatasetIdExcludingIdsMatching(
             UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition);
 
-    // --- Row-based multi-turn: conversation-aware selection ---
-
     /**
      * Page of runnable SINGLE-TURN test cases ({@code conversation_id IS NULL}) — valid, not excluded, and
      * (when {@code extraCondition} is non-null) matching the suite filter. Sorted by (createdAt asc, id asc).

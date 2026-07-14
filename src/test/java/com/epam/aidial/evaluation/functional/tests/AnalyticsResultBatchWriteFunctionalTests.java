@@ -289,7 +289,6 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody().getTotalItems()).isEqualTo(3);
 
-        // All three turns must coexist — turn_index is part of the natural key, so they are NOT duplicates.
         assertThat(analyticsTestDataHelper.countAll()).isEqualTo(3L);
 
         List<Map<String, Object>> rows = analyticsTestDataHelper.findResultsByRunId(testSuiteRunId);
@@ -301,7 +300,6 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
     @DisplayName("Should default turn fields to 0/1 when omitted by single-turn callers")
     void shouldDefaultTurnFieldsWhenOmitted() {
         TestCaseRunResultItemDto item = buildItem(UUID.randomUUID(), "single-turn-case", 0);
-        // turnIndex/totalTurns intentionally left null (omitted by the caller)
 
         BatchWriteRequestDto request = BatchWriteRequestDto.builder()
                 .testSuiteId(testSuiteId)

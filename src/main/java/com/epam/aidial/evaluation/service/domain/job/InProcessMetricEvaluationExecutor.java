@@ -178,8 +178,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
 
         Map<String, TsmdEvaluationResult> tsmdResults = new ConcurrentHashMap<>();
 
-        // Conditions are evaluated synchronously here, on the orchestrating thread, before any async
-        // dispatch. The context is read-only and never accessed from worker threads.
         ConditionContext conditionContext = ConditionContext.builder()
                 .dataJson(result.getTestCaseData())
                 .responseJson(result.getExtractedColumns())
@@ -267,9 +265,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             log.warn("Metric evaluation interrupted while waiting for result {}", result.getId(), e);
         }
 
-        // Record timeout/missing TSMDs as Failure so the summary reflects incomplete evaluation. Only
-        // dispatched TSMDs are considered — condition-skipped ones must stay absent, condition-errored
-        // ones already carry a ConditionError.
         for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
             tsmdResults.putIfAbsent(
                     tsmd.getName(),
@@ -292,8 +287,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     private boolean checkForErrors(Map<String, TsmdEvaluationResult> tsmdResults) {
-        // ConditionError is intentionally NOT counted: a failed metric condition is a per-metric concern
-        // and must not flip the test-case result to FAILED.
         for (TsmdEvaluationResult value : tsmdResults.values()) {
             if (value instanceof TsmdEvaluationResult.Failure) {
                 return true;
@@ -330,8 +323,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .turnIndex(result.getTurnIndex())
                 .totalTurns(result.getTotalTurns())
                 .testCaseData(parseJsonNode(result.getTestCaseData()))
-                // extractedColumns is stored verbatim as a scalar-valued JSON object: one summary is produced
-                // per result row (single-turn or one per-turn row of a multi-turn conversation).
                 .extractedColumns(parseJsonNode(result.getExtractedColumns()))
                 .executionStatus(executionStatus)
                 .execDurationMs(result.getExecDurationMs())

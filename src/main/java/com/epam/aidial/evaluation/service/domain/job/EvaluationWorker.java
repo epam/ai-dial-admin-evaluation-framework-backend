@@ -100,8 +100,6 @@ public class EvaluationWorker {
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 
         try (Scope scope = span.makeCurrent()) {
-            // Broken conversation (marked at snapshot: missing turn 0, gap, dup index, invalid turn, over-cap):
-            // emit exactly one sentinel 0/0 ERROR row without invoking the model; the run continues.
             if (input.isBroken()) {
                 return List.of(buildBrokenConversationResult(input, context, runIndex, traceId, execStartedAtMs));
             }
@@ -111,9 +109,6 @@ public class EvaluationWorker {
                 return List.of(executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs));
             }
 
-            // Row-based multi-turn: an assembled input carrying frozen conversation turns delegates to the
-            // turn-loop executor (single permit per conversation), returning one result row per surviving turn.
-            // Multi-turn is emergent from the input's turns, not a suite-level flag.
             if (input.getTurns() != null) {
                 return multiTurnConversationExecutor.execute(
                         input, context, runIndex, responseColumns, traceId, execStartedAtMs);

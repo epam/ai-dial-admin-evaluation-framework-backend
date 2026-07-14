@@ -90,13 +90,8 @@ public class MultiTurnConversationExecutor {
             String traceId,
             long execStartedAtMs) {
 
-        // Row-based multi-turn: iterate the ordered turns frozen into the assembled input at snapshot time.
-        // Each turn is a discrete test-case row carrying its own scalar data — there is no array projection.
         final List<FrozenTurn> turns = parseTurns(input.getTurns());
         if (turns.isEmpty()) {
-            // Defensive: a non-broken conversation always freezes at least one turn. An unreadable/empty
-            // turns payload cannot be executed, so surface it as a single 0/0 ERROR row rather than
-            // silently producing no rows.
             log.warn(
                     "Multi-turn conversation {} for test case {} has no readable frozen turns",
                     input.getConversationId(),
@@ -160,9 +155,6 @@ public class MultiTurnConversationExecutor {
                             result.extractionWarningsJson(),
                             turnData));
                 } else {
-                    // ABORT. Persist an ERROR row for the failing turn — unless the abort was a pre-request
-                    // cancellation (no synthetic rows for cancelled cases). A turn that issued its request
-                    // (outcome != null) is always a real failure and gets a row.
                     final boolean requestIssued = result.outcome() != null;
                     if (requestIssued || !context.getCancellationSignal().get()) {
                         results.add(buildTurnRow(
@@ -177,8 +169,8 @@ public class MultiTurnConversationExecutor {
                                 result.status(),
                                 result.outcome(),
                                 result.requestBodyJson(),
-                                "{}", // nothing to extract
-                                "[]", // nothing to warn about, since no extraction
+                                "{}",
+                                "[]",
                                 turnData));
                     }
                     break;
@@ -284,7 +276,6 @@ public class MultiTurnConversationExecutor {
             return TurnResult.abortBeforeRequest(ExecutionStatus.ERROR);
         }
 
-        // Re-send the full accumulated history plus this turn's new user message(s); force non-streaming.
         final List<Object> newMessages = new ArrayList<>(messages);
         final List<Object> fullMessages = new ArrayList<>(history);
         fullMessages.addAll(newMessages);
@@ -304,11 +295,9 @@ public class MultiTurnConversationExecutor {
         final TurnOutcome outcome = deploymentTurnInvoker.invoke(
                 turn.context(), turn.method(), path, headers, queryParams, serialized.body());
         if (outcome.status() != ExecutionStatus.SUCCESS) {
-            // Fail-fast: keep the partial history (incl. this failed turn's user message); no extraction.
             return TurnResult.abortAfterRequest(outcome.status(), requestBodyJson, newMessages, outcome);
         }
 
-        // Absence of a message object (not merely missing content) aborts the conversation.
         final JsonNode assistantMessage = extractAssistantMessage(outcome.responseBody());
         if (assistantMessage == null) {
             log.warn(
@@ -318,7 +307,6 @@ public class MultiTurnConversationExecutor {
             return TurnResult.abortAfterRequest(ExecutionStatus.ERROR, requestBodyJson, newMessages, outcome);
         }
 
-        // Append the assistant reply (the full choices[0].message object, verbatim) after the user turn.
         final List<Object> messagesToAppend = new ArrayList<>(newMessages);
         messagesToAppend.add(assistantMessage);
         final ResponseColumnExtractor.ExtractionResult extraction =

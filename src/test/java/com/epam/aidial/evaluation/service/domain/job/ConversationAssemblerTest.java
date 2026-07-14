@@ -34,11 +34,9 @@ class ConversationAssemblerTest {
         assertThat(result.conversationId()).isEqualTo(conversationId);
         JsonNode frozen = objectMapper.readTree(result.turnsJson());
         assertThat(frozen).hasSize(3);
-        // ordered by turnIndex regardless of input order
         assertThat(frozen.get(0).get("turnIndex").asInt()).isEqualTo(0);
         assertThat(frozen.get(0).get("data").get("q").asString()).isEqualTo("a");
         assertThat(frozen.get(2).get("turnIndex").asInt()).isEqualTo(2);
-        // each frozen turn carries its own identity
         assertThat(frozen.get(0).get("testCaseId").asString()).isNotBlank();
         assertThat(frozen.get(0).get("testCaseName").asString()).isNotBlank();
     }

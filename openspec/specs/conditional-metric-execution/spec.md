@@ -11,19 +11,30 @@ Status: **Implemented**
 
 ### Requirement: Optional execution condition on a metric definition
 A Test Suite Metric Definition (TSMD) SHALL carry an optional `condition` string. When the condition
-is null or blank, the metric SHALL be evaluated for every test case (unchanged behavior). When set,
-the condition SHALL be evaluated once per test-case result to decide whether the metric runs for that
-test case.
+is null or blank, the metric SHALL be evaluated for every test-case result (unchanged behavior). When
+set, the condition SHALL be evaluated once per test-case result to decide whether the metric runs for
+that result. Because each turn of a multi-turn conversation is its own `TestCaseRunResult`, a condition
+is evaluated once per turn (its `data`/`response` are that turn's scalar values). The condition SHALL
+NOT be evaluated on non-SUCCESS rows (a failing turn or a `0/0` data-error row), which propagate
+without metric evaluation.
 Status: **Implemented**
 
 #### Scenario: No condition means always run
 - **WHEN** a TSMD has a null or blank `condition`
 - **THEN** the metric SHALL be evaluated for every test-case result exactly as before
 
-#### Scenario: Condition gates evaluation per test case
+#### Scenario: Condition gates evaluation per test-case result
 - **WHEN** a TSMD has a non-blank `condition`
 - **THEN** the condition SHALL be evaluated once per test-case result and its result SHALL determine
-  whether that metric runs for that test case
+  whether that metric runs for that result
+
+#### Scenario: Condition runs on each successful turn
+- **WHEN** a 3-turn conversation completes successfully and a TSMD carries a condition referencing `response`
+- **THEN** the condition SHALL be evaluated three times, once per turn-result, each against that turn's scalar `data`/`response`
+
+#### Scenario: Condition not evaluated on a failed turn
+- **WHEN** turn `k` of a conversation is an ERROR result
+- **THEN** no condition SHALL be evaluated for that turn-result and no metric SHALL be dispatched for it
 
 ### Requirement: Condition evaluates against a namespaced dictionary
 The condition SHALL be evaluated against a single dictionary with three top-level namespaces: `data`
@@ -92,38 +103,6 @@ Status: **Implemented**
 - **WHEN** a condition references `turn.index` or `turn.total`
 - **THEN** they SHALL resolve to the result row's 0-based turn index and planned turn count
 
-### Requirement: Condition context is an extensible carrier
-The condition evaluator SHALL receive a single `ConditionContext` object carrying the evaluation
-inputs, so future fields can be added without changing method signatures. The context SHALL expose the
-`data` and `response` inputs and the current turn's position: `turnIndex` (0-based) and `totalTurns`
-(count), populated from the `TestCaseRunResult` being evaluated; for a single-turn result they are `0`
-and `1`. The turn position is surfaced to conditions through the `turn` namespace of the dictionary.
-Status: **Implemented**
-
-#### Scenario: Context carries the evaluation dictionary
-- **WHEN** the evaluator runs
-- **THEN** it SHALL receive a context exposing the `data` and `response` inputs
-
-#### Scenario: Context carries turn position
-- **WHEN** the evaluator runs for a result at turn `i` of a conversation of `N` turns
-- **THEN** the context SHALL expose `turnIndex = i` and `totalTurns = N`
-
-#### Scenario: Single-turn context turn position
-- **WHEN** the evaluator runs for a non-multi-turn result
-- **THEN** the context SHALL expose `turnIndex = 0` and `totalTurns = 1`
-
-### Requirement: Conditions evaluate per turn
-Because each turn of a multi-turn conversation is its own `TestCaseRunResult`, a metric's `condition` SHALL be evaluated once per turn-result — the `data` and `response` inputs are that turn's scalar values, and the `turn` namespace (`index`/`total`/`last`) identifies the turn. This per-turn granularity is a consequence of per-turn result rows. The condition SHALL NOT be evaluated on non-SUCCESS rows (a failing turn or a `0/0` data-error row), which propagate without metric evaluation.
-Status: **Implemented**
-
-#### Scenario: Condition runs on each successful turn
-- **WHEN** a 3-turn conversation completes successfully and a TSMD carries a condition referencing `response`
-- **THEN** the condition SHALL be evaluated three times, once per turn-result, each against that turn's scalar `data`/`response`
-
-#### Scenario: Condition not evaluated on a failed turn
-- **WHEN** turn `k` of a conversation is an ERROR result
-- **THEN** no condition SHALL be evaluated for that turn-result and no metric SHALL be dispatched for it
-
 ### Requirement: Runtime condition outcome determines metric result
 For each test-case result, the condition outcome SHALL map to exactly one behavior: a clean boolean
 `true` runs the metric normally; a clean boolean `false` skips the metric and omits it entirely from
@@ -149,10 +128,12 @@ Status: **Implemented**
 ## Implementation notes
 
 Components (service.domain): `ConditionExpressionEvaluator` (single entry point;
-`validate(condition)` and `evaluate(condition, ConditionContext)`), `ConditionContext` (builder-backed
-carrier). Reuses `JsonataEvaluationService` for JSONata parse/eval and the `data`/`response` namespace
-tokens from `EvalSummaryExportColumnConstants`; the `turn` namespace (`index`/`total`/`last`) is built
-from the `ConditionContext` turn position. Runtime integration in
+`validate(condition)` and `evaluate(condition, ConditionContext)`), `ConditionContext` (builder-backed,
+extensible carrier — future evaluation inputs can be added without changing method signatures; exposes
+the `data`/`response` inputs plus `turnIndex`/`totalTurns` sourced from the `TestCaseRunResult`, `0`/`1`
+for a single-turn result). Reuses `JsonataEvaluationService` for JSONata parse/eval and the
+`data`/`response` namespace tokens from `EvalSummaryExportColumnConstants`; the `turn` namespace
+(`index`/`total`/`last`) is built from the `ConditionContext` turn position. Runtime integration in
 `InProcessMetricEvaluationExecutor.evaluateAndBuild()` with a
 `TsmdEvaluationResult.ConditionError` variant handled by `MetricOutputMapper`; `checkForErrors`
 ignores `ConditionError`.

@@ -18,42 +18,53 @@ import org.junit.jupiter.api.Test;
 class EvalBaggageTest {
 
     @Test
-    @DisplayName("puts run and suite ids into the current baggage within the scope")
-    void shouldPutRunAndSuiteIdsIntoBaggageWithinScope() {
+    @DisplayName("puts run id, suite id, testcase id and run index into the current baggage within the scope")
+    void shouldPutAllIdentifiersIntoBaggageWithinScope() {
         UUID runId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
+        UUID testCaseId = UUID.randomUUID();
+        int runIndex = 3;
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId)) {
+        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId, testCaseId, runIndex)) {
             Baggage baggage = Baggage.current();
             assertThat(baggage.getEntryValue(TracingConstants.EVAL_RUN_ID)).isEqualTo(runId.toString());
             assertThat(baggage.getEntryValue(TracingConstants.EVAL_SUITE_ID)).isEqualTo(suiteId.toString());
+            assertThat(baggage.getEntryValue(TracingConstants.TESTCASE_ID)).isEqualTo(testCaseId.toString());
+            assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX)).isEqualTo("3");
         }
     }
 
     @Test
-    @DisplayName("removes run and suite ids from the baggage after the scope closes (no leak)")
+    @DisplayName("removes all identifiers from the baggage after the scope closes (no leak)")
     void shouldRemoveIdsFromBaggageAfterScopeCloses() {
         UUID runId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
+        UUID testCaseId = UUID.randomUUID();
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId)) {
+        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId, testCaseId, 0)) {
             // entries present inside the scope (covered by the previous test)
         }
 
         Baggage baggage = Baggage.current();
         assertThat(baggage.getEntryValue(TracingConstants.EVAL_RUN_ID)).isNull();
         assertThat(baggage.getEntryValue(TracingConstants.EVAL_SUITE_ID)).isNull();
+        assertThat(baggage.getEntryValue(TracingConstants.TESTCASE_ID)).isNull();
+        assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX)).isNull();
     }
 
     @Test
-    @DisplayName("does not throw and adds no entries when both ids are null")
-    void shouldNotThrowWhenBothIdsAreNull() {
+    @DisplayName("does not throw and adds no entries when all values are null")
+    void shouldNotThrowWhenAllValuesAreNull() {
         assertThatCode(() -> {
-                    try (Scope scope = EvalBaggage.withRunContext(null, null)) {
+                    try (Scope scope = EvalBaggage.withRunContext(null, null, null, null)) {
                         Baggage baggage = Baggage.current();
                         assertThat(baggage.getEntryValue(TracingConstants.EVAL_RUN_ID))
                                 .isNull();
                         assertThat(baggage.getEntryValue(TracingConstants.EVAL_SUITE_ID))
+                                .isNull();
+                        assertThat(baggage.getEntryValue(TracingConstants.TESTCASE_ID))
+                                .isNull();
+                        assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX))
                                 .isNull();
                     }
                 })
@@ -61,14 +72,16 @@ class EvalBaggageTest {
     }
 
     @Test
-    @DisplayName("adds only the run id when the suite id is null")
-    void shouldAddOnlyRunIdWhenSuiteIdIsNull() {
+    @DisplayName("adds only the run id when the other values are null")
+    void shouldAddOnlyRunIdWhenOtherValuesAreNull() {
         UUID runId = UUID.randomUUID();
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, null)) {
+        try (Scope scope = EvalBaggage.withRunContext(runId, null, null, null)) {
             Baggage baggage = Baggage.current();
             assertThat(baggage.getEntryValue(TracingConstants.EVAL_RUN_ID)).isEqualTo(runId.toString());
             assertThat(baggage.getEntryValue(TracingConstants.EVAL_SUITE_ID)).isNull();
+            assertThat(baggage.getEntryValue(TracingConstants.TESTCASE_ID)).isNull();
+            assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX)).isNull();
         }
     }
 }

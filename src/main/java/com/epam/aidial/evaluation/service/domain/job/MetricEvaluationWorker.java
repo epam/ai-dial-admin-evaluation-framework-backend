@@ -59,22 +59,26 @@ public class MetricEvaluationWorker {
         Span span = openTelemetry
                 .getTracer("com.epam.aidial.evaluation")
                 .spanBuilder("metric.tsmd.evaluate")
-                .setAttribute("tsmd.name", tsmd.getName())
-                .setAttribute("tsmd.provider.id", tsmd.getDeclarationProviderId())
+                .setAttribute(TracingConstants.TSMD_NAME, tsmd.getName())
+                .setAttribute(TracingConstants.TSMD_PROVIDER_ID, tsmd.getDeclarationProviderId())
                 .setAttribute(
                         TracingConstants.EVAL_RUN_ID,
                         context.getTestSuiteRunId().toString())
-                .setAttribute("result.id", result.getId().toString())
-                .setAttribute("testcase.id", result.getTestCaseId().toString())
-                .setAttribute("testcase.name", result.getTestCaseName())
+                .setAttribute(TracingConstants.RESULT_ID, result.getId().toString())
+                .setAttribute(
+                        TracingConstants.TESTCASE_ID, result.getTestCaseId().toString())
+                .setAttribute(TracingConstants.TESTCASE_NAME, result.getTestCaseName())
                 .setAttribute(
                         TracingConstants.EVAL_SUITE_ID, context.getTestSuiteId().toString())
-                .setAttribute("metric.declaration.name", tsmd.getMetricDeclarationName())
+                .setAttribute(TracingConstants.METRIC_DECLARATION_NAME, tsmd.getMetricDeclarationName())
                 .startSpan();
 
         try (Scope scope = span.makeCurrent();
-                Scope baggageScope =
-                        EvalBaggage.withRunContext(context.getTestSuiteRunId(), context.getTestSuiteId())) {
+                Scope baggageScope = EvalBaggage.withRunContext(
+                        context.getTestSuiteRunId(),
+                        context.getTestSuiteId(),
+                        result.getTestCaseId(),
+                        result.getRunIndex())) {
             providerSemaphore.acquire();
             try {
                 return invokeWithRetries(tsmd, result, context);

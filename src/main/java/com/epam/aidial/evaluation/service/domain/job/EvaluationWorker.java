@@ -91,9 +91,10 @@ public class EvaluationWorker {
         Span span = openTelemetry
                 .getTracer("com.epam.aidial.evaluation")
                 .spanBuilder("eval.testcase.execute")
-                .setAttribute("testcase.id", input.getTestCaseId().toString())
-                .setAttribute("testcase.name", input.getTestCaseName())
-                .setAttribute("run.index", String.valueOf(runIndex))
+                .setAttribute(
+                        TracingConstants.TESTCASE_ID, input.getTestCaseId().toString())
+                .setAttribute(TracingConstants.TESTCASE_NAME, input.getTestCaseName())
+                .setAttribute(TracingConstants.RUN_INDEX, String.valueOf(runIndex))
                 .setAttribute(TracingConstants.EVAL_RUN_ID, context.getRunId().toString())
                 .setAttribute(
                         TracingConstants.EVAL_SUITE_ID, context.getSuiteId().toString())
@@ -102,7 +103,8 @@ public class EvaluationWorker {
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 
         try (Scope scope = span.makeCurrent();
-                Scope baggageScope = EvalBaggage.withRunContext(context.getRunId(), context.getSuiteId())) {
+                Scope baggageScope = EvalBaggage.withRunContext(
+                        context.getRunId(), context.getSuiteId(), input.getTestCaseId(), runIndex)) {
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {
                 return executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs);

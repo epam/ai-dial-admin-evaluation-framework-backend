@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingPro
 import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.constants.TracingConstants;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -262,7 +263,7 @@ public class TryItOutService {
         Span span = openTelemetry
                 .getTracer("com.epam.aidial.evaluation")
                 .spanBuilder("try-it-out.mcp.invoke")
-                .setAttribute("eval.suite.id", testSuiteId.toString())
+                .setAttribute(TracingConstants.EVAL_SUITE_ID, testSuiteId.toString())
                 .setAttribute("mcp.tool.name", toolRef.getName())
                 .startSpan();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
@@ -331,7 +332,7 @@ public class TryItOutService {
         Span span = openTelemetry
                 .getTracer("com.epam.aidial.evaluation")
                 .spanBuilder("try-it-out.invoke")
-                .setAttribute("eval.suite.id", testSuiteId.toString())
+                .setAttribute(TracingConstants.EVAL_SUITE_ID, testSuiteId.toString())
                 .startSpan();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
         try (Scope scope = span.makeCurrent()) {

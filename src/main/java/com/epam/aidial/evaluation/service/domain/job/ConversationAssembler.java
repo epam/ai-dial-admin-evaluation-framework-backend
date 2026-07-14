@@ -11,6 +11,7 @@ import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -94,7 +95,7 @@ public class ConversationAssembler {
         }
     }
 
-    private tools.jackson.databind.JsonNode parseData(String data) {
+    private JsonNode parseData(String data) {
         if (data == null || data.isBlank()) {
             return objectMapper.createObjectNode();
         }

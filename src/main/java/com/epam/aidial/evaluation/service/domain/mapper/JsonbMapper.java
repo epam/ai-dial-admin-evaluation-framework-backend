@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -133,28 +134,20 @@ public class JsonbMapper {
     }
 
     /**
-     * Serializes the per-suite {@code overall} score definition (an opaque {@code StructuredQuery}
-     * JSON object) from the request DTO into the entity's JSONB column. Returns {@code null} for a
-     * null input so the column stays null (meaning "use the system default").
+     * Serializes the per-suite {@code overall} score definition from the request DTO into the entity's
+     * JSONB column. Returns {@code null} for a null input so the column stays null (meaning "use the
+     * system default").
      */
-    public String mapOverallScore(Map<String, Object> value) {
+    public String mapOverallScore(OverallScoreDefinition value) {
         return write(value, "overallScore");
     }
 
     /**
-     * The per-suite {@code overall} score definition (an opaque {@code StructuredQuery} JSON object),
-     * read from the entity into the suite snapshot or the suite response. A null column means the
-     * run-level {@code overall} falls back to the system default.
+     * The per-suite {@code overall} score definition, read from the entity into the suite snapshot or the
+     * suite response. A null column means the run-level {@code overall} falls back to the system default.
      */
-    public Map<String, Object> mapOverallScore(String json) {
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-        try {
-            return objectMapper.readValue(json, MAP_TYPE);
-        } catch (JacksonException ex) {
-            throw new IllegalArgumentException("Failed to deserialize overallScore", ex);
-        }
+    public OverallScoreDefinition mapOverallScore(String json) {
+        return read(json, OverallScoreDefinition.class, "overallScore");
     }
 
     /**

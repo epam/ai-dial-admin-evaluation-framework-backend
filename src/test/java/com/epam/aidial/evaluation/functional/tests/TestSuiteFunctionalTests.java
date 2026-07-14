@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import java.util.List;
 import java.util.Map;
@@ -570,6 +571,7 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
                                 List.of(Map.of("type", "field", "name", "metric::Relevancy::score"))),
                         "as",
                         "value")));
+        CustomFunction overallScoreDefinition = new CustomFunction(overallScore);
         TestSuiteRequestDto updateRequest = TestSuiteRequestDto.builder()
                 .name(created.getName())
                 .description(created.getDescription())
@@ -582,7 +584,7 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
                 .datasetId(created.getDatasetId())
                 .requestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
-                .overallScore(overallScore)
+                .overallScore(overallScoreDefinition)
                 .build();
 
         // When (If-Match required for optimistic locking)
@@ -597,14 +599,14 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
         // Then: the response echoes the submitted overallScore
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().getOverallScore()).isEqualTo(overallScore);
+        assertThat(response.getBody().getOverallScore()).isEqualTo(overallScoreDefinition);
 
         // And: it is persisted — a fresh GET returns the same overallScore
         ResponseEntity<TestSuiteResponseDto> fetched =
                 restTemplate.getForEntity(apiUrl("/test-suites/" + created.getId()), TestSuiteResponseDto.class);
         assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(fetched.getBody()).isNotNull();
-        assertThat(fetched.getBody().getOverallScore()).isEqualTo(overallScore);
+        assertThat(fetched.getBody().getOverallScore()).isEqualTo(overallScoreDefinition);
     }
 
     @Test

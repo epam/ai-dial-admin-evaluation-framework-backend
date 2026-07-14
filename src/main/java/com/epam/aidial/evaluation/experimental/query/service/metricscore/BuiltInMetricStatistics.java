@@ -72,6 +72,15 @@ public class BuiltInMetricStatistics {
     /** A built-in statistic: its persisted {@code metric_score_name} and the query computing it. */
     public record MetricStatistic(String name, StructuredQuery query) {}
 
+    /**
+     * Public entry point for other Phase-3 collaborators (e.g. {@link OverallScoreDefinitionResolver})
+     * that need to build a run/computation-scoped aggregate query around their own select expression,
+     * without duplicating the run-scoping filter construction.
+     */
+    public StructuredQuery aggregateSelecting(Expr selectExpr) {
+        return aggregate(selectExpr);
+    }
+
     /** Aggregate query selecting a single {@code value} over {@code eval_summaries}, run/computation scoped. */
     private static StructuredQuery aggregate(Expr selectExpr) {
         return new StructuredQuery(

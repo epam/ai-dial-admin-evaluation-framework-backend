@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.Map;
@@ -69,9 +70,9 @@ public class TestSuiteResponseDto {
     private Long updatedAt;
 
     @Schema(
-            description = "Per-suite definition of the run-level `overall` metric score (a structured-query "
-                    + "expression), as a JSON object. Null when the suite uses the built-in default.")
-    private Map<String, Object> overallScore;
+            description = "Per-suite definition of the run-level `overall` metric score. Discriminated by `type` "
+                    + "(`mean`/`weighted_mean`/`custom_function`). Null when the suite uses the built-in default.")
+    private OverallScoreDefinition overallScore;
 
     @Schema(
             description = "Per-suite test-case filter (a Structured Query DSL filter subtree), as a JSON object. "

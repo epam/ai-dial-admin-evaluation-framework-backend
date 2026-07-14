@@ -71,14 +71,17 @@ public class MetricEvaluationWorker {
                 .setAttribute(
                         TracingConstants.EVAL_SUITE_ID, context.getTestSuiteId().toString())
                 .setAttribute(TracingConstants.METRIC_DECLARATION_NAME, tsmd.getMetricDeclarationName())
+                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION)
                 .startSpan();
 
         try (Scope scope = span.makeCurrent();
-                Scope baggageScope = EvalBaggage.withRunContext(
+                Scope baggageScope = EvalBaggage.withMetricContext(
                         context.getTestSuiteRunId(),
                         context.getTestSuiteId(),
                         result.getTestCaseId(),
-                        result.getRunIndex())) {
+                        result.getRunIndex(),
+                        result.getId(),
+                        tsmd.getMetricDeclarationName())) {
             providerSemaphore.acquire();
             try {
                 return invokeWithRetries(tsmd, result, context);

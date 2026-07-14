@@ -98,12 +98,13 @@ public class EvaluationWorker {
                 .setAttribute(TracingConstants.EVAL_RUN_ID, context.getRunId().toString())
                 .setAttribute(
                         TracingConstants.EVAL_SUITE_ID, context.getSuiteId().toString())
+                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_EXECUTION)
                 .startSpan();
         long execStartedAtMs = clock.millis();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 
         try (Scope scope = span.makeCurrent();
-                Scope baggageScope = EvalBaggage.withRunContext(
+                Scope baggageScope = EvalBaggage.withExecutionContext(
                         context.getRunId(), context.getSuiteId(), input.getTestCaseId(), runIndex)) {
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {

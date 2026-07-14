@@ -8,8 +8,8 @@ import java.util.UUID;
 import lombok.experimental.UtilityClass;
 
 /**
- * Populates OTel Baggage with the eval run/suite ids, test case id and run index for the duration of an
- * execution scope.
+ * Populates OTel Baggage with the eval run/suite ids, test case id, run index and phase (plus the result
+ * id and metric name on the metric-evaluation path) for the duration of an execution scope.
  *
  * <p>Mirrors the {@link TraceContextUtils} static-helper pattern. Baggage lives in the OTel API and is
  * independent of the SDK, so entries are added to the context regardless of whether OTel is enabled; the
@@ -23,10 +23,12 @@ import lombok.experimental.UtilityClass;
 public class EvalBaggage {
 
     /**
-     * Adds {@code eval.run.id}, {@code eval.suite.id}, {@code testcase.id} and {@code run.index} to the
-     * current OTel Baggage and returns the resulting {@link Scope}. Null ids/index are skipped (no entry
-     * added), so the call never throws for missing values. All entries are non-sensitive identifiers,
-     * safe to broadcast verbatim to downstream services.
+     * Adds the test-case execution context ({@code eval.run.id}, {@code eval.suite.id},
+     * {@code testcase.id}, {@code run.index} and {@code eval.phase=execution}) to the current OTel
+     * Baggage and returns the resulting {@link Scope}. Used by {@code EvaluationWorker}; the result id is
+     * not yet available at this point (the downstream call produces it), so it is not part of this scope.
+     * Null ids/index are skipped (no entry added), so the call never throws for missing values. All
+     * entries are non-sensitive identifiers, safe to broadcast verbatim to downstream services.
      *
      * @param runId the evaluation run id, or {@code null} to skip
      * @param suiteId the evaluation suite id, or {@code null} to skip
@@ -34,7 +36,44 @@ public class EvalBaggage {
      * @param runIndex the zero-based run index, or {@code null} to skip
      * @return the baggage scope; close it to restore the previous baggage
      */
-    public static Scope withRunContext(UUID runId, UUID suiteId, UUID testCaseId, Integer runIndex) {
+    public static Scope withExecutionContext(UUID runId, UUID suiteId, UUID testCaseId, Integer runIndex) {
+        return runContextBuilder(runId, suiteId, testCaseId, runIndex)
+                .put(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_EXECUTION)
+                .build()
+                .makeCurrent();
+    }
+
+    /**
+     * Adds the metric-evaluation context to the current OTel Baggage and returns the resulting
+     * {@link Scope}. In addition to the shared run/suite/testcase/run-index members it sets
+     * {@code eval.phase=metric-evaluation}, plus {@code result.id} (so downstream telemetry can key back
+     * to the exact {@code TestCaseRunResult} row) and {@code metric.declaration.name} (so judge-model
+     * spend can be attributed to a specific metric). Used by {@code MetricEvaluationWorker}. Null values
+     * are skipped, so the call never throws for missing values. All entries are non-sensitive
+     * identifiers, safe to broadcast verbatim to downstream services.
+     *
+     * @param runId the evaluation run id, or {@code null} to skip
+     * @param suiteId the evaluation suite id, or {@code null} to skip
+     * @param testCaseId the test case id, or {@code null} to skip
+     * @param runIndex the zero-based run index, or {@code null} to skip
+     * @param resultId the test case run result id, or {@code null} to skip
+     * @param metricDeclarationName the metric declaration name, or {@code null} to skip
+     * @return the baggage scope; close it to restore the previous baggage
+     */
+    public static Scope withMetricContext(
+            UUID runId, UUID suiteId, UUID testCaseId, Integer runIndex, UUID resultId, String metricDeclarationName) {
+        BaggageBuilder builder = runContextBuilder(runId, suiteId, testCaseId, runIndex)
+                .put(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION);
+        if (resultId != null) {
+            builder.put(TracingConstants.RESULT_ID, resultId.toString());
+        }
+        if (metricDeclarationName != null) {
+            builder.put(TracingConstants.METRIC_DECLARATION_NAME, metricDeclarationName);
+        }
+        return builder.build().makeCurrent();
+    }
+
+    private static BaggageBuilder runContextBuilder(UUID runId, UUID suiteId, UUID testCaseId, Integer runIndex) {
         BaggageBuilder builder = Baggage.current().toBuilder();
         if (runId != null) {
             builder.put(TracingConstants.EVAL_RUN_ID, runId.toString());
@@ -48,6 +87,6 @@ public class EvalBaggage {
         if (runIndex != null) {
             builder.put(TracingConstants.RUN_INDEX, runIndex.toString());
         }
-        return builder.build().makeCurrent();
+        return builder;
     }
 }

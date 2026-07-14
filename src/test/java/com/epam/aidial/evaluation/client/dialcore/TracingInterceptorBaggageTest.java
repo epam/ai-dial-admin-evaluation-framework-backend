@@ -45,8 +45,8 @@ class TracingInterceptorBaggageTest {
     }
 
     @Test
-    @DisplayName("injects a baggage header carrying eval.run.id, eval.suite.id, testcase.id and run.index"
-            + " when OTel is enabled")
+    @DisplayName("injects a baggage header carrying eval.run.id, eval.suite.id, testcase.id, run.index"
+            + " and eval.phase=execution when OTel is enabled")
     void shouldInjectBaggageHeaderWhenOtelEnabled() {
         UUID runId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
@@ -64,10 +64,11 @@ class TracingInterceptorBaggageTest {
                     assertThat(baggage).contains("eval.suite.id=" + suiteId);
                     assertThat(baggage).contains("testcase.id=" + testCaseId);
                     assertThat(baggage).contains("run.index=" + runIndex);
+                    assertThat(baggage).contains("eval.phase=execution");
                 })
                 .andRespond(withSuccess());
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId, testCaseId, runIndex)) {
+        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, runIndex)) {
             client.get().uri("/deployments/x/chat/completions").retrieve().toBodilessEntity();
         }
 
@@ -75,7 +76,7 @@ class TracingInterceptorBaggageTest {
     }
 
     @Test
-    @DisplayName("baggage header carries only the four non-sensitive id members — no authorization or api-key")
+    @DisplayName("execution baggage header carries only the five non-sensitive members — no authorization or api-key")
     void shouldCarryOnlyNonSensitiveIdentifiers() {
         UUID runId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
@@ -90,18 +91,19 @@ class TracingInterceptorBaggageTest {
                     String baggage = request.getHeaders().getFirst("baggage");
                     assertThat(baggage).isNotNull();
                     String[] members = baggage.split(",");
-                    assertThat(members).hasSize(4);
+                    assertThat(members).hasSize(5);
                     assertThat(Arrays.stream(members).map(String::trim))
                             .allMatch(m -> m.startsWith("eval.run.id=")
                                     || m.startsWith("eval.suite.id=")
                                     || m.startsWith("testcase.id=")
-                                    || m.startsWith("run.index="));
+                                    || m.startsWith("run.index=")
+                                    || m.startsWith("eval.phase="));
                     assertThat(baggage.toLowerCase()).doesNotContain("authorization");
                     assertThat(baggage.toLowerCase()).doesNotContain("api-key");
                 })
                 .andRespond(withSuccess());
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId, testCaseId, runIndex)) {
+        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, runIndex)) {
             client.get().uri("/x").retrieve().toBodilessEntity();
         }
 
@@ -124,7 +126,7 @@ class TracingInterceptorBaggageTest {
                         assertThat(request.getHeaders().getFirst("baggage")).isNull())
                 .andRespond(withSuccess());
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId, testCaseId, 0)) {
+        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, 0)) {
             client.get().uri("/x").retrieve().toBodilessEntity();
         }
 
@@ -132,14 +134,16 @@ class TracingInterceptorBaggageTest {
     }
 
     @Test
-    @DisplayName("serializes baggage for the metric-provider client (same tracingInterceptor factory)")
+    @DisplayName("serializes metric baggage (phase, result id, metric name) for the metric-provider client")
     void shouldSerializeBaggageForMetricProviderClient() {
         // MetricProviderRestClientConfiguration builds its clients with the identical
         // DialCoreClientConfiguration.tracingInterceptor(openTelemetry), so this asserts the metric path.
         UUID runId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
         UUID testCaseId = UUID.randomUUID();
+        UUID resultId = UUID.randomUUID();
         int runIndex = 1;
+        String metricName = "answer-correctness";
         MockRestServiceServer[] serverOut = new MockRestServiceServer[1];
         RestClient client = clientWith(propagatingOpenTelemetry(), serverOut);
 
@@ -152,10 +156,13 @@ class TracingInterceptorBaggageTest {
                     assertThat(baggage).contains("eval.suite.id=" + suiteId);
                     assertThat(baggage).contains("testcase.id=" + testCaseId);
                     assertThat(baggage).contains("run.index=" + runIndex);
+                    assertThat(baggage).contains("eval.phase=metric-evaluation");
+                    assertThat(baggage).contains("result.id=" + resultId);
+                    assertThat(baggage).contains("metric.declaration.name=" + metricName);
                 })
                 .andRespond(withSuccess());
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId, testCaseId, runIndex)) {
+        try (Scope scope = EvalBaggage.withMetricContext(runId, suiteId, testCaseId, runIndex, resultId, metricName)) {
             client.post().uri("/evaluate").retrieve().toBodilessEntity();
         }
 

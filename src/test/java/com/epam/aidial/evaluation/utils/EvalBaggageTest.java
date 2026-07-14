@@ -18,19 +18,58 @@ import org.junit.jupiter.api.Test;
 class EvalBaggageTest {
 
     @Test
-    @DisplayName("puts run id, suite id, testcase id and run index into the current baggage within the scope")
-    void shouldPutAllIdentifiersIntoBaggageWithinScope() {
+    @DisplayName("execution context puts run id, suite id, testcase id, run index and phase=execution into baggage")
+    void shouldPutExecutionIdentifiersIntoBaggageWithinScope() {
         UUID runId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
         UUID testCaseId = UUID.randomUUID();
         int runIndex = 3;
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId, testCaseId, runIndex)) {
+        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, runIndex)) {
             Baggage baggage = Baggage.current();
             assertThat(baggage.getEntryValue(TracingConstants.EVAL_RUN_ID)).isEqualTo(runId.toString());
             assertThat(baggage.getEntryValue(TracingConstants.EVAL_SUITE_ID)).isEqualTo(suiteId.toString());
             assertThat(baggage.getEntryValue(TracingConstants.TESTCASE_ID)).isEqualTo(testCaseId.toString());
             assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX)).isEqualTo("3");
+            assertThat(baggage.getEntryValue(TracingConstants.EVAL_PHASE)).isEqualTo(TracingConstants.PHASE_EXECUTION);
+        }
+    }
+
+    @Test
+    @DisplayName("execution context adds no result id or metric declaration name")
+    void shouldNotAddMetricOnlyMembersForExecutionContext() {
+        UUID runId = UUID.randomUUID();
+
+        try (Scope scope = EvalBaggage.withExecutionContext(runId, UUID.randomUUID(), UUID.randomUUID(), 0)) {
+            Baggage baggage = Baggage.current();
+            assertThat(baggage.getEntryValue(TracingConstants.RESULT_ID)).isNull();
+            assertThat(baggage.getEntryValue(TracingConstants.METRIC_DECLARATION_NAME))
+                    .isNull();
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "metric context puts the shared ids plus phase=metric-evaluation, result id and metric declaration name")
+    void shouldPutMetricIdentifiersIntoBaggageWithinScope() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+        UUID testCaseId = UUID.randomUUID();
+        UUID resultId = UUID.randomUUID();
+        int runIndex = 1;
+        String metricName = "answer-correctness";
+
+        try (Scope scope = EvalBaggage.withMetricContext(runId, suiteId, testCaseId, runIndex, resultId, metricName)) {
+            Baggage baggage = Baggage.current();
+            assertThat(baggage.getEntryValue(TracingConstants.EVAL_RUN_ID)).isEqualTo(runId.toString());
+            assertThat(baggage.getEntryValue(TracingConstants.EVAL_SUITE_ID)).isEqualTo(suiteId.toString());
+            assertThat(baggage.getEntryValue(TracingConstants.TESTCASE_ID)).isEqualTo(testCaseId.toString());
+            assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX)).isEqualTo("1");
+            assertThat(baggage.getEntryValue(TracingConstants.EVAL_PHASE))
+                    .isEqualTo(TracingConstants.PHASE_METRIC_EVALUATION);
+            assertThat(baggage.getEntryValue(TracingConstants.RESULT_ID)).isEqualTo(resultId.toString());
+            assertThat(baggage.getEntryValue(TracingConstants.METRIC_DECLARATION_NAME))
+                    .isEqualTo(metricName);
         }
     }
 
@@ -41,7 +80,7 @@ class EvalBaggageTest {
         UUID suiteId = UUID.randomUUID();
         UUID testCaseId = UUID.randomUUID();
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, suiteId, testCaseId, 0)) {
+        try (Scope scope = EvalBaggage.withMetricContext(runId, suiteId, testCaseId, 0, UUID.randomUUID(), "m")) {
             // entries present inside the scope (covered by the previous test)
         }
 
@@ -50,13 +89,17 @@ class EvalBaggageTest {
         assertThat(baggage.getEntryValue(TracingConstants.EVAL_SUITE_ID)).isNull();
         assertThat(baggage.getEntryValue(TracingConstants.TESTCASE_ID)).isNull();
         assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX)).isNull();
+        assertThat(baggage.getEntryValue(TracingConstants.EVAL_PHASE)).isNull();
+        assertThat(baggage.getEntryValue(TracingConstants.RESULT_ID)).isNull();
+        assertThat(baggage.getEntryValue(TracingConstants.METRIC_DECLARATION_NAME))
+                .isNull();
     }
 
     @Test
-    @DisplayName("does not throw and adds no entries when all values are null")
+    @DisplayName("does not throw and adds no id entries when all values are null")
     void shouldNotThrowWhenAllValuesAreNull() {
         assertThatCode(() -> {
-                    try (Scope scope = EvalBaggage.withRunContext(null, null, null, null)) {
+                    try (Scope scope = EvalBaggage.withMetricContext(null, null, null, null, null, null)) {
                         Baggage baggage = Baggage.current();
                         assertThat(baggage.getEntryValue(TracingConstants.EVAL_RUN_ID))
                                 .isNull();
@@ -66,22 +109,30 @@ class EvalBaggageTest {
                                 .isNull();
                         assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX))
                                 .isNull();
+                        assertThat(baggage.getEntryValue(TracingConstants.RESULT_ID))
+                                .isNull();
+                        assertThat(baggage.getEntryValue(TracingConstants.METRIC_DECLARATION_NAME))
+                                .isNull();
+                        // phase is always set (a constant), independent of the nullable ids
+                        assertThat(baggage.getEntryValue(TracingConstants.EVAL_PHASE))
+                                .isEqualTo(TracingConstants.PHASE_METRIC_EVALUATION);
                     }
                 })
                 .doesNotThrowAnyException();
     }
 
     @Test
-    @DisplayName("adds only the run id when the other values are null")
+    @DisplayName("adds only the run id (plus phase) when the other values are null")
     void shouldAddOnlyRunIdWhenOtherValuesAreNull() {
         UUID runId = UUID.randomUUID();
 
-        try (Scope scope = EvalBaggage.withRunContext(runId, null, null, null)) {
+        try (Scope scope = EvalBaggage.withExecutionContext(runId, null, null, null)) {
             Baggage baggage = Baggage.current();
             assertThat(baggage.getEntryValue(TracingConstants.EVAL_RUN_ID)).isEqualTo(runId.toString());
             assertThat(baggage.getEntryValue(TracingConstants.EVAL_SUITE_ID)).isNull();
             assertThat(baggage.getEntryValue(TracingConstants.TESTCASE_ID)).isNull();
             assertThat(baggage.getEntryValue(TracingConstants.RUN_INDEX)).isNull();
+            assertThat(baggage.getEntryValue(TracingConstants.EVAL_PHASE)).isEqualTo(TracingConstants.PHASE_EXECUTION);
         }
     }
 }

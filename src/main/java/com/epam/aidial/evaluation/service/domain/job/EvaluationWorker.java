@@ -89,8 +89,8 @@ public class EvaluationWorker {
             int runIndex,
             List<ResponseColumnDefinitionDto> responseColumns) {
         Span span = openTelemetry
-                .getTracer("com.epam.aidial.evaluation")
-                .spanBuilder("eval.testcase.execute")
+                .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
+                .spanBuilder(TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE)
                 .setAttribute(
                         TracingConstants.TESTCASE_ID, input.getTestCaseId().toString())
                 .setAttribute(TracingConstants.TESTCASE_NAME, input.getTestCaseName())

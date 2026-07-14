@@ -57,8 +57,8 @@ public class MetricEvaluationWorker {
             MetricEvaluationContext context)
             throws InterruptedException {
         Span span = openTelemetry
-                .getTracer("com.epam.aidial.evaluation")
-                .spanBuilder("metric.tsmd.evaluate")
+                .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
+                .spanBuilder(TracingConstants.SPAN_METRIC_TSMD_EVALUATE)
                 .setAttribute(TracingConstants.TSMD_NAME, tsmd.getName())
                 .setAttribute(TracingConstants.TSMD_PROVIDER_ID, tsmd.getDeclarationProviderId())
                 .setAttribute(

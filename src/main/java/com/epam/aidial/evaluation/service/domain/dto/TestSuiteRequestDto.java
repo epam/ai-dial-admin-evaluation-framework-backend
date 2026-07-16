@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -81,16 +82,19 @@ public class TestSuiteRequestDto {
     @Schema(example = "maintainer@example.com")
     private String createdBy;
 
+    @Valid
     @Schema(
             description =
-                    "Optional per-suite definition of the run-level `overall` metric score, as a structured-query "
-                            + "expression (StructuredQuery). References configured metric columns by their flattened name "
-                            + "`metric::<metricName>::<outputField>`. When omitted, `overall` falls back to the built-in "
-                            + "default (single-metric only). Stored verbatim; not validated as a runnable query at write time.",
-            example = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\",\"select\":[{\"expr\":{\"type\":\"fn\","
-                    + "\"name\":\"avg\",\"args\":[{\"type\":\"field\",\"name\":\"metric::Relevancy::score\"}]},"
-                    + "\"as\":\"value\"}]}")
-    private Map<String, Object> overallScore;
+                    "Optional per-suite definition of the run-level `overall` metric score. Discriminated by `type`: "
+                            + "`mean` (no parameters, resolved against whatever metric fields the run currently has), "
+                            + "`weighted_mean` (an explicit `{metricName, outputField, weight}` list — weights need not "
+                            + "already sum to 1), or `custom_function` (a raw Structured Query DSL expression, the "
+                            + "free-form escape hatch, referencing metric columns by their flattened name "
+                            + "`metric::<metricName>::<outputField>`). When omitted, `overall` falls back to the "
+                            + "built-in default (single-metric only). `weighted_mean`/`custom_function` are not "
+                            + "validated as referencing real metrics at write time.",
+            example = "{\"type\":\"mean\"}")
+    private OverallScoreDefinition overallScore;
 
     @Schema(
             description =

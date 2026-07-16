@@ -68,7 +68,8 @@ class TracingInterceptorBaggageTest {
                 })
                 .andRespond(withSuccess());
 
-        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, runIndex)) {
+        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, runIndex)
+                .makeCurrent()) {
             client.get().uri("/deployments/x/chat/completions").retrieve().toBodilessEntity();
         }
 
@@ -103,7 +104,8 @@ class TracingInterceptorBaggageTest {
                 })
                 .andRespond(withSuccess());
 
-        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, runIndex)) {
+        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, runIndex)
+                .makeCurrent()) {
             client.get().uri("/x").retrieve().toBodilessEntity();
         }
 
@@ -126,7 +128,8 @@ class TracingInterceptorBaggageTest {
                         assertThat(request.getHeaders().getFirst("baggage")).isNull())
                 .andRespond(withSuccess());
 
-        try (Scope scope = EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, 0)) {
+        try (Scope scope =
+                EvalBaggage.withExecutionContext(runId, suiteId, testCaseId, 0).makeCurrent()) {
             client.get().uri("/x").retrieve().toBodilessEntity();
         }
 
@@ -162,7 +165,8 @@ class TracingInterceptorBaggageTest {
                 })
                 .andRespond(withSuccess());
 
-        try (Scope scope = EvalBaggage.withMetricContext(runId, suiteId, testCaseId, runIndex, resultId, metricName)) {
+        try (Scope scope = EvalBaggage.withMetricContext(runId, suiteId, testCaseId, runIndex, resultId, metricName)
+                .makeCurrent()) {
             client.post().uri("/evaluate").retrieve().toBodilessEntity();
         }
 

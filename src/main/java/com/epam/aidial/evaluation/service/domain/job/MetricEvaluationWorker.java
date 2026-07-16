@@ -11,8 +11,10 @@ import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.utils.EvalBaggage;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import java.util.List;
 import java.util.Map;
@@ -74,14 +76,15 @@ public class MetricEvaluationWorker {
                 .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION)
                 .startSpan();
 
-        try (Scope scope = span.makeCurrent();
-                Scope baggageScope = EvalBaggage.withMetricContext(
-                        context.getTestSuiteRunId(),
-                        context.getTestSuiteId(),
-                        result.getTestCaseId(),
-                        result.getRunIndex(),
-                        result.getId(),
-                        tsmd.getMetricDeclarationName())) {
+        Baggage baggage = EvalBaggage.withMetricContext(
+                context.getTestSuiteRunId(),
+                context.getTestSuiteId(),
+                result.getTestCaseId(),
+                result.getRunIndex(),
+                result.getId(),
+                tsmd.getMetricDeclarationName());
+        Context traceContext = Context.current().with(span).with(baggage);
+        try (Scope scope = traceContext.makeCurrent()) {
             providerSemaphore.acquire();
             try {
                 return invokeWithRetries(tsmd, result, context);

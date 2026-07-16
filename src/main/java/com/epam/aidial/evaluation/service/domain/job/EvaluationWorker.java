@@ -34,8 +34,10 @@ import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.utils.EvalBaggage;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -103,9 +105,10 @@ public class EvaluationWorker {
         long execStartedAtMs = clock.millis();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 
-        try (Scope scope = span.makeCurrent();
-                Scope baggageScope = EvalBaggage.withExecutionContext(
-                        context.getRunId(), context.getSuiteId(), input.getTestCaseId(), runIndex)) {
+        Baggage baggage = EvalBaggage.withExecutionContext(
+                context.getRunId(), context.getSuiteId(), input.getTestCaseId(), runIndex);
+        Context traceContext = Context.current().with(span).with(baggage);
+        try (Scope scope = traceContext.makeCurrent()) {
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {
                 return executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs);

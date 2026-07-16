@@ -318,53 +318,29 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     }
 
     @Override
-    public long countRunnableSingleTurn(UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition) {
-        Condition combined = withExtra(
-                validNotExcludedCondition(datasetId, excludedIds).and(TEST_CASES.CONVERSATION_ID.isNull()),
-                extraCondition);
-        Long count = dsl.selectCount().from(TEST_CASES).where(combined).fetchOne(0, Long.class);
-        return count != null ? count : 0L;
-    }
-
-    @Override
-    public List<String> findFilterMatchingConversationIdsPage(
+    public List<String> findRunnableConversationIdsPage(
             UUID datasetId, Condition extraCondition, int offset, int limit) {
-        var grouped = dsl.select(TEST_CASES.CONVERSATION_ID)
+        Condition where = TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.isNotNull());
+        return dsl.select(TEST_CASES.CONVERSATION_ID)
                 .from(TEST_CASES)
-                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.isNotNull()))
-                .groupBy(TEST_CASES.CONVERSATION_ID);
-        var filtered = extraCondition == null
-                ? grouped
-                : grouped.having(DSL.count().eq(DSL.count().filterWhere(extraCondition)));
-        return filtered.orderBy(DSL.min(TEST_CASES.CREATED_AT_MS).asc(), TEST_CASES.CONVERSATION_ID.asc())
+                .where(withExtra(where, extraCondition))
+                .groupBy(TEST_CASES.CONVERSATION_ID)
+                .orderBy(DSL.min(TEST_CASES.CREATED_AT_MS).asc(), TEST_CASES.CONVERSATION_ID.asc())
                 .limit(limit)
                 .offset(offset)
                 .fetch(TEST_CASES.CONVERSATION_ID);
     }
 
     @Override
-    public long countFilterMatchingConversations(UUID datasetId, Condition extraCondition) {
-        var grouped = dsl.select(TEST_CASES.CONVERSATION_ID)
-                .from(TEST_CASES)
-                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.isNotNull()))
-                .groupBy(TEST_CASES.CONVERSATION_ID);
-        var filtered = extraCondition == null
-                ? grouped
-                : grouped.having(DSL.count().eq(DSL.count().filterWhere(extraCondition)));
-        Long count = dsl.selectCount().from(filtered.asTable("c")).fetchOne(0, Long.class);
-        return count != null ? count : 0L;
-    }
-
-    @Override
-    public List<TestCase> findTurnsByConversationIds(UUID datasetId, Collection<String> conversationIds) {
+    public List<TestCase> findFilterMatchingTurnsByConversationIds(
+            UUID datasetId, Collection<String> conversationIds, Condition extraCondition) {
         if (conversationIds == null || conversationIds.isEmpty()) {
             return List.of();
         }
+        Condition where =
+                TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.in(conversationIds));
         return dsl.selectFrom(TEST_CASES)
-                .where(TEST_CASES
-                        .DATASET_ID
-                        .eq(datasetId.toString())
-                        .and(TEST_CASES.CONVERSATION_ID.in(conversationIds)))
+                .where(withExtra(where, extraCondition))
                 .orderBy(TEST_CASES.CONVERSATION_ID.asc(), TEST_CASES.TURN_INDEX.asc())
                 .fetch(recordMapper::map);
     }

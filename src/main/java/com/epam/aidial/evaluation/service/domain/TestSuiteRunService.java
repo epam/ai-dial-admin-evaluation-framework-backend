@@ -88,6 +88,10 @@ public class TestSuiteRunService {
         }
 
         List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());
+        // Count of individual runnable test cases (valid + enabled + filter), counting conversation turns
+        // as individual rows — this is the empty-suite guard. It seeds numberOfTestCases coarsely; the
+        // snapshot phase overwrites it with the authoritative execution-unit count (single-turn rows +
+        // assembled conversations). Conversation integrity is resolved only at snapshot, never here.
         long numberOfTestCases = runnableTestCaseCounter.countRunnable(
                 testSuite.getDatasetId(), testSuite.getTestCaseFilter(), disabledIds);
         if (numberOfTestCases == 0) {

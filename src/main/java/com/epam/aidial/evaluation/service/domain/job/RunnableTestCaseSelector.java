@@ -33,25 +33,21 @@ public interface RunnableTestCaseSelector {
      */
     void validateFilter(UUID datasetId, String filterJson);
 
-    /**
-     * Counts runnable execution UNITS: runnable single-turn test cases plus conversations whose turns all
-     * match the filter. This is the coarse run-creation guard count; per-conversation contiguity/validity is
-     * resolved at snapshot (a broken conversation still counts as a unit but yields an ERROR row).
-     */
-    long countRunnableUnits(UUID datasetId, String filterJson, Collection<UUID> excludedIds);
-
     /** Page of runnable SINGLE-TURN test cases (deterministic {@code created_at_ms asc, id asc} order). */
     List<TestCase> loadRunnableSingleTurnPage(
             UUID datasetId, String filterJson, Collection<UUID> excludedIds, int offset, int limit);
 
     /**
-     * Page of distinct conversation ids whose turns all match the filter, in deterministic order
-     * ({@code min(created_at_ms) asc, conversation_id asc}).
+     * Page of distinct conversation ids that have at least one turn matching the filter (row-level, like
+     * disable), in deterministic order ({@code min(created_at_ms) asc, conversation_id asc}).
      */
-    List<String> loadFilterMatchingConversationIdsPage(UUID datasetId, String filterJson, int offset, int limit);
+    List<String> loadRunnableConversationIdsPage(UUID datasetId, String filterJson, int offset, int limit);
 
-    /** All turns (any validity, no exclusion applied) of the given conversations, ordered by (conversation_id, turn_index). */
-    List<TestCase> loadConversationTurns(UUID datasetId, Collection<String> conversationIds);
+    /**
+     * The filter-matching turns of the given conversations, ordered by (conversation_id, turn_index).
+     * Only the filter is applied here; validity and exclusion are resolved at assembly time.
+     */
+    List<TestCase> loadConversationTurns(UUID datasetId, Collection<String> conversationIds, String filterJson);
 
     /**
      * Whether the dataset contains ANY conversation row (any row with a non-null {@code conversation_id}).

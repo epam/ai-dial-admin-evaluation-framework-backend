@@ -9,9 +9,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * Counts the runnable test cases of a suite — those that are valid ({@code is_valid = true}), not in
- * the suite's {@code disabledTestCaseIds}, and (when set) matching the suite's {@code testCaseFilter}.
- * This is the single place that reads the runnable count for the run-creation guard; it delegates to
+ * Counts the runnable <b>individual</b> test cases of a suite — those that are valid
+ * ({@code is_valid = true}), not in the suite's {@code disabledTestCaseIds}, and (when set) matching the
+ * suite's {@code testCaseFilter}. Conversation turns are counted as individual rows here (no
+ * per-conversation grouping); conversation integrity is resolved only at snapshot time. This is the
+ * single place that reads the runnable count for the run-creation guard; it delegates to
  * {@link RunnableTestCaseSelector} so the filter is applied consistently with the snapshot phase.
  */
 @Component
@@ -22,7 +24,7 @@ public class RunnableTestCaseCounter {
     private final RunnableTestCaseSelector runnableTestCaseSelector;
 
     public long countRunnable(UUID datasetId, String filterJson, Collection<UUID> disabledTestCaseIds) {
-        return runnableTestCaseSelector.countRunnableUnits(
+        return runnableTestCaseSelector.countRunnable(
                 datasetId, filterJson, disabledTestCaseIds != null ? disabledTestCaseIds : List.of());
     }
 

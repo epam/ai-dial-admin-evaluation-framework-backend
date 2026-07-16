@@ -110,25 +110,23 @@ public interface TestCaseRepository {
     List<TestCase> findRunnableSingleTurnPage(
             UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit);
 
-    /** Count of runnable single-turn test cases (see {@link #findRunnableSingleTurnPage}). */
-    long countRunnableSingleTurn(UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition);
+    /**
+     * Page of distinct {@code conversation_id}s in the dataset that have at least one turn matching
+     * {@code extraCondition} (the suite filter, applied row-level like disable); a {@code null} condition
+     * includes every conversation. Deterministic, partition-friendly order ({@code min(created_at_ms) asc,
+     * conversation_id asc}); the {@code GROUP BY} exists only for de-duplication and the {@code min}
+     * ordering. Exclusion/validity/contiguity are resolved during Java-side assembly, not here.
+     */
+    List<String> findRunnableConversationIdsPage(UUID datasetId, Condition extraCondition, int offset, int limit);
 
     /**
-     * Page of distinct {@code conversation_id}s in the dataset whose turns ALL match {@code extraCondition}
-     * (the suite filter); a {@code null} condition includes every conversation. Deterministic order
-     * ({@code min(created_at_ms) asc, conversation_id asc}). Exclusion/validity/contiguity are resolved
-     * during Java-side assembly, not here.
+     * The filter-matching turns of the given conversations in the dataset — only {@code extraCondition}
+     * (the suite filter) is applied here; validity and exclusion are resolved during Java-side assembly.
+     * A {@code null} condition loads every turn. Ordered by ({@code conversation_id asc, turn_index asc})
+     * for grouping + assembly.
      */
-    List<String> findFilterMatchingConversationIdsPage(UUID datasetId, Condition extraCondition, int offset, int limit);
-
-    /** Count of conversations whose turns all match {@code extraCondition} (see above). */
-    long countFilterMatchingConversations(UUID datasetId, Condition extraCondition);
-
-    /**
-     * All turns (any validity, no exclusion applied) of the given conversations in the dataset,
-     * ordered by ({@code conversation_id asc, turn_index asc}) for grouping + assembly.
-     */
-    List<TestCase> findTurnsByConversationIds(UUID datasetId, Collection<String> conversationIds);
+    List<TestCase> findFilterMatchingTurnsByConversationIds(
+            UUID datasetId, Collection<String> conversationIds, Condition extraCondition);
 
     /**
      * Cheap {@code EXISTS} check: whether the dataset contains ANY conversation row (any row with a non-null

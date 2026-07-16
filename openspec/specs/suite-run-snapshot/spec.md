@@ -76,9 +76,9 @@ Status: **Planned**
 - **WHEN** conversation `conv-A` has turns `0,1,2` and the suite disables only the turn row at `turn_index = 1` (an enabled turn `2` remains after a disabled turn `1`)
 - **THEN** `conv-A` SHALL be treated as broken (enabled turns do not form a contiguous prefix) and written as a broken-conversation marker input
 
-#### Scenario: Snapshot honors the suite testCaseFilter atomically per conversation
+#### Scenario: Snapshot applies the suite testCaseFilter row-level (like disable)
 - **WHEN** the suite has a `testCaseFilter`
-- **THEN** a conversation SHALL be included only if ALL its turns match the filter (atomic include/exclude, no holes); the runnable selector aggregates per `conversation_id`; a null `testCaseFilter` SHALL impose no additional restriction
+- **THEN** the filter SHALL be applied per turn (not aggregated per `conversation_id`): a conversation is enumerated when at least one of its turns matches, only its filter-matching turns are loaded, and `ConversationAssembler` treats a non-matching turn like a disabled turn — a non-matching tail turn truncates the runnable prefix while a non-matching middle turn breaks the conversation. A null `testCaseFilter` SHALL impose no additional restriction
 
 #### Scenario: Stale disabled ID is silently ignored
 - **WHEN** the suite's `disabledTestCaseIds = [tc-deleted]` and `tc-deleted` is no longer in the dataset

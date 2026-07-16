@@ -67,13 +67,6 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
     }
 
     @Override
-    public long countRunnableUnits(UUID datasetId, String filterJson, Collection<UUID> excludedIds) {
-        final Condition filter = compile(datasetId, filterJson);
-        return testCaseRepository.countRunnableSingleTurn(datasetId, excludedIds, filter)
-                + testCaseRepository.countFilterMatchingConversations(datasetId, filter);
-    }
-
-    @Override
     public List<TestCase> loadRunnableSingleTurnPage(
             UUID datasetId, String filterJson, Collection<UUID> excludedIds, int offset, int limit) {
         final Condition filter = compile(datasetId, filterJson);
@@ -81,15 +74,15 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
     }
 
     @Override
-    public List<String> loadFilterMatchingConversationIdsPage(
-            UUID datasetId, String filterJson, int offset, int limit) {
+    public List<String> loadRunnableConversationIdsPage(UUID datasetId, String filterJson, int offset, int limit) {
         final Condition filter = compile(datasetId, filterJson);
-        return testCaseRepository.findFilterMatchingConversationIdsPage(datasetId, filter, offset, limit);
+        return testCaseRepository.findRunnableConversationIdsPage(datasetId, filter, offset, limit);
     }
 
     @Override
-    public List<TestCase> loadConversationTurns(UUID datasetId, Collection<String> conversationIds) {
-        return testCaseRepository.findTurnsByConversationIds(datasetId, conversationIds);
+    public List<TestCase> loadConversationTurns(UUID datasetId, Collection<String> conversationIds, String filterJson) {
+        final Condition filter = compile(datasetId, filterJson);
+        return testCaseRepository.findFilterMatchingTurnsByConversationIds(datasetId, conversationIds, filter);
     }
 
     @Override

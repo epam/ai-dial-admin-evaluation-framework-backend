@@ -20,13 +20,16 @@ match the filter. The filter is AND-combined with the existing validity
 and exclusion predicates; it never widens the set. When `testCaseFilter` is null or absent, selection
 behaves exactly as before (validity + `disabledTestCaseIds` only).
 
-Filter application SHALL be conversation-aware. A single-turn test case (`conversation_id IS NULL`) is
-filtered per row exactly as today. A multi-turn conversation (the set of rows sharing a non-null
-`conversation_id`) is an atomic unit for filtering: the conversation SHALL be included only if EVERY
-one of its turns matches the filter, and excluded otherwise. The filter SHALL never produce a
-per-turn hole (it SHALL NOT include a subset of a conversation's turns). The runnable selector
-enforces this by aggregating per `conversation_id` (e.g. `GROUP BY conversation_id HAVING`
-all turns of the conversation satisfy the AND-combined validity + exclusion + filter predicate).
+Filter application SHALL be **row-level**, applied to individual test-case rows exactly like the
+`disabledTestCaseIds` exclusion. A single-turn test case (`conversation_id IS NULL`) is filtered per
+row. For a multi-turn conversation (rows sharing a non-null `conversation_id`) the filter selects
+individual turns: a non-matching turn is simply not a survivor (identical to a disabled turn). There
+is NO conversation-level aggregation in the counting or selection path (no `GROUP BY conversation_id
+HAVING …`); conversation integrity over the surviving (valid + enabled + filter-matching) turns —
+contiguity from turn 0, tail-only truncation, broken on a middle hole — is resolved **only at snapshot
+time** by `ConversationAssembler` (see the suite-run-snapshot spec). Consequently a non-matching
+**tail** turn truncates the conversation's runnable prefix, while a non-matching **middle** turn leaves
+a hole and breaks the conversation.
 Status: **Implemented**
 
 #### Scenario: Filter narrows the runnable set

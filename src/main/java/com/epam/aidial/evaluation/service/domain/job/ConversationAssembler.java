@@ -17,13 +17,18 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Assembles the turns of a single conversation (all rows sharing a {@code conversation_id}) into one
- * runnable execution unit, applying the row-based multi-turn selection rules at snapshot time:
+ * Assembles the turns of a single conversation into one runnable execution unit, applying the row-based
+ * multi-turn selection rules at snapshot time. The input {@code turns} are the conversation's
+ * <b>filter-matching</b> turns (the suite's {@code testCaseFilter} is applied row-level in SQL upstream,
+ * like disable); when the suite has no filter this is every turn. Validity and exclusion are resolved here
+ * in memory:
  *
  * <ul>
- *   <li>Any invalid turn ({@code is_valid = false}) → the whole conversation is broken.
+ *   <li>Any invalid turn ({@code is_valid = false}) among the (filter-matching) turns → the whole
+ *       conversation is broken.
  *   <li>Disable is tail-only: after removing the excluded (disabled) turn ids, the survivors MUST form a
  *       contiguous prefix {@code 0..k} (start at 0, no gap, no duplicate index); a middle hole → broken.
+ *       A filtered-out middle turn produces the same hole, so it breaks the conversation too.
  *   <li>No surviving turns, or more than {@link ValidationConstants#MAX_CONVERSATION_TURNS} survivors → broken.
  * </ul>
  *

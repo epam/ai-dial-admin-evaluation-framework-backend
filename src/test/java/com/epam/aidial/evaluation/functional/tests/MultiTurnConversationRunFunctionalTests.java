@@ -210,29 +210,65 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("testCaseFilter includes a conversation only when ALL its turns match")
-    void shouldIncludeConversationOnlyWhenAllTurnsMatchFilter() {
+    @DisplayName(
+            "testCaseFilter applies row-level: a non-matching tail turn truncates the conversation (still runnable)")
+    void shouldTruncateConversationWhenFilterDropsTailTurn() {
         TestSuiteResponseDto suite = createConversationSuite();
-        UUID matching = UUID.randomUUID();
-        createTurn(suite.getId(), "match / turn 0", matching, 0, Map.of("question", "a", "topic", "keep"));
-        createTurn(suite.getId(), "match / turn 1", matching, 1, Map.of("question", "b", "topic", "keep"));
-        UUID partial = UUID.randomUUID();
-        createTurn(suite.getId(), "partial / turn 0", partial, 0, Map.of("question", "a", "topic", "keep"));
-        createTurn(suite.getId(), "partial / turn 1", partial, 1, Map.of("question", "b", "topic", "drop"));
-        metaTestDataHelper.setSuiteTestCaseFilter(
-                suite.getId(),
-                "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"data::topic\"},"
-                        + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"keep\"}]}");
+        UUID full = UUID.randomUUID();
+        createTurn(suite.getId(), "full / turn 0", full, 0, Map.of("question", "a", "topic", "keep"));
+        createTurn(suite.getId(), "full / turn 1", full, 1, Map.of("question", "b", "topic", "keep"));
+        UUID tail = UUID.randomUUID();
+        createTurn(suite.getId(), "tail / turn 0", tail, 0, Map.of("question", "a", "topic", "keep"));
+        createTurn(suite.getId(), "tail / turn 1", tail, 1, Map.of("question", "b", "topic", "drop"));
+        metaTestDataHelper.setSuiteTestCaseFilter(suite.getId(), keepTopicFilter());
 
         stubConstantReply();
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+        // Both conversations have >=1 matching turn, so both are runnable units: full (2 turns) + tail (1 turn).
+        assertThat(run.getNumberOfTestCases()).isEqualTo(2);
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(3);
+        assertThat(results).allMatch(r -> "SUCCESS".equals(String.valueOf(r.get("execution_status"))));
+        assertThat(results.stream()
+                        .filter(r -> ((Number) r.get("total_turns")).intValue() == 2)
+                        .count())
+                .isEqualTo(2);
+        assertThat(results.stream()
+                        .filter(r -> ((Number) r.get("total_turns")).intValue() == 1)
+                        .count())
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("testCaseFilter applies row-level: a non-matching middle turn breaks the conversation (0/0 ERROR row)")
+    void shouldBreakConversationWhenFilterLeavesMiddleHole() {
+        TestSuiteResponseDto suite = createConversationSuite();
+        UUID mid = UUID.randomUUID();
+        createTurn(suite.getId(), "mid / turn 0", mid, 0, Map.of("question", "a", "topic", "keep"));
+        createTurn(suite.getId(), "mid / turn 1", mid, 1, Map.of("question", "b", "topic", "drop"));
+        createTurn(suite.getId(), "mid / turn 2", mid, 2, Map.of("question", "c", "topic", "keep"));
+        metaTestDataHelper.setSuiteTestCaseFilter(suite.getId(), keepTopicFilter());
+
+        stubConstantReply();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+        // Turns 0 and 2 match; the filtered-out middle turn leaves a hole in the surviving prefix → broken.
         assertThat(run.getNumberOfTestCases()).isEqualTo(1);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
-        assertThat(results).hasSize(2);
-        assertThat(results).allMatch(r -> ((Number) r.get("total_turns")).intValue() == 2);
+        assertThat(results).hasSize(1);
+        Map<String, Object> row = results.get(0);
+        assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("ERROR");
+        assertThat(((Number) row.get("total_turns")).intValue()).isEqualTo(0);
+    }
+
+    private static String keepTopicFilter() {
+        return "{\"op\":\"eq\",\"args\":[{\"type\":\"field\",\"name\":\"data::topic\"},"
+                + "{\"type\":\"value\",\"value_type\":\"string\",\"value\":\"keep\"}]}";
     }
 
     private void stubConstantReply() {

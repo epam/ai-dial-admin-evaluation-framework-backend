@@ -277,7 +277,7 @@ Status: **Implemented**
 - **THEN** the retry attempt SHALL acquire a rate limit token before making the HTTP call, same as a first attempt. This prevents retry storms from bypassing the rate limiter after a burst of failures (e.g., 429 responses).
 
 ### Requirement: Batch result writing
-The executor SHALL buffer completed `TestCaseRunResult` records and flush them to the analytics database in configurable row batches, performing exactly one final flush after all virtual threads terminate. Results SHALL be added per conversation via `addResults(buffer, List<TestCaseRunResult>)`: each call buffers all of one conversation's turn rows and increments a **completed-conversation** counter by one (a single-turn conversation is a one-element list; a broken conversation contributes a one-element ERROR list). Progress SHALL be reported as `notifyProgress(conversationsCompleted, totalCases)` where `totalCases = numberOfTestCases * numberOfRuns` and `numberOfTestCases` is the **runnable-conversation** count, keeping progress in the 0–100% range even though a conversation contributes multiple rows.
+The executor SHALL buffer completed `TestCaseRunResult` records and flush them to the analytics database in configurable row batches, performing exactly one final flush after all virtual threads terminate. Results SHALL be added per conversation via `addResults(buffer, List<TestCaseRunResult>)`: each call buffers all of one conversation's turn rows and increments a **completed-conversation** counter by one (a single-turn conversation is a one-element list; a broken conversation contributes a one-element ERROR list). Progress SHALL be reported as `notifyProgress(conversationsCompleted, totalCases)` where `totalCases = numberOfTestCases * numberOfRuns` and `numberOfTestCases` is the post-snapshot **execution-unit** count (conversation = 1 unit), keeping progress in the 0–100% range even though a conversation contributes multiple rows.
 Status: **Implemented**
 
 #### Scenario: Row-batch flush on size
@@ -685,22 +685,22 @@ Status: **Implemented**
 - **WHEN** response columns use MCP-specific JSONata paths (e.g., `$.isError`, `$.content[0].text`, `$.structuredContent.results`)
 - **THEN** the extraction SHALL work correctly because the serialized JSON preserves the MCP envelope structure
 
-### Requirement: Runnable-conversation counting and zero-runnable guard
-The unit of "runnable" work SHALL be a **CONVERSATION**, not an individual test-case row. A runnable conversation is either a standalone single-turn row or a multi-turn group whose enabled turns form a contiguous prefix `0..k` and pass the suite `testCaseFilter` atomically (see the selection spec). `RunnableTestCaseCounter.countRunnable(...)` SHALL count runnable **conversations**; that count drives `number_of_test_cases` on the run and the zero-runnable guard (guard #4) in `TestSuiteRunService.createRun`. Broken conversations are NOT counted as runnable (they still surface as one ERROR row at execution — see the broken-conversation requirement).
+### Requirement: Runnable counting (individual test cases) and zero-runnable guard
+Guard-time counting SHALL be per **individual test case (row)**, NOT per conversation. `RunnableTestCaseCounter.countRunnable(...)` SHALL count individual runnable rows (`is_valid = true`, NOT in `disabledTestCaseIds`, matching `testCaseFilter`), counting each conversation turn as one row; there SHALL be no per-conversation grouping in the counting path. This row count drives the zero-runnable guard (guard #4) in `TestSuiteRunService.createRun` and coarsely seeds `number_of_test_cases` on the PENDING run. The snapshot phase SHALL then **overwrite** `number_of_test_cases` with the authoritative **execution-unit** count (standalone single-turn rows + assembled conversations, each conversation counting as exactly one unit, including broken conversations). Conversation integrity (contiguity / broken classification) is resolved ONLY at snapshot, never in the counting path.
 Status: **Implemented**
 
-#### Scenario: Runnable count is conversation-granular
+#### Scenario: Guard-time runnable count is per individual test case
 - **WHEN** a bound dataset has 2 multi-turn conversations (3 turns and 4 turns) and 5 standalone single-turn rows, all runnable
-- **THEN** `RunnableTestCaseCounter.countRunnable(...)` SHALL return 7 (2 conversations + 5 single-turn), NOT 12 (turn rows)
-- **AND** the run's `number_of_test_cases` SHALL be set to 7
+- **THEN** `RunnableTestCaseCounter.countRunnable(...)` SHALL return 12 (7 turn rows + 5 single-turn rows), counting turns individually
+- **AND** the PENDING run's `number_of_test_cases` SHALL be seeded to 12, then overwritten at snapshot with 7 execution units (2 conversations + 5 single-turn rows)
 
-#### Scenario: Zero-runnable guard on no runnable conversations
-- **WHEN** run creation runs guard #4 and the runnable-conversation count is zero (every row disabled/invalid/filtered/broken)
+#### Scenario: Zero-runnable guard on no runnable test cases
+- **WHEN** run creation runs guard #4 and the individual-row runnable count is zero (every row disabled/invalid/filtered)
 - **THEN** `createRun` SHALL throw `InvalidOperationException("Suite has no valid and enabled test cases")` (→ 409 `INVALID_OPERATION`), preserving the existing guard order (1.not-found 2.unbound 3.config-invalid 4.zero-runnable 5.rate-limits)
 
-#### Scenario: Progress denominator uses conversation count
-- **WHEN** the run has `number_of_test_cases = 7` runnable conversations and `numberOfRuns = 2`
-- **THEN** `totalCases` for progress SHALL be `14` (7 × 2), and progress advances one per completed conversation × run index
+#### Scenario: Progress denominator uses the execution-unit count
+- **WHEN** the snapshot produced 7 execution units (post-snapshot `number_of_test_cases = 7`) and `numberOfRuns = 2`
+- **THEN** `totalCases` for progress SHALL be `14` (7 × 2), and progress advances one per completed execution unit × run index
 
 ### Requirement: Broken conversation yields one sentinel ERROR row
 A conversation that the snapshot phase marked **broken** (see the suite-run-snapshot spec for the classification rules) is frozen into a marker `test_case_run_inputs` row. At execution the worker SHALL turn that marker into **exactly ONE** `TestCaseRunResult` with `executionStatus = ERROR` and the sentinel `turn_index = 0, total_turns = 0`, **without invoking the model** (no HTTP/MCP call). The run SHALL continue; other conversations proceed normally.
@@ -746,5 +746,5 @@ Status: **Implemented**
 - MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `context.getInputBindings()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
 - DTOs: `ExecutionSettingsDto`, `RetryPolicyDto` (in `service.domain.dto`)
 - Multi-turn: injectable `service.domain.job.MultiTurnConversationExecutor`; branch added in `EvaluationWorker.execute` keyed on the assembled input carrying more than one turn (multi-turn is emergent from conversation rows). The suite's single `inputBindings` are reused each turn and per-turn variation comes from each turn's discrete scalar row `data`. The worker returns a `List<TestCaseRunResult>`, one element per surviving turn; a broken conversation returns a one-element sentinel ERROR row (`turn_index=0, total_turns=0`) without a model call. Dispatch granularity is `(conversation × runIndex)` in `InProcessEvaluationExecutor` — one concurrency permit per conversation task; turns within a conversation run sequentially. See the multi-turn-conversation spec.
-- Counting / guards: `RunnableTestCaseCounter.countRunnable(...)` counts runnable conversations (multi-turn groups + standalone single-turn rows), driving `number_of_test_cases` and guard #4; `TestSuiteRunService.createRun` keeps guard order (1 not-found, 2 unbound, 3 config-invalid, 4 zero-runnable, 5 rate-limits) and adds a guard rejecting `MCP_TOOL` suites bound to datasets containing any `conversation_id` row with 409 `INVALID_OPERATION`.
-- Batch writer: `ResultBatchWriter.addResults(buffer, List<TestCaseRunResult>)` buffers a conversation's rows and advances the completed-conversation counter by one; progress denominator `totalCases = numberOfTestCases (runnable conversations) × numberOfRuns`.
+- Counting / guards: `RunnableTestCaseCounter.countRunnable(...)` counts individual runnable test-case rows (conversation turns counted individually — no per-conversation grouping), driving guard #4 and coarsely seeding `number_of_test_cases`; the snapshot overwrites `number_of_test_cases` with the execution-unit count (conversation = 1 unit). `TestSuiteRunService.createRun` keeps guard order (1 not-found, 2 unbound, 3 config-invalid, 4 zero-runnable, 5 rate-limits) and adds a guard rejecting `MCP_TOOL` suites bound to datasets containing any `conversation_id` row with 409 `INVALID_OPERATION`.
+- Batch writer: `ResultBatchWriter.addResults(buffer, List<TestCaseRunResult>)` buffers a conversation's rows and advances the completed-unit counter by one; progress denominator `totalCases = numberOfTestCases (post-snapshot execution units) × numberOfRuns`.

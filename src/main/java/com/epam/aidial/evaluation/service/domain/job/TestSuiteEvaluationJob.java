@@ -304,10 +304,12 @@ public class TestSuiteEvaluationJob {
     }
 
     /**
-     * Snapshots the filter-matching CONVERSATIONS as assembled per-conversation execution units (one input row
-     * each), paging by distinct {@code conversation_id} so a conversation is never split across a page. Each
-     * conversation's turns are grouped and handed to {@link ConversationAssembler}, which resolves
-     * runnable-vs-broken (contiguity, tail-only disable, validity, cap). Returns the next free {@code position}.
+     * Snapshots CONVERSATIONS with at least one filter-matching turn as assembled per-conversation execution
+     * units (one input row each), paging by distinct {@code conversation_id} so a conversation is never split
+     * across a page. Only the filter is applied in SQL (row-level, like disable); each conversation's
+     * filter-matching turns are grouped and handed to {@link ConversationAssembler}, which resolves
+     * runnable-vs-broken (validity, tail-only disable, contiguity, cap) in memory. Returns the next free
+     * {@code position}.
      */
     private int snapshotConversationUnits(
             UUID runId, UUID datasetId, String filterJson, Set<UUID> excludedSet, int startPosition) {
@@ -315,10 +317,11 @@ public class TestSuiteEvaluationJob {
         int offset = 0;
         List<String> conversationIds;
         do {
-            conversationIds = runnableTestCaseSelector.loadFilterMatchingConversationIdsPage(
+            conversationIds = runnableTestCaseSelector.loadRunnableConversationIdsPage(
                     datasetId, filterJson, offset, SNAPSHOT_PAGE_SIZE);
             if (!conversationIds.isEmpty()) {
-                List<TestCase> allTurns = runnableTestCaseSelector.loadConversationTurns(datasetId, conversationIds);
+                List<TestCase> allTurns =
+                        runnableTestCaseSelector.loadConversationTurns(datasetId, conversationIds, filterJson);
                 Map<UUID, List<TestCase>> turnsByConversation = allTurns.stream()
                         .collect(Collectors.groupingBy(
                                 TestCase::getConversationId, LinkedHashMap::new, Collectors.toList()));

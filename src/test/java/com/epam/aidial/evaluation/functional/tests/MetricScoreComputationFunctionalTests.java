@@ -10,8 +10,11 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResult
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.WeightedMean;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -166,6 +169,29 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
 
         final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
         assertThat(value(results, "overall", "overall")).isCloseTo(0.75, within(1e-9));
+    }
+
+    @Test
+    @DisplayName(
+            "weighted mean coalesces a metric missing from the run's data to zero instead of nulling the whole overall")
+    void computesWeightedMeanWithMissingMetricAsZero() {
+        final UUID suiteId = UUID.randomUUID();
+        final UUID runId = UUID.randomUUID();
+        final UUID computationId = UUID.randomUUID();
+        final long createdAt = 1_700_000_000_000L;
+        final long computedAt = 1_700_000_500_000L;
+
+        // Only Relevancy is present in the run's data (avg = 0.5); "Ghost" is never seeded.
+        seedRun(suiteId, runId, computationId, createdAt, computedAt);
+        final WeightedMean weightedMean = new WeightedMean(List.of(
+                new WeightedMetric("Relevancy", "score", new BigDecimal("1.0")),
+                new WeightedMetric("Ghost", "score", new BigDecimal("1.0"))));
+
+        executor.execute(context(suiteId, runId, computationId, weightedMean));
+
+        final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
+        // (1*0.5 + 1*0) / (1+1) = 0.25 — the missing "Ghost" term is coalesced to 0, not left NULL.
+        assertThat(value(results, "overall", "overall")).isCloseTo(0.25, within(1e-9));
     }
 
     private void seedClassifierRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {

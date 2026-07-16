@@ -28,13 +28,17 @@ import tools.jackson.databind.ObjectMapper;
  * caller as a dedicated DSL function.
  *
  * <ul>
- *   <li>{@link Mean} — {@code divide(add(avg(f1), avg(f2), ...), n)} over {@code metricFieldNames}, the
- *       run's currently discovered numeric metric fields (not anything persisted on the definition
- *       itself).
- *   <li>{@link WeightedMean} — {@code divide(add(multiply(w1, avg(m1)), ...), add(w1, ...))}, built
- *       directly from the stored {@link WeightedMetric} list, independent of {@code metricFieldNames}.
+ *   <li>{@link Mean} — {@code divide(add(coalesce(avg(f1), 0), coalesce(avg(f2), 0), ...), n)} over
+ *       {@code metricFieldNames}, the run's currently discovered numeric metric fields (not anything
+ *       persisted on the definition itself). A field missing from the run's data resolves to a SQL
+ *       {@code NULL} average that is coalesced to {@code 0} for that term.
+ *   <li>{@link WeightedMean} — {@code divide(add(multiply(w1, coalesce(avg(m1), 0)), ...), add(w1, ...))},
+ *       built directly from the stored {@link WeightedMetric} list, independent of
+ *       {@code metricFieldNames}. A missing metric's average is likewise coalesced to {@code 0} for its
+ *       term rather than nulling the whole result.
  *   <li>{@link CustomFunction} — the stored raw expression, converted to a {@link StructuredQuery}
- *       verbatim (the caller supplies the full query, including its own run-scoping filter).
+ *       verbatim (the caller supplies the full query, including its own run-scoping filter). NOT subject
+ *       to the {@code mean}/{@code weighted_mean} null-to-zero coalescing.
  * </ul>
  */
 @Slf4j
@@ -92,7 +96,8 @@ public class OverallScoreDefinitionResolver {
     }
 
     private FnExpr avg(String fieldName) {
-        return new FnExpr("avg", false, List.of(new FieldExpr(fieldName)));
+        final FnExpr rawAvg = new FnExpr("avg", false, List.of(new FieldExpr(fieldName)));
+        return new FnExpr("coalesce", false, List.of(rawAvg, decimal(BigDecimal.ZERO)));
     }
 
     private static String flattenedFieldName(WeightedMetric metric) {

@@ -145,6 +145,19 @@ public class BuiltInQueryFunctions {
         return QueryFunction.of("divide", (fn, ctx) -> binary(fn, ctx, "divide", Field::div));
     }
 
+    @Bean
+    public QueryFunction coalesceFunction() {
+        return QueryFunction.of("coalesce", (fn, ctx) -> {
+            final List<Expr> args = ctx.args(fn);
+            if (args.size() != 2) {
+                throw new ValidationException("function 'coalesce' expects exactly two arguments");
+            }
+            final Field<BigDecimal> value = ctx.toField(args.get(0)).cast(BigDecimal.class);
+            final Field<BigDecimal> fallback = ctx.toField(args.get(1)).cast(BigDecimal.class);
+            return DSL.coalesce(value, fallback);
+        });
+    }
+
     /** {@code add}/{@code multiply}: n-ary (≥1 arg), left-folded via {@code combiner}. */
     private Field<BigDecimal> reduce(
             FnExpr fn, FunctionContext ctx, String name, BinaryOperator<Field<BigDecimal>> combiner) {

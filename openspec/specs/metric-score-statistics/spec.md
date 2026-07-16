@@ -49,24 +49,30 @@ suite create/update/get — see `test-suites`) as a **typed, sealed `OverallScor
 by a `type` property, with exactly three variants:
 - **`mean`** — no parameters. Resolved at Phase 3 by combining the run's **currently discovered** numeric
   metric fields (the same fields used for the per-metric AVG/P10/P90/MIN/MAX statistics) as
-  `divide(add(avg(f1), avg(f2), ...), n)` (composed from the DSL's `add`/`divide` functions — there is no
-  dedicated `mean` DSL function) — NOT a list persisted on the suite or supplied by the caller at
-  definition time.
+  `divide(add(coalesce(avg(f1), 0), coalesce(avg(f2), 0), ...), n)` (composed from the DSL's
+  `add`/`divide`/`coalesce` functions — there is no dedicated `mean` DSL function) — NOT a list persisted
+  on the suite or supplied by the caller at definition time.
 - **`weighted_mean`** — an explicit, non-empty list of `{metricName, outputField, weight}` entries.
-  Resolved at Phase 3 as `Σ(weight × avg(metric::metricName::outputField)) / Σweight` (composed from the
-  DSL's `add`/`multiply`/`divide` functions), evaluated over every test case in the run (each `avg(...)`
-  term scoped only by the standard `:runId`/`:computationId` filter, with no additional per-test-case
-  narrowing). The metric/weight references are **not validated at write time** against the suite's
-  actually-configured metrics — a reference absent from a given run's data resolves to a SQL `NULL` that
-  propagates through the arithmetic rather than failing suite create/update.
+  Resolved at Phase 3 as `Σ(weight × coalesce(avg(metric::metricName::outputField), 0)) / Σweight`
+  (composed from the DSL's `add`/`multiply`/`divide`/`coalesce` functions), evaluated over every test case
+  in the run (each `avg(...)` term scoped only by the standard `:runId`/`:computationId` filter, with no
+  additional per-test-case narrowing). The metric/weight references are **not validated at write time**
+  against the suite's actually-configured metrics — a reference absent from a given run's data resolves to
+  a SQL `NULL` average that is coalesced to `0` for that term, rather than propagating `NULL` through the
+  arithmetic or failing suite create/update.
 - **`custom_function`** — a self-contained Structured Query DSL expression over the configured metric
   columns (`metric::<metricName>::<outputField>`), run with only the run-scoping params (`:runId`,
   `:computationId`); stored opaquely and not validated as a runnable query at write time (the prior
-  free-form escape hatch, unchanged in behavior, now carried under this discriminated variant).
+  free-form escape hatch, unchanged in behavior, now carried under this discriminated variant). This
+  variant is **not** subject to the `mean`/`weighted_mean` null-to-zero coalescing — a `custom_function`
+  expression's own `avg`/`add`/`multiply`/`divide` calls retain standard SQL null-arithmetic semantics
+  unless the expression itself uses `coalesce`.
 
 When the column is NULL, `overall` is computed from the built-in **default** (the single metric's
 `avg(:metricField)`) — unchanged from before this typed model, and distinct from the `mean` variant (which
-must be explicitly set and, unlike the default, is computed for any metric count).
+must be explicitly set and, unlike the default, is computed for any metric count). The default is
+likewise **not** coalesced to `0` — it is only ever computed when the run resolves to exactly one numeric
+metric field, so there is no multi-term composition for a missing metric to poison.
 
 At computation time (Phase 3) the system SHALL resolve the run's `overall` definition from the snapshot
 via an `OverallScoreDefinitionResolver` into a `StructuredQuery`, then compute it **through the
@@ -98,9 +104,9 @@ Status: **Implemented**
 - **WHEN** the same `{metricName, outputField}` pair appears in the `weighted_mean` list more than once, each with its own weight
 - **THEN** the terms combine via ordinary arithmetic (equivalent to a single entry with the summed weight), with no special-cased deduplication
 
-#### Scenario: Weighted mean metric references are not validated at write time
-- **WHEN** a `weighted_mean` definition references a `metricName`/`outputField` that is not configured on the suite (or not present in a given run's data)
-- **THEN** suite create/update still succeeds (no HTTP 400), and that entry's term resolves to a SQL `NULL` that propagates through the arithmetic at Phase 3 rather than failing the computation
+#### Scenario: Weighted mean coalesces a missing metric's term to zero instead of nulling the whole score
+- **WHEN** a `weighted_mean` definition references a `metricName`/`outputField` that is not configured on the suite (or not present in a given run's data), alongside at least one other term that IS present
+- **THEN** suite create/update still succeeds (no HTTP 400), the missing entry's `avg(...)` resolves to SQL `NULL` but is coalesced to `0` for that term via the DSL's `coalesce` function, and the overall `weighted_mean` result is a real number computed from the remaining present term(s) — a single missing metric no longer nulls the entire `overall` result
 
 #### Scenario: Custom function targets one metric of many
 - **WHEN** a suite's `overall_score` is `{"type":"custom_function","expression":{...}}` whose expression averages exactly one of two numeric metric fields (e.g. `avg(field metric::<metricA>::score)`), and a run completes

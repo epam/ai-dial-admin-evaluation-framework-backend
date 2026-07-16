@@ -397,6 +397,135 @@ class EvalSummaryQueryRenderTest {
                 .hasMessageContaining("numeric literal");
     }
 
+    @Test
+    @DisplayName("renders add(e1, e2, e3) as a left-folded sum over three or more arguments")
+    void rendersAddOverThreeArguments() {
+        StructuredQuery query = aggregateSelecting(new FnExpr(
+                "add",
+                false,
+                List.of(
+                        new ValueExpr(ValueType.DECIMAL, "1.0"),
+                        new ValueExpr(ValueType.DECIMAL, "2.0"),
+                        new ValueExpr(ValueType.DECIMAL, "3.0"))));
+
+        String sql = render(query);
+        assertThat(sql)
+                .contains("1.0")
+                .contains("2.0")
+                .contains("3.0")
+                .contains("+")
+                .contains("\"value\"");
+    }
+
+    @Test
+    @DisplayName("renders multiply(e1, e2, e3) as a left-folded product over three or more arguments")
+    void rendersMultiplyOverThreeArguments() {
+        StructuredQuery query = aggregateSelecting(new FnExpr(
+                "multiply",
+                false,
+                List.of(
+                        new ValueExpr(ValueType.DECIMAL, "2.0"),
+                        new ValueExpr(ValueType.DECIMAL, "3.0"),
+                        new ValueExpr(ValueType.DECIMAL, "4.0"))));
+
+        String sql = render(query);
+        assertThat(sql)
+                .contains("2.0")
+                .contains("3.0")
+                .contains("4.0")
+                .contains("*")
+                .contains("\"value\"");
+    }
+
+    @Test
+    @DisplayName("rejects add with zero arguments")
+    void rejectsAddWithZeroArguments() {
+        StructuredQuery query = aggregateSelecting(new FnExpr("add", false, List.of()));
+
+        assertThatThrownBy(() -> render(query))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("at least one argument");
+    }
+
+    @Test
+    @DisplayName("renders subtract(a, b) as a binary difference")
+    void rendersSubtractOverTwoArguments() {
+        StructuredQuery query = aggregateSelecting(new FnExpr(
+                "subtract",
+                false,
+                List.of(new ValueExpr(ValueType.DECIMAL, "5.0"), new ValueExpr(ValueType.DECIMAL, "2.0"))));
+
+        String sql = render(query);
+        assertThat(sql).contains("5.0").contains("2.0").contains("-").contains("\"value\"");
+    }
+
+    @Test
+    @DisplayName("rejects subtract with a non-binary arity")
+    void rejectsSubtractWrongArity() {
+        StructuredQuery query =
+                aggregateSelecting(new FnExpr("subtract", false, List.of(new ValueExpr(ValueType.DECIMAL, "1.0"))));
+
+        assertThatThrownBy(() -> render(query))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("exactly two arguments");
+    }
+
+    @Test
+    @DisplayName("renders divide(a, b) as a binary quotient")
+    void rendersDivideOverTwoArguments() {
+        StructuredQuery query = aggregateSelecting(new FnExpr(
+                "divide",
+                false,
+                List.of(new ValueExpr(ValueType.DECIMAL, "9.0"), new ValueExpr(ValueType.DECIMAL, "3.0"))));
+
+        String sql = render(query);
+        assertThat(sql).contains("9.0").contains("3.0").contains("/").contains("\"value\"");
+    }
+
+    @Test
+    @DisplayName("rejects divide with a non-binary arity")
+    void rejectsDivideWrongArity() {
+        StructuredQuery query = aggregateSelecting(new FnExpr(
+                "divide",
+                false,
+                List.of(
+                        new ValueExpr(ValueType.DECIMAL, "1.0"),
+                        new ValueExpr(ValueType.DECIMAL, "2.0"),
+                        new ValueExpr(ValueType.DECIMAL, "3.0"))));
+
+        assertThatThrownBy(() -> render(query))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("exactly two arguments");
+    }
+
+    @Test
+    @DisplayName("renders a weighted-mean composition (divide/add/multiply nested over per-metric averages)")
+    void rendersWeightedMeanComposition() {
+        FnExpr avgRagas = new FnExpr("avg", false, List.of(new FieldExpr("metric::Ragas Answer Relevancy::score")));
+        FnExpr avgDeepEval =
+                new FnExpr("avg", false, List.of(new FieldExpr("metric::DeepEval Answer Relevancy::score")));
+        FnExpr weightedTerm1 =
+                new FnExpr("multiply", false, List.of(new ValueExpr(ValueType.DECIMAL, "1.0"), avgRagas));
+        FnExpr weightedTerm2 =
+                new FnExpr("multiply", false, List.of(new ValueExpr(ValueType.DECIMAL, "2.0"), avgDeepEval));
+        FnExpr weightedSum = new FnExpr("add", false, List.of(weightedTerm1, weightedTerm2));
+        FnExpr weightSum = new FnExpr(
+                "add",
+                false,
+                List.of(new ValueExpr(ValueType.DECIMAL, "1.0"), new ValueExpr(ValueType.DECIMAL, "2.0")));
+        FnExpr weightedMean = new FnExpr("divide", false, List.of(weightedSum, weightSum));
+        StructuredQuery query = aggregateSelecting(weightedMean);
+
+        String sql = render(query);
+        assertThat(sql)
+                .contains("avg(")
+                .contains("\"metric_values\"")
+                .contains("+")
+                .contains("*")
+                .contains("/")
+                .contains("\"value\"");
+    }
+
     private static FnExpr percentile(String fn, String fraction, String column) {
         return new FnExpr(fn, false, List.of(new ValueExpr(ValueType.DECIMAL, fraction), new FieldExpr(column)));
     }

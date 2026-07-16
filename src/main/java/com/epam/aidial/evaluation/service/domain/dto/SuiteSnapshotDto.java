@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
-import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -68,10 +68,10 @@ public class SuiteSnapshotDto {
     private ArgumentTemplateDto argumentTemplate;
 
     @Schema(
-            description = "Per-suite 'overall' metric-score definition (structured-query expression) captured at "
-                    + "snapshot time; null = system default (single-metric only). Added in a backward-compatible way "
-                    + "— absent in older version-2 snapshots, which fall back to the default.")
-    private Map<String, Object> overallScore;
+            description = "Per-suite 'overall' metric-score definition captured at snapshot time; null = system "
+                    + "default (single-metric only). Added in a backward-compatible way — absent in older "
+                    + "version-2 snapshots, which fall back to the default.")
+    private OverallScoreDefinition overallScore;
 
     public static final String CURRENT_VERSION = "2";
 

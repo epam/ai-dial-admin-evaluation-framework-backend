@@ -27,6 +27,10 @@ final class QueryFunctionTestSupport {
                 builtIns.maxFunction(),
                 builtIns.percentileContFunction(),
                 builtIns.percentileDiscFunction(),
+                builtIns.addFunction(),
+                builtIns.multiplyFunction(),
+                builtIns.subtractFunction(),
+                builtIns.divideFunction(),
                 new RocAucFunction());
         return new QueryFunctionRegistry(functions);
     }

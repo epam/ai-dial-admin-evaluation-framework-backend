@@ -5,12 +5,16 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
+import com.epam.aidial.evaluation.constants.TracingConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
+import com.epam.aidial.evaluation.utils.EvalBaggage;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import java.util.List;
 import java.util.Map;
@@ -55,19 +59,32 @@ public class MetricEvaluationWorker {
             MetricEvaluationContext context)
             throws InterruptedException {
         Span span = openTelemetry
-                .getTracer("com.epam.aidial.evaluation")
-                .spanBuilder("metric.tsmd.evaluate")
-                .setAttribute("tsmd.name", tsmd.getName())
-                .setAttribute("tsmd.provider.id", tsmd.getDeclarationProviderId())
-                .setAttribute("eval.run.id", context.getTestSuiteRunId().toString())
-                .setAttribute("result.id", result.getId().toString())
-                .setAttribute("testcase.id", result.getTestCaseId().toString())
-                .setAttribute("testcase.name", result.getTestCaseName())
-                .setAttribute("eval.suite.id", context.getTestSuiteId().toString())
-                .setAttribute("metric.declaration.name", tsmd.getMetricDeclarationName())
+                .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
+                .spanBuilder(TracingConstants.SPAN_METRIC_TSMD_EVALUATE)
+                .setAttribute(TracingConstants.TSMD_NAME, tsmd.getName())
+                .setAttribute(TracingConstants.TSMD_PROVIDER_ID, tsmd.getDeclarationProviderId())
+                .setAttribute(
+                        TracingConstants.EVAL_RUN_ID,
+                        context.getTestSuiteRunId().toString())
+                .setAttribute(TracingConstants.RESULT_ID, result.getId().toString())
+                .setAttribute(
+                        TracingConstants.TESTCASE_ID, result.getTestCaseId().toString())
+                .setAttribute(TracingConstants.TESTCASE_NAME, result.getTestCaseName())
+                .setAttribute(
+                        TracingConstants.EVAL_SUITE_ID, context.getTestSuiteId().toString())
+                .setAttribute(TracingConstants.METRIC_DECLARATION_NAME, tsmd.getMetricDeclarationName())
+                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_METRIC_EVALUATION)
                 .startSpan();
 
-        try (Scope scope = span.makeCurrent()) {
+        Baggage baggage = EvalBaggage.withMetricContext(
+                context.getTestSuiteRunId(),
+                context.getTestSuiteId(),
+                result.getTestCaseId(),
+                result.getRunIndex(),
+                result.getId(),
+                tsmd.getMetricDeclarationName());
+        Context traceContext = Context.current().with(span).with(baggage);
+        try (Scope scope = traceContext.makeCurrent()) {
             providerSemaphore.acquire();
             try {
                 return invokeWithRetries(tsmd, result, context);

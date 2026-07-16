@@ -103,7 +103,8 @@ class OverallScoreDefinitionResolverTest {
     }
 
     private static FnExpr avg(String fieldName) {
-        return new FnExpr("avg", false, List.of(new FieldExpr(fieldName)));
+        FnExpr rawAvg = new FnExpr("avg", false, List.of(new FieldExpr(fieldName)));
+        return new FnExpr("coalesce", false, List.of(rawAvg, decimal("0")));
     }
 
     private static ValueExpr decimal(String value) {

@@ -189,6 +189,31 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
+    @DisplayName("A fully-disabled conversation is excluded from the run entirely (no unit, no ERROR row)")
+    void shouldExcludeFullyDisabledConversation() {
+        TestSuiteResponseDto suite = createConversationSuite();
+        UUID runnable = UUID.randomUUID();
+        createTurn(suite.getId(), "runnable / turn 0", runnable, 0, "a");
+        createTurn(suite.getId(), "runnable / turn 1", runnable, 1, "b");
+        UUID disabled = UUID.randomUUID();
+        TestCaseResponseDto d0 = createTurn(suite.getId(), "disabled / turn 0", disabled, 0, "x");
+        TestCaseResponseDto d1 = createTurn(suite.getId(), "disabled / turn 1", disabled, 1, "y");
+        metaTestDataHelper.appendDisabledTestCaseIds(suite.getId(), List.of(d0.getId(), d1.getId()));
+
+        stubConstantReply();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+        // Only the runnable conversation survives as a single execution unit.
+        assertThat(run.getNumberOfTestCases()).isEqualTo(1);
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(2);
+        assertThat(results).allMatch(r -> "SUCCESS".equals(String.valueOf(r.get("execution_status"))));
+        assertThat(results).allMatch(r -> ((Number) r.get("total_turns")).intValue() == 2);
+    }
+
+    @Test
     @DisplayName("Tail-only disable truncates the conversation to its surviving prefix (2 of 3 turns run)")
     void shouldTruncateConversationOnTailDisable() {
         TestSuiteResponseDto suite = createConversationSuite();

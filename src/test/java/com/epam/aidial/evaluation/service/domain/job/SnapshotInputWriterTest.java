@@ -180,6 +180,22 @@ class SnapshotInputWriterTest {
     }
 
     @Test
+    @DisplayName("skips a fully-disabled conversation entirely (no unit, not a broken row)")
+    void skipsFullyDisabledConversation() {
+        final UUID conversationId = UUID.randomUUID();
+        final TestCase t0 = turn(conversationId, 0, true);
+        final TestCase t2 = turn(conversationId, 2, true);
+        stubConversation(conversationId, List.of(t0, t2));
+        final String disabledJson = "[\"" + t0.getId() + "\",\"" + t2.getId() + "\"]";
+
+        final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, disabledJson);
+
+        assertThat(written).isZero();
+        verify(inputRepository).deleteByRunId(RUN_ID);
+        verify(inputRepository, never()).insertBatch(any());
+    }
+
+    @Test
     @DisplayName("pages single-turn selection until a short page and numbers positions across pages")
     void pagesSingleTurnUntilShortPage() {
         final List<TestCase> fullPage = IntStream.range(0, PAGE_SIZE)

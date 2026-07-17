@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -123,8 +124,13 @@ public class SnapshotInputWriter {
                     if (turns == null || turns.isEmpty()) {
                         continue;
                     }
-                    final ConversationAssembler.AssembledConversation assembled =
+                    // A fully-disabled conversation yields no unit (empty) — it drops out of the run entirely.
+                    final Optional<ConversationAssembler.AssembledConversation> assembledOpt =
                             conversationAssembler.assemble(turns, excludedSet);
+                    if (assembledOpt.isEmpty()) {
+                        continue;
+                    }
+                    final ConversationAssembler.AssembledConversation assembled = assembledOpt.get();
                     batch.add(TestCaseRunInput.builder()
                             .runId(runId)
                             .position(position++)

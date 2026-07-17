@@ -5,6 +5,7 @@ import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.Builder;
@@ -20,16 +21,18 @@ import tools.jackson.databind.node.ObjectNode;
  * Assembles the turns of a single conversation into one runnable execution unit, applying the row-based
  * multi-turn selection rules at snapshot time. The input {@code turns} are the conversation's
  * <b>filter-matching</b> turns (the suite's {@code testCaseFilter} is applied row-level in SQL upstream,
- * like disable); when the suite has no filter this is every turn. Validity and exclusion are resolved here
- * in memory:
+ * like disable); when the suite has no filter this is every turn. Exclusion (the suite's
+ * {@code disabledTestCaseIds}) is applied <b>first</b>, and every subsequent rule is evaluated over the
+ * <b>surviving</b> turns only — a disabled turn has no influence on the outcome:
  *
  * <ul>
- *   <li>Any invalid turn ({@code is_valid = false}) among the (filter-matching) turns → the whole
- *       conversation is broken.
- *   <li>Disable is tail-only: after removing the excluded (disabled) turn ids, the survivors MUST form a
- *       contiguous prefix {@code 0..k} (start at 0, no gap, no duplicate index); a middle hole → broken.
- *       A filtered-out middle turn produces the same hole, so it breaks the conversation too.
- *   <li>No surviving turns, or more than {@link ValidationConstants#MAX_CONVERSATION_TURNS} survivors → broken.
+ *   <li>No surviving turns (e.g. every turn disabled) → the conversation contributes <b>no execution
+ *       unit</b> at all ({@link Optional#empty()}); it is not a broken unit, it simply drops out of the run.
+ *   <li>Any invalid turn ({@code is_valid = false}) among the survivors → the whole conversation is broken.
+ *   <li>Disable is tail-only: the survivors MUST form a contiguous prefix {@code 0..k} (start at 0, no gap,
+ *       no duplicate index); a middle hole → broken. A filtered-out middle turn produces the same hole, so
+ *       it breaks the conversation too.
+ *   <li>More than {@link ValidationConstants#MAX_CONVERSATION_TURNS} survivors → broken.
  * </ul>
  *
  * <p>A runnable unit carries the ordered surviving turns (as {@code turnsJson}) and {@code totalTurns} = the
@@ -43,9 +46,12 @@ public class ConversationAssembler {
 
     private final ObjectMapper objectMapper;
 
-    public AssembledConversation assemble(List<TestCase> turns, Set<UUID> excludedIds) {
-        final UUID conversationId = turns.get(0).getConversationId();
-        final boolean anyInvalid = turns.stream().anyMatch(t -> !t.isValid());
+    /**
+     * Assembles a conversation's (filter-matching) turns into an execution unit, or {@link Optional#empty()}
+     * when no turn survives exclusion — a fully-disabled conversation contributes nothing to the run.
+     */
+    public Optional<AssembledConversation> assemble(List<TestCase> turns, Set<UUID> excludedIds) {
+        final UUID conversationId = turns.getFirst().getConversationId();
 
         final List<TestCase> survivors = turns.stream()
                 .filter(t -> !excludedIds.contains(t.getId()))
@@ -53,15 +59,20 @@ public class ConversationAssembler {
                         (TestCase t) -> t.getTurnIndex() == null ? Integer.MAX_VALUE : t.getTurnIndex()))
                 .toList();
 
+        // Every turn excluded (disabled) → this conversation is deselected entirely, not a broken unit.
+        if (survivors.isEmpty()) {
+            return Optional.empty();
+        }
+
+        // Rules apply to survivors only: a disabled turn (invalid or not) has no influence on the outcome.
+        final boolean anyInvalid = survivors.stream().anyMatch(t -> !t.isValid());
         final boolean contiguous = isContiguousFromZero(survivors);
-        final boolean broken = anyInvalid
-                || survivors.isEmpty()
-                || !contiguous
-                || survivors.size() > ValidationConstants.MAX_CONVERSATION_TURNS;
+        final boolean broken =
+                anyInvalid || !contiguous || survivors.size() > ValidationConstants.MAX_CONVERSATION_TURNS;
 
-        final TestCase representative = survivors.isEmpty() ? turns.get(0) : survivors.get(0);
+        final TestCase representative = survivors.getFirst();
 
-        return AssembledConversation.builder()
+        return Optional.of(AssembledConversation.builder()
                 .conversationId(conversationId)
                 .broken(broken)
                 .totalTurns(broken ? 0 : survivors.size())
@@ -69,7 +80,7 @@ public class ConversationAssembler {
                 .representativeTestCaseName(representative.getTestCaseName())
                 .representativeTestCaseData(representative.getData())
                 .turnsJson(broken ? null : serializeTurns(survivors))
-                .build();
+                .build());
     }
 
     /** True when the survivors' turn indexes are exactly {@code 0, 1, ..., size-1} (start at 0, no gap, no dup). */

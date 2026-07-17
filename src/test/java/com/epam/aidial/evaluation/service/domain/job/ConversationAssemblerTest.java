@@ -27,7 +27,7 @@ class ConversationAssemblerTest {
         List<TestCase> turns =
                 List.of(turn(2, true, "{\"q\":\"c\"}"), turn(0, true, "{\"q\":\"a\"}"), turn(1, true, "{\"q\":\"b\"}"));
 
-        AssembledConversation result = assembler.assemble(turns, Set.of());
+        AssembledConversation result = assembler.assemble(turns, Set.of()).orElseThrow();
 
         assertThat(result.broken()).isFalse();
         assertThat(result.totalTurns()).isEqualTo(3);
@@ -48,7 +48,8 @@ class ConversationAssemblerTest {
         TestCase t1 = turn(1, true, "{}");
         TestCase t2 = turn(2, true, "{}");
 
-        AssembledConversation result = assembler.assemble(List.of(t0, t1, t2), Set.of(t2.getId()));
+        AssembledConversation result =
+                assembler.assemble(List.of(t0, t1, t2), Set.of(t2.getId())).orElseThrow();
 
         assertThat(result.broken()).isFalse();
         assertThat(result.totalTurns()).isEqualTo(2);
@@ -62,7 +63,8 @@ class ConversationAssemblerTest {
         TestCase t1 = turn(1, true, "{}");
         TestCase t2 = turn(2, true, "{}");
 
-        AssembledConversation result = assembler.assemble(List.of(t0, t1, t2), Set.of(t1.getId()));
+        AssembledConversation result =
+                assembler.assemble(List.of(t0, t1, t2), Set.of(t1.getId())).orElseThrow();
 
         assertThat(result.broken()).isTrue();
         assertThat(result.totalTurns()).isZero();
@@ -72,19 +74,36 @@ class ConversationAssemblerTest {
     @Test
     @DisplayName("a missing turn 0 breaks the conversation")
     void missingTurnZeroBreaks() {
-        AssembledConversation result = assembler.assemble(List.of(turn(1, true, "{}"), turn(2, true, "{}")), Set.of());
+        AssembledConversation result = assembler
+                .assemble(List.of(turn(1, true, "{}"), turn(2, true, "{}")), Set.of())
+                .orElseThrow();
 
         assertThat(result.broken()).isTrue();
         assertThat(result.totalTurns()).isZero();
     }
 
     @Test
-    @DisplayName("any invalid turn breaks the whole conversation")
+    @DisplayName("any invalid surviving turn breaks the whole conversation")
     void anyInvalidTurnBreaks() {
-        AssembledConversation result = assembler.assemble(List.of(turn(0, true, "{}"), turn(1, false, "{}")), Set.of());
+        AssembledConversation result = assembler
+                .assemble(List.of(turn(0, true, "{}"), turn(1, false, "{}")), Set.of())
+                .orElseThrow();
 
         assertThat(result.broken()).isTrue();
         assertThat(result.totalTurns()).isZero();
+    }
+
+    @Test
+    @DisplayName("an invalid turn that is disabled no longer breaks the conversation")
+    void disabledInvalidTurnDoesNotBreak() {
+        TestCase t0 = turn(0, true, "{}");
+        TestCase t1 = turn(1, false, "{}");
+
+        AssembledConversation result =
+                assembler.assemble(List.of(t0, t1), Set.of(t1.getId())).orElseThrow();
+
+        assertThat(result.broken()).isFalse();
+        assertThat(result.totalTurns()).isEqualTo(1);
     }
 
     @Test
@@ -95,22 +114,20 @@ class ConversationAssemblerTest {
             turns.add(turn(i, true, "{}"));
         }
 
-        AssembledConversation result = assembler.assemble(turns, Set.of());
+        AssembledConversation result = assembler.assemble(turns, Set.of()).orElseThrow();
 
         assertThat(result.broken()).isTrue();
         assertThat(result.totalTurns()).isZero();
     }
 
     @Test
-    @DisplayName("all turns disabled leaves no survivors and breaks the conversation")
-    void allDisabledBreaks() {
+    @DisplayName("all turns disabled leaves no survivors and yields no execution unit (skipped, not broken)")
+    void allDisabledSkips() {
         TestCase t0 = turn(0, true, "{}");
         TestCase t1 = turn(1, true, "{}");
 
-        AssembledConversation result = assembler.assemble(List.of(t0, t1), Set.of(t0.getId(), t1.getId()));
-
-        assertThat(result.broken()).isTrue();
-        assertThat(result.totalTurns()).isZero();
+        assertThat(assembler.assemble(List.of(t0, t1), Set.of(t0.getId(), t1.getId())))
+                .isEmpty();
     }
 
     private TestCase turn(int turnIndex, boolean valid, String data) {

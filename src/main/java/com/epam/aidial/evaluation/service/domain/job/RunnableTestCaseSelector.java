@@ -22,10 +22,6 @@ public interface RunnableTestCaseSelector {
     /** Counts the runnable test cases (validity + exclusion + optional filter). */
     long countRunnable(UUID datasetId, String filterJson, Collection<UUID> excludedIds);
 
-    /** Returns a page of runnable test cases in deterministic snapshot order ({@code created_at_ms asc, id asc}). */
-    List<TestCase> loadRunnablePage(
-            UUID datasetId, String filterJson, Collection<UUID> excludedIds, int offset, int limit);
-
     /**
      * Validates that {@code filterJson} translates against the dataset's test-case schema. Throws
      * {@code ValidationException} (→ HTTP 400) on an unknown field, type error, or malformed filter.

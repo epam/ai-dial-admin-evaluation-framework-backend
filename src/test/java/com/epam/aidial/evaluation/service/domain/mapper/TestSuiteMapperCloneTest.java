@@ -30,7 +30,8 @@ class TestSuiteMapperCloneTest {
         ObjectMapper objectMapper = new ObjectMapper();
         JsonbMapper jsonbMapper = new JsonbMapper(objectMapper);
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
-        mapper = new TestSuiteMapper(jsonbMapper, warningsSerializer, objectMapper);
+        DisabledTestCaseIdsCodec disabledTestCaseIdsCodec = new DisabledTestCaseIdsCodec(objectMapper);
+        mapper = new TestSuiteMapper(jsonbMapper, warningsSerializer, disabledTestCaseIdsCodec);
     }
 
     // -----------------------------------------------------------------------

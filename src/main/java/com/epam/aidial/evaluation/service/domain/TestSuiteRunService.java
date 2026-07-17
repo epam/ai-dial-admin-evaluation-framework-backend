@@ -26,6 +26,7 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
+import com.epam.aidial.evaluation.service.domain.mapper.DisabledTestCaseIdsCodec;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.util.List;
@@ -40,7 +41,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -60,6 +60,7 @@ public class TestSuiteRunService {
     private final FilterParser filterParser;
     private final SortParser sortParser;
     private final ObjectMapper objectMapper;
+    private final DisabledTestCaseIdsCodec disabledTestCaseIdsCodec;
 
     @Transactional("metaTransactionManager")
     public TestSuiteRunResponseDto createRun(UUID testSuiteId, RunConfigDto config) {
@@ -87,7 +88,7 @@ public class TestSuiteRunService {
                     + "for MCP suites yet. The bound dataset contains conversation rows.");
         }
 
-        List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());
+        List<UUID> disabledIds = disabledTestCaseIdsCodec.deserialize(testSuite.getDisabledTestCaseIds());
         // Count of individual runnable test cases (valid + enabled + filter), counting conversation turns
         // as individual rows — this is the empty-suite guard. It seeds numberOfTestCases coarsely; the
         // snapshot phase overwrites it with the authoritative execution-unit count (single-turn rows +
@@ -277,34 +278,5 @@ public class TestSuiteRunService {
         }
 
         return mapper.toDto(testSuiteRunRepository.findById(runId).orElseThrow());
-    }
-
-    /**
-     * Deserialises a suite's {@code disabledTestCaseIds} JSONB column into a typed list.
-     * Returns an empty list on null/blank or malformed payloads so run creation does not
-     * brick on a single corrupt row.
-     */
-    private List<UUID> deserializeDisabledIds(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            List<String> raw = objectMapper.readValue(json, new TypeReference<>() {});
-            List<UUID> ids = new java.util.ArrayList<>(raw.size());
-            for (String s : raw) {
-                if (s == null || s.isBlank()) {
-                    continue;
-                }
-                try {
-                    ids.add(UUID.fromString(s));
-                } catch (IllegalArgumentException ex) {
-                    log.warn("Skipping malformed UUID in disabledTestCaseIds: {}", s, ex);
-                }
-            }
-            return ids;
-        } catch (JacksonException ex) {
-            log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
-            return List.of();
-        }
     }
 }

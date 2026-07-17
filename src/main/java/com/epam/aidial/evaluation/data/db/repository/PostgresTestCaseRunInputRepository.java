@@ -99,6 +99,7 @@ public class PostgresTestCaseRunInputRepository implements TestCaseRunInputRepos
                 .execute();
     }
 
+    @Override
     public void deleteByRunId(UUID runId) {
         dsl.deleteFrom(TEST_CASE_RUN_INPUTS)
                 .where(TEST_CASE_RUN_INPUTS.RUN_ID.eq(runId.toString()))

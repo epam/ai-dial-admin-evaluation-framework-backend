@@ -51,16 +51,6 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
     }
 
     @Override
-    public List<TestCase> loadRunnablePage(
-            UUID datasetId, String filterJson, Collection<UUID> excludedIds, int offset, int limit) {
-        final Condition filter = compile(datasetId, filterJson);
-        return filter == null
-                ? testCaseRepository.findValidByDatasetIdExcludingIds(datasetId, excludedIds, offset, limit)
-                : testCaseRepository.findValidByDatasetIdExcludingIdsMatching(
-                        datasetId, excludedIds, filter, offset, limit);
-    }
-
-    @Override
     public void validateFilter(UUID datasetId, String filterJson) {
         // Successful translation (against the dataset's typed bindings) is the validity check.
         compile(datasetId, filterJson);

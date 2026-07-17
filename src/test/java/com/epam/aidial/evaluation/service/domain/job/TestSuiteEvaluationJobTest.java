@@ -50,10 +50,7 @@ class TestSuiteEvaluationJobTest {
     private DatasetRepository datasetRepository;
 
     @Mock
-    private RunnableTestCaseSelector runnableTestCaseSelector;
-
-    @Mock
-    private ConversationAssembler conversationAssembler;
+    private SnapshotInputWriter snapshotInputWriter;
 
     @Mock
     private TestCaseRunInputRepository testCaseRunInputRepository;
@@ -98,8 +95,7 @@ class TestSuiteEvaluationJobTest {
                 repository,
                 testSuiteRepository,
                 datasetRepository,
-                runnableTestCaseSelector,
-                conversationAssembler,
+                snapshotInputWriter,
                 testCaseRunInputRepository,
                 sseService,
                 evaluationRunProperties,

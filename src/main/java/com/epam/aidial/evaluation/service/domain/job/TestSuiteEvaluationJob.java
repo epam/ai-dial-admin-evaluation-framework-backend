@@ -6,8 +6,6 @@ import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationR
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
-import com.epam.aidial.evaluation.data.db.model.TestCase;
-import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
@@ -28,16 +26,11 @@ import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingE
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
 import java.sql.SQLException;
 import java.time.Clock;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
@@ -48,7 +41,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -59,15 +51,11 @@ public class TestSuiteEvaluationJob {
 
     private static final int SNAPSHOT_MAX_RETRIES = 2;
     private static final String SQLSTATE_SERIALIZATION_FAILURE = "40001";
-    private static final int SNAPSHOT_PAGE_SIZE = 100;
-
-    private static final TypeReference<List<UUID>> UUID_LIST = new TypeReference<>() {};
 
     private final TestSuiteRunRepository repository;
     private final TestSuiteRepository testSuiteRepository;
     private final DatasetRepository datasetRepository;
-    private final RunnableTestCaseSelector runnableTestCaseSelector;
-    private final ConversationAssembler conversationAssembler;
+    private final SnapshotInputWriter snapshotInputWriter;
     private final TestCaseRunInputRepository testCaseRunInputRepository;
     private final TestSuiteRunSseService sseService;
     private final EvaluationRunProperties evaluationRunProperties;
@@ -230,13 +218,6 @@ public class TestSuiteEvaluationJob {
         TransactionTemplate tx = new TransactionTemplate(metaTransactionManager);
         tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         tx.execute(status -> {
-            // Delete any leftover inputs from a prior failed attempt
-            if (testCaseRunInputRepository
-                    instanceof
-                    com.epam.aidial.evaluation.data.db.repository.PostgresTestCaseRunInputRepository pgRepo) {
-                pgRepo.deleteByRunId(runId);
-            }
-
             TestSuite suite = testSuiteRepository
                     .findById(repository
                             .findById(runId)
@@ -249,23 +230,11 @@ public class TestSuiteEvaluationJob {
                     .orElseThrow(() -> new SnapshotDatasetMissingException(
                             "Dataset not found for run: " + runId + ", datasetId=" + suite.getDatasetId()));
 
-            SuiteSnapshotDto snapshot = suiteSnapshotBuilder.build(suite, dataset);
-            String snapshotJson;
-            try {
-                snapshotJson = objectMapper.writeValueAsString(snapshot);
-            } catch (JacksonException e) {
-                throw new IllegalStateException("Failed to serialize suite snapshot", e);
-            }
+            String snapshotJson = serializeSnapshot(suite, dataset);
 
-            List<UUID> disabledIds = deserializeDisabledIds(suite.getDisabledTestCaseIds());
-            Set<UUID> excludedSet = new HashSet<>(disabledIds);
-            UUID datasetId = suite.getDatasetId();
-            String filterJson = suite.getTestCaseFilter();
+            int totalInputs = snapshotInputWriter.writeInputs(
+                    runId, suite.getDatasetId(), suite.getTestCaseFilter(), suite.getDisabledTestCaseIds());
 
-            int position = snapshotSingleTurnUnits(runId, datasetId, filterJson, disabledIds);
-            position = snapshotConversationUnits(runId, datasetId, filterJson, excludedSet, position);
-
-            int totalInputs = position;
             long now = clock.millis();
             repository.updateSuiteSnapshot(runId, snapshotJson, now);
             repository.updateNumberOfTestCases(runId, totalInputs, now);
@@ -274,113 +243,12 @@ public class TestSuiteEvaluationJob {
         });
     }
 
-    /**
-     * Snapshots the runnable SINGLE-TURN test cases as length-1 execution units, in deterministic order.
-     * Returns the next free {@code position}.
-     */
-    private int snapshotSingleTurnUnits(UUID runId, UUID datasetId, String filterJson, List<UUID> disabledIds) {
-        int position = 0;
-        int offset = 0;
-        List<TestCase> page;
-        do {
-            page = runnableTestCaseSelector.loadRunnableSingleTurnPage(
-                    datasetId, filterJson, disabledIds, offset, SNAPSHOT_PAGE_SIZE);
-            if (!page.isEmpty()) {
-                List<TestCaseRunInput> batch = new ArrayList<>(page.size());
-                for (TestCase tc : page) {
-                    batch.add(TestCaseRunInput.builder()
-                            .runId(runId)
-                            .position(position++)
-                            .testCaseId(tc.getId())
-                            .testCaseName(tc.getTestCaseName())
-                            .testCaseData(tc.getData())
-                            .build());
-                }
-                testCaseRunInputRepository.insertBatch(batch);
-            }
-            offset += SNAPSHOT_PAGE_SIZE;
-        } while (page.size() == SNAPSHOT_PAGE_SIZE);
-        return position;
-    }
-
-    /**
-     * Snapshots CONVERSATIONS with at least one filter-matching turn as assembled per-conversation execution
-     * units (one input row each), paging by distinct {@code conversation_id} so a conversation is never split
-     * across a page. Only the filter is applied in SQL (row-level, like disable); each conversation's
-     * filter-matching turns are grouped and handed to {@link ConversationAssembler}, which resolves
-     * runnable-vs-broken (validity, tail-only disable, contiguity, cap) in memory. Returns the next free
-     * {@code position}.
-     */
-    private int snapshotConversationUnits(
-            UUID runId, UUID datasetId, String filterJson, Set<UUID> excludedSet, int startPosition) {
-        int position = startPosition;
-        int offset = 0;
-        List<String> conversationIds;
-        do {
-            conversationIds = runnableTestCaseSelector.loadRunnableConversationIdsPage(
-                    datasetId, filterJson, offset, SNAPSHOT_PAGE_SIZE);
-            if (!conversationIds.isEmpty()) {
-                List<TestCase> allTurns =
-                        runnableTestCaseSelector.loadConversationTurns(datasetId, conversationIds, filterJson);
-                Map<UUID, List<TestCase>> turnsByConversation = allTurns.stream()
-                        .collect(Collectors.groupingBy(
-                                TestCase::getConversationId, LinkedHashMap::new, Collectors.toList()));
-
-                List<TestCaseRunInput> batch = new ArrayList<>(conversationIds.size());
-                for (String conversationId : conversationIds) {
-                    List<TestCase> turns = turnsByConversation.get(UUID.fromString(conversationId));
-                    if (turns == null || turns.isEmpty()) {
-                        continue;
-                    }
-                    ConversationAssembler.AssembledConversation assembled =
-                            conversationAssembler.assemble(turns, excludedSet);
-                    batch.add(TestCaseRunInput.builder()
-                            .runId(runId)
-                            .position(position++)
-                            .testCaseId(assembled.representativeTestCaseId())
-                            .testCaseName(assembled.representativeTestCaseName())
-                            .testCaseData(assembled.representativeTestCaseData())
-                            .conversationId(assembled.conversationId())
-                            .totalTurns(assembled.totalTurns())
-                            .turns(assembled.turnsJson())
-                            .broken(assembled.broken())
-                            .build());
-                }
-                if (!batch.isEmpty()) {
-                    testCaseRunInputRepository.insertBatch(batch);
-                }
-            }
-            offset += SNAPSHOT_PAGE_SIZE;
-        } while (conversationIds.size() == SNAPSHOT_PAGE_SIZE);
-        return position;
-    }
-
-    /**
-     * Deserialises {@code TestSuite.disabledTestCaseIds} (JSONB array of stringified UUIDs) into
-     * a typed list. Returns an empty list on null/blank or malformed payloads so the snapshot
-     * still proceeds (a single corrupt row must not brick run start).
-     */
-    private List<UUID> deserializeDisabledIds(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
+    private String serializeSnapshot(TestSuite suite, Dataset dataset) {
+        SuiteSnapshotDto snapshot = suiteSnapshotBuilder.build(suite, dataset);
         try {
-            List<String> raw = objectMapper.readValue(json, new TypeReference<>() {});
-            List<UUID> ids = new ArrayList<>(raw.size());
-            for (String s : raw) {
-                if (s == null || s.isBlank()) {
-                    continue;
-                }
-                try {
-                    ids.add(UUID.fromString(s));
-                } catch (IllegalArgumentException ex) {
-                    log.warn("Skipping malformed UUID in disabledTestCaseIds: {}", s, ex);
-                }
-            }
-            return ids;
-        } catch (JacksonException ex) {
-            log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
-            return List.of();
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (JacksonException e) {
+            throw new IllegalStateException("Failed to serialize suite snapshot", e);
         }
     }
 

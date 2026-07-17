@@ -273,15 +273,8 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     @Override
     public List<TestCase> findValidByDatasetIdExcludingIds(
             UUID datasetId, Collection<UUID> excludedIds, int offset, int limit) {
-        return findValidByDatasetIdExcludingIdsMatching(datasetId, excludedIds, null, offset, limit);
-    }
-
-    @Override
-    public List<TestCase> findValidByDatasetIdExcludingIdsMatching(
-            UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit) {
-        Condition combined = withExtra(validNotExcludedCondition(datasetId, excludedIds), extraCondition);
         return dsl.selectFrom(TEST_CASES)
-                .where(combined)
+                .where(validNotExcludedCondition(datasetId, excludedIds))
                 .orderBy(TEST_CASES.CREATED_AT_MS.asc(), TEST_CASES.ID.asc())
                 .limit(limit)
                 .offset(offset)

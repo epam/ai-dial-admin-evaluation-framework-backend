@@ -87,15 +87,6 @@ public interface TestCaseRepository {
     long countValidByDatasetIdExcludingIds(UUID datasetId, Collection<UUID> excludedIds);
 
     /**
-     * As {@link #findValidByDatasetIdExcludingIds} but additionally AND-ing {@code extraCondition}
-     * (e.g. a suite {@code testCaseFilter} translated to jOOQ). A {@code null} condition imposes no
-     * extra restriction (identical to {@link #findValidByDatasetIdExcludingIds}). The condition must
-     * be expressed over the {@code test_cases} table.
-     */
-    List<TestCase> findValidByDatasetIdExcludingIdsMatching(
-            UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit);
-
-    /**
      * As {@link #countValidByDatasetIdExcludingIds} but additionally AND-ing {@code extraCondition}
      * ({@code null} = no extra restriction). The condition must be expressed over the
      * {@code test_cases} table.

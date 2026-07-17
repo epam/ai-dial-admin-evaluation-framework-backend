@@ -15,5 +15,11 @@ public interface TestCaseRunInputRepository {
 
     boolean existsByRunId(UUID runId);
 
+    /**
+     * Deletes all input rows for the given run. Used by the snapshot phase to make input-writing
+     * idempotent (clear any leftovers from a prior failed attempt before re-writing).
+     */
+    void deleteByRunId(UUID runId);
+
     int deleteByRunIdsInTerminalStateOlderThan(Duration retention);
 }

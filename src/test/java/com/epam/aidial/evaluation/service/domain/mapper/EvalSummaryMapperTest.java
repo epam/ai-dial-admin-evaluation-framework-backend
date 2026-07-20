@@ -114,6 +114,42 @@ class EvalSummaryMapperTest {
     }
 
     @Test
+    @DisplayName("Should map multiTurnId from item to entity when supplied")
+    void shouldMapMultiTurnIdWhenSupplied() {
+        UUID multiTurnId = UUID.randomUUID();
+        EvalSummaryBatchWriteItemDto item = buildMinimalItem();
+        item.setMultiTurnId(multiTurnId);
+
+        EvalSummary entity =
+                mapper.toEntity(item, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1000L, 2000L);
+
+        assertThat(entity.getMultiTurnId()).isEqualTo(multiTurnId);
+    }
+
+    @Test
+    @DisplayName("Should default multiTurnId to null when omitted (single-turn)")
+    void shouldDefaultMultiTurnIdToNull() {
+        EvalSummaryBatchWriteItemDto item = buildMinimalItem();
+
+        EvalSummary entity =
+                mapper.toEntity(item, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1000L, 2000L);
+
+        assertThat(entity.getMultiTurnId()).isNull();
+    }
+
+    @Test
+    @DisplayName("Should map multiTurnId from entity to response DTO")
+    void shouldMapMultiTurnIdToResponseDto() {
+        UUID multiTurnId = UUID.randomUUID();
+        EvalSummary entity = buildMinimalEntity(ExecutionStatus.SUCCESS);
+        entity.setMultiTurnId(multiTurnId);
+
+        EvalSummaryResponseDto dto = mapper.toDto(entity);
+
+        assertThat(dto.getMultiTurnId()).isEqualTo(multiTurnId);
+    }
+
+    @Test
     @DisplayName("Should set extractedColumns to empty object when null")
     void shouldDefaultExtractedColumnsWhenNull() {
         EvalSummaryBatchWriteItemDto item = buildMinimalItem();

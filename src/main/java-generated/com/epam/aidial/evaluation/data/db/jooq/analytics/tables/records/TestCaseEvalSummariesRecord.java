@@ -321,6 +321,20 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
         return (Integer) get(19);
     }
 
+    /**
+     * Setter for <code>analytics.test_case_eval_summaries.multi_turn_id</code>.
+     */
+    public void setMultiTurnId(String value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_summaries.multi_turn_id</code>.
+     */
+    public String getMultiTurnId() {
+        return (String) get(20);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -344,7 +358,7 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
     /**
      * Create a detached, initialised TestCaseEvalSummariesRecord
      */
-    public TestCaseEvalSummariesRecord(String id, String testSuiteId, String testSuiteRunId, String testCaseRunResultId, String testCaseId, String testCaseName, Integer runIndex, String computationId, JSONB testCaseData, JSONB extractedColumns, String executionStatus, Long execDurationMs, Integer responseStatusCode, JSONB metricValues, JSONB metricInfos, Long createdAtMs, Long computedAtMs, JSONB extractionWarnings, Integer turnIndex, Integer totalTurns) {
+    public TestCaseEvalSummariesRecord(String id, String testSuiteId, String testSuiteRunId, String testCaseRunResultId, String testCaseId, String testCaseName, Integer runIndex, String computationId, JSONB testCaseData, JSONB extractedColumns, String executionStatus, Long execDurationMs, Integer responseStatusCode, JSONB metricValues, JSONB metricInfos, Long createdAtMs, Long computedAtMs, JSONB extractionWarnings, Integer turnIndex, Integer totalTurns, String multiTurnId) {
         super(TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES);
 
         setId(id);
@@ -367,6 +381,7 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
         setExtractionWarnings(extractionWarnings);
         setTurnIndex(turnIndex);
         setTotalTurns(totalTurns);
+        setMultiTurnId(multiTurnId);
         resetTouchedOnNotNull();
     }
 }

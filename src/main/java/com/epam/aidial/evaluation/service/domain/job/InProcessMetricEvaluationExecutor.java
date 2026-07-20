@@ -323,6 +323,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .runIndex(result.getRunIndex())
                 .turnIndex(result.getTurnIndex())
                 .totalTurns(result.getTotalTurns())
+                .multiTurnId(result.getMultiTurnId())
                 .testCaseData(parseJsonNode(result.getTestCaseData()))
                 .extractedColumns(parseJsonNode(result.getExtractedColumns()))
                 .executionStatus(executionStatus)

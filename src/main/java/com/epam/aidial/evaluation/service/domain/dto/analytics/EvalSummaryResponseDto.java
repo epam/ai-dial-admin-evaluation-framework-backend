@@ -23,6 +23,14 @@ public class EvalSummaryResponseDto {
     private String testCaseName;
     private int runIndex;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "Id of the multi-turn this summary belongs to; groups a multi-turn's per-turn "
+                    + "summary rows (the summary table has no traceId, so this is the grouping key). "
+                    + "Omitted for single-turn results.",
+            example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    private UUID multiTurnId;
+
     @Schema(
             description = "0-based multi-turn turn index this summary belongs to. Single-turn results are 0.",
             example = "0")

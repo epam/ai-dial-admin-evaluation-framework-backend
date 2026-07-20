@@ -152,6 +152,7 @@ public class MultiTurnExecutor {
                             context,
                             runIndex,
                             traceId,
+                            input.getMultiTurnId(),
                             turnStart,
                             turnEnd,
                             current.turnIndex(),
@@ -171,6 +172,7 @@ public class MultiTurnExecutor {
                                 context,
                                 runIndex,
                                 traceId,
+                                input.getMultiTurnId(),
                                 turnStart,
                                 turnEnd,
                                 current.turnIndex(),
@@ -200,6 +202,7 @@ public class MultiTurnExecutor {
                     context,
                     runIndex,
                     traceId,
+                    input.getMultiTurnId(),
                     now,
                     now,
                     current.turnIndex(),
@@ -220,6 +223,7 @@ public class MultiTurnExecutor {
             EvaluationContext context,
             int runIndex,
             String traceId,
+            UUID multiTurnId,
             long turnStart,
             long turnEnd,
             int turnIndex,
@@ -241,6 +245,7 @@ public class MultiTurnExecutor {
                 .turnIndex(turnIndex)
                 .totalTurns(totalTurns)
                 .lastTurnIndex(lastTurnIndex)
+                .multiTurnId(multiTurnId)
                 .testCaseData(jsonService.writeOrToString(turnData))
                 .requestBody(requestBodyJson)
                 .responseBody(outcome != null ? outcome.responseBody() : null)
@@ -385,6 +390,7 @@ public class MultiTurnExecutor {
                 .turnIndex(0)
                 .totalTurns(0)
                 .lastTurnIndex(0)
+                .multiTurnId(input.getMultiTurnId())
                 .testCaseData(input.getTestCaseData())
                 .requestBody(null)
                 .responseBody(null)

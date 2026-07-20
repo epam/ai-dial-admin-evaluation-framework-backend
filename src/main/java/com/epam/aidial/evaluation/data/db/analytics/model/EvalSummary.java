@@ -20,6 +20,7 @@ public class EvalSummary {
     private int runIndex;
     private int turnIndex;
     private int totalTurns;
+    private UUID multiTurnId;
     private UUID computationId;
     private String testCaseData;
     private String extractedColumns;

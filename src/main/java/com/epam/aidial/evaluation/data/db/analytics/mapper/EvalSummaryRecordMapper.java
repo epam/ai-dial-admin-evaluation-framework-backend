@@ -31,6 +31,7 @@ public class EvalSummaryRecordMapper {
                 .runIndex(r.getRunIndex())
                 .turnIndex(r.getTurnIndex())
                 .totalTurns(r.getTotalTurns())
+                .multiTurnId(toUuid(r.getMultiTurnId()))
                 .computationId(UUID.fromString(r.getComputationId()))
                 .testCaseData(toJsonString(r.getTestCaseData()))
                 .extractedColumns(toJsonString(r.getExtractedColumns()))
@@ -60,6 +61,7 @@ public class EvalSummaryRecordMapper {
                 .runIndex(r.getValue(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX))
                 .turnIndex(r.getValue(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX))
                 .totalTurns(r.getValue(TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS))
+                .multiTurnId(toUuid(r.getValue(TEST_CASE_EVAL_SUMMARIES.MULTI_TURN_ID)))
                 .computationId(UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)))
                 .testCaseData(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA)))
                 .extractedColumns(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS)))
@@ -87,6 +89,7 @@ public class EvalSummaryRecordMapper {
                 .runIndex(r.getValue(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX))
                 .turnIndex(r.getValue(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX))
                 .totalTurns(r.getValue(TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS))
+                .multiTurnId(toUuid(r.getValue(TEST_CASE_EVAL_SUMMARIES.MULTI_TURN_ID)))
                 .computationId(UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)))
                 .testCaseData(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA)))
                 .extractedColumns(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS)))
@@ -116,6 +119,7 @@ public class EvalSummaryRecordMapper {
                 .runIndex(r.getValue(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX))
                 .turnIndex(r.getValue(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX))
                 .totalTurns(r.getValue(TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS))
+                .multiTurnId(toUuid(r.getValue(TEST_CASE_EVAL_SUMMARIES.MULTI_TURN_ID)))
                 .computationId(UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)))
                 .testCaseData(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA)))
                 .extractedColumns(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS)))
@@ -134,5 +138,9 @@ public class EvalSummaryRecordMapper {
 
     private static String toJsonString(JSONB jsonb) {
         return jsonb != null ? jsonb.data() : null;
+    }
+
+    private static UUID toUuid(String value) {
+        return value != null ? UUID.fromString(value) : null;
     }
 }

@@ -107,6 +107,10 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         // First line must be the header row including the always-emitted identity columns.
         String firstLine = response.getBody().split("\\r?\\n", 2)[0];
         assertThat(firstLine).contains("testCaseName", "executionStatus");
+        // multiTurnId is an identity column placed immediately before turnIndex.
+        List<String> headers = List.of(firstLine.split(","));
+        assertThat(headers).contains("multiTurnId");
+        assertThat(headers.indexOf("multiTurnId")).isEqualTo(headers.indexOf("turnIndex") - 1);
     }
 
     @Test

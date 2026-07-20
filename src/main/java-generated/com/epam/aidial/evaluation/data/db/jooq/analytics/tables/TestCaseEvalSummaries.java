@@ -166,6 +166,11 @@ public class TestCaseEvalSummaries extends TableImpl<TestCaseEvalSummariesRecord
      */
     public final TableField<TestCaseEvalSummariesRecord, Integer> TOTAL_TURNS = createField(DSL.name("total_turns"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
 
+    /**
+     * The column <code>analytics.test_case_eval_summaries.multi_turn_id</code>.
+     */
+    public final TableField<TestCaseEvalSummariesRecord, String> MULTI_TURN_ID = createField(DSL.name("multi_turn_id"), SQLDataType.VARCHAR(36), this, "");
+
     private TestCaseEvalSummaries(Name alias, Table<TestCaseEvalSummariesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -204,7 +209,7 @@ public class TestCaseEvalSummaries extends TableImpl<TestCaseEvalSummariesRecord
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_EVAL_SUMMARIES_COMPUTATION, Indexes.IDX_EVAL_SUMMARIES_ID, Indexes.IDX_EVAL_SUMMARIES_RUN_COMPUTATION, Indexes.UQ_EVAL_SUMMARIES_NATURAL_KEY);
+        return Arrays.asList(Indexes.IDX_EVAL_SUMMARIES_COMPUTATION, Indexes.IDX_EVAL_SUMMARIES_ID, Indexes.IDX_EVAL_SUMMARIES_RUN_COMPUTATION, Indexes.IDX_EVAL_SUMMARIES_RUN_MULTITURN, Indexes.UQ_EVAL_SUMMARIES_NATURAL_KEY);
     }
 
     @Override

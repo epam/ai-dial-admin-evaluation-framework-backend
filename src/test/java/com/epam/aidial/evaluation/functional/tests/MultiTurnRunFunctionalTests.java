@@ -106,6 +106,7 @@ public abstract class MultiTurnRunFunctionalTests extends BaseFunctionalTest {
         assertThat(String.valueOf(turn0.get("execution_status"))).isEqualTo("SUCCESS");
         assertThat(((Number) turn0.get("turn_index")).intValue()).isEqualTo(0);
         assertThat(((Number) turn0.get("total_turns")).intValue()).isEqualTo(2);
+        assertThat(String.valueOf(turn0.get("multi_turn_id"))).isEqualTo(multiTurnId.toString());
         assertThat(objectMapper
                         .readTree(String.valueOf(turn0.get("extracted_columns")))
                         .get("answer")
@@ -118,6 +119,7 @@ public abstract class MultiTurnRunFunctionalTests extends BaseFunctionalTest {
         Map<String, Object> turn1 = results.get(1);
         assertThat(((Number) turn1.get("turn_index")).intValue()).isEqualTo(1);
         assertThat(((Number) turn1.get("total_turns")).intValue()).isEqualTo(2);
+        assertThat(String.valueOf(turn1.get("multi_turn_id"))).isEqualTo(multiTurnId.toString());
         assertThat(objectMapper
                         .readTree(String.valueOf(turn1.get("extracted_columns")))
                         .get("answer")

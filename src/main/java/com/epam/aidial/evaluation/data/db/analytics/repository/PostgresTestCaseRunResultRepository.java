@@ -59,6 +59,7 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
                         .set(TEST_CASE_RUN_RESULTS.TURN_INDEX, r.getTurnIndex())
                         .set(TEST_CASE_RUN_RESULTS.TOTAL_TURNS, r.getTotalTurns())
                         .set(TEST_CASE_RUN_RESULTS.LAST_TURN_INDEX, r.getLastTurnIndex())
+                        .set(TEST_CASE_RUN_RESULTS.MULTI_TURN_ID, toIdString(r.getMultiTurnId()))
                         .set(TEST_CASE_RUN_RESULTS.TEST_CASE_DATA, toJsonb(r.getTestCaseData()))
                         .set(TEST_CASE_RUN_RESULTS.REQUEST_BODY, toJsonb(r.getRequestBody()))
                         .set(TEST_CASE_RUN_RESULTS.RESPONSE_BODY, toJsonb(r.getResponseBody()))
@@ -140,5 +141,9 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
 
     private static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
+    }
+
+    private static String toIdString(UUID id) {
+        return id != null ? id.toString() : null;
     }
 }

@@ -23,6 +23,7 @@ public class TestCaseRunResultRecordMapper {
                 .turnIndex(r.getTurnIndex())
                 .totalTurns(r.getTotalTurns())
                 .lastTurnIndex(r.getLastTurnIndex())
+                .multiTurnId(toUuid(r.getMultiTurnId()))
                 .testCaseData(toJsonString(r.getTestCaseData()))
                 .requestBody(toJsonString(r.getRequestBody()))
                 .responseBody(toJsonString(r.getResponseBody()))
@@ -42,5 +43,9 @@ public class TestCaseRunResultRecordMapper {
 
     private static String toJsonString(JSONB jsonb) {
         return jsonb != null ? jsonb.data() : null;
+    }
+
+    private static UUID toUuid(String value) {
+        return value != null ? UUID.fromString(value) : null;
     }
 }

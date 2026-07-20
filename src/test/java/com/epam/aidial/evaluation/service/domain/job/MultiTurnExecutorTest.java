@@ -122,8 +122,9 @@ class MultiTurnExecutorTest {
 
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
 
+        TestCaseRunInput input = inputWithTurns(2);
         List<TestCaseRunResult> results =
-                executor.execute(inputWithTurns(2), context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
+                executor.execute(input, context(), 0, columnsA(), "trace-1", FIXED_CLOCK.millis());
 
         assertThat(results).hasSize(2);
 
@@ -143,6 +144,7 @@ class MultiTurnExecutorTest {
         assertThat(row0.getTotalTurns()).isEqualTo(2);
         assertThat(row0.getLastTurnIndex()).isEqualTo(1);
         assertThat(row0.getTraceId()).isEqualTo("trace-1");
+        assertThat(row0.getMultiTurnId()).isEqualTo(input.getMultiTurnId());
         assertThat(row0.getResponseStatusCode()).isEqualTo(200);
         assertThat(objectMapper.readTree(row0.getExtractedColumns()).get("a").asString())
                 .isEqualTo("answer-0");
@@ -155,6 +157,7 @@ class MultiTurnExecutorTest {
         assertThat(row1.getTurnIndex()).isEqualTo(1);
         assertThat(row1.getTotalTurns()).isEqualTo(2);
         assertThat(row1.getLastTurnIndex()).isEqualTo(1);
+        assertThat(row1.getMultiTurnId()).isEqualTo(input.getMultiTurnId());
         assertThat(objectMapper.readTree(row1.getExtractedColumns()).get("a").asString())
                 .isEqualTo("answer-1");
         assertThat(objectMapper.readTree(row1.getTestCaseData()).get("question").asString())

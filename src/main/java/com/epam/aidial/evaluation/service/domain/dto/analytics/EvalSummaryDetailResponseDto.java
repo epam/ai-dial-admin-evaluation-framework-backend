@@ -22,6 +22,13 @@ public class EvalSummaryDetailResponseDto {
     private UUID testCaseId;
     private String testCaseName;
     private int runIndex;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "Id of the multi-turn this summary belongs to; omitted for single-turn results.",
+            example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    private UUID multiTurnId;
+
     private UUID computationId;
     private JsonNode testCaseData;
 

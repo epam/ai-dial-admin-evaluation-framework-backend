@@ -1426,7 +1426,9 @@ A TestCase SHALL carry two optional top-level fields — `multiTurnId` (a client
 The service SHALL apply the following per-row write-time validation on create (`POST`), full replace (`PUT`), and CSV import, returning HTTP 400 on any violation:
 - **Both-or-neither**: `multiTurnId` and `turnIndex` MUST be both present or both absent.
 - **Well-formed id**: when present, `multiTurnId` MUST be a syntactically valid UUID.
-- **Turn bounds**: when present, `turnIndex` MUST satisfy `turnIndex >= 0` AND `turnIndex < MAX_MULTI_TURN_TURNS`.
+- **Non-negative index**: when present, `turnIndex` MUST satisfy `turnIndex >= 0`.
+
+There SHALL be no upper-bound (`turnIndex < MAX_MULTI_TURN_TURNS`) validation at write time. Because a multi-turn's runnable turns may be non-contiguous (turns disabled or filtered out at the start, middle, or end), a high authored `turnIndex` no longer implies a large turn count; the turn-count limit is enforced later, at snapshot/run time, against the number of surviving turns (see `suite-run-snapshot`).
 
 Contiguity and completeness of a multi-turn (turn 0 present, no gaps, no missing tail) SHALL NOT be validated at write time — multi-turn integrity is client-managed at authoring and is enforced later at snapshot/run time (see `test-suites` / snapshot specs). Validation is strictly per row.
 
@@ -1452,9 +1454,9 @@ Status: **Planned**
 - **WHEN** client sends a valid `multiTurnId` and `turnIndex = -1`
 - **THEN** system SHALL respond with HTTP 400
 
-#### Scenario: turnIndex at or above the cap
-- **WHEN** client sends a valid `multiTurnId` and `turnIndex >= MAX_MULTI_TURN_TURNS`
-- **THEN** system SHALL respond with HTTP 400
+#### Scenario: Large turnIndex is accepted at write time
+- **WHEN** client sends a valid `multiTurnId` and a large `turnIndex` (e.g. `turnIndex >= MAX_MULTI_TURN_TURNS`)
+- **THEN** system SHALL accept the write (HTTP 201) without an upper-bound error; the turn-count limit is applied later against the surviving-turn count at snapshot time
 
 #### Scenario: Contiguity not enforced at write
 - **WHEN** client creates multi-turn rows with `turnIndex` values `0` and `2` (a gap) under the same `multiTurnId`

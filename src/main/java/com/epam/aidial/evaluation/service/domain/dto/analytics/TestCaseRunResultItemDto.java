@@ -50,6 +50,14 @@ public class TestCaseRunResultItemDto {
     @Min(value = 0, message = "totalTurns must be >= 0")
     private Integer totalTurns;
 
+    /**
+     * Optional id of the multi-turn this row belongs to (matches the source test cases' multiTurnId).
+     * External single-turn callers may omit it, in which case it defaults to {@code null} at write time,
+     * keeping single-turn payloads byte-compatible. It is grouping metadata only and is not part of the
+     * natural key, so it never affects idempotent-write conflict resolution.
+     */
+    private UUID multiTurnId;
+
     @NotNull(message = "testCaseData is required")
     private JsonNode testCaseData;
 

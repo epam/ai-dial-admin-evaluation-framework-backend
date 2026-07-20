@@ -26,6 +26,7 @@ public abstract class TestCaseRunResultMapper {
     // Internal correctness column (turn.last). Not part of the external batch-write contract — the run
     // pipeline writes it via the repository; externally-ingested rows default to 0 (single-turn semantics).
     @Mapping(target = "lastTurnIndex", constant = "0")
+    @Mapping(source = "item.multiTurnId", target = "multiTurnId")
     @Mapping(source = "item.executionInfo.status", target = "executionStatus")
     @Mapping(source = "item.executionInfo.startedAt", target = "execStartedAtMs")
     @Mapping(source = "item.executionInfo.completedAt", target = "execCompletedAtMs")

@@ -51,6 +51,7 @@ public class EvalSummaryExportColumnPlanner {
         descriptors.add(plain("testCaseId", row -> row.getSummary().getTestCaseId()));
         descriptors.add(plain("testCaseName", row -> row.getSummary().getTestCaseName()));
         descriptors.add(plain("runIndex", row -> row.getSummary().getRunIndex()));
+        descriptors.add(plain("multiTurnId", row -> row.getSummary().getMultiTurnId()));
         descriptors.add(plain("turnIndex", row -> row.getSummary().getTurnIndex()));
         descriptors.add(plain("totalTurns", row -> row.getSummary().getTotalTurns()));
         descriptors.add(plain("computationId", row -> row.getSummary().getComputationId()));

@@ -731,6 +731,7 @@ public class EvaluationWorker {
                 .turnIndex(0)
                 .totalTurns(0)
                 .lastTurnIndex(0)
+                .multiTurnId(input.getMultiTurnId())
                 .testCaseData(input.getTestCaseData())
                 .requestBody(null)
                 .responseBody(errorBody)

@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-07-20 (meta V1.28, analytics V1.15)
+> **Last sync**: 2026-07-20 (meta V1.28, analytics V1.17)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -640,6 +640,7 @@ Test case execution results stored in the analytics database. Each row represent
 | `turn_index` | INTEGER | NOT NULL | 0 | Authored multi-turn turn index (0-based, preserved even when surviving turns are non-contiguous). Single-turn results are `0`. |
 | `total_turns` | INTEGER | NOT NULL | 1 | Surviving turn count that ran (single-turn = `1`; `0` marks a broken/data-shape failure where no turn ran). |
 | `last_turn_index` | INTEGER | NOT NULL | 0 | Max authored `turn_index` among the multi-turn's surviving turns. Drives `turn.last` (`turn_index == last_turn_index`) correctly under gaps. Single-turn = `0`. Internal correctness column — not exposed on response DTOs or CSV export. Added V1.15. |
+| `multi_turn_id` | VARCHAR(36) | NULL | - | Id of the multi-turn this row belongs to (from the source test cases' `multi_turn_id`). Groups a multi-turn's per-turn result rows. `NULL` = single-turn. Exposed on the response DTO (`multiTurnId`, omitted when null). Not part of any unique key. Added V1.16. |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (per-turn projected scalar view for multi-turn rows) |
 | `request_body` | JSONB | NULL | - | HTTP request body sent to endpoint |
 | `response_body` | JSONB | NULL | - | HTTP response body received |
@@ -671,6 +672,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 |------------|---------|------|-------|
 | `idx_results_suite_run_case` | `(test_suite_id, test_suite_run_id, test_case_name)` | BTREE | Composite index for suite/run/case filtering |
 | `idx_results_id` | `(id)` | BTREE | Standalone index for efficient `findById` lookups (PK has `created_at_ms` as leading column) |
+| `idx_results_run_multiturn` | `(test_suite_run_id, multi_turn_id, created_at_ms)` | BTREE | Groups a multi-turn's per-turn result rows within a run; `created_at_ms` trails to align with the keyset spine and stay partition-ready. Added V1.16. |
 
 ### JSONB Column Schemas
 
@@ -748,6 +750,7 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index |
 | `turn_index` | INTEGER | NOT NULL | 0 | Multi-turn turn index (0-based, denormalized from test_case_run_results). Single-turn = `0`. |
 | `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count (denormalized). Single-turn = `1`. |
+| `multi_turn_id` | VARCHAR(36) | NULL | - | Id of the multi-turn this summary belongs to (copied from the source `test_case_run_results` row). The summary table has no `trace_id`, so this is its multi-turn grouping key. `NULL` = single-turn. Exposed on the response DTO (`multiTurnId`, omitted when null) and CSV export. Not part of the unique key. Added V1.17. |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (denormalized from test_case_run_results) |
 | `extracted_columns` | JSONB | NOT NULL | `'{}'::jsonb` | Extracted column values (denormalized) |
@@ -777,6 +780,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 | `idx_eval_summaries_run_computation` | `(test_suite_run_id, computation_id)` | BTREE | Lookup by run and computation batch |
 | `idx_eval_summaries_computation` | `(computation_id)` | BTREE | Lookup by computation batch |
 | `idx_eval_summaries_id` | `(id)` | BTREE | Standalone index for efficient `findById` lookups (PK has `created_at_ms` as leading column) |
+| `idx_eval_summaries_run_multiturn` | `(test_suite_run_id, multi_turn_id, created_at_ms)` | BTREE | Groups a multi-turn's per-turn summary rows within a run; `created_at_ms` trails to align with the keyset spine and stay partition-ready. Added V1.17. |
 
 ### JSONB Column Schemas
 
@@ -962,6 +966,8 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index` (INTEGER NOT NULL DEFAULT 0) and `total_turns` (INTEGER NOT NULL DEFAULT 1) to test_case_run_results; recreated `uq_results_run_case_index` including `turn_index` (per-turn result rows) |
 | V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index` (INTEGER NOT NULL DEFAULT 0) and `total_turns` (INTEGER NOT NULL DEFAULT 1) to test_case_eval_summaries; recreated `uq_eval_summaries_natural_key` including `turn_index` (per-turn summary rows) |
 | V1.15 | `V1.15__AddLastTurnIndexToTestCaseRunResults.sql` | Added `last_turn_index` (INTEGER NOT NULL DEFAULT 0) to test_case_run_results — max authored surviving turn index, drives `turn.last` correctly when surviving turns are non-contiguous; not part of any unique key |
+| V1.16 | `V1.16__AddMultiTurnIdToTestCaseRunResults.sql` | Added nullable `multi_turn_id` (VARCHAR(36)) to test_case_run_results (multi-turn grouping key; `NULL` = single-turn) + non-unique grouping index `idx_results_run_multiturn` `(test_suite_run_id, multi_turn_id, created_at_ms)`; not part of any unique key |
+| V1.17 | `V1.17__AddMultiTurnIdToEvalSummaries.sql` | Added nullable `multi_turn_id` (VARCHAR(36)) to test_case_eval_summaries (multi-turn grouping key, copied from the source result; `NULL` = single-turn) + non-unique grouping index `idx_eval_summaries_run_multiturn` `(test_suite_run_id, multi_turn_id, created_at_ms)`; not part of the natural key |
 
 ---
 

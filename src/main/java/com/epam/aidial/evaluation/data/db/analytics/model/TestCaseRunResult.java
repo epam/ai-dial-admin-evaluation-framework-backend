@@ -20,6 +20,7 @@ public class TestCaseRunResult {
     private int turnIndex;
     private int totalTurns;
     private int lastTurnIndex;
+    private UUID multiTurnId;
     private String testCaseData;
     private String requestBody;
     private String responseBody;

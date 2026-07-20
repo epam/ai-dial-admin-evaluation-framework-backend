@@ -176,6 +176,11 @@ public class TestCaseRunResults extends TableImpl<TestCaseRunResultsRecord> {
      */
     public final TableField<TestCaseRunResultsRecord, Integer> LAST_TURN_INDEX = createField(DSL.name("last_turn_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
 
+    /**
+     * The column <code>analytics.test_case_run_results.multi_turn_id</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, String> MULTI_TURN_ID = createField(DSL.name("multi_turn_id"), SQLDataType.VARCHAR(36), this, "");
+
     private TestCaseRunResults(Name alias, Table<TestCaseRunResultsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -214,7 +219,7 @@ public class TestCaseRunResults extends TableImpl<TestCaseRunResultsRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_RESULTS_ID, Indexes.IDX_RESULTS_SUITE_RUN_CASE);
+        return Arrays.asList(Indexes.IDX_RESULTS_ID, Indexes.IDX_RESULTS_RUN_MULTITURN, Indexes.IDX_RESULTS_SUITE_RUN_CASE);
     }
 
     @Override

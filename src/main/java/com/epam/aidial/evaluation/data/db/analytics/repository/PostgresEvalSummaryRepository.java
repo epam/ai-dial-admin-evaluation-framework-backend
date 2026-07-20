@@ -70,6 +70,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, s.getRunIndex())
                         .set(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX, s.getTurnIndex())
                         .set(TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS, s.getTotalTurns())
+                        .set(TEST_CASE_EVAL_SUMMARIES.MULTI_TURN_ID, toIdString(s.getMultiTurnId()))
                         .set(
                                 TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
                                 s.getComputationId().toString())
@@ -128,6 +129,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES.MULTI_TURN_ID,
                         TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
@@ -250,6 +252,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES.MULTI_TURN_ID,
                         TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
@@ -275,6 +278,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES.MULTI_TURN_ID,
                         TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
@@ -302,6 +306,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES.MULTI_TURN_ID,
                         TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
@@ -343,5 +348,9 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
 
     private static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
+    }
+
+    private static String toIdString(UUID id) {
+        return id != null ? id.toString() : null;
     }
 }

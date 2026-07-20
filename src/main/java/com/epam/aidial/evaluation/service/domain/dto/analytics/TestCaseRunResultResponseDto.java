@@ -23,6 +23,13 @@ public class TestCaseRunResultResponseDto {
     private String testCaseName;
     private int runIndex;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "Id of the multi-turn this row belongs to; groups a multi-turn's per-turn rows. "
+                    + "Omitted for single-turn results.",
+            example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    private UUID multiTurnId;
+
     @Schema(
             description = "0-based multi-turn turn index this row belongs to. Single-turn results are 0.",
             example = "0")

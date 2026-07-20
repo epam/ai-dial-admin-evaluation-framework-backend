@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteRequest
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ExecutionInfoRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultResponseDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +62,53 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
                 metaTestDataHelper.findRun(testSuiteRunId).orElseThrow().getCreatedAt();
         Long resultCreatedAt = analyticsTestDataHelper.findAnyResultCreatedAt().orElseThrow();
         assertThat(resultCreatedAt).isEqualTo(runCreatedAt);
+    }
+
+    @Test
+    @DisplayName("Should persist multiTurnId when supplied, default to NULL when omitted, and expose it on GET")
+    void shouldRoundTripMultiTurnId() {
+        UUID multiTurnId = UUID.randomUUID();
+        UUID mtCaseId = UUID.randomUUID();
+        UUID singleCaseId = UUID.randomUUID();
+
+        TestCaseRunResultItemDto withMultiTurn = buildItem(mtCaseId, "mt-turn-0", 0);
+        withMultiTurn.setMultiTurnId(multiTurnId);
+        TestCaseRunResultItemDto singleTurn = buildItem(singleCaseId, "single", 0);
+
+        BatchWriteRequestDto request = BatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .results(List.of(withMultiTurn, singleTurn))
+                .build();
+
+        var writeResponse = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+        assertThat(writeResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findResultsByRunId(testSuiteRunId);
+        Map<String, Object> mtRow = rowForCase(rows, mtCaseId);
+        Map<String, Object> singleRow = rowForCase(rows, singleCaseId);
+
+        // Persisted: supplied id round-trips; omitted defaults to NULL (byte-compatible single-turn).
+        assertThat(String.valueOf(mtRow.get("multi_turn_id"))).isEqualTo(multiTurnId.toString());
+        assertThat(singleRow.get("multi_turn_id")).isNull();
+
+        // Exposed on GET: present for multi-turn, omitted (null) for single-turn.
+        UUID mtResultId = UUID.fromString(String.valueOf(mtRow.get("id")));
+        UUID singleResultId = UUID.fromString(String.valueOf(singleRow.get("id")));
+
+        TestCaseRunResultResponseDto mtDto = restTemplate
+                .getForEntity(apiUrl("/analytics/test-case-results/" + mtResultId), TestCaseRunResultResponseDto.class)
+                .getBody();
+        TestCaseRunResultResponseDto singleDto = restTemplate
+                .getForEntity(
+                        apiUrl("/analytics/test-case-results/" + singleResultId), TestCaseRunResultResponseDto.class)
+                .getBody();
+
+        assertThat(mtDto).isNotNull();
+        assertThat(mtDto.getMultiTurnId()).isEqualTo(multiTurnId);
+        assertThat(singleDto).isNotNull();
+        assertThat(singleDto.getMultiTurnId()).isNull();
     }
 
     @Test
@@ -318,6 +366,13 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
     }
 
     // --- helpers ---
+
+    private static Map<String, Object> rowForCase(List<Map<String, Object>> rows, UUID testCaseId) {
+        return rows.stream()
+                .filter(r -> testCaseId.toString().equals(String.valueOf(r.get("test_case_id"))))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No result row for test case " + testCaseId));
+    }
 
     private BatchWriteRequestDto buildBatchRequest(UUID suiteId, UUID runId, int count) {
         List<TestCaseRunResultItemDto> items = new ArrayList<>();

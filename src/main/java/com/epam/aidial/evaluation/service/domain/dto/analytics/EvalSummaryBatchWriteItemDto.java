@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.dto.analytics;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -39,6 +40,12 @@ public class EvalSummaryBatchWriteItemDto {
 
     @Min(value = 0, message = "totalTurns must be >= 0")
     private Integer totalTurns;
+
+    @Schema(
+            description = "Optional id of the multi-turn this summary belongs to (matches the source "
+                    + "test cases' multiTurnId). Omit or null for single-turn results.",
+            example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    private UUID multiTurnId;
 
     @NotNull(message = "testCaseData is required")
     private JsonNode testCaseData;

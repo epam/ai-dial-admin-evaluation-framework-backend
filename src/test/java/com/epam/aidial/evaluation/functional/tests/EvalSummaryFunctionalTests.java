@@ -69,6 +69,53 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should persist optional multiTurnId, default to NULL when omitted, and expose it on the list API")
+    void shouldRoundTripMultiTurnIdOnSummaries() {
+        UUID computationId = UUID.randomUUID();
+        insertRunMetricSnapshots(testSuiteRunId, computationId);
+        UUID multiTurnId = UUID.randomUUID();
+
+        EvalSummaryBatchWriteItemDto multiTurnItem = buildEvalSummaryItem(UUID.randomUUID(), "mt-turn-0", 0);
+        multiTurnItem.setMultiTurnId(multiTurnId);
+        EvalSummaryBatchWriteItemDto singleTurnItem = buildEvalSummaryItem(UUID.randomUUID(), "single", 1);
+
+        EvalSummaryBatchWriteRequestDto request = EvalSummaryBatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .computationId(computationId)
+                .computedAtMs(1739750400000L)
+                .items(List.of(multiTurnItem, singleTurnItem))
+                .build();
+
+        var writeResponse = restTemplate.postForEntity(
+                apiUrl("/analytics/eval-summaries"), jsonEntity(request), EvalSummaryBatchWriteResponseDto.class);
+        assertThat(writeResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        var listResponse = restTemplate.exchange(
+                apiUrl("/analytics/eval-summaries?filter=runId:eq:" + testSuiteRunId + "&computation=" + computationId
+                        + "&size=10"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<CursorPageResponseDto<Map<String, Object>>>() {});
+
+        assertThat(listResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Map<String, Object>> content = listResponse.getBody().getContent();
+        Map<String, Object> mtRow = summaryRowByName(content, "mt-turn-0");
+        Map<String, Object> singleRow = summaryRowByName(content, "single");
+
+        // Present for the multi-turn summary; omitted entirely (NON_NULL) for the single-turn summary.
+        assertThat(mtRow.get("multiTurnId")).isEqualTo(multiTurnId.toString());
+        assertThat(singleRow).doesNotContainKey("multiTurnId");
+    }
+
+    private static Map<String, Object> summaryRowByName(List<Map<String, Object>> rows, String name) {
+        return rows.stream()
+                .filter(r -> name.equals(r.get("testCaseName")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No summary row named " + name));
+    }
+
+    @Test
     @DisplayName("Should reject non-existent testSuiteRunId with 404")
     void shouldRejectNonExistentRun() {
         EvalSummaryBatchWriteRequestDto request =

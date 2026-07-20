@@ -28,6 +28,7 @@ public abstract class EvalSummaryMapper {
     @Mapping(source = "item.runIndex", target = "runIndex")
     @Mapping(target = "turnIndex", expression = "java(item.getTurnIndex() == null ? 0 : item.getTurnIndex())")
     @Mapping(target = "totalTurns", expression = "java(item.getTotalTurns() == null ? 1 : item.getTotalTurns())")
+    @Mapping(source = "item.multiTurnId", target = "multiTurnId")
     @Mapping(source = "item.testCaseData", target = "testCaseData")
     @Mapping(source = "item.extractedColumns", target = "extractedColumns")
     @Mapping(source = "item.executionStatus", target = "executionStatus")

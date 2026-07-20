@@ -2,8 +2,8 @@
 -- keyed by multi_turn_id and ordered by turn_index. Both columns are nullable;
 -- NULL/NULL denotes a single-turn test case (all existing rows, backward compatible).
 ALTER TABLE test_cases
-    ADD COLUMN multi_turn_id VARCHAR(36),
-    ADD COLUMN turn_index      INTEGER;
+    ADD COLUMN IF NOT EXISTS multi_turn_id VARCHAR(36),
+    ADD COLUMN IF NOT EXISTS turn_index      INTEGER;
 
 -- Grouping/lookup of a multi-turn's turns within a dataset.
 CREATE INDEX idx_test_cases_multi_turn ON test_cases (dataset_id, multi_turn_id);

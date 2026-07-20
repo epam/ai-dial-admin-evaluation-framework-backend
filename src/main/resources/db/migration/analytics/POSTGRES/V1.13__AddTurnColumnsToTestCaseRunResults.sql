@@ -3,8 +3,8 @@
 -- NOT NULL DEFAULT backfills existing single-turn rows to 0/1 in a single metadata-only
 -- statement (PG 11+, no table rewrite).
 ALTER TABLE test_case_run_results
-    ADD COLUMN turn_index  INTEGER NOT NULL DEFAULT 0,
-    ADD COLUMN total_turns INTEGER NOT NULL DEFAULT 1;
+    ADD COLUMN IF NOT EXISTS turn_index  INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS total_turns INTEGER NOT NULL DEFAULT 1;
 
 -- Extend the idempotency key to include turn_index so each turn is uniquely keyed and
 -- ON CONFLICT DO NOTHING writes hold per turn. Columns are NOT NULL, so a plain unique

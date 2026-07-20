@@ -6,4 +6,4 @@
 -- NOT NULL DEFAULT backfills existing rows to 0 in a single metadata-only statement (PG 11+, no rewrite);
 -- single-turn rows read last_turn_index = 0 (turn.last = true), matching prior single-turn semantics.
 ALTER TABLE test_case_run_results
-    ADD COLUMN last_turn_index INTEGER NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS last_turn_index INTEGER NOT NULL DEFAULT 0;

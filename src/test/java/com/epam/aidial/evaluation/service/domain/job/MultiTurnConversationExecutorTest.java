@@ -141,6 +141,7 @@ class MultiTurnConversationExecutorTest {
         assertThat(row0.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(row0.getTurnIndex()).isEqualTo(0);
         assertThat(row0.getTotalTurns()).isEqualTo(2);
+        assertThat(row0.getLastTurnIndex()).isEqualTo(1);
         assertThat(row0.getTraceId()).isEqualTo("trace-1");
         assertThat(row0.getResponseStatusCode()).isEqualTo(200);
         assertThat(objectMapper.readTree(row0.getExtractedColumns()).get("a").asString())
@@ -153,11 +154,35 @@ class MultiTurnConversationExecutorTest {
         assertThat(row1.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(row1.getTurnIndex()).isEqualTo(1);
         assertThat(row1.getTotalTurns()).isEqualTo(2);
+        assertThat(row1.getLastTurnIndex()).isEqualTo(1);
         assertThat(objectMapper.readTree(row1.getExtractedColumns()).get("a").asString())
                 .isEqualTo("answer-1");
         assertThat(objectMapper.readTree(row1.getTestCaseData()).get("question").asString())
                 .isEqualTo("q1");
         assertThat(contentOf(row1.getResponseBody())).isEqualTo("assistant-1");
+    }
+
+    @Test
+    @DisplayName("non-contiguous survivors keep authored turnIndex and share lastTurnIndex (max authored)")
+    void nonContiguousSurvivorsPreserveAuthoredIndices() {
+        when(resolvedRequestService.resolve(any(), any(), any()))
+                .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-3"));
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(response(200, "assistant-0"), response(200, "assistant-3"));
+        when(responseColumnExtractor.extract(any(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+
+        // Frozen survivors carry authored indices 0 and 3 (turns 1,2 dropped upstream).
+        List<TestCaseRunResult> results =
+                executor.execute(inputWithTurnIndices(0, 3), context(), 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+
+        assertThat(results).hasSize(2);
+        assertThat(results.get(0).getTurnIndex()).isEqualTo(0);
+        assertThat(results.get(0).getTotalTurns()).isEqualTo(2);
+        assertThat(results.get(0).getLastTurnIndex()).isEqualTo(3);
+        assertThat(results.get(1).getTurnIndex()).isEqualTo(3);
+        assertThat(results.get(1).getTotalTurns()).isEqualTo(2);
+        assertThat(results.get(1).getLastTurnIndex()).isEqualTo(3);
     }
 
     @Test
@@ -391,6 +416,33 @@ class MultiTurnConversationExecutorTest {
                 .testCaseId(UUID.randomUUID())
                 .testCaseName("conv-1 / turn 0")
                 .totalTurns(n)
+                .turns(objectMapper.writeValueAsString(turns))
+                .build();
+    }
+
+    /**
+     * Builds a conversation input whose frozen turns carry the given authored {@code turnIndex} values (as the
+     * snapshot phase writes them after non-contiguous survivor selection); {@code data} is {@code
+     * {"question":"q<index>"}} per turn.
+     */
+    private TestCaseRunInput inputWithTurnIndices(int... turnIndices) {
+        ArrayNode turns = objectMapper.createArrayNode();
+        for (int i : turnIndices) {
+            ObjectNode turn = objectMapper.createObjectNode();
+            turn.put("testCaseId", UUID.randomUUID().toString());
+            turn.put("testCaseName", "conv-1 / turn " + i);
+            turn.put("turnIndex", i);
+            ObjectNode data = objectMapper.createObjectNode();
+            data.put("question", "q" + i);
+            turn.set("data", data);
+            turns.add(turn);
+        }
+        return TestCaseRunInput.builder()
+                .runId(UUID.randomUUID())
+                .conversationId(UUID.randomUUID())
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("conv-1 / turn 0")
+                .totalTurns(turnIndices.length)
                 .turns(objectMapper.writeValueAsString(turns))
                 .build();
     }

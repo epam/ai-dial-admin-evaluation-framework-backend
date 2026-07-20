@@ -183,6 +183,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .responseJson(result.getExtractedColumns())
                 .turnIndex(result.getTurnIndex())
                 .totalTurns(result.getTotalTurns())
+                .lastTurnIndex(result.getLastTurnIndex())
                 .build();
 
         List<AggregatedMetricDefinition> dispatchedTsmds = new ArrayList<>();

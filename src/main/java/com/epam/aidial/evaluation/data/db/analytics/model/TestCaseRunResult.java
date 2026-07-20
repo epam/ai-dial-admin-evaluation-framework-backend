@@ -19,6 +19,7 @@ public class TestCaseRunResult {
     private int runIndex;
     private int turnIndex;
     private int totalTurns;
+    private int lastTurnIndex;
     private String testCaseData;
     private String requestBody;
     private String responseBody;

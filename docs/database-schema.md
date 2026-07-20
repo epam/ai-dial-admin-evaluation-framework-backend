@@ -454,9 +454,9 @@ One row = one execution unit. Single-turn units use the scalar `test_case_*` col
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name at snapshot time |
 | `test_case_data` | JSONB | NOT NULL | - | Unified test case data map at snapshot time |
 | `conversation_id` | VARCHAR(36) | NULL | - | Conversation grouping key for a multi-turn unit; `NULL` for single-turn. Added V1.28. |
-| `total_turns` | INTEGER | NULL | - | Surviving (post-truncation) turn count of the assembled conversation; `NULL` for single-turn. Added V1.28. |
-| `turns` | JSONB | NULL | - | Ordered assembled turns `[{testCaseId, testCaseName, turnIndex, data}, ...]` for a multi-turn unit; `NULL` for single-turn. Added V1.28. |
-| `broken` | BOOLEAN | NOT NULL | `false` | Broken-conversation marker (missing turn 0 / gap / dup index / invalid turn / over-cap); executor emits a single `0/0` ERROR row. Added V1.28. |
+| `total_turns` | INTEGER | NULL | - | Surviving turn count of the assembled conversation (turns disabled/filtered out at start/middle/end simply drop; ordering is not required); `NULL` for single-turn. Added V1.28. |
+| `turns` | JSONB | NULL | - | Ordered assembled surviving turns `[{testCaseId, testCaseName, turnIndex, data}, ...]` for a multi-turn unit, sorted by authored `turnIndex` (indices preserved, may be non-contiguous); `NULL` for single-turn. Added V1.28. |
+| `broken` | BOOLEAN | NOT NULL | `false` | Broken-conversation marker (an invalid surviving turn, or surviving count over the cap — ordering/gaps no longer break); executor emits a single `0/0` ERROR row. Added V1.28. |
 | `request_template_override` | JSONB | NULL | - | Legacy per-case request template override at snapshot time. Always NULL for runs created after V1.22 (the override surface was removed with the dataset migration); kept for backward compatibility with in-flight pre-V1.22 runs. |
 | `input_bindings_override` | JSONB | NULL | - | Legacy per-case input bindings override at snapshot time. Always NULL for runs created after V1.22; same backward-compatibility reason as above. |
 
@@ -635,8 +635,9 @@ Test case execution results stored in the analytics database. Each row represent
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Test case ID |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index (0-based) |
-| `turn_index` | INTEGER | NOT NULL | 0 | Conversation turn index (0-based). Single-turn results are `0`. |
-| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the conversation (single-turn = `1`; `0` marks a data-shape failure where no turn ran). Last turn ⇔ `turn_index == total_turns - 1`. |
+| `turn_index` | INTEGER | NOT NULL | 0 | Authored conversation turn index (0-based, preserved even when surviving turns are non-contiguous). Single-turn results are `0`. |
+| `total_turns` | INTEGER | NOT NULL | 1 | Surviving turn count that ran (single-turn = `1`; `0` marks a broken/data-shape failure where no turn ran). |
+| `last_turn_index` | INTEGER | NOT NULL | 0 | Max authored `turn_index` among the conversation's surviving turns. Drives `turn.last` (`turn_index == last_turn_index`) correctly under gaps. Single-turn = `0`. Internal correctness column — not exposed on response DTOs or CSV export. Added V1.15. |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (per-turn projected scalar view for multi-turn rows) |
 | `request_body` | JSONB | NULL | - | HTTP request body sent to endpoint |
 | `response_body` | JSONB | NULL | - | HTTP response body received |
@@ -952,6 +953,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.11 | `V1.11__CreateRocAucScoreFunction.sql` | Created `roc_auc_score(double precision[], double precision[])` SQL function computing the rank-sum ROC AUC score over paired label/probability arrays |
 | V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index` (INTEGER NOT NULL DEFAULT 0) and `total_turns` (INTEGER NOT NULL DEFAULT 1) to test_case_run_results; recreated `uq_results_run_case_index` including `turn_index` (per-turn result rows) |
 | V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index` (INTEGER NOT NULL DEFAULT 0) and `total_turns` (INTEGER NOT NULL DEFAULT 1) to test_case_eval_summaries; recreated `uq_eval_summaries_natural_key` including `turn_index` (per-turn summary rows) |
+| V1.15 | `V1.15__AddLastTurnIndexToTestCaseRunResults.sql` | Added `last_turn_index` (INTEGER NOT NULL DEFAULT 0) to test_case_run_results — max authored surviving turn index, drives `turn.last` correctly when surviving turns are non-contiguous; not part of any unique key |
 
 ---
 

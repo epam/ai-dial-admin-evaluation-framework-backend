@@ -46,11 +46,12 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * End-to-end functional test for row-based multi-turn conversations: create → run a DEPLOYMENT suite against
  * a mocked DIAL Core deployment where a conversation is an ordered group of discrete {@code test_cases} rows
- * (one row per turn, sharing a {@code conversationId} with contiguous {@code turnIndex} from 0). Multi-turn is
- * emergent from the data — there is no suite-level flag. Each turn is persisted as its own scalar result row
- * carrying {@code turn_index}/{@code total_turns}, its raw per-turn {@code response_body}, and scalar
- * {@code extracted_columns}; a broken conversation surfaces as one degenerate {@code 0/0} ERROR row and the
- * run still completes.
+ * (one row per turn, sharing a {@code conversationId}). Surviving turns run in ascending authored
+ * {@code turnIndex} order with gaps allowed (a disabled/filtered start or middle turn simply drops); multi-turn
+ * is emergent from the data — there is no suite-level flag. Each turn is persisted as its own scalar result row
+ * carrying {@code turn_index}/{@code total_turns}/{@code last_turn_index}, its raw per-turn {@code response_body},
+ * and scalar {@code extracted_columns}; a broken conversation (an invalid surviving turn, or over the turn cap)
+ * surfaces as one degenerate {@code 0/0} ERROR row and the run still completes.
  */
 @DisplayName("Multi-turn Conversation Run Functional Tests (row-based)")
 public abstract class MultiTurnConversationRunFunctionalTests extends BaseFunctionalTest {
@@ -170,12 +171,39 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("Should surface a broken conversation (gap in turn indexes) as one 0/0 ERROR row; run completes")
-    void shouldSurfaceBrokenConversationAsErrorRow() {
+    @DisplayName("A gap in turn indexes no longer breaks the conversation — survivors run, authored indices kept")
+    void shouldRunConversationWithGapPreservingAuthoredIndices() {
         TestSuiteResponseDto suite = createConversationSuite();
         UUID conversationId = UUID.randomUUID();
-        createTurn(suite.getId(), "broken / turn 0", conversationId, 0, "hello");
-        createTurn(suite.getId(), "broken / turn 2", conversationId, 2, "third");
+        createTurn(suite.getId(), "gap / turn 0", conversationId, 0, "hello");
+        createTurn(suite.getId(), "gap / turn 2", conversationId, 2, "third");
+
+        stubConstantReply();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(2);
+        assertThat(results).allMatch(r -> "SUCCESS".equals(String.valueOf(r.get("execution_status"))));
+        assertThat(results).allMatch(r -> ((Number) r.get("total_turns")).intValue() == 2);
+        // Authored indices preserved (0 and 2, not renumbered), and last_turn_index is the max authored (2).
+        assertThat(results.stream()
+                        .map(r -> ((Number) r.get("turn_index")).intValue())
+                        .sorted()
+                        .toList())
+                .containsExactly(0, 2);
+        assertThat(results).allMatch(r -> ((Number) r.get("last_turn_index")).intValue() == 2);
+    }
+
+    @Test
+    @DisplayName("An invalid surviving turn breaks the conversation — one 0/0 ERROR row; run completes")
+    void shouldBreakConversationWithInvalidSurvivingTurn() {
+        TestSuiteResponseDto suite = createConversationSuite();
+        UUID conversationId = UUID.randomUUID();
+        createTurn(suite.getId(), "invalid / turn 0", conversationId, 0, "hello");
+        TestCaseResponseDto t1 = createTurn(suite.getId(), "invalid / turn 1", conversationId, 1, "second");
+        metaTestDataHelper.forceTestCaseInvalid(t1.getId(), "[\"forced invalid\"]");
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
@@ -186,6 +214,7 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
         assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("ERROR");
         assertThat(((Number) row.get("turn_index")).intValue()).isEqualTo(0);
         assertThat(((Number) row.get("total_turns")).intValue()).isEqualTo(0);
+        assertThat(((Number) row.get("last_turn_index")).intValue()).isEqualTo(0);
     }
 
     @Test
@@ -268,8 +297,8 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("testCaseFilter applies row-level: a non-matching middle turn breaks the conversation (0/0 ERROR row)")
-    void shouldBreakConversationWhenFilterLeavesMiddleHole() {
+    @DisplayName("testCaseFilter applies row-level: a non-matching middle turn is honored — survivors run")
+    void shouldRunConversationWhenFilterLeavesMiddleHole() {
         TestSuiteResponseDto suite = createConversationSuite();
         UUID mid = UUID.randomUUID();
         createTurn(suite.getId(), "mid / turn 0", mid, 0, Map.of("question", "a", "topic", "keep"));
@@ -281,14 +310,19 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        // Turns 0 and 2 match; the filtered-out middle turn leaves a hole in the surviving prefix → broken.
+        // Turns 0 and 2 match; the filtered-out middle turn simply drops → survivors 0,2 run as one unit.
         assertThat(run.getNumberOfTestCases()).isEqualTo(1);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
-        assertThat(results).hasSize(1);
-        Map<String, Object> row = results.get(0);
-        assertThat(String.valueOf(row.get("execution_status"))).isEqualTo("ERROR");
-        assertThat(((Number) row.get("total_turns")).intValue()).isEqualTo(0);
+        assertThat(results).hasSize(2);
+        assertThat(results).allMatch(r -> "SUCCESS".equals(String.valueOf(r.get("execution_status"))));
+        assertThat(results).allMatch(r -> ((Number) r.get("total_turns")).intValue() == 2);
+        assertThat(results.stream()
+                        .map(r -> ((Number) r.get("turn_index")).intValue())
+                        .sorted()
+                        .toList())
+                .containsExactly(0, 2);
+        assertThat(results).allMatch(r -> ((Number) r.get("last_turn_index")).intValue() == 2);
     }
 
     private static String keepTopicFilter() {

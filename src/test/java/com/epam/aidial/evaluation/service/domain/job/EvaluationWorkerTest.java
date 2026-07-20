@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -179,6 +180,33 @@ class EvaluationWorkerTest {
         assertThat(result.getRequestBody()).isNotNull();
         assertThat(result.getTurnIndex()).isEqualTo(0);
         assertThat(result.getTotalTurns()).isEqualTo(1);
+        assertThat(result.getLastTurnIndex()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("Should emit a 0/0/0 ERROR sentinel for a broken conversation input without a model call")
+    void execute_brokenConversation_returnsSentinelErrorRow() {
+        TestCaseRunInput input = TestCaseRunInput.builder()
+                .runId(UUID.randomUUID())
+                .position(0)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("broken-conv")
+                .testCaseData("{}")
+                .broken(true)
+                .build();
+        EvaluationContext context = buildContext();
+
+        List<TestCaseRunResult> results = worker.execute(input, context, 0, List.of());
+
+        assertThat(results).hasSize(1);
+        TestCaseRunResult sentinel = results.get(0);
+        assertThat(sentinel.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(sentinel.getTurnIndex()).isEqualTo(0);
+        assertThat(sentinel.getTotalTurns()).isEqualTo(0);
+        assertThat(sentinel.getLastTurnIndex()).isEqualTo(0);
+        assertThat(sentinel.getResponseBody()).contains("BROKEN_CONVERSATION").contains("invalid");
+        // No model call is made for a broken conversation.
+        verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
     }
 
     @Test

@@ -117,12 +117,33 @@ class SnapshotInputWriterTest {
     }
 
     @Test
-    @DisplayName("marks a non-contiguous conversation broken (0/0, no turns) but still writes one unit")
-    void marksNonContiguousConversationBroken() {
+    @DisplayName("assembles a non-contiguous conversation as runnable, preserving authored turn indices")
+    void writesNonContiguousConversationAsRunnable() {
         final UUID conversationId = UUID.randomUUID();
         final TestCase t0 = turn(conversationId, 0, true);
-        final TestCase t2 = turn(conversationId, 2, true); // gap at index 1
+        final TestCase t2 = turn(conversationId, 2, true); // gap at index 1 — no longer breaks
         stubConversation(conversationId, List.of(t0, t2));
+
+        final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, null);
+
+        assertThat(written).isEqualTo(1);
+        verify(inputRepository).insertBatch(batchCaptor.capture());
+        final TestCaseRunInput input = batchCaptor.getValue().getFirst();
+        assertThat(input.isBroken()).isFalse();
+        assertThat(input.getTotalTurns()).isEqualTo(2);
+        final JsonNode frozen = objectMapper.readTree(input.getTurns());
+        assertThat(frozen).hasSize(2);
+        assertThat(frozen.get(0).get("turnIndex").asInt()).isEqualTo(0);
+        assertThat(frozen.get(1).get("turnIndex").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("marks a conversation with an invalid surviving turn broken (0/0, no turns)")
+    void marksInvalidTurnConversationBroken() {
+        final UUID conversationId = UUID.randomUUID();
+        final TestCase t0 = turn(conversationId, 0, true);
+        final TestCase t1 = turn(conversationId, 1, false); // invalid surviving turn breaks
+        stubConversation(conversationId, List.of(t0, t1));
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, null);
 

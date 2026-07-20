@@ -29,11 +29,17 @@ class ConditionExpressionEvaluatorTest {
     }
 
     private ConditionContext ctx(String dataJson, String responseJson, int turnIndex, int totalTurns) {
+        return ctx(dataJson, responseJson, turnIndex, totalTurns, totalTurns - 1);
+    }
+
+    private ConditionContext ctx(
+            String dataJson, String responseJson, int turnIndex, int totalTurns, int lastTurnIndex) {
         return ConditionContext.builder()
                 .dataJson(dataJson)
                 .responseJson(responseJson)
                 .turnIndex(turnIndex)
                 .totalTurns(totalTurns)
+                .lastTurnIndex(lastTurnIndex)
                 .build();
     }
 
@@ -135,6 +141,18 @@ class ConditionExpressionEvaluatorTest {
     void evaluateTurnLastSingleTurn() {
         ConditionDecision decision = evaluator.evaluate("turn.last", ctx("{}", "{}", 0, 1));
         assertThat(decision.isRun()).isTrue();
+    }
+
+    @Test
+    @DisplayName("turn.last is correct for non-contiguous surviving turns (keyed off lastTurnIndex, not total-1)")
+    void evaluateTurnLastNonContiguous() {
+        // Surviving turns have authored index 0 and 3: total = 2, lastTurnIndex = 3.
+        // (total - 1 = 1 would be wrong — that index does not exist among survivors.)
+        ConditionDecision onFirst = evaluator.evaluate("turn.last", ctx("{}", "{}", 0, 2, 3));
+        ConditionDecision onLast = evaluator.evaluate("turn.last", ctx("{}", "{}", 3, 2, 3));
+
+        assertThat(onFirst.isSkip()).isTrue();
+        assertThat(onLast.isRun()).isTrue();
     }
 
     @Test

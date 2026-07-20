@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -22,14 +21,11 @@ public class ConversationFieldsValidator {
         if (hasConversation != hasTurn) {
             throw new ValidationException("conversationId and turnIndex must be provided together");
         }
-        if (hasTurn) {
-            if (turnIndex < 0) {
-                throw new ValidationException("turnIndex must be >= 0");
-            }
-            if (turnIndex >= ValidationConstants.MAX_CONVERSATION_TURNS) {
-                throw new ValidationException(
-                        "turnIndex must be less than " + ValidationConstants.MAX_CONVERSATION_TURNS);
-            }
+        // No upper bound on turnIndex at write time: surviving turns may be non-contiguous (turns disabled or
+        // filtered out at the start/middle/end), so a high authored index no longer implies a large turn count.
+        // The turn-count limit is enforced at snapshot against the surviving-turn count (see ConversationAssembler).
+        if (hasTurn && turnIndex < 0) {
+            throw new ValidationException("turnIndex must be >= 0");
         }
     }
 }

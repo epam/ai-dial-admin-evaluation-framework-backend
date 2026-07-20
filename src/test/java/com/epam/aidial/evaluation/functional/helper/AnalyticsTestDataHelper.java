@@ -94,6 +94,7 @@ public class AnalyticsTestDataHelper {
                         TEST_CASE_RUN_RESULTS.RUN_INDEX,
                         TEST_CASE_RUN_RESULTS.TURN_INDEX,
                         TEST_CASE_RUN_RESULTS.TOTAL_TURNS,
+                        TEST_CASE_RUN_RESULTS.LAST_TURN_INDEX,
                         TEST_CASE_RUN_RESULTS.EXECUTION_STATUS,
                         TEST_CASE_RUN_RESULTS.REQUEST_BODY,
                         TEST_CASE_RUN_RESULTS.RESPONSE_BODY,

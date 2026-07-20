@@ -51,17 +51,10 @@ class ConversationFieldsValidatorTest {
     }
 
     @Test
-    @DisplayName("turnIndex at the cap is rejected (must be strictly less than MAX_CONVERSATION_TURNS)")
-    void turnIndexAtCapRejected() {
-        assertThatThrownBy(() -> validator.validate(UUID.randomUUID(), ValidationConstants.MAX_CONVERSATION_TURNS))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("less than " + ValidationConstants.MAX_CONVERSATION_TURNS);
-    }
-
-    @Test
-    @DisplayName("turnIndex one below the cap is valid")
-    void turnIndexJustBelowCapValid() {
-        assertThatCode(() -> validator.validate(UUID.randomUUID(), ValidationConstants.MAX_CONVERSATION_TURNS - 1))
+    @DisplayName("a large turnIndex at or above the cap is accepted (no write-time upper bound)")
+    void largeTurnIndexAccepted() {
+        assertThatCode(() -> validator.validate(UUID.randomUUID(), ValidationConstants.MAX_CONVERSATION_TURNS))
                 .doesNotThrowAnyException();
+        assertThatCode(() -> validator.validate(UUID.randomUUID(), 10_000)).doesNotThrowAnyException();
     }
 }

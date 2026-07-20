@@ -22,6 +22,7 @@ public class TestCaseRunResultRecordMapper {
                 .runIndex(r.getRunIndex())
                 .turnIndex(r.getTurnIndex())
                 .totalTurns(r.getTotalTurns())
+                .lastTurnIndex(r.getLastTurnIndex())
                 .testCaseData(toJsonString(r.getTestCaseData()))
                 .requestBody(toJsonString(r.getRequestBody()))
                 .responseBody(toJsonString(r.getResponseBody()))

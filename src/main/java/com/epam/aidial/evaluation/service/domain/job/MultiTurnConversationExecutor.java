@@ -104,6 +104,14 @@ public class MultiTurnConversationExecutor {
                 : context.getSnapshotInputBindings();
 
         final int totalTurns = turns.size();
+
+        /*
+         Authored indices are preserved (no renumbering); the last surviving turn's authored index is the
+         max, which drives turn.last correctly even when survivors are non-contiguous.
+        */
+        final int lastTurnIndex =
+                turns.stream().mapToInt(FrozenTurn::turnIndex).max().orElse(0);
+
         final String deploymentId = context.getSnapshotDeploymentRef() != null
                 ? context.getSnapshotDeploymentRef().getId()
                 : null;
@@ -148,6 +156,7 @@ public class MultiTurnConversationExecutor {
                             turnEnd,
                             current.turnIndex(),
                             totalTurns,
+                            lastTurnIndex,
                             ExecutionStatus.SUCCESS,
                             result.outcome(),
                             result.requestBodyJson(),
@@ -166,6 +175,7 @@ public class MultiTurnConversationExecutor {
                                 turnEnd,
                                 current.turnIndex(),
                                 totalTurns,
+                                lastTurnIndex,
                                 result.status(),
                                 result.outcome(),
                                 result.requestBodyJson(),
@@ -194,6 +204,7 @@ public class MultiTurnConversationExecutor {
                     now,
                     current.turnIndex(),
                     totalTurns,
+                    lastTurnIndex,
                     ExecutionStatus.ERROR,
                     null,
                     null,
@@ -213,6 +224,7 @@ public class MultiTurnConversationExecutor {
             long turnEnd,
             int turnIndex,
             int totalTurns,
+            int lastTurnIndex,
             ExecutionStatus status,
             TurnOutcome outcome,
             String requestBodyJson,
@@ -228,6 +240,7 @@ public class MultiTurnConversationExecutor {
                 .runIndex(runIndex)
                 .turnIndex(turnIndex)
                 .totalTurns(totalTurns)
+                .lastTurnIndex(lastTurnIndex)
                 .testCaseData(jsonService.writeOrToString(turnData))
                 .requestBody(requestBodyJson)
                 .responseBody(outcome != null ? outcome.responseBody() : null)
@@ -371,6 +384,7 @@ public class MultiTurnConversationExecutor {
                 .runIndex(runIndex)
                 .turnIndex(0)
                 .totalTurns(0)
+                .lastTurnIndex(0)
                 .testCaseData(input.getTestCaseData())
                 .requestBody(null)
                 .responseBody(null)

@@ -73,8 +73,10 @@ public class ConditionExpressionEvaluator {
      * column look absent — see AGENTS.md JSONB-null caveat).
      *
      * <p>The {@code turn} namespace carries the current turn's position so conditions can gate on it, e.g.
-     * {@code turn.last} to run only on the final turn, or {@code turn.index}/{@code turn.total}. A single-turn
-     * result is {@code index=0, total=1, last=true}.
+     * {@code turn.last} to run only on the final turn, or {@code turn.index}/{@code turn.total}. {@code turn.last}
+     * is {@code turnIndex == lastTurnIndex} (the max authored surviving index) — correct even when surviving
+     * turns are non-contiguous, unlike {@code index == total - 1}. A single-turn result is
+     * {@code index=0, total=1, last=true}.
      */
     private String buildDictionaryJson(ConditionContext context) {
         final ObjectNode root = objectMapper.createObjectNode();
@@ -84,7 +86,7 @@ public class ConditionExpressionEvaluator {
         final ObjectNode turn = objectMapper.createObjectNode();
         turn.put(TURN_INDEX, context.turnIndex());
         turn.put(TURN_TOTAL, context.totalTurns());
-        turn.put(TURN_LAST, (context.turnIndex() + 1) == context.totalTurns());
+        turn.put(TURN_LAST, context.turnIndex() == context.lastTurnIndex());
         root.set(TURN_NAMESPACE, turn);
 
         return objectMapper.writeValueAsString(root);

@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-@DisplayName("ConversationAssembler (snapshot-time contiguity / broken-conversation rules)")
+@DisplayName("ConversationAssembler (snapshot-time survivor selection / broken-conversation rules)")
 class ConversationAssemblerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -42,8 +42,8 @@ class ConversationAssemblerTest {
     }
 
     @Test
-    @DisplayName("tail-only disable truncates to the surviving contiguous prefix (not broken)")
-    void tailDisableTruncates() {
+    @DisplayName("tail disable shortens the conversation to the surviving turns (not broken)")
+    void tailDisableShortens() {
         TestCase t0 = turn(0, true, "{}");
         TestCase t1 = turn(1, true, "{}");
         TestCase t2 = turn(2, true, "{}");
@@ -57,8 +57,8 @@ class ConversationAssemblerTest {
     }
 
     @Test
-    @DisplayName("disabling a middle turn breaks the conversation (non-contiguous prefix)")
-    void middleDisableBreaks() {
+    @DisplayName("disabling a middle turn is honored — survivors run with authored indices preserved")
+    void middleDisableRuns() {
         TestCase t0 = turn(0, true, "{}");
         TestCase t1 = turn(1, true, "{}");
         TestCase t2 = turn(2, true, "{}");
@@ -66,20 +66,26 @@ class ConversationAssemblerTest {
         AssembledConversation result =
                 assembler.assemble(List.of(t0, t1, t2), Set.of(t1.getId())).orElseThrow();
 
-        assertThat(result.broken()).isTrue();
-        assertThat(result.totalTurns()).isZero();
-        assertThat(result.turnsJson()).isNull();
+        assertThat(result.broken()).isFalse();
+        assertThat(result.totalTurns()).isEqualTo(2);
+        JsonNode frozen = objectMapper.readTree(result.turnsJson());
+        assertThat(frozen).hasSize(2);
+        assertThat(frozen.get(0).get("turnIndex").asInt()).isEqualTo(0);
+        assertThat(frozen.get(1).get("turnIndex").asInt()).isEqualTo(2);
     }
 
     @Test
-    @DisplayName("a missing turn 0 breaks the conversation")
-    void missingTurnZeroBreaks() {
+    @DisplayName("a missing turn 0 no longer breaks the conversation — survivors run in order")
+    void missingTurnZeroRuns() {
         AssembledConversation result = assembler
                 .assemble(List.of(turn(1, true, "{}"), turn(2, true, "{}")), Set.of())
                 .orElseThrow();
 
-        assertThat(result.broken()).isTrue();
-        assertThat(result.totalTurns()).isZero();
+        assertThat(result.broken()).isFalse();
+        assertThat(result.totalTurns()).isEqualTo(2);
+        JsonNode frozen = objectMapper.readTree(result.turnsJson());
+        assertThat(frozen.get(0).get("turnIndex").asInt()).isEqualTo(1);
+        assertThat(frozen.get(1).get("turnIndex").asInt()).isEqualTo(2);
     }
 
     @Test

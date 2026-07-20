@@ -339,6 +339,20 @@ public class TestCaseRunResultsRecord extends UpdatableRecordImpl<TestCaseRunRes
         return (Integer) get(21);
     }
 
+    /**
+     * Setter for <code>analytics.test_case_run_results.last_turn_index</code>.
+     */
+    public void setLastTurnIndex(Integer value) {
+        set(22, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_run_results.last_turn_index</code>.
+     */
+    public Integer getLastTurnIndex() {
+        return (Integer) get(22);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -362,7 +376,7 @@ public class TestCaseRunResultsRecord extends UpdatableRecordImpl<TestCaseRunRes
     /**
      * Create a detached, initialised TestCaseRunResultsRecord
      */
-    public TestCaseRunResultsRecord(String id, String testSuiteRunId, String testSuiteId, String testCaseId, String testCaseName, Integer runIndex, JSONB testCaseData, JSONB requestBody, JSONB responseBody, Integer responseStatusCode, String executionStatus, Long execStartedAtMs, Long execCompletedAtMs, Long execDurationMs, String traceId, Long createdAtMs, JSONB extractedColumns, JSONB extractionWarnings, Integer retryCount, JSONB logDetails, Integer turnIndex, Integer totalTurns) {
+    public TestCaseRunResultsRecord(String id, String testSuiteRunId, String testSuiteId, String testCaseId, String testCaseName, Integer runIndex, JSONB testCaseData, JSONB requestBody, JSONB responseBody, Integer responseStatusCode, String executionStatus, Long execStartedAtMs, Long execCompletedAtMs, Long execDurationMs, String traceId, Long createdAtMs, JSONB extractedColumns, JSONB extractionWarnings, Integer retryCount, JSONB logDetails, Integer turnIndex, Integer totalTurns, Integer lastTurnIndex) {
         super(TestCaseRunResults.TEST_CASE_RUN_RESULTS);
 
         setId(id);
@@ -387,6 +401,7 @@ public class TestCaseRunResultsRecord extends UpdatableRecordImpl<TestCaseRunRes
         setLogDetails(logDetails);
         setTurnIndex(turnIndex);
         setTotalTurns(totalTurns);
+        setLastTurnIndex(lastTurnIndex);
         resetTouchedOnNotNull();
     }
 }

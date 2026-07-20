@@ -29,15 +29,19 @@ import tools.jackson.databind.node.ObjectNode;
  *   <li>No surviving turns (e.g. every turn disabled) → the conversation contributes <b>no execution
  *       unit</b> at all ({@link Optional#empty()}); it is not a broken unit, it simply drops out of the run.
  *   <li>Any invalid turn ({@code is_valid = false}) among the survivors → the whole conversation is broken.
- *   <li>Disable is tail-only: the survivors MUST form a contiguous prefix {@code 0..k} (start at 0, no gap,
- *       no duplicate index); a middle hole → broken. A filtered-out middle turn produces the same hole, so
- *       it breaks the conversation too.
  *   <li>More than {@link ValidationConstants#MAX_CONVERSATION_TURNS} survivors → broken.
  * </ul>
  *
+ * <p>Ordering and sequencing are <b>not</b> integrity concerns: the survivors run in ascending authored
+ * {@code turn_index} order with their authored indices preserved (no renumbering), and gaps are allowed — a
+ * turn disabled or filtered out at the start, middle, or end simply drops, and the remaining turns run. A
+ * missing turn 0 or a hole no longer breaks the conversation.
+ *
  * <p>A runnable unit carries the ordered surviving turns (as {@code turnsJson}) and {@code totalTurns} = the
- * surviving count. A broken unit carries {@code broken = true} and {@code totalTurns = 0}; the executor turns
- * it into a single {@code 0/0} ERROR result row without invoking the model.
+ * surviving count. The turns keep their authored {@code turn_index}, so the maximum authored surviving index
+ * (needed for turn position — {@code turn.last} — under gaps) is recomputed by the executor from the frozen
+ * turns; it is not stored separately. A broken unit carries {@code broken = true} and {@code totalTurns = 0};
+ * the executor turns it into a single {@code 0/0} ERROR result row without invoking the model.
  */
 @Component
 @LogExecution
@@ -65,10 +69,10 @@ public class ConversationAssembler {
         }
 
         // Rules apply to survivors only: a disabled turn (invalid or not) has no influence on the outcome.
+        // Ordering/sequencing is NOT an integrity concern — a missing turn 0, a gap, or a filtered-out
+        // start/middle turn simply yields a shorter survivor list, run in ascending authored turn_index order.
         final boolean anyInvalid = survivors.stream().anyMatch(t -> !t.isValid());
-        final boolean contiguous = isContiguousFromZero(survivors);
-        final boolean broken =
-                anyInvalid || !contiguous || survivors.size() > ValidationConstants.MAX_CONVERSATION_TURNS;
+        final boolean broken = anyInvalid || survivors.size() > ValidationConstants.MAX_CONVERSATION_TURNS;
 
         final TestCase representative = survivors.getFirst();
 
@@ -81,17 +85,6 @@ public class ConversationAssembler {
                 .representativeTestCaseData(representative.getData())
                 .turnsJson(broken ? null : serializeTurns(survivors))
                 .build());
-    }
-
-    /** True when the survivors' turn indexes are exactly {@code 0, 1, ..., size-1} (start at 0, no gap, no dup). */
-    private static boolean isContiguousFromZero(List<TestCase> survivors) {
-        for (int i = 0; i < survivors.size(); i++) {
-            final Integer turnIndex = survivors.get(i).getTurnIndex();
-            if (turnIndex == null || turnIndex != i) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private String serializeTurns(List<TestCase> survivors) {

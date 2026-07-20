@@ -58,6 +58,7 @@ class TestSuiteMapperCloneTest {
         assertThat(cloned.getResponseColumns()).isEqualTo(source.getResponseColumns());
         assertThat(cloned.getMcpDeploymentRef()).isEqualTo(source.getMcpDeploymentRef());
         assertThat(cloned.getToolRef()).isEqualTo(source.getToolRef());
+        assertThat(cloned.getOverallScoreThreshold()).isEqualTo(source.getOverallScoreThreshold());
         assertThat(cloned.getCreatedBy()).isEqualTo(createdBy);
         assertThat(cloned.getVersion()).isEqualTo(0L);
     }
@@ -236,6 +237,7 @@ class TestSuiteMapperCloneTest {
                 .endpointRef("{\"method\":\"POST\",\"relativeUrlPattern\":\"/v1/chat\"}")
                 .responseColumns("[]")
                 .inputBindings("[]")
+                .overallScoreThreshold(0.75)
                 .build();
 
         TestSuiteRequestDto dto = mapper.toRequestDto(entity);
@@ -252,6 +254,7 @@ class TestSuiteMapperCloneTest {
         assertThat(dto.getEndpointRef().getMethod()).isEqualTo(HttpMethod.POST);
         assertThat(dto.getResponseColumns()).isEmpty();
         assertThat(dto.getInputBindings()).isEmpty();
+        assertThat(dto.getOverallScoreThreshold()).isEqualTo(0.75);
     }
 
     @Test
@@ -270,6 +273,7 @@ class TestSuiteMapperCloneTest {
                 .toolRef(null)
                 .argumentTemplate(null)
                 .requestTemplate(null)
+                .overallScoreThreshold(null)
                 .build();
 
         TestSuiteRequestDto dto = mapper.toRequestDto(entity);
@@ -283,6 +287,7 @@ class TestSuiteMapperCloneTest {
         assertThat(dto.getToolRef()).isNull();
         assertThat(dto.getArgumentTemplate()).isNull();
         assertThat(dto.getRequestTemplate()).isNull();
+        assertThat(dto.getOverallScoreThreshold()).isNull();
     }
 
     @Test
@@ -321,6 +326,7 @@ class TestSuiteMapperCloneTest {
                 .argumentTemplate(null)
                 .mcpDeploymentRef(null)
                 .toolRef(null)
+                .overallScoreThreshold(0.8)
                 .valid(true)
                 .validationWarnings("[]")
                 .version(3L)

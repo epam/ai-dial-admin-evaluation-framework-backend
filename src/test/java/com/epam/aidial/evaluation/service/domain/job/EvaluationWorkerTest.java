@@ -426,15 +426,17 @@ class EvaluationWorkerTest {
 
     @Test
     @DisplayName(
-            "Should set traceId on result from span context (span has 5 attributes: testcase.id, testcase.name, run.index, eval.run.id, eval.suite.id)")
+            "Should set traceId on result from span context (span has 6 attributes: testcase.id, testcase.name, run.index, eval.run.id, eval.suite.id, eval.phase)")
     void execute_setsTraceIdFromSpanContext() throws Exception {
-        // given — mock chain models 5 setAttribute calls matching the production code:
+        // given — mock chain models 6 setAttribute calls matching the production code:
         // .setAttribute("testcase.id", ...).setAttribute("testcase.name", ...)
-        // .setAttribute("run.index", ...).setAttribute("eval.run.id", ...).setAttribute("eval.suite.id", ...)
+        // .setAttribute("run.index", ...).setAttribute("eval.run.id", ...)
+        // .setAttribute("eval.suite.id", ...).setAttribute("eval.phase", ...)
         String expectedTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
         when(openTelemetry
                         .getTracer(anyString())
                         .spanBuilder(anyString())
+                        .setAttribute(anyString(), anyString())
                         .setAttribute(anyString(), anyString())
                         .setAttribute(anyString(), anyString())
                         .setAttribute(anyString(), anyString())
@@ -447,6 +449,7 @@ class EvaluationWorkerTest {
         when(openTelemetry
                         .getTracer(anyString())
                         .spanBuilder(anyString())
+                        .setAttribute(anyString(), anyString())
                         .setAttribute(anyString(), anyString())
                         .setAttribute(anyString(), anyString())
                         .setAttribute(anyString(), anyString())
@@ -550,7 +553,8 @@ class EvaluationWorkerTest {
             TestCaseRunInput input = buildTestCaseRunInput();
             EvaluationContext context = buildMcpContext();
 
-            CallToolResult callResult = new CallToolResult(List.of(new TextContent("result text")), false, null, null);
+            CallToolResult callResult = new CallToolResult(
+                    List.of(TextContent.builder("result text").build()), false, null, null);
 
             when(mcpRequestResolver.resolve(any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
@@ -579,7 +583,8 @@ class EvaluationWorkerTest {
             TestCaseRunInput input = buildTestCaseRunInput();
             EvaluationContext context = buildMcpContext();
 
-            CallToolResult errorResult = new CallToolResult(List.of(new TextContent("tool error")), true, null, null);
+            CallToolResult errorResult =
+                    new CallToolResult(List.of(TextContent.builder("tool error").build()), true, null, null);
 
             when(mcpRequestResolver.resolve(any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()
@@ -651,7 +656,8 @@ class EvaluationWorkerTest {
             TestCaseRunInput input = buildTestCaseRunInput();
             EvaluationContext context = buildMcpContext();
 
-            CallToolResult callResult = new CallToolResult(List.of(new TextContent("result")), false, null, null);
+            CallToolResult callResult =
+                    new CallToolResult(List.of(TextContent.builder("result").build()), false, null, null);
 
             when(mcpRequestResolver.resolve(any(), any(), any()))
                     .thenReturn(McpRequestResolver.ResolutionResult.builder()

@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.experimental.query.service.translate.ValueExpr
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.function.BinaryOperator;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Field;
 import org.jooq.impl.DSL;
@@ -122,6 +123,66 @@ public class BuiltInQueryFunctions {
     @Bean
     public QueryFunction percentileDiscFunction() {
         return QueryFunction.of("percentile_disc", (fn, ctx) -> percentile(fn, ctx, false));
+    }
+
+    @Bean
+    public QueryFunction addFunction() {
+        return QueryFunction.of("add", (fn, ctx) -> reduce(fn, ctx, "add", Field::add));
+    }
+
+    @Bean
+    public QueryFunction multiplyFunction() {
+        return QueryFunction.of("multiply", (fn, ctx) -> reduce(fn, ctx, "multiply", Field::mul));
+    }
+
+    @Bean
+    public QueryFunction subtractFunction() {
+        return QueryFunction.of("subtract", (fn, ctx) -> binary(fn, ctx, "subtract", Field::sub));
+    }
+
+    @Bean
+    public QueryFunction divideFunction() {
+        return QueryFunction.of("divide", (fn, ctx) -> binary(fn, ctx, "divide", Field::div));
+    }
+
+    @Bean
+    public QueryFunction coalesceFunction() {
+        return QueryFunction.of("coalesce", (fn, ctx) -> {
+            final List<Expr> args = ctx.args(fn);
+            if (args.size() != 2) {
+                throw new ValidationException("function 'coalesce' expects exactly two arguments");
+            }
+            final Field<BigDecimal> value = ctx.toField(args.get(0)).cast(BigDecimal.class);
+            final Field<BigDecimal> fallback = ctx.toField(args.get(1)).cast(BigDecimal.class);
+            return DSL.coalesce(value, fallback);
+        });
+    }
+
+    /** {@code add}/{@code multiply}: n-ary (≥1 arg), left-folded via {@code combiner}. */
+    private Field<BigDecimal> reduce(
+            FnExpr fn, FunctionContext ctx, String name, BinaryOperator<Field<BigDecimal>> combiner) {
+        final List<Expr> args = ctx.args(fn);
+        if (args.isEmpty()) {
+            throw new ValidationException("function '" + name + "' expects at least one argument");
+        }
+        Field<BigDecimal> result = null;
+        for (final Expr arg : args) {
+            final Field<BigDecimal> term = ctx.toField(arg).cast(BigDecimal.class);
+            result = result == null ? term : combiner.apply(result, term);
+        }
+        return result;
+    }
+
+    /** {@code subtract}/{@code divide}: binary only (exactly 2 args). */
+    private Field<BigDecimal> binary(
+            FnExpr fn, FunctionContext ctx, String name, BinaryOperator<Field<BigDecimal>> combiner) {
+        final List<Expr> args = ctx.args(fn);
+        if (args.size() != 2) {
+            throw new ValidationException("function '" + name + "' expects exactly two arguments");
+        }
+        final Field<BigDecimal> left = ctx.toField(args.get(0)).cast(BigDecimal.class);
+        final Field<BigDecimal> right = ctx.toField(args.get(1)).cast(BigDecimal.class);
+        return combiner.apply(left, right);
     }
 
     /**

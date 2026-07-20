@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import java.util.List;
 import java.util.Map;
@@ -107,6 +108,46 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getId()).isEqualTo(created.getId());
         assertThat(response.getBody().getName()).isEqualTo("Test Suite Get By ID");
+    }
+
+    @Test
+    @DisplayName("Should persist and return deploymentRef.type")
+    void shouldPersistAndReturnDeploymentRefType() {
+        // Given: a suite whose deploymentRef carries an application type
+        TestSuiteRequestDto request = buildTestSuiteRequest("Deployment Type Suite", "Desc");
+        request.getDeploymentRef().setType("dial-application");
+
+        // When
+        ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        // Then: the create response echoes the type
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        assertThat(created.getBody().getDeploymentRef().getType()).isEqualTo("dial-application");
+
+        // And: a fresh GET returns the persisted type
+        ResponseEntity<TestSuiteResponseDto> fetched = restTemplate.getForEntity(
+                apiUrl("/test-suites/" + created.getBody().getId()), TestSuiteResponseDto.class);
+        assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fetched.getBody()).isNotNull();
+        assertThat(fetched.getBody().getDeploymentRef().getType()).isEqualTo("dial-application");
+    }
+
+    @Test
+    @DisplayName("Should return null deploymentRef.type when omitted")
+    void shouldReturnNullDeploymentRefTypeWhenOmitted() {
+        // Given: buildTestSuiteRequest leaves deploymentRef.type unset
+        TestSuiteResponseDto created = createTestSuite("No Deployment Type Suite");
+
+        // When
+        ResponseEntity<TestSuiteResponseDto> fetched =
+                restTemplate.getForEntity(apiUrl("/test-suites/" + created.getId()), TestSuiteResponseDto.class);
+
+        // Then: type reads back as null (optional field)
+        assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fetched.getBody()).isNotNull();
+        assertThat(fetched.getBody().getDeploymentRef().getType()).isNull();
     }
 
     @Test
@@ -530,6 +571,7 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
                                 List.of(Map.of("type", "field", "name", "metric::Relevancy::score"))),
                         "as",
                         "value")));
+        CustomFunction overallScoreDefinition = new CustomFunction(overallScore);
         TestSuiteRequestDto updateRequest = TestSuiteRequestDto.builder()
                 .name(created.getName())
                 .description(created.getDescription())
@@ -542,7 +584,7 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
                 .datasetId(created.getDatasetId())
                 .requestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
-                .overallScore(overallScore)
+                .overallScore(overallScoreDefinition)
                 .build();
 
         // When (If-Match required for optimistic locking)
@@ -557,14 +599,143 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
         // Then: the response echoes the submitted overallScore
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().getOverallScore()).isEqualTo(overallScore);
+        assertThat(response.getBody().getOverallScore()).isEqualTo(overallScoreDefinition);
 
         // And: it is persisted — a fresh GET returns the same overallScore
         ResponseEntity<TestSuiteResponseDto> fetched =
                 restTemplate.getForEntity(apiUrl("/test-suites/" + created.getId()), TestSuiteResponseDto.class);
         assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(fetched.getBody()).isNotNull();
-        assertThat(fetched.getBody().getOverallScore()).isEqualTo(overallScore);
+        assertThat(fetched.getBody().getOverallScore()).isEqualTo(overallScoreDefinition);
+    }
+
+    @Test
+    @DisplayName("Should persist and return overallScoreThreshold on create")
+    void shouldPersistAndReturnOverallScoreThresholdOnCreate() {
+        // Given: a create request including overallScoreThreshold
+        TestSuiteRequestDto request = buildTestSuiteRequest("Threshold Suite Create", "Description");
+        request.setOverallScoreThreshold(0.8);
+
+        // When
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getOverallScoreThreshold()).isEqualTo(0.8);
+        assertThat(response.getBody().isValid()).isTrue();
+        assertThat(response.getBody().getValidationWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should persist and return overallScoreThreshold on update")
+    void shouldPersistAndReturnOverallScoreThresholdOnUpdate() {
+        // Given: a suite and an update request carrying overallScoreThreshold
+        TestSuiteResponseDto created = createTestSuite("Threshold Suite Update");
+        TestSuiteRequestDto updateRequest = TestSuiteRequestDto.builder()
+                .name(created.getName())
+                .description(created.getDescription())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(buildEndpointContract("/v1/chat"))
+                .datasetId(created.getDatasetId())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .overallScoreThreshold(0.9)
+                .build();
+
+        // When (If-Match required for optimistic locking)
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch(created.getVersion() != null ? "\"" + created.getVersion() + "\"" : "0");
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + created.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(updateRequest, headers),
+                TestSuiteResponseDto.class);
+
+        // Then: the response echoes the submitted overallScoreThreshold
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getOverallScoreThreshold()).isEqualTo(0.9);
+        assertThat(response.getBody().isValid()).isTrue();
+        assertThat(response.getBody().getValidationWarnings()).isEmpty();
+
+        // And: it is persisted — a fresh GET returns the same overallScoreThreshold
+        ResponseEntity<TestSuiteResponseDto> fetched =
+                restTemplate.getForEntity(apiUrl("/test-suites/" + created.getId()), TestSuiteResponseDto.class);
+        assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fetched.getBody()).isNotNull();
+        assertThat(fetched.getBody().getOverallScoreThreshold()).isEqualTo(0.9);
+    }
+
+    @Test
+    @DisplayName("Should leave overallScoreThreshold null when omitted on create")
+    void shouldLeaveOverallScoreThresholdNull_whenOmittedOnCreate() {
+        // Given/When: a suite created without overallScoreThreshold
+        TestSuiteResponseDto created = createTestSuite("Threshold Suite Omitted");
+
+        // Then
+        assertThat(created.getOverallScoreThreshold()).isNull();
+    }
+
+    @Test
+    @DisplayName("Should return 400 when overallScoreThreshold is below 0.0")
+    void shouldReturn400_whenOverallScoreThresholdBelowMin() {
+        // Given
+        TestSuiteRequestDto request = buildTestSuiteRequest("Threshold Suite Below Min", "Description");
+        request.setOverallScoreThreshold(-0.1);
+
+        // When
+        ResponseEntity<String> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), String.class);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when overallScoreThreshold is above 1.0")
+    void shouldReturn400_whenOverallScoreThresholdAboveMax() {
+        // Given
+        TestSuiteRequestDto request = buildTestSuiteRequest("Threshold Suite Above Max", "Description");
+        request.setOverallScoreThreshold(1.1);
+
+        // When
+        ResponseEntity<String> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), String.class);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should accept overallScoreThreshold at the 0.0 and 1.0 boundaries")
+    void shouldAcceptOverallScoreThreshold_atBoundaries() {
+        // Given/When: create with the lower boundary
+        TestSuiteRequestDto lowerRequest = buildTestSuiteRequest("Threshold Suite Lower Bound", "Description");
+        lowerRequest.setOverallScoreThreshold(0.0);
+        ResponseEntity<TestSuiteResponseDto> lowerResponse = restTemplate.postForEntity(
+                apiUrl("/test-suites"), jsonEntity(lowerRequest), TestSuiteResponseDto.class);
+
+        // Then
+        assertThat(lowerResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(lowerResponse.getBody()).isNotNull();
+        assertThat(lowerResponse.getBody().getOverallScoreThreshold()).isEqualTo(0.0);
+
+        // Given/When: create with the upper boundary
+        TestSuiteRequestDto upperRequest = buildTestSuiteRequest("Threshold Suite Upper Bound", "Description");
+        upperRequest.setOverallScoreThreshold(1.0);
+        ResponseEntity<TestSuiteResponseDto> upperResponse = restTemplate.postForEntity(
+                apiUrl("/test-suites"), jsonEntity(upperRequest), TestSuiteResponseDto.class);
+
+        // Then
+        assertThat(upperResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(upperResponse.getBody()).isNotNull();
+        assertThat(upperResponse.getBody().getOverallScoreThreshold()).isEqualTo(1.0);
     }
 
     @Test

@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.experimental.query.model.LogicalNode;
 import com.epam.aidial.evaluation.experimental.query.model.OutputColumn;
 import com.epam.aidial.evaluation.experimental.query.model.ParamExpr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.HashSet;
@@ -82,6 +83,8 @@ public class QueryParameterResolver {
             case FnExpr(var name, var distinct, var args) ->
                 new FnExpr(name, distinct, mapList(args, arg -> resolveExpr(arg, params, resolving)));
             case ArrayExpr(var items) -> new ArrayExpr(mapList(items, item -> resolveExpr(item, params, resolving)));
+            // A subquery is a nested query: resolve params within it (its own recursive pass).
+            case SubqueryExpr(var subquery) -> new SubqueryExpr(resolve(subquery, params));
         };
     }
 

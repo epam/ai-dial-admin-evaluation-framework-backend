@@ -70,11 +70,12 @@ Status: **Implemented**
 
 ### Requirement: Expression grammar
 The system SHALL model expressions as a sealed `Expr` hierarchy discriminated by the `type` key
-with five kinds: `field` (column reference), `value` (literal whose `value` is always a JSON string
+with six kinds: `field` (column reference), `value` (literal whose `value` is always a JSON string
 governed by `value_type`), `param` (runtime parameter), `fn` (function call with a nestable
-expression `args` list), and `array` (collection whose items use the key `items`). `value_type`
-SHALL be a closed enum: `string`, `integer`, `long`, `decimal`, `boolean`, `date`, `timestamp`,
-`uuid`, `null`.
+expression `args` list), `array` (collection whose items use the key `items`), and `subquery` (a
+nested `StructuredQuery` under the `query` key — usable anywhere any other expression is, subject to
+the constraints in the `in` predicate requirement and elsewhere). `value_type` SHALL be a closed enum:
+`string`, `integer`, `long`, `decimal`, `boolean`, `date`, `timestamp`, `uuid`, `null`.
 Status: **Implemented**
 
 #### Scenario: Nested function expression binds
@@ -91,16 +92,71 @@ Status: **Implemented**
   deserialized
 - **THEN** it binds to the array record using the `items` key, distinct from a function's `args`
 
-### Requirement: `in` predicate with array operand
-The system SHALL treat `in` as an ordinary binary predicate whose right operand is typically an
-`array` expression, without structurally encoding "left scalar / right set" — that constraint is
-deferred to validation.
+#### Scenario: Subquery expression binds with query key
+- **WHEN** a `subquery` expression `{ "type": "subquery", "query": { <StructuredQuery> } }` is
+  deserialized
+- **THEN** it binds to the subquery record carrying a nested `StructuredQuery` under the `query` key
+
+### Requirement: `in` predicate with array or subquery operand
+The system SHALL treat `in` as an ordinary binary predicate whose right operand is either an
+`array` expression (set membership over literals) or a `subquery` expression (set membership over a
+nested query's result), without structurally encoding "left scalar / right set" — that constraint
+is deferred to validation.
+
+When the right operand is a `subquery`, the system SHALL compile it to a nested `SELECT`
+(`<left> IN (SELECT …)`) during translation — one SQL statement. The subquery's **first** select
+column SHALL be the membership key projected into the `IN` (the built select is wrapped in a derived
+table selecting that first column), so the subquery may additionally select aggregates purely to
+drive its own `ORDER BY`/`LIMIT` (e.g. `max(computed_at_ms)` to take the latest N groups). An `in`
+subquery that matches no rows SHALL cause the enclosing query to return no rows (nested `IN` over an
+empty set is false). The subquery MAY target a different entity than the enclosing query; if the two
+entities live on different datasources, the resulting nested SQL is rejected by the database itself
+(surfaced as HTTP 400 through the system's existing SQL-error mapping) rather than by a structural
+same-entity check.
 Status: **Implemented**
 
 #### Scenario: Set membership binds
 - **WHEN** `execution_status IN ('SUCCESS', 'PARTIAL')` is deserialized
 - **THEN** the predicate's `args` hold a field expression on the left and an array expression of
   two value literals on the right
+
+#### Scenario: Subquery membership resolves the latest N groups in one request
+- **WHEN** a `metric_score_results` row query filters `test_suite_run_id in (<subquery>)` where the
+  subquery is a same-entity aggregate selecting `test_suite_run_id` (first) and `max(computed_at_ms)`,
+  grouped by `test_suite_run_id`, ordered by that aggregate descending with `limit: 2`
+- **THEN** the query compiles to `… WHERE test_suite_run_id IN (SELECT …)` and returns all rows whose
+  `test_suite_run_id` is one of the 2 most-recently computed runs — in a single statement
+
+#### Scenario: Cross-datasource subquery is rejected by the database
+- **WHEN** an `in` subquery targets an entity on a different datasource than the enclosing query
+- **THEN** the request is rejected with HTTP 400, surfaced through the same SQL-error-to-validation
+  mapping used for any other database grammar/type error
+
+#### Scenario: Subquery used as a scalar comparison operand
+- **WHEN** a `subquery` expression appears as the operand of a non-`in` comparison (e.g.
+  `computed_at_ms eq (subquery)`), a `select` projection, or a function argument
+- **THEN** it compiles to a scalar value derived from the subquery's first selected column, usable
+  anywhere any other expression is valid
+
+### Requirement: Query entity resolution is centralized per entity
+The system SHALL resolve, for each queryable entity, its datasource, its backing table, and its field
+bindings through a single per-entity component, keyed by the entity's wire name and consulted purely
+from the entity name carried on the query (or a nested subquery's own entity name) — not through a
+collection of independent, per-entity request-handling classes. An entity whose field bindings depend
+on the specific query being executed (rather than being fixed for the entity as a whole) SHALL resolve
+those bindings from the query itself, using the same per-entity resolution mechanism as every other
+entity.
+Status: **Implemented**
+
+#### Scenario: Unknown entity is rejected once, uniformly
+- **WHEN** a structured query names an entity with no registered resolver
+- **THEN** the request is rejected with HTTP 400, naming the supported entities
+
+#### Scenario: Instance-aware entity resolves bindings from the query
+- **WHEN** a query against an entity whose field typing depends on request content (e.g. `test_cases`,
+  whose flattened fields are scoped by the query's own `dataset_id` filter) is executed
+- **THEN** that entity's field bindings are derived from the query being executed, using the same
+  resolution mechanism every other entity uses, not a separate execution path
 
 ### Requirement: Aggregation, sort, and pagination request shapes
 The system SHALL model an aggregate call (`fn`, expression `args`, optional `distinct`, required
@@ -138,8 +194,8 @@ Status: **Implemented**
 ### Requirement: Query execution endpoint
 The system SHALL execute a structured query submitted as a request body at
 `POST /api/v1/queries/execute` and return its results. Execution SHALL be entity-agnostic: the request
-SHALL be routed by its `entity` to the matching execution repository, and a query naming an entity
-that has no registered repository SHALL be rejected with a validation error (HTTP 400) that names the
+SHALL be routed by its `entity` to the matching entity resolver, and a query naming an entity
+that has no registered resolver SHALL be rejected with a validation error (HTTP 400) that names the
 supported entities. Each entity SHALL be executed against its own datasource (meta for `test_suites`,
 analytics for `eval_summaries`), and the query SHALL be translated to parameterized SQL — never raw
 SQL text — before execution.
@@ -151,17 +207,17 @@ Status: **Implemented**
   JSON
 
 #### Scenario: Unknown entity is rejected
-- **WHEN** a query naming an entity with no registered repository is posted
+- **WHEN** a query naming an entity with no registered resolver is posted
 - **THEN** the request is rejected with HTTP 400 and the error names the supported entities
 
 ### Requirement: Supported function catalog
 The system SHALL accept in a structured query's expressions only functions from a closed catalog, and
 SHALL reject any other function name with HTTP 400. Each catalog entry SHALL define the function's
-group (scalar, aggregate, ordered-set aggregate, or reduction), arity, operand types, and return type.
-The catalog SHALL be **registry-driven**: each function is contributed as a separate component
-(`QueryFunction`) collected by name at startup, so the set of supported functions is extended by adding
-a component rather than editing a central switch; duplicate names SHALL be rejected at startup. The
-catalog is:
+group (scalar, aggregate, ordered-set aggregate, reduction, or arithmetic), arity, operand types, and
+return type. The catalog SHALL be **registry-driven**: each function is contributed as a separate
+component (`QueryFunction`) collected by name at startup, so the set of supported functions is
+extended by adding a component rather than editing a central switch; duplicate names SHALL be
+rejected at startup. The catalog is:
 
 | Function | Group | Arity / signature | Returns |
 |---|---|---|---|
@@ -179,6 +235,10 @@ catalog is:
 | `percentile_cont` | ordered-set aggregate | `percentile_cont(fraction, column)` | numeric (interpolated) |
 | `percentile_disc` | ordered-set aggregate | `percentile_disc(fraction, column)` | type of `column` (an actual member) |
 | `roc_auc` | aggregate | `roc_auc(label, probability)` (2 args) | numeric (0-1) or null |
+| `add` | arithmetic | `add(e1, e2, ...)` (n-ary, ≥1 arg) | numeric |
+| `multiply` | arithmetic | `multiply(e1, e2, ...)` (n-ary, ≥1 arg) | numeric |
+| `subtract` | arithmetic | `subtract(a, b)` (exactly 2 args) | numeric |
+| `divide` | arithmetic | `divide(a, b)` (exactly 2 args) | numeric |
 For `percentile_cont`/`percentile_disc`, `fraction` SHALL be a decimal literal in the closed interval
 `[0, 1]` and `column` SHALL be any resolvable field expression; the call SHALL be evaluated as an
 ordered-set aggregate over `column`. Ordered-set aggregates SHALL be used in aggregate mode (the
@@ -187,8 +247,17 @@ SHALL compute the ROC AUC score (rank-sum / Mann–Whitney formulation) over the
 is a 0/1-valued field and `probability` is a field in `[0, 1]`; the function SHALL aggregate both
 columns (via `array_agg`, index-aligned so `label[i]`/`probability[i]` correspond to the same row) and
 delegate the rank-sum computation to a database-side stored function, returning `NULL` when the matched
-rows contain only one class (no positive/negative pair exists to rank). Arithmetic functions
-(`add`/`subtract`/`multiply`/`divide`) are the planned extension, each added as a further `QueryFunction` component.
+rows contain only one class (no positive/negative pair exists to rank). `add` and `multiply` SHALL
+accept one or more arguments and combine them left-to-right (`e1 op e2 op ... op en`); `subtract` and
+`divide` SHALL accept exactly two arguments (`a - b` and `a / b` respectively) and SHALL be rejected
+with HTTP 400 for any other arity. All four arithmetic functions operate on already-resolved numeric
+expressions (e.g. the result of an `avg(...)` aggregate call) — combining multiple per-metric
+aggregates into a single suite `overall` score (a plain mean of several metrics, `divide(add(avg(m1),
+avg(m2), ...), n)`, or a weighted mean `Σ(wᵢ×mᵢ)/Σwᵢ` expressed as `divide(add(multiply(w1, m1),
+multiply(w2, m2), ...), add(w1, w2, ...))`) is composed from these primitives rather than a dedicated
+`mean`/`weighted_mean` function. This composition is performed server-side by the `metric-score-statistics`
+capability's `OverallScoreDefinitionResolver` — a caller of this DSL never has to build that composition
+by hand (see `metric-score-statistics`'s "Overall score" requirement).
 Status: **Implemented**
 
 #### Scenario: Catalog function resolves
@@ -226,6 +295,36 @@ Status: **Implemented**
 #### Scenario: ROC AUC with wrong arity is rejected
 - **WHEN** a query calls `roc_auc` with a number of arguments other than two
 - **THEN** the query is rejected with HTTP 400
+
+#### Scenario: Weighted mean of specific metrics via arithmetic composition
+- **WHEN** an aggregate-mode query with no `group_by` selects
+  `divide(add(multiply(w1, avg(metric:A:f1)), multiply(w2, avg(metric:B:f2))), add(w1, w2))` aliased
+  `value`, where `w1`/`w2` are numeric literals and `avg(metric:A:f1)`/`avg(metric:B:f2)` are each that
+  metric's average across the matching rows
+- **THEN** the response is a single row whose `value` equals `Σ(wᵢ×mᵢ)/Σwᵢ` for the two metric
+  averages — mathematically identical to normalizing the weights to sum to 1 and then summing their
+  weighted terms
+
+#### Scenario: Mean of all metric output via arithmetic composition
+- **WHEN** an aggregate-mode query with no `group_by` selects `divide(add(avg(metric:A:f1),
+  avg(metric:B:f2), avg(metric:C:f3)), 3)` aliased `value`
+- **THEN** the response is a single row whose `value` equals the unweighted average of the three
+  metric averages
+
+#### Scenario: `add`/`multiply` accept three or more arguments
+- **WHEN** a query calls `add` or `multiply` with three or more arguments
+- **THEN** the arguments are combined left-to-right into a single value without requiring manual
+  pairwise nesting
+
+#### Scenario: `subtract`/`divide` reject non-binary arity
+- **WHEN** a query calls `subtract` or `divide` with a number of arguments other than two
+- **THEN** the query is rejected with HTTP 400
+
+#### Scenario: Duplicate metric terms in an arithmetic composition combine naturally
+- **WHEN** a weighted-mean composition references the same metric field in more than one `multiply`
+  term (e.g. the same metric listed twice with different weights)
+- **THEN** the terms combine via ordinary arithmetic (equivalent to a single term with the summed
+  weight) with no special-cased deduplication logic required
 
 ### Requirement: Query validation and allowlist
 The system SHALL validate a structured query before and during translation against the entity's
@@ -375,12 +474,18 @@ Status: **Implemented**
 - Open decisions carried as `// TODO(Dn)` markers: D1 (mode explicit vs inferred), D5/D8 (tiebreaker
   / null ordering), D6 (aggregate response typing), D10 (param source/registry).
 - Execution endpoint + dispatch: `experimental.query.web.StructuredQueryController`,
-  `experimental.query.service.StructuredQueryService`, `…service.repository.StructuredQueryRepository`
-  (+ `PostgresTestSuiteQueryRepository` on meta DSL, `PostgresEvalSummaryQueryRepository` on analytics
-  DSL, both `@ConditionalOnProperty`).
+  `experimental.query.service.StructuredQueryService`,
+  `…service.repository.StructuredQueryEntityResolver` (SPI) + `…service.repository.StructuredQueryEntityRegistry`
+  (+ `PostgresTestSuiteEntityResolver` on meta DSL, `PostgresEvalSummaryEntityResolver` on analytics DSL,
+  `PostgresMetricScoreResultEntityResolver` on analytics DSL, `PostgresTestCaseEntityResolver` on meta
+  DSL, all `@ConditionalOnProperty`).
 - Execution + translation: `StructuredQueryExecutor`, `QueryResultPage`, and
   `…service.translate.{StructuredQueryBuilder, FilterTranslator, ExprTranslator, JsonbFieldResolver,
-  ValueExprToObjectMapper}`. Response: `…service.dto.StructuredQueryResultDto`; JSONB row parsing via
+  ValueExprToObjectMapper}`. `ExprTranslator` holds the sole `ObjectProvider<StructuredQueryBuilder>` in
+  the pipeline (lazy, breaks the `StructuredQueryBuilder → FilterTranslator/ExprTranslator` constructor
+  cycle); `StructuredQueryBuilder.compileSubqueryMembership(SubqueryExpr)` builds and wraps a subquery's
+  nested select, reached from `ExprTranslator` and (via `ExprTranslator`) from `FilterTranslator`'s `in`
+  handling. Response: `…service.dto.StructuredQueryResultDto`; JSONB row parsing via
   `experimental.query.web.JsonbRowConverter`.
 - Execution error mapping: `ValidationException` → 400; `BadSqlGrammarException` /
   `DataIntegrityViolationException` caught in `StructuredQueryExecutor` and rethrown as

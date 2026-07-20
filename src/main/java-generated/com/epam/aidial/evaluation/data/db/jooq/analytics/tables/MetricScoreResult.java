@@ -84,6 +84,16 @@ public class MetricScoreResult extends TableImpl<MetricScoreResultRecord> {
      */
     public final TableField<MetricScoreResultRecord, Double> VALUE = createField(DSL.name("value"), SQLDataType.DOUBLE, this, "");
 
+    /**
+     * The column <code>analytics.metric_score_result.test_suite_id</code>.
+     */
+    public final TableField<MetricScoreResultRecord, String> TEST_SUITE_ID = createField(DSL.name("test_suite_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
+    /**
+     * The column <code>analytics.metric_score_result.computed_at_ms</code>.
+     */
+    public final TableField<MetricScoreResultRecord, Long> COMPUTED_AT_MS = createField(DSL.name("computed_at_ms"), SQLDataType.BIGINT.nullable(false), this, "");
+
     private MetricScoreResult(Name alias, Table<MetricScoreResultRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -122,7 +132,7 @@ public class MetricScoreResult extends TableImpl<MetricScoreResultRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_METRIC_SCORE_RESULT_RUN_COMPUTATION, Indexes.UQ_METRIC_SCORE_RESULT_NATURAL_KEY);
+        return Arrays.asList(Indexes.IDX_METRIC_SCORE_RESULT_RUN_COMPUTATION, Indexes.IDX_METRIC_SCORE_RESULT_SUITE_COMPUTED, Indexes.UQ_METRIC_SCORE_RESULT_NATURAL_KEY);
     }
 
     @Override

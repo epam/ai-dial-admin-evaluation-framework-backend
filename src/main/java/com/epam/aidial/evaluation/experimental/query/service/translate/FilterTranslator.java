@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.model.FilterNode;
 import com.epam.aidial.evaluation.experimental.query.model.LogicalNode;
+import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
@@ -26,12 +27,17 @@ import org.springframework.stereotype.Component;
 /**
  * Translates the recursive filter tree (§3) into a jOOQ {@link Condition}. Logical nodes map to
  * {@code AND}/{@code OR}/{@code NOT}; comparison nodes are treated as binary {@code left op right}
- * where the left operand is any translatable expression and the right is a literal, field, or — for
- * {@code in} — an array of literals. A {@code null} tree means "no filter" ({@code TRUE}).
+ * where the left operand is any translatable expression and the right is a literal, field, an array
+ * (for {@code in}), or a {@code subquery} (for {@code in}). A {@code null} tree means "no filter"
+ * ({@code TRUE}).
  *
  * <p>Used for both {@code filter} (against base-field bindings) and {@code having} (against bindings
  * augmented with aggregate aliases) — the binding map supplied by the caller decides which names are
  * resolvable.
+ *
+ * <p>A {@code subquery}-valued {@code in} compiles to a nested {@code SELECT} ({@code left IN (SELECT
+ * …)}) via {@link ExprTranslator#compileSubqueryMembership}, which reaches back into
+ * {@code StructuredQueryBuilder} lazily — this class has no dependency on the builder at all.
  */
 @Component
 @LogExecution
@@ -103,6 +109,9 @@ public class FilterTranslator {
         final Field left = exprTranslator.toField(leftExpr, bindings);
 
         if (op == ComparisonOp.IN) {
+            if (right instanceof SubqueryExpr subquery) {
+                return left.in(exprTranslator.compileSubqueryMembership(subquery));
+            }
             return left.in(inValues(right, bindings));
         }
         if (isNullLiteral(right)) {

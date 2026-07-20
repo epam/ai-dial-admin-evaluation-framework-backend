@@ -3,7 +3,8 @@
   "description": "Clone of production suite, targeting staging deployment",
   "deploymentRef": {
     "id": "deploy-staging",
-    "name": "Staging"
+    "name": "Staging",
+    "type": "dial-application"
   },
   "endpointRef": {
     "method": "POST",

@@ -56,5 +56,15 @@ public final class ValidationConstants {
     public static final String NAME_NO_TWO_COLON_MESSAGE =
             "Name must not contain '::' (reserved as CSV export column separator)";
 
+    /** Minimum allowed value for {@code TestSuiteRequestDto.overallScoreThreshold} (inclusive). */
+    public static final String MIN_OVERALL_SCORE_THRESHOLD = "0.0";
+
+    /** Maximum allowed value for {@code TestSuiteRequestDto.overallScoreThreshold} (inclusive). */
+    public static final String MAX_OVERALL_SCORE_THRESHOLD = "1.0";
+
+    /** Message paired with {@link #MIN_OVERALL_SCORE_THRESHOLD} / {@link #MAX_OVERALL_SCORE_THRESHOLD}. */
+    public static final String OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE =
+            "overallScoreThreshold must be between 0.0 and 1.0";
+
     private ValidationConstants() {}
 }

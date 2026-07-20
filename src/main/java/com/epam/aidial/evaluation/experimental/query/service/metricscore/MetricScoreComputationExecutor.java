@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryServ
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
@@ -28,8 +29,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Phase 3 of a test suite run: computes metric-score statistics over the run's eval summaries via the
@@ -41,12 +40,13 @@ import tools.jackson.databind.ObjectMapper;
  *       statistic (AVG/P10/P90/MIN/MAX) is executed once per numeric metric field, binding
  *       {@code :metricField}.
  *   <li><b>Run-level {@code overall}</b> — a per-suite definition taken from the run's suite snapshot
- *       ({@link MetricScoreComputationContext#getOverallExpression()}). When the suite has no custom
+ *       ({@link MetricScoreComputationContext#getOverallScoreDefinition()}). When the suite has no
  *       definition (null), the {@linkplain BuiltInMetricStatistics#defaultOverall() default} query is
  *       used — computed <b>only when the run has exactly one numeric metric field</b> (so {@code overall}
  *       is that metric's average; the executor binds {@code :metricField} to the single field) and
- *       skipped otherwise. A custom expression (JSON, from the snapshot) references the real configured
- *       metric columns and is run with only the run-scoping params, regardless of metric count.
+ *       skipped otherwise. A non-null typed definition ({@code Mean}/{@code WeightedMean}/
+ *       {@code CustomFunction}, resolved via {@link OverallScoreDefinitionResolver}) is computed
+ *       regardless of metric count.
  * </ul>
  *
  * <p>Fault isolation: a {@link ValidationException} computing one score is logged and skipped so it
@@ -63,13 +63,14 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
     private final MetricScoreService metricScoreService;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
     private final StructuredQueryService structuredQueryService;
-    private final ObjectMapper objectMapper;
+    private final OverallScoreDefinitionResolver overallScoreDefinitionResolver;
 
     @Override
     public void execute(MetricScoreComputationContext ctx) {
         if (isCancelled(ctx)) {
             return;
         }
+        final long computedAtMs = ctx.getComputedAtMs();
         final List<RunMetricSnapshot> snapshots = runMetricSnapshotRepository.findByRunIdAndComputationId(
                 ctx.getTestSuiteRunId(), ctx.getComputationId());
         final List<MetricField> metricFields = discoverMetricFields(snapshots);
@@ -88,12 +89,12 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
             if (isCancelled(ctx)) {
                 return;
             }
-            results.addAll(computePerMetric(statistic.query(), statistic.name(), metricFields, ctx));
+            results.addAll(computePerMetric(statistic.query(), statistic.name(), metricFields, ctx, computedAtMs));
         }
 
         // Run-level overall, from the suite's (snapshot) definition or the single-metric default.
         if (!isCancelled(ctx)) {
-            results.addAll(computeOverall(ctx, metricFields));
+            results.addAll(computeOverall(ctx, metricFields, computedAtMs));
         }
 
         metricScoreService.saveAll(results);
@@ -109,14 +110,15 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
             StructuredQuery query,
             String scoreName,
             List<MetricField> metricFields,
-            MetricScoreComputationContext ctx) {
+            MetricScoreComputationContext ctx,
+            long computedAtMs) {
         final List<MetricScoreResult> results = new ArrayList<>();
         for (final MetricField metricField : metricFields) {
             final Map<String, Expr> params = baseParams(ctx);
             params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
             final Double value = executeScalar(query, params, scoreName, metricField.flattenedName(), ctx);
             if (value != null) {
-                results.add(buildResult(ctx, scoreName, metricField.metricName(), value));
+                results.add(buildResult(ctx, scoreName, metricField.metricName(), value, computedAtMs));
             }
         }
         return results;
@@ -127,8 +129,10 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
      * default — computed only when the run has exactly one numeric metric field (then {@code overall} is
      * that metric's average), otherwise skipped (no {@code overall} row).
      */
-    private List<MetricScoreResult> computeOverall(MetricScoreComputationContext ctx, List<MetricField> metricFields) {
-        final boolean isDefault = ctx.getOverallExpression() == null;
+    private List<MetricScoreResult> computeOverall(
+            MetricScoreComputationContext ctx, List<MetricField> metricFields, long computedAtMs) {
+        final OverallScoreDefinition definition = ctx.getOverallScoreDefinition();
+        final boolean isDefault = definition == null;
         if (isDefault && metricFields.size() != 1) {
             log.debug(
                     "Default overall skipped for run {}: {} metric fields (computed only for a single metric)",
@@ -138,7 +142,7 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         }
         final StructuredQuery query = isDefault
                 ? builtInStatistics.defaultOverall()
-                : parseExpression(ctx.getOverallExpression(), MetricScoreConstants.SCORE_OVERALL);
+                : overallScoreDefinitionResolver.resolve(definition, metricFieldNames(metricFields));
         if (query == null) {
             return List.of();
         }
@@ -153,8 +157,12 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         final Double value = executeScalar(
                 query, params, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, ctx);
         return value != null
-                ? List.of(
-                        buildResult(ctx, MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, value))
+                ? List.of(buildResult(
+                        ctx,
+                        MetricScoreConstants.SCORE_OVERALL,
+                        MetricScoreConstants.SCORE_OVERALL,
+                        value,
+                        computedAtMs))
                 : List.of();
     }
 
@@ -209,24 +217,21 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         return fields;
     }
 
-    private StructuredQuery parseExpression(String expression, String label) {
-        try {
-            return objectMapper.readValue(expression, StructuredQuery.class);
-        } catch (JacksonException e) {
-            log.warn("Skipping metric score '{}': unparseable expression: {}", label, e.getMessage(), e);
-            return null;
-        }
+    private static List<String> metricFieldNames(List<MetricField> metricFields) {
+        return metricFields.stream().map(MetricField::flattenedName).toList();
     }
 
     private MetricScoreResult buildResult(
-            MetricScoreComputationContext ctx, String scoreName, String metricName, Double value) {
+            MetricScoreComputationContext ctx, String scoreName, String metricName, Double value, long computedAtMs) {
         return MetricScoreResult.builder()
                 .id(UUID.randomUUID())
                 .testSuiteRunId(ctx.getTestSuiteRunId())
+                .testSuiteId(ctx.getTestSuiteId())
                 .computationId(ctx.getComputationId())
                 .metricScoreName(scoreName)
                 .metricName(metricName)
                 .value(value)
+                .computedAtMs(computedAtMs)
                 .build();
     }
 

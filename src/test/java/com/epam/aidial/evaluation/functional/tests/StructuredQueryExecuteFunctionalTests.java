@@ -3,10 +3,14 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.experimental.query.service.dto.StructuredQueryResultDto;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +32,9 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
 
     @Autowired
     private AnalyticsTestDataHelper analyticsTestDataHelper;
+
+    @Autowired
+    private MetricScoreService metricScoreService;
 
     private String executeUrl() {
         return baseUrl() + "/api/v1/queries/execute";
@@ -288,6 +295,89 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
         ResponseEntity<String> response = restTemplate.postForEntity(executeUrl(), jsonEntity(json), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("returns every metric-score aggregation for the latest N runs via a JSON subquery `in`")
+    void returnsAllMetricScoresForLatestRunsViaSubquery() {
+        UUID suiteId = UUID.randomUUID();
+        UUID olderRun = UUID.randomUUID();
+        UUID newerRun = UUID.randomUUID();
+        // Two runs of the same suite, each a computation with all six score names; newerRun computed later.
+        seedAllScores(suiteId, olderRun, UUID.randomUUID(), 1_000L);
+        seedAllScores(suiteId, newerRun, UUID.randomUUID(), 2_000L);
+        // A third, older run that must be excluded by `limit: 2`.
+        seedAllScores(suiteId, UUID.randomUUID(), UUID.randomUUID(), 500L);
+
+        String json = """
+                {
+                  "entity": "metric_score_results",
+                  "mode": "row",
+                  "filter": { "op": "in", "args": [
+                      { "type": "field", "name": "test_suite_run_id" },
+                      { "type": "subquery", "query": {
+                          "entity": "metric_score_results",
+                          "mode": "aggregate",
+                          "filter": { "op": "eq", "args": [
+                              { "type": "field", "name": "test_suite_id" },
+                              { "type": "value", "value_type": "uuid", "value": "%s" } ] },
+                          "select": [
+                              { "expr": { "type": "field", "name": "test_suite_run_id" }, "as": "test_suite_run_id" },
+                              { "expr": { "type": "fn", "name": "max", "args": [
+                                  { "type": "field", "name": "computed_at_ms" } ] }, "as": "recency" } ],
+                          "group_by": ["test_suite_run_id"],
+                          "sort": [ { "field": "recency", "dir": "desc" } ],
+                          "page": { "type": "offset", "offset": 0, "limit": 2 }
+                      } } ] },
+                  "select": [
+                      { "expr": { "type": "field", "name": "test_suite_run_id" } },
+                      { "expr": { "type": "field", "name": "metric_score_name" } },
+                      { "expr": { "type": "field", "name": "metric_name" } },
+                      { "expr": { "type": "field", "name": "value" } } ],
+                  "sort": [ { "field": "computed_at_ms", "dir": "desc" } ],
+                  "page": { "type": "offset", "offset": 0, "limit": 100 }
+                }
+                """.formatted(suiteId);
+
+        ResponseEntity<StructuredQueryResultDto> response = post(json);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        StructuredQueryResultDto body = response.getBody();
+        assertThat(body).isNotNull();
+        // 6 score names x the latest 2 runs = 12 rows; the oldest run is excluded.
+        assertThat(body.rows()).hasSize(12);
+        assertThat(body.rows())
+                .extracting(row -> row.get("test_suite_run_id"))
+                .containsOnly(olderRun.toString(), newerRun.toString());
+        assertThat(body.rows())
+                .extracting(row -> (String) row.get("metric_score_name"))
+                .containsExactlyInAnyOrder(
+                        "AVG", "MAX", "MIN", "P10", "P90", "overall", "AVG", "MAX", "MIN", "P10", "P90", "overall");
+    }
+
+    /** Persists all six metric-score aggregations for one run/computation of a suite. */
+    private void seedAllScores(UUID suiteId, UUID runId, UUID computationId, long computedAtMs) {
+        final List<String> perMetric = List.of("AVG", "MAX", "MIN", "P10", "P90");
+        final List<MetricScoreResult> results = new ArrayList<>();
+        for (final String scoreName : perMetric) {
+            results.add(score(suiteId, runId, computationId, scoreName, "Exact Match.exact_match", 1.0, computedAtMs));
+        }
+        results.add(score(suiteId, runId, computationId, "overall", "overall", 1.0, computedAtMs));
+        metricScoreService.saveAll(results);
+    }
+
+    private static MetricScoreResult score(
+            UUID suiteId, UUID runId, UUID computationId, String scoreName, String metricName, double value, long ms) {
+        return MetricScoreResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .computationId(computationId)
+                .metricScoreName(scoreName)
+                .metricName(metricName)
+                .value(value)
+                .computedAtMs(ms)
+                .build();
     }
 
     @Test

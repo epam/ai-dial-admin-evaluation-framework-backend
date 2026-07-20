@@ -185,7 +185,7 @@ class MetricEvaluationWorkerTest {
 
         @Test
         @DisplayName(
-                "Should set all span attributes including testcase.id, testcase.name, eval.suite.id, metric.declaration.name")
+                "Should set all span attributes including testcase.id, testcase.name, eval.suite.id, metric.declaration.name, eval.phase")
         void shouldSetAllSpanAttributes() throws InterruptedException {
             // given
             UUID testCaseId = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -246,7 +246,7 @@ class MetricEvaluationWorkerTest {
             // when
             spanWorker.evaluate(tsmd, result, new Semaphore(5), context);
 
-            // then — verify all 8 setAttribute calls on the span builder
+            // then — verify all 9 setAttribute calls on the span builder
             var inOrderVerifier = inOrder(spanBuilder);
             inOrderVerifier.verify(spanBuilder).setAttribute("tsmd.name", "Accuracy");
             inOrderVerifier.verify(spanBuilder).setAttribute("tsmd.provider.id", "dial");
@@ -256,6 +256,7 @@ class MetricEvaluationWorkerTest {
             inOrderVerifier.verify(spanBuilder).setAttribute("testcase.name", "my-test-case");
             inOrderVerifier.verify(spanBuilder).setAttribute("eval.suite.id", testSuiteId.toString());
             inOrderVerifier.verify(spanBuilder).setAttribute("metric.declaration.name", "exact_match");
+            inOrderVerifier.verify(spanBuilder).setAttribute("eval.phase", "metric-evaluation");
         }
     }
 }

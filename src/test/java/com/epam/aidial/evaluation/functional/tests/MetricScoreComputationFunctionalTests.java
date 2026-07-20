@@ -3,18 +3,27 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
+import com.epam.aidial.evaluation.configuration.JsonMapperConfiguration;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.CustomFunction;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.WeightedMean;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * End-to-end Phase-3 metric-score computation over a run's persisted eval summaries. Exercises the
@@ -25,6 +34,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 @DisplayName("Metric Score Computation (Phase 3) Functional Tests")
 public abstract class MetricScoreComputationFunctionalTests extends BaseFunctionalTest {
 
+    private static final ObjectMapper OBJECT_MAPPER = new JsonMapperConfiguration().objectMapper();
+    private static final long COMPUTED_AT_MS = 1_700_000_600_000L;
     private static final String OUTPUT_SCHEMA = "{\"properties\":{\"score\":{\"type\":\"number\"}}}";
     private static final String CLASSIFIER_OUTPUT_SCHEMA =
             "{\"properties\":{\"label\":{\"type\":\"number\"},\"probability\":{\"type\":\"number\"}}}";
@@ -90,8 +101,16 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         // overall = unweighted mean of the per-metric averages; one metric whose AVG is 0.5.
         assertThat(value(results, "overall", "overall")).isCloseTo(0.5, within(1e-6));
 
+        assertThat(results).allSatisfy(result -> {
+            assertThat(result.getComputationId()).isEqualTo(computationId);
+            // The suite is denormalized onto every result, and each carries a compute timestamp.
+            assertThat(result.getTestSuiteId()).isEqualTo(suiteId);
+            assertThat(result.getComputedAtMs()).isNotNull().isPositive();
+        });
+        // All results of one computation share a single compute timestamp.
         assertThat(results)
-                .allSatisfy(result -> assertThat(result.getComputationId()).isEqualTo(computationId));
+                .extracting(MetricScoreResult::getComputedAtMs)
+                .containsOnly(results.getFirst().getComputedAtMs());
     }
 
     @Test
@@ -125,7 +144,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         // Relevancy avg = (0.0+0.5+1.0)/3 = 0.5; Accuracy avg = (0.6+0.7+0.8)/3 = 0.7.
         seedTwoMetricRun(suiteId, runId, computationId, createdAt, computedAt);
 
-        executor.execute(context(suiteId, runId, computationId, CUSTOM_OVERALL_RELEVANCY));
+        executor.execute(context(suiteId, runId, computationId, customFunction(CUSTOM_OVERALL_RELEVANCY)));
 
         final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
         // 5 per-metric stats x 2 fields + the custom overall (computed for any metric count).
@@ -146,10 +165,33 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         // label/probability pairs: (0, 0.1), (0, 0.4), (1, 0.35), (1, 0.8) -> AUC = 0.75 (one discordant pair).
         seedClassifierRun(suiteId, runId, computationId, createdAt, computedAt);
 
-        executor.execute(context(suiteId, runId, computationId, CUSTOM_OVERALL_ROC_AUC));
+        executor.execute(context(suiteId, runId, computationId, customFunction(CUSTOM_OVERALL_ROC_AUC)));
 
         final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
         assertThat(value(results, "overall", "overall")).isCloseTo(0.75, within(1e-9));
+    }
+
+    @Test
+    @DisplayName(
+            "weighted mean coalesces a metric missing from the run's data to zero instead of nulling the whole overall")
+    void computesWeightedMeanWithMissingMetricAsZero() {
+        final UUID suiteId = UUID.randomUUID();
+        final UUID runId = UUID.randomUUID();
+        final UUID computationId = UUID.randomUUID();
+        final long createdAt = 1_700_000_000_000L;
+        final long computedAt = 1_700_000_500_000L;
+
+        // Only Relevancy is present in the run's data (avg = 0.5); "Ghost" is never seeded.
+        seedRun(suiteId, runId, computationId, createdAt, computedAt);
+        final WeightedMean weightedMean = new WeightedMean(List.of(
+                new WeightedMetric("Relevancy", "score", new BigDecimal("1.0")),
+                new WeightedMetric("Ghost", "score", new BigDecimal("1.0"))));
+
+        executor.execute(context(suiteId, runId, computationId, weightedMean));
+
+        final List<MetricScoreResult> results = resultRepository.findByRunAndComputation(runId, computationId);
+        // (1*0.5 + 1*0) / (1+1) = 0.25 — the missing "Ghost" term is coalesced to 0, not left NULL.
+        assertThat(value(results, "overall", "overall")).isCloseTo(0.25, within(1e-9));
     }
 
     private void seedClassifierRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
@@ -248,14 +290,19 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     }
 
     private static MetricScoreComputationContext context(
-            UUID suiteId, UUID runId, UUID computationId, String overallExpression) {
+            UUID suiteId, UUID runId, UUID computationId, OverallScoreDefinition overallScoreDefinition) {
         return MetricScoreComputationContext.builder()
                 .testSuiteRunId(runId)
                 .testSuiteId(suiteId)
                 .computationId(computationId)
-                .overallExpression(overallExpression)
+                .overallScoreDefinition(overallScoreDefinition)
+                .computedAtMs(COMPUTED_AT_MS)
                 .cancellationSignal(new AtomicBoolean(false))
                 .build();
+    }
+
+    private static CustomFunction customFunction(String expressionJson) {
+        return new CustomFunction(OBJECT_MAPPER.readValue(expressionJson, new TypeReference<Map<String, Object>>() {}));
     }
 
     private static double value(List<MetricScoreResult> results, String scoreName, String metricName) {

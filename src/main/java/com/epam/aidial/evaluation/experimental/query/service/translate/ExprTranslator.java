@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ParamExpr;
+import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.FunctionContext;
@@ -14,7 +15,10 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Field;
+import org.jooq.Record1;
+import org.jooq.Select;
 import org.jooq.impl.DSL;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
@@ -44,6 +48,11 @@ public class ExprTranslator {
     private final ValueExprToObjectMapper valueExprToObjectMapper;
     private final JsonbFieldResolver jsonbFieldResolver;
     private final QueryFunctionRegistry functionRegistry;
+
+    /** Lazy so constructing this bean never requires {@link StructuredQueryBuilder} to exist yet
+     *  (breaks the {@code StructuredQueryBuilder → FilterTranslator/ExprTranslator} constructor cycle);
+     *  the only such reference in the translation pipeline. */
+    private final ObjectProvider<StructuredQueryBuilder> queryBuilderProvider;
 
     /** Resolves a {@link FieldExpr} to its bound column, rejecting unknown field names. */
     public Field<?> resolveField(FieldExpr expr, Map<String, QueryFieldBinding> bindings) {
@@ -86,8 +95,26 @@ public class ExprTranslator {
             case ValueExpr value -> DSL.val(valueExprToObjectMapper.map(value));
             case FnExpr fn -> functionRegistry.translate(fn, new FunctionContext(this, bindings));
             case ParamExpr param -> throw new ValidationException("unbound query parameter '" + param.name() + "'");
-            case ArrayExpr ignored ->
+            case ArrayExpr _ ->
                 throw new ValidationException("array expressions are only valid as the right operand of 'in'");
+            case SubqueryExpr subquery -> subqueryField(compileSubqueryMembership(subquery));
         };
+    }
+
+    /**
+     * Delegates to {@link StructuredQueryBuilder#compileSubqueryMembership}, resolved lazily via
+     * {@link #queryBuilderProvider}. Used both for a scalar expression position (wrapped as a
+     * {@link Field} via {@link #subqueryField}) and, via {@link FilterTranslator}, for {@code in}'s
+     * right operand (used directly as a {@link Select}).
+     */
+    Select<? extends Record1<?>> compileSubqueryMembership(SubqueryExpr subquery) {
+        return queryBuilderProvider.getObject().compileSubqueryMembership(subquery);
+    }
+
+    /** Wraps a compiled subquery select as a scalar {@link Field}; jOOQ's generic overload can't infer
+     *  its type parameter from a captured wildcard, so the cast is isolated here. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static Field<?> subqueryField(Select<? extends Record1<?>> select) {
+        return DSL.field((Select) select);
     }
 }

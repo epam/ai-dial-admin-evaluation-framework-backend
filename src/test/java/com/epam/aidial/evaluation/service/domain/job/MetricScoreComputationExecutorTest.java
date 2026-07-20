@@ -17,9 +17,12 @@ import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.experimental.query.service.metricscore.BuiltInMetricStatistics;
 import com.epam.aidial.evaluation.experimental.query.service.metricscore.MetricScoreComputationExecutor;
+import com.epam.aidial.evaluation.experimental.query.service.metricscore.OverallScoreDefinitionResolver;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.CustomFunction;
+import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +32,8 @@ import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 class MetricScoreComputationExecutorTest {
 
@@ -39,33 +44,42 @@ class MetricScoreComputationExecutorTest {
     /** The built-in per-metric statistic names (AVG/P10/P90/MIN/MAX), all run per metric field. */
     private static final List<String> PER_METRIC_NAMES = List.of("AVG", "P10", "P90", "MIN", "MAX");
 
+    private static final long FIXED_MILLIS = 1_700_000_000_000L;
+
+    private static final ObjectMapper OBJECT_MAPPER = new JsonMapperConfiguration().objectMapper();
+
     /**
-     * A custom (non-default) overall expression in JSON, exercising the snapshot-driven parse path. It is
-     * self-contained — it references a real metric column directly and binds no executor placeholders.
+     * A custom (non-default) overall definition, exercising the resolver's {@code custom_function} parse
+     * path. It is self-contained — it references a real metric column directly and binds no executor
+     * placeholders.
      */
-    private static final String CUSTOM_OVERALL_EXPRESSION = "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
-            + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"avg\","
-            + "\"args\":[{\"type\":\"field\",\"name\":\"metric:Relevancy:score\"}]},\"as\":\"value\"}]}";
+    private static final OverallScoreDefinition CUSTOM_OVERALL_DEFINITION = new CustomFunction(OBJECT_MAPPER.readValue(
+            "{\"entity\":\"eval_summaries\",\"mode\":\"aggregate\","
+                    + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"avg\","
+                    + "\"args\":[{\"type\":\"field\",\"name\":\"metric:Relevancy:score\"}]},\"as\":\"value\"}]}",
+            new TypeReference<Map<String, Object>>() {}));
 
     private final RunMetricSnapshotRepository runMetricSnapshotRepository = mock(RunMetricSnapshotRepository.class);
     private final MetricScoreService metricScoreService = mock(MetricScoreService.class);
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor = mock(OutputSchemaFieldExtractor.class);
     private final StructuredQueryService structuredQueryService = mock(StructuredQueryService.class);
+    private final BuiltInMetricStatistics builtInStatistics = new BuiltInMetricStatistics();
 
     private final MetricScoreComputationExecutor executor = new MetricScoreComputationExecutor(
-            new BuiltInMetricStatistics(),
+            builtInStatistics,
             runMetricSnapshotRepository,
             metricScoreService,
             outputSchemaFieldExtractor,
             structuredQueryService,
-            new JsonMapperConfiguration().objectMapper());
+            new OverallScoreDefinitionResolver(builtInStatistics, OBJECT_MAPPER));
 
-    private MetricScoreComputationContext context(String overallExpression) {
+    private MetricScoreComputationContext context(OverallScoreDefinition overallScoreDefinition) {
         return MetricScoreComputationContext.builder()
                 .testSuiteRunId(RUN_ID)
                 .testSuiteId(SUITE_ID)
                 .computationId(COMPUTATION_ID)
-                .overallExpression(overallExpression)
+                .overallScoreDefinition(overallScoreDefinition)
+                .computedAtMs(FIXED_MILLIS)
                 .cancellationSignal(new AtomicBoolean(false))
                 .build();
     }
@@ -115,6 +129,11 @@ class MetricScoreComputationExecutorTest {
         final List<MetricScoreResult> saved = captureSaved();
         // 5 built-in stats over the single field, plus the default overall (single-metric → computed).
         assertThat(saved).hasSize(6);
+        // Every result carries the run's suite and the fixed compute timestamp (shared across the computation).
+        assertThat(saved).allSatisfy(r -> {
+            assertThat(r.getTestSuiteId()).isEqualTo(SUITE_ID);
+            assertThat(r.getComputedAtMs()).isEqualTo(FIXED_MILLIS);
+        });
         assertThat(saved)
                 .filteredOn(r -> PER_METRIC_NAMES.contains(r.getMetricScoreName()))
                 .extracting(
@@ -159,7 +178,7 @@ class MetricScoreComputationExecutorTest {
         when(structuredQueryService.execute(any(), any()))
                 .thenAnswer(invocation -> answer(invocation.getArgument(1), 0.6, 0.8, 0.7));
 
-        executor.execute(context(CUSTOM_OVERALL_EXPRESSION));
+        executor.execute(context(CUSTOM_OVERALL_DEFINITION));
 
         final List<MetricScoreResult> saved = captureSaved();
         // 5 built-in stats x 2 fields + the custom overall (run for any metric count).

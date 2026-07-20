@@ -24,7 +24,8 @@
     "deploymentRef": {
       "id": "gpt-35-turbo",
       "name": "GPT-3.5 Turbo",
-      "version": "2024-02-01"
+      "version": "2024-02-01",
+      "type": "dial-model"
     },
     "endpointRef": {
       "method": "POST",

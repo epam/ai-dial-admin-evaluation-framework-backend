@@ -27,6 +27,7 @@ public class TestSuite {
     private String toolRef;
     private String argumentTemplate;
     private String overallScore;
+    private Double overallScoreThreshold;
     private String testCaseFilter;
     private boolean valid;
     private String validationWarnings;

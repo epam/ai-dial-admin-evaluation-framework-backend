@@ -104,6 +104,7 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
 | `overall_score` | JSONB | NULL | - | Per-suite `overall` metric-score definition — a serialized `StructuredQuery` expression. Settable and readable via the suite API (`overallScore` on `POST`/`PUT`/`GET /api/v1/test-suites`); references configured metric columns by their flattened name `metric::<metricName>::<outputField>`. NULL = system default (the single metric's average — `avg(:metricField)` — computed only when the run has exactly one numeric metric field). Captured verbatim into the suite snapshot per run; Phase 3 honors a non-null value for any metric count. See V1.23. |
 | `test_case_filter` | JSONB | NULL | - | Per-suite test-case selection filter — a serialized Structured Query DSL `filter` subtree authored over the dataset's test-case fields (base columns and flattened `data::<field>` fields). Settable and readable via the suite API (`testCaseFilter` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time against the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). NULL = no filter (run every valid, non-disabled test case). When set, it is AND-combined with `is_valid` and `disabled_test_case_ids` to select the runnable test cases at run-creation count and snapshot. Does not affect suite validity. See V1.24. |
+| `overall_score_threshold` | DOUBLE PRECISION | NULL | - | Optional per-suite threshold, same numeric type as the computed run-level `overall` metric score result (`metric_score_result.value`). Settable and readable via the suite API (`overallScoreThreshold` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time to be within `[0.0, 1.0]` inclusive (HTTP 400 `VALIDATION_ERROR` otherwise). NULL = no threshold configured. Not compared server-side against a run's computed score — comparison is a client-side concern. Not captured in the suite snapshot. See V1.25. |
 | `is_valid` | BOOLEAN | NOT NULL | TRUE | Suite-level validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `version` | BIGINT | NOT NULL | 0 | Optimistic locking version |
@@ -131,7 +132,8 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 {
   "id": "string",
   "name": "string",
-  "version": "string"
+  "version": "string",
+  "type": "string (optional, e.g. dial-model / dial-application)"
 }
 ```
 
@@ -424,7 +426,7 @@ Tracks async test suite evaluation runs.
   "snapshotVersion": "2",
   "suiteType": "DEPLOYMENT|MCP_TOOL",
   "datasetRef": { "id": "uuid", "version": 0, "name": "string" },
-  "deploymentRef": { "id": "string", "name": "string", "version": "string" },
+  "deploymentRef": { "id": "string", "name": "string", "version": "string", "type": "string (optional)" },
   "endpointRef": { /* EndpointContractDto */ },
   "requestTemplate": { /* RequestTemplateDto */ },
   "inputBindings": [ /* List of InputBindingDto */ ],
@@ -875,10 +877,12 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 |--------|------|----------|---------|-------------|
 | `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
 | `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | Reference to test suite run (soft FK) |
+| `test_suite_id` | VARCHAR(36) | NOT NULL | - | Reference to the run's owning test suite (soft FK, denormalized for suite-scoped queries) |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `metric_score_name` | VARCHAR(255) | NOT NULL | - | Statistic / definition name (e.g. `AVG`, `P90`, `overall`) |
 | `metric_name` | VARCHAR(255) | NOT NULL | - | Metric output field as `<metricName>.<outputField>` |
 | `value` | DOUBLE PRECISION | NULL | - | Computed numeric value |
+| `computed_at_ms` | BIGINT | NOT NULL | - | Epoch-millisecond compute timestamp; shared by all results of a computation |
 
 ### Primary Key
 
@@ -895,6 +899,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
 | `idx_metric_score_result_run_computation` | `(test_suite_run_id, computation_id)` | BTREE | Lookup results for a run's computation |
+| `idx_metric_score_result_suite_computed` | `(test_suite_id, computed_at_ms)` | BTREE | Suite-scoped, time-ordered retrieval (latest N results for a suite) |
 
 ---
 
@@ -932,8 +937,9 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.20 | `V1.20__AddDisplayNameToMetricDeclarationVersions.sql` | Added nullable display_name TEXT column to metric_declaration_versions                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | V1.21 | `V1.21__AddCoercedCellCountToRevalidationTasks.sql` | Added coerced_cell_count column to revalidation_tasks                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | V1.22 | `V1.22__IntroduceDataset.sql` | Introduced datasets table; rebound test_cases and revalidation_tasks FKs from test_suites to datasets; backfilled per-suite datasets; relaxed `test_suites.dataset_id` to nullable (unbound state); added `datasets.visibility` (`'PUBLIC'`/`'PRIVATE'`) with CHECK constraint; added `tg_test_suites_private_binding_guard` trigger raising `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` for concurrent PRIVATE-binding violations; backfilled `suite_snapshot` JSON to v2 (`snapshotVersion`, `datasetRef`) |
-| V1.23 | `V1.23__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs)                                                                                                                                                                                                                                                                                                                                                        |
-| V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` and `disabled_test_case_ids` at run-creation count and snapshot)                                                                                                                                                                                                                                           |
+| V1.23 | `V1.23__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs) |
+| V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` and `disabled_test_case_ids` at run-creation count and snapshot) |
+| V1.25 | `V1.25__AddOverallScoreThresholdToTestSuites.sql` | Added nullable `overall_score_threshold` DOUBLE PRECISION column to test_suites (per-suite threshold compared against the computed run-level `overall` metric score, same numeric type as the result; NULL = no threshold configured) |
 | V1.27 | `V1.27__AddConversationColumnsToTestCases.sql` | Added nullable `conversation_id` (VARCHAR(36)) and `turn_index` (INTEGER) to test_cases for row-based multi-turn; added `idx_test_cases_conversation` `(dataset_id, conversation_id)` and partial unique `uq_test_cases_conversation_turn` `(dataset_id, conversation_id, turn_index) WHERE conversation_id IS NOT NULL` |
 | V1.28 | `V1.28__AddConversationColumnsToTestCaseRunInputs.sql` | Added nullable `conversation_id` (VARCHAR(36)), `total_turns` (INTEGER), `turns` (JSONB), and `broken` (BOOLEAN NOT NULL DEFAULT false) to test_case_run_inputs for snapshot-assembled per-conversation execution units |
 
@@ -951,6 +957,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.8 | `V1.8__NormalizeErrorShapedMetricValues.sql` | Normalized transport-failure metric_values from synthetic `{"error": null}` to real output field names; updated corresponding metric_infos entries |
 | V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |
 | V1.11 | `V1.11__CreateRocAucScoreFunction.sql` | Created `roc_auc_score(double precision[], double precision[])` SQL function computing the rank-sum ROC AUC score over paired label/probability arrays |
+| V1.12 | `V1.12__AddSuiteAndTimestampToMetricScoreResult.sql` | Added `test_suite_id` and `computed_at_ms` to metric_score_result (backfilled, NOT NULL) with index `idx_metric_score_result_suite_computed` for suite-scoped latest-N retrieval |
 | V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index` (INTEGER NOT NULL DEFAULT 0) and `total_turns` (INTEGER NOT NULL DEFAULT 1) to test_case_run_results; recreated `uq_results_run_case_index` including `turn_index` (per-turn result rows) |
 | V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index` (INTEGER NOT NULL DEFAULT 0) and `total_turns` (INTEGER NOT NULL DEFAULT 1) to test_case_eval_summaries; recreated `uq_eval_summaries_natural_key` including `turn_index` (per-turn summary rows) |
 | V1.15 | `V1.15__AddLastTurnIndexToTestCaseRunResults.sql` | Added `last_turn_index` (INTEGER NOT NULL DEFAULT 0) to test_case_run_results — max authored surviving turn index, drives `turn.last` correctly when surviving turns are non-contiguous; not part of any unique key |

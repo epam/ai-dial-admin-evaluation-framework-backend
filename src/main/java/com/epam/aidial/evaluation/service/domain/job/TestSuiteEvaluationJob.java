@@ -304,7 +304,8 @@ public class TestSuiteEvaluationJob {
                     .testSuiteRunId(run.getId())
                     .testSuiteId(run.getTestSuiteId())
                     .computationId(metricContext.getComputationId())
-                    .overallExpression(resolveOverallExpression(run))
+                    .overallScoreDefinition(resolveSnapshot(run).getOverallScore())
+                    .computedAtMs(clock.millis())
                     .cancellationSignal(cancellationSignal)
                     .build();
             metricScoreComputation.execute(ctx);
@@ -315,16 +316,6 @@ public class TestSuiteEvaluationJob {
                     e.getMessage(),
                     e);
         }
-    }
-
-    /**
-     * The run's {@code overall} score definition from the suite snapshot, as a structured-query
-     * expression JSON, or {@code null} when the suite has no custom definition (the executor then
-     * applies the single-metric default).
-     */
-    private String resolveOverallExpression(TestSuiteRun run) {
-        Map<String, Object> overallScore = resolveSnapshot(run).getOverallScore();
-        return overallScore == null ? null : objectMapper.writeValueAsString(overallScore);
     }
 
     private EvaluationContext buildContext(TestSuiteRun run, AtomicBoolean cancellationSignal, String token) {

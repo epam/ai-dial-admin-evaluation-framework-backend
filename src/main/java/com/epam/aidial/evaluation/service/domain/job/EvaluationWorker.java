@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
+import com.epam.aidial.evaluation.constants.TracingConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
@@ -31,10 +32,13 @@ import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
+import com.epam.aidial.evaluation.utils.EvalBaggage;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.baggage.Baggage;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -88,18 +92,24 @@ public class EvaluationWorker {
             int runIndex,
             List<ResponseColumnDefinitionDto> responseColumns) {
         Span span = openTelemetry
-                .getTracer("com.epam.aidial.evaluation")
-                .spanBuilder("eval.testcase.execute")
-                .setAttribute("testcase.id", input.getTestCaseId().toString())
-                .setAttribute("testcase.name", input.getTestCaseName())
-                .setAttribute("run.index", String.valueOf(runIndex))
-                .setAttribute("eval.run.id", context.getRunId().toString())
-                .setAttribute("eval.suite.id", context.getSuiteId().toString())
+                .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
+                .spanBuilder(TracingConstants.SPAN_EVAL_TESTCASE_EXECUTE)
+                .setAttribute(
+                        TracingConstants.TESTCASE_ID, input.getTestCaseId().toString())
+                .setAttribute(TracingConstants.TESTCASE_NAME, input.getTestCaseName())
+                .setAttribute(TracingConstants.RUN_INDEX, String.valueOf(runIndex))
+                .setAttribute(TracingConstants.EVAL_RUN_ID, context.getRunId().toString())
+                .setAttribute(
+                        TracingConstants.EVAL_SUITE_ID, context.getSuiteId().toString())
+                .setAttribute(TracingConstants.EVAL_PHASE, TracingConstants.PHASE_EXECUTION)
                 .startSpan();
         long execStartedAtMs = clock.millis();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
 
-        try (Scope scope = span.makeCurrent()) {
+        Baggage baggage = EvalBaggage.withExecutionContext(
+                context.getRunId(), context.getSuiteId(), input.getTestCaseId(), runIndex);
+        Context traceContext = Context.current().with(span).with(baggage);
+        try (Scope scope = traceContext.makeCurrent()) {
             if (input.isBroken()) {
                 return List.of(buildBrokenConversationResult(input, context, runIndex, traceId, execStartedAtMs));
             }

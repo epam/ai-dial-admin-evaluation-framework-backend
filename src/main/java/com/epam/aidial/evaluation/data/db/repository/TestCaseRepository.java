@@ -38,6 +38,15 @@ public interface TestCaseRepository {
     void batchUpdate(List<TestCase> testCases);
 
     /**
+     * Parks the {@code test_case_name} of every given row at a collision-proof temporary value
+     * (phase 1 of a two-phase name update). This lets a caller reassign names among rows within
+     * one transaction (e.g. a swap or rename cycle) without tripping the per-statement, non-deferrable
+     * unique index {@code (dataset_id, LOWER(test_case_name))} on an intermediate state. Sets only the
+     * name column. No-op for a null/empty list.
+     */
+    void parkTestCaseNames(List<TestCase> testCases);
+
+    /**
      * Returns the lowercased names of test cases in the given dataset that collide with the provided names,
      * excluding the specified IDs (the batch items themselves).
      */

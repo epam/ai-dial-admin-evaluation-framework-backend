@@ -239,6 +239,64 @@ public abstract class TestCaseBatchPatchFunctionalTests extends BaseTestCaseBatc
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
+    // ---- 8.3b: Name permutation (issue #95) ----
+
+    @Test
+    @DisplayName("Should swap two test case names via batch PATCH")
+    void shouldSwapNamesViaBatchPatch() {
+        TestSuiteResponseDto suite = createTestSuite();
+        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "A");
+        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "B");
+
+        List<Map<String, Object>> items = List.of(
+                Map.of("id", tc1.getId().toString(), "testCaseName", "B"),
+                Map.of("id", tc2.getId().toString(), "testCaseName", "A"));
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases"),
+                HttpMethod.PATCH,
+                jsonEntity(items),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getName(suite, tc1.getId())).isEqualTo("B");
+        assertThat(getName(suite, tc2.getId())).isEqualTo("A");
+    }
+
+    @Test
+    @DisplayName("Should apply a multi-way rename cycle via batch PATCH")
+    void shouldApplyMultiWayRenameCycle() {
+        TestSuiteResponseDto suite = createTestSuite();
+        TestCaseResponseDto tcA = createTestCase(suite.getId(), "A");
+        TestCaseResponseDto tcB = createTestCase(suite.getId(), "B");
+        TestCaseResponseDto tcC = createTestCase(suite.getId(), "C");
+
+        // Rotate: A->B, B->C, C->A
+        List<Map<String, Object>> items = List.of(
+                Map.of("id", tcA.getId().toString(), "testCaseName", "B"),
+                Map.of("id", tcB.getId().toString(), "testCaseName", "C"),
+                Map.of("id", tcC.getId().toString(), "testCaseName", "A"));
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases"),
+                HttpMethod.PATCH,
+                jsonEntity(items),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getName(suite, tcA.getId())).isEqualTo("B");
+        assertThat(getName(suite, tcB.getId())).isEqualTo("C");
+        assertThat(getName(suite, tcC.getId())).isEqualTo("A");
+    }
+
+    private String getName(TestSuiteResponseDto suite, UUID id) {
+        return restTemplate
+                .getForEntity(
+                        apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases/" + id), TestCaseResponseDto.class)
+                .getBody()
+                .getTestCaseName();
+    }
+
     // ---- 8.4: Atomicity test ----
 
     @Test

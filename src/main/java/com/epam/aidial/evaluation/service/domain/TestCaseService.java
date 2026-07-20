@@ -248,8 +248,9 @@ public class TestCaseService {
                     .build());
         }
 
-        List<ItemResultDto> itemResults = new ArrayList<>(itemOps.size());
-        List<TestCase> renamedEntities = new ArrayList<>();
+        // Pass 1: prepare every item in memory (fetch, merge-patch, revalidate) without writing, so a
+        // name permutation within the request can be parked before any row is persisted.
+        List<PreparedItemOp> prepared = new ArrayList<>(itemOps.size());
         for (TestCaseItemOperationDto op : itemOps) {
             TestCase existing = testCaseRepository
                     .findByIdAndDatasetId(op.getId(), datasetId)
@@ -263,23 +264,40 @@ public class TestCaseService {
             }
 
             boolean changed = !equalForUpdate(before, existing);
+            boolean renamed = !Objects.equals(beforeName, existing.getTestCaseName());
+            prepared.add(new PreparedItemOp(existing, changed, renamed));
+        }
+
+        // Pass 2: park renamed rows at temporary names so a swap/cycle does not trip the
+        // per-statement unique index during the apply pass.
+        List<TestCase> renamedEntities = prepared.stream()
+                .filter(PreparedItemOp::renamed)
+                .map(PreparedItemOp::entity)
+                .toList();
+        if (!renamedEntities.isEmpty()) {
+            testCaseRepository.parkTestCaseNames(renamedEntities);
+        }
+
+        // Pass 3: apply final values.
+        List<ItemResultDto> itemResults = new ArrayList<>(itemOps.size());
+        for (PreparedItemOp item : prepared) {
+            TestCase entity = item.entity();
             try {
-                TestCase persisted = testCaseRepository.update(existing);
+                TestCase persisted = testCaseRepository.update(entity);
                 if (persisted == null) {
-                    throw new EntityNotFoundException("TestCase not found: " + op.getId());
+                    throw new EntityNotFoundException("TestCase not found: " + entity.getId());
                 }
             } catch (DataIntegrityViolationException ex) {
                 UniqueConstraintViolationDetector.rethrowIfUniqueViolation(
                         ex,
-                        "A test case with name '" + existing.getTestCaseName() + "' already exists in this dataset",
-                        existing.getTestCaseName());
+                        "A test case with name '" + entity.getTestCaseName() + "' already exists in this dataset",
+                        entity.getTestCaseName());
                 throw ex;
             }
-            itemResults.add(
-                    ItemResultDto.builder().id(op.getId()).updated(changed).build());
-            if (!Objects.equals(beforeName, existing.getTestCaseName())) {
-                renamedEntities.add(existing);
-            }
+            itemResults.add(ItemResultDto.builder()
+                    .id(entity.getId())
+                    .updated(item.changed())
+                    .build());
         }
 
         if (!renamedEntities.isEmpty()) {
@@ -303,6 +321,9 @@ public class TestCaseService {
         }
         return false;
     }
+
+    /** A composite-bulk itemOperation prepared in memory (pass 1) and awaiting park/apply. */
+    private record PreparedItemOp(TestCase entity, boolean changed, boolean renamed) {}
 
     private static TestCase copyTestCase(TestCase original) {
         return TestCase.builder()

@@ -379,6 +379,27 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
         return r.getBody();
     }
 
+    @Test
+    @DisplayName("Should swap two test case names via composite bulk patch itemOperations")
+    void shouldSwapNamesViaItemOperations() {
+        TestSuiteResponseDto suite = createTestSuite();
+        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "A", true);
+        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "B", true);
+
+        Map<String, Object> body = Map.of(
+                "itemOperations",
+                List.of(
+                        Map.of("id", tc1.getId().toString(), "patch", Map.of("testCaseName", "B")),
+                        Map.of("id", tc2.getId().toString(), "patch", Map.of("testCaseName", "A"))));
+
+        ResponseEntity<TestCaseBulkPatchResponseDto> response = restTemplate.exchange(
+                bulkUrl(suite.getId()), HttpMethod.PATCH, jsonEntity(body), TestCaseBulkPatchResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getTestCase(suite, tc1.getId()).getTestCaseName()).isEqualTo("B");
+        assertThat(getTestCase(suite, tc2.getId()).getTestCaseName()).isEqualTo("A");
+    }
+
     private TestCaseResponseDto getTestCase(TestSuiteResponseDto suite, UUID id) {
         ResponseEntity<TestCaseResponseDto> resp = restTemplate.getForEntity(
                 apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases/" + id), TestCaseResponseDto.class);

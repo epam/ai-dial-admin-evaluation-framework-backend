@@ -40,6 +40,8 @@ import org.springframework.stereotype.Repository;
 @ConditionalOnProperty(name = "datasource.meta.vendor", havingValue = "POSTGRES")
 public class PostgresTestCaseRepository implements TestCaseRepository {
 
+    private static final String PARKED_NAME_PREFIX = "__tc_batch_";
+
     @Qualifier("metaDsl")
     private final DSLContext dsl;
 
@@ -145,6 +147,11 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         if (testCases == null || testCases.isEmpty()) {
             return;
         }
+        // Phase 1: park every row's name at a unique temporary value so a name permutation within the
+        // batch (swap/cycle) does not violate the non-deferrable unique index on an intermediate state.
+        parkTestCaseNames(testCases);
+
+        // Phase 2: apply the final name and other fields.
         long now = transactionTimestampContext.getTimestamp();
         List<Query> queries = testCases.stream()
                 .map(tc -> {
@@ -165,6 +172,27 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                 })
                 .toList();
         dsl.batch(queries).execute();
+    }
+
+    @Override
+    public void parkTestCaseNames(List<TestCase> testCases) {
+        if (testCases == null || testCases.isEmpty()) {
+            return;
+        }
+        final String token = UUID.randomUUID().toString().replace("-", "");
+        List<Query> queries = testCases.stream()
+                .map(tc -> (Query) dsl.update(TEST_CASES)
+                        .set(TEST_CASES.TEST_CASE_NAME, parkedName(token, tc.getId()))
+                        .where(TEST_CASES
+                                .ID
+                                .eq(tc.getId().toString())
+                                .and(TEST_CASES.DATASET_ID.eq(tc.getDatasetId().toString()))))
+                .toList();
+        dsl.batch(queries).execute();
+    }
+
+    private static String parkedName(String token, UUID id) {
+        return PARKED_NAME_PREFIX + token + "_" + id;
     }
 
     @Override

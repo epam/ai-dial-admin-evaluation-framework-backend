@@ -29,6 +29,7 @@ public class TestSuiteRecordMapper {
                 .toolRef(toJsonString(r.getToolRef()))
                 .argumentTemplate(toJsonString(r.getArgumentTemplate()))
                 .overallScore(toJsonString(r.getOverallScore()))
+                .overallScoreThreshold(r.getOverallScoreThreshold())
                 .testCaseFilter(toJsonString(r.getTestCaseFilter()))
                 .valid(r.getIsValid())
                 .validationWarnings(toJsonString(r.getValidationWarnings()))

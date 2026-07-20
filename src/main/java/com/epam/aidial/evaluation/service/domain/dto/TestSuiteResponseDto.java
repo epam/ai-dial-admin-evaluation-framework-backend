@@ -75,6 +75,11 @@ public class TestSuiteResponseDto {
     private OverallScoreDefinition overallScore;
 
     @Schema(
+            description =
+                    "Threshold the run-level `overall` metric score is compared against. Null when not configured.")
+    private Double overallScoreThreshold;
+
+    @Schema(
             description = "Per-suite test-case filter (a Structured Query DSL filter subtree), as a JSON object. "
                     + "Selects which of the bound dataset's test cases run (combined with `disabledTestCaseIds` and "
                     + "validity). Null when the suite applies no filter.")

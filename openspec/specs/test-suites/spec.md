@@ -577,6 +577,38 @@ Status: **Implemented**
 - **WHEN** client sets `overallScore` on an otherwise valid suite
 - **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `overallScore`
 
+### Requirement: Per-suite `overallScoreThreshold` on the suite API
+The suite create and update request bodies SHALL accept an optional `overallScoreThreshold` field — a numeric value (same type as the computed run-level `overall` metric score result) that a client can compare a run's `overall` score against. The system SHALL persist it verbatim to `test_suites.overall_score_threshold` (`DOUBLE PRECISION`) and SHALL return it on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `overallScoreThreshold` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. The system SHALL reject a value outside the inclusive range `0.0`–`1.0` with HTTP 400 `VALIDATION_ERROR` at write time and SHALL NOT persist it. The system SHALL NOT perform any comparison against a run's computed `overall` score — evaluating the threshold against a run's result is a client-side concern.
+Status: **Implemented**
+
+#### Scenario: Set overallScoreThreshold on update and read it back
+- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with an `overallScoreThreshold` numeric value
+- **THEN** system SHALL respond HTTP 200 with the updated suite whose `overallScoreThreshold` equals the submitted value, and a subsequent `GET /api/v1/test-suites/{id}` SHALL return the same `overallScoreThreshold`
+
+#### Scenario: Set overallScoreThreshold on create
+- **WHEN** client calls `POST /api/v1/test-suites` with a valid body including an `overallScoreThreshold` value
+- **THEN** system SHALL create the suite persisting `overall_score_threshold` and return it in the response body
+
+#### Scenario: Omitted overallScoreThreshold leaves the column null
+- **WHEN** client creates or updates a suite without an `overallScoreThreshold` field
+- **THEN** system SHALL store `overall_score_threshold` as NULL and the suite response SHALL omit `overallScoreThreshold` (or return it as null)
+
+#### Scenario: overallScoreThreshold does not affect suite validity
+- **WHEN** client sets `overallScoreThreshold` on an otherwise valid suite
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or value of `overallScoreThreshold`
+
+#### Scenario: Clone inherits the source threshold
+- **WHEN** a suite carrying an `overallScoreThreshold` is cloned
+- **THEN** the cloned suite SHALL inherit the same `overallScoreThreshold` (as with `overallScore`)
+
+#### Scenario: Value outside 0.0-1.0 is rejected
+- **WHEN** client submits `overallScoreThreshold` less than `0.0` or greater than `1.0` on create or update
+- **THEN** system SHALL respond HTTP 400 `VALIDATION_ERROR` and SHALL NOT persist the suite/value
+
+#### Scenario: Boundary values 0.0 and 1.0 are accepted
+- **WHEN** client submits `overallScoreThreshold` equal to `0.0` or `1.0`
+- **THEN** system SHALL accept and persist the value
+
 ### Requirement: Per-suite `testCaseFilter` on the suite API
 The suite create and update request bodies SHALL accept an optional `testCaseFilter` field — a JSON
 object holding a Structured Query DSL `filter` subtree that selects which of the bound dataset's test
@@ -633,6 +665,7 @@ Status: **Implemented**
 - FilterWhitelists: `TEST_SUITES` — `suiteType` (EQ, IN), `id` (EQ, IN), `description` (CO), `updatedAt` (GT, GTE, LT, LTE), plus existing `name`, `createdBy`, `createdAt`
 - `overallScore` (per-suite): DTO fields `TestSuiteRequestDto.overallScore` / `TestSuiteResponseDto.overallScore` (`Map<String, Object>`), per the JSONB-as-object convention. Conversion via `JsonbMapper.mapOverallScore(Map)` (write) / `mapOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` (clone already preserves it via `toCloneEntity`). Column pre-exists: `V1.23__AddOverallScoreToTestSuites.sql` (no new migration).
 - `testCaseFilter` (per-suite): DTO fields `TestSuiteRequestDto.testCaseFilter` / `TestSuiteResponseDto.testCaseFilter` (`Map<String, Object>`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseFilter`. Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` / `toRequestDto` / `toCloneEntity`. New column: `V1.24__AddTestCaseFilterToTestSuites.sql` (`test_case_filter JSONB`), then `./gradlew generateJooq`. Write-time validation delegates to `RunnableTestCaseSelector.validateFilter(datasetId, filterJson)` from `TestSuiteService` (see `suite-test-case-filter`).
+- `overallScoreThreshold` (per-suite): DTO fields `TestSuiteRequestDto.overallScoreThreshold` / `TestSuiteResponseDto.overallScoreThreshold` (`Double`) — a plain scalar column, not JSONB (unlike `overallScore`/`testCaseFilter`), mapped directly with no `JsonbMapper` conversion. Model field: `TestSuite.overallScoreThreshold` (`Double`). Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` / `toRequestDto` / `toCloneEntity`; record mapping in `TestSuiteRecordMapper`. Repository: `PostgresTestSuiteRepository` sets `TEST_SUITES.OVERALL_SCORE_THRESHOLD` alongside `TEST_SUITES.OVERALL_SCORE` in the create, update, and clone-create statements. New column: `V1.25__AddOverallScoreThresholdToTestSuites.sql` (`overall_score_threshold DOUBLE PRECISION`), then `./gradlew generateJooq`. Range validation via `@DecimalMin`/`@DecimalMax` on `TestSuiteRequestDto.overallScoreThreshold`, with bound literals and message in `ValidationConstants` (`MIN_OVERALL_SCORE_THRESHOLD` = `"0.0"`, `MAX_OVERALL_SCORE_THRESHOLD` = `"1.0"`, `OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE`). Not included in `SuiteSnapshotDto`/`SuiteSnapshotBuilder` — reflects the suite's current configured value, not captured per-run.
 
 ## Open Questions / TODO
 - Add explicit validation rules for `name`/`description` in DTOs (current behavior depends on DTO constraints).

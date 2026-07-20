@@ -75,6 +75,7 @@ public class TestSuiteMapper {
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
                 .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
+                .overallScoreThreshold(entity.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();
     }
@@ -99,6 +100,7 @@ public class TestSuiteMapper {
                 .toolRef(jsonbMapper.mapToolRef(dto.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()))
                 .overallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()))
+                .overallScoreThreshold(dto.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()))
                 .valid(true)
                 .validationWarnings("[]")
@@ -123,6 +125,7 @@ public class TestSuiteMapper {
         entity.setToolRef(jsonbMapper.mapToolRef(dto.getToolRef()));
         entity.setArgumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()));
         entity.setOverallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()));
+        entity.setOverallScoreThreshold(dto.getOverallScoreThreshold());
         entity.setTestCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()));
     }
 
@@ -194,6 +197,7 @@ public class TestSuiteMapper {
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
                 .overallScore(source.getOverallScore())
+                .overallScoreThreshold(source.getOverallScoreThreshold())
                 .testCaseFilter(source.getTestCaseFilter())
                 .version(0L)
                 .createdBy(createdBy)
@@ -230,6 +234,7 @@ public class TestSuiteMapper {
                 .toolRef(jsonbMapper.mapToolRef(entity.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(entity.getArgumentTemplate()))
                 .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
+                .overallScoreThreshold(entity.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();
     }

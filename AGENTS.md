@@ -79,6 +79,7 @@
 - Every `@Test` assertion MUST directly verify the behavior stated in the test's `@DisplayName`. Functional tests MUST have deterministic assertions — no if/else branching where only one branch executes per run.
 - When changing API endpoints or DTOs, update OpenAPI examples (`@Schema example`, `@ExampleObject`) to reflect the new contract.
 - When adding Flyway migrations that change schema, update `docs/database-schema.md`.
+- Write Flyway migrations idempotently: use `IF NOT EXISTS`/`IF EXISTS` on every statement that supports it (`CREATE TABLE`/`ADD COLUMN`/`CREATE INDEX`/`DROP …`/etc.); guard the rest (`ADD CONSTRAINT`, trigger DDL) with a catalog-checking `DO $$ … $$` block. This keeps re-running migrations against a local DB a no-op instead of a hard failure. See [docs/code-templates.md](docs/code-templates.md#new-flyway-migration).
 - When adding a configuration property: add a row to `docs/configuration.md` with all six columns (`Property | Environment Variable | Default | Required | Applied when | Description`) in the same PR; see [configuration-docs spec](openspec/specs/configuration-docs/spec.md) for the full rule (column schema, four-term `Required` vocabulary, top-level grouping).
 - Prefer extracting separate methods with descriptive names to large enclosing methods with lots of commentary.
 - Use final for local variables that do not change.

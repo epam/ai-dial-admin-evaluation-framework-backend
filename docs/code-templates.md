@@ -473,6 +473,9 @@ public class NewEntityController {
 ```
 
 ## New Flyway Migration
+
+**Always write migrations idempotently** — use `IF NOT EXISTS` / `IF EXISTS` on every statement that supports it (`CREATE TABLE`, `ADD COLUMN`, `DROP COLUMN`, `CREATE INDEX`, `CREATE SEQUENCE`, `DROP …`, etc.). Flyway itself won't re-run an already-applied migration, but a local DB whose Flyway history was reset (or a migration edited before its checksum is committed) will re-execute the SQL; idempotent statements make that a no-op instead of a hard failure (`column already exists`, `relation already exists`). For statements without a native guard (e.g. `ALTER TABLE … ADD CONSTRAINT`, some trigger DDL), wrap in a `DO $$ … $$` block that checks the catalog first.
+
 ```sql
 -- V1.2__CreateNewEntitiesTable.sql
 CREATE TABLE IF NOT EXISTS new_entities (

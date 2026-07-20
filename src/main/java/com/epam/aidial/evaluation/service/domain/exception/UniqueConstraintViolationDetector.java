@@ -31,7 +31,7 @@ public final class UniqueConstraintViolationDetector {
     /**
      * Returns true if the given throwable or any of its causes is a unique constraint violation (23505) whose
      * SQL error message references the named constraint. Used to distinguish which unique index was violated
-     * (e.g. the conversation/turn index vs the test-case name index).
+     * (e.g. the multiTurn/turn index vs the test-case name index).
      */
     public static boolean mentionsConstraint(Throwable t, String constraintName) {
         Throwable current = t;

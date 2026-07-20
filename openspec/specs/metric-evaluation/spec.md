@@ -280,7 +280,7 @@ Status: **Implemented**
 - **THEN** the executor SHALL record a `Failure` with a `RuntimeException` and the pre-extracted output field names for that TSMD
 
 ### Requirement: EvalSummary assembly from TestCaseRunResult
-The system SHALL build one EvalSummary per `TestCaseRunResult`, copying context fields from the result and adding computed metric values. Because a multi-turn conversation now produces one result row per turn, it likewise produces one EvalSummary per turn. The `extractedColumns` value SHALL be copied from the result **verbatim** — a scalar object for every result (single-turn and per-turn alike). Each summary SHALL carry `turnIndex` and `totalTurns` copied from the source result.
+The system SHALL build one EvalSummary per `TestCaseRunResult`, copying context fields from the result and adding computed metric values. Because a multi-turn now produces one result row per turn, it likewise produces one EvalSummary per turn. The `extractedColumns` value SHALL be copied from the result **verbatim** — a scalar object for every result (single-turn and per-turn alike). Each summary SHALL carry `turnIndex` and `totalTurns` copied from the source result.
 Status: **Implemented**
 
 #### Scenario: Field mapping from result to summary
@@ -292,7 +292,7 @@ Status: **Implemented**
 - **THEN** `EvalSummary.extractedColumns` SHALL store `{"answer": "Paris"}` unchanged, with no normalization step
 
 #### Scenario: One summary per turn
-- **WHEN** a 3-turn conversation is evaluated
+- **WHEN** a 3-turn multi-turn is evaluated
 - **THEN** three EvalSummary rows SHALL be produced, with `turnIndex` `0`,`1`,`2` and `totalTurns` `3`
 
 #### Scenario: Non-SUCCESS result propagation

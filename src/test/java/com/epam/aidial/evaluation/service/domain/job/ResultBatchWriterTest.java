@@ -65,13 +65,13 @@ class ResultBatchWriterTest {
                 .build();
     }
 
-    /** Adds one single-turn conversation (one row). */
-    private void addOneConversation(ResultBatchWriter.RunBuffer buffer) {
+    /** Adds one single-turn multiTurn (one row). */
+    private void addOneMultiTurn(ResultBatchWriter.RunBuffer buffer) {
         writer.addResults(buffer, List.of(buildResult()));
     }
 
-    /** Builds a multi-turn conversation of {@code turns} per-turn rows. */
-    private List<TestCaseRunResult> conversationOf(int turns) {
+    /** Builds a multi-turn multiTurn of {@code turns} per-turn rows. */
+    private List<TestCaseRunResult> multiTurnOf(int turns) {
         List<TestCaseRunResult> rows = new ArrayList<>();
         for (int i = 0; i < turns; i++) {
             rows.add(buildResult());
@@ -86,7 +86,7 @@ class ResultBatchWriterTest {
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
         for (int i = 0; i < batchSize - 1; i++) {
-            addOneConversation(buffer);
+            addOneMultiTurn(buffer);
         }
 
         verify(transactionalWriter, never()).saveBatch(anyList());
@@ -95,13 +95,13 @@ class ResultBatchWriterTest {
     }
 
     @Test
-    @DisplayName("addResults at row threshold triggers flush; progress counts completed conversations")
+    @DisplayName("addResults at row threshold triggers flush; progress counts completed multiTurns")
     void addResults_atThreshold_flushes() {
         int batchSize = 3;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
         for (int i = 0; i < batchSize; i++) {
-            addOneConversation(buffer);
+            addOneMultiTurn(buffer);
         }
 
         verify(transactionalWriter, times(1)).saveBatch(anyList());
@@ -110,16 +110,16 @@ class ResultBatchWriterTest {
     }
 
     @Test
-    @DisplayName("addResults with multiple flushes increments total flushed and conversation progress correctly")
+    @DisplayName("addResults with multiple flushes increments total flushed and multiTurn progress correctly")
     void addResults_multipleFlushes_incrementsTotalFlushed() {
         int batchSize = 2;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        addOneConversation(buffer);
-        addOneConversation(buffer);
+        addOneMultiTurn(buffer);
+        addOneMultiTurn(buffer);
 
-        addOneConversation(buffer);
-        addOneConversation(buffer);
+        addOneMultiTurn(buffer);
+        addOneMultiTurn(buffer);
 
         verify(transactionalWriter, times(2)).saveBatch(anyList());
         verify(sseService, times(1)).notifyProgress(eq(RUN_ID), eq(SUITE_ID), eq(2), eq(TOTAL_CASES));
@@ -128,14 +128,14 @@ class ResultBatchWriterTest {
     }
 
     @Test
-    @DisplayName("a multi-turn conversation buffers all its per-turn rows but advances progress by one")
-    void addResults_multiTurnConversation_buffersRowsAdvancesProgressByOne() {
+    @DisplayName("a multi-turn multiTurn buffers all its per-turn rows but advances progress by one")
+    void addResults_multiTurn_buffersRowsAdvancesProgressByOne() {
         int batchSize = 10;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        writer.addResults(buffer, conversationOf(3));
+        writer.addResults(buffer, multiTurnOf(3));
         verify(transactionalWriter, never()).saveBatch(anyList());
-        assertThat(buffer.getConversationsCompleted()).isEqualTo(1);
+        assertThat(buffer.getMultiTurnsCompleted()).isEqualTo(1);
 
         writer.flush(buffer);
 
@@ -149,9 +149,9 @@ class ResultBatchWriterTest {
         int batchSize = 10;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        addOneConversation(buffer);
-        addOneConversation(buffer);
-        addOneConversation(buffer);
+        addOneMultiTurn(buffer);
+        addOneMultiTurn(buffer);
+        addOneMultiTurn(buffer);
 
         // No flush yet because below threshold
         verify(transactionalWriter, never()).saveBatch(anyList());
@@ -182,8 +182,8 @@ class ResultBatchWriterTest {
         int batchSize = 2;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        addOneConversation(buffer);
-        addOneConversation(buffer);
+        addOneMultiTurn(buffer);
+        addOneMultiTurn(buffer);
 
         verify(sseService, times(1)).notifyProgress(eq(RUN_ID), eq(SUITE_ID), eq(2), eq(TOTAL_CASES));
     }
@@ -194,7 +194,7 @@ class ResultBatchWriterTest {
         int batchSize = 10;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        addOneConversation(buffer);
+        addOneMultiTurn(buffer);
 
         doThrow(new RuntimeException("SSE connection lost"))
                 .when(sseService)

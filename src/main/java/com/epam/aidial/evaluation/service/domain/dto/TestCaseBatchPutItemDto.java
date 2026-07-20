@@ -35,8 +35,8 @@ public class TestCaseBatchPutItemDto {
             description = "Row-based multi-turn grouping key (client-supplied UUID); provide together with turnIndex, "
                     + "or omit both for single-turn. PUT is a full replacement, so omitting these clears grouping.",
             example = "7b1c9f2e-3a4d-4c5b-8e6f-1a2b3c4d5e6f")
-    private UUID conversationId;
+    private UUID multiTurnId;
 
-    @Schema(description = "0-based turn position within the conversation.", example = "0")
+    @Schema(description = "0-based turn position within the multi-turn.", example = "0")
     private Integer turnIndex;
 }

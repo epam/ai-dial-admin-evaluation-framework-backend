@@ -51,9 +51,9 @@ public class PostgresTestCaseRunInputRepository implements TestCaseRunInputRepos
                                 toJsonb(input.getRequestTemplateOverride()))
                         .set(TEST_CASE_RUN_INPUTS.INPUT_BINDINGS_OVERRIDE, toJsonb(input.getInputBindingsOverride()))
                         .set(
-                                TEST_CASE_RUN_INPUTS.CONVERSATION_ID,
-                                input.getConversationId() != null
-                                        ? input.getConversationId().toString()
+                                TEST_CASE_RUN_INPUTS.MULTI_TURN_ID,
+                                input.getMultiTurnId() != null
+                                        ? input.getMultiTurnId().toString()
                                         : null)
                         .set(TEST_CASE_RUN_INPUTS.TOTAL_TURNS, input.getTotalTurns())
                         .set(TEST_CASE_RUN_INPUTS.TURNS, toJsonb(input.getTurns()))

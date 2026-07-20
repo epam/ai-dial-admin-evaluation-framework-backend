@@ -98,7 +98,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                 .set(TEST_CASES.DATASET_ID, testCase.getDatasetId().toString())
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
-                .set(TEST_CASES.CONVERSATION_ID, toNullableString(testCase.getConversationId()))
+                .set(TEST_CASES.MULTI_TURN_ID, toNullableString(testCase.getMultiTurnId()))
                 .set(TEST_CASES.TURN_INDEX, testCase.getTurnIndex())
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
@@ -118,7 +118,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         int updated = dsl.update(TEST_CASES)
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
-                .set(TEST_CASES.CONVERSATION_ID, toNullableString(testCase.getConversationId()))
+                .set(TEST_CASES.MULTI_TURN_ID, toNullableString(testCase.getMultiTurnId()))
                 .set(TEST_CASES.TURN_INDEX, testCase.getTurnIndex())
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
@@ -156,7 +156,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                     return (Query) dsl.update(TEST_CASES)
                             .set(TEST_CASES.TEST_CASE_NAME, tc.getTestCaseName())
                             .set(TEST_CASES.DATA, toJsonb(tc.getData()))
-                            .set(TEST_CASES.CONVERSATION_ID, toNullableString(tc.getConversationId()))
+                            .set(TEST_CASES.MULTI_TURN_ID, toNullableString(tc.getMultiTurnId()))
                             .set(TEST_CASES.TURN_INDEX, tc.getTurnIndex())
                             .set(TEST_CASES.IS_VALID, tc.isValid())
                             .set(
@@ -300,7 +300,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     public List<TestCase> findRunnableSingleTurnPage(
             UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit) {
         Condition combined = withExtra(
-                validNotExcludedCondition(datasetId, excludedIds).and(TEST_CASES.CONVERSATION_ID.isNull()),
+                validNotExcludedCondition(datasetId, excludedIds).and(TEST_CASES.MULTI_TURN_ID.isNull()),
                 extraCondition);
         return dsl.selectFrom(TEST_CASES)
                 .where(combined)
@@ -311,38 +311,36 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     }
 
     @Override
-    public List<String> findRunnableConversationIdsPage(
-            UUID datasetId, Condition extraCondition, int offset, int limit) {
-        Condition where = TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.isNotNull());
-        return dsl.select(TEST_CASES.CONVERSATION_ID)
+    public List<String> findRunnableMultiTurnIdsPage(UUID datasetId, Condition extraCondition, int offset, int limit) {
+        Condition where = TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.MULTI_TURN_ID.isNotNull());
+        return dsl.select(TEST_CASES.MULTI_TURN_ID)
                 .from(TEST_CASES)
                 .where(withExtra(where, extraCondition))
-                .groupBy(TEST_CASES.CONVERSATION_ID)
-                .orderBy(DSL.min(TEST_CASES.CREATED_AT_MS).asc(), TEST_CASES.CONVERSATION_ID.asc())
+                .groupBy(TEST_CASES.MULTI_TURN_ID)
+                .orderBy(DSL.min(TEST_CASES.CREATED_AT_MS).asc(), TEST_CASES.MULTI_TURN_ID.asc())
                 .limit(limit)
                 .offset(offset)
-                .fetch(TEST_CASES.CONVERSATION_ID);
+                .fetch(TEST_CASES.MULTI_TURN_ID);
     }
 
     @Override
-    public List<TestCase> findFilterMatchingTurnsByConversationIds(
-            UUID datasetId, Collection<String> conversationIds, Condition extraCondition) {
-        if (conversationIds == null || conversationIds.isEmpty()) {
+    public List<TestCase> findFilterMatchingTurnsByMultiTurnIds(
+            UUID datasetId, Collection<String> multiTurnIds, Condition extraCondition) {
+        if (multiTurnIds == null || multiTurnIds.isEmpty()) {
             return List.of();
         }
-        Condition where =
-                TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.in(conversationIds));
+        Condition where = TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.MULTI_TURN_ID.in(multiTurnIds));
         return dsl.selectFrom(TEST_CASES)
                 .where(withExtra(where, extraCondition))
-                .orderBy(TEST_CASES.CONVERSATION_ID.asc(), TEST_CASES.TURN_INDEX.asc())
+                .orderBy(TEST_CASES.MULTI_TURN_ID.asc(), TEST_CASES.TURN_INDEX.asc())
                 .fetch(recordMapper::map);
     }
 
     @Override
-    public boolean existsConversationRowByDatasetId(UUID datasetId) {
+    public boolean existsMultiTurnRowByDatasetId(UUID datasetId) {
         return dsl.fetchExists(dsl.selectOne()
                 .from(TEST_CASES)
-                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.CONVERSATION_ID.isNotNull())));
+                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.MULTI_TURN_ID.isNotNull())));
     }
 
     private static Condition withExtra(Condition base, Condition extraCondition) {
@@ -379,7 +377,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                 .set(TEST_CASES.DATASET_ID, testCase.getDatasetId().toString())
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
-                .set(TEST_CASES.CONVERSATION_ID, toNullableString(testCase.getConversationId()))
+                .set(TEST_CASES.MULTI_TURN_ID, toNullableString(testCase.getMultiTurnId()))
                 .set(TEST_CASES.TURN_INDEX, testCase.getTurnIndex())
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
@@ -404,14 +402,14 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         // expose an expression-based RETURNING clause for custom expressions like xmax.
         Integer wasUpdate = dsl.resultQuery(
                         "INSERT INTO test_cases ("
-                                + "id, dataset_id, test_case_name, data, conversation_id, turn_index, is_valid, "
+                                + "id, dataset_id, test_case_name, data, multi_turn_id, turn_index, is_valid, "
                                 + "validation_warnings, created_at_ms, updated_at_ms"
                                 + ") VALUES ("
                                 + "{0}, {1}, {2}, {3}::jsonb, {4}, {5}, {6}, {7}::jsonb, {8}, {9}"
                                 + ") ON CONFLICT (dataset_id, LOWER(test_case_name)) DO UPDATE SET"
                                 + " test_case_name = EXCLUDED.test_case_name,"
                                 + " data = EXCLUDED.data,"
-                                + " conversation_id = EXCLUDED.conversation_id,"
+                                + " multi_turn_id = EXCLUDED.multi_turn_id,"
                                 + " turn_index = EXCLUDED.turn_index,"
                                 + " is_valid = EXCLUDED.is_valid,"
                                 + " validation_warnings = EXCLUDED.validation_warnings,"
@@ -421,7 +419,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                         DSL.val(testCase.getDatasetId().toString()),
                         DSL.val(testCase.getTestCaseName()),
                         DSL.val(testCase.getData() != null ? testCase.getData() : "{}"),
-                        DSL.val(toNullableString(testCase.getConversationId())),
+                        DSL.val(toNullableString(testCase.getMultiTurnId())),
                         DSL.val(testCase.getTurnIndex()),
                         DSL.val(testCase.isValid()),
                         DSL.val(testCase.getValidationWarnings() != null ? testCase.getValidationWarnings() : "[]"),

@@ -23,13 +23,13 @@ public final class ValidationConstants {
     public static final int MAX_DISABLED_TC_IDS = 10000;
 
     /**
-     * Maximum number of turns in a multi-turn conversation (row-based). A conversation is an ordered group of
-     * {@code test_cases} rows sharing a {@code conversation_id}; this caps the surviving turn count at snapshot
-     * (a conversation with more surviving turns is marked broken). It is NOT a write-time bound on the authored
+     * Maximum number of turns in a multi-turn multiTurn (row-based). A multiTurn is an ordered group of
+     * {@code test_cases} rows sharing a {@code multi_turn_id}; this caps the surviving turn count at snapshot
+     * (a multiTurn with more surviving turns is marked broken). It is NOT a write-time bound on the authored
      * {@code turnIndex} — surviving turns may be non-contiguous, so a high index no longer implies a large
-     * count. Bounds per-conversation deployment calls (one call per turn).
+     * count. Bounds per-multiTurn deployment calls (one call per turn).
      */
-    public static final int MAX_CONVERSATION_TURNS = 10;
+    public static final int MAX_MULTI_TURN_TURNS = 10;
 
     /**
      * Regex enforced on test-case schema field names ({@code FieldDefinitionDto}).

@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
 
 /**
- * Non-streaming per-turn deployment invoker with retry/backoff for the multi-turn conversation executor.
+ * Non-streaming per-turn deployment invoker with retry/backoff for the multi-turn multiTurn executor.
  * Owns the retry loop (exponential backoff, cancellation checks), a single non-streaming DIAL Core call
  * (rejecting streaming responses and oversize bodies), HTTP-status → {@link ExecutionStatus} mapping, and
  * timeout detection. Returns a {@link TurnOutcome} carrying the final status, HTTP status code, raw

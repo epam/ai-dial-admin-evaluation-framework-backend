@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-07-13 (meta V1.28, analytics V1.11)
+> **Last sync**: 2026-07-20 (meta V1.28, analytics V1.15)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -309,8 +309,8 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
 | `dataset_id` | VARCHAR(36) | NOT NULL | - | FK to `datasets.id` (CASCADE on delete). Renamed from `test_suite_id` in V1.22. |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Display name |
 | `data` | JSONB | NOT NULL | `'{}'::jsonb` | Unified test case data map |
-| `conversation_id` | VARCHAR(36) | NULL | - | Row-based multi-turn grouping key (client-supplied UUID). `NULL` = single-turn test case. Rows sharing a `conversation_id` form one conversation, ordered by `turn_index`. Added V1.27. |
-| `turn_index` | INTEGER | NULL | - | 0-based turn position within the conversation. `NULL` for single-turn. Added V1.27. |
+| `multi_turn_id` | VARCHAR(36) | NULL | - | Row-based multi-turn grouping key (client-supplied UUID). `NULL` = single-turn test case. Rows sharing a `multi_turn_id` form one multi-turn, ordered by `turn_index`. Added V1.27. |
+| `turn_index` | INTEGER | NULL | - | 0-based turn position within the multi-turn. `NULL` for single-turn. Added V1.27. |
 | `is_valid` | BOOLEAN | NOT NULL | - | Validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
@@ -321,9 +321,9 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
 | `uq_test_cases_dataset_name` | `dataset_id`, `LOWER(test_case_name)` | UNIQUE (BTREE) | Case-insensitive unique constraint: one name per dataset |
-| `uq_test_cases_conversation_turn` | `dataset_id`, `conversation_id`, `turn_index` | UNIQUE (BTREE), partial `WHERE conversation_id IS NOT NULL` | One row per turn index within a conversation. Added V1.27. |
+| `uq_test_cases_multi_turn_turn` | `dataset_id`, `multi_turn_id`, `turn_index` | UNIQUE (BTREE), partial `WHERE multi_turn_id IS NOT NULL` | One row per turn index within a multi-turn. Added V1.27. |
 | `idx_test_cases_dataset_id` | `dataset_id` | BTREE | |
-| `idx_test_cases_conversation` | `dataset_id`, `conversation_id` | BTREE | Groups a conversation's turns. Added V1.27. |
+| `idx_test_cases_multi_turn` | `dataset_id`, `multi_turn_id` | BTREE | Groups a multi-turn's turns. Added V1.27. |
 | `idx_test_cases_created_at_ms` | `created_at_ms DESC` | BTREE | |
 | `idx_test_cases_data` | `data` | GIN | |
 
@@ -446,7 +446,7 @@ Tracks async test suite evaluation runs.
 
 Snapshot of test case data for a run; written at async phase start under a REPEATABLE READ transaction. Acts as the executor's source of truth for the run duration. Rows are automatically deleted when the parent run row is deleted (FK CASCADE). A scheduled retention job additionally purges rows for completed/failed runs older than the configured retention window.
 
-One row = one execution unit. Single-turn units use the scalar `test_case_*` columns (as before). Row-based multi-turn conversations are **assembled at snapshot** into a single unit: the scalar columns carry the representative (turn 0) snapshot and `turns` carries the full ordered turn list. Broken conversations are flagged via `broken` so the executor emits one `0/0` ERROR result row without invoking the model.
+One row = one execution unit. Single-turn units use the scalar `test_case_*` columns (as before). Row-based multi-turns are **assembled at snapshot** into a single unit: the scalar columns carry the representative (turn 0) snapshot and `turns` carries the full ordered turn list. Broken multi-turns are flagged via `broken` so the executor emits one `0/0` ERROR result row without invoking the model.
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -455,10 +455,10 @@ One row = one execution unit. Single-turn units use the scalar `test_case_*` col
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Loose reference to the test case (no FK — snapshot is independent of live `test_cases`) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name at snapshot time |
 | `test_case_data` | JSONB | NOT NULL | - | Unified test case data map at snapshot time |
-| `conversation_id` | VARCHAR(36) | NULL | - | Conversation grouping key for a multi-turn unit; `NULL` for single-turn. Added V1.28. |
-| `total_turns` | INTEGER | NULL | - | Surviving turn count of the assembled conversation (turns disabled/filtered out at start/middle/end simply drop; ordering is not required); `NULL` for single-turn. Added V1.28. |
+| `multi_turn_id` | VARCHAR(36) | NULL | - | Multi-turn grouping key for a multi-turn unit; `NULL` for single-turn. Added V1.28. |
+| `total_turns` | INTEGER | NULL | - | Surviving turn count of the assembled multi-turn (turns disabled/filtered out at start/middle/end simply drop; ordering is not required); `NULL` for single-turn. Added V1.28. |
 | `turns` | JSONB | NULL | - | Ordered assembled surviving turns `[{testCaseId, testCaseName, turnIndex, data}, ...]` for a multi-turn unit, sorted by authored `turnIndex` (indices preserved, may be non-contiguous); `NULL` for single-turn. Added V1.28. |
-| `broken` | BOOLEAN | NOT NULL | `false` | Broken-conversation marker (an invalid surviving turn, or surviving count over the cap — ordering/gaps no longer break); executor emits a single `0/0` ERROR row. Added V1.28. |
+| `broken` | BOOLEAN | NOT NULL | `false` | Broken-multi-turn marker (an invalid surviving turn, or surviving count over the cap — ordering/gaps no longer break); executor emits a single `0/0` ERROR row. Added V1.28. |
 | `request_template_override` | JSONB | NULL | - | Legacy per-case request template override at snapshot time. Always NULL for runs created after V1.22 (the override surface was removed with the dataset migration); kept for backward compatibility with in-flight pre-V1.22 runs. |
 | `input_bindings_override` | JSONB | NULL | - | Legacy per-case input bindings override at snapshot time. Always NULL for runs created after V1.22; same backward-compatibility reason as above. |
 
@@ -637,9 +637,9 @@ Test case execution results stored in the analytics database. Each row represent
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Test case ID |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index (0-based) |
-| `turn_index` | INTEGER | NOT NULL | 0 | Authored conversation turn index (0-based, preserved even when surviving turns are non-contiguous). Single-turn results are `0`. |
+| `turn_index` | INTEGER | NOT NULL | 0 | Authored multi-turn turn index (0-based, preserved even when surviving turns are non-contiguous). Single-turn results are `0`. |
 | `total_turns` | INTEGER | NOT NULL | 1 | Surviving turn count that ran (single-turn = `1`; `0` marks a broken/data-shape failure where no turn ran). |
-| `last_turn_index` | INTEGER | NOT NULL | 0 | Max authored `turn_index` among the conversation's surviving turns. Drives `turn.last` (`turn_index == last_turn_index`) correctly under gaps. Single-turn = `0`. Internal correctness column — not exposed on response DTOs or CSV export. Added V1.15. |
+| `last_turn_index` | INTEGER | NOT NULL | 0 | Max authored `turn_index` among the multi-turn's surviving turns. Drives `turn.last` (`turn_index == last_turn_index`) correctly under gaps. Single-turn = `0`. Internal correctness column — not exposed on response DTOs or CSV export. Added V1.15. |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (per-turn projected scalar view for multi-turn rows) |
 | `request_body` | JSONB | NULL | - | HTTP request body sent to endpoint |
 | `response_body` | JSONB | NULL | - | HTTP response body received |
@@ -663,7 +663,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING); `turn_index` keys each turn of a multi-turn conversation. Includes `created_at_ms` for future partitioning. |
+| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING); `turn_index` keys each turn of a multi-turn. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -746,7 +746,7 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Reference to test case (soft FK) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case name at execution time |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index |
-| `turn_index` | INTEGER | NOT NULL | 0 | Conversation turn index (0-based, denormalized from test_case_run_results). Single-turn = `0`. |
+| `turn_index` | INTEGER | NOT NULL | 0 | Multi-turn turn index (0-based, denormalized from test_case_run_results). Single-turn = `0`. |
 | `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count (denormalized). Single-turn = `1`. |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (denormalized from test_case_run_results) |
@@ -940,8 +940,9 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.23 | `V1.23__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs) |
 | V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` and `disabled_test_case_ids` at run-creation count and snapshot) |
 | V1.25 | `V1.25__AddOverallScoreThresholdToTestSuites.sql` | Added nullable `overall_score_threshold` DOUBLE PRECISION column to test_suites (per-suite threshold compared against the computed run-level `overall` metric score, same numeric type as the result; NULL = no threshold configured) |
-| V1.27 | `V1.27__AddConversationColumnsToTestCases.sql` | Added nullable `conversation_id` (VARCHAR(36)) and `turn_index` (INTEGER) to test_cases for row-based multi-turn; added `idx_test_cases_conversation` `(dataset_id, conversation_id)` and partial unique `uq_test_cases_conversation_turn` `(dataset_id, conversation_id, turn_index) WHERE conversation_id IS NOT NULL` |
-| V1.28 | `V1.28__AddConversationColumnsToTestCaseRunInputs.sql` | Added nullable `conversation_id` (VARCHAR(36)), `total_turns` (INTEGER), `turns` (JSONB), and `broken` (BOOLEAN NOT NULL DEFAULT false) to test_case_run_inputs for snapshot-assembled per-conversation execution units |
+| V1.26 | `V1.26__AddTsmdCondition.sql` | Added nullable `condition` VARCHAR(2000) column to test_suite_metric_definitions (optional per-result execution condition; JSONata, hard-validated at write time; NULL/blank = always run) |
+| V1.27 | `V1.27__AddMultiTurnColumnsToTestCases.sql` | Added nullable `multi_turn_id` (VARCHAR(36)) and `turn_index` (INTEGER) to test_cases for row-based multi-turn; added `idx_test_cases_multi_turn` `(dataset_id, multi_turn_id)` and partial unique `uq_test_cases_multi_turn_turn` `(dataset_id, multi_turn_id, turn_index) WHERE multi_turn_id IS NOT NULL` |
+| V1.28 | `V1.28__AddMultiTurnColumnsToTestCaseRunInputs.sql` | Added nullable `multi_turn_id` (VARCHAR(36)), `total_turns` (INTEGER), `turns` (JSONB), and `broken` (BOOLEAN NOT NULL DEFAULT false) to test_case_run_inputs for snapshot-assembled per-multi-turn execution units |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

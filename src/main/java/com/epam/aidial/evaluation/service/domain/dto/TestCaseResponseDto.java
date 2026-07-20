@@ -26,14 +26,14 @@ public class TestCaseResponseDto {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(
-            description = "Row-based multi-turn grouping key. Present only for turns of a conversation; omitted for "
+            description = "Row-based multi-turn grouping key. Present only for turns of a multi-turn; omitted for "
                     + "single-turn test cases.",
             example = "7b1c9f2e-3a4d-4c5b-8e6f-1a2b3c4d5e6f")
-    private UUID conversationId;
+    private UUID multiTurnId;
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(
-            description = "0-based turn position within the conversation. Omitted for single-turn test cases.",
+            description = "0-based turn position within the multi-turn. Omitted for single-turn test cases.",
             example = "0")
     private Integer turnIndex;
 

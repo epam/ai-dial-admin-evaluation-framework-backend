@@ -15,7 +15,7 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Database schema for eval summaries
-The analytics database SHALL contain a `test_case_eval_summaries` table storing denormalized, append-only rows that combine test case context with metric computation outputs, at **per-turn** granularity (`turn_index`, `total_turns`) so that each turn of a multi-turn conversation produces its own summary row.
+The analytics database SHALL contain a `test_case_eval_summaries` table storing denormalized, append-only rows that combine test case context with metric computation outputs, at **per-turn** granularity (`turn_index`, `total_turns`) so that each turn of a multi-turn produces its own summary row.
 Status: **Implemented**
 
 #### Scenario: Table structure
@@ -97,7 +97,7 @@ Status: **Implemented**
 
 #### Scenario: Distinct turns are not duplicates
 - **WHEN** a batch contains two items sharing `(testCaseId, runIndex, computationId)` but differing in `turnIndex`
-- **THEN** both SHALL be inserted (distinct turns of one conversation are not duplicates); items identical on the full natural key SHALL be silently skipped via `ON CONFLICT DO NOTHING`
+- **THEN** both SHALL be inserted (distinct turns of one multi-turn are not duplicates); items identical on the full natural key SHALL be silently skipped via `ON CONFLICT DO NOTHING`
 
 #### Scenario: Required fields validation
 - **WHEN** required envelope fields are missing (`testSuiteId`, `testSuiteRunId`, `computationId`, `computedAtMs`) or required per-item fields are missing (`testCaseRunResultId`, `testCaseId`, `testCaseName`, `testCaseData`, `runIndex`, `executionStatus`, `execDurationMs`, `metricValues`)
@@ -214,7 +214,7 @@ Eval summary list and detail responses SHALL expose `turnIndex` (0-based) and `t
 Status: **Implemented**
 
 #### Scenario: Multi-turn summary rows carry turn fields
-- **WHEN** a 3-turn conversation is evaluated under one computation
+- **WHEN** a 3-turn multi-turn is evaluated under one computation
 - **THEN** three summary rows SHALL exist for the same `(testCaseId, runIndex, computationId)`, with `turnIndex` `0`, `1`, `2` and `totalTurns` `3`
 
 #### Scenario: Single-turn summary is unchanged in shape

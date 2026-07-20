@@ -1,4 +1,4 @@
--- Per-turn result rows: each turn of a multi-turn conversation is its own row.
+-- Per-turn result rows: each turn of a multi-turn is its own row.
 -- turn_index is 0-based (matches run_index); total_turns is the planned turn count.
 -- NOT NULL DEFAULT backfills existing single-turn rows to 0/1 in a single metadata-only
 -- statement (PG 11+, no table rewrite).

@@ -34,20 +34,20 @@ public interface RunnableTestCaseSelector {
             UUID datasetId, String filterJson, Collection<UUID> excludedIds, int offset, int limit);
 
     /**
-     * Page of distinct conversation ids that have at least one turn matching the filter (row-level, like
-     * disable), in deterministic order ({@code min(created_at_ms) asc, conversation_id asc}).
+     * Page of distinct multiTurn ids that have at least one turn matching the filter (row-level, like
+     * disable), in deterministic order ({@code min(created_at_ms) asc, multi_turn_id asc}).
      */
-    List<String> loadRunnableConversationIdsPage(UUID datasetId, String filterJson, int offset, int limit);
+    List<String> loadRunnableMultiTurnIdsPage(UUID datasetId, String filterJson, int offset, int limit);
 
     /**
-     * The filter-matching turns of the given conversations, ordered by (conversation_id, turn_index).
+     * The filter-matching turns of the given multiTurns, ordered by (multi_turn_id, turn_index).
      * Only the filter is applied here; validity and exclusion are resolved at assembly time.
      */
-    List<TestCase> loadConversationTurns(UUID datasetId, Collection<String> conversationIds, String filterJson);
+    List<TestCase> loadMultiTurnTurns(UUID datasetId, Collection<String> multiTurnIds, String filterJson);
 
     /**
-     * Whether the dataset contains ANY conversation row (any row with a non-null {@code conversation_id}).
+     * Whether the dataset contains ANY multiTurn row (any row with a non-null {@code multi_turn_id}).
      * Used by the run-creation guard to reject MCP suites bound to a dataset carrying multi-turn rows.
      */
-    boolean datasetHasConversationRows(UUID datasetId);
+    boolean datasetHasMultiTurnRows(UUID datasetId);
 }

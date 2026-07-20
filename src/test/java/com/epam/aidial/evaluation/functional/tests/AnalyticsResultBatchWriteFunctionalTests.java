@@ -267,12 +267,12 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
     }
 
     @Test
-    @DisplayName("Should import a multi-turn conversation as distinct per-turn rows")
-    void shouldImportMultiTurnConversationAsDistinctRows() {
-        UUID conversationCaseId = UUID.randomUUID();
+    @DisplayName("Should import a multi-turn multiTurn as distinct per-turn rows")
+    void shouldImportMultiTurnAsDistinctRows() {
+        UUID multiTurnCaseId = UUID.randomUUID();
         List<TestCaseRunResultItemDto> turns = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
-            TestCaseRunResultItemDto turn = buildItem(conversationCaseId, "multi-turn-case", 0);
+            TestCaseRunResultItemDto turn = buildItem(multiTurnCaseId, "multi-turn-case", 0);
             turn.setTurnIndex(i);
             turn.setTotalTurns(3);
             turns.add(turn);

@@ -24,13 +24,13 @@ public class TestCaseRunResultResponseDto {
     private int runIndex;
 
     @Schema(
-            description = "0-based conversation turn index this row belongs to. Single-turn results are 0.",
+            description = "0-based multi-turn turn index this row belongs to. Single-turn results are 0.",
             example = "0")
     private int turnIndex;
 
     @Schema(
-            description = "Total number of turns in the conversation. Single-turn results are 1; "
-                    + "the last turn of a conversation is the row where turnIndex == totalTurns - 1.",
+            description = "Total number of turns in the multi-turn. Single-turn results are 1; "
+                    + "the last turn of a multi-turn is the row where turnIndex == totalTurns - 1.",
             example = "1")
     private int totalTurns;
 

@@ -21,8 +21,8 @@ public class TestCase {
     private String testCaseName;
     private String data;
     /** Row-based multi-turn grouping key; {@code null} for single-turn test cases. */
-    private UUID conversationId;
-    /** 0-based turn position within the conversation; {@code null} for single-turn test cases. */
+    private UUID multiTurnId;
+    /** 0-based turn position within the multiTurn; {@code null} for single-turn test cases. */
     private Integer turnIndex;
 
     private boolean valid;

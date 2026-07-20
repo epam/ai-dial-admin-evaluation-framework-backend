@@ -1,7 +1,7 @@
 {
   "id": "550e8400-e29b-41d4-a716-446655440001",
   "testCaseName": "Support chat - turn 0",
-  "conversationId": "9f1c2e7a-6b4d-4e2a-9c3f-1a2b3c4d5e6f",
+  "multiTurnId": "9f1c2e7a-6b4d-4e2a-9c3f-1a2b3c4d5e6f",
   "turnIndex": 0,
   "data": {
     "messages": [

@@ -658,7 +658,7 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().trim()).isEqualTo("testCaseName,conversationId,turnIndex");
+        assertThat(response.getBody().trim()).isEqualTo("testCaseName,multiTurnId,turnIndex");
     }
 
     @Test

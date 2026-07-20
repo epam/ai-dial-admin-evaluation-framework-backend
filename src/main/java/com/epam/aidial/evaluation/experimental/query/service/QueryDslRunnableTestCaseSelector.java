@@ -64,20 +64,20 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
     }
 
     @Override
-    public List<String> loadRunnableConversationIdsPage(UUID datasetId, String filterJson, int offset, int limit) {
+    public List<String> loadRunnableMultiTurnIdsPage(UUID datasetId, String filterJson, int offset, int limit) {
         final Condition filter = compile(datasetId, filterJson);
-        return testCaseRepository.findRunnableConversationIdsPage(datasetId, filter, offset, limit);
+        return testCaseRepository.findRunnableMultiTurnIdsPage(datasetId, filter, offset, limit);
     }
 
     @Override
-    public List<TestCase> loadConversationTurns(UUID datasetId, Collection<String> conversationIds, String filterJson) {
+    public List<TestCase> loadMultiTurnTurns(UUID datasetId, Collection<String> multiTurnIds, String filterJson) {
         final Condition filter = compile(datasetId, filterJson);
-        return testCaseRepository.findFilterMatchingTurnsByConversationIds(datasetId, conversationIds, filter);
+        return testCaseRepository.findFilterMatchingTurnsByMultiTurnIds(datasetId, multiTurnIds, filter);
     }
 
     @Override
-    public boolean datasetHasConversationRows(UUID datasetId) {
-        return testCaseRepository.existsConversationRowByDatasetId(datasetId);
+    public boolean datasetHasMultiTurnRows(UUID datasetId) {
+        return testCaseRepository.existsMultiTurnRowByDatasetId(datasetId);
     }
 
     /** Parses and translates the stored filter to a jOOQ {@link Condition}; {@code null} when there is no filter. */

@@ -19,17 +19,17 @@ import org.springframework.stereotype.Component;
 
 /**
  * Writes the frozen execution-unit input rows ({@code test_case_run_inputs}) for a suite run during the
- * snapshot phase. This is the single owner of the snapshot's row selection, conversation assembly, and
+ * snapshot phase. This is the single owner of the snapshot's row selection, multiTurn assembly, and
  * batched persistence; {@link TestSuiteEvaluationJob} calls {@link #writeInputs} inside its snapshot
  * transaction and uses the returned count as the authoritative {@code number_of_test_cases}.
  *
  * <p>Two execution-unit kinds are written, in deterministic order:
  *
  * <ol>
- *   <li>runnable SINGLE-TURN test cases ({@code conversation_id IS NULL}) as length-1 units;
- *   <li>CONVERSATIONS with at least one filter-matching turn as one assembled unit each (paged by distinct
- *       {@code conversation_id} so a conversation is never split across a page), with
- *       {@link ConversationAssembler} resolving runnable-vs-broken in memory.
+ *   <li>runnable SINGLE-TURN test cases ({@code multi_turn_id IS NULL}) as length-1 units;
+ *   <li>MULTI_TURNS with at least one filter-matching turn as one assembled unit each (paged by distinct
+ *       {@code multi_turn_id} so a multiTurn is never split across a page), with
+ *       {@link MultiTurnAssembler} resolving runnable-vs-broken in memory.
  * </ol>
  *
  * <p>Only the suite's {@code testCaseFilter} is applied in SQL (row-level, like disable); validity and the
@@ -44,7 +44,7 @@ public class SnapshotInputWriter {
     private static final int SNAPSHOT_PAGE_SIZE = 100;
 
     private final RunnableTestCaseSelector runnableTestCaseSelector;
-    private final ConversationAssembler conversationAssembler;
+    private final MultiTurnAssembler multiTurnAssembler;
     private final TestCaseRunInputRepository testCaseRunInputRepository;
     private final DisabledTestCaseIdsCodec disabledTestCaseIdsCodec;
 
@@ -53,7 +53,7 @@ public class SnapshotInputWriter {
      * Must be called inside the caller's snapshot transaction.
      *
      * @param disabledTestCaseIdsJson the suite's {@code disabledTestCaseIds} JSONB payload (array of UUID strings)
-     * @return the total number of execution units written (single-turn units + conversation units)
+     * @return the total number of execution units written (single-turn units + multiTurn units)
      */
     public int writeInputs(UUID runId, UUID datasetId, String filterJson, String disabledTestCaseIdsJson) {
         final List<UUID> disabledIds = disabledTestCaseIdsCodec.deserialize(disabledTestCaseIdsJson);
@@ -62,7 +62,7 @@ public class SnapshotInputWriter {
         testCaseRunInputRepository.deleteByRunId(runId);
 
         int position = writeSingleTurnUnits(runId, datasetId, filterJson, disabledIds, 0);
-        position = writeConversationUnits(runId, datasetId, filterJson, excludedSet, position);
+        position = writeMultiTurnUnits(runId, datasetId, filterJson, excludedSet, position);
         return position;
     }
 
@@ -97,47 +97,47 @@ public class SnapshotInputWriter {
     }
 
     /**
-     * Writes CONVERSATIONS with at least one filter-matching turn as assembled per-conversation execution units
-     * (one input row each), paging by distinct {@code conversation_id} so a conversation is never split across a
-     * page. Only the filter is applied in SQL (row-level, like disable); each conversation's filter-matching turns
-     * are grouped and handed to {@link ConversationAssembler}, which resolves runnable-vs-broken (validity,
+     * Writes MULTI_TURNS with at least one filter-matching turn as assembled per-multiTurn execution units
+     * (one input row each), paging by distinct {@code multi_turn_id} so a multiTurn is never split across a
+     * page. Only the filter is applied in SQL (row-level, like disable); each multiTurn's filter-matching turns
+     * are grouped and handed to {@link MultiTurnAssembler}, which resolves runnable-vs-broken (validity,
      * tail-only disable, contiguity, cap) in memory. Returns the next free {@code position}.
      */
-    private int writeConversationUnits(
+    private int writeMultiTurnUnits(
             UUID runId, UUID datasetId, String filterJson, Set<UUID> excludedSet, int startPosition) {
         int position = startPosition;
         int offset = 0;
-        List<String> conversationIds;
+        List<String> multiTurnIds;
         do {
-            conversationIds = runnableTestCaseSelector.loadRunnableConversationIdsPage(
+            multiTurnIds = runnableTestCaseSelector.loadRunnableMultiTurnIdsPage(
                     datasetId, filterJson, offset, SNAPSHOT_PAGE_SIZE);
-            if (!conversationIds.isEmpty()) {
+            if (!multiTurnIds.isEmpty()) {
                 final List<TestCase> allTurns =
-                        runnableTestCaseSelector.loadConversationTurns(datasetId, conversationIds, filterJson);
-                final Map<UUID, List<TestCase>> turnsByConversation = allTurns.stream()
+                        runnableTestCaseSelector.loadMultiTurnTurns(datasetId, multiTurnIds, filterJson);
+                final Map<UUID, List<TestCase>> turnsByMultiTurn = allTurns.stream()
                         .collect(Collectors.groupingBy(
-                                TestCase::getConversationId, LinkedHashMap::new, Collectors.toList()));
+                                TestCase::getMultiTurnId, LinkedHashMap::new, Collectors.toList()));
 
-                final List<TestCaseRunInput> batch = new ArrayList<>(conversationIds.size());
-                for (String conversationId : conversationIds) {
-                    final List<TestCase> turns = turnsByConversation.get(UUID.fromString(conversationId));
+                final List<TestCaseRunInput> batch = new ArrayList<>(multiTurnIds.size());
+                for (String multiTurnId : multiTurnIds) {
+                    final List<TestCase> turns = turnsByMultiTurn.get(UUID.fromString(multiTurnId));
                     if (turns == null || turns.isEmpty()) {
                         continue;
                     }
-                    // A fully-disabled conversation yields no unit (empty) — it drops out of the run entirely.
-                    final Optional<ConversationAssembler.AssembledConversation> assembledOpt =
-                            conversationAssembler.assemble(turns, excludedSet);
+                    // A fully-disabled multiTurn yields no unit (empty) — it drops out of the run entirely.
+                    final Optional<MultiTurnAssembler.AssembledMultiTurn> assembledOpt =
+                            multiTurnAssembler.assemble(turns, excludedSet);
                     if (assembledOpt.isEmpty()) {
                         continue;
                     }
-                    final ConversationAssembler.AssembledConversation assembled = assembledOpt.get();
+                    final MultiTurnAssembler.AssembledMultiTurn assembled = assembledOpt.get();
                     batch.add(TestCaseRunInput.builder()
                             .runId(runId)
                             .position(position++)
                             .testCaseId(assembled.representativeTestCaseId())
                             .testCaseName(assembled.representativeTestCaseName())
                             .testCaseData(assembled.representativeTestCaseData())
-                            .conversationId(assembled.conversationId())
+                            .multiTurnId(assembled.multiTurnId())
                             .totalTurns(assembled.totalTurns())
                             .turns(assembled.turnsJson())
                             .broken(assembled.broken())
@@ -148,7 +148,7 @@ public class SnapshotInputWriter {
                 }
             }
             offset += SNAPSHOT_PAGE_SIZE;
-        } while (conversationIds.size() >= SNAPSHOT_PAGE_SIZE);
+        } while (multiTurnIds.size() >= SNAPSHOT_PAGE_SIZE);
         return position;
     }
 }

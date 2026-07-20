@@ -53,8 +53,8 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("MultiTurnConversationExecutor per-turn emission (row-based)")
-class MultiTurnConversationExecutorTest {
+@DisplayName("MultiTurnExecutor per-turn emission (row-based)")
+class MultiTurnExecutorTest {
 
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
 
@@ -84,12 +84,12 @@ class MultiTurnConversationExecutorTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private MultiTurnConversationExecutor executor;
+    private MultiTurnExecutor executor;
 
     @BeforeEach
     void setUp() {
         final QuietJsonService jsonService = new QuietJsonService(objectMapper);
-        executor = new MultiTurnConversationExecutor(
+        executor = new MultiTurnExecutor(
                 resolvedRequestService,
                 urlBuilder,
                 serializerRegistry,
@@ -209,7 +209,7 @@ class MultiTurnConversationExecutorTest {
     }
 
     @Test
-    @DisplayName("fail-fast on a mid-conversation HTTP failure: k SUCCESS rows + 1 ERROR row, remaining turns skipped")
+    @DisplayName("fail-fast on a mid-multiTurn HTTP failure: k SUCCESS rows + 1 ERROR row, remaining turns skipped")
     void failFastOnHttpFailure() {
         when(resolvedRequestService.resolve(any(), any(), any()))
                 .thenReturn(resolvedTurn("turn-0"), resolvedTurn("turn-1"));
@@ -315,7 +315,7 @@ class MultiTurnConversationExecutorTest {
                 .runId(UUID.randomUUID())
                 .testCaseId(UUID.randomUUID())
                 .testCaseName("conv-1")
-                .conversationId(UUID.randomUUID())
+                .multiTurnId(UUID.randomUUID())
                 .turns("[]")
                 .build();
 
@@ -394,7 +394,7 @@ class MultiTurnConversationExecutorTest {
     }
 
     /**
-     * Builds a conversation input of {@code n} frozen turns (as the snapshot phase writes them): an ordered
+     * Builds a multiTurn input of {@code n} frozen turns (as the snapshot phase writes them): an ordered
      * {@code turns} JSON array where each element carries a discrete row's {@code testCaseId}/{@code
      * testCaseName}/{@code turnIndex} and scalar {@code data} ({@code {"question":"q<i>"}}).
      */
@@ -412,7 +412,7 @@ class MultiTurnConversationExecutorTest {
         }
         return TestCaseRunInput.builder()
                 .runId(UUID.randomUUID())
-                .conversationId(UUID.randomUUID())
+                .multiTurnId(UUID.randomUUID())
                 .testCaseId(UUID.randomUUID())
                 .testCaseName("conv-1 / turn 0")
                 .totalTurns(n)
@@ -421,7 +421,7 @@ class MultiTurnConversationExecutorTest {
     }
 
     /**
-     * Builds a conversation input whose frozen turns carry the given authored {@code turnIndex} values (as the
+     * Builds a multiTurn input whose frozen turns carry the given authored {@code turnIndex} values (as the
      * snapshot phase writes them after non-contiguous survivor selection); {@code data} is {@code
      * {"question":"q<index>"}} per turn.
      */
@@ -439,7 +439,7 @@ class MultiTurnConversationExecutorTest {
         }
         return TestCaseRunInput.builder()
                 .runId(UUID.randomUUID())
-                .conversationId(UUID.randomUUID())
+                .multiTurnId(UUID.randomUUID())
                 .testCaseId(UUID.randomUUID())
                 .testCaseName("conv-1 / turn 0")
                 .totalTurns(turnIndices.length)

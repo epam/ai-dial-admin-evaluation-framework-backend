@@ -18,24 +18,24 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Assembles the turns of a single conversation into one runnable execution unit, applying the row-based
- * multi-turn selection rules at snapshot time. The input {@code turns} are the conversation's
+ * Assembles the turns of a single multiTurn into one runnable execution unit, applying the row-based
+ * multi-turn selection rules at snapshot time. The input {@code turns} are the multiTurn's
  * <b>filter-matching</b> turns (the suite's {@code testCaseFilter} is applied row-level in SQL upstream,
  * like disable); when the suite has no filter this is every turn. Exclusion (the suite's
  * {@code disabledTestCaseIds}) is applied <b>first</b>, and every subsequent rule is evaluated over the
  * <b>surviving</b> turns only — a disabled turn has no influence on the outcome:
  *
  * <ul>
- *   <li>No surviving turns (e.g. every turn disabled) → the conversation contributes <b>no execution
+ *   <li>No surviving turns (e.g. every turn disabled) → the multiTurn contributes <b>no execution
  *       unit</b> at all ({@link Optional#empty()}); it is not a broken unit, it simply drops out of the run.
- *   <li>Any invalid turn ({@code is_valid = false}) among the survivors → the whole conversation is broken.
- *   <li>More than {@link ValidationConstants#MAX_CONVERSATION_TURNS} survivors → broken.
+ *   <li>Any invalid turn ({@code is_valid = false}) among the survivors → the whole multiTurn is broken.
+ *   <li>More than {@link ValidationConstants#MAX_MULTI_TURN_TURNS} survivors → broken.
  * </ul>
  *
  * <p>Ordering and sequencing are <b>not</b> integrity concerns: the survivors run in ascending authored
  * {@code turn_index} order with their authored indices preserved (no renumbering), and gaps are allowed — a
  * turn disabled or filtered out at the start, middle, or end simply drops, and the remaining turns run. A
- * missing turn 0 or a hole no longer breaks the conversation.
+ * missing turn 0 or a hole no longer breaks the multiTurn.
  *
  * <p>A runnable unit carries the ordered surviving turns (as {@code turnsJson}) and {@code totalTurns} = the
  * surviving count. The turns keep their authored {@code turn_index}, so the maximum authored surviving index
@@ -46,16 +46,16 @@ import tools.jackson.databind.node.ObjectNode;
 @Component
 @LogExecution
 @RequiredArgsConstructor
-public class ConversationAssembler {
+public class MultiTurnAssembler {
 
     private final ObjectMapper objectMapper;
 
     /**
-     * Assembles a conversation's (filter-matching) turns into an execution unit, or {@link Optional#empty()}
-     * when no turn survives exclusion — a fully-disabled conversation contributes nothing to the run.
+     * Assembles a multiTurn's (filter-matching) turns into an execution unit, or {@link Optional#empty()}
+     * when no turn survives exclusion — a fully-disabled multiTurn contributes nothing to the run.
      */
-    public Optional<AssembledConversation> assemble(List<TestCase> turns, Set<UUID> excludedIds) {
-        final UUID conversationId = turns.getFirst().getConversationId();
+    public Optional<AssembledMultiTurn> assemble(List<TestCase> turns, Set<UUID> excludedIds) {
+        final UUID multiTurnId = turns.getFirst().getMultiTurnId();
 
         final List<TestCase> survivors = turns.stream()
                 .filter(t -> !excludedIds.contains(t.getId()))
@@ -63,7 +63,7 @@ public class ConversationAssembler {
                         (TestCase t) -> t.getTurnIndex() == null ? Integer.MAX_VALUE : t.getTurnIndex()))
                 .toList();
 
-        // Every turn excluded (disabled) → this conversation is deselected entirely, not a broken unit.
+        // Every turn excluded (disabled) → this multiTurn is deselected entirely, not a broken unit.
         if (survivors.isEmpty()) {
             return Optional.empty();
         }
@@ -72,12 +72,12 @@ public class ConversationAssembler {
         // Ordering/sequencing is NOT an integrity concern — a missing turn 0, a gap, or a filtered-out
         // start/middle turn simply yields a shorter survivor list, run in ascending authored turn_index order.
         final boolean anyInvalid = survivors.stream().anyMatch(t -> !t.isValid());
-        final boolean broken = anyInvalid || survivors.size() > ValidationConstants.MAX_CONVERSATION_TURNS;
+        final boolean broken = anyInvalid || survivors.size() > ValidationConstants.MAX_MULTI_TURN_TURNS;
 
         final TestCase representative = survivors.getFirst();
 
-        return Optional.of(AssembledConversation.builder()
-                .conversationId(conversationId)
+        return Optional.of(AssembledMultiTurn.builder()
+                .multiTurnId(multiTurnId)
                 .broken(broken)
                 .totalTurns(broken ? 0 : survivors.size())
                 .representativeTestCaseId(representative.getId())
@@ -100,7 +100,7 @@ public class ConversationAssembler {
         try {
             return objectMapper.writeValueAsString(array);
         } catch (JacksonException e) {
-            throw new IllegalStateException("Failed to serialize assembled conversation turns", e);
+            throw new IllegalStateException("Failed to serialize assembled multi-turn turns", e);
         }
     }
 
@@ -111,13 +111,13 @@ public class ConversationAssembler {
         try {
             return objectMapper.readTree(data);
         } catch (JacksonException e) {
-            throw new IllegalStateException("Failed to parse test case data JSON during conversation assembly", e);
+            throw new IllegalStateException("Failed to parse test case data JSON during multi-turn assembly", e);
         }
     }
 
     @Builder
-    public record AssembledConversation(
-            UUID conversationId,
+    public record AssembledMultiTurn(
+            UUID multiTurnId,
             boolean broken,
             int totalTurns,
             UUID representativeTestCaseId,

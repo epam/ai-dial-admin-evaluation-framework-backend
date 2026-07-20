@@ -166,10 +166,10 @@ public abstract class McpEvaluationRunFunctionalTests extends AbstractMcpFunctio
     }
 
     @Test
-    @DisplayName("Run creation on an MCP suite whose dataset has conversation rows is rejected with 409")
-    void shouldRejectRunForMcpSuiteWithConversationRows() {
+    @DisplayName("Run creation on an MCP suite whose dataset has multiTurn rows is rejected with 409")
+    void shouldRejectRunForMcpSuiteWithMultiTurnRows() {
         TestSuiteResponseDto suite = createMcpSuite();
-        createConversationTurn(suite.getId(), "conv / turn 0", UUID.randomUUID(), 0, Map.of("userQuery", "hi"));
+        createMultiTurnTurn(suite.getId(), "conv / turn 0", UUID.randomUUID(), 0, Map.of("userQuery", "hi"));
 
         ResponseEntity<String> response = restTemplate.postForEntity(
                 apiUrl("/test-suites/" + suite.getId() + "/runs"),
@@ -184,12 +184,12 @@ public abstract class McpEvaluationRunFunctionalTests extends AbstractMcpFunctio
 
     // --- Helper Methods ---
 
-    private TestCaseResponseDto createConversationTurn(
-            UUID testSuiteId, String name, UUID conversationId, int turnIndex, Map<String, Object> data) {
+    private TestCaseResponseDto createMultiTurnTurn(
+            UUID testSuiteId, String name, UUID multiTurnId, int turnIndex, Map<String, Object> data) {
         UUID datasetId = metaTestDataHelper.getDatasetId(testSuiteId);
         TestCaseRequestDto req = TestCaseRequestDto.builder()
                 .testCaseName(name)
-                .conversationId(conversationId)
+                .multiTurnId(multiTurnId)
                 .turnIndex(turnIndex)
                 .data(data)
                 .build();

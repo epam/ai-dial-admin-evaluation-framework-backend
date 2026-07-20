@@ -83,16 +83,16 @@ public class TestSuiteRunService {
         }
 
         if (testSuite.getSuiteType() == SuiteType.MCP_TOOL
-                && runnableTestCaseCounter.hasConversationRows(testSuite.getDatasetId())) {
-            throw new InvalidOperationException("Cannot start a run: multi-turn conversations are not supported "
-                    + "for MCP suites yet. The bound dataset contains conversation rows.");
+                && runnableTestCaseCounter.hasMultiTurnRows(testSuite.getDatasetId())) {
+            throw new InvalidOperationException("Cannot start a run: multi-turn evaluation is not supported "
+                    + "for MCP suites yet. The bound dataset contains multi-turn rows.");
         }
 
         List<UUID> disabledIds = disabledTestCaseIdsCodec.deserialize(testSuite.getDisabledTestCaseIds());
-        // Count of individual runnable test cases (valid + enabled + filter), counting conversation turns
+        // Count of individual runnable test cases (valid + enabled + filter), counting multiTurn turns
         // as individual rows — this is the empty-suite guard. It seeds numberOfTestCases coarsely; the
         // snapshot phase overwrites it with the authoritative execution-unit count (single-turn rows +
-        // assembled conversations). Conversation integrity is resolved only at snapshot, never here.
+        // assembled multiTurns). MultiTurn integrity is resolved only at snapshot, never here.
         long numberOfTestCases = runnableTestCaseCounter.countRunnable(
                 testSuite.getDatasetId(), testSuite.getTestCaseFilter(), disabledIds);
         if (numberOfTestCases == 0) {

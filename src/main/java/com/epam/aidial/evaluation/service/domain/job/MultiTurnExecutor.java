@@ -36,10 +36,10 @@ import org.springframework.util.MultiValueMap;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Multi-turn (conversational) executor for {@code DEPLOYMENT} suites. Drives a sequence of chat-completions
- * turns for one assembled conversation, accumulating {@code messages} history and re-sending the full
- * history each turn. A conversation is an <b>ordered group of discrete test-case rows</b> (one row per turn,
- * keyed by {@code conversation_id}/{@code turn_index}), frozen into the assembled input's {@code turns} JSON
+ * Multi-turn executor for {@code DEPLOYMENT} suites. Drives a sequence of chat-completions
+ * turns for one assembled multiTurn, accumulating {@code messages} history and re-sending the full
+ * history each turn. A multiTurn is an <b>ordered group of discrete test-case rows</b> (one row per turn,
+ * keyed by {@code multi_turn_id}/{@code turn_index}), frozen into the assembled input's {@code turns} JSON
  * at snapshot time. Each turn resolves the suite's single {@code requestTemplate}/{@code inputBindings}
  * against that turn's own <b>scalar</b> row {@code data} — there is no array-valued column projection.
  * Turn count {@code N} is the number of frozen (surviving) turns.
@@ -48,21 +48,21 @@ import tools.jackson.databind.JsonNode;
  * ({@code testCaseId}/{@code testCaseName}), {@code turn_index} (authored 0-based) / {@code total_turns}
  * ({@code N}), the per-turn scalar {@code testCaseData}, the full accumulated {@code requestBody} actually
  * sent for that turn, that turn's raw {@code responseBody}, and that turn's scalar {@code extractedColumns}/
- * {@code extractionWarnings}. All rows of a conversation share the conversation span's {@code traceId}.
+ * {@code extractionWarnings}. All rows of a multiTurn share the multiTurn span's {@code traceId}.
  *
  * <p>Contract: the resolved request body must be JSON with a top-level {@code messages} array; the
  * assistant reply is read from the hardcoded {@code choices[0].message} OpenAI path; turns are always
  * invoked non-streaming; the loop is fail-fast — the first turn that fails after retries (or returns a 2xx
- * with no assistant message object) aborts the conversation. Completed turns are persisted as {@code
+ * with no assistant message object) aborts the multiTurn. Completed turns are persisted as {@code
  * SUCCESS} rows; the failing turn is persisted as one {@code ERROR} row (both with {@code total_turns = N}).
- * Broken conversations are detected at snapshot time and never reach this executor — they are turned into a
+ * Broken multiTurns are detected at snapshot time and never reach this executor — they are turned into a
  * single {@code 0/0} ERROR row by {@link EvaluationWorker}.
  */
 @Slf4j
 @Component
 @LogExecution
 @RequiredArgsConstructor
-public class MultiTurnConversationExecutor {
+public class MultiTurnExecutor {
 
     private static final String MESSAGES_FIELD = "messages";
 
@@ -77,10 +77,10 @@ public class MultiTurnConversationExecutor {
     private final Clock clock;
 
     /**
-     * Runs the full conversation for one test case, returning one {@link TestCaseRunResult} per turn (fewer
+     * Runs the full multiTurn for one test case, returning one {@link TestCaseRunResult} per turn (fewer
      * than {@code N} on early abort; a single degenerate {@code ERROR} row on a data-shape problem). The whole
-     * conversation executes inside the caller's single worker task / semaphore permit; turns are sequential.
-     * {@code traceId} is the conversation span's id (shared by every turn row).
+     * multiTurn executes inside the caller's single worker task / semaphore permit; turns are sequential.
+     * {@code traceId} is the multiTurn span's id (shared by every turn row).
      */
     public List<TestCaseRunResult> execute(
             TestCaseRunInput input,
@@ -93,10 +93,10 @@ public class MultiTurnConversationExecutor {
         final List<FrozenTurn> turns = parseTurns(input.getTurns());
         if (turns.isEmpty()) {
             log.warn(
-                    "Multi-turn conversation {} for test case {} has no readable frozen turns",
-                    input.getConversationId(),
+                    "Multi-turn {} for test case {} has no readable frozen turns",
+                    input.getMultiTurnId(),
                     input.getTestCaseId());
-            return List.of(buildConversationErrorRow(input, context, runIndex, traceId, execStartedAtMs));
+            return List.of(buildMultiTurnErrorRow(input, context, runIndex, traceId, execStartedAtMs));
         }
 
         final List<InputBindingDto> bindings = input.getInputBindingsOverride() != null
@@ -188,7 +188,7 @@ public class MultiTurnConversationExecutor {
             }
         } catch (RuntimeException e) {
             log.warn(
-                    "Multi-turn conversation failed for test case {} in suite {} at turn {}: {}",
+                    "Multi-turn run failed for test case {} in suite {} at turn {}: {}",
                     current.testCaseId(),
                     context.getSuiteId(),
                     current.turnIndex(),
@@ -259,7 +259,7 @@ public class MultiTurnConversationExecutor {
     }
 
     /**
-     * Runs one conversation turn without mutating shared state: it re-sends the accumulated {@code history}
+     * Runs one multiTurn turn without mutating shared state: it re-sends the accumulated {@code history}
      * plus this turn's new user message(s) non-streaming, and on a 2xx reads the assistant reply and extracts
      * response columns. {@code history} is read only to build the request body.
      */
@@ -366,14 +366,14 @@ public class MultiTurnConversationExecutor {
     }
 
     /**
-     * Single degenerate {@code ERROR} row for a conversation that carries no readable frozen turns
-     * (defensive; the snapshot phase never emits such an input for a non-broken conversation):
+     * Single degenerate {@code ERROR} row for a multiTurn that carries no readable frozen turns
+     * (defensive; the snapshot phase never emits such an input for a non-broken multiTurn):
      * {@code turn_index=0}, {@code total_turns=0} (distinguishing "never started" from a real single turn,
      * which is {@code 0/1}), with the failure captured in {@code logDetails}.
      */
-    private TestCaseRunResult buildConversationErrorRow(
+    private TestCaseRunResult buildMultiTurnErrorRow(
             TestCaseRunInput input, EvaluationContext context, int runIndex, String traceId, long execStartedAtMs) {
-        final String message = "Conversation has no readable turns";
+        final String message = "MultiTurn has no readable turns";
         final long now = clock.millis();
         return TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
@@ -439,7 +439,7 @@ public class MultiTurnConversationExecutor {
         return headers;
     }
 
-    /** One frozen turn of an assembled conversation: its own row identity, authored index, and scalar data. */
+    /** One frozen turn of an assembled multiTurn: its own row identity, authored index, and scalar data. */
     private record FrozenTurn(UUID testCaseId, String testCaseName, int turnIndex, Map<String, Object> data) {}
 
     /** Everything one turn needs, ready to execute: its index, the per-turn scalar data, and the send context. */

@@ -57,7 +57,7 @@ class SnapshotInputWriterTest {
     @BeforeEach
     void setUp() {
         // Real collaborators (per the test contract): only the selector + input repository are mocked.
-        final ConversationAssembler assembler = new ConversationAssembler(objectMapper);
+        final MultiTurnAssembler assembler = new MultiTurnAssembler(objectMapper);
         final DisabledTestCaseIdsCodec codec = new DisabledTestCaseIdsCodec(objectMapper);
         writer = new SnapshotInputWriter(selector, assembler, inputRepository, codec);
     }
@@ -89,19 +89,19 @@ class SnapshotInputWriterTest {
         assertThat(inputs).extracting(TestCaseRunInput::getTestCaseId).containsExactly(a.getId(), b.getId());
         assertThat(inputs).allSatisfy(i -> {
             assertThat(i.getRunId()).isEqualTo(RUN_ID);
-            assertThat(i.getConversationId()).isNull();
+            assertThat(i.getMultiTurnId()).isNull();
             assertThat(i.getTurns()).isNull();
             assertThat(i.isBroken()).isFalse();
         });
     }
 
     @Test
-    @DisplayName("assembles a contiguous conversation into one runnable unit carrying its frozen turns")
-    void writesRunnableConversationUnit() {
-        final UUID conversationId = UUID.randomUUID();
-        final TestCase t0 = turn(conversationId, 0, true);
-        final TestCase t1 = turn(conversationId, 1, true);
-        stubConversation(conversationId, List.of(t0, t1));
+    @DisplayName("assembles a contiguous multiTurn into one runnable unit carrying its frozen turns")
+    void writesRunnableMultiTurnUnit() {
+        final UUID multiTurnId = UUID.randomUUID();
+        final TestCase t0 = turn(multiTurnId, 0, true);
+        final TestCase t1 = turn(multiTurnId, 1, true);
+        stubMultiTurn(multiTurnId, List.of(t0, t1));
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, null);
 
@@ -109,7 +109,7 @@ class SnapshotInputWriterTest {
         verify(inputRepository).insertBatch(batchCaptor.capture());
         final TestCaseRunInput input = batchCaptor.getValue().getFirst();
         assertThat(input.getPosition()).isZero();
-        assertThat(input.getConversationId()).isEqualTo(conversationId);
+        assertThat(input.getMultiTurnId()).isEqualTo(multiTurnId);
         assertThat(input.getTotalTurns()).isEqualTo(2);
         assertThat(input.isBroken()).isFalse();
         assertThat(input.getTestCaseId()).isEqualTo(t0.getId());
@@ -117,12 +117,12 @@ class SnapshotInputWriterTest {
     }
 
     @Test
-    @DisplayName("assembles a non-contiguous conversation as runnable, preserving authored turn indices")
-    void writesNonContiguousConversationAsRunnable() {
-        final UUID conversationId = UUID.randomUUID();
-        final TestCase t0 = turn(conversationId, 0, true);
-        final TestCase t2 = turn(conversationId, 2, true); // gap at index 1 — no longer breaks
-        stubConversation(conversationId, List.of(t0, t2));
+    @DisplayName("assembles a non-contiguous multiTurn as runnable, preserving authored turn indices")
+    void writesNonContiguousMultiTurnAsRunnable() {
+        final UUID multiTurnId = UUID.randomUUID();
+        final TestCase t0 = turn(multiTurnId, 0, true);
+        final TestCase t2 = turn(multiTurnId, 2, true); // gap at index 1 — no longer breaks
+        stubMultiTurn(multiTurnId, List.of(t0, t2));
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, null);
 
@@ -138,12 +138,12 @@ class SnapshotInputWriterTest {
     }
 
     @Test
-    @DisplayName("marks a conversation with an invalid surviving turn broken (0/0, no turns)")
-    void marksInvalidTurnConversationBroken() {
-        final UUID conversationId = UUID.randomUUID();
-        final TestCase t0 = turn(conversationId, 0, true);
-        final TestCase t1 = turn(conversationId, 1, false); // invalid surviving turn breaks
-        stubConversation(conversationId, List.of(t0, t1));
+    @DisplayName("marks a multiTurn with an invalid surviving turn broken (0/0, no turns)")
+    void marksInvalidTurnMultiTurnBroken() {
+        final UUID multiTurnId = UUID.randomUUID();
+        final TestCase t0 = turn(multiTurnId, 0, true);
+        final TestCase t1 = turn(multiTurnId, 1, false); // invalid surviving turn breaks
+        stubMultiTurn(multiTurnId, List.of(t0, t1));
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, null);
 
@@ -156,13 +156,13 @@ class SnapshotInputWriterTest {
     }
 
     @Test
-    @DisplayName("continues positions from single-turn units into conversation units across both phases")
+    @DisplayName("continues positions from single-turn units into multiTurn units across both phases")
     void positionsContinueAcrossPhases() {
         final TestCase single = singleTurn("solo", "{}");
         when(selector.loadRunnableSingleTurnPage(eq(DATASET_ID), any(), any(), anyInt(), anyInt()))
                 .thenReturn(List.of(single));
-        final UUID conversationId = UUID.randomUUID();
-        stubConversation(conversationId, List.of(turn(conversationId, 0, true)));
+        final UUID multiTurnId = UUID.randomUUID();
+        stubMultiTurn(multiTurnId, List.of(turn(multiTurnId, 0, true)));
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, null);
 
@@ -170,19 +170,19 @@ class SnapshotInputWriterTest {
         verify(inputRepository, times(2)).insertBatch(batchCaptor.capture());
         final List<List<TestCaseRunInput>> batches = batchCaptor.getAllValues();
         assertThat(batches.get(0).getFirst().getPosition()).isZero();
-        assertThat(batches.get(0).getFirst().getConversationId()).isNull();
+        assertThat(batches.get(0).getFirst().getMultiTurnId()).isNull();
         assertThat(batches.get(1).getFirst().getPosition()).isEqualTo(1);
-        assertThat(batches.get(1).getFirst().getConversationId()).isEqualTo(conversationId);
+        assertThat(batches.get(1).getFirst().getMultiTurnId()).isEqualTo(multiTurnId);
     }
 
     @Test
     @DisplayName("parses disabledTestCaseIds via the real codec and excludes the disabled tail turn from assembly")
     void excludesDisabledTailTurnParsedFromJson() {
-        final UUID conversationId = UUID.randomUUID();
-        final TestCase t0 = turn(conversationId, 0, true);
-        final TestCase t1 = turn(conversationId, 1, true);
-        final TestCase t2 = turn(conversationId, 2, true);
-        stubConversation(conversationId, List.of(t0, t1, t2));
+        final UUID multiTurnId = UUID.randomUUID();
+        final TestCase t0 = turn(multiTurnId, 0, true);
+        final TestCase t1 = turn(multiTurnId, 1, true);
+        final TestCase t2 = turn(multiTurnId, 2, true);
+        stubMultiTurn(multiTurnId, List.of(t0, t1, t2));
         final String disabledJson = "[\"" + t2.getId() + "\"]";
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, disabledJson);
@@ -201,12 +201,12 @@ class SnapshotInputWriterTest {
     }
 
     @Test
-    @DisplayName("skips a fully-disabled conversation entirely (no unit, not a broken row)")
-    void skipsFullyDisabledConversation() {
-        final UUID conversationId = UUID.randomUUID();
-        final TestCase t0 = turn(conversationId, 0, true);
-        final TestCase t2 = turn(conversationId, 2, true);
-        stubConversation(conversationId, List.of(t0, t2));
+    @DisplayName("skips a fully-disabled multiTurn entirely (no unit, not a broken row)")
+    void skipsFullyDisabledMultiTurn() {
+        final UUID multiTurnId = UUID.randomUUID();
+        final TestCase t0 = turn(multiTurnId, 0, true);
+        final TestCase t2 = turn(multiTurnId, 2, true);
+        stubMultiTurn(multiTurnId, List.of(t0, t2));
         final String disabledJson = "[\"" + t0.getId() + "\",\"" + t2.getId() + "\"]";
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, disabledJson);
@@ -241,10 +241,10 @@ class SnapshotInputWriterTest {
                         IntStream.rangeClosed(0, PAGE_SIZE).boxed().toList());
     }
 
-    private void stubConversation(UUID conversationId, List<TestCase> turns) {
-        when(selector.loadRunnableConversationIdsPage(eq(DATASET_ID), any(), anyInt(), anyInt()))
-                .thenReturn(List.of(conversationId.toString()));
-        when(selector.loadConversationTurns(eq(DATASET_ID), any(), any())).thenReturn(turns);
+    private void stubMultiTurn(UUID multiTurnId, List<TestCase> turns) {
+        when(selector.loadRunnableMultiTurnIdsPage(eq(DATASET_ID), any(), anyInt(), anyInt()))
+                .thenReturn(List.of(multiTurnId.toString()));
+        when(selector.loadMultiTurnTurns(eq(DATASET_ID), any(), any())).thenReturn(turns);
     }
 
     private TestCase singleTurn(String name, String data) {
@@ -257,13 +257,13 @@ class SnapshotInputWriterTest {
                 .build();
     }
 
-    private TestCase turn(UUID conversationId, int index, boolean valid) {
+    private TestCase turn(UUID multiTurnId, int index, boolean valid) {
         return TestCase.builder()
                 .id(UUID.randomUUID())
                 .datasetId(DATASET_ID)
                 .testCaseName("turn-" + index)
                 .data("{\"q\":" + index + "}")
-                .conversationId(conversationId)
+                .multiTurnId(multiTurnId)
                 .turnIndex(index)
                 .valid(valid)
                 .build();

@@ -55,7 +55,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class TestCaseService {
 
     private static final Set<String> VALIDATION_RELEVANT_FIELDS = Set.of("data", "testCaseName");
-    private static final String CONVERSATION_TURN_CONSTRAINT = "uq_test_cases_conversation_turn";
+    private static final String MULTI_TURN_TURN_CONSTRAINT = "uq_test_cases_multi_turn_turn";
 
     private final TestCaseRepository testCaseRepository;
     private final DatasetQueryService datasetQueryService;
@@ -70,13 +70,13 @@ public class TestCaseService {
     private final TestCaseBulkDeleteValidator bulkDeleteValidator;
     private final TestCaseBulkSelectorResolver bulkSelectorResolver;
     private final TransactionTimestampContext transactionTimestampContext;
-    private final ConversationFieldsValidator conversationFieldsValidator;
+    private final MultiTurnFieldsValidator multiTurnFieldsValidator;
 
     @Transactional("metaTransactionManager")
     public TestCaseResponseDto create(UUID datasetId, TestCaseRequestDto dto, boolean includeWarnings) {
         List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(datasetId);
         TestCase entity = testCaseMapper.toEntity(dto, datasetId);
-        conversationFieldsValidator.validate(entity.getConversationId(), entity.getTurnIndex());
+        multiTurnFieldsValidator.validate(entity.getMultiTurnId(), entity.getTurnIndex());
         runValidation(entity, schema);
         try {
             TestCase saved = testCaseRepository.save(entity);
@@ -123,7 +123,7 @@ public class TestCaseService {
                 .orElseThrow(() -> new EntityNotFoundException("TestCase not found: " + id));
         List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(datasetId);
         testCaseMapper.updateEntity(existing, dto);
-        conversationFieldsValidator.validate(existing.getConversationId(), existing.getTurnIndex());
+        multiTurnFieldsValidator.validate(existing.getMultiTurnId(), existing.getTurnIndex());
         runValidation(existing, schema);
         try {
             TestCase updated = testCaseRepository.update(existing);
@@ -144,7 +144,7 @@ public class TestCaseService {
                 .orElseThrow(() -> new EntityNotFoundException("TestCase not found: " + id));
         List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(datasetId);
         applyMergePatch(existing, patchBody);
-        conversationFieldsValidator.validate(existing.getConversationId(), existing.getTurnIndex());
+        multiTurnFieldsValidator.validate(existing.getMultiTurnId(), existing.getTurnIndex());
         runValidation(existing, schema);
         try {
             TestCase updated = testCaseRepository.update(existing);
@@ -172,7 +172,7 @@ public class TestCaseService {
         for (TestCaseBatchPutItemDto item : items) {
             TestCase entity = existingById.get(item.getId());
             testCaseMapper.updateEntity(entity, item);
-            conversationFieldsValidator.validate(entity.getConversationId(), entity.getTurnIndex());
+            multiTurnFieldsValidator.validate(entity.getMultiTurnId(), entity.getTurnIndex());
             entities.add(entity);
         }
 
@@ -202,7 +202,7 @@ public class TestCaseService {
             Map<String, Object> patchBody = new HashMap<>(item);
             patchBody.remove("id");
             applyMergePatch(entity, patchBody);
-            conversationFieldsValidator.validate(entity.getConversationId(), entity.getTurnIndex());
+            multiTurnFieldsValidator.validate(entity.getMultiTurnId(), entity.getTurnIndex());
             entities.add(entity);
         }
 
@@ -308,7 +308,7 @@ public class TestCaseService {
                 .datasetId(original.getDatasetId())
                 .testCaseName(original.getTestCaseName())
                 .data(original.getData())
-                .conversationId(original.getConversationId())
+                .multiTurnId(original.getMultiTurnId())
                 .turnIndex(original.getTurnIndex())
                 .valid(original.isValid())
                 .validationWarnings(original.getValidationWarnings())
@@ -320,16 +320,16 @@ public class TestCaseService {
     private static boolean equalForUpdate(TestCase a, TestCase b) {
         return Objects.equals(a.getTestCaseName(), b.getTestCaseName())
                 && Objects.equals(a.getData(), b.getData())
-                && Objects.equals(a.getConversationId(), b.getConversationId())
+                && Objects.equals(a.getMultiTurnId(), b.getMultiTurnId())
                 && Objects.equals(a.getTurnIndex(), b.getTurnIndex())
                 && a.isValid() == b.isValid()
                 && Objects.equals(a.getValidationWarnings(), b.getValidationWarnings());
     }
 
     private void rethrowWriteConflict(DataIntegrityViolationException ex, String testCaseName) {
-        if (UniqueConstraintViolationDetector.mentionsConstraint(ex, CONVERSATION_TURN_CONSTRAINT)) {
+        if (UniqueConstraintViolationDetector.mentionsConstraint(ex, MULTI_TURN_TURN_CONSTRAINT)) {
             throw new UniqueConstraintViolationException(
-                    "A test case already exists for this conversation and turn index", (String) null);
+                    "A test case already exists for this multi-turn and turn index", (String) null);
         }
         UniqueConstraintViolationDetector.rethrowIfUniqueViolation(
                 ex, "A test case with name '" + testCaseName + "' already exists in this dataset", testCaseName);
@@ -411,9 +411,9 @@ public class TestCaseService {
         try {
             testCaseRepository.batchUpdate(entities);
         } catch (DataIntegrityViolationException ex) {
-            if (UniqueConstraintViolationDetector.mentionsConstraint(ex, CONVERSATION_TURN_CONSTRAINT)) {
+            if (UniqueConstraintViolationDetector.mentionsConstraint(ex, MULTI_TURN_TURN_CONSTRAINT)) {
                 throw new UniqueConstraintViolationException(
-                        "A test case already exists for this conversation and turn index", (String) null);
+                        "A test case already exists for this multi-turn and turn index", (String) null);
             }
             UniqueConstraintViolationDetector.rethrowIfUniqueViolation(
                     ex, "A test case name collision was detected during batch update");

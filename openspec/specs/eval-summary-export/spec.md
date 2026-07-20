@@ -106,16 +106,16 @@ Status: **Implemented**
 - **THEN** the row's column header SHALL be `data::meta.tags` (the embedded dot is preserved unmodified because `::` is the separator)
 
 ### Requirement: Inlined extractedColumns columns
-For each `ResponseColumnDefinitionDto` in `SuiteSnapshotDto.responseColumns` (preserving snapshot order), the CSV SHALL include one column named `response::<columnName>` (with `::` as the family-separator). The cell value SHALL be `extractedColumns[columnName]` rendered per the cell-serialization rules — `extractedColumns` is an object of scalars, so the cell is the scalar value (a multi-turn conversation is exported as one CSV row per turn, each with its own scalar cell). When extraction failed for a column (recorded in `extractionWarnings`), the cell SHALL be empty.
+For each `ResponseColumnDefinitionDto` in `SuiteSnapshotDto.responseColumns` (preserving snapshot order), the CSV SHALL include one column named `response::<columnName>` (with `::` as the family-separator). The cell value SHALL be `extractedColumns[columnName]` rendered per the cell-serialization rules — `extractedColumns` is an object of scalars, so the cell is the scalar value (a multi-turn is exported as one CSV row per turn, each with its own scalar cell). When extraction failed for a column (recorded in `extractionWarnings`), the cell SHALL be empty.
 Status: **Implemented**
 
 #### Scenario: Successful extraction
 - **WHEN** the snapshot response columns include `answer` and a row has `extractedColumns.answer = "42"`
 - **THEN** the row's `response::answer` cell SHALL be `42`
 
-#### Scenario: Multi-turn conversation exports one row per turn
-- **WHEN** a 3-turn conversation has response column `answer` with per-turn values `"Paris"`, `"Berlin"`, `"Tokio"`
-- **THEN** the export SHALL contain three rows for that conversation with `response::answer` cells `Paris`, `Berlin`, `Tokio` and `turnIndex` `0`,`1`,`2`
+#### Scenario: Multi-turn exports one row per turn
+- **WHEN** a 3-turn multi-turn has response column `answer` with per-turn values `"Paris"`, `"Berlin"`, `"Tokio"`
+- **THEN** the export SHALL contain three rows for that multi-turn with `response::answer` cells `Paris`, `Berlin`, `Tokio` and `turnIndex` `0`,`1`,`2`
 
 #### Scenario: Failed extraction
 - **WHEN** the snapshot response columns include `answer` and a row has `extractedColumns.answer = null` and a warning for `answer` in `extractionWarnings`
@@ -223,7 +223,7 @@ Status: **Implemented**
 - **THEN** all listed identity and execution columns — including `turnIndex` and `totalTurns` immediately after `runIndex` — SHALL appear in the header row before any `data::*`, `response::*`, `metric::*`, `metricInfo::*`, `metricError::*`, or `extractionWarnings` columns
 
 #### Scenario: Turn columns populated per row
-- **WHEN** a multi-turn conversation of 3 turns is exported
+- **WHEN** a multi-turn of 3 turns is exported
 - **THEN** the three rows SHALL carry `turnIndex` `0`,`1`,`2` and `totalTurns` `3`; a single-turn suite's row SHALL carry `turnIndex` `0` and `totalTurns` `1`
 
 ### Requirement: Request and response bodies via explicit columns

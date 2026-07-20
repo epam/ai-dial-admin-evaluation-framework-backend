@@ -27,15 +27,14 @@ public class TestCaseRequestDto {
 
     @Schema(
             description = "Row-based multi-turn grouping key (client-supplied UUID). Rows sharing this value form one "
-                    + "conversation, ordered by turnIndex. Must be provided together with turnIndex; omit both for a "
+                    + "multi-turn, ordered by turnIndex. Must be provided together with turnIndex; omit both for a "
                     + "single-turn test case.",
             example = "7b1c9f2e-3a4d-4c5b-8e6f-1a2b3c4d5e6f")
-    private UUID conversationId;
+    private UUID multiTurnId;
 
     @Schema(
-            description =
-                    "0-based turn position within the conversation. Must be provided together with conversationId "
-                            + "and be in [0, MAX_CONVERSATION_TURNS).",
+            description = "0-based turn position within the multi-turn. Must be provided together with multiTurnId "
+                    + "and be in [0, MAX_MULTI_TURN_TURNS).",
             example = "0")
     private Integer turnIndex;
 }

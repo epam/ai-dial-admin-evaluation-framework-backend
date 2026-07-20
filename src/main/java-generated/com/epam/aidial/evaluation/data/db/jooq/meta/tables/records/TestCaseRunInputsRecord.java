@@ -122,16 +122,16 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
     }
 
     /**
-     * Setter for <code>meta.test_case_run_inputs.conversation_id</code>.
+     * Setter for <code>meta.test_case_run_inputs.multi_turn_id</code>.
      */
-    public void setConversationId(String value) {
+    public void setMultiTurnId(String value) {
         set(7, value);
     }
 
     /**
-     * Getter for <code>meta.test_case_run_inputs.conversation_id</code>.
+     * Getter for <code>meta.test_case_run_inputs.multi_turn_id</code>.
      */
-    public String getConversationId() {
+    public String getMultiTurnId() {
         return (String) get(7);
     }
 
@@ -200,7 +200,7 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
     /**
      * Create a detached, initialised TestCaseRunInputsRecord
      */
-    public TestCaseRunInputsRecord(String runId, Integer position, String testCaseId, String testCaseName, JSONB testCaseData, JSONB requestTemplateOverride, JSONB inputBindingsOverride, String conversationId, Integer totalTurns, JSONB turns, Boolean broken) {
+    public TestCaseRunInputsRecord(String runId, Integer position, String testCaseId, String testCaseName, JSONB testCaseData, JSONB requestTemplateOverride, JSONB inputBindingsOverride, String multiTurnId, Integer totalTurns, JSONB turns, Boolean broken) {
         super(TestCaseRunInputs.TEST_CASE_RUN_INPUTS);
 
         setRunId(runId);
@@ -210,7 +210,7 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
         setTestCaseData(testCaseData);
         setRequestTemplateOverride(requestTemplateOverride);
         setInputBindingsOverride(inputBindingsOverride);
-        setConversationId(conversationId);
+        setMultiTurnId(multiTurnId);
         setTotalTurns(totalTurns);
         setTurns(turns);
         setBroken(broken);

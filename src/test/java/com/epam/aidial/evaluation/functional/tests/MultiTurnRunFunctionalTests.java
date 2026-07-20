@@ -44,17 +44,17 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * End-to-end functional test for row-based multi-turn conversations: create → run a DEPLOYMENT suite against
- * a mocked DIAL Core deployment where a conversation is an ordered group of discrete {@code test_cases} rows
- * (one row per turn, sharing a {@code conversationId}). Surviving turns run in ascending authored
+ * End-to-end functional test for row-based multi-turn multiTurns: create → run a DEPLOYMENT suite against
+ * a mocked DIAL Core deployment where a multiTurn is an ordered group of discrete {@code test_cases} rows
+ * (one row per turn, sharing a {@code multiTurnId}). Surviving turns run in ascending authored
  * {@code turnIndex} order with gaps allowed (a disabled/filtered start or middle turn simply drops); multi-turn
  * is emergent from the data — there is no suite-level flag. Each turn is persisted as its own scalar result row
  * carrying {@code turn_index}/{@code total_turns}/{@code last_turn_index}, its raw per-turn {@code response_body},
- * and scalar {@code extracted_columns}; a broken conversation (an invalid surviving turn, or over the turn cap)
+ * and scalar {@code extracted_columns}; a broken multiTurn (an invalid surviving turn, or over the turn cap)
  * surfaces as one degenerate {@code 0/0} ERROR row and the run still completes.
  */
-@DisplayName("Multi-turn Conversation Run Functional Tests (row-based)")
-public abstract class MultiTurnConversationRunFunctionalTests extends BaseFunctionalTest {
+@DisplayName("Multi-turn MultiTurn Run Functional Tests (row-based)")
+public abstract class MultiTurnRunFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private DialCoreDeploymentInvoker deploymentInvoker;
@@ -69,13 +69,13 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     private ObjectMapper objectMapper;
 
     @Test
-    @DisplayName("Should persist one scalar result row per turn with turn_index/total_turns for a 2-turn conversation")
-    void shouldRunTwoTurnConversation() throws JacksonException {
-        TestSuiteResponseDto suite = createConversationSuite();
+    @DisplayName("Should persist one scalar result row per turn with turn_index/total_turns for a 2-turn multiTurn")
+    void shouldRunTwoTurnMultiTurn() throws JacksonException {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
         assertThat(suite.isValid()).isTrue();
-        UUID conversationId = UUID.randomUUID();
-        createTurn(suite.getId(), "conv1 / turn 0", conversationId, 0, "hello");
-        createTurn(suite.getId(), "conv1 / turn 1", conversationId, 1, "how are you");
+        UUID multiTurnId = UUID.randomUUID();
+        createTurn(suite.getId(), "conv1 / turn 0", multiTurnId, 0, "hello");
+        createTurn(suite.getId(), "conv1 / turn 1", multiTurnId, 1, "how are you");
 
         AtomicInteger callCount = new AtomicInteger();
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -128,9 +128,9 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("Should run per-conversation turn counts: 2-turn and 3-turn conversations yield 2 and 3 per-turn rows")
-    void shouldRunPerConversationTurnCounts() {
-        TestSuiteResponseDto suite = createConversationSuite();
+    @DisplayName("Should run per-multiTurn turn counts: 2-turn and 3-turn multiTurns yield 2 and 3 per-turn rows")
+    void shouldRunPerMultiTurnTurnCounts() {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
         UUID convA = UUID.randomUUID();
         createTurn(suite.getId(), "convA / turn 0", convA, 0, "a");
         createTurn(suite.getId(), "convA / turn 1", convA, 1, "b");
@@ -171,12 +171,12 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("A gap in turn indexes no longer breaks the conversation — survivors run, authored indices kept")
-    void shouldRunConversationWithGapPreservingAuthoredIndices() {
-        TestSuiteResponseDto suite = createConversationSuite();
-        UUID conversationId = UUID.randomUUID();
-        createTurn(suite.getId(), "gap / turn 0", conversationId, 0, "hello");
-        createTurn(suite.getId(), "gap / turn 2", conversationId, 2, "third");
+    @DisplayName("A gap in turn indexes no longer breaks the multiTurn — survivors run, authored indices kept")
+    void shouldRunMultiTurnWithGapPreservingAuthoredIndices() {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
+        UUID multiTurnId = UUID.randomUUID();
+        createTurn(suite.getId(), "gap / turn 0", multiTurnId, 0, "hello");
+        createTurn(suite.getId(), "gap / turn 2", multiTurnId, 2, "third");
 
         stubConstantReply();
 
@@ -197,12 +197,12 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("An invalid surviving turn breaks the conversation — one 0/0 ERROR row; run completes")
-    void shouldBreakConversationWithInvalidSurvivingTurn() {
-        TestSuiteResponseDto suite = createConversationSuite();
-        UUID conversationId = UUID.randomUUID();
-        createTurn(suite.getId(), "invalid / turn 0", conversationId, 0, "hello");
-        TestCaseResponseDto t1 = createTurn(suite.getId(), "invalid / turn 1", conversationId, 1, "second");
+    @DisplayName("An invalid surviving turn breaks the multiTurn — one 0/0 ERROR row; run completes")
+    void shouldBreakMultiTurnWithInvalidSurvivingTurn() {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
+        UUID multiTurnId = UUID.randomUUID();
+        createTurn(suite.getId(), "invalid / turn 0", multiTurnId, 0, "hello");
+        TestCaseResponseDto t1 = createTurn(suite.getId(), "invalid / turn 1", multiTurnId, 1, "second");
         metaTestDataHelper.forceTestCaseInvalid(t1.getId(), "[\"forced invalid\"]");
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
@@ -218,9 +218,9 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("A fully-disabled conversation is excluded from the run entirely (no unit, no ERROR row)")
-    void shouldExcludeFullyDisabledConversation() {
-        TestSuiteResponseDto suite = createConversationSuite();
+    @DisplayName("A fully-disabled multiTurn is excluded from the run entirely (no unit, no ERROR row)")
+    void shouldExcludeFullyDisabledMultiTurn() {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
         UUID runnable = UUID.randomUUID();
         createTurn(suite.getId(), "runnable / turn 0", runnable, 0, "a");
         createTurn(suite.getId(), "runnable / turn 1", runnable, 1, "b");
@@ -233,7 +233,7 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        // Only the runnable conversation survives as a single execution unit.
+        // Only the runnable multiTurn survives as a single execution unit.
         assertThat(run.getNumberOfTestCases()).isEqualTo(1);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
@@ -243,13 +243,13 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName("Tail-only disable truncates the conversation to its surviving prefix (2 of 3 turns run)")
-    void shouldTruncateConversationOnTailDisable() {
-        TestSuiteResponseDto suite = createConversationSuite();
-        UUID conversationId = UUID.randomUUID();
-        createTurn(suite.getId(), "conv / turn 0", conversationId, 0, "a");
-        createTurn(suite.getId(), "conv / turn 1", conversationId, 1, "b");
-        TestCaseResponseDto lastTurn = createTurn(suite.getId(), "conv / turn 2", conversationId, 2, "c");
+    @DisplayName("Tail-only disable truncates the multiTurn to its surviving prefix (2 of 3 turns run)")
+    void shouldTruncateMultiTurnOnTailDisable() {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
+        UUID multiTurnId = UUID.randomUUID();
+        createTurn(suite.getId(), "conv / turn 0", multiTurnId, 0, "a");
+        createTurn(suite.getId(), "conv / turn 1", multiTurnId, 1, "b");
+        TestCaseResponseDto lastTurn = createTurn(suite.getId(), "conv / turn 2", multiTurnId, 2, "c");
         metaTestDataHelper.appendDisabledTestCaseIds(suite.getId(), List.of(lastTurn.getId()));
 
         stubConstantReply();
@@ -264,10 +264,9 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     @Test
-    @DisplayName(
-            "testCaseFilter applies row-level: a non-matching tail turn truncates the conversation (still runnable)")
-    void shouldTruncateConversationWhenFilterDropsTailTurn() {
-        TestSuiteResponseDto suite = createConversationSuite();
+    @DisplayName("testCaseFilter applies row-level: a non-matching tail turn truncates the multiTurn (still runnable)")
+    void shouldTruncateMultiTurnWhenFilterDropsTailTurn() {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
         UUID full = UUID.randomUUID();
         createTurn(suite.getId(), "full / turn 0", full, 0, Map.of("question", "a", "topic", "keep"));
         createTurn(suite.getId(), "full / turn 1", full, 1, Map.of("question", "b", "topic", "keep"));
@@ -280,7 +279,7 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        // Both conversations have >=1 matching turn, so both are runnable units: full (2 turns) + tail (1 turn).
+        // Both multiTurns have >=1 matching turn, so both are runnable units: full (2 turns) + tail (1 turn).
         assertThat(run.getNumberOfTestCases()).isEqualTo(2);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
@@ -298,8 +297,8 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
 
     @Test
     @DisplayName("testCaseFilter applies row-level: a non-matching middle turn is honored — survivors run")
-    void shouldRunConversationWhenFilterLeavesMiddleHole() {
-        TestSuiteResponseDto suite = createConversationSuite();
+    void shouldRunMultiTurnWhenFilterLeavesMiddleHole() {
+        TestSuiteResponseDto suite = createMultiTurnSuite();
         UUID mid = UUID.randomUUID();
         createTurn(suite.getId(), "mid / turn 0", mid, 0, Map.of("question", "a", "topic", "keep"));
         createTurn(suite.getId(), "mid / turn 1", mid, 1, Map.of("question", "b", "topic", "drop"));
@@ -353,7 +352,7 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
                 .asString();
     }
 
-    private TestSuiteResponseDto createConversationSuite() {
+    private TestSuiteResponseDto createMultiTurnSuite() {
         String schemaJson;
         try {
             schemaJson = objectMapper.writeValueAsString(List.of(
@@ -370,10 +369,10 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
         } catch (JacksonException e) {
             throw new AssertionError("Failed to serialize test-case schema", e);
         }
-        Dataset dataset = metaTestDataHelper.createDataset("conversation-" + UUID.randomUUID(), schemaJson);
+        Dataset dataset = metaTestDataHelper.createDataset("multiTurn-" + UUID.randomUUID(), schemaJson);
 
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
-                .name("Conversation Suite " + UUID.randomUUID())
+                .name("MultiTurn Suite " + UUID.randomUUID())
                 .description("row-based multi-turn")
                 .datasetId(dataset.getId())
                 .inputBindings(List.of(InputBindingDto.builder()
@@ -417,17 +416,17 @@ public abstract class MultiTurnConversationRunFunctionalTests extends BaseFuncti
     }
 
     private TestCaseResponseDto createTurn(
-            UUID suiteId, String name, UUID conversationId, int turnIndex, String question) {
-        return createTurn(suiteId, name, conversationId, turnIndex, Map.of("question", question));
+            UUID suiteId, String name, UUID multiTurnId, int turnIndex, String question) {
+        return createTurn(suiteId, name, multiTurnId, turnIndex, Map.of("question", question));
     }
 
     private TestCaseResponseDto createTurn(
-            UUID suiteId, String name, UUID conversationId, int turnIndex, Map<String, Object> data) {
+            UUID suiteId, String name, UUID multiTurnId, int turnIndex, Map<String, Object> data) {
         ResponseEntity<TestCaseResponseDto> response = restTemplate.postForEntity(
                 apiUrl("/datasets/" + metaTestDataHelper.getDatasetId(suiteId) + "/test-cases"),
                 jsonEntity(TestCaseRequestDto.builder()
                         .testCaseName(name)
-                        .conversationId(conversationId)
+                        .multiTurnId(multiTurnId)
                         .turnIndex(turnIndex)
                         .data(data)
                         .build()),

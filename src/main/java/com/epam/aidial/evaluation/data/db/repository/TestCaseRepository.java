@@ -95,36 +95,36 @@ public interface TestCaseRepository {
             UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition);
 
     /**
-     * Page of runnable SINGLE-TURN test cases ({@code conversation_id IS NULL}) — valid, not excluded, and
+     * Page of runnable SINGLE-TURN test cases ({@code multi_turn_id IS NULL}) — valid, not excluded, and
      * (when {@code extraCondition} is non-null) matching the suite filter. Sorted by (createdAt asc, id asc).
      */
     List<TestCase> findRunnableSingleTurnPage(
             UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit);
 
     /**
-     * Page of distinct {@code conversation_id}s in the dataset that have at least one turn matching
+     * Page of distinct {@code multi_turn_id}s in the dataset that have at least one turn matching
      * {@code extraCondition} (the suite filter, applied row-level like disable); a {@code null} condition
-     * includes every conversation. Deterministic, partition-friendly order ({@code min(created_at_ms) asc,
-     * conversation_id asc}); the {@code GROUP BY} exists only for de-duplication and the {@code min}
+     * includes every multiTurn. Deterministic, partition-friendly order ({@code min(created_at_ms) asc,
+     * multi_turn_id asc}); the {@code GROUP BY} exists only for de-duplication and the {@code min}
      * ordering. Exclusion/validity/contiguity are resolved during Java-side assembly, not here.
      */
-    List<String> findRunnableConversationIdsPage(UUID datasetId, Condition extraCondition, int offset, int limit);
+    List<String> findRunnableMultiTurnIdsPage(UUID datasetId, Condition extraCondition, int offset, int limit);
 
     /**
-     * The filter-matching turns of the given conversations in the dataset — only {@code extraCondition}
+     * The filter-matching turns of the given multiTurns in the dataset — only {@code extraCondition}
      * (the suite filter) is applied here; validity and exclusion are resolved during Java-side assembly.
-     * A {@code null} condition loads every turn. Ordered by ({@code conversation_id asc, turn_index asc})
+     * A {@code null} condition loads every turn. Ordered by ({@code multi_turn_id asc, turn_index asc})
      * for grouping + assembly.
      */
-    List<TestCase> findFilterMatchingTurnsByConversationIds(
-            UUID datasetId, Collection<String> conversationIds, Condition extraCondition);
+    List<TestCase> findFilterMatchingTurnsByMultiTurnIds(
+            UUID datasetId, Collection<String> multiTurnIds, Condition extraCondition);
 
     /**
-     * Cheap {@code EXISTS} check: whether the dataset contains ANY conversation row (any row with a non-null
-     * {@code conversation_id}). Used by the run-creation guard to reject MCP suites bound to a dataset that
-     * carries multi-turn conversation rows (multi-turn is HTTP-deployment only this round).
+     * Cheap {@code EXISTS} check: whether the dataset contains ANY multiTurn row (any row with a non-null
+     * {@code multi_turn_id}). Used by the run-creation guard to reject MCP suites bound to a dataset that
+     * carries multi-turn multiTurn rows (multi-turn is HTTP-deployment only this round).
      */
-    boolean existsConversationRowByDatasetId(UUID datasetId);
+    boolean existsMultiTurnRowByDatasetId(UUID datasetId);
 
     /**
      * Inserts a test case, skipping if a row with the same (dataset_id, LOWER(test_case_name)) already exists.

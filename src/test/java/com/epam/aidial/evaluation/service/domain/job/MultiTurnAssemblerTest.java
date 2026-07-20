@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
-import com.epam.aidial.evaluation.service.domain.job.ConversationAssembler.AssembledConversation;
+import com.epam.aidial.evaluation.service.domain.job.MultiTurnAssembler.AssembledMultiTurn;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -14,12 +14,12 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-@DisplayName("ConversationAssembler (snapshot-time survivor selection / broken-conversation rules)")
-class ConversationAssemblerTest {
+@DisplayName("MultiTurnAssembler (snapshot-time survivor selection / broken-multiTurn rules)")
+class MultiTurnAssemblerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ConversationAssembler assembler = new ConversationAssembler(objectMapper);
-    private final UUID conversationId = UUID.randomUUID();
+    private final MultiTurnAssembler assembler = new MultiTurnAssembler(objectMapper);
+    private final UUID multiTurnId = UUID.randomUUID();
 
     @Test
     @DisplayName("contiguous valid turns assemble into a runnable unit with ordered frozen turns")
@@ -27,11 +27,11 @@ class ConversationAssemblerTest {
         List<TestCase> turns =
                 List.of(turn(2, true, "{\"q\":\"c\"}"), turn(0, true, "{\"q\":\"a\"}"), turn(1, true, "{\"q\":\"b\"}"));
 
-        AssembledConversation result = assembler.assemble(turns, Set.of()).orElseThrow();
+        AssembledMultiTurn result = assembler.assemble(turns, Set.of()).orElseThrow();
 
         assertThat(result.broken()).isFalse();
         assertThat(result.totalTurns()).isEqualTo(3);
-        assertThat(result.conversationId()).isEqualTo(conversationId);
+        assertThat(result.multiTurnId()).isEqualTo(multiTurnId);
         JsonNode frozen = objectMapper.readTree(result.turnsJson());
         assertThat(frozen).hasSize(3);
         assertThat(frozen.get(0).get("turnIndex").asInt()).isEqualTo(0);
@@ -42,13 +42,13 @@ class ConversationAssemblerTest {
     }
 
     @Test
-    @DisplayName("tail disable shortens the conversation to the surviving turns (not broken)")
+    @DisplayName("tail disable shortens the multiTurn to the surviving turns (not broken)")
     void tailDisableShortens() {
         TestCase t0 = turn(0, true, "{}");
         TestCase t1 = turn(1, true, "{}");
         TestCase t2 = turn(2, true, "{}");
 
-        AssembledConversation result =
+        AssembledMultiTurn result =
                 assembler.assemble(List.of(t0, t1, t2), Set.of(t2.getId())).orElseThrow();
 
         assertThat(result.broken()).isFalse();
@@ -63,7 +63,7 @@ class ConversationAssemblerTest {
         TestCase t1 = turn(1, true, "{}");
         TestCase t2 = turn(2, true, "{}");
 
-        AssembledConversation result =
+        AssembledMultiTurn result =
                 assembler.assemble(List.of(t0, t1, t2), Set.of(t1.getId())).orElseThrow();
 
         assertThat(result.broken()).isFalse();
@@ -75,9 +75,9 @@ class ConversationAssemblerTest {
     }
 
     @Test
-    @DisplayName("a missing turn 0 no longer breaks the conversation — survivors run in order")
+    @DisplayName("a missing turn 0 no longer breaks the multiTurn — survivors run in order")
     void missingTurnZeroRuns() {
-        AssembledConversation result = assembler
+        AssembledMultiTurn result = assembler
                 .assemble(List.of(turn(1, true, "{}"), turn(2, true, "{}")), Set.of())
                 .orElseThrow();
 
@@ -89,9 +89,9 @@ class ConversationAssemblerTest {
     }
 
     @Test
-    @DisplayName("any invalid surviving turn breaks the whole conversation")
+    @DisplayName("any invalid surviving turn breaks the whole multiTurn")
     void anyInvalidTurnBreaks() {
-        AssembledConversation result = assembler
+        AssembledMultiTurn result = assembler
                 .assemble(List.of(turn(0, true, "{}"), turn(1, false, "{}")), Set.of())
                 .orElseThrow();
 
@@ -100,12 +100,12 @@ class ConversationAssemblerTest {
     }
 
     @Test
-    @DisplayName("an invalid turn that is disabled no longer breaks the conversation")
+    @DisplayName("an invalid turn that is disabled no longer breaks the multiTurn")
     void disabledInvalidTurnDoesNotBreak() {
         TestCase t0 = turn(0, true, "{}");
         TestCase t1 = turn(1, false, "{}");
 
-        AssembledConversation result =
+        AssembledMultiTurn result =
                 assembler.assemble(List.of(t0, t1), Set.of(t1.getId())).orElseThrow();
 
         assertThat(result.broken()).isFalse();
@@ -113,14 +113,14 @@ class ConversationAssemblerTest {
     }
 
     @Test
-    @DisplayName("a surviving turn count over the cap breaks the conversation")
+    @DisplayName("a surviving turn count over the cap breaks the multiTurn")
     void overCapBreaks() {
         List<TestCase> turns = new ArrayList<>();
-        for (int i = 0; i <= ValidationConstants.MAX_CONVERSATION_TURNS; i++) {
+        for (int i = 0; i <= ValidationConstants.MAX_MULTI_TURN_TURNS; i++) {
             turns.add(turn(i, true, "{}"));
         }
 
-        AssembledConversation result = assembler.assemble(turns, Set.of()).orElseThrow();
+        AssembledMultiTurn result = assembler.assemble(turns, Set.of()).orElseThrow();
 
         assertThat(result.broken()).isTrue();
         assertThat(result.totalTurns()).isZero();
@@ -141,7 +141,7 @@ class ConversationAssemblerTest {
                 .id(UUID.randomUUID())
                 .datasetId(UUID.randomUUID())
                 .testCaseName("conv / turn " + turnIndex)
-                .conversationId(conversationId)
+                .multiTurnId(multiTurnId)
                 .turnIndex(turnIndex)
                 .valid(valid)
                 .data(data)

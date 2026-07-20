@@ -9,10 +9,10 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-@DisplayName("ConversationFieldsValidator (row-based multi-turn write-time validation)")
-class ConversationFieldsValidatorTest {
+@DisplayName("MultiTurnFieldsValidator (row-based multi-turn write-time validation)")
+class MultiTurnFieldsValidatorTest {
 
-    private final ConversationFieldsValidator validator = new ConversationFieldsValidator();
+    private final MultiTurnFieldsValidator validator = new MultiTurnFieldsValidator();
 
     @Test
     @DisplayName("both fields null (single-turn) is valid")
@@ -27,16 +27,16 @@ class ConversationFieldsValidatorTest {
     }
 
     @Test
-    @DisplayName("conversationId without turnIndex is rejected (both-or-neither)")
-    void conversationIdWithoutTurnIndexRejected() {
+    @DisplayName("multiTurnId without turnIndex is rejected (both-or-neither)")
+    void multiTurnIdWithoutTurnIndexRejected() {
         assertThatThrownBy(() -> validator.validate(UUID.randomUUID(), null))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("provided together");
     }
 
     @Test
-    @DisplayName("turnIndex without conversationId is rejected (both-or-neither)")
-    void turnIndexWithoutConversationIdRejected() {
+    @DisplayName("turnIndex without multiTurnId is rejected (both-or-neither)")
+    void turnIndexWithoutMultiTurnIdRejected() {
         assertThatThrownBy(() -> validator.validate(null, 0))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("provided together");
@@ -53,7 +53,7 @@ class ConversationFieldsValidatorTest {
     @Test
     @DisplayName("a large turnIndex at or above the cap is accepted (no write-time upper bound)")
     void largeTurnIndexAccepted() {
-        assertThatCode(() -> validator.validate(UUID.randomUUID(), ValidationConstants.MAX_CONVERSATION_TURNS))
+        assertThatCode(() -> validator.validate(UUID.randomUUID(), ValidationConstants.MAX_MULTI_TURN_TURNS))
                 .doesNotThrowAnyException();
         assertThatCode(() -> validator.validate(UUID.randomUUID(), 10_000)).doesNotThrowAnyException();
     }

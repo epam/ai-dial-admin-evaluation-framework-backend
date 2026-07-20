@@ -108,7 +108,7 @@ class EvaluationWorkerTest {
     private McpResponseSerializer mcpResponseSerializer;
 
     @Mock
-    private MultiTurnConversationExecutor multiTurnConversationExecutor;
+    private MultiTurnExecutor multiTurnExecutor;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneId.of("UTC"));
@@ -136,7 +136,7 @@ class EvaluationWorkerTest {
                 FIXED_CLOCK,
                 sseEventParser,
                 sseEventProcessingProperties,
-                multiTurnConversationExecutor,
+                multiTurnExecutor,
                 new QuietJsonService(objectMapper));
     }
 
@@ -184,8 +184,8 @@ class EvaluationWorkerTest {
     }
 
     @Test
-    @DisplayName("Should emit a 0/0/0 ERROR sentinel for a broken conversation input without a model call")
-    void execute_brokenConversation_returnsSentinelErrorRow() {
+    @DisplayName("Should emit a 0/0/0 ERROR sentinel for a broken multiTurn input without a model call")
+    void execute_brokenMultiTurn_returnsSentinelErrorRow() {
         TestCaseRunInput input = TestCaseRunInput.builder()
                 .runId(UUID.randomUUID())
                 .position(0)
@@ -204,8 +204,8 @@ class EvaluationWorkerTest {
         assertThat(sentinel.getTurnIndex()).isEqualTo(0);
         assertThat(sentinel.getTotalTurns()).isEqualTo(0);
         assertThat(sentinel.getLastTurnIndex()).isEqualTo(0);
-        assertThat(sentinel.getResponseBody()).contains("BROKEN_CONVERSATION").contains("invalid");
-        // No model call is made for a broken conversation.
+        assertThat(sentinel.getResponseBody()).contains("BROKEN_MULTI_TURN").contains("invalid");
+        // No model call is made for a broken multiTurn.
         verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
     }
 

@@ -20,7 +20,7 @@ public class TestCaseRunInput {
     private String requestTemplateOverride;
     private String inputBindingsOverride;
 
-    private UUID conversationId;
+    private UUID multiTurnId;
     private Integer totalTurns;
     private String turns;
     private boolean broken;

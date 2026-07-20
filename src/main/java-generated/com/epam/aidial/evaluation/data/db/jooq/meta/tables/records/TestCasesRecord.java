@@ -132,16 +132,16 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
     }
 
     /**
-     * Setter for <code>meta.test_cases.conversation_id</code>.
+     * Setter for <code>meta.test_cases.multi_turn_id</code>.
      */
-    public void setConversationId(String value) {
+    public void setMultiTurnId(String value) {
         set(8, value);
     }
 
     /**
-     * Getter for <code>meta.test_cases.conversation_id</code>.
+     * Getter for <code>meta.test_cases.multi_turn_id</code>.
      */
-    public String getConversationId() {
+    public String getMultiTurnId() {
         return (String) get(8);
     }
 
@@ -182,7 +182,7 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
     /**
      * Create a detached, initialised TestCasesRecord
      */
-    public TestCasesRecord(String id, String datasetId, String testCaseName, Boolean isValid, JSONB validationWarnings, Long createdAtMs, Long updatedAtMs, JSONB data, String conversationId, Integer turnIndex) {
+    public TestCasesRecord(String id, String datasetId, String testCaseName, Boolean isValid, JSONB validationWarnings, Long createdAtMs, Long updatedAtMs, JSONB data, String multiTurnId, Integer turnIndex) {
         super(TestCases.TEST_CASES);
 
         setId(id);
@@ -193,7 +193,7 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
         setCreatedAtMs(createdAtMs);
         setUpdatedAtMs(updatedAtMs);
         setData(data);
-        setConversationId(conversationId);
+        setMultiTurnId(multiTurnId);
         setTurnIndex(turnIndex);
         resetTouchedOnNotNull();
     }

@@ -24,7 +24,7 @@ public class TestCaseMapper {
                 .id(entity.getId())
                 .testCaseName(entity.getTestCaseName())
                 .data(warningsSerializer.deserializeMap(entity.getData()))
-                .conversationId(entity.getConversationId())
+                .multiTurnId(entity.getMultiTurnId())
                 .turnIndex(entity.getTurnIndex())
                 .valid(entity.isValid())
                 .validationWarnings(
@@ -42,7 +42,7 @@ public class TestCaseMapper {
                 .datasetId(datasetId)
                 .testCaseName(dto.getTestCaseName())
                 .data(warningsSerializer.serializeMap(dto.getData()))
-                .conversationId(dto.getConversationId())
+                .multiTurnId(dto.getMultiTurnId())
                 .turnIndex(dto.getTurnIndex())
                 .valid(false)
                 .validationWarnings("[]")
@@ -55,7 +55,7 @@ public class TestCaseMapper {
         }
         entity.setTestCaseName(dto.getTestCaseName());
         entity.setData(warningsSerializer.serializeMap(dto.getData()));
-        entity.setConversationId(dto.getConversationId());
+        entity.setMultiTurnId(dto.getMultiTurnId());
         entity.setTurnIndex(dto.getTurnIndex());
     }
 
@@ -65,7 +65,7 @@ public class TestCaseMapper {
         }
         entity.setTestCaseName(dto.getTestCaseName());
         entity.setData(warningsSerializer.serializeMap(dto.getData()));
-        entity.setConversationId(dto.getConversationId());
+        entity.setMultiTurnId(dto.getMultiTurnId());
         entity.setTurnIndex(dto.getTurnIndex());
     }
 }

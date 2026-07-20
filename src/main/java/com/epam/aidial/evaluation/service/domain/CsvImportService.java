@@ -57,7 +57,7 @@ import tools.jackson.databind.ObjectMapper;
 public class CsvImportService {
 
     private static final String TEST_CASE_NAME_HEADER = "testCaseName";
-    private static final String CONVERSATION_ID_HEADER = "conversationId";
+    private static final String MULTI_TURN_ID_HEADER = "multiTurnId";
     private static final String TURN_INDEX_HEADER = "turnIndex";
     private static final int SAMPLE_ROWS_LIMIT = 10;
 
@@ -71,7 +71,7 @@ public class CsvImportService {
     private final SchemaTypeCoercer schemaTypeCoercer;
     private final ObjectMapper objectMapper;
     private final ValidationWarningsSerializer warningsSerializer;
-    private final ConversationFieldsValidator conversationFieldsValidator;
+    private final MultiTurnFieldsValidator multiTurnFieldsValidator;
 
     /**
      * Dry-run: parse and validate without persisting. Returns preview with detected columns and sample rows.
@@ -889,9 +889,9 @@ public class CsvImportService {
             if (TEST_CASE_NAME_HEADER.equalsIgnoreCase(header)) {
                 mappedTo = "testCaseName";
                 fieldName = "testCaseName";
-            } else if (CONVERSATION_ID_HEADER.equalsIgnoreCase(header)) {
-                mappedTo = "conversationId";
-                fieldName = "conversationId";
+            } else if (MULTI_TURN_ID_HEADER.equalsIgnoreCase(header)) {
+                mappedTo = "multiTurnId";
+                fieldName = "multiTurnId";
             } else if (TURN_INDEX_HEADER.equalsIgnoreCase(header)) {
                 mappedTo = "turnIndex";
                 fieldName = "turnIndex";
@@ -979,9 +979,9 @@ public class CsvImportService {
         String testCaseName = null;
         Map<String, Object> data = new LinkedHashMap<>();
         boolean hasJsonParseErrors = false;
-        UUID conversationId = null;
+        UUID multiTurnId = null;
         Integer turnIndex = null;
-        List<String> conversationErrors = new ArrayList<>();
+        List<String> multiTurnErrors = new ArrayList<>();
 
         for (int i = 0; i < bindings.size() && i < record.size(); i++) {
             ColumnBinding b = bindings.get(i);
@@ -990,12 +990,12 @@ public class CsvImportService {
 
             switch (b.mappedTo()) {
                 case "testCaseName" -> testCaseName = value != null ? value.toString() : null;
-                case "conversationId" -> {
+                case "multiTurnId" -> {
                     if (raw != null && !raw.isBlank()) {
                         try {
-                            conversationId = UUID.fromString(raw.trim());
+                            multiTurnId = UUID.fromString(raw.trim());
                         } catch (IllegalArgumentException e) {
-                            conversationErrors.add("conversationId is not a valid UUID: '" + raw.trim() + "'");
+                            multiTurnErrors.add("multiTurnId is not a valid UUID: '" + raw.trim() + "'");
                         }
                     }
                 }
@@ -1004,7 +1004,7 @@ public class CsvImportService {
                         try {
                             turnIndex = Integer.valueOf(raw.trim());
                         } catch (NumberFormatException e) {
-                            conversationErrors.add("turnIndex is not a valid integer: '" + raw.trim() + "'");
+                            multiTurnErrors.add("turnIndex is not a valid integer: '" + raw.trim() + "'");
                         }
                     }
                 }
@@ -1044,20 +1044,20 @@ public class CsvImportService {
             testCaseName = String.format("Row %0" + padWidth + "d", dataRowIndex);
         }
 
-        if (conversationErrors.isEmpty()) {
+        if (multiTurnErrors.isEmpty()) {
             try {
-                conversationFieldsValidator.validate(conversationId, turnIndex);
+                multiTurnFieldsValidator.validate(multiTurnId, turnIndex);
             } catch (ValidationException e) {
-                conversationErrors.add(e.getMessage());
+                multiTurnErrors.add(e.getMessage());
             }
         }
-        if (!conversationErrors.isEmpty()) {
-            conversationId = null;
+        if (!multiTurnErrors.isEmpty()) {
+            multiTurnId = null;
             turnIndex = null;
         }
 
         return new ParsedRow(
-                rowNumber, testCaseName, data, hasJsonParseErrors, conversationId, turnIndex, conversationErrors);
+                rowNumber, testCaseName, data, hasJsonParseErrors, multiTurnId, turnIndex, multiTurnErrors);
     }
 
     /**
@@ -1094,7 +1094,7 @@ public class CsvImportService {
     private static ValidationResult combineWithJsonParseErrors(ValidationResult vr, ParsedRow row) {
         boolean valid = vr.isValid()
                 && !row.hasJsonParseErrors()
-                && row.conversationErrors().isEmpty();
+                && row.multiTurnErrors().isEmpty();
         List<ValidationWarningDto> warnings = new ArrayList<>(vr.getWarnings() != null ? vr.getWarnings() : List.of());
         if (row.hasJsonParseErrors()) {
             warnings.add(ValidationWarningDto.builder()
@@ -1102,9 +1102,9 @@ public class CsvImportService {
                     .code(ValidationWarningCode.UNKNOWN)
                     .build());
         }
-        for (String conversationError : row.conversationErrors()) {
+        for (String multiTurnError : row.multiTurnErrors()) {
             warnings.add(ValidationWarningDto.builder()
-                    .message(conversationError)
+                    .message(multiTurnError)
                     .code(ValidationWarningCode.UNKNOWN)
                     .build());
         }
@@ -1172,7 +1172,7 @@ public class CsvImportService {
                 .id(null)
                 .testCaseName(row.testCaseName())
                 .data(row.data())
-                .conversationId(row.conversationId())
+                .multiTurnId(row.multiTurnId())
                 .turnIndex(row.turnIndex())
                 .valid(vr.isValid())
                 .validationWarnings(vr.getWarnings())
@@ -1186,7 +1186,7 @@ public class CsvImportService {
                 .datasetId(datasetId)
                 .testCaseName(row.testCaseName())
                 .data(warningsSerializer.serializeMap(row.data()))
-                .conversationId(row.conversationId())
+                .multiTurnId(row.multiTurnId())
                 .turnIndex(row.turnIndex())
                 .valid(vr.isValid())
                 .validationWarnings(warningsSerializer.serializeWarnings(vr.getWarnings()))
@@ -1204,9 +1204,9 @@ public class CsvImportService {
             String testCaseName,
             Map<String, Object> data,
             boolean hasJsonParseErrors,
-            UUID conversationId,
+            UUID multiTurnId,
             Integer turnIndex,
-            List<String> conversationErrors) {}
+            List<String> multiTurnErrors) {}
 
     private record InsertResult(int validCount, int invalidCount, int skippedCount, int overriddenCount) {}
 }

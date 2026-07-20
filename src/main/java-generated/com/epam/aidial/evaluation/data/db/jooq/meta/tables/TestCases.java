@@ -101,9 +101,9 @@ public class TestCases extends TableImpl<TestCasesRecord> {
     public final TableField<TestCasesRecord, JSONB> DATA = createField(DSL.name("data"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'{}'::jsonb"), SQLDataType.JSONB)), this, "");
 
     /**
-     * The column <code>meta.test_cases.conversation_id</code>.
+     * The column <code>meta.test_cases.multi_turn_id</code>.
      */
-    public final TableField<TestCasesRecord, String> CONVERSATION_ID = createField(DSL.name("conversation_id"), SQLDataType.VARCHAR(36), this, "");
+    public final TableField<TestCasesRecord, String> MULTI_TURN_ID = createField(DSL.name("multi_turn_id"), SQLDataType.VARCHAR(36), this, "");
 
     /**
      * The column <code>meta.test_cases.turn_index</code>.
@@ -179,7 +179,7 @@ public class TestCases extends TableImpl<TestCasesRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_TEST_CASES_CONVERSATION, Indexes.IDX_TEST_CASES_CREATED_AT_MS, Indexes.IDX_TEST_CASES_DATASET_ID, Indexes.UQ_TEST_CASES_CONVERSATION_TURN);
+        return Arrays.asList(Indexes.IDX_TEST_CASES_CREATED_AT_MS, Indexes.IDX_TEST_CASES_DATASET_ID, Indexes.IDX_TEST_CASES_MULTI_TURN, Indexes.UQ_TEST_CASES_MULTI_TURN_TURN);
     }
 
     @Override

@@ -83,7 +83,7 @@ public class EvaluationWorker {
     private final Clock clock;
     private final SseEventParser sseEventParser;
     private final SseEventProcessingProperties sseEventProcessingProperties;
-    private final MultiTurnConversationExecutor multiTurnConversationExecutor;
+    private final MultiTurnExecutor multiTurnExecutor;
     private final QuietJsonService jsonService;
 
     public List<TestCaseRunResult> execute(
@@ -111,7 +111,7 @@ public class EvaluationWorker {
         Context traceContext = Context.current().with(span).with(baggage);
         try (Scope scope = traceContext.makeCurrent()) {
             if (input.isBroken()) {
-                return List.of(buildBrokenConversationResult(input, context, runIndex, traceId, execStartedAtMs));
+                return List.of(buildBrokenMultiTurnResult(input, context, runIndex, traceId, execStartedAtMs));
             }
 
             // Check suite type for MCP branching
@@ -120,8 +120,7 @@ public class EvaluationWorker {
             }
 
             if (input.getTurns() != null) {
-                return multiTurnConversationExecutor.execute(
-                        input, context, runIndex, responseColumns, traceId, execStartedAtMs);
+                return multiTurnExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);
             }
 
             // Parse test case data for template resolution
@@ -710,19 +709,18 @@ public class EvaluationWorker {
     }
 
     /**
-     * Builds the single sentinel {@code ERROR} row for a broken conversation (flagged at snapshot: an invalid
+     * Builds the single sentinel {@code ERROR} row for a broken multiTurn (flagged at snapshot: an invalid
      * surviving turn, or a surviving turn count over the cap — ordering/sequencing no longer breaks a
-     * conversation). No model/MCP request is made. The row carries {@code turn_index = 0}, {@code total_turns
-     * = 0}, {@code last_turn_index = 0} to distinguish a broken conversation from a real single-turn result
+     * multiTurn). No model/MCP request is made. The row carries {@code turn_index = 0}, {@code total_turns
+     * = 0}, {@code last_turn_index = 0} to distinguish a broken multiTurn from a real single-turn result
      * ({@code 0/1}). The run continues.
      */
-    private TestCaseRunResult buildBrokenConversationResult(
+    private TestCaseRunResult buildBrokenMultiTurnResult(
             TestCaseRunInput input, EvaluationContext context, int runIndex, String traceId, long execStartedAtMs) {
         long now = clock.millis();
         String errorBody = buildErrorEnvelope(
-                "BROKEN_CONVERSATION",
-                "Conversation is broken (a turn is invalid, or the conversation has too many turns) "
-                        + "and was skipped.");
+                "BROKEN_MULTI_TURN",
+                "Multi-turn is broken (a turn is invalid, or the multi-turn has too many turns) " + "and was skipped.");
         return TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
                 .testSuiteRunId(context.getRunId())

@@ -8,8 +8,8 @@ import lombok.Builder;
  * columns (the {@code response} namespace), plus the turn position of the result row being evaluated:
  * {@code turnIndex} (the authored 0-based index, preserved even when surviving turns are non-contiguous),
  * {@code totalTurns} (the surviving turn count that ran), and {@code lastTurnIndex} (the maximum authored
- * index among the conversation's surviving turns). A single-turn result is {@code 0}/{@code 1}/{@code 0}.
- * The last turn of a conversation is {@code turnIndex == lastTurnIndex} — NOT {@code totalTurns - 1}, which
+ * index among the multiTurn's surviving turns). A single-turn result is {@code 0}/{@code 1}/{@code 0}.
+ * The last turn of a multiTurn is {@code turnIndex == lastTurnIndex} — NOT {@code totalTurns - 1}, which
  * is wrong once surviving turns are non-contiguous.
  *
  * <p>The carrier exists so that new inputs can be added without changing

@@ -13,7 +13,7 @@ Status: **Implemented**
 A Test Suite Metric Definition (TSMD) SHALL carry an optional `condition` string. When the condition
 is null or blank, the metric SHALL be evaluated for every test-case result (unchanged behavior). When
 set, the condition SHALL be evaluated once per test-case result to decide whether the metric runs for
-that result. Because each turn of a multi-turn conversation is its own `TestCaseRunResult`, a condition
+that result. Because each turn of a multi-turn is its own `TestCaseRunResult`, a condition
 is evaluated once per turn (its `data`/`response` are that turn's scalar values). The condition SHALL
 NOT be evaluated on non-SUCCESS rows (a failing turn or a `0/0` data-error row), which propagate
 without metric evaluation.
@@ -29,18 +29,18 @@ Status: **Implemented**
   whether that metric runs for that result
 
 #### Scenario: Condition runs on each successful turn
-- **WHEN** a 3-turn conversation completes successfully and a TSMD carries a condition referencing `response`
+- **WHEN** a 3-turn multi-turn completes successfully and a TSMD carries a condition referencing `response`
 - **THEN** the condition SHALL be evaluated three times, once per turn-result, each against that turn's scalar `data`/`response`
 
 #### Scenario: Condition not evaluated on a failed turn
-- **WHEN** turn `k` of a conversation is an ERROR result
+- **WHEN** turn `k` of a multi-turn is an ERROR result
 - **THEN** no condition SHALL be evaluated for that turn-result and no metric SHALL be dispatched for it
 
 ### Requirement: Condition evaluates against a namespaced dictionary
 The condition SHALL be evaluated against a single dictionary with three top-level namespaces: `data`
 (the test case's data columns), `response` (the extracted/response columns) — reusing the same
 namespace tokens as the CSV export — and `turn` (the current turn's position; see the turn-namespace
-requirement). Because each turn of a multi-turn conversation is its own test-case result, the `data`
+requirement). Because each turn of a multi-turn is its own test-case result, the `data`
 and `response` values SHALL be that turn's scalar columns (the same shape metric bindings resolve
 against). The dictionary serialization passed to the JSONata evaluator SHALL preserve explicit JSON
 nulls (it MUST NOT use the shared `NON_NULL` mapper path, which would drop null-valued keys and make a
@@ -81,14 +81,14 @@ Status: **Implemented**
 
 ### Requirement: Turn position exposed via the `turn` namespace
 The dictionary SHALL expose the current result row's turn position under the `turn` namespace with
-three fields: `turn.index` (0-based turn index), `turn.total` (the conversation's planned turn count),
+three fields: `turn.index` (0-based turn index), `turn.total` (the multi-turn's planned turn count),
 and `turn.last` (boolean, true when `index == total - 1`). A single-turn result SHALL be
 `index=0, total=1, last=true`. This lets a condition gate on turn position — e.g. `turn.last` to run a
-metric only on the final turn of a conversation.
+metric only on the final turn of a multi-turn.
 Status: **Implemented**
 
 #### Scenario: turn.last on the final turn
-- **WHEN** a condition is `turn.last` and the result is turn `i` of a conversation where `i == N - 1`
+- **WHEN** a condition is `turn.last` and the result is turn `i` of a multi-turn where `i == N - 1`
 - **THEN** the condition SHALL evaluate to `true` and the metric SHALL run
 
 #### Scenario: turn.last on a non-final turn

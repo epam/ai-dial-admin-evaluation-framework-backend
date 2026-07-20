@@ -18,7 +18,7 @@ public class TestCaseRecordMapper {
                 .datasetId(UUID.fromString(r.getDatasetId()))
                 .testCaseName(r.getTestCaseName())
                 .data(toJsonString(r.getData()))
-                .conversationId(r.getConversationId() != null ? UUID.fromString(r.getConversationId()) : null)
+                .multiTurnId(r.getMultiTurnId() != null ? UUID.fromString(r.getMultiTurnId()) : null)
                 .turnIndex(r.getTurnIndex())
                 .valid(r.getIsValid())
                 .validationWarnings(validationWarnings != null ? validationWarnings : "[]")

@@ -25,10 +25,10 @@ Every statement in the file is a fact about **what the backend now accepts or re
 **Conversion rule** — when you catch yourself writing frontend behavior, restate it as the underlying API fact and drop the rest:
 - ✗ "The UI should show an inline validation error on the condition field."
   → ✓ "`POST`/`PUT` reject a malformed `condition` with `400 VALIDATION_ERROR`."
-- ✗ "The UI must always resend `conversationId` since PUT is a full replacement."
-  → ✓ "`PUT` is a full replacement: `conversationId`/`turnIndex` omitted from the body are cleared."
-- ✗ "Group by `(traceId, runIndex)` to render a conversation."
-  → ✓ "All turns of one conversation-run share a `traceId`; each turn is a separate row with its own `turnIndex`."
+- ✗ "The UI must always resend `multiTurnId` since PUT is a full replacement."
+  → ✓ "`PUT` is a full replacement: `multiTurnId`/`turnIndex` omitted from the body are cleared."
+- ✗ "Group by `(traceId, runIndex)` to render a multi-turn."
+  → ✓ "All turns of one multi-turn run share a `traceId`; each turn is a separate row with its own `turnIndex`."
 
 The recipe below has no slot for UI/UX prose. If a sentence doesn't fit a slot, it doesn't belong.
 

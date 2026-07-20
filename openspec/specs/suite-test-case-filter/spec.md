@@ -21,15 +21,15 @@ and exclusion predicates; it never widens the set. When `testCaseFilter` is null
 behaves exactly as before (validity + `disabledTestCaseIds` only).
 
 Filter application SHALL be **row-level**, applied to individual test-case rows exactly like the
-`disabledTestCaseIds` exclusion. A single-turn test case (`conversation_id IS NULL`) is filtered per
-row. For a multi-turn conversation (rows sharing a non-null `conversation_id`) the filter selects
+`disabledTestCaseIds` exclusion. A single-turn test case (`multi_turn_id IS NULL`) is filtered per
+row. For a multi-turn (rows sharing a non-null `multi_turn_id`) the filter selects
 individual turns: a non-matching turn is simply not a survivor (identical to a disabled turn). There
-is NO conversation-level aggregation in the counting or selection path (no `GROUP BY conversation_id
-HAVING …`); conversation integrity over the surviving (valid + enabled + filter-matching) turns —
+is NO multi-turn-level aggregation in the counting or selection path (no `GROUP BY multi_turn_id
+HAVING …`); multi-turn integrity over the surviving (valid + enabled + filter-matching) turns —
 contiguity from turn 0, tail-only truncation, broken on a middle hole — is resolved **only at snapshot
-time** by `ConversationAssembler` (see the suite-run-snapshot spec). Consequently a non-matching
-**tail** turn truncates the conversation's runnable prefix, while a non-matching **middle** turn leaves
-a hole and breaks the conversation.
+time** by `MultiTurnAssembler` (see the suite-run-snapshot spec). Consequently a non-matching
+**tail** turn truncates the multi-turn's runnable prefix, while a non-matching **middle** turn leaves
+a hole and breaks the multi-turn.
 Status: **Implemented**
 
 #### Scenario: Filter narrows the runnable set
@@ -47,15 +47,15 @@ Status: **Implemented**
 - **WHEN** a suite has `testCaseFilter = null`
 - **THEN** the runnable set SHALL be the valid, non-excluded test cases with no additional predicate
 
-#### Scenario: Conversation included only when all turns match
-- **WHEN** a conversation `conv-1` has turns `[turn-0, turn-1, turn-2]` with `data.category` values
+#### Scenario: Multi-turn included only when all turns match
+- **WHEN** a multi-turn `conv-1` has turns `[turn-0, turn-1, turn-2]` with `data.category` values
   `["A", "A", "A"]` and `testCaseFilter` is `category IN ('A')`
-- **THEN** the whole conversation `conv-1` SHALL be included as one runnable unit
+- **THEN** the whole multi-turn `conv-1` SHALL be included as one runnable unit
 
-#### Scenario: Conversation excluded when any turn fails the filter
-- **WHEN** a conversation `conv-1` has turns `[turn-0, turn-1, turn-2]` with `data.category` values
+#### Scenario: Multi-turn excluded when any turn fails the filter
+- **WHEN** a multi-turn `conv-1` has turns `[turn-0, turn-1, turn-2]` with `data.category` values
   `["A", "B", "A"]` and `testCaseFilter` is `category IN ('A')`
-- **THEN** the whole conversation `conv-1` SHALL be excluded (no partial/per-turn inclusion), leaving
+- **THEN** the whole multi-turn `conv-1` SHALL be excluded (no partial/per-turn inclusion), leaving
   no `conv-1` turn in the runnable set
 
 ### Requirement: Filter is applied consistently at run-creation count and snapshot
@@ -103,12 +103,12 @@ Status: **Implemented**
 ## Implementation Notes
 - New `service`-layer interface `service.domain.job.RunnableTestCaseSelector`; implementation in
   `experimental.query.service` (mirrors the `MetricScoreComputation` inversion), backed by
-  `QueryDslRunnableTestCaseSelector`. The selector aggregates per `conversation_id` so a multi-turn
-  conversation is included only when all of its turns match; single-turn rows
-  (`conversation_id IS NULL`) are still evaluated per row.
+  `QueryDslRunnableTestCaseSelector`. The selector aggregates per `multi_turn_id` so a multi-turn
+  multi-turn is included only when all of its turns match; single-turn rows
+  (`multi_turn_id IS NULL`) are still evaluated per row.
 - Translation reuse: `FilterTranslator`, `TestCaseFieldBindingsBuilder`; base predicate mirrors
   `PostgresTestCaseRepository.validNotExcludedCondition`, AND-combined with the translated filter
-  before the per-conversation aggregation.
+  before the per-multi-turn aggregation.
 - Run wiring: `RunnableTestCaseCounter`, `TestSuiteRunService.createRun` (guard #4),
   `TestSuiteEvaluationJob.attemptSnapshot`.
 - Write-time filter validation: `RunnableTestCaseSelector.validateFilter(datasetId, filterJson)`,

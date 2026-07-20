@@ -5,6 +5,8 @@ import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.List;
@@ -95,6 +97,19 @@ public class TestSuiteRequestDto {
                             + "validated as referencing real metrics at write time.",
             example = "{\"type\":\"mean\"}")
     private OverallScoreDefinition overallScore;
+
+    @DecimalMin(
+            value = ValidationConstants.MIN_OVERALL_SCORE_THRESHOLD,
+            message = ValidationConstants.OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE)
+    @DecimalMax(
+            value = ValidationConstants.MAX_OVERALL_SCORE_THRESHOLD,
+            message = ValidationConstants.OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE)
+    @Schema(
+            description = "Optional threshold the run-level `overall` metric score is compared against "
+                    + "(e.g. for pass/fail evaluation). Same numeric type as the computed overall score result. "
+                    + "Must be between 0.0 and 1.0 (inclusive). Null = no threshold configured.",
+            example = "0.8")
+    private Double overallScoreThreshold;
 
     @Schema(
             description =

@@ -577,7 +577,7 @@ Metric applications within a test suite. Each row binds a metric declaration (wi
 | `name` | VARCHAR(255) | NOT NULL | - | Metric definition name (unique per suite, case-insensitive) |
 | `config_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Config parameter bindings (List of MetricParameterBindingDto) |
 | `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Input parameter bindings (List of MetricParameterBindingDto) |
-| `condition` | VARCHAR(2000) | NULL | - | Optional execution condition evaluated per test-case result against `{ data, response }`. Bare `name()` = custom/system function; otherwise JSONata. Boolean true runs the metric, false skips it, an evaluation error skips it with a surfaced metric-level error. NULL/blank ⇒ always run. Hard-validated (400) at write time. See V1.26. |
+| `condition` | VARCHAR(2000) | NULL | - | Optional execution condition evaluated per test-case result (per turn for multi-turn) as JSONata against `{ data, response, turn: { index, total, last } }`. Boolean true runs the metric, false skips it (metric omitted entirely), an evaluation error skips it with a surfaced metric-level error. NULL/blank ⇒ always run. Hard-validated (400) at write time. See V1.26. |
 | `is_enabled` | BOOLEAN | NOT NULL | `TRUE` | Whether this TSMD participates in metric evaluation |
 | `is_valid` | BOOLEAN | NOT NULL | `TRUE` | Whether the last soft validation passed |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Soft validation warnings (List of ValidationWarningDto) |

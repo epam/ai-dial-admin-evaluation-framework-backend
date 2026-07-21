@@ -268,12 +268,19 @@ public class TestCaseService {
             prepared.add(new PreparedItemOp(existing, changed, renamed));
         }
 
-        // Pass 2: park renamed rows at temporary names so a swap/cycle does not trip the
-        // per-statement unique index during the apply pass.
+        // Validate final-state name uniqueness before any write (consistent with batch PUT/PATCH),
+        // so genuine duplicates are rejected up front. The per-item DataIntegrityViolationException
+        // catch below remains as a DB-level backstop.
         List<TestCase> renamedEntities = prepared.stream()
                 .filter(PreparedItemOp::renamed)
                 .map(PreparedItemOp::entity)
                 .toList();
+        if (!renamedEntities.isEmpty()) {
+            validateBatchNameUniqueness(renamedEntities, datasetId);
+        }
+
+        // Pass 2: park renamed rows at temporary names so a swap/cycle does not trip the
+        // per-statement unique index during the apply pass.
         if (!renamedEntities.isEmpty()) {
             testCaseRepository.parkTestCaseNames(renamedEntities);
         }
@@ -298,10 +305,6 @@ public class TestCaseService {
                     .id(entity.getId())
                     .updated(item.changed())
                     .build());
-        }
-
-        if (!renamedEntities.isEmpty()) {
-            validateBatchNameUniqueness(renamedEntities, datasetId);
         }
 
         return TestCaseBulkPatchResponseDto.builder()

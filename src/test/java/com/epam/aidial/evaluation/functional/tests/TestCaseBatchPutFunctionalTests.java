@@ -294,4 +294,42 @@ public abstract class TestCaseBatchPutFunctionalTests extends BaseTestCaseBatchF
                 apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases/" + tc1.getId()), TestCaseResponseDto.class);
         assertThat(tc1After.getBody().getTestCaseName()).isEqualTo("TC 1");
     }
+
+    @Test
+    @DisplayName("Should swap two test case names via batch PUT")
+    void shouldSwapNamesViaBatchUpdate() {
+        TestSuiteResponseDto suite = createTestSuite();
+        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "A");
+        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "B");
+
+        List<TestCaseBatchPutItemDto> items = List.of(
+                TestCaseBatchPutItemDto.builder()
+                        .id(tc1.getId())
+                        .testCaseName("B")
+                        .data(Map.of())
+                        .build(),
+                TestCaseBatchPutItemDto.builder()
+                        .id(tc2.getId())
+                        .testCaseName("A")
+                        .data(Map.of())
+                        .build());
+
+        ResponseEntity<List<TestCaseResponseDto>> response = restTemplate.exchange(
+                apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases"),
+                HttpMethod.PUT,
+                jsonEntity(items),
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getName(suite, tc1.getId())).isEqualTo("B");
+        assertThat(getName(suite, tc2.getId())).isEqualTo("A");
+    }
+
+    private String getName(TestSuiteResponseDto suite, UUID id) {
+        return restTemplate
+                .getForEntity(
+                        apiUrl("/datasets/" + suite.getDatasetId() + "/test-cases/" + id), TestCaseResponseDto.class)
+                .getBody()
+                .getTestCaseName();
+    }
 }

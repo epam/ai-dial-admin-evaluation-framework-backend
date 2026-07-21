@@ -249,12 +249,14 @@ public class TestCaseService {
         }
 
         // Pass 1: prepare every item in memory (fetch, merge-patch, revalidate) without writing, so a
-        // name permutation within the request can be parked before any row is persisted.
-        List<PreparedItemOp> prepared = new ArrayList<>(itemOps.size());
+        // name permutation within the request can be parked before any row is persisted. All rows are
+        // fetched in a single query (as batch PUT/PATCH does) rather than one SELECT per item.
+        final Map<UUID, TestCase> existingById = fetchAndVerifyAllExist(
+                itemOps.stream().map(TestCaseItemOperationDto::getId).toList(), datasetId);
+
+        final List<ItemOperation> operationsToPerform = new ArrayList<>(itemOps.size());
         for (TestCaseItemOperationDto op : itemOps) {
-            TestCase existing = testCaseRepository
-                    .findByIdAndDatasetId(op.getId(), datasetId)
-                    .orElseThrow(() -> new EntityNotFoundException("TestCase not found: " + op.getId()));
+            TestCase existing = existingById.get(op.getId());
             String beforeName = existing.getTestCaseName();
             TestCase before = copyTestCase(existing);
 
@@ -265,15 +267,15 @@ public class TestCaseService {
 
             boolean changed = !equalForUpdate(before, existing);
             boolean renamed = !Objects.equals(beforeName, existing.getTestCaseName());
-            prepared.add(new PreparedItemOp(existing, changed, renamed));
+            operationsToPerform.add(new ItemOperation(existing, changed, renamed));
         }
 
         // Validate final-state name uniqueness before any write (consistent with batch PUT/PATCH),
         // so genuine duplicates are rejected up front. The per-item DataIntegrityViolationException
         // catch below remains as a DB-level backstop.
-        List<TestCase> renamedEntities = prepared.stream()
-                .filter(PreparedItemOp::renamed)
-                .map(PreparedItemOp::entity)
+        final List<TestCase> renamedEntities = operationsToPerform.stream()
+                .filter(ItemOperation::renamed)
+                .map(ItemOperation::entity)
                 .toList();
         if (!renamedEntities.isEmpty()) {
             validateBatchNameUniqueness(renamedEntities, datasetId);
@@ -286,8 +288,8 @@ public class TestCaseService {
         }
 
         // Pass 3: apply final values.
-        List<ItemResultDto> itemResults = new ArrayList<>(itemOps.size());
-        for (PreparedItemOp item : prepared) {
+        final List<ItemResultDto> itemResults = new ArrayList<>(itemOps.size());
+        for (ItemOperation item : operationsToPerform) {
             TestCase entity = item.entity();
             try {
                 TestCase persisted = testCaseRepository.update(entity);
@@ -326,7 +328,7 @@ public class TestCaseService {
     }
 
     /** A composite-bulk itemOperation prepared in memory (pass 1) and awaiting park/apply. */
-    private record PreparedItemOp(TestCase entity, boolean changed, boolean renamed) {}
+    private record ItemOperation(TestCase entity, boolean changed, boolean renamed) {}
 
     private static TestCase copyTestCase(TestCase original) {
         return TestCase.builder()

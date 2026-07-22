@@ -65,9 +65,9 @@ class ResultBatchWriterTest {
                 .build();
     }
 
-    /** Adds one single-turn multiTurn (one row). */
+    /** Adds one single-turn multiTurn (one row, one turn). */
     private void addOneMultiTurn(ResultBatchWriter.RunBuffer buffer) {
-        writer.addResults(buffer, List.of(buildResult()));
+        writer.addResults(buffer, List.of(buildResult()), 1);
     }
 
     /** Builds a multi-turn multiTurn of {@code turns} per-turn rows. */
@@ -128,19 +128,19 @@ class ResultBatchWriterTest {
     }
 
     @Test
-    @DisplayName("a multi-turn multiTurn buffers all its per-turn rows but advances progress by one")
-    void addResults_multiTurn_buffersRowsAdvancesProgressByOne() {
+    @DisplayName("a multi-turn multiTurn buffers all its per-turn rows and advances progress by its turn count")
+    void addResults_multiTurn_buffersRowsAdvancesProgressByTurnCount() {
         int batchSize = 10;
         ResultBatchWriter.RunBuffer buffer = writer.createBuffer(batchSize, RUN_ID, SUITE_ID, TOTAL_CASES);
 
-        writer.addResults(buffer, multiTurnOf(3));
+        writer.addResults(buffer, multiTurnOf(3), 3);
         verify(transactionalWriter, never()).saveBatch(anyList());
-        assertThat(buffer.getMultiTurnsCompleted()).isEqualTo(1);
+        assertThat(buffer.getTurnsCompleted()).isEqualTo(3);
 
         writer.flush(buffer);
 
         assertThat(buffer.getTotalFlushed()).isEqualTo(3);
-        verify(sseService, times(1)).notifyProgress(eq(RUN_ID), eq(SUITE_ID), eq(1), eq(TOTAL_CASES));
+        verify(sseService, times(1)).notifyProgress(eq(RUN_ID), eq(SUITE_ID), eq(3), eq(TOTAL_CASES));
     }
 
     @Test
@@ -217,8 +217,8 @@ class ResultBatchWriterTest {
         TestCaseRunResult result1 = buildResult();
         TestCaseRunResult result2 = buildResult();
 
-        writer.addResults(buffer, List.of(result1));
-        writer.addResults(buffer, List.of(result2));
+        writer.addResults(buffer, List.of(result1), 1);
+        writer.addResults(buffer, List.of(result2), 1);
 
         ArgumentCaptor<List<TestCaseRunResult>> captor = ArgumentCaptor.forClass(List.class);
         verify(transactionalWriter).saveBatch(captor.capture());

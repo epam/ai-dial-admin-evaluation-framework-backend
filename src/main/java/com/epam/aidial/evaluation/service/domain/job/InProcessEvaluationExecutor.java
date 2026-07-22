@@ -108,6 +108,12 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
 
                         final int ri = runIndex;
                         final TestCaseRunInput capturedInput = input;
+                        // Progress is turn-granular: a runnable multiTurn advances progress by its surviving
+                        // turn count, a single-turn case or a broken multiTurn (one sentinel row) by one. This
+                        // matches SnapshotInputWriter's turn-based denominator so progress reaches 100%.
+                        final int unitTurnCount = capturedInput.isBroken() || capturedInput.getTotalTurns() == null
+                                ? 1
+                                : capturedInput.getTotalTurns();
                         String token = context.getToken();
 
                         CompletableFuture<Void> future = CompletableFuture.runAsync(
@@ -115,7 +121,7 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                                     try {
                                         List<TestCaseRunResult> results =
                                                 evaluationWorker.execute(capturedInput, context, ri, responseColumns);
-                                        resultBatchWriter.addResults(buffer, results);
+                                        resultBatchWriter.addResults(buffer, results, unitTurnCount);
                                         // Intentionally broad: the worker is the last line of defense for a
                                         // single test case. Any failure (including unchecked) MUST be turned
                                         // into a synthetic ERROR row so per-case bugs are visible instead of
@@ -137,7 +143,7 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                                             try {
                                                 TestCaseRunResult synthetic = testCaseRunResultFactory.errorResult(
                                                         capturedInput, ri, e, clock.millis());
-                                                resultBatchWriter.addResults(buffer, List.of(synthetic));
+                                                resultBatchWriter.addResults(buffer, List.of(synthetic), unitTurnCount);
                                             } catch (Exception synthEx) {
                                                 log.error(
                                                         "Failed to record synthetic ERROR for test case {} run {}: {}",

@@ -32,7 +32,7 @@ public class ResultBatchWriter {
         private final List<TestCaseRunResult> buffer = new ArrayList<>();
         private final ReentrantLock lock = new ReentrantLock();
         private final AtomicInteger totalFlushed = new AtomicInteger(0);
-        private final AtomicInteger multiTurnsCompleted = new AtomicInteger(0);
+        private final AtomicInteger turnsCompleted = new AtomicInteger(0);
         private final int batchSize;
         private final UUID runId;
         private final UUID suiteId;
@@ -49,8 +49,8 @@ public class ResultBatchWriter {
             return totalFlushed.get();
         }
 
-        public int getMultiTurnsCompleted() {
-            return multiTurnsCompleted.get();
+        public int getTurnsCompleted() {
+            return turnsCompleted.get();
         }
     }
 
@@ -60,11 +60,13 @@ public class ResultBatchWriter {
 
     /**
      * Adds one multiTurn's results to the buffer — one row for a single-turn case, N rows for a
-     * multi-turn multiTurn. Each call counts as exactly one completed multiTurn (the progress
-     * numerator), independent of how many rows it contributes. Flushes when the buffered row count reaches
-     * the batch size. Thread-safe via ReentrantLock.
+     * multi-turn multiTurn. Advances the progress numerator by {@code unitTurnCount} — the multiTurn's
+     * surviving turn count (1 for a single-turn case) — so progress is turn-granular and reaches the
+     * turn-based denominator exactly, regardless of how many result rows the unit actually produced
+     * (a broken or aborted multiTurn writes fewer rows but still advances by its full turn count).
+     * Flushes when the buffered row count reaches the batch size. Thread-safe via ReentrantLock.
      */
-    public void addResults(RunBuffer buffer, List<TestCaseRunResult> results) {
+    public void addResults(RunBuffer buffer, List<TestCaseRunResult> results, int unitTurnCount) {
         if (results == null || results.isEmpty()) {
             return;
         }
@@ -72,7 +74,7 @@ public class ResultBatchWriter {
         buffer.lock.lock();
         try {
             buffer.buffer.addAll(results);
-            buffer.multiTurnsCompleted.incrementAndGet();
+            buffer.turnsCompleted.addAndGet(unitTurnCount);
             if (buffer.buffer.size() >= buffer.batchSize) {
                 toFlush = new ArrayList<>(buffer.buffer);
                 buffer.buffer.clear();
@@ -111,8 +113,7 @@ public class ResultBatchWriter {
         log.debug("Flushed {} results for run {} (total: {})", batch.size(), buffer.runId, flushed);
 
         try {
-            sseService.notifyProgress(
-                    buffer.runId, buffer.suiteId, buffer.multiTurnsCompleted.get(), buffer.totalCases);
+            sseService.notifyProgress(buffer.runId, buffer.suiteId, buffer.turnsCompleted.get(), buffer.totalCases);
         } catch (Exception e) {
             log.debug("Failed to send progress SSE for run {}: {}", buffer.runId, e.getMessage(), e);
         }

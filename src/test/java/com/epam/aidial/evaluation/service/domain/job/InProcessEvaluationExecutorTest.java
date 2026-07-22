@@ -180,7 +180,7 @@ class InProcessEvaluationExecutorTest {
         assertThat(captor.getValue().getTestCaseId()).isEqualTo(input.getTestCaseId());
 
         verify(testCaseRepository, never()).findValidByDatasetIdExcludingIds(any(), anyList(), anyInt(), anyInt());
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result)), eq(1));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -246,7 +246,7 @@ class InProcessEvaluationExecutorTest {
 
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(any(TestCaseRunInput.class), any(EvaluationContext.class), eq(0), anyList());
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result)), eq(1));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -271,8 +271,8 @@ class InProcessEvaluationExecutorTest {
                 .execute(eq(input1), any(EvaluationContext.class), eq(0), anyList());
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input2), any(EvaluationContext.class), eq(0), anyList());
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result1)));
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result1)), eq(1));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)), eq(1));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -343,8 +343,8 @@ class InProcessEvaluationExecutorTest {
                 .execute(eq(input1), any(EvaluationContext.class), eq(0), anyList());
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input2), any(EvaluationContext.class), eq(0), anyList());
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result1)));
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result1)), eq(1));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)), eq(1));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -372,10 +372,10 @@ class InProcessEvaluationExecutorTest {
                 .execute(eq(input2), any(EvaluationContext.class), eq(0), anyList());
 
         // result2 (real) is added
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)), eq(1));
 
         ArgumentCaptor<List<TestCaseRunResult>> captor = resultListCaptor();
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResults(eq(buffer), captor.capture());
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResults(eq(buffer), captor.capture(), eq(1));
 
         boolean foundSynthetic = captor.getAllValues().stream()
                 .flatMap(List::stream)
@@ -418,8 +418,8 @@ class InProcessEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(resultBatchWriter).addResults(eq(buffer), eq(List.of(result1)));
-        verify(resultBatchWriter).addResults(eq(buffer), eq(List.of(result2)));
+        verify(resultBatchWriter).addResults(eq(buffer), eq(List.of(result1)), eq(1));
+        verify(resultBatchWriter).addResults(eq(buffer), eq(List.of(result2)), eq(1));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -439,10 +439,10 @@ class InProcessEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)), eq(1));
 
         ArgumentCaptor<List<TestCaseRunResult>> captor = resultListCaptor();
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResults(eq(buffer), captor.capture());
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResults(eq(buffer), captor.capture(), eq(1));
 
         TestCaseRunResult synthetic = captor.getAllValues().stream()
                 .flatMap(List::stream)
@@ -505,7 +505,7 @@ class InProcessEvaluationExecutorTest {
         verify(resultBatchWriter, atLeastOnce()).flush(eq(buffer));
         List<TestCaseRunResult> added = new ArrayList<>();
         try {
-            verify(resultBatchWriter, atLeastOnce()).addResults(eq(buffer), captor.capture());
+            verify(resultBatchWriter, atLeastOnce()).addResults(eq(buffer), captor.capture(), eq(1));
             captor.getAllValues().forEach(added::addAll);
         } catch (AssertionError expected) {
         }
@@ -571,13 +571,13 @@ class InProcessEvaluationExecutorTest {
                     return null;
                 })
                 .when(resultBatchWriter)
-                .addResults(eq(buffer), anyList());
+                .addResults(eq(buffer), anyList(), anyInt());
 
         // Must complete normally (no rethrow).
         executor.execute(context);
 
         // input2's real result still attempted (even though synthesis failed)
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)), eq(1));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 }

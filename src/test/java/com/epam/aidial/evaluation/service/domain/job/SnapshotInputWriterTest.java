@@ -105,7 +105,8 @@ class SnapshotInputWriterTest {
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, null);
 
-        assertThat(written).isEqualTo(1);
+        // One assembled unit, but the returned count is the surviving turn count (2), not one.
+        assertThat(written).isEqualTo(2);
         verify(inputRepository).insertBatch(batchCaptor.capture());
         final TestCaseRunInput input = batchCaptor.getValue().getFirst();
         assertThat(input.getPosition()).isZero();
@@ -126,7 +127,7 @@ class SnapshotInputWriterTest {
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, null);
 
-        assertThat(written).isEqualTo(1);
+        assertThat(written).isEqualTo(2);
         verify(inputRepository).insertBatch(batchCaptor.capture());
         final TestCaseRunInput input = batchCaptor.getValue().getFirst();
         assertThat(input.isBroken()).isFalse();
@@ -187,7 +188,7 @@ class SnapshotInputWriterTest {
 
         final int written = writer.writeInputs(RUN_ID, DATASET_ID, null, disabledJson);
 
-        assertThat(written).isEqualTo(1);
+        assertThat(written).isEqualTo(2);
         // The disabled tail turn is excluded → survivors 0,1 form a contiguous prefix → runnable, 2 turns.
         verify(inputRepository).insertBatch(batchCaptor.capture());
         final TestCaseRunInput input = batchCaptor.getValue().getFirst();

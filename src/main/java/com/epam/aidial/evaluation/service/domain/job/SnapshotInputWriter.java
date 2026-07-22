@@ -53,7 +53,8 @@ public class SnapshotInputWriter {
      * Must be called inside the caller's snapshot transaction.
      *
      * @param disabledTestCaseIdsJson the suite's {@code disabledTestCaseIds} JSONB payload (array of UUID strings)
-     * @return the total number of execution units written (single-turn units + multiTurn units)
+     * @return the total number of executed test cases — single-turn cases (one turn each) plus, for every
+     *     multiTurn, its surviving turn count; multi-turns are NOT collapsed to one
      */
     public int writeInputs(UUID runId, UUID datasetId, String filterJson, String disabledTestCaseIdsJson) {
         final List<UUID> disabledIds = disabledTestCaseIdsCodec.deserialize(disabledTestCaseIdsJson);
@@ -61,14 +62,15 @@ public class SnapshotInputWriter {
 
         testCaseRunInputRepository.deleteByRunId(runId);
 
-        int position = writeSingleTurnUnits(runId, datasetId, filterJson, disabledIds, 0);
-        position = writeMultiTurnUnits(runId, datasetId, filterJson, excludedSet, position);
-        return position;
+        // A single-turn unit is exactly one turn, so its unit count == its turn count.
+        final int singleTurnUnits = writeSingleTurnUnits(runId, datasetId, filterJson, disabledIds, 0);
+        final int multiTurnTurns = writeMultiTurnUnits(runId, datasetId, filterJson, excludedSet, singleTurnUnits);
+        return singleTurnUnits + multiTurnTurns;
     }
 
     /**
      * Writes the runnable SINGLE-TURN test cases as length-1 execution units, in deterministic order.
-     * Returns the next free {@code position}.
+     * Returns the next free {@code position} (which, starting from 0, equals the single-turn unit count).
      */
     private int writeSingleTurnUnits(
             UUID runId, UUID datasetId, String filterJson, List<UUID> disabledIds, int startPosition) {
@@ -101,11 +103,13 @@ public class SnapshotInputWriter {
      * (one input row each), paging by distinct {@code multi_turn_id} so a multiTurn is never split across a
      * page. Only the filter is applied in SQL (row-level, like disable); each multiTurn's filter-matching turns
      * are grouped and handed to {@link MultiTurnAssembler}, which resolves runnable-vs-broken (validity,
-     * tail-only disable, contiguity, cap) in memory. Returns the next free {@code position}.
+     * tail-only disable, contiguity, cap) in memory. Returns the sum of surviving turn counts across all
+     * written multiTurns (each multiTurn contributes its {@code totalTurns}, not one).
      */
     private int writeMultiTurnUnits(
             UUID runId, UUID datasetId, String filterJson, Set<UUID> excludedSet, int startPosition) {
         int position = startPosition;
+        int turnCount = 0;
         int offset = 0;
         List<String> multiTurnIds;
         do {
@@ -131,6 +135,9 @@ public class SnapshotInputWriter {
                         continue;
                     }
                     final MultiTurnAssembler.AssembledMultiTurn assembled = assembledOpt.get();
+                    // A runnable multiTurn contributes one test case per surviving turn; a broken one
+                    // contributes the single 0/0 sentinel row it produces (its totalTurns is 0).
+                    turnCount += assembled.broken() ? 1 : assembled.totalTurns();
                     batch.add(TestCaseRunInput.builder()
                             .runId(runId)
                             .position(position++)
@@ -149,6 +156,6 @@ public class SnapshotInputWriter {
             }
             offset += SNAPSHOT_PAGE_SIZE;
         } while (multiTurnIds.size() >= SNAPSHOT_PAGE_SIZE);
-        return position;
+        return turnCount;
     }
 }

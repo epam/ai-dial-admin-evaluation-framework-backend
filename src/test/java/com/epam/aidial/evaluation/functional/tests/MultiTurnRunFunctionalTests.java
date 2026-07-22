@@ -155,7 +155,8 @@ public abstract class MultiTurnRunFunctionalTests extends BaseFunctionalTest {
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        assertThat(run.getNumberOfTestCases()).isEqualTo(2);
+        // Turn-based count: the 2-turn and 3-turn multiTurns contribute 2 + 3 = 5 test cases (not 2 units).
+        assertThat(run.getNumberOfTestCases()).isEqualTo(5);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
         assertThat(results).hasSize(5);
@@ -235,8 +236,8 @@ public abstract class MultiTurnRunFunctionalTests extends BaseFunctionalTest {
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        // Only the runnable multiTurn survives as a single execution unit.
-        assertThat(run.getNumberOfTestCases()).isEqualTo(1);
+        // Only the runnable multiTurn survives; turn-based count is its 2 surviving turns.
+        assertThat(run.getNumberOfTestCases()).isEqualTo(2);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
         assertThat(results).hasSize(2);
@@ -281,8 +282,8 @@ public abstract class MultiTurnRunFunctionalTests extends BaseFunctionalTest {
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        // Both multiTurns have >=1 matching turn, so both are runnable units: full (2 turns) + tail (1 turn).
-        assertThat(run.getNumberOfTestCases()).isEqualTo(2);
+        // Both multiTurns have >=1 matching turn: full (2 turns) + tail (1 turn) = 3 test cases.
+        assertThat(run.getNumberOfTestCases()).isEqualTo(3);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
         assertThat(results).hasSize(3);
@@ -311,8 +312,8 @@ public abstract class MultiTurnRunFunctionalTests extends BaseFunctionalTest {
 
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId());
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-        // Turns 0 and 2 match; the filtered-out middle turn simply drops → survivors 0,2 run as one unit.
-        assertThat(run.getNumberOfTestCases()).isEqualTo(1);
+        // Turns 0 and 2 match; the filtered-out middle turn drops → survivors 0,2 = 2 test cases.
+        assertThat(run.getNumberOfTestCases()).isEqualTo(2);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
         assertThat(results).hasSize(2);

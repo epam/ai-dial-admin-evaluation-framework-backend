@@ -83,6 +83,7 @@
 - When adding a configuration property: add a row to `docs/configuration.md` with all six columns (`Property | Environment Variable | Default | Required | Applied when | Description`) in the same PR; see [configuration-docs spec](openspec/specs/configuration-docs/spec.md) for the full rule (column schema, four-term `Required` vocabulary, top-level grouping).
 - Prefer extracting separate methods with descriptive names to large enclosing methods with lots of commentary.
 - Use final for local variables that do not change.
+- Prefer `getFirst()`/`getLast()` instead of `get(0)`/`get(N-1)` when working with lists
 
 ### DON'T ❌
 - Don't use JPA/Hibernate - this is a JDBC-only project

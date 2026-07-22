@@ -124,7 +124,7 @@ public class MultiTurnExecutor {
 
         final List<TestCaseRunResult> results = new ArrayList<>();
         final List<Object> history = new ArrayList<>();
-        FrozenTurn current = turns.get(0);
+        FrozenTurn current = turns.getFirst();
         try {
             for (int i = 0; i < totalTurns; i++) {
                 current = turns.get(i);

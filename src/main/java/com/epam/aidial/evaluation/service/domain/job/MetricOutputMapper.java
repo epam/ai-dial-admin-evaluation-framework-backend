@@ -4,7 +4,6 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.MetricErrorDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,24 +43,23 @@ public class MetricOutputMapper {
             String tsmdName = entry.getKey();
 
             switch (entry.getValue()) {
-                case TsmdEvaluationResult.Success success -> {
+                case TsmdEvaluationResult.Success(var response, var _) -> {
                     ObjectNode tsmdNode = objectMapper.createObjectNode();
-                    mapResponseValues(tsmdNode, success.response().getOutput());
+                    mapResponseValues(tsmdNode, response.getOutput());
                     root.set(tsmdName, tsmdNode);
                 }
-                case TsmdEvaluationResult.Failure failure -> {
+                case TsmdEvaluationResult.Failure(var _, var fieldsNames) -> {
                     ObjectNode tsmdNode = objectMapper.createObjectNode();
-                    List<String> fieldNames = failure.outputFieldNames();
-                    if (fieldNames.isEmpty()) {
+                    if (fieldsNames.isEmpty()) {
                         log.warn("TSMD '{}' has no output field names — producing empty metricValues", tsmdName);
                     } else {
-                        for (String fieldName : fieldNames) {
+                        for (String fieldName : fieldsNames) {
                             tsmdNode.putNull(fieldName);
                         }
                     }
                     root.set(tsmdName, tsmdNode);
                 }
-                case TsmdEvaluationResult.ConditionError ignored -> {
+                case TsmdEvaluationResult.ConditionError _ -> {
                     /* no metricValues entry */
                 }
             }
@@ -90,22 +88,20 @@ public class MetricOutputMapper {
         for (Map.Entry<String, TsmdEvaluationResult> entry : tsmdResults.entrySet()) {
             String tsmdName = entry.getKey();
             switch (entry.getValue()) {
-                case TsmdEvaluationResult.Success success -> {
-                    ObjectNode tsmdInfoNode =
-                            buildResponseInfos(success.response().getOutput());
+                case TsmdEvaluationResult.Success(var response, var _) -> {
+                    ObjectNode tsmdInfoNode = buildResponseInfos(response.getOutput());
                     if (tsmdInfoNode != null) {
                         root.set(tsmdName, tsmdInfoNode);
                         hasAnyInfo = true;
                     }
                 }
-                case TsmdEvaluationResult.Failure failure -> {
-                    String message = failure.error().getMessage();
-                    List<String> fieldNames = failure.outputFieldNames();
+                case TsmdEvaluationResult.Failure(var error, var fieldsNames) -> {
+                    String message = error.getMessage();
                     ObjectNode tsmdInfoNode = objectMapper.createObjectNode();
-                    if (fieldNames.isEmpty()) {
+                    if (fieldsNames.isEmpty()) {
                         tsmdInfoNode.put("error", message);
                     } else {
-                        for (String fieldName : fieldNames) {
+                        for (String fieldName : fieldsNames) {
                             ObjectNode errorNode = objectMapper.createObjectNode();
                             errorNode.put("error", message);
                             tsmdInfoNode.set(fieldName, errorNode);
@@ -114,9 +110,9 @@ public class MetricOutputMapper {
                     root.set(tsmdName, tsmdInfoNode);
                     hasAnyInfo = true;
                 }
-                case TsmdEvaluationResult.ConditionError conditionError -> {
+                case TsmdEvaluationResult.ConditionError(var message, var _) -> {
                     ObjectNode tsmdInfoNode = objectMapper.createObjectNode();
-                    tsmdInfoNode.put("error", conditionError.message());
+                    tsmdInfoNode.put("error", message);
                     root.set(tsmdName, tsmdInfoNode);
                     hasAnyInfo = true;
                 }

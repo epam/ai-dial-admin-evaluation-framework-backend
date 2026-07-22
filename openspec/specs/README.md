@@ -166,6 +166,8 @@ Specs documented but not yet fully implemented.
   User-defined response column definitions scoped to TestSuite. JSONata expressions to extract named values from response bodies, stored as JSONB, evaluated at run time. `FILE` type supported as a display hint for DIAL file reference columns.
 - **[test-suite-runs](test-suite-runs/spec.md)** — Implemented
   Foundational infrastructure for async test suite execution: run lifecycle (PENDING→RUNNING→COMPLETED/FAILED/CANCELLED), CRUD with filtering/sorting/pagination, SSE status streaming, startup reconciliation, configurable concurrency limits. Uses in-process evaluation engine with virtual threads, streaming SSE support, retry/rate-limiting, and configurable execution settings. `numberOfTestCases` finalized at snapshot phase (not immutable at creation). `suiteSnapshot` field in API response (detail only; omitted from list).
+- **[eval-results-import](eval-results-import/spec.md)** — Implemented
+  `POST /api/v1/test-suites/{testSuiteId}/runs/import` — imports a batch of already-produced eval results for an existing, dataset-bound suite in one request (creates the run, persists results, extracts response columns) and asynchronously runs Phase 2 (metric evaluation) + Phase 3 (score computation) against them, skipping deployment invocation entirely. Related: test-suite-runs, response-columns, analytics-results.
 - **[evaluation-runs](evaluation-runs/spec.md)** — Planned
   Running suites, storing run history and per-case results.
 - **[runner-and-jobs](runner-and-jobs/spec.md)** — Partial

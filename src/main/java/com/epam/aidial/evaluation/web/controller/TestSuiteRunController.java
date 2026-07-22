@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalResultsImportRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import com.epam.aidial.evaluation.web.pagination.FilterParam;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
@@ -57,6 +58,26 @@ public class TestSuiteRunController {
             @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId,
             @Valid @RequestBody TestSuiteRunRequestDto request) {
         TestSuiteRunResponseDto response = testSuiteRunService.createRun(testSuiteId, request.getRunConfig());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+    }
+
+    @PostMapping("/api/v1/test-suites/{testSuiteId}/runs/import")
+    @Operation(
+            summary = "Import eval results and evaluate them",
+            description = "Creates a run from a batch of already-produced eval results (raw model responses) for "
+                    + "an existing, dataset-bound test suite, then asynchronously runs metric evaluation and score "
+                    + "computation against them — Phase 1 (deployment invocation) is never performed. Same "
+                    + "not-found/unbound-dataset/invalid-config/concurrency/name-uniqueness guards as creating a "
+                    + "normal run.")
+    @ApiResponse(responseCode = "202", description = "Run created, results persisted, and evaluation dispatched")
+    @ApiResponse(responseCode = "404", description = "Test suite or a referenced test case not found")
+    @ApiResponse(responseCode = "400", description = "Invalid or malformed result batch")
+    @ApiResponse(responseCode = "409", description = "Suite has no dataset (SUITE_HAS_NO_DATASET), or duplicate name")
+    @ApiResponse(responseCode = "429", description = "Concurrent run limit exceeded")
+    public ResponseEntity<TestSuiteRunResponseDto> importResults(
+            @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId,
+            @Valid @RequestBody EvalResultsImportRequestDto request) {
+        TestSuiteRunResponseDto response = testSuiteRunService.importResultsAndEvaluate(testSuiteId, request);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 

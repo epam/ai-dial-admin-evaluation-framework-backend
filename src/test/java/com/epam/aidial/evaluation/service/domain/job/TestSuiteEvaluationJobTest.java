@@ -2,6 +2,11 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -286,5 +291,90 @@ class TestSuiteEvaluationJobTest {
 
     private SuiteSnapshotDto invokeResolveSnapshot(TestSuiteRun run) {
         return (SuiteSnapshotDto) ReflectionTestUtils.invokeMethod(job, "resolveSnapshot", run);
+    }
+
+    @Nested
+    @DisplayName("executeRunAsync(skipDeploymentPhase=true)")
+    class ExecuteRunAsyncSkipDeploymentPhase {
+
+        private UUID runId;
+        private UUID suiteId;
+        private UUID datasetId;
+        private TestSuiteRun run;
+        private TestSuite liveSuite;
+        private Dataset liveDataset;
+
+        @BeforeEach
+        void setUp() {
+            runId = UUID.randomUUID();
+            suiteId = UUID.randomUUID();
+            datasetId = UUID.randomUUID();
+            run = TestSuiteRun.builder()
+                    .id(runId)
+                    .testSuiteId(suiteId)
+                    .suiteSnapshot(null)
+                    .build();
+
+            liveSuite = TestSuite.builder()
+                    .id(suiteId)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .datasetId(datasetId)
+                    .disabledTestCaseIds("[]")
+                    .build();
+            liveDataset = Dataset.builder().id(datasetId).build();
+        }
+
+        @Test
+        @DisplayName("runs Phase 2 + Phase 3 but never Phase 1, and completes the run")
+        void runsPhase2And3NeverPhase1() {
+            SuiteSnapshotDto builtSnapshot = SuiteSnapshotDto.builder()
+                    .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                    .suiteType("DEPLOYMENT")
+                    .build();
+            when(repository.findById(runId)).thenReturn(Optional.of(run));
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(liveSuite));
+            when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(liveDataset));
+            when(suiteSnapshotBuilder.build(liveSuite, liveDataset)).thenReturn(builtSnapshot);
+
+            job.executeRunAsync(runId, null, true);
+
+            verify(evaluationExecutor, never()).execute(any());
+            verify(metricEvaluationExecutor).execute(any());
+            verify(metricScoreComputation).execute(any());
+            verify(repository).updateToRunning(eq(runId), anyLong(), anyLong());
+            verify(repository).updateToCompleted(eq(runId), anyLong(), anyLong());
+        }
+
+        @Test
+        @DisplayName("cancellation before Phase 2 skips both metric evaluation and score computation")
+        void cancellationSkipsPhase2And3() {
+            job.registerCancellationSignal(runId);
+            job.interruptRun(runId);
+
+            job.executeRunAsync(runId, null, true);
+
+            verify(metricEvaluationExecutor, never()).execute(any());
+            verify(metricScoreComputation, never()).execute(any());
+            verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
+        }
+
+        @Test
+        @DisplayName("cancellation during Phase 2 skips Phase 3 and cancels the run")
+        void cancellationDuringPhase2SkipsPhase3() {
+            when(repository.findById(runId)).thenReturn(Optional.of(run));
+            job.registerCancellationSignal(runId);
+            doAnswer(invocation -> {
+                        job.interruptRun(runId);
+                        return null;
+                    })
+                    .when(metricEvaluationExecutor)
+                    .execute(any());
+
+            job.executeRunAsync(runId, null, true);
+
+            verify(metricEvaluationExecutor).execute(any());
+            verify(metricScoreComputation, never()).execute(any());
+            verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
+        }
     }
 }

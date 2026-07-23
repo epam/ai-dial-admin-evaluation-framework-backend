@@ -152,7 +152,8 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
                 .findFirst()
                 .orElseThrow();
         assertThat(String.valueOf(turn0.get("execution_status"))).isEqualTo("SUCCESS");
-        assertThat(String.valueOf(turn1.get("execution_status"))).isIn("ERROR", "FAILED");
+        // HTTP 500 maps deterministically to FAILED (only 401/403 → ERROR).
+        assertThat(String.valueOf(turn1.get("execution_status"))).isEqualTo("FAILED");
         assertThat(results.stream().anyMatch(r -> ((Number) r.get("turn_index")).intValue() == 2))
                 .as("turn 2 must not be sent after turn 1 fails")
                 .isFalse();

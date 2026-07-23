@@ -87,15 +87,21 @@ public class DeploymentTurnInvoker {
                 return new TurnOutcome(ExecutionStatus.ERROR, statusCode, null, 0);
             }
 
-            final String responseBody = jsonService.writeOrToString(result.body());
+            String responseBody = jsonService.writeOrToString(result.body());
             if (responseBody != null
                     && responseBody.getBytes(StandardCharsets.UTF_8).length > context.getMaxResponseSizeBytes()) {
                 status = ExecutionStatus.ERROR;
+                // Mirror the single-turn path: cap the persisted body so an oversize turn never writes an
+                // unbounded blob to test_case_run_results.response_body. writeOrToString re-escapes the
+                // truncated fragment so the stored value stays valid JSON.
+                responseBody = jsonService.writeOrToString(
+                        DeploymentInvocationSupport.truncateUtf8(responseBody, context.getMaxResponseSizeBytes()));
             }
             return new TurnOutcome(status, statusCode, responseBody, 0);
         } catch (Exception e) {
             final ExecutionStatus status =
                     DeploymentInvocationSupport.isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
+            log.warn("Turn invocation failed ({}): {}", status, e.getMessage(), e);
             return new TurnOutcome(status, null, null, 0);
         }
     }

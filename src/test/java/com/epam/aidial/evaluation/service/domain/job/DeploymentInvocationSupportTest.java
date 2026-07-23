@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
 import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -68,6 +69,16 @@ class DeploymentInvocationSupportTest {
         assertThat(DeploymentInvocationSupport.isRetryable(ExecutionStatus.TIMEOUT, null, 3, 3))
                 .as("no retries once attempts are exhausted")
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("truncateUtf8 caps oversize strings on a byte boundary and passes short ones through")
+    void truncateUtf8() {
+        assertThat(DeploymentInvocationSupport.truncateUtf8(null, 10)).isNull();
+        assertThat(DeploymentInvocationSupport.truncateUtf8("abc", 10)).isEqualTo("abc");
+        assertThat(DeploymentInvocationSupport.truncateUtf8("abcdef", 3)).isEqualTo("abc");
+        assertThat(DeploymentInvocationSupport.truncateUtf8("abcdef", 3).getBytes(StandardCharsets.UTF_8))
+                .hasSizeLessThanOrEqualTo(3);
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -64,6 +65,23 @@ public final class DeploymentInvocationSupport {
             return true;
         }
         return statusCode != null && (statusCode == 429 || statusCode >= 500);
+    }
+
+    /**
+     * Truncates {@code value} to at most {@code maxBytes} UTF-8 bytes, cutting on a byte boundary (a split
+     * multi-byte char is dropped/replaced by the decoder). Returns the input unchanged when it is null or
+     * already within the limit. Callers that persist the result should JSON-escape it (as both the single-
+     * and multi-turn paths do) so the stored {@code response_body} stays valid JSON.
+     */
+    public static String truncateUtf8(String value, long maxBytes) {
+        if (value == null) {
+            return null;
+        }
+        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length <= maxBytes) {
+            return value;
+        }
+        return new String(bytes, 0, (int) maxBytes, StandardCharsets.UTF_8);
     }
 
     /** Builds a query-param multi-value map from resolved key/value pairs, skipping any with a null key or value. */

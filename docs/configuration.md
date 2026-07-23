@@ -388,6 +388,7 @@ Configuration for MCP (Model Context Protocol) tool invocations routed through D
 |---|---|---|---|---|---|
 | `analytics.results.batch.max-items` | `ANALYTICS_RESULTS_BATCH_MAX_ITEMS` | `10000` | No | - | Maximum number of result items per batch write request. |
 | `analytics.results.batch.max-request-size-bytes` | `ANALYTICS_RESULTS_BATCH_MAX_REQUEST_SIZE_BYTES` | `10485760` | No | - | Maximum request body size in bytes for a batch write (10 MB). Also enforced by `server.tomcat.max-http-post-size`. |
+| `analytics.results.csv-import.max-file-size` | `ANALYTICS_RESULTS_CSV_IMPORT_MAX_FILE_SIZE` | `10MB` | No | - | Maximum CSV file size for the eval-results import endpoint (`POST /api/v1/test-suites/{id}/runs/import`). Requests exceeding this limit are rejected with HTTP 400 before parsing begins. |
 
 ### 6.9 Analytics Eval Summaries Batch Write
 

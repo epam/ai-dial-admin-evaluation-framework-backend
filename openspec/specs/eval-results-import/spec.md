@@ -24,6 +24,52 @@ Status: **Implemented**
 - **WHEN** an import request is processed
 - **THEN** the system does not invoke any deployment/model and instead uses the caller-supplied response bodies directly as the basis for metric evaluation
 
+### Requirement: Import request is a CSV file upload, not a JSON body
+The system SHALL accept the eval-results import batch as a CSV file uploaded via `multipart/form-data` (a `file` part, plus optional `testRunName` and `delimiter` form fields), not as a JSON request body. The CSV SHALL use a fixed set of 15 reserved, flat-named columns (`testCaseId`, `testCaseName`, `runIndex`, `testCaseData`, `requestBody`, `responseBody`, `responseStatusCode`, `executionStatus`, `startedAt`, `completedAt`, `traceId`, `retryCount`, `logDetails`, `extractedColumns`, `extractionWarnings`); every column is reserved — `testCaseData` is a required JSON-object column; `extractedColumns` and `extractionWarnings` are optional pre-computed JSON columns (defaulting to `{}` and `[]` when absent); CSV headers that do not match any reserved column are ignored. The parsed batch SHALL be validated and persisted synchronously within the request, with the same all-or-nothing semantics the batch validation already applies.
+
+Status: **Implemented**
+
+#### Scenario: A well-formed CSV file is imported successfully
+- **WHEN** a client uploads a CSV file whose header row contains the reserved columns and whose data rows are well-formed
+- **THEN** the system parses each row into a `TestCaseRunResult` stub, applies the same batch validation used for any import, and proceeds to create a run and persist the results
+
+#### Scenario: `testCaseData` is supplied as a JSON-object column in the CSV
+- **WHEN** a CSV row includes a `testCaseData` cell containing a valid JSON object string
+- **THEN** the system uses that value as the row's `testCaseData` verbatim; callers must supply `testCaseData` as a reserved CSV column — there is no mechanism to derive it from other columns
+
+#### Scenario: `extractedColumns` and `extractionWarnings` are optional caller-supplied columns
+- **WHEN** a CSV row includes `extractedColumns` and/or `extractionWarnings` cells
+- **THEN** the system persists those values verbatim on the corresponding `TestCaseRunResult`; when either column is absent or blank, it defaults to `{}` (for `extractedColumns`) or `[]` (for `extractionWarnings`)
+
+#### Scenario: File size exceeds the configured maximum
+- **WHEN** the uploaded CSV file's size exceeds `analytics.results.csv-import.max-file-size`
+- **THEN** the system rejects the request with HTTP 400 and creates no run
+
+#### Scenario: Empty or header-only CSV is rejected
+- **WHEN** the uploaded file has no header row, or a header row but no data rows
+- **THEN** the system rejects the request with HTTP 400 and creates no run
+
+### Requirement: Reserved CSV columns are typed and validated per row
+The system SHALL parse `requestBody`, `responseBody`, and `logDetails` cells as JSON when non-blank (object, array, or primitive), treating a blank cell as absent; a cell that is present but not valid JSON SHALL be rejected with HTTP 400 identifying the offending row. The system SHALL parse `executionStatus` as an `ExecutionStatus` enum name, rejecting any other value with HTTP 400 identifying the offending row. The system SHALL enforce the following per-row constraints via inline checks in the parser: `runIndex` must be present and in the range [0, 99999]; `testCaseName` must be at most 255 characters; `executionStatus`, `startedAt`, and `completedAt` must be present. All violations SHALL be surfaced as one combined validation error covering every offending row rather than failing on the first.
+
+Status: **Implemented**
+
+#### Scenario: A malformed JSON cell is rejected with its row identified
+- **WHEN** a non-blank `requestBody`, `responseBody`, or `logDetails` cell in some row is not valid JSON
+- **THEN** the system rejects the whole request with HTTP 400 that identifies which row the malformed cell was in, and creates no run
+
+#### Scenario: An invalid executionStatus value is rejected
+- **WHEN** a row's `executionStatus` cell does not match any `ExecutionStatus` enum name
+- **THEN** the system rejects the whole request with HTTP 400 and creates no run
+
+#### Scenario: A missing required reserved column value is rejected
+- **WHEN** a row is missing a value for `runIndex`, `executionStatus`, `startedAt`, or `completedAt`
+- **THEN** the system rejects the whole request with HTTP 400 identifying the offending row and field, and creates no run
+
+#### Scenario: Multiple rows with independent violations are reported together
+- **WHEN** more than one row in the same CSV file violates a per-row constraint
+- **THEN** the system collects and reports all violations in a single rejection rather than stopping at the first one found
+
 ### Requirement: Suite-level guards mirror normal run creation
 The system SHALL apply the same suite-level guards used for normal run creation before accepting an import: the suite must exist, must be bound to a dataset, and must be in a valid configuration state. The system SHALL also apply the same global and per-suite concurrent-run limits and run-name uniqueness check used for normal run creation.
 
@@ -98,24 +144,24 @@ Status: **Implemented**
 
 #### Scenario: Test case data violates the dataset schema
 - **WHEN** an import item's `testCaseData` does not conform to the suite's bound dataset's schema
-- **THEN** the system rejects the whole request with HTTP 400 mentioning "testCaseData validation failed" and the offending item's test case identity, and creates no run
+- **THEN** the system rejects the whole request with HTTP 400 mentioning "testCaseData validation failed" and identifying the offending row, and creates no run
 
 #### Scenario: Dataset has no schema configured
 - **WHEN** the suite's bound dataset has no schema configured
 - **THEN** the system performs no schema validation against `testCaseData` and proceeds to persist the batch normally
 
-### Requirement: Server-side response-column extraction
-The system SHALL evaluate the target suite's configured response-column expressions against each imported item's response body at import time, using the same `ResponseColumnExtractor` used for live evaluation runs, and SHALL persist the resulting extracted values and any extraction warnings alongside each imported result.
+### Requirement: Caller-supplied extracted columns and extraction warnings
+The system SHALL accept optional `extractedColumns` and `extractionWarnings` CSV columns carrying pre-computed response-column values. The system SHALL persist these values verbatim on each `TestCaseRunResult` without re-evaluating any response-column expressions at import time. When `extractedColumns` is absent or blank, the system SHALL default the persisted value to `{}`; when `extractionWarnings` is absent or blank, the system SHALL default the persisted value to `[]`.
 
 Status: **Implemented**
 
-#### Scenario: Response columns are extracted from the imported response body
-- **WHEN** the target suite has one or more response-column definitions and an import item includes a response body
-- **THEN** the system evaluates each response-column expression against that response body and persists the extracted values on the corresponding `TestCaseRunResult`
+#### Scenario: Pre-computed extracted columns are persisted verbatim
+- **WHEN** an import CSV row supplies an `extractedColumns` cell containing a valid JSON value
+- **THEN** the system persists that value verbatim on the corresponding `TestCaseRunResult`, without evaluating any response-column expressions
 
-#### Scenario: Extraction failure is recorded as a warning, not a request failure
-- **WHEN** a response-column expression fails to evaluate against an imported item's response body
-- **THEN** the system records an extraction warning for that column on the corresponding result and still persists the result
+#### Scenario: Absent extracted columns default to empty
+- **WHEN** an import CSV row omits the `extractedColumns` and/or `extractionWarnings` columns (or leaves them blank)
+- **THEN** the system persists `{}` for `extractedColumns` and `[]` for `extractionWarnings` on the corresponding result
 
 ### Requirement: Metric evaluation and score computation run on imported results
 Once an import request's results are persisted, the system SHALL asynchronously run metric evaluation and score computation against them (via `TestSuiteEvaluationJob.executeRunAsync(runId, token, skipDeploymentPhase=true)`), reusing the same `MetricEvaluationExecutor` and `MetricScoreComputation` logic used for live runs, and SHALL transition the run's status through the same lifecycle (`PENDING` → `RUNNING` → `COMPLETED`/`FAILED`/`CANCELLED`) as a normal run.
@@ -144,4 +190,4 @@ Status: **Implemented**
 - **THEN** the system marks the run as `FAILED` and does not proceed to trigger evaluation
 
 ## Implementation Notes
-`POST /api/v1/test-suites/{testSuiteId}/runs/import` (`TestSuiteRunController`) → `TestSuiteRunService.importResultsAndEvaluate` (suite guards + `EvalResultsImportService.validateBatch` for structural/schema batch validation — no `TestCase`/dataset resolution — inside one `@Transactional("metaTransactionManager")` method that saves the run via a private `createAndSaveRun` helper and registers a `TransactionSynchronizationManager` `afterCommit` callback — deferred exactly as `createRun` defers its own dispatch, so the async job never races an uncommitted run row) → `EvalResultsImportService.persistResults` (`@Transactional("analyticsTransactionManager")`, using `ResponseColumnExtractor` and a `TestCaseRunResultMapper` overload that sources `testCaseName`/`testCaseData` straight from the request item, synthesizing `UUID.randomUUID()` for `testCaseId` when the caller only supplied `testCaseName` — `test_case_run_results.test_case_id` is `NOT NULL` with no FK to `test_cases`, so a synthesized id is safe) → `TestSuiteEvaluationJob.executeRunAsync(runId, token, skipDeploymentPhase=true)` (Phase 2 `MetricEvaluationExecutor` + Phase 3 `computeMetricScores`, reused unmodified from the live-run job — `resolveSnapshot` already synthesizes a transient snapshot from the live suite+dataset when `suiteSnapshot` is null). `EvalResultsImportService` owns both batch validation (a plain method that runs inside the caller's ambient meta transaction) and result persistence (its own analytics transaction) — there is no separate `EvalResultsImportRunService`; that class was tried and folded back, with its run-creation (`createAndSaveRun`) and failure-compensation (`markRunFailed`) logic moved onto `TestSuiteRunService` as private methods. `createRun` and `importResultsAndEvaluate` remain two separate methods with their own inline suite-lookup guards (differing error messages), but now share two private helpers for the logic that was byte-identical between them: `enforceConcurrencyLimits` (global/per-suite concurrent-run checks) and `createAndSaveRun` (run-name resolution + save + unique-violation mapping, parameterized by `runConfigJson`); the only thing shared beyond that is the job-level `executeRunAsync(runId, token, skipDeploymentPhase)` entry point (`false`/real token vs. `true`/`null`). No `run_source`/kind column exists: nothing in the pipeline branches on how a run was created. See `design.md` Decision 4 (revised) for why test-case resolution was dropped in favor of caller-trusted identity/data, and Decisions 2/5/6 for the service-boundary history. Related: test-suite-runs, response-columns, analytics-results, test-suite-clone.
+`POST /api/v1/test-suites/{testSuiteId}/runs/import` (`TestSuiteRunController`, `consumes = MULTIPART_FORM_DATA_VALUE`, a `file` part plus optional `testRunName`/`delimiter` form fields) → `EvalResultsCsvParser.parse` (new, `service.domain.analytics` — streams the CSV via Apache Commons CSV; all 15 columns are reserved (see `RESERVED_COLUMNS`); `testCaseData` is a required JSON-object column; `extractedColumns`/`extractionWarnings` are optional pre-computed JSON columns defaulting to `{}`/`[]`; CSV headers not matching any reserved column are ignored (no non-reserved-column-to-testCaseData mapping exists; `CsvCellParser`/`SchemaTypeCoercer` are not used); builds `TestCaseRunResult` stubs directly with inline field validation — `runIndex` null/range, `testCaseName` length, `executionStatus` null, `startedAt`/`completedAt` null; runs `SchemaValidationService.validate` per row for `testCaseData` schema validation; when `testCaseId` is absent, synthesizes a `UUID.randomUUID()` for the stub so `test_case_run_results.test_case_id NOT NULL` is satisfied; bounded by `analytics.results.batch.max-items` and `analytics.results.csv-import.max-file-size`) → `TestSuiteRunService.importResultsAndEvaluate` (suite guards + `EvalResultsImportService.validateBatch(List<TestCaseRunResult> results)` for structural batch validation — empty/max-size/duplicate-key/`completedAt<startedAt`/missing-identity checks; no `TestCase`/dataset resolution — inside one `@Transactional("metaTransactionManager")` method that saves the run via a private `createAndSaveRun` helper and registers a `TransactionSynchronizationManager` `afterCommit` callback) → `EvalResultsImportService.persistResults` (`@Transactional("analyticsTransactionManager")` — fills in run-context fields (`id`, `testSuiteRunId`, `testSuiteId`, `createdAtMs`) via `.toBuilder()`; persists `extractedColumns`/`extractionWarnings` verbatim from the caller-supplied CSV stubs (no `ResponseColumnExtractor.extract` call); batches writes via `TestCaseRunResultRepository.saveAll` chunked by `csv.import.batch-size`; no `TestCaseRunResultMapper` involvement on the import path) → `TestSuiteEvaluationJob.executeRunAsync(runId, token, skipDeploymentPhase=true)` (Phase 2 `MetricEvaluationExecutor` + Phase 3 `computeMetricScores`, reused unmodified from the live-run job; the previously separate `executeImportedRunAsync` method was merged into `executeRunAsync` behind this flag — see `design.md` Decision 5, revised; `resolveSnapshot` already synthesizes a transient snapshot from the live suite+dataset when `suiteSnapshot` is null). `EvalResultsImportService` owns both structural batch validation (`validateBatch`, no `@Transactional` — runs in the caller's ambient meta transaction) and result persistence (`persistResults`, `@Transactional("analyticsTransactionManager")`); `SchemaValidationService`/`DatasetSchemaProvider` live exclusively in `EvalResultsCsvParser`. `EvalResultsImportRequestDto` and `EvalResultsImportItemDto` do not exist — the CSV parser produces `List<TestCaseRunResult>` directly with no intermediate DTO. The `TestCaseRunResultMapper` import overload was removed; `AnalyticsResultService`'s live-run `toEntity(TestCaseRunResultItemDto, ...)` overload is untouched. `createRun` and `importResultsAndEvaluate` remain two separate methods sharing two private helpers: `enforceConcurrencyLimits` and `createAndSaveRun`; `markRunFailed` (failure compensation with SSE notify) is a private method on `TestSuiteRunService` used only by the import path. No `run_source`/kind column exists: nothing in the pipeline branches on how a run was created. See `design.md` Decision 4 (revised) for why test-case resolution was dropped in favor of caller-trusted identity/data, and Decisions 2/5/6/7 for the service-boundary and format history. Related: test-suite-runs, response-columns, analytics-results, test-suite-clone.

@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
@@ -11,12 +12,11 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
 import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorCategory;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalResultsImportItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalResultsImportRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
@@ -30,6 +30,7 @@ import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -63,6 +64,7 @@ public class TestSuiteRunService {
     private final SortParser sortParser;
     private final ObjectMapper objectMapper;
     private final EvalResultsImportService evalResultsImportService;
+    private final EvalResultsCsvParser evalResultsCsvParser;
 
     @Transactional("metaTransactionManager")
     public TestSuiteRunResponseDto createRun(UUID testSuiteId, RunConfigDto config) {
@@ -135,15 +137,17 @@ public class TestSuiteRunService {
     }
 
     /**
-     * Imports a batch of already-produced eval results for an existing, dataset-bound suite: creates a
-     * {@code PENDING} run, then — once this transaction commits — persists the results (analytics
-     * datasource) and triggers Phase 2 (metric evaluation) + Phase 3 (score computation) asynchronously
-     * via {@link TestSuiteEvaluationJob#executeRunAsync} with Phase 1 skipped. Dispatch is deferred to
+     * Imports a batch of already-produced eval results for an existing, dataset-bound suite: parses the
+     * uploaded CSV via {@link EvalResultsCsvParser}, creates a {@code PENDING} run, then — once
+     * this transaction commits — persists the results (analytics datasource) and triggers Phase 2 (metric
+     * evaluation) + Phase 3 (score computation) asynchronously via
+     * {@link TestSuiteEvaluationJob#executeRunAsync} with Phase 1 skipped. Dispatch is deferred to
      * {@code afterCommit} for the same reason {@link #createRun} defers it: the async job reads the run by
      * id on its own connection and must not race a not-yet-visible row.
      */
     @Transactional("metaTransactionManager")
-    public TestSuiteRunResponseDto importResultsAndEvaluate(UUID testSuiteId, EvalResultsImportRequestDto request) {
+    public TestSuiteRunResponseDto importResultsAndEvaluate(
+            UUID testSuiteId, String testRunName, InputStream csv, long contentLength, char delimiter) {
         TestSuite testSuite = testSuiteRepository
                 .findById(testSuiteId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found with id: " + testSuiteId));
@@ -160,21 +164,21 @@ public class TestSuiteRunService {
                     + ". The test suite is not in a valid state.");
         }
 
-        List<EvalResultsImportItemDto> results = request.getResults();
-        evalResultsImportService.validateBatch(testSuite.getDatasetId(), results);
+        List<TestCaseRunResult> results =
+                evalResultsCsvParser.parse(testSuite.getDatasetId(), csv, contentLength, delimiter);
+        evalResultsImportService.validateBatch(results);
 
         enforceConcurrencyLimits(testSuiteId);
 
-        TestSuiteRun run = createAndSaveRun(testSuiteId, request.getTestRunName(), results.size(), "{}");
+        TestSuiteRun run = createAndSaveRun(testSuiteId, testRunName, results.size(), "{}");
 
         UUID runId = run.getId();
-        String responseColumnsJson = testSuite.getResponseColumns();
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 try {
-                    evalResultsImportService.persistResults(testSuiteId, run, results, responseColumnsJson);
+                    evalResultsImportService.persistResults(testSuiteId, run, results);
                 } catch (Exception ex) {
                     log.error("Failed to persist imported eval results for run {}: {}", runId, ex.getMessage(), ex);
                     markRunFailed(runId, "Failed to persist imported eval results", "IMPORT_RESULTS_PERSIST_FAILED");

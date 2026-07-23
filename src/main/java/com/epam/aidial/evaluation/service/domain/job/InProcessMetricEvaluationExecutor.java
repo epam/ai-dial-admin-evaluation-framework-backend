@@ -9,6 +9,9 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResult
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
+import com.epam.aidial.evaluation.service.domain.ConditionContext;
+import com.epam.aidial.evaluation.service.domain.ConditionDecision;
+import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
@@ -55,6 +58,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private final RunMetricSnapshotBatchWriteClient runMetricSnapshotBatchWriteClient;
     private final ObjectMapper objectMapper;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
+    private final ConditionExpressionEvaluator conditionExpressionEvaluator;
 
     @Override
     public void execute(MetricEvaluationContext context) {
@@ -174,8 +178,34 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
 
         Map<String, TsmdEvaluationResult> tsmdResults = new ConcurrentHashMap<>();
 
-        List<CompletableFuture<Void>> tsmdFutures = new ArrayList<>();
+        // Evaluate each metric's condition synchronously (before async dispatch) over {data, response, turn}:
+        // RUN → dispatch; SKIP → omit the metric entirely; ERROR → record a metric-level ConditionError
+        // (row stays SUCCESS). Only dispatched metrics are reconciled for timeout/failure below.
+        ConditionContext conditionContext = ConditionContext.builder()
+                .dataJson(result.getTestCaseData())
+                .responseJson(result.getExtractedColumns())
+                .turnIndex(result.getTurnIndex())
+                .totalTurns(result.getTotalTurns())
+                .build();
+
+        List<AggregatedMetricDefinition> dispatchedTsmds = new ArrayList<>();
         for (AggregatedMetricDefinition tsmd : context.getAggregatedTsmds()) {
+            ConditionDecision decision = conditionExpressionEvaluator.evaluate(tsmd.getCondition(), conditionContext);
+            if (decision.isSkip()) {
+                continue;
+            }
+            if (decision.isError()) {
+                tsmdResults.put(
+                        tsmd.getName(),
+                        new TsmdEvaluationResult.ConditionError(
+                                decision.errorMessage(), outputFieldNamesMap.get(tsmd.getName())));
+                continue;
+            }
+            dispatchedTsmds.add(tsmd);
+        }
+
+        List<CompletableFuture<Void>> tsmdFutures = new ArrayList<>();
+        for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
             List<String> fieldNames = outputFieldNamesMap.get(tsmd.getName());
             Semaphore semaphore = providerSemaphores.get(tsmd.getDeclarationProviderId());
             log.debug(
@@ -230,8 +260,9 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             log.warn("Metric evaluation interrupted while waiting for result {}", result.getId(), e);
         }
 
-        // Record timeout/missing TSMDs as Failure so the summary reflects incomplete evaluation
-        for (AggregatedMetricDefinition tsmd : context.getAggregatedTsmds()) {
+        // Record timeout/missing TSMDs as Failure so the summary reflects incomplete evaluation.
+        // Only dispatched metrics are reconciled — skipped/condition-error metrics are intentionally absent.
+        for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
             tsmdResults.putIfAbsent(
                     tsmd.getName(),
                     new TsmdEvaluationResult.Failure(
@@ -286,6 +317,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .testCaseId(result.getTestCaseId())
                 .testCaseName(result.getTestCaseName())
                 .runIndex(result.getRunIndex())
+                .turnIndex(result.getTurnIndex())
+                .totalTurns(result.getTotalTurns())
                 .testCaseData(parseJsonNode(result.getTestCaseData()))
                 .extractedColumns(parseJsonNode(result.getExtractedColumns()))
                 .executionStatus(executionStatus)

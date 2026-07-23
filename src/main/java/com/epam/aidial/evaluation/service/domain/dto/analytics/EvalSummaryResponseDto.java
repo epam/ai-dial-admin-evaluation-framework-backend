@@ -22,6 +22,8 @@ public class EvalSummaryResponseDto {
     private UUID testCaseId;
     private String testCaseName;
     private int runIndex;
+    private int turnIndex;
+    private int totalTurns;
     private UUID computationId;
     private JsonNode testCaseData;
 

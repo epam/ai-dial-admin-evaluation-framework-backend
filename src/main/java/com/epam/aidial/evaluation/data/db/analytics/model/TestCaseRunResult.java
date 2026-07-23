@@ -17,6 +17,15 @@ public class TestCaseRunResult {
     private UUID testCaseId;
     private String testCaseName;
     private int runIndex;
+
+    /** 0-based turn position within a multi-turn conversation; 0 for single-turn results. */
+    @Builder.Default
+    private int turnIndex = 0;
+
+    /** Planned turn count of the conversation; 1 for single-turn results. */
+    @Builder.Default
+    private int totalTurns = 1;
+
     private String testCaseData;
     private String requestBody;
     private String responseBody;

@@ -97,6 +97,11 @@ public class TestCaseRunInputs extends TableImpl<TestCaseRunInputsRecord> {
      */
     public final TableField<TestCaseRunInputsRecord, JSONB> INPUT_BINDINGS_OVERRIDE = createField(DSL.name("input_bindings_override"), SQLDataType.JSONB, this, "");
 
+    /**
+     * The column <code>meta.test_case_run_inputs.multi_turn_data</code>.
+     */
+    public final TableField<TestCaseRunInputsRecord, JSONB> MULTI_TURN_DATA = createField(DSL.name("multi_turn_data"), SQLDataType.JSONB, this, "");
+
     private TestCaseRunInputs(Name alias, Table<TestCaseRunInputsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

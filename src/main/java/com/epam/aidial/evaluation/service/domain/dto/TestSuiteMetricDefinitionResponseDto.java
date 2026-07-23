@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +36,13 @@ public class TestSuiteMetricDefinitionResponseDto {
 
     @Schema(description = "Whether this metric definition is enabled for evaluation", example = "true")
     private boolean enabled;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "Optional JSONata condition gating whether this metric runs per turn; "
+                    + "omitted when unconditional.",
+            example = "turn.last")
+    private String condition;
 
     @Schema(description = "Whether bindings passed soft validation", example = "true")
     private boolean valid;

@@ -121,6 +121,20 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
         return (JSONB) get(6);
     }
 
+    /**
+     * Setter for <code>meta.test_case_run_inputs.multi_turn_data</code>.
+     */
+    public void setMultiTurnData(JSONB value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_case_run_inputs.multi_turn_data</code>.
+     */
+    public JSONB getMultiTurnData() {
+        return (JSONB) get(7);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -144,7 +158,7 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
     /**
      * Create a detached, initialised TestCaseRunInputsRecord
      */
-    public TestCaseRunInputsRecord(String runId, Integer position, String testCaseId, String testCaseName, JSONB testCaseData, JSONB requestTemplateOverride, JSONB inputBindingsOverride) {
+    public TestCaseRunInputsRecord(String runId, Integer position, String testCaseId, String testCaseName, JSONB testCaseData, JSONB requestTemplateOverride, JSONB inputBindingsOverride, JSONB multiTurnData) {
         super(TestCaseRunInputs.TEST_CASE_RUN_INPUTS);
 
         setRunId(runId);
@@ -154,6 +168,7 @@ public class TestCaseRunInputsRecord extends UpdatableRecordImpl<TestCaseRunInpu
         setTestCaseData(testCaseData);
         setRequestTemplateOverride(requestTemplateOverride);
         setInputBindingsOverride(inputBindingsOverride);
+        setMultiTurnData(multiTurnData);
         resetTouchedOnNotNull();
     }
 }

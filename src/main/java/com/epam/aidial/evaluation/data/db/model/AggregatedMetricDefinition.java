@@ -28,6 +28,10 @@ public class AggregatedMetricDefinition {
     private String inputBindings;
 
     private boolean enabled;
+
+    /** Optional JSONata condition gating whether this metric runs per result row (per turn). */
+    private String condition;
+
     private boolean valid;
     /** JSONB array of ValidationWarningDto; stored as-is. */
     private String validationWarnings;

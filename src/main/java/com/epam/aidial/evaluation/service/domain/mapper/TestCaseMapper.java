@@ -24,6 +24,7 @@ public class TestCaseMapper {
                 .id(entity.getId())
                 .testCaseName(entity.getTestCaseName())
                 .data(warningsSerializer.deserializeMap(entity.getData()))
+                .multiTurnData(warningsSerializer.deserializeTurns(entity.getMultiTurnData()))
                 .valid(entity.isValid())
                 .validationWarnings(
                         includeWarnings ? warningsSerializer.deserializeWarnings(entity.getValidationWarnings()) : null)
@@ -36,10 +37,13 @@ public class TestCaseMapper {
         if (dto == null) {
             return null;
         }
+        boolean multiTurn = dto.getMultiTurnData() != null;
         return TestCase.builder()
                 .datasetId(datasetId)
                 .testCaseName(dto.getTestCaseName())
-                .data(warningsSerializer.serializeMap(dto.getData()))
+                // Mutual exclusivity: a multi-turn case carries no single-turn data ('{}').
+                .data(multiTurn ? "{}" : warningsSerializer.serializeMap(dto.getData()))
+                .multiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()))
                 .valid(false)
                 .validationWarnings("[]")
                 .build();
@@ -49,15 +53,19 @@ public class TestCaseMapper {
         if (entity == null || dto == null) {
             return;
         }
+        boolean multiTurn = dto.getMultiTurnData() != null;
         entity.setTestCaseName(dto.getTestCaseName());
-        entity.setData(warningsSerializer.serializeMap(dto.getData()));
+        entity.setData(multiTurn ? "{}" : warningsSerializer.serializeMap(dto.getData()));
+        entity.setMultiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()));
     }
 
     public void updateEntity(TestCase entity, TestCaseBatchPutItemDto dto) {
         if (entity == null || dto == null) {
             return;
         }
+        boolean multiTurn = dto.getMultiTurnData() != null;
         entity.setTestCaseName(dto.getTestCaseName());
-        entity.setData(warningsSerializer.serializeMap(dto.getData()));
+        entity.setData(multiTurn ? "{}" : warningsSerializer.serializeMap(dto.getData()));
+        entity.setMultiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()));
     }
 }

@@ -42,8 +42,14 @@ public class MetricOutputMapper {
         ObjectNode root = objectMapper.createObjectNode();
         for (Map.Entry<String, TsmdEvaluationResult> entry : tsmdResults.entrySet()) {
             String tsmdName = entry.getKey();
-            ObjectNode tsmdNode = objectMapper.createObjectNode();
 
+            // A condition error omits the metric entirely from metricValues (it is surfaced only in
+            // metricInfos as a wholesale metricError::<name>); an absent key reads as intentionally skipped.
+            if (entry.getValue() instanceof TsmdEvaluationResult.ConditionError) {
+                continue;
+            }
+
+            ObjectNode tsmdNode = objectMapper.createObjectNode();
             switch (entry.getValue()) {
                 case TsmdEvaluationResult.Success success ->
                     mapResponseValues(tsmdNode, success.response().getOutput());
@@ -56,6 +62,9 @@ public class MetricOutputMapper {
                             tsmdNode.putNull(fieldName);
                         }
                     }
+                }
+                case TsmdEvaluationResult.ConditionError ignored -> {
+                    // unreachable — handled by the continue above
                 }
             }
 
@@ -106,6 +115,14 @@ public class MetricOutputMapper {
                             tsmdInfoNode.set(fieldName, errorNode);
                         }
                     }
+                    root.set(tsmdName, tsmdInfoNode);
+                    hasAnyInfo = true;
+                }
+                case TsmdEvaluationResult.ConditionError conditionError -> {
+                    // Wholesale metric-level error (no per-field wrapper) → renders as the metricError::<name>
+                    // export column. Relies on "error" not being an output-schema field name.
+                    ObjectNode tsmdInfoNode = objectMapper.createObjectNode();
+                    tsmdInfoNode.put("error", conditionError.message());
                     root.set(tsmdName, tsmdInfoNode);
                     hasAnyInfo = true;
                 }

@@ -77,6 +77,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                 .set(TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS, toJsonb(entity.getConfigBindings()))
                 .set(TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS, toJsonb(entity.getInputBindings()))
                 .set(TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED, entity.isEnabled())
+                .set(TEST_SUITE_METRIC_DEFINITIONS.CONDITION, entity.getCondition())
                 .set(TEST_SUITE_METRIC_DEFINITIONS.IS_VALID, entity.isValid())
                 .set(TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS, toJsonb(entity.getValidationWarnings()))
                 .set(TEST_SUITE_METRIC_DEFINITIONS.CREATED_AT_MS, entity.getCreatedAt())
@@ -97,6 +98,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                         TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED,
+                        TEST_SUITE_METRIC_DEFINITIONS.CONDITION,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_VALID,
                         TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.CREATED_AT_MS,
@@ -120,6 +122,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                         TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED,
+                        TEST_SUITE_METRIC_DEFINITIONS.CONDITION,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_VALID,
                         TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.CREATED_AT_MS,
@@ -146,6 +149,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                         TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED,
+                        TEST_SUITE_METRIC_DEFINITIONS.CONDITION,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_VALID,
                         TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.CREATED_AT_MS,
@@ -233,6 +237,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                         TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED,
+                        TEST_SUITE_METRIC_DEFINITIONS.CONDITION,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_VALID,
                         TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.CREATED_AT_MS,
@@ -266,6 +271,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                 .set(TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS, toJsonb(entity.getConfigBindings()))
                 .set(TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS, toJsonb(entity.getInputBindings()))
                 .set(TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED, entity.isEnabled())
+                .set(TEST_SUITE_METRIC_DEFINITIONS.CONDITION, entity.getCondition())
                 .set(TEST_SUITE_METRIC_DEFINITIONS.IS_VALID, entity.isValid())
                 .set(TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS, toJsonb(entity.getValidationWarnings()))
                 .set(TEST_SUITE_METRIC_DEFINITIONS.UPDATED_AT_MS, entity.getUpdatedAt())
@@ -322,6 +328,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                         .set(TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS, toJsonb(tsmd.getConfigBindings()))
                         .set(TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS, toJsonb(tsmd.getInputBindings()))
                         .set(TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED, tsmd.isEnabled())
+                        .set(TEST_SUITE_METRIC_DEFINITIONS.CONDITION, tsmd.getCondition())
                         .set(TEST_SUITE_METRIC_DEFINITIONS.IS_VALID, tsmd.isValid())
                         .set(TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS, toJsonb(tsmd.getValidationWarnings()))
                         .set(TEST_SUITE_METRIC_DEFINITIONS.CREATED_AT_MS, timestamp)
@@ -341,6 +348,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                         TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED,
+                        TEST_SUITE_METRIC_DEFINITIONS.CONDITION,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_VALID,
                         TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.CREATED_AT_MS,
@@ -380,6 +388,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                         TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED,
+                        TEST_SUITE_METRIC_DEFINITIONS.CONDITION,
                         TEST_SUITE_METRIC_DEFINITIONS.IS_VALID,
                         TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS,
                         TEST_SUITE_METRIC_DEFINITIONS.CREATED_AT_MS,
@@ -424,6 +433,7 @@ public class PostgresTestSuiteMetricDefinitionRepository implements TestSuiteMet
                 .configBindings(toJsonString(r.getValue(TEST_SUITE_METRIC_DEFINITIONS.CONFIG_BINDINGS)))
                 .inputBindings(toJsonString(r.getValue(TEST_SUITE_METRIC_DEFINITIONS.INPUT_BINDINGS)))
                 .enabled(Boolean.TRUE.equals(r.getValue(TEST_SUITE_METRIC_DEFINITIONS.IS_ENABLED)))
+                .condition(r.getValue(TEST_SUITE_METRIC_DEFINITIONS.CONDITION))
                 .valid(Boolean.TRUE.equals(r.getValue(TEST_SUITE_METRIC_DEFINITIONS.IS_VALID)))
                 .validationWarnings(toJsonString(r.getValue(TEST_SUITE_METRIC_DEFINITIONS.VALIDATION_WARNINGS)))
                 .metricDeclarationName(r.getValue("metric_declaration_name", String.class))

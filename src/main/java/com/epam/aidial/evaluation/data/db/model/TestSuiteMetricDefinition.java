@@ -23,6 +23,13 @@ public class TestSuiteMetricDefinition {
     private String inputBindings;
 
     private boolean enabled;
+
+    /**
+     * Optional JSONata expression gating whether this metric runs per result row (per turn). Null/blank
+     * means the metric always runs. Validated as syntactically valid JSONata at write time.
+     */
+    private String condition;
+
     private boolean valid;
     /** JSONB array of ValidationWarningDto; stored as-is. */
     private String validationWarnings;

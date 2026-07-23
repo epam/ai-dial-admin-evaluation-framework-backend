@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +16,8 @@ import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.service.domain.ConditionDecision;
+import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import java.math.BigDecimal;
@@ -26,6 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -64,8 +68,16 @@ class InProcessMetricEvaluationExecutorTest {
     @Mock
     private OutputSchemaFieldExtractor outputSchemaFieldExtractor;
 
+    @Mock
+    private ConditionExpressionEvaluator conditionExpressionEvaluator;
+
     @InjectMocks
     private InProcessMetricEvaluationExecutor executor;
+
+    @BeforeEach
+    void stubConditions() {
+        lenient().when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.run());
+    }
 
     @Test
     @DisplayName("All TSMDs complete within perResultTimeoutMs — EvalSummary assembled from actual responses")

@@ -43,16 +43,31 @@ public class TestCaseFieldBindingsBuilder {
         return build(datasetSchemaProvider.getSchema(datasetId));
     }
 
-    /** Builds bindings from an already-resolved test-case schema. */
+    /**
+     * Builds bindings for the dataset's current schema with the flattened {@code data::<field>} paths
+     * pointing at a supplied JSONB source instead of {@code TEST_CASES.DATA}. Used to re-point the filter
+     * at a per-turn element ({@code elem}) inside the ALL-turns-match lateral (see
+     * {@code QueryDslRunnableTestCaseSelector}); base {@code TEST_CASES} columns remain correlated to the
+     * outer row.
+     */
+    public Map<String, QueryFieldBinding> build(UUID datasetId, Field<JSONB> dataSource) {
+        return build(datasetSchemaProvider.getSchema(datasetId), dataSource);
+    }
+
+    /** Builds bindings from an already-resolved test-case schema against {@code TEST_CASES.DATA}. */
     public Map<String, QueryFieldBinding> build(List<FieldDefinitionDto> schema) {
+        return build(schema, TEST_CASES.DATA);
+    }
+
+    /** Builds bindings from a resolved schema with {@code data::<field>} paths against {@code dataSource}. */
+    public Map<String, QueryFieldBinding> build(List<FieldDefinitionDto> schema, Field<JSONB> dataSource) {
         final Map<String, QueryFieldBinding> bindings = new LinkedHashMap<>(schemaResolver.bindings(TEST_CASES));
-        final Field<JSONB> dataColumn = TEST_CASES.DATA;
         for (final FieldDefinitionDto field : schema) {
             final String name = DATA_COLUMN_PREFIX + field.getName();
             final QueryFieldType type = schemaFieldTypeMapper.map(field.getType());
             final Field<?> path = type.isJsonb()
-                    ? jsonPathAccessor.jsonbAt(dataColumn, DSL.val(field.getName()))
-                    : jsonPathAccessor.jsonbAtAsText(dataColumn, DSL.val(field.getName()));
+                    ? jsonPathAccessor.jsonbAt(dataSource, DSL.val(field.getName()))
+                    : jsonPathAccessor.jsonbAtAsText(dataSource, DSL.val(field.getName()));
             bindings.put(name, new QueryFieldBinding(name, path, type));
         }
         return Collections.unmodifiableMap(bindings);

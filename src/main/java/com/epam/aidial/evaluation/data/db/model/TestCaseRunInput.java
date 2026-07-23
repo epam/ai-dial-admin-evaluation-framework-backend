@@ -17,6 +17,13 @@ public class TestCaseRunInput {
     private UUID testCaseId;
     private String testCaseName;
     private String testCaseData;
+
+    /**
+     * Frozen JSON array of turn-data maps for a multi-turn conversation (snapshot of the case's
+     * {@code multiTurnData}). Null for a single-turn input (the scalar {@code testCaseData} path is used).
+     */
+    private String multiTurnData;
+
     private String requestTemplateOverride;
     private String inputBindingsOverride;
 }

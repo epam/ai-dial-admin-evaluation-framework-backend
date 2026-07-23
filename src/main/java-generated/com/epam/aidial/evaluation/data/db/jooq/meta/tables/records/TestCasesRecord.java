@@ -131,6 +131,20 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
         return (JSONB) get(7);
     }
 
+    /**
+     * Setter for <code>meta.test_cases.multi_turn_data</code>.
+     */
+    public void setMultiTurnData(JSONB value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_cases.multi_turn_data</code>.
+     */
+    public JSONB getMultiTurnData() {
+        return (JSONB) get(8);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -154,7 +168,7 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
     /**
      * Create a detached, initialised TestCasesRecord
      */
-    public TestCasesRecord(String id, String datasetId, String testCaseName, Boolean isValid, JSONB validationWarnings, Long createdAtMs, Long updatedAtMs, JSONB data) {
+    public TestCasesRecord(String id, String datasetId, String testCaseName, Boolean isValid, JSONB validationWarnings, Long createdAtMs, Long updatedAtMs, JSONB data, JSONB multiTurnData) {
         super(TestCases.TEST_CASES);
 
         setId(id);
@@ -165,6 +179,7 @@ public class TestCasesRecord extends UpdatableRecordImpl<TestCasesRecord> {
         setCreatedAtMs(createdAtMs);
         setUpdatedAtMs(updatedAtMs);
         setData(data);
+        setMultiTurnData(multiTurnData);
         resetTouchedOnNotNull();
     }
 }

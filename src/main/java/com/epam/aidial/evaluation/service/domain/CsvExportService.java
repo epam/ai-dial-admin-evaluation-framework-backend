@@ -36,6 +36,7 @@ import tools.jackson.databind.ObjectMapper;
 public class CsvExportService {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private static final TypeReference<List<Map<String, Object>>> TURNS_TYPE = new TypeReference<>() {};
 
     private final DatasetRepository datasetRepository;
     private final DatasetSchemaProvider datasetSchemaProvider;
@@ -62,6 +63,7 @@ public class CsvExportService {
 
         List<String> header = new ArrayList<>();
         header.add("testCaseName");
+        header.add("turnIndex");
         header.addAll(dataColumnNames);
 
         List<FilterCondition> filters = filterParser.parse(filter != null ? filter : List.of());
@@ -90,13 +92,18 @@ public class CsvExportService {
                     headerWritten = true;
                 }
                 for (TestCase tc : cases) {
-                    List<Object> row = new ArrayList<>();
-                    row.add(tc.getTestCaseName() != null ? tc.getTestCaseName() : "");
-                    Map<String, Object> data = parseJsonToMap(tc.getData());
-                    for (String name : dataColumnNames) {
-                        row.add(cellValue(data.get(name)));
+                    String name = tc.getTestCaseName() != null ? tc.getTestCaseName() : "";
+                    if (tc.getMultiTurnData() != null) {
+                        // Multi-turn cases are multiplied to one flat row per turn, sharing testCaseName,
+                        // with turnIndex 0..N-1 in order.
+                        List<Map<String, Object>> turns = parseTurns(tc.getMultiTurnData());
+                        for (int i = 0; i < turns.size(); i++) {
+                            printer.printRecord(buildRow(name, String.valueOf(i), turns.get(i), dataColumnNames));
+                        }
+                    } else {
+                        // Single-turn case → one row with a blank turnIndex.
+                        printer.printRecord(buildRow(name, "", parseJsonToMap(tc.getData()), dataColumnNames));
                     }
-                    printer.printRecord(row);
                 }
                 if (cases.size() < pageSize) {
                     break;
@@ -106,6 +113,30 @@ public class CsvExportService {
             if (!headerWritten) {
                 printer.printRecord(header);
             }
+        }
+    }
+
+    private List<Object> buildRow(
+            String testCaseName, String turnIndex, Map<String, Object> data, List<String> dataColumnNames) {
+        List<Object> row = new ArrayList<>();
+        row.add(testCaseName);
+        row.add(turnIndex);
+        for (String name : dataColumnNames) {
+            row.add(cellValue(data.get(name)));
+        }
+        return row;
+    }
+
+    private List<Map<String, Object>> parseTurns(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<Map<String, Object>> turns = objectMapper.readValue(json, TURNS_TYPE);
+            return turns != null ? turns : List.of();
+        } catch (JacksonException e) {
+            log.warn("Failed to parse multiTurnData for export, treating as no turns: {}", e.getMessage(), e);
+            return List.of();
         }
     }
 

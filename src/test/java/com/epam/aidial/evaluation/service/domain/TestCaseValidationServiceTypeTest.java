@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.configuration.properties.testcase.TestCaseProperties;
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
@@ -33,11 +34,15 @@ class TestCaseValidationServiceTypeTest {
     @Mock
     private FileRefValidator fileRefValidator;
 
+    @Mock
+    private TestCaseProperties testCaseProperties;
+
     private TestCaseValidationService service;
 
     @BeforeEach
     void setUp() {
-        service = new TestCaseValidationService(templateVariableExtractor, validationProperties, fileRefValidator);
+        service = new TestCaseValidationService(
+                templateVariableExtractor, validationProperties, fileRefValidator, testCaseProperties);
         when(validationProperties.getMaxWarningsPerCase()).thenReturn(100);
         when(templateVariableExtractor.extract(any())).thenReturn(List.of());
     }

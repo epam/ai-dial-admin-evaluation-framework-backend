@@ -5,6 +5,7 @@ import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRu
 import com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
@@ -54,6 +55,7 @@ public class TestSuiteRunService {
 
     private final TestSuiteRunRepository testSuiteRunRepository;
     private final TestSuiteRepository testSuiteRepository;
+    private final TestCaseService testCaseService;
     private final RunnableTestCaseCounter runnableTestCaseCounter;
     private final TestSuiteRunProperties properties;
     private final TestSuiteEvaluationJob evaluationJob;
@@ -84,6 +86,13 @@ public class TestSuiteRunService {
         if (!testSuite.isValid()) {
             throw new InvalidOperationException("Cannot create a run for test suite with id: " + testSuiteId
                     + ". The test suite is not in a valid state.");
+        }
+
+        // Multi-turn conversations are supported only for HTTP chat-completions suites. Reject an MCP suite
+        // whose dataset contains any multi-turn case (409 INVALID_OPERATION).
+        if (testSuite.getSuiteType() == SuiteType.MCP_TOOL
+                && testCaseService.datasetHasMultiTurnCases(testSuite.getDatasetId())) {
+            throw new InvalidOperationException("Cannot create a run: MCP suites do not support multi-turn test cases");
         }
 
         List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());

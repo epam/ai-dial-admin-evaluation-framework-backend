@@ -59,6 +59,9 @@ public interface TestCaseRepository {
 
     long countByDatasetId(UUID datasetId);
 
+    /** True when the dataset contains at least one multi-turn test case (multi_turn_data is not null). */
+    boolean existsMultiTurnByDatasetId(UUID datasetId);
+
     List<TestCase> findBatchByDatasetId(UUID datasetId, int offset, int limit);
 
     void updateValidation(UUID id, UUID datasetId, boolean valid, String validationWarningsJson);

@@ -32,6 +32,7 @@ public class ValidationWarningsSerializer {
     private static final TypeReference<List<ValidationWarningDto>> WARNINGS_TYPE = new TypeReference<>() {};
     private static final TypeReference<List<ExtractionWarningDto>> EXTRACTION_WARNINGS_TYPE = new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private static final TypeReference<List<Map<String, Object>>> TURNS_TYPE = new TypeReference<>() {};
 
     private final ObjectMapper objectMapper;
 
@@ -159,6 +160,46 @@ public class ValidationWarningsSerializer {
         } catch (JacksonException e) {
             log.warn("Failed to deserialize JSON map, returning empty: {}", e.getMessage(), e);
             return Map.of();
+        }
+    }
+
+    /**
+     * Serializes a multi-turn data array (list of turn-data maps) to a JSON array string. Returns
+     * {@code null} for a null input so an absent {@code multiTurnData} maps to a NULL column (single-turn);
+     * throws (fail-fast) on serialization failure to prevent silent data loss.
+     *
+     * @param turns ordered list of turn-data maps (may be null)
+     * @return JSON array string, or {@code null} when {@code turns} is null
+     */
+    public String serializeTurns(List<Map<String, Object>> turns) {
+        if (turns == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(turns);
+        } catch (JacksonException e) {
+            log.error("Failed to serialize multi-turn data: {}", e.getMessage(), e);
+            throw new IllegalArgumentException("Failed to serialize multi-turn data", e);
+        }
+    }
+
+    /**
+     * Deserializes a multi-turn data array from a JSON array string. Returns {@code null} for null/blank
+     * input (absent multiTurnData) and, on a parse error, logs and returns {@code null} (graceful
+     * degradation for a non-critical read path).
+     *
+     * @param json JSON array string (may be null or blank)
+     * @return ordered list of turn-data maps, or {@code null} when absent/unparseable
+     */
+    public List<Map<String, Object>> deserializeTurns(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, TURNS_TYPE);
+        } catch (JacksonException e) {
+            log.warn("Failed to deserialize multi-turn data, returning null: {}", e.getMessage(), e);
+            return null;
         }
     }
 }

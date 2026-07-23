@@ -269,6 +269,7 @@ public class TestSuiteEvaluationJob {
                             .testCaseId(tc.getId())
                             .testCaseName(tc.getTestCaseName())
                             .testCaseData(tc.getData())
+                            .multiTurnData(tc.getMultiTurnData())
                             .build());
                 }
                 if (!batch.isEmpty()) {

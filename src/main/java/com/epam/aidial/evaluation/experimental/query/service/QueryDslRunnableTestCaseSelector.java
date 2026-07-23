@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.experimental.query.service;
 
+import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES;
+
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
@@ -15,6 +17,10 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.Condition;
+import org.jooq.Field;
+import org.jooq.JSONB;
+import org.jooq.Table;
+import org.jooq.impl.DSL;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -66,14 +72,29 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
         compile(datasetId, filterJson);
     }
 
-    /** Parses and translates the stored filter to a jOOQ {@link Condition}; {@code null} when there is no filter. */
+    /**
+     * Parses and translates the stored filter into an ALL-turns-match jOOQ {@link Condition}; {@code null}
+     * when there is no filter (unfiltered selection is byte-identical to today). The filter is compiled once
+     * against a per-turn element {@code elem} (its {@code data::<field>} paths re-pointed to {@code elem})
+     * and wrapped as a universal quantifier over {@code coalesce(multi_turn_data, jsonb_build_array(data))}:
+     * a case is runnable iff no turn fails the filter. {@code IS NOT TRUE} makes a turn whose predicate is
+     * false <i>or unknown</i> (e.g. a missing field) count as failing. A single-turn case is the trivial
+     * one-element array, preserving current behavior.
+     */
     private Condition compile(UUID datasetId, String filterJson) {
         final FilterNode filter = parseFilter(filterJson);
         if (filter == null) {
             return null;
         }
-        final Map<String, QueryFieldBinding> bindings = bindingsBuilder.build(datasetId);
-        return filterTranslator.toCondition(filter, bindings);
+        final Field<JSONB> elem = DSL.field(DSL.name("t", "elem"), JSONB.class);
+        final Map<String, QueryFieldBinding> bindings = bindingsBuilder.build(datasetId, elem);
+        final Condition perTurn = filterTranslator.toCondition(filter, bindings);
+
+        final Table<?> turns = DSL.table(
+                        "jsonb_array_elements(coalesce({0}, jsonb_build_array({1})))",
+                        TEST_CASES.MULTI_TURN_DATA, TEST_CASES.DATA)
+                .as("t", "elem");
+        return DSL.notExists(DSL.selectOne().from(turns).where(DSL.condition("({0}) is not true", perTurn)));
     }
 
     /**

@@ -34,6 +34,14 @@ public class EvalSummaryBatchWriteItemDto {
     @Max(value = 99999, message = "runIndex must be <= 99999")
     private Integer runIndex;
 
+    /** 0-based turn position within a multi-turn conversation; defaults to 0 (single-turn) when omitted. */
+    @Min(value = 0, message = "turnIndex must be >= 0")
+    private Integer turnIndex;
+
+    /** Planned turn count of the conversation; defaults to 1 (single-turn) when omitted. */
+    @Min(value = 1, message = "totalTurns must be >= 1")
+    private Integer totalTurns;
+
     @NotNull(message = "testCaseData is required")
     private JsonNode testCaseData;
 

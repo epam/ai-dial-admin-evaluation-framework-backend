@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.configuration.properties.testcase.TestCaseProperties;
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
@@ -30,6 +31,7 @@ public class TestCaseValidationService {
     private final TemplateVariableExtractor templateVariableExtractor;
     private final ValidationProperties validationProperties;
     private final FileRefValidator fileRefValidator;
+    private final TestCaseProperties testCaseProperties;
 
     /**
      * Validates test case data against the effective template, bindings, and schema.
@@ -194,6 +196,53 @@ public class TestCaseValidationService {
 
         return ValidationResult.builder()
                 .valid(warnings.isEmpty())
+                .warnings(List.copyOf(warnings))
+                .build();
+    }
+
+    /**
+     * Validates every turn of a multi-turn case against the same dataset schema. The case is valid iff
+     * every turn passes and the turn count is within the configured cap; each turn's warnings are tagged
+     * with its 0-based {@code turnIndex}. Exceeding the max-turns cap adds one invalidating warning (not a
+     * 400) so a bad row is persisted-but-invalid rather than failing the whole write.
+     */
+    public ValidationResult validateMultiTurn(
+            List<Map<String, Object>> turns,
+            List<FieldDefinitionDto> testCaseSchema,
+            RequestTemplateDto effectiveTemplate,
+            List<InputBindingDto> effectiveBindings,
+            boolean hasOverrides,
+            UUID datasetId) {
+        List<Map<String, Object>> safeTurns = turns != null ? turns : List.of();
+        List<ValidationWarningDto> warnings = new ArrayList<>();
+
+        int maxTurns = testCaseProperties.getMultiTurn().getMaxTurns();
+        if (safeTurns.size() > maxTurns) {
+            warnings.add(warning(
+                    null,
+                    "$.multiTurnData",
+                    "Multi-turn case has " + safeTurns.size() + " turns, exceeding the maximum of " + maxTurns,
+                    ValidationWarningCode.ADDITIONAL));
+        }
+
+        for (int i = 0; i < safeTurns.size(); i++) {
+            ValidationResult turnResult = validateTestCase(
+                    safeTurns.get(i), testCaseSchema, effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
+            for (ValidationWarningDto w : turnResult.getWarnings()) {
+                w.setTurnIndex(i);
+                warnings.add(w);
+            }
+        }
+
+        boolean valid = warnings.isEmpty();
+
+        int maxWarnings = validationProperties.getMaxWarningsPerCase();
+        if (warnings.size() > maxWarnings) {
+            warnings.subList(maxWarnings, warnings.size()).clear();
+        }
+
+        return ValidationResult.builder()
+                .valid(valid)
                 .warnings(List.copyOf(warnings))
                 .build();
     }

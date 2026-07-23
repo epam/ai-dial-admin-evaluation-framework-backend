@@ -21,6 +21,8 @@ public class TestCaseRunResultResponseDto {
     private UUID testCaseId;
     private String testCaseName;
     private int runIndex;
+    private int turnIndex;
+    private int totalTurns;
     private JsonNode testCaseData;
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -161,6 +161,16 @@ public class TestCaseRunResults extends TableImpl<TestCaseRunResultsRecord> {
      */
     public final TableField<TestCaseRunResultsRecord, JSONB> LOG_DETAILS = createField(DSL.name("log_details"), SQLDataType.JSONB, this, "");
 
+    /**
+     * The column <code>analytics.test_case_run_results.turn_index</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, Integer> TURN_INDEX = createField(DSL.name("turn_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>analytics.test_case_run_results.total_turns</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, Integer> TOTAL_TURNS = createField(DSL.name("total_turns"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
+
     private TestCaseRunResults(Name alias, Table<TestCaseRunResultsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

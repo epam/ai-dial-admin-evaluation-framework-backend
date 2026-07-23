@@ -46,6 +46,7 @@ public class PostgresTestCaseRunInputRepository implements TestCaseRunInputRepos
                                 input.getTestCaseId().toString())
                         .set(TEST_CASE_RUN_INPUTS.TEST_CASE_NAME, input.getTestCaseName())
                         .set(TEST_CASE_RUN_INPUTS.TEST_CASE_DATA, toJsonb(input.getTestCaseData()))
+                        .set(TEST_CASE_RUN_INPUTS.MULTI_TURN_DATA, toJsonb(input.getMultiTurnData()))
                         .set(
                                 TEST_CASE_RUN_INPUTS.REQUEST_TEMPLATE_OVERRIDE,
                                 toJsonb(input.getRequestTemplateOverride()))

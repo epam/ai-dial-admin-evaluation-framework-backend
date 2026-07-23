@@ -125,8 +125,7 @@ class EvalResultsImportServiceTest {
         @Test
         @DisplayName("throws ValidationException when results batch is empty")
         void throwsWhenBatchEmpty() {
-            assertThatThrownBy(() -> service.validateBatch(List.of()))
-                    .isInstanceOf(ValidationException.class);
+            assertThatThrownBy(() -> service.validateBatch(List.of())).isInstanceOf(ValidationException.class);
         }
 
         @Test
@@ -144,8 +143,7 @@ class EvalResultsImportServiceTest {
             List<TestCaseRunResult> results =
                     List.of(itemBuilder("tc1").build(), itemBuilder("tc2").build());
 
-            assertThatThrownBy(() -> smallBatchService.validateBatch(results))
-                    .isInstanceOf(ValidationException.class);
+            assertThatThrownBy(() -> smallBatchService.validateBatch(results)).isInstanceOf(ValidationException.class);
         }
 
         @Test
@@ -165,8 +163,7 @@ class EvalResultsImportServiceTest {
                     .execCompletedAtMs(1000L)
                     .build();
 
-            assertThatThrownBy(() -> service.validateBatch(List.of(item)))
-                    .isInstanceOf(ValidationException.class);
+            assertThatThrownBy(() -> service.validateBatch(List.of(item))).isInstanceOf(ValidationException.class);
         }
 
         @Test
@@ -174,8 +171,7 @@ class EvalResultsImportServiceTest {
         void throwsWhenIdentityMissing() {
             TestCaseRunResult item = itemBuilder(null).testCaseId(null).build();
 
-            assertThatThrownBy(() -> service.validateBatch(List.of(item)))
-                    .isInstanceOf(ValidationException.class);
+            assertThatThrownBy(() -> service.validateBatch(List.of(item))).isInstanceOf(ValidationException.class);
         }
 
         @Test

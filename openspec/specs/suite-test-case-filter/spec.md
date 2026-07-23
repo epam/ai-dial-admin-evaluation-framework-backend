@@ -78,10 +78,39 @@ Status: **Implemented**
   `experimental.query` layer (the selector is a `service`-layer interface implemented in the query
   layer)
 
+### Requirement: ALL-turns-match filtering for multi-turn cases
+When a suite `testCaseFilter` is applied to runnable-case selection, a multi-turn case SHALL be considered a match if and only if **every** turn satisfies the filter (universal quantifier). A single-turn case is the trivial one-turn case (identical to current behavior). A turn for which the filter is unknown/null (e.g. a missing field) SHALL count as failing.
+Status: **Implemented**
+
+#### Scenario: All turns match
+- **WHEN** a filter is `tags co "a" or tags co "b"` and every turn of a multi-turn case has a matching tag
+- **THEN** the case is selected as runnable
+
+#### Scenario: One non-matching turn excludes the case
+- **WHEN** at least one turn of a multi-turn case fails the filter
+- **THEN** the entire case is excluded from runnable selection
+
+#### Scenario: Missing-field turn fails
+- **WHEN** a turn lacks the field referenced by the filter
+- **THEN** that turn is treated as failing and the case is excluded
+
+### Requirement: Filter compiles once over a coalesced turns array
+The filter SHALL be compiled once against a per-turn element and wrapped as a universal quantifier over `COALESCE(multi_turn_data, jsonb_build_array(data))` using a `NOT EXISTS (... WHERE (<filter>) IS NOT TRUE)` lateral. The lateral is added only when a filter is present, so unfiltered selection is unchanged.
+Status: **Implemented**
+
+#### Scenario: No filter leaves selection unchanged
+- **WHEN** a suite has no `testCaseFilter`
+- **THEN** runnable selection issues today's query with no coalesce/lateral
+
 ## Implementation Notes
 - New `service`-layer interface `service.domain.job.RunnableTestCaseSelector`; implementation in
   `experimental.query.service` (mirrors the `MetricScoreComputation` inversion), backed by
   `QueryDslRunnableTestCaseSelector`.
+- Multi-turn ALL-turns-match: `TestCaseFieldBindingsBuilder` overload binds `data::<field>` against a
+  per-turn JSONB element (`elem`); `QueryDslRunnableTestCaseSelector.compile()` compiles the filter
+  against `elem` and wraps the `Condition` in the `NOT EXISTS` lateral over
+  `COALESCE(multi_turn_data, jsonb_build_array(data))`, passed to `PostgresTestCaseRepository` as an
+  opaque `extraCondition`.
 - Translation reuse: `FilterTranslator`, `TestCaseFieldBindingsBuilder`; base predicate mirrors
   `PostgresTestCaseRepository.validNotExcludedCondition`.
 - Run wiring: `RunnableTestCaseCounter`, `TestSuiteRunService.createRun` (guard #4),

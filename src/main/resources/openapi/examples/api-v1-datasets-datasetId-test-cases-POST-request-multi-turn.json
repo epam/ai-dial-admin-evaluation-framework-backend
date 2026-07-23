@@ -1,0 +1,11 @@
+{
+  "testCaseName": "Multi-turn - follow-up question",
+  "multiTurnData": [
+    {
+      "prompt": "What is the capital of France?"
+    },
+    {
+      "prompt": "And what is its population?"
+    }
+  ]
+}

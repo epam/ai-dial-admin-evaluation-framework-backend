@@ -154,6 +154,34 @@ Status: **Planned**
 - **WHEN** client calls PATCH with body that modifies `data`
 - **THEN** system SHALL recalculate valid against the dataset's schema and include validationWarnings if `valid=false`
 
+### Requirement: multiTurnData authoring field
+The test-case request, response, and batch-put DTOs SHALL expose an optional `multiTurnData` (`List<Map<String,Object>>`); the model and `test_cases` table gain a nullable `multi_turn_data JSONB` column. The field is omitted (`@JsonInclude(NON_NULL)`) for single-turn cases. A DB CHECK constraint SHALL enforce mutual exclusivity (`multi_turn_data IS NULL OR data = '{}'::jsonb`).
+Status: **Planned**
+
+#### Scenario: Round-trip a multi-turn case
+- **WHEN** a test case is created with a `multiTurnData` array and read back
+- **THEN** the response includes `multiTurnData` with the same ordered turns and omits it for single-turn cases
+
+#### Scenario: DB rejects a mutually-exclusive violation
+- **WHEN** a write attempts a row with both non-empty `data` and non-null `multi_turn_data`
+- **THEN** the database rejects it via the mutual-exclusivity CHECK constraint
+
+### Requirement: Per-turn validation against the dataset schema
+Each element of `multiTurnData` SHALL be validated against the same dataset `test_case_schema` used for single-turn `data`. The case's `is_valid` is true iff every turn passes. Validation warnings aggregate across turns, each warning carrying the originating turn index.
+Status: **Planned**
+
+#### Scenario: One invalid turn invalidates the case
+- **WHEN** any turn violates the schema (missing required field, type mismatch, unknown field)
+- **THEN** the case is stored with `is_valid=false` and warnings tagged with the offending turn index
+
+### Requirement: multiTurnData is PATCH-able with mutual exclusivity
+`multiTurnData` SHALL be part of the merge-PATCH whitelist alongside `testCaseName` and `data`. A PATCH that sets one of `data`/`multiTurnData` clears the other.
+Status: **Planned**
+
+#### Scenario: PATCH switches a case to multi-turn
+- **WHEN** a single-turn case is PATCHed with a `multiTurnData` array
+- **THEN** the case becomes multi-turn and its `data` is cleared to `{}`
+
 ### Requirement: Unique testCaseName within Dataset
 The service SHALL enforce that `testCaseName` is unique within a Dataset (case-insensitive). `"TestA"` and `"testa"` are considered duplicates within the same dataset. Create, update (PUT/PATCH when changing name), and CSV import SHALL enforce uniqueness. CSV import `conflictStrategy` continues to govern collision behavior (FAIL/SKIP/OVERRIDE) for both cross-import collisions and within-CSV duplicates. The DB unique constraint is `(dataset_id, LOWER(test_case_name))`; upsert-based strategies leverage it directly.
 Status: **Planned**
@@ -285,14 +313,14 @@ Status: **Planned**
 - **THEN** the CSV cell values SHALL use their natural string representation (unchanged from current behavior)
 
 ### Requirement: CSV bulk upload with schema detection
-The service SHALL allow bulk uploading TestCases via CSV under the dataset endpoint `POST /api/v1/datasets/{datasetId}/test-cases/import`. All columns map to the unified `data` map. Column names match the dataset's `testCaseSchema` field names. Schema auto-detection, persistence, and replacement behavior depend on the `importMode` parameter. In OVERRIDE mode, schema is always replaced on the dataset from CSV. In APPEND mode, schema is only auto-detected when the dataset schema is empty. In MERGE mode, new CSV columns are merged into the existing dataset schema. The reserved CSV column is `testCaseName` only; the previously-recognized `enabled` column is no longer parsed (TestCase has no `enabled` field).
+The service SHALL allow bulk uploading TestCases via CSV under the dataset endpoint `POST /api/v1/datasets/{datasetId}/test-cases/import`. All columns map to the unified `data` map. Column names match the dataset's `testCaseSchema` field names. Schema auto-detection, persistence, and replacement behavior depend on the `importMode` parameter. In OVERRIDE mode, schema is always replaced on the dataset from CSV. In APPEND mode, schema is only auto-detected when the dataset schema is empty. In MERGE mode, new CSV columns are merged into the existing dataset schema. The reserved CSV columns are `testCaseName` and `turnIndex` (both excluded from `data` and from schema auto-detection); `turnIndex` groups and orders the turns of a multi-turn case (see the `multi-turn-conversation` spec). The previously-recognized `enabled` column is no longer parsed (TestCase has no `enabled` field).
 
 Cell values for ARRAY- and OBJECT-typed fields SHALL be stored as structured JSON values (not strings) when the schema specifies those types; when there is no schema or the field has no schema type, valid JSON arrays/objects SHALL be parsed and stored structurally. `CsvCellParser` SHALL NOT treat `"1"` and `"0"` as boolean literals; only `"true"`/`"false"` (case-insensitive). Integer parsing SHALL use `Long.parseLong()`. Inline coercion SHALL match the schema type when known; post-persist fixup SHALL run after schema auto-detection / merge / OVERRIDE replacement.
 Status: **Planned**
 
 #### Scenario: Import maps all columns to data
 - **WHEN** CSV header has column names matching `testCaseSchema` fields
-- **THEN** system SHALL map all non-testCaseName columns to `data` (the `enabled` column header is no longer reserved and is treated like any other data column — falling under the schema rules of the chosen importMode)
+- **THEN** system SHALL map all columns except the reserved `testCaseName` and `turnIndex` to `data` (the `enabled` column header is no longer reserved and is treated like any other data column — falling under the schema rules of the chosen importMode)
 
 #### Scenario: Header `enabled` is no longer reserved
 - **WHEN** CSV contains a column named `enabled`
@@ -300,7 +328,7 @@ Status: **Planned**
 
 #### Scenario: Auto-detect schema from CSV (no existing schema)
 - **WHEN** the dataset's `testCaseSchema` is empty and CSV is imported (any mode)
-- **THEN** system SHALL auto-detect field definitions from CSV columns: all headers except `testCaseName` become `FieldDefinitionDto` entries with `required: false`; schema field order follows CSV column order
+- **THEN** system SHALL auto-detect field definitions from CSV columns: all headers except the reserved `testCaseName` and `turnIndex` become `FieldDefinitionDto` entries with `required: false`; schema field order follows CSV column order
 
 #### Scenario: Auto-detected schema is persisted on the dataset
 - **WHEN** CSV import commits and schema auto-detection or merge occurs
@@ -331,7 +359,7 @@ Status: **Planned**
 
 #### Scenario: Auto-detect schema from CSV (legacy reservation note)
 - **WHEN** the dataset's `testCaseSchema` is empty and CSV is imported (any mode)
-- **THEN** system SHALL auto-detect field definitions from CSV columns: all headers except the single reserved name `testCaseName` become `FieldDefinitionDto` entries with `required: false` and `description: null`; schema field order follows CSV column order (left to right)
+- **THEN** system SHALL auto-detect field definitions from CSV columns: all headers except the reserved `testCaseName` and `turnIndex` become `FieldDefinitionDto` entries with `required: false` and `description: null`; schema field order follows CSV column order (left to right)
 
 #### Scenario: Auto-detect type inference
 - **WHEN** system auto-detects schema from CSV

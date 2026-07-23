@@ -4,11 +4,13 @@
   "results": [
     {
       "testCaseId": "770e8400-e29b-41d4-a716-446655440002",
-      "testCaseName": "test-case-1",
+      "testCaseName": "multi-turn-conversation",
       "runIndex": 0,
-      "testCaseData": {"prompt": "Hello, world!", "category": "greeting"},
-      "requestBody": {"messages": [{"role": "user", "content": "Hello, world!"}]},
-      "responseBody": {"choices": [{"message": {"content": "Hi there!"}}]},
+      "turnIndex": 0,
+      "totalTurns": 2,
+      "testCaseData": {"prompt": "What is the capital of France?"},
+      "requestBody": {"messages": [{"role": "user", "content": "What is the capital of France?"}]},
+      "responseBody": {"choices": [{"message": {"content": "Paris."}}]},
       "responseStatusCode": 200,
       "executionInfo": {
         "status": "SUCCESS",
@@ -18,8 +20,29 @@
         "retryCount": 0
       },
       "extractedColumns": {
-        "answer": "Hi there!",
-        "total_tokens": 42
+        "answer": "Paris."
+      },
+      "extractionWarnings": []
+    },
+    {
+      "testCaseId": "770e8400-e29b-41d4-a716-446655440002",
+      "testCaseName": "multi-turn-conversation",
+      "runIndex": 0,
+      "turnIndex": 1,
+      "totalTurns": 2,
+      "testCaseData": {"prompt": "And what is its population?"},
+      "requestBody": {"messages": [{"role": "user", "content": "What is the capital of France?"}, {"role": "assistant", "content": "Paris."}, {"role": "user", "content": "And what is its population?"}]},
+      "responseBody": {"choices": [{"message": {"content": "About 2.1 million."}}]},
+      "responseStatusCode": 200,
+      "executionInfo": {
+        "status": "SUCCESS",
+        "startedAt": 1739750401500,
+        "completedAt": 1739750402700,
+        "traceId": "trace-abc-124",
+        "retryCount": 0
+      },
+      "extractedColumns": {
+        "answer": "About 2.1 million."
       },
       "extractionWarnings": []
     },
@@ -27,6 +50,8 @@
       "testCaseId": "880e8400-e29b-41d4-a716-446655440003",
       "testCaseName": "test-case-2",
       "runIndex": 0,
+      "turnIndex": 0,
+      "totalTurns": 1,
       "testCaseData": {"prompt": "Error test", "category": "error-handling"},
       "requestBody": {"messages": [{"role": "user", "content": "Error test"}]},
       "responseBody": {"error": {"message": "Internal server error"}},

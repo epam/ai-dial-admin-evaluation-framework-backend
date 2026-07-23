@@ -1131,7 +1131,7 @@ public class CsvImportService {
         try {
             return Integer.parseInt(raw.trim());
         } catch (NumberFormatException e) {
-            log.debug("Non-integer turnIndex '{}', treating as blank", raw);
+            log.debug("Non-integer turnIndex '{}', treating as blank: {}", raw, e.getMessage(), e);
             return null;
         }
     }

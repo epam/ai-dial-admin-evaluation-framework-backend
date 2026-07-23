@@ -71,6 +71,26 @@ Status: **Implemented**
   - `deploymentRef` and `endpointRef` read from `context.getSnapshotDeploymentRef()` and `context.getSnapshotEndpointRef()`
   - The worker SHALL NOT call `resolveRequest(suiteId, tcId)` (no DB reads during execution)
 
+### Requirement: Multi-turn dispatch and per-turn result emission
+The worker that executes one run input SHALL return a list of results. When the input carries `multi_turn_data`, execution is delegated to the multi-turn turn loop, which emits one result per executed turn; otherwise the existing single-turn path is used and returns a single result. MCP inputs are unchanged. Each result carries `turn_index` and `total_turns` (single-turn = `0/1`).
+Status: **Implemented**
+
+#### Scenario: Multi-turn input yields per-turn results
+- **WHEN** a run input has `multi_turn_data`
+- **THEN** execution runs the turn loop and returns one `TestCaseRunResult` per executed turn
+
+#### Scenario: Single-turn input is unchanged
+- **WHEN** a run input has no `multi_turn_data`
+- **THEN** the existing single-turn path runs and returns exactly one result with `turn_index=0, total_turns=1`
+
+### Requirement: One concurrency permit per conversation
+The execution unit SHALL be the whole conversation: turns of one multi-turn case run sequentially under a single concurrency permit, and progress is counted one unit per conversation regardless of how many turn rows it writes.
+Status: **Implemented**
+
+#### Scenario: Progress counts conversations, not turns
+- **WHEN** a multi-turn case writes N turn rows
+- **THEN** run progress advances by one unit for that case, and the runnable-case count treats the multi-turn case as one unit
+
 ### Requirement: Snapshot phase
 Before transitioning a run to RUNNING, the system SHALL execute a snapshot phase that freezes the suite configuration and test case data.
 Status: **Implemented**

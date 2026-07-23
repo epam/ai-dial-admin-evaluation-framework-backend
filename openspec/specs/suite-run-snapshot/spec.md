@@ -92,6 +92,18 @@ Status: **Planned**
 - **WHEN** `resolveSnapshot()` runs against a run row created before the snapshot feature (i.e., `suite_snapshot IS NULL`)
 - **THEN** synthesis SHALL load the live `TestSuite` AND the live `Dataset` referenced by the suite; build a transient `SuiteSnapshotDto` via `SuiteSnapshotBuilder.build(testSuite, dataset)` (version `"2"`, schema sourced from the live dataset); if either the suite or the dataset is missing, fail the run with the corresponding error code
 
+### Requirement: Snapshot freezes multiTurnData per case
+The suite-run snapshot SHALL freeze a multi-turn case's turns by carrying `multi_turn_data` into a new nullable column on `test_case_run_inputs`. Each runnable case produces exactly one input row (single-turn or multi-turn); the existing per-case paging is used. There is no cross-row assembly and no "broken" sentinel — invalid and over-cap cases are already `is_valid=false` and excluded by runnable selection.
+Status: **Implemented**
+
+#### Scenario: Multi-turn case snapshots to one input row
+- **WHEN** a runnable multi-turn case is snapshotted
+- **THEN** one `test_case_run_inputs` row is written carrying its ordered `multi_turn_data`
+
+#### Scenario: Single-turn snapshot unchanged
+- **WHEN** a runnable single-turn case is snapshotted
+- **THEN** one input row is written with `multi_turn_data` null, exactly as today
+
 ### Requirement: Two-tier column selection on test_suite_runs
 The `PostgresTestSuiteRunRepository` SHALL use two distinct SELECT column sets to avoid TOAST overhead.
 Status: **Implemented**

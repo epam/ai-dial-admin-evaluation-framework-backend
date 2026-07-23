@@ -157,6 +157,18 @@ Status: **Implemented**
 - **WHEN** a TSMD references a metric with an invalid output schema
 - **THEN** the validation warning in `validationWarnings` SHALL have `code = "INVALID_OUTPUT_SCHEMA"`
 
+### Requirement: Condition syntax is validated at write time
+When a Test Suite Metric Definition is created or updated, a non-blank `condition` SHALL be validated as a syntactically valid JSONata expression. Malformed expressions are rejected with HTTP 400. A blank/null condition is a no-op.
+Status: **Implemented**
+
+#### Scenario: Malformed condition rejected on create
+- **WHEN** a metric definition is created with a syntactically invalid JSONata `condition`
+- **THEN** the request is rejected with HTTP 400
+
+#### Scenario: Malformed condition rejected on update
+- **WHEN** an existing metric definition is updated with a malformed `condition`
+- **THEN** the request is rejected with HTTP 400
+
 ### Requirement: Constant binding source — nullable value
 
 `ConstantBindingSourceDto.value` SHALL be nullable (accept JSON `null`). Clients may set `value = null` to represent an explicit JSON null constant. The system SHALL accept the binding and store it. If the binding targets a required metric property, soft validation SHALL produce a `REQUIRED` warning; if the property is optional, no warning is produced.

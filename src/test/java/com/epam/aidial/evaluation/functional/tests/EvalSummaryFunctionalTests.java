@@ -214,6 +214,60 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
+    @Test
+    @DisplayName("Per-turn summaries of one conversation persist as distinct rows keyed by turn_index")
+    void shouldPersistPerTurnSummaryRows() {
+        UUID computationId = UUID.randomUUID();
+        insertRunMetricSnapshots(testSuiteRunId, computationId);
+
+        UUID testCaseId = UUID.randomUUID();
+        EvalSummaryBatchWriteItemDto turn0 = buildEvalSummaryItem(testCaseId, "conv", 0);
+        turn0.setTurnIndex(0);
+        turn0.setTotalTurns(2);
+        EvalSummaryBatchWriteItemDto turn1 = buildEvalSummaryItem(testCaseId, "conv", 0);
+        turn1.setTurnIndex(1);
+        turn1.setTotalTurns(2);
+
+        EvalSummaryBatchWriteRequestDto request = EvalSummaryBatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .computationId(computationId)
+                .computedAtMs(System.currentTimeMillis())
+                .items(List.of(turn0, turn1))
+                .build();
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/eval-summaries"), jsonEntity(request), EvalSummaryBatchWriteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findEvalSummariesByRunId(testSuiteRunId);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.stream().map(r -> ((Number) r.get("turn_index")).intValue()))
+                .containsExactlyInAnyOrder(0, 1);
+        assertThat(rows)
+                .allSatisfy(r ->
+                        assertThat(((Number) r.get("total_turns")).intValue()).isEqualTo(2));
+    }
+
+    @Test
+    @DisplayName("Single-turn summary write omitting turn fields defaults to turn_index=0, total_turns=1")
+    void shouldDefaultTurnFieldsForSingleTurnSummary() {
+        UUID computationId = UUID.randomUUID();
+        insertRunMetricSnapshots(testSuiteRunId, computationId);
+
+        EvalSummaryBatchWriteRequestDto request =
+                buildEvalSummaryBatchRequest(testSuiteId, testSuiteRunId, computationId, 1);
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/eval-summaries"), jsonEntity(request), EvalSummaryBatchWriteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findEvalSummariesByRunId(testSuiteRunId);
+        assertThat(rows).hasSize(1);
+        assertThat(((Number) rows.get(0).get("turn_index")).intValue()).isEqualTo(0);
+        assertThat(((Number) rows.get(0).get("total_turns")).intValue()).isEqualTo(1);
+    }
+
     // --- List Tests ---
 
     @Test

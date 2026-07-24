@@ -93,6 +93,8 @@ analytics:
     batch:
       max-items: 10000
       max-request-size-bytes: 10485760  # 10MB
+    csv-import:
+      max-file-size: 10MB
   eval-summaries:
     batch:
       max-items: 10000

@@ -32,6 +32,7 @@ import com.epam.aidial.evaluation.functional.tests.DatasetMigrationFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.DatasetScopedTestCaseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetVisibilityFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DeploymentFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalResultsImportFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryAggregationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportPageSizeFunctionalTests;
@@ -333,6 +334,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestSuiteRunTests extends TestSuiteRunFunctionalTests {}
+
+    @Nested
+    class EvalResultsImportTests extends EvalResultsImportFunctionalTests {}
 
     @Nested
     class TestSuiteRunSseTests extends TestSuiteRunSseFunctionalTests {}

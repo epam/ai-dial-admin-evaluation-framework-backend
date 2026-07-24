@@ -104,7 +104,7 @@ public class TestSuiteEvaluationJob {
     }
 
     @Async("testSuiteRunExecutor")
-    public void executeRunAsync(UUID runId, String token) {
+    public void executeRunAsync(UUID runId, String token, boolean skipDeploymentPhase) {
         final AtomicBoolean cancellationSignal =
                 activeCancellationSignals.computeIfAbsent(runId, _ -> new AtomicBoolean(false));
         try {
@@ -117,8 +117,7 @@ public class TestSuiteEvaluationJob {
                 return;
             }
 
-            // Snapshot phase: runs before RUNNING transition
-            if (!executeSnapshotPhase(runId)) {
+            if (!skipDeploymentPhase && !executeSnapshotPhase(runId)) {
                 return;
             }
 
@@ -129,29 +128,31 @@ public class TestSuiteEvaluationJob {
             TestSuiteRun run =
                     repository.findById(runId).orElseThrow(() -> new IllegalStateException("Run not found: " + runId));
 
-            // Inconsistent snapshot guard
-            boolean hasSnapshot = run.getSuiteSnapshot() != null;
-            boolean hasInputs = testCaseRunInputRepository.existsByRunId(runId);
-            if (hasSnapshot != hasInputs) {
-                log.error(
-                        "Inconsistent snapshot state for run {}: suite_snapshot={}, inputs={}",
-                        runId,
-                        hasSnapshot,
-                        hasInputs);
-                now = clock.millis();
-                String errorDetails = buildErrorDetails(
-                        "SNAPSHOT_STATE_INCONSISTENT",
-                        RunErrorCategory.INTERNAL,
-                        "Exactly one of suite_snapshot / test_case_run_inputs is present",
-                        null);
-                repository.updateToFailed(runId, "Inconsistent snapshot state", errorDetails, now, now);
-                notifySse(runId);
-                return;
-            }
+            if (!skipDeploymentPhase) {
+                // Inconsistent snapshot guard
+                boolean hasSnapshot = run.getSuiteSnapshot() != null;
+                boolean hasInputs = testCaseRunInputRepository.existsByRunId(runId);
+                if (hasSnapshot != hasInputs) {
+                    log.error(
+                            "Inconsistent snapshot state for run {}: suite_snapshot={}, inputs={}",
+                            runId,
+                            hasSnapshot,
+                            hasInputs);
+                    now = clock.millis();
+                    String errorDetails = buildErrorDetails(
+                            "SNAPSHOT_STATE_INCONSISTENT",
+                            RunErrorCategory.INTERNAL,
+                            "Exactly one of suite_snapshot / test_case_run_inputs is present",
+                            null);
+                    repository.updateToFailed(runId, "Inconsistent snapshot state", errorDetails, now, now);
+                    notifySse(runId);
+                    return;
+                }
 
-            // Phase 1: Deployment evaluation
-            EvaluationContext context = buildContext(run, cancellationSignal, token);
-            evaluationExecutor.execute(context);
+                // Phase 1: Deployment evaluation
+                EvaluationContext context = buildContext(run, cancellationSignal, token);
+                evaluationExecutor.execute(context);
+            }
 
             // Phase 2: Metric evaluation
             if (!cancellationSignal.get()) {

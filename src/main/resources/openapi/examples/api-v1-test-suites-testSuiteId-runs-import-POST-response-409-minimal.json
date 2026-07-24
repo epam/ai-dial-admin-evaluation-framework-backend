@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-05-26T10:15:30Z",
+  "status": 409,
+  "error": "Conflict",
+  "errorCode": "SUITE_HAS_NO_DATASET",
+  "message": "Cannot import eval results: test suite 550e8400-e29b-41d4-a716-446655440000 is not bound to a dataset (datasetId is null).",
+  "path": "/api/v1/test-suites/550e8400-e29b-41d4-a716-446655440000/runs/import"
+}

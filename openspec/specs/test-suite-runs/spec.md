@@ -576,7 +576,7 @@ Status: **Implemented**
 - **THEN** system SHALL allow the update (mutable properties like `testRunName` are not status-dependent)
 
 ### Requirement: Startup reconciliation of orphaned runs
-The service SHALL reconcile orphaned runs on application startup. In-memory state (thread tracking, SSE emitters) is lost on restart, so any runs left in non-terminal status (PENDING or RUNNING) are no longer being executed. The reconciliation strategy is pluggable; the current mock implementation marks all orphaned runs as FAILED. Future implementations MAY re-enqueue runs or reconnect to an external executor.
+The service SHALL reconcile orphaned runs on application startup. In-memory state (thread tracking, SSE emitters) is lost on restart, so any runs left in non-terminal status (PENDING or RUNNING) are no longer being executed. The reconciliation strategy is a pluggable seam; the active implementation marks all orphaned runs as FAILED.
 Status: **Implemented**
 
 #### Scenario: Mark orphaned runs as FAILED on startup
@@ -594,10 +594,6 @@ Status: **Implemented**
 #### Scenario: Reconciliation runs before accepting requests
 - **WHEN** the application starts
 - **THEN** reconciliation SHALL complete before the service begins accepting new run creation requests (e.g., via `@EventListener(ApplicationReadyEvent.class)` or `SmartLifecycle`)
-
-#### Scenario: Future extensibility
-- **WHEN** a real executor replaces the mock implementation
-- **THEN** the reconciliation strategy MAY be changed to re-enqueue orphaned runs or query the external executor for their actual status, without modifying the reconciliation trigger mechanism
 
 ### Requirement: Header blacklist validation at suite save time
 The system SHALL validate `requestTemplate.headers` against the configured header blacklist when a test suite is created or updated. Suites with blacklisted headers SHALL be marked as invalid with a validation warning.

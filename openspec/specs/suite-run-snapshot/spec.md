@@ -6,8 +6,8 @@ This spec defines the suite snapshot mechanism: freezing suite configuration and
 Status: **Implemented**
 
 ## Key Terms
-- **SuiteSnapshotDto**: Versioned DTO capturing all execution-relevant suite fields at snapshot time. Fields: `snapshotVersion` (default `"1"`), `suiteType`, and type-specific fields (DEPLOYMENT: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`; MCP_TOOL: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`). Annotated with `@JsonIgnoreProperties(ignoreUnknown = true)` for forward compatibility.
-- **SuiteSnapshotBuilder**: `@Component` in `service.domain` that builds `SuiteSnapshotDto` from a `TestSuite` model via `JsonbMapper`. Always sets `snapshotVersion = "1"`.
+- **SuiteSnapshotDto**: Versioned DTO capturing all execution-relevant suite fields at snapshot time. Fields: `snapshotVersion` (default `CURRENT_VERSION` = `"2"`), `suiteType`, and type-specific fields (DEPLOYMENT: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`; MCP_TOOL: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`). Annotated with `@JsonIgnoreProperties(ignoreUnknown = true)` for forward compatibility.
+- **SuiteSnapshotBuilder**: `@Component` in `service.domain` that builds `SuiteSnapshotDto` from a `TestSuite` model via `JsonbMapper`. Always stamps `snapshotVersion = "2"` (`CURRENT_VERSION`).
 - **test_case_run_inputs**: Append-only meta table with columns `run_id`, `position`, `test_case_id`, `test_case_name`, `test_case_data` (JSONB), `request_template_override` (JSONB, nullable), `input_bindings_override` (JSONB, nullable). Primary key `(run_id, position)`.
 - **Snapshot phase**: The first phase of `executeRunAsync` — runs before the RUNNING state transition, uses `ISOLATION_REPEATABLE_READ`, retries on `40001`, idempotent.
 

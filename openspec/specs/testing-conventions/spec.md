@@ -66,7 +66,7 @@ Functional test assertions that verify persisted state SHALL use production repo
 
 ### Requirement: ArchUnit fence forbids raw JdbcTemplate outside allowed packages in production code
 
-A LayeredArchitectureTest rule SHALL fail when any production class outside the two allowed packages imports `org.springframework.jdbc.core.JdbcTemplate` or `org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate`. The two allowed packages are `com.epam.aidial.evaluation.configuration.datasource` (datasource bean wiring and Flyway configuration) and `com.epam.aidial.evaluation.service.infrastructure.health` (`DatabaseHealthIndicator` and `AnalyticsDatabaseHealthIndicator`, which probe each datasource via JdbcTemplate). The rule applies to production sources (`src/main/java`, `src/main/java-generated`) only — test infrastructure classes such as `PostgresTestPersistenceService` (schema reset DDL) are excluded by `ImportOption.DoNotIncludeTests`.
+A LayeredArchitectureTest rule SHALL fail when any production class outside the two allowed packages (`configuration.datasource` and `service.infrastructure.health`) imports `org.springframework.jdbc.core.JdbcTemplate` or `NamedParameterJdbcTemplate`. Test infrastructure classes such as `PostgresTestPersistenceService` (schema reset DDL) are excluded by `ImportOption.DoNotIncludeTests`. The full rule (exact carve-out packages, health-indicator exception, rule expression) is owned by the `typed-sql-dsl` capability; this requirement exists here because the fence protects the test-and-persistence conventions.
 
 Status: **Implemented**
 
@@ -74,11 +74,6 @@ Status: **Implemented**
 
 - **WHEN** a developer adds an import of `NamedParameterJdbcTemplate` to any class under `com.epam.aidial.evaluation.data.db`, `.service`, `.web`, or `.client`
 - **THEN** the ArchUnit rule SHALL fail with a message naming the offending class and the two allowed locations
-
-#### Scenario: Health indicator carve-out permitted
-
-- **WHEN** `DatabaseHealthIndicator` or `AnalyticsDatabaseHealthIndicator` in `service.infrastructure.health` injects `JdbcTemplate` to issue its liveness probe
-- **THEN** the ArchUnit rule SHALL NOT flag these classes
 
 ### Requirement: Test data helpers expose typed DSLContext only via constructor injection
 

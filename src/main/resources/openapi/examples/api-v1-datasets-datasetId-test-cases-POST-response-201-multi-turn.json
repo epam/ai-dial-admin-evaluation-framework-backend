@@ -1,6 +1,9 @@
 {
   "id": "550e8400-e29b-41d4-a716-446655440002",
   "testCaseName": "Multi-turn - follow-up question",
+  "data": {
+    "tags": "geography"
+  },
   "multiTurnData": [
     {
       "prompt": "What is the capital of France?"

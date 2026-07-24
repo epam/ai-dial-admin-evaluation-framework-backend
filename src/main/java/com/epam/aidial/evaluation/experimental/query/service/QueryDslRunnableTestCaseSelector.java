@@ -75,11 +75,13 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
     /**
      * Parses and translates the stored filter into an ALL-turns-match jOOQ {@link Condition}; {@code null}
      * when there is no filter (unfiltered selection is byte-identical to today). The filter is compiled once
-     * against a per-turn element {@code elem} (its {@code data::<field>} paths re-pointed to {@code elem})
-     * and wrapped as a universal quantifier over {@code coalesce(multi_turn_data, jsonb_build_array(data))}:
-     * a case is runnable iff no turn fails the filter. {@code IS NOT TRUE} makes a turn whose predicate is
-     * false <i>or unknown</i> (e.g. a missing field) count as failing. A single-turn case is the trivial
-     * one-element array, preserving current behavior.
+     * with scope-aware bindings: per-turn fields resolve against the per-turn element {@code elem}, shared
+     * fields against the outer row's {@code data} (constant across turns). It is wrapped as a universal
+     * quantifier over {@code coalesce(multi_turn_data, jsonb_build_array(data))}: a case is runnable iff no
+     * turn fails the filter. {@code IS NOT TRUE} makes a turn whose predicate is false <i>or unknown</i>
+     * (e.g. a missing per-turn field) count as failing. Shared-field references remain correlated to the
+     * outer row inside the lateral. A single-turn case is the trivial one-element array, preserving current
+     * behavior.
      */
     private Condition compile(UUID datasetId, String filterJson) {
         final FilterNode filter = parseFilter(filterJson);
@@ -87,7 +89,7 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
             return null;
         }
         final Field<JSONB> elem = DSL.field(DSL.name("t", "elem"), JSONB.class);
-        final Map<String, QueryFieldBinding> bindings = bindingsBuilder.build(datasetId, elem);
+        final Map<String, QueryFieldBinding> bindings = bindingsBuilder.buildScoped(datasetId, elem);
         final Condition perTurn = filterTranslator.toCondition(filter, bindings);
 
         final Table<?> turns = DSL.table(

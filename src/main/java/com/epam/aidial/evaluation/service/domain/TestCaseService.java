@@ -446,13 +446,14 @@ public class TestCaseService {
                 ? warningsSerializer.deserializeTurns(entity.getMultiTurnData())
                 : null;
 
-        // Structural invariants first (mutual exclusivity + non-empty array) → 400; the max-turns cap is
-        // an invalidating warning handled below, not a 400.
-        multiTurnFieldsValidator.validateStructure(dataMap, turns);
+        // Structural invariants first (non-empty array + scope placement) → 400; the max-turns cap is
+        // an invalidating warning handled below, not a 400. `data` (shared) and `multiTurnData` (per-turn)
+        // may coexist; placement is validated against the dataset schema's perTurn flags.
+        multiTurnFieldsValidator.validateStructure(dataMap, turns, schema);
 
         ValidationResult result = turns != null
                 ? testCaseValidationService.validateMultiTurn(
-                        turns, schema, null, List.of(), false, entity.getDatasetId())
+                        dataMap, turns, schema, null, List.of(), false, entity.getDatasetId())
                 : testCaseValidationService.validateTestCase(
                         dataMap, schema, null, List.of(), false, entity.getDatasetId());
         entity.setValid(result.isValid());
@@ -546,26 +547,25 @@ public class TestCaseService {
         if (patch.containsKey("testCaseName") && patch.get("testCaseName") != null) {
             entity.setTestCaseName(patch.get("testCaseName").toString());
         }
+        // `data` (shared) and `multiTurnData` (per-turn) are independent buckets: patching one does NOT
+        // clear the other. Post-merge placement + per-scope validation (runValidation) governs correctness.
         if (patch.containsKey("data")) {
             Object v = patch.get("data");
             if (v instanceof Map) {
                 Map<String, Object> patchData = (Map<String, Object>) v;
                 Map<String, Object> merged = mergeMaps(warningsSerializer.deserializeMap(entity.getData()), patchData);
                 entity.setData(warningsSerializer.serializeMap(merged));
-                // Setting data switches the case to single-turn: clear any multi-turn payload.
-                entity.setMultiTurnData(null);
             }
         }
         if (patch.containsKey("multiTurnData")) {
             Object v = patch.get("multiTurnData");
             if (v == null) {
+                // Reverting to single-turn; the existing `data` map is retained as the single-turn data.
                 entity.setMultiTurnData(null);
             } else if (v instanceof List) {
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> turns = (List<Map<String, Object>>) v;
                 entity.setMultiTurnData(warningsSerializer.serializeTurns(turns));
-                // Setting multiTurnData switches the case to multi-turn: clear single-turn data.
-                entity.setData("{}");
             }
         }
     }

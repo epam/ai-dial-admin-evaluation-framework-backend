@@ -32,6 +32,7 @@ public class TestCaseValidationService {
     private final ValidationProperties validationProperties;
     private final FileRefValidator fileRefValidator;
     private final TestCaseProperties testCaseProperties;
+    private final TestCaseFieldScopeResolver scopeResolver;
 
     /**
      * Validates test case data against the effective template, bindings, and schema.
@@ -201,12 +202,16 @@ public class TestCaseValidationService {
     }
 
     /**
-     * Validates every turn of a multi-turn case against the same dataset schema. The case is valid iff
-     * every turn passes and the turn count is within the configured cap; each turn's warnings are tagged
-     * with its 0-based {@code turnIndex}. Exceeding the max-turns cap adds one invalidating warning (not a
-     * 400) so a bad row is persisted-but-invalid rather than failing the whole write.
+     * Validates a multi-turn case scope-aware: the shared {@code data} map against the shared sub-schema
+     * ({@code perTurn=false} fields) and every turn against the per-turn sub-schema ({@code perTurn=true}
+     * fields), both using the dataset schema. The case is valid iff no shared-field warning and every turn
+     * passes and the turn count is within the configured cap; each per-turn warning is tagged with its
+     * 0-based {@code turnIndex} (shared-field warnings carry none). Exceeding the max-turns cap adds one
+     * invalidating warning (not a 400). A multi-turn case with all-empty turn maps is valid when no
+     * required per-turn field exists.
      */
     public ValidationResult validateMultiTurn(
+            Map<String, Object> sharedData,
             List<Map<String, Object>> turns,
             List<FieldDefinitionDto> testCaseSchema,
             RequestTemplateDto effectiveTemplate,
@@ -215,6 +220,15 @@ public class TestCaseValidationService {
             UUID datasetId) {
         List<Map<String, Object>> safeTurns = turns != null ? turns : List.of();
         List<ValidationWarningDto> warnings = new ArrayList<>();
+
+        List<FieldDefinitionDto> sharedSchema = scopeResolver.sharedSchema(testCaseSchema);
+        List<FieldDefinitionDto> perTurnSchema = scopeResolver.perTurnSchema(testCaseSchema);
+
+        // Shared (test-case-level) fields are validated once against the shared sub-schema; their warnings
+        // carry no turn index.
+        ValidationResult sharedResult = validateTestCase(
+                sharedData, sharedSchema, effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
+        warnings.addAll(sharedResult.getWarnings());
 
         int maxTurns = testCaseProperties.getMultiTurn().getMaxTurns();
         if (safeTurns.size() > maxTurns) {
@@ -227,7 +241,7 @@ public class TestCaseValidationService {
 
         for (int i = 0; i < safeTurns.size(); i++) {
             ValidationResult turnResult = validateTestCase(
-                    safeTurns.get(i), testCaseSchema, effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
+                    safeTurns.get(i), perTurnSchema, effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
             for (ValidationWarningDto w : turnResult.getWarnings()) {
                 w.setTurnIndex(i);
                 warnings.add(w);

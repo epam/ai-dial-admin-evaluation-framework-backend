@@ -42,7 +42,11 @@ class TestCaseValidationServiceTypeTest {
     @BeforeEach
     void setUp() {
         service = new TestCaseValidationService(
-                templateVariableExtractor, validationProperties, fileRefValidator, testCaseProperties);
+                templateVariableExtractor,
+                validationProperties,
+                fileRefValidator,
+                testCaseProperties,
+                new TestCaseFieldScopeResolver());
         when(validationProperties.getMaxWarningsPerCase()).thenReturn(100);
         when(templateVariableExtractor.extract(any())).thenReturn(List.of());
     }

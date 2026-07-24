@@ -113,6 +113,21 @@ public abstract class AbstractMultiTurnFunctionalTest extends BaseFunctionalTest
         return response.getBody();
     }
 
+    /** Creates a multi-turn case carrying both shared (test-case-level) {@code data} and per-turn {@code turns}. */
+    protected TestCaseResponseDto createMultiTurnCase(
+            UUID datasetId, String name, Map<String, Object> sharedData, List<Map<String, Object>> turns) {
+        ResponseEntity<TestCaseResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName(name)
+                        .data(sharedData)
+                        .multiTurnData(turns)
+                        .build()),
+                TestCaseResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
     protected TestCaseResponseDto createSingleTurnCase(UUID datasetId, String name, Map<String, Object> data) {
         ResponseEntity<TestCaseResponseDto> response = restTemplate.postForEntity(
                 apiUrl("/datasets/" + datasetId + "/test-cases"),
@@ -154,11 +169,13 @@ public abstract class AbstractMultiTurnFunctionalTest extends BaseFunctionalTest
                                 .name("prompt")
                                 .type(SchemaFieldType.STRING)
                                 .required(true)
+                                .perTurn(true)
                                 .build(),
                         FieldDefinitionDto.builder()
                                 .name("category")
                                 .type(SchemaFieldType.STRING)
                                 .required(false)
+                                .perTurn(true)
                                 .build())))
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/chat")

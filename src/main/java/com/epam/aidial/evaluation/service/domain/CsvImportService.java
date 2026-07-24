@@ -72,6 +72,7 @@ public class CsvImportService {
     private final SchemaTypeCoercer schemaTypeCoercer;
     private final ObjectMapper objectMapper;
     private final ValidationWarningsSerializer warningsSerializer;
+    private final TestCaseFieldScopeResolver scopeResolver;
 
     /**
      * Dry-run: parse and validate without persisting. Returns preview with detected columns and sample rows.
@@ -385,9 +386,40 @@ public class CsvImportService {
                             + "' appears non-contiguously; multi-turn rows of a case must be contiguous")
                     .build());
         }
-        ValidationResult combined = validateRunAsMultiTurn(run, datasetId, testCaseSchema, warnings);
-        return persist(toMultiTurnEntity(run, datasetId, combined), combined, conflictStrategy, first.testCaseName());
+        List<ParsedRow> ordered = orderTurns(run);
+        MultiTurnAssembly assembly = assembleMultiTurn(ordered, testCaseSchema);
+        ValidationResult combined = validateRunAsMultiTurn(run, ordered, assembly, datasetId, testCaseSchema, warnings);
+        return persist(
+                toMultiTurnEntity(first.testCaseName(), datasetId, assembly, combined),
+                combined,
+                conflictStrategy,
+                first.testCaseName());
     }
+
+    /**
+     * Splits an ordered multi-turn run into its shared (test-case-level) data map and its ordered per-turn
+     * maps, using each column's schema scope. Shared columns must be identical across the run's rows; a
+     * mismatch is flagged so validation can invalidate the case.
+     */
+    private MultiTurnAssembly assembleMultiTurn(List<ParsedRow> ordered, List<FieldDefinitionDto> schema) {
+        Map<String, Object> shared = null;
+        boolean sharedConflict = false;
+        List<Map<String, Object>> perTurnMaps = new ArrayList<>(ordered.size());
+        for (ParsedRow row : ordered) {
+            TestCaseFieldScopeResolver.Partition partition = scopeResolver.partition(row.data(), schema);
+            if (shared == null) {
+                shared = partition.shared();
+            } else if (!shared.equals(partition.shared())) {
+                sharedConflict = true;
+            }
+            perTurnMaps.add(partition.perTurn());
+        }
+        return new MultiTurnAssembly(shared != null ? shared : Map.of(), perTurnMaps, sharedConflict);
+    }
+
+    /** A CSV multi-turn run split by scope: the case's shared data and its ordered per-turn maps. */
+    private record MultiTurnAssembly(
+            Map<String, Object> sharedData, List<Map<String, Object>> perTurnMaps, boolean sharedConflict) {}
 
     /** Persists one assembled entity (single-turn row or multi-turn case) via the conflict strategy. */
     private InsertResult persist(
@@ -422,14 +454,25 @@ public class CsvImportService {
     }
 
     private ValidationResult validateRunAsMultiTurn(
-            List<ParsedRow> run, UUID datasetId, List<FieldDefinitionDto> schema, List<CsvImportWarningDto> warnings) {
-        List<ParsedRow> ordered = orderTurns(run);
-        List<Map<String, Object>> turns = ordered.stream().map(ParsedRow::data).toList();
-        ValidationResult vr =
-                testCaseValidationService.validateMultiTurn(turns, schema, null, List.of(), false, datasetId);
+            List<ParsedRow> run,
+            List<ParsedRow> ordered,
+            MultiTurnAssembly assembly,
+            UUID datasetId,
+            List<FieldDefinitionDto> schema,
+            List<CsvImportWarningDto> warnings) {
+        ValidationResult vr = testCaseValidationService.validateMultiTurn(
+                assembly.sharedData(), assembly.perTurnMaps(), schema, null, List.of(), false, datasetId);
 
         List<ValidationWarningDto> merged = new ArrayList<>(vr.getWarnings() != null ? vr.getWarnings() : List.of());
         boolean valid = vr.isValid();
+        if (assembly.sharedConflict()) {
+            valid = false;
+            merged.add(ValidationWarningDto.builder()
+                    .message("Shared (test-case-level) column values differ across turns of case '"
+                            + run.get(0).testCaseName() + "'; they must be identical")
+                    .code(ValidationWarningCode.ADDITIONAL)
+                    .build());
+        }
         if (ordered.stream().anyMatch(ParsedRow::hasJsonParseErrors)) {
             valid = false;
             merged.add(ValidationWarningDto.builder()
@@ -483,14 +526,13 @@ public class CsvImportService {
         return false;
     }
 
-    private TestCase toMultiTurnEntity(List<ParsedRow> run, UUID datasetId, ValidationResult vr) {
-        List<Map<String, Object>> turns =
-                orderTurns(run).stream().map(ParsedRow::data).toList();
+    private TestCase toMultiTurnEntity(
+            String testCaseName, UUID datasetId, MultiTurnAssembly assembly, ValidationResult vr) {
         return TestCase.builder()
                 .datasetId(datasetId)
-                .testCaseName(run.get(0).testCaseName())
-                .data("{}")
-                .multiTurnData(warningsSerializer.serializeTurns(turns))
+                .testCaseName(testCaseName)
+                .data(warningsSerializer.serializeMap(assembly.sharedData()))
+                .multiTurnData(warningsSerializer.serializeTurns(assembly.perTurnMaps()))
                 .valid(vr.isValid())
                 .validationWarnings(warningsSerializer.serializeWarnings(vr.getWarnings()))
                 .build();
@@ -517,13 +559,40 @@ public class CsvImportService {
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
-            return buildSchemaFromBindings(bindings);
+            // OVERRIDE rebuilds field defs from CSV columns (types inferred later) and so loses field scope;
+            // scope (perTurn) is a persistent dataset-schema property, so re-apply it by field name. MERGE
+            // and APPEND already carry the existing schema's fields (with their perTurn) through unchanged.
+            return applyScopeFromDataset(buildSchemaFromBindings(bindings), testCaseSchema);
         }
         if (mode == CsvImportMode.MERGE) {
             return mergeSchemaWithBindings(testCaseSchema, bindings);
         }
         // APPEND + non-empty schema: use existing schema as-is
         return testCaseSchema != null ? testCaseSchema : List.of();
+    }
+
+    /**
+     * Copies each field's {@code perTurn} scope from the dataset's current schema onto a freshly-built
+     * validation schema (matched by name). Only the OVERRIDE/empty path uses this — its field defs are new
+     * objects, so mutating them is safe; MERGE/APPEND carry the dataset schema's own objects through.
+     */
+    private List<FieldDefinitionDto> applyScopeFromDataset(
+            List<FieldDefinitionDto> schema, List<FieldDefinitionDto> datasetSchema) {
+        if (datasetSchema == null || datasetSchema.isEmpty()) {
+            return schema;
+        }
+        Map<String, Boolean> scopeByName = new LinkedHashMap<>();
+        for (FieldDefinitionDto f : datasetSchema) {
+            if (f != null && f.getName() != null) {
+                scopeByName.put(f.getName(), f.getPerTurn());
+            }
+        }
+        for (FieldDefinitionDto f : schema) {
+            if (f != null && f.getName() != null && scopeByName.containsKey(f.getName())) {
+                f.setPerTurn(scopeByName.get(f.getName()));
+            }
+        }
+        return schema;
     }
 
     private List<FieldDefinitionDto> buildSchemaFromBindings(List<ColumnBinding> bindings) {

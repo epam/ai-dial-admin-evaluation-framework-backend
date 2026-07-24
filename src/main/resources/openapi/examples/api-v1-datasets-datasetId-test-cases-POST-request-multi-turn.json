@@ -1,5 +1,8 @@
 {
   "testCaseName": "Multi-turn - follow-up question",
+  "data": {
+    "tags": "geography"
+  },
   "multiTurnData": [
     {
       "prompt": "What is the capital of France?"

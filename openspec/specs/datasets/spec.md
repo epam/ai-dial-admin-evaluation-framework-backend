@@ -275,7 +275,7 @@ Status: **Planned**
 - **THEN** the payload SHALL include `id` (UUID), `name`, `description`, `visibility` (one of `PUBLIC`/`PRIVATE`), `testCaseSchema` (list of `FieldDefinitionDto`), `isValid` (boolean), `validationWarnings` (list of structured warnings), `version` (Long), `createdBy`, `createdAt` (epoch ms), `updatedAt` (epoch ms)
 
 ### Requirement: Dataset testCaseSchema structure and validation
-The system SHALL validate the `testCaseSchema` on every dataset create/update: schema is a list of `FieldDefinitionDto` entries where each entry's `name` is non-blank, unique within the schema (case-insensitive), at most 255 characters, and matches the identifier pattern that prohibits the `:` character; `type` is one of `STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`; `displayName` is at most 255 characters; `description` is at most 2000 characters; `required` is a boolean.
+The system SHALL validate the `testCaseSchema` on every dataset create/update: schema is a list of `FieldDefinitionDto` entries where each entry's `name` is non-blank, unique within the schema (case-insensitive), at most 255 characters, and matches the identifier pattern that prohibits the `:` character; `type` is one of `STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`; `displayName` is at most 255 characters; `description` is at most 2000 characters; `required` is a boolean; `perTurn` is a boolean (default `false`) that marks the field's **scope** — `true` = per-turn (the field's value may vary between turns of a multi-turn case and lives in each `multiTurnData[i]` map), `false`/absent = shared (test-case-level, constant across turns, lives in the `data` map). Scope is a schema-level declaration and applies uniformly to every test case in the dataset. A missing `perTurn` SHALL be treated as `false`, so schemas authored before this field are unchanged.
 Status: **Planned**
 
 #### Scenario: Empty schema accepted
@@ -297,6 +297,14 @@ Status: **Planned**
 #### Scenario: Field exceeds max length
 - **WHEN** client sends a field with `name` longer than 255 characters or `description` longer than 2000 characters
 - **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
+
+#### Scenario: perTurn defaults to shared when absent
+- **WHEN** client sends a field with no `perTurn` attribute
+- **THEN** the field SHALL be persisted and treated as shared (`perTurn=false`), and existing pre-change schemas SHALL behave identically to before
+
+#### Scenario: perTurn marks a field per-turn
+- **WHEN** client sends a field with `perTurn: true`
+- **THEN** the request SHALL succeed and that field's values SHALL be expected in each turn's `multiTurnData[i]` map (not in the shared `data` map) for multi-turn cases in this dataset
 
 ### Requirement: Schema-driven data cleanup on dataset schema change
 When a dataset PUT removes one or more fields from `testCaseSchema`, the system SHALL strip those keys from the `data` map of every TestCase under the dataset before completing the update. This cleanup runs synchronously within the dataset update transaction so that no TestCase carries orphan fields by the time the dataset PUT returns 202.

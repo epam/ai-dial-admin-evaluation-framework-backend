@@ -86,7 +86,8 @@ class CsvImportServiceSchemaTest {
                 csvCellParser,
                 schemaTypeCoercer,
                 objectMapper,
-                warningsSerializer);
+                warningsSerializer,
+                new TestCaseFieldScopeResolver());
         datasetId = UUID.randomUUID();
 
         when(csvImportProperties.getMaxFileSize()).thenReturn(DataSize.ofMegabytes(10));

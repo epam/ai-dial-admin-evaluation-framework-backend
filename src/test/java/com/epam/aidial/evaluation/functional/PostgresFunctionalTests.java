@@ -58,6 +58,7 @@ import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQu
 import com.epam.aidial.evaluation.functional.tests.MultiTurnCsvFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiTurnSharedDataFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
@@ -380,6 +381,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class MultiTurnCsvTests extends MultiTurnCsvFunctionalTests {}
+
+    @Nested
+    class MultiTurnSharedDataTests extends MultiTurnSharedDataFunctionalTests {}
 
     @Nested
     class AnalyticsRetryFieldsTests extends AnalyticsRetryFieldsFunctionalTests {}

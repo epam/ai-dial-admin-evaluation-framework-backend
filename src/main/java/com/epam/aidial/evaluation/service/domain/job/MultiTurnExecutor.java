@@ -21,6 +21,7 @@ import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -107,13 +108,18 @@ public class MultiTurnExecutor {
                 ? context.getSnapshotEndpointRef().getMethod()
                 : null;
 
+        // The case's shared (test-case-level) data is frozen into the snapshot input's testCaseData; each
+        // turn's effective view merges it with that turn's own per-turn map (per-turn keys win). This merged
+        // view drives template resolution and is persisted as the turn row's testCaseData, so it also feeds
+        // the conditional-metric dictionary and metric input downstream.
+        final Map<String, Object> sharedData = parseSharedData(input.getTestCaseData());
         final int totalTurns = turns.size();
         final List<TestCaseRunResult> results = new ArrayList<>();
         final List<Object> history = new ArrayList<>();
         int turnIndex = 0;
         try {
             for (turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
-                final Map<String, Object> turnData = turns.get(turnIndex);
+                final Map<String, Object> turnData = mergeSharedAndTurn(sharedData, turns.get(turnIndex));
                 final TurnDefinition turn = new TurnDefinition(
                         turnIndex, context, template, bindings, turnData, deploymentId, method, responseColumns);
 
@@ -184,7 +190,7 @@ public class MultiTurnExecutor {
                     null,
                     "{}",
                     "[]",
-                    turns.get(Math.min(turnIndex, totalTurns - 1))));
+                    mergeSharedAndTurn(sharedData, turns.get(Math.min(turnIndex, totalTurns - 1)))));
         }
         return results;
     }
@@ -302,6 +308,28 @@ public class MultiTurnExecutor {
                 outcome,
                 extraction.extractedColumns(),
                 extraction.extractionWarnings());
+    }
+
+    /** Parses the case's shared (test-case-level) data map from the frozen snapshot input; empty when absent. */
+    private Map<String, Object> parseSharedData(String dataJson) {
+        if (dataJson == null || dataJson.isBlank()) {
+            return Map.of();
+        }
+        return jsonService.readMapOrEmpty(dataJson);
+    }
+
+    /**
+     * Builds a turn's effective view: the case's shared data overlaid with that turn's own per-turn map.
+     * Per-turn keys take precedence (scope placement makes overlap unreachable via the API; this is a
+     * defensive tiebreak). Returns the turn map unchanged when there is no shared data.
+     */
+    private static Map<String, Object> mergeSharedAndTurn(Map<String, Object> shared, Map<String, Object> turn) {
+        if (shared.isEmpty()) {
+            return turn;
+        }
+        final Map<String, Object> merged = new LinkedHashMap<>(shared);
+        merged.putAll(turn);
+        return merged;
     }
 
     /**

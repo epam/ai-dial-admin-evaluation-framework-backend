@@ -17,6 +17,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -95,10 +96,14 @@ public class CsvExportService {
                     String name = tc.getTestCaseName() != null ? tc.getTestCaseName() : "";
                     if (tc.getMultiTurnData() != null) {
                         // Multi-turn cases are multiplied to one flat row per turn, sharing testCaseName,
-                        // with turnIndex 0..N-1 in order.
+                        // with turnIndex 0..N-1 in order. The case's shared (test-case-level) data is merged
+                        // into every turn row, so shared columns are repeated identically across the rows.
+                        Map<String, Object> sharedData = parseJsonToMap(tc.getData());
                         List<Map<String, Object>> turns = parseTurns(tc.getMultiTurnData());
                         for (int i = 0; i < turns.size(); i++) {
-                            printer.printRecord(buildRow(name, String.valueOf(i), turns.get(i), dataColumnNames));
+                            Map<String, Object> row = new LinkedHashMap<>(sharedData);
+                            row.putAll(turns.get(i));
+                            printer.printRecord(buildRow(name, String.valueOf(i), row, dataColumnNames));
                         }
                     } else {
                         // Single-turn case → one row with a blank turnIndex.

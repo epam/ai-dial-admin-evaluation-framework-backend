@@ -44,6 +44,7 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
                 .name("prompt")
                 .type(SchemaFieldType.STRING)
                 .required(true)
+                .perTurn(true)
                 .build()));
     }
 

@@ -309,7 +309,7 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
 | `dataset_id` | VARCHAR(36) | NOT NULL | - | FK to `datasets.id` (CASCADE on delete). Renamed from `test_suite_id` in V1.22. |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Display name |
 | `data` | JSONB | NOT NULL | `'{}'::jsonb` | Unified test case data map (single-turn). Empty `'{}'` for a multi-turn case. |
-| `multi_turn_data` | JSONB | NULL | - | Ordered array of per-turn data maps for a multi-turn conversation (V1.27); NULL for single-turn. Mutually exclusive with a populated `data` — enforced by CHECK `chk_test_cases_multi_turn_exclusive` (`multi_turn_data IS NULL OR data = '{}'::jsonb`). |
+| `multi_turn_data` | JSONB | NULL | - | Ordered array of per-turn data maps for a multi-turn conversation (V1.27); NULL for single-turn (the discriminator). MAY coexist with a populated `data`: `data` carries the case's shared (test-case-level) fields and each turn map carries the per-turn fields. Field scope is declared per field in `datasets.test_case_schema` (`FieldDefinitionDto.perTurn`). No mutual-exclusivity CHECK constraint. |
 | `is_valid` | BOOLEAN | NOT NULL | - | Validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
@@ -931,7 +931,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` and `disabled_test_case_ids` at run-creation count and snapshot) |
 | V1.25 | `V1.25__AddOverallScoreThresholdToTestSuites.sql` | Added nullable `overall_score_threshold` DOUBLE PRECISION column to test_suites (per-suite threshold compared against the computed run-level `overall` metric score, same numeric type as the result; NULL = no threshold configured) |
 | V1.26 | `V1.26__AddConditionToTestSuiteMetricDefinitions.sql` | Added nullable `condition` VARCHAR(2000) to test_suite_metric_definitions (optional JSONata gating whether the metric runs per result row/turn; NULL ⇒ always run) |
-| V1.27 | `V1.27__AddMultiTurnDataToTestCases.sql` | Added nullable `multi_turn_data` JSONB to test_cases (ordered array of per-turn data maps) + CHECK `chk_test_cases_multi_turn_exclusive` enforcing mutual exclusivity with `data` |
+| V1.27 | `V1.27__AddMultiTurnDataToTestCases.sql` | Added nullable `multi_turn_data` JSONB to test_cases (ordered array of per-turn data maps). Coexists with `data` (shared vs per-turn fields, scoped in `test_case_schema`); no mutual-exclusivity CHECK constraint. |
 | V1.28 | `V1.28__AddMultiTurnDataToTestCaseRunInputs.sql` | Added nullable `multi_turn_data` JSONB to test_case_run_inputs (frozen multi-turn snapshot; one input row per case) |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)

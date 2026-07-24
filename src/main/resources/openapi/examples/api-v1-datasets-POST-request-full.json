@@ -8,13 +8,22 @@
       "name": "question",
       "displayName": "Question",
       "type": "STRING",
-      "required": true
+      "required": true,
+      "perTurn": true
     },
     {
       "name": "expected_answer",
       "displayName": "Expected Answer",
       "type": "STRING",
-      "required": false
+      "required": false,
+      "perTurn": true
+    },
+    {
+      "name": "tags",
+      "displayName": "Tags",
+      "type": "STRING",
+      "required": false,
+      "perTurn": false
     }
   ]
 }

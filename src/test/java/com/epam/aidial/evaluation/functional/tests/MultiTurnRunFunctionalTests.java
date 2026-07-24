@@ -52,9 +52,11 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
     }
 
     @Test
-    @DisplayName("data + multiTurnData together is rejected with 400")
-    void mutualExclusivityRejected() {
-        TestSuiteResponseDto suite = createChatSuite("MT mutual-excl");
+    @DisplayName("A per-turn field placed in shared data is rejected with 400")
+    void misplacedPerTurnFieldRejected() {
+        // `prompt` is a per-turn field in this dataset; placing it in the shared `data` map is a structural
+        // placement error (data and multiTurnData themselves may coexist — only misplacement is a 400).
+        TestSuiteResponseDto suite = createChatSuite("MT placement");
         UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
 
         ResponseEntity<String> response = restTemplate.postForEntity(

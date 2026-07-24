@@ -183,4 +183,23 @@ public abstract class TestSuiteStructuredQueryFunctionalTests extends BaseFuncti
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("not_a_real_entity");
     }
+
+    @Test
+    @DisplayName("filters test_suites by deployment_ref::name using JSONB text extraction")
+    void filtersByDeploymentRefName() {
+        String prefix = "sq-depref-" + UUID.randomUUID();
+        String deploymentRefJson =
+                "{\"id\":\"my-app-id\",\"name\":\"My App\",\"version\":\"1.0\",\"type\":\"dial-application\"}";
+        TestSuite target = metaTestDataHelper.createTestSuiteWithDeploymentRef(prefix + "-target", deploymentRefJson);
+        TestSuite noRef = metaTestDataHelper.createTestSuite(prefix + "-no-ref");
+
+        QueryResultPage page = queryRepository.execute(rowQuery(
+                eq("deployment_ref::name", ValueType.STRING, "My App"),
+                List.of(col(new FieldExpr("id")), col(new FieldExpr("name")))));
+
+        assertThat(page.rows())
+                .extracting(row -> row.get("id"))
+                .contains(target.getId().toString())
+                .doesNotContain(noRef.getId().toString());
+    }
 }

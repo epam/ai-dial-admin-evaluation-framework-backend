@@ -25,13 +25,17 @@ import org.springframework.stereotype.Component;
  * of {@code EvalSummariesSchemaProvider}: the schema endpoint advertises the flat names, this turns
  * a referenced name back into the path it denotes so projection/filter/sort/aggregate work on it.
  *
+ * <p>Also handles the {@code deployment_ref::} and {@code mcp_deployment_ref::} families for the
+ * {@code test_suites} entity, resolving them to text extractions over the respective JSONB columns.
+ *
  * <p>Resolution is keyed off the backing JSONB column being present in the supplied bindings, so it
- * activates only for entities that actually have it (e.g. {@code eval_summaries}); on an entity
- * without the column ({@code test_suites}) a prefixed name returns {@code null} and the caller
- * rejects it as unknown. Paths mirror the production analytics layer: metric values are addressed by
- * a two-level {@code metric_values -> '<metric>' ->> '<field>'} cast to {@code numeric} (every metric
- * output value is a number); {@code data::}/{@code response::} extract text; {@code metricInfo::} keeps
- * the raw JSONB object. Key components are bound parameters, never concatenated into SQL.
+ * activates only for entities that actually have it; on an entity without the column a prefixed name
+ * returns {@code null} and the caller rejects it as unknown. Paths mirror the production analytics
+ * layer: metric values are addressed by a two-level {@code metric_values -> '<metric>' ->> '<field>'}
+ * cast to {@code numeric} (every metric output value is a number);
+ * {@code data::}/{@code response::}/{@code deployment_ref::}/{@code mcp_deployment_ref::} extract
+ * text; {@code metricInfo::} keeps the raw JSONB object. Key components are bound parameters, never
+ * concatenated into SQL.
  */
 @Component
 @LogExecution
@@ -42,6 +46,10 @@ public class JsonbFieldResolver {
     private static final String EXTRACTED_COLUMNS_FIELD = "extracted_columns";
     private static final String METRIC_VALUES_FIELD = "metric_values";
     private static final String METRIC_INFOS_FIELD = "metric_infos";
+    private static final String DEPLOYMENT_REF_FIELD = "deployment_ref";
+    private static final String MCP_DEPLOYMENT_REF_FIELD = "mcp_deployment_ref";
+    private static final String DEPLOYMENT_REF_PREFIX = DEPLOYMENT_REF_FIELD + COLUMN_SEPARATOR;
+    private static final String MCP_DEPLOYMENT_REF_PREFIX = MCP_DEPLOYMENT_REF_FIELD + COLUMN_SEPARATOR;
 
     private final JsonPathAccessor jsonPathAccessor;
 
@@ -65,6 +73,12 @@ public class JsonbFieldResolver {
         }
         if (name.startsWith(METRIC_COLUMN_PREFIX)) {
             return metricPath(bindings, suffix(name, METRIC_COLUMN_PREFIX), name);
+        }
+        if (name.startsWith(DEPLOYMENT_REF_PREFIX)) {
+            return textPath(bindings, DEPLOYMENT_REF_FIELD, suffix(name, DEPLOYMENT_REF_PREFIX), name);
+        }
+        if (name.startsWith(MCP_DEPLOYMENT_REF_PREFIX)) {
+            return textPath(bindings, MCP_DEPLOYMENT_REF_FIELD, suffix(name, MCP_DEPLOYMENT_REF_PREFIX), name);
         }
         return null;
     }

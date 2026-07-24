@@ -459,6 +459,46 @@ Status: **Implemented**
 - **WHEN** a query containing a `param` expression is posted to `/api/v1/queries/execute`
 - **THEN** the request is rejected with HTTP 400 because no binding is supplied
 
+### Requirement: JSONB sub-field resolver prefix families
+The system SHALL support resolving flattened JSONB sub-field names for the `test_suites` entity via
+the `JsonbFieldResolver`. Two new prefix families SHALL be recognised:
+- `deployment_ref::<key>` — resolves to `deployment_ref ->> '<key>'` (text extraction) over the
+  `deployment_ref` JSONB column on the `test_suites` table. Exposed sub-fields: `id`, `name`,
+  `version`, `type`.
+- `mcp_deployment_ref::<key>` — resolves to `mcp_deployment_ref ->> '<key>'` (text extraction) over
+  the `mcp_deployment_ref` JSONB column on the `test_suites` table. Exposed sub-fields: `id`, `name`,
+  `type`, `transport`.
+
+Both families SHALL use the `textPath()` resolution path in `JsonbFieldResolver`, guarded by the
+same `jsonbColumn()` check that ensures the resolver only activates when the entity's bindings
+include the backing column. The resulting `QueryFieldType` for all sub-fields resolved via these
+families SHALL be `STRING`. A suffix that resolves to a JSON key absent from the stored object SHALL
+return SQL `NULL` (standard Postgres `->>` semantics); this is not an error.
+Status: **Implemented**
+
+#### Scenario: deployment_ref::name resolves to text extraction
+- **WHEN** a `test_suites` query names the field `deployment_ref::name` in a filter or select
+- **THEN** the query builder emits `deployment_ref ->> 'name'` as the SQL expression for that field
+
+#### Scenario: mcp_deployment_ref::id resolves to text extraction
+- **WHEN** a `test_suites` query names the field `mcp_deployment_ref::id` in a filter or select
+- **THEN** the query builder emits `mcp_deployment_ref ->> 'id'` as the SQL expression for that field
+
+#### Scenario: deployment_ref sub-field on an MCP suite returns NULL
+- **WHEN** a `test_suites` query selects `deployment_ref::name` for a suite whose `deployment_ref`
+  column is NULL (e.g. an MCP-type suite)
+- **THEN** the projected value for that row is SQL `NULL`, not an error
+
+#### Scenario: Opaque OBJECT binding is unaffected
+- **WHEN** a `test_suites` query names the plain field `deployment_ref` (no `::` suffix)
+- **THEN** the query builder uses the existing `OBJECT`-typed `deployment_ref` column binding,
+  not the sub-field resolver path
+
+#### Scenario: Resolver does not activate for entities without the backing column
+- **WHEN** a query targets an entity other than `test_suites` and names `deployment_ref::name`
+- **THEN** `JsonbFieldResolver` returns null (backing column not in bindings) and the field is
+  rejected as unknown with HTTP 400
+
 ## Implementation notes
 
 - Request object model: `com.epam.aidial.evaluation.experimental.query.model` — `StructuredQuery`,
@@ -481,7 +521,11 @@ Status: **Implemented**
   DSL, all `@ConditionalOnProperty`).
 - Execution + translation: `StructuredQueryExecutor`, `QueryResultPage`, and
   `…service.translate.{StructuredQueryBuilder, FilterTranslator, ExprTranslator, JsonbFieldResolver,
-  ValueExprToObjectMapper}`. `ExprTranslator` holds the sole `ObjectProvider<StructuredQueryBuilder>` in
+  ValueExprToObjectMapper}`. `JsonbFieldResolver` handles `data::`, `response::`, `metric::`,
+  `metricInfo::` families for `eval_summaries` and `deployment_ref::` (`id`, `name`, `version`,
+  `type`) and `mcp_deployment_ref::` (`id`, `name`, `type`, `transport`) families for `test_suites`
+  — all backed by `jsonbAtAsText` path expressions over the respective JSONB columns.
+  `ExprTranslator` holds the sole `ObjectProvider<StructuredQueryBuilder>` in
   the pipeline (lazy, breaks the `StructuredQueryBuilder → FilterTranslator/ExprTranslator` constructor
   cycle); `StructuredQueryBuilder.compileSubqueryMembership(SubqueryExpr)` builds and wraps a subquery's
   nested select, reached from `ExprTranslator` and (via `ExprTranslator`) from `FilterTranslator`'s `in`

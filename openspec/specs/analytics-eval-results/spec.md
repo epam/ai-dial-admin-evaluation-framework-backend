@@ -51,7 +51,7 @@ Status: **Implemented**
 - **THEN** the table SHALL NOT have an `updated_at_ms` column (results are immutable/append-only)
 
 ### Requirement: Per-turn result rows with turn columns
-`test_case_run_results` SHALL persist one row per executed turn. New columns `turn_index INTEGER NOT NULL DEFAULT 0` and `total_turns INTEGER NOT NULL DEFAULT 1` identify the turn and its conversation length. Turns of one conversation share the same `test_case_id` (no separate grouping key); indices are contiguous `0..N-1`. Each turn row carries that turn's own `test_case_data`, the full accumulated `request_body`, that turn's raw `response_body`, its scalar `extracted_columns`, and the shared `trace_id`. Response DTOs expose `turnIndex` and `totalTurns`; batch-write item DTOs accept them as optional (defaulting `0/1`) so single-turn external callers stay compatible. No `multi_turn_id` or `last_turn_index` column is added.
+`test_case_run_results` SHALL persist one row per executed turn. New columns `turn_index INTEGER NOT NULL DEFAULT 0` and `total_turns INTEGER NOT NULL DEFAULT 1` identify the turn and its test case's turn count. Turns of one test-case run share the same `test_case_id` (no separate grouping key); indices are contiguous `0..N-1`. Each turn row carries that turn's own `test_case_data`, the full accumulated `request_body`, that turn's raw `response_body`, its scalar `extracted_columns`, and the shared `trace_id`. Response DTOs expose `turnIndex` and `totalTurns`; batch-write item DTOs accept them as optional (defaulting `0/1`) so single-turn external callers stay compatible. No `multi_turn_id` or `last_turn_index` column is added.
 Status: **Implemented**
 
 #### Scenario: Turn rows share test_case_id and trace_id

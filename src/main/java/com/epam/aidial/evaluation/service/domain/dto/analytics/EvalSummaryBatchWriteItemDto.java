@@ -36,14 +36,14 @@ public class EvalSummaryBatchWriteItemDto {
     private Integer runIndex;
 
     @Schema(
-            description = "0-based turn position within a multi-turn conversation; defaults to 0 (single-turn) "
+            description = "0-based turn position within a multi-turn test case; defaults to 0 (single-turn) "
                     + "when omitted.",
             example = "0")
     @Min(value = 0, message = "turnIndex must be >= 0")
     private Integer turnIndex;
 
     @Schema(
-            description = "Planned turn count of the conversation; defaults to 1 (single-turn) when omitted.",
+            description = "Planned turn count of the test case; defaults to 1 (single-turn) when omitted.",
             example = "1")
     @Min(value = 1, message = "totalTurns must be >= 1")
     private Integer totalTurns;

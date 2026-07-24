@@ -35,7 +35,7 @@ public class TestCaseBatchPutItemDto {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(
-            description = "Ordered array of per-turn data maps for a multi-turn conversation. Mutually "
+            description = "Ordered array of per-turn data maps for a multi-turn test case. Mutually "
                     + "exclusive with 'data'. Omitted for single-turn cases.",
             example = "[{\"prompt\":\"Hi\"},{\"prompt\":\"And then?\"}]")
     private List<Map<String, Object>> multiTurnData;

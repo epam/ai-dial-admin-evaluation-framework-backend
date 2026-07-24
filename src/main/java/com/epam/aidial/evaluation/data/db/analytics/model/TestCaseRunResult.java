@@ -18,11 +18,11 @@ public class TestCaseRunResult {
     private String testCaseName;
     private int runIndex;
 
-    /** 0-based turn position within a multi-turn conversation; 0 for single-turn results. */
+    /** 0-based turn position within a multi-turn test case; 0 for single-turn results. */
     @Builder.Default
     private int turnIndex = 0;
 
-    /** Planned turn count of the conversation; 1 for single-turn results. */
+    /** Planned turn count of the test case; 1 for single-turn results. */
     @Builder.Default
     private int totalTurns = 1;
 

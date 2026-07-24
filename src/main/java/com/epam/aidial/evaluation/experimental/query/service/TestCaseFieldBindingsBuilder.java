@@ -66,17 +66,19 @@ public class TestCaseFieldBindingsBuilder {
     }
 
     private Map<String, QueryFieldBinding> buildInternal(
-            List<FieldDefinitionDto> schema, Function<FieldDefinitionDto, Field<JSONB>> sourceOf) {
+            List<FieldDefinitionDto> schema, FieldSourceProvider fieldSourceProvider) {
         final Map<String, QueryFieldBinding> bindings = new LinkedHashMap<>(schemaResolver.bindings(TEST_CASES));
         for (final FieldDefinitionDto field : schema) {
-            final Field<JSONB> dataSource = sourceOf.apply(field);
+            final Field<JSONB> source = fieldSourceProvider.apply(field);
             final String name = DATA_COLUMN_PREFIX + field.getName();
             final QueryFieldType type = schemaFieldTypeMapper.map(field.getType());
             final Field<?> path = type.isJsonb()
-                    ? jsonPathAccessor.jsonbAt(dataSource, DSL.val(field.getName()))
-                    : jsonPathAccessor.jsonbAtAsText(dataSource, DSL.val(field.getName()));
+                    ? jsonPathAccessor.jsonbAt(source, DSL.val(field.getName()))
+                    : jsonPathAccessor.jsonbAtAsText(source, DSL.val(field.getName()));
             bindings.put(name, new QueryFieldBinding(name, path, type));
         }
         return Collections.unmodifiableMap(bindings);
     }
+
+    private interface FieldSourceProvider extends Function<FieldDefinitionDto, Field<JSONB>> {}
 }

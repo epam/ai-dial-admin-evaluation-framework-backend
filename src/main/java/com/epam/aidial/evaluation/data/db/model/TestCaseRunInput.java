@@ -19,7 +19,7 @@ public class TestCaseRunInput {
     private String testCaseData;
 
     /**
-     * Frozen JSON array of turn-data maps for a multi-turn conversation (snapshot of the case's
+     * Frozen JSON array of turn-data maps for a multi-turn test case (snapshot of the case's
      * {@code multiTurnData}). Null for a single-turn input (the scalar {@code testCaseData} path is used).
      */
     private String multiTurnData;

@@ -100,7 +100,7 @@ public abstract class MultiTurnFilterFunctionalTests extends AbstractMultiTurnFu
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
         Map<String, Long> rows = rowsPerTestCase(run.getId());
-        // All five cases run: three 2-turn conversations + two single-turn cases.
+        // All five cases run: three 2-turn test cases + two single-turn cases.
         assertThat(rows)
                 .containsOnlyKeys("mt-all-match", "mt-one-fails", "mt-missing-field", "single-match", "single-nomatch");
         assertThat(rows.get("mt-all-match")).isEqualTo(2L);

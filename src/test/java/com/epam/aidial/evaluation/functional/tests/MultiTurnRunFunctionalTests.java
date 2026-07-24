@@ -89,8 +89,8 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
     // -------------------- Execution --------------------
 
     @Test
-    @DisplayName("2-turn conversation persists two SUCCESS rows and accumulates history")
-    void twoTurnConversation_accumulatesHistory() {
+    @DisplayName("2-turn test case persists two SUCCESS rows and accumulates history")
+    void twoTurnCase_accumulatesHistory() {
         TestSuiteResponseDto suite = createChatSuite("MT 2-turn");
         UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
         createMultiTurnCase(datasetId, "conv-2turn", List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1")));
@@ -121,8 +121,8 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
     }
 
     @Test
-    @DisplayName("Fail-fast: a failing turn stops the conversation with earlier SUCCESS rows kept")
-    void failFast_stopsConversation() {
+    @DisplayName("Fail-fast: a failing turn stops the run with earlier SUCCESS rows kept")
+    void failFast_stopsRun() {
         TestSuiteResponseDto suite = createChatSuite("MT fail-fast");
         UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
         createMultiTurnCase(

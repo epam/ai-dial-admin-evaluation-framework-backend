@@ -215,7 +215,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Per-turn summaries of one conversation persist as distinct rows keyed by turn_index")
+    @DisplayName("Per-turn summaries of one test case persist as distinct rows keyed by turn_index")
     void shouldPersistPerTurnSummaryRows() {
         UUID computationId = UUID.randomUUID();
         insertRunMetricSnapshots(testSuiteRunId, computationId);

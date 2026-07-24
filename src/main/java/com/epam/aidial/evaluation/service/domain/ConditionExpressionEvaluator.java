@@ -74,7 +74,7 @@ public class ConditionExpressionEvaluator {
      *
      * <p>The {@code turn} namespace carries the current turn's position so conditions can gate on it, e.g.
      * {@code turn.last} to run only on the final turn, or {@code turn.index}/{@code turn.total}. Because a
-     * conversation's turns are contiguous {@code 0..N-1}, {@code turn.last} is {@code index == total - 1}.
+     * test case's turns are contiguous {@code 0..N-1}, {@code turn.last} is {@code index == total - 1}.
      * A single-turn result is {@code index=0, total=1, last=true}.
      */
     private String buildDictionaryJson(ConditionContext context) {

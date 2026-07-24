@@ -63,9 +63,7 @@ public class MetricOutputMapper {
                         }
                     }
                 }
-                case TsmdEvaluationResult.ConditionError ignored -> {
-                    // unreachable — handled by the continue above
-                }
+                case TsmdEvaluationResult.ConditionError _ -> {} // unreachable — handled by the continue above
             }
 
             root.set(tsmdName, tsmdNode);

@@ -309,7 +309,7 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
 | `dataset_id` | VARCHAR(36) | NOT NULL | - | FK to `datasets.id` (CASCADE on delete). Renamed from `test_suite_id` in V1.22. |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Display name |
 | `data` | JSONB | NOT NULL | `'{}'::jsonb` | Unified test case data map (single-turn). Empty `'{}'` for a multi-turn case. |
-| `multi_turn_data` | JSONB | NULL | - | Ordered array of per-turn data maps for a multi-turn conversation (V1.27); NULL for single-turn (the discriminator). MAY coexist with a populated `data`: `data` carries the case's shared (test-case-level) fields and each turn map carries the per-turn fields. Field scope is declared per field in `datasets.test_case_schema` (`FieldDefinitionDto.perTurn`). No mutual-exclusivity CHECK constraint. |
+| `multi_turn_data` | JSONB | NULL | - | Ordered array of per-turn data maps for a multi-turn test case (V1.27); NULL for single-turn (the discriminator). MAY coexist with a populated `data`: `data` carries the case's shared (test-case-level) fields and each turn map carries the per-turn fields. Field scope is declared per field in `datasets.test_case_schema` (`FieldDefinitionDto.perTurn`). No mutual-exclusivity CHECK constraint. |
 | `is_valid` | BOOLEAN | NOT NULL | - | Validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
@@ -450,7 +450,7 @@ Snapshot of test case data for a run; written at async phase start under a REPEA
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Loose reference to the test case (no FK — snapshot is independent of live `test_cases`) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name at snapshot time |
 | `test_case_data` | JSONB | NOT NULL | - | Unified test case data map at snapshot time (single-turn) |
-| `multi_turn_data` | JSONB | NULL | - | Frozen ordered array of per-turn data maps for a multi-turn conversation (V1.28); NULL for a single-turn input |
+| `multi_turn_data` | JSONB | NULL | - | Frozen ordered array of per-turn data maps for a multi-turn test case (V1.28); NULL for a single-turn input |
 | `request_template_override` | JSONB | NULL | - | Legacy per-case request template override at snapshot time. Always NULL for runs created after V1.22 (the override surface was removed with the dataset migration); kept for backward compatibility with in-flight pre-V1.22 runs. |
 | `input_bindings_override` | JSONB | NULL | - | Legacy per-case input bindings override at snapshot time. Always NULL for runs created after V1.22; same backward-compatibility reason as above. |
 
@@ -629,8 +629,8 @@ Test case execution results stored in the analytics database. Each row represent
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Test case ID |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index (0-based) |
-| `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn conversation (V1.13); 0 for single-turn |
-| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the conversation (V1.13); 1 for single-turn |
+| `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn test case (V1.13); 0 for single-turn |
+| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the test case (V1.13); 1 for single-turn |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (that turn's data for a multi-turn row) |
 | `request_body` | JSONB | NULL | - | HTTP request body sent to endpoint (full accumulated history for a multi-turn turn) |
 | `response_body` | JSONB | NULL | - | HTTP response body received |
@@ -737,8 +737,8 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Reference to test case (soft FK) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case name at execution time |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index |
-| `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn conversation (V1.14); 0 for single-turn |
-| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the conversation (V1.14); 1 for single-turn |
+| `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn test case (V1.14); 0 for single-turn |
+| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the test case (V1.14); 1 for single-turn |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (denormalized from test_case_run_results) |
 | `extracted_columns` | JSONB | NOT NULL | `'{}'::jsonb` | Extracted column values (denormalized) |

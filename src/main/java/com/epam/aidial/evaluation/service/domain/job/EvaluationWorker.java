@@ -115,7 +115,7 @@ public class EvaluationWorker {
                 return List.of(executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs));
             }
 
-            // Multi-turn conversations run through a dedicated sequential turn loop, emitting one result
+            // Multi-turn test cases run through a dedicated sequential turn loop, emitting one result
             // per turn; the single-turn HTTP path below is unchanged.
             if (input.getMultiTurnData() != null) {
                 return multiTurnExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);

@@ -42,6 +42,8 @@ import tools.jackson.databind.node.ObjectNode;
 public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelector {
 
     private static final String ENTITY = "test_cases";
+    private static final String TABLE_ALIAS = "t";
+    private static final String ARRAY_ELEMENT_FIELD_ALIAS = "elem";
 
     private final TestCaseRepository testCaseRepository;
     private final TestCaseFieldBindingsBuilder bindingsBuilder;
@@ -88,14 +90,14 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
         if (filter == null) {
             return null;
         }
-        final Field<JSONB> elem = DSL.field(DSL.name("t", "elem"), JSONB.class);
+        final Field<JSONB> elem = DSL.field(DSL.name(TABLE_ALIAS, ARRAY_ELEMENT_FIELD_ALIAS), JSONB.class);
         final Map<String, QueryFieldBinding> bindings = bindingsBuilder.buildScoped(datasetId, elem);
         final Condition perTurn = filterTranslator.toCondition(filter, bindings);
 
         final Table<?> turns = DSL.table(
                         "jsonb_array_elements(coalesce({0}, jsonb_build_array({1})))",
                         TEST_CASES.MULTI_TURN_DATA, TEST_CASES.DATA)
-                .as("t", "elem");
+                .as(TABLE_ALIAS, ARRAY_ELEMENT_FIELD_ALIAS);
         return DSL.notExists(DSL.selectOne().from(turns).where(DSL.condition("({0}) is not true", perTurn)));
     }
 

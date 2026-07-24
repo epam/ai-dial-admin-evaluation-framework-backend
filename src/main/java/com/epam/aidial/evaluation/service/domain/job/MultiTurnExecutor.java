@@ -54,7 +54,7 @@ import tools.jackson.databind.JsonNode;
  * <p>Contract: the resolved request body must be JSON with a top-level {@code messages} array; the assistant
  * reply is read from the hardcoded {@code choices[0].message} OpenAI path; turns are always non-streaming;
  * the loop is fail-fast — the first turn that fails after retries (or returns a 2xx with no assistant message
- * object) aborts the conversation. Completed turns persist as {@code SUCCESS} rows; the failing turn persists
+ * object) aborts the run. Completed turns persist as {@code SUCCESS} rows; the failing turn persists
  * as one {@code ERROR} row.
  */
 @Slf4j
@@ -76,9 +76,9 @@ public class MultiTurnExecutor {
     private final Clock clock;
 
     /**
-     * Runs the full conversation for one test case, returning one {@link TestCaseRunResult} per executed
-     * turn (fewer than {@code N} on early abort). The whole conversation runs inside the caller's single
-     * worker task / semaphore permit; turns are sequential. {@code traceId} is the conversation span's id
+     * Runs all turns of one multi-turn test case, returning one {@link TestCaseRunResult} per executed
+     * turn (fewer than {@code N} on early abort). The whole test-case run runs inside the caller's single
+     * worker task / semaphore permit; turns are sequential. {@code traceId} is the test-case-run span's id
      * (shared by every turn row).
      */
     public List<TestCaseRunResult> execute(
@@ -108,10 +108,12 @@ public class MultiTurnExecutor {
                 ? context.getSnapshotEndpointRef().getMethod()
                 : null;
 
-        // The case's shared (test-case-level) data is frozen into the snapshot input's testCaseData; each
-        // turn's effective view merges it with that turn's own per-turn map (per-turn keys win). This merged
-        // view drives template resolution and is persisted as the turn row's testCaseData, so it also feeds
-        // the conditional-metric dictionary and metric input downstream.
+        /*
+         The case's shared (test-case-level) data is frozen into the snapshot input's testCaseData; each
+         turn's effective view merges it with that turn's own per-turn map (per-turn keys win). This merged
+         view drives template resolution and is persisted as the turn row's testCaseData, so it also feeds
+         the conditional-metric dictionary and metric input downstream.
+        */
         final Map<String, Object> sharedData = parseSharedData(input.getTestCaseData());
         final int totalTurns = turns.size();
         final List<TestCaseRunResult> results = new ArrayList<>();

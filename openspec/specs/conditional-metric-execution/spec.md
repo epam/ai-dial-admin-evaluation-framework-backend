@@ -24,7 +24,7 @@ The `condition` SHALL be a JSONata expression evaluated against a dictionary wit
 Status: **Implemented**
 
 #### Scenario: turn.last selects the final turn
-- **WHEN** a condition is `turn.last` and a result row is the last turn of its conversation
+- **WHEN** a condition is `turn.last` and a result row is the last turn of its test-case run
 - **THEN** the condition is true and the metric runs; on non-final turns it is false and the metric is skipped
 
 #### Scenario: Single-turn is its own last turn

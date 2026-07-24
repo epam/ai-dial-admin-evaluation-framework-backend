@@ -83,11 +83,11 @@ Status: **Implemented**
 - **WHEN** a run input has no `multi_turn_data`
 - **THEN** the existing single-turn path runs and returns exactly one result with `turn_index=0, total_turns=1`
 
-### Requirement: One concurrency permit per conversation
-The execution unit SHALL be the whole conversation: turns of one multi-turn case run sequentially under a single concurrency permit, and progress is counted one unit per conversation regardless of how many turn rows it writes.
+### Requirement: One concurrency permit per test-case run
+The execution unit SHALL be the whole test-case run: turns of one multi-turn case run sequentially under a single concurrency permit, and progress is counted one unit per test-case run regardless of how many turn rows it writes.
 Status: **Implemented**
 
-#### Scenario: Progress counts conversations, not turns
+#### Scenario: Progress counts test-case runs, not turns
 - **WHEN** a multi-turn case writes N turn rows
 - **THEN** run progress advances by one unit for that case, and the runnable-case count treats the multi-turn case as one unit
 

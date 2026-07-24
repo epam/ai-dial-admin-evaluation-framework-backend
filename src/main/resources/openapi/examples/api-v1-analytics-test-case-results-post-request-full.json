@@ -4,7 +4,7 @@
   "results": [
     {
       "testCaseId": "770e8400-e29b-41d4-a716-446655440002",
-      "testCaseName": "multi-turn-conversation",
+      "testCaseName": "multi-turn-test-case",
       "runIndex": 0,
       "turnIndex": 0,
       "totalTurns": 2,
@@ -26,7 +26,7 @@
     },
     {
       "testCaseId": "770e8400-e29b-41d4-a716-446655440002",
-      "testCaseName": "multi-turn-conversation",
+      "testCaseName": "multi-turn-test-case",
       "runIndex": 0,
       "turnIndex": 1,
       "totalTurns": 2,

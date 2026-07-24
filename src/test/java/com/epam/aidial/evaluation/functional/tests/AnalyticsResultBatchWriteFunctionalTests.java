@@ -268,7 +268,7 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
 
     @Test
     @DisplayName("turnIndex extends the natural key: same testCaseId+runIndex, different turns, both persist")
-    void shouldPersistDistinctTurnsOfSameConversation() {
+    void shouldPersistDistinctTurnsOfSameTestCase() {
         UUID testCaseId = UUID.randomUUID();
         TestCaseRunResultItemDto turn0 = buildTurnItem(testCaseId, "conv", 0, 0, 2);
         TestCaseRunResultItemDto turn1 = buildTurnItem(testCaseId, "conv", 0, 1, 2);

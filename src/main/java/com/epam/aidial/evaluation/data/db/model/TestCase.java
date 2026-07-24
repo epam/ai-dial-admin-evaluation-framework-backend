@@ -22,7 +22,7 @@ public class TestCase {
     private String data;
 
     /**
-     * JSON array of turn-data maps for a multi-turn conversation (stored as jsonb). Null for a single-turn
+     * JSON array of turn-data maps for a multi-turn test case (stored as jsonb). Null for a single-turn
      * case. Mutually exclusive with a populated {@code data} (multi-turn ⇒ {@code data = '{}'}).
      */
     private String multiTurnData;

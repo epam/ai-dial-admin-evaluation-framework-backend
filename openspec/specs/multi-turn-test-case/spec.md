@@ -1,7 +1,7 @@
-# Multi-turn Conversation
+# Multi-turn Test Case
 
 ## Purpose
-This spec defines multi-turn test cases: a single `test_cases` row carrying an ordered `multiTurnData` turn array (mutually exclusive with single-turn `data`), executed as one sequential chat-completions conversation with full-history resend, emitting one result row per turn. It covers the data model discriminator, turn-count bounds, the sequential turn loop, fail-fast on turn failure, flat CSV import/export multiplication, and the MCP-suite rejection guard. The authoring/validation surface is specified in `test-cases`; per-turn result/summary storage in `analytics-eval-results` / `metrics-storage`; snapshot freezing in `suite-run-snapshot`; dispatch in `eval-execution-engine`.
+This spec defines multi-turn test cases: a single `test_cases` row carrying an ordered `multiTurnData` turn array (mutually exclusive with single-turn `data`), executed as one sequential chat-completions test-case run with full-history resend, emitting one result row per turn. It covers the data model discriminator, turn-count bounds, the sequential turn loop, fail-fast on turn failure, flat CSV import/export multiplication, and the MCP-suite rejection guard. The authoring/validation surface is specified in `test-cases`; per-turn result/summary storage in `analytics-eval-results` / `metrics-storage`; snapshot freezing in `suite-run-snapshot`; dispatch in `eval-execution-engine`.
 
 Status: **Implemented**
 
@@ -13,7 +13,7 @@ Status: **Implemented**
 
 #### Scenario: Multi-turn case is identified by multiTurnData
 - **WHEN** a test case is stored with a non-empty `multiTurnData` array
-- **THEN** it is treated as a multi-turn conversation whose turns are the array elements in order (`turn_index` = array position, `0..N-1`), regardless of whether `data` is empty or carries shared fields
+- **THEN** it is treated as a multi-turn test case whose turns are the array elements in order (`turn_index` = array position, `0..N-1`), regardless of whether `data` is empty or carries shared fields
 
 #### Scenario: Single-turn case is unaffected
 - **WHEN** a test case has `multiTurnData` absent/null
@@ -39,7 +39,7 @@ Status: **Implemented**
 A multi-turn case SHALL execute as one sequential unit. The engine maintains a running `messages` history; for each turn in order it resolves the suite's single `requestTemplate`/`inputBindings` against that turn's **effective view** — the merge of the case's shared `data` map with that turn's own per-turn map (per-turn keys take precedence on any overlap) — appends the resolved `messages` to the history, sends the request with the full accumulated history (non-streaming), appends the assistant reply `choices[0].message` verbatim to the history, extracts that turn's response columns, and persists that turn as its own result row. The merged effective view is also the `data` namespace supplied to conditional-metric evaluation for that turn.
 Status: **Implemented**
 
-#### Scenario: Two-turn conversation accumulates history
+#### Scenario: Two-turn test case accumulates history
 - **WHEN** a 2-turn case runs successfully
 - **THEN** turn 0 is sent with its own messages, turn 1 is sent with turn 0's messages + turn 0's assistant reply + turn 1's messages, and two SUCCESS result rows are persisted with `turn_index` 0 and 1 and `total_turns=2`
 
@@ -52,16 +52,16 @@ Status: **Implemented**
 - **THEN** its turns run strictly in order under a single concurrency permit (concurrency applies across cases, not across turns of one case)
 
 ### Requirement: Fail-fast on turn failure
-If a turn fails (non-2xx after retries, timeout/network error, oversized/streaming response, or a 2xx response with no `choices[0].message` object, or a resolved body without a top-level `messages` array), the conversation SHALL stop. Earlier turns MUST persist as SUCCESS rows; the failing turn MUST persist as one ERROR row; later turns MUST NOT be sent.
+If a turn fails (non-2xx after retries, timeout/network error, oversized/streaming response, or a 2xx response with no `choices[0].message` object, or a resolved body without a top-level `messages` array), the run SHALL stop. Earlier turns MUST persist as SUCCESS rows; the failing turn MUST persist as one ERROR row; later turns MUST NOT be sent.
 Status: **Implemented**
 
 #### Scenario: Failure at turn k
 - **WHEN** turn k of N fails
 - **THEN** turns `0..k-1` persist as SUCCESS rows, turn k persists as one ERROR row, and turns `k+1..N-1` produce no rows
 
-#### Scenario: Non-chat body fails the conversation at runtime
+#### Scenario: Non-chat body fails the run at runtime
 - **WHEN** a resolved turn body has no top-level `messages` array
-- **THEN** that conversation persists one ERROR row and other cases continue (this is not a suite-validation failure)
+- **THEN** that run persists one ERROR row and other cases continue (this is not a suite-validation failure)
 
 ### Requirement: Flat CSV import/export multiplication
 CSV import/export SHALL remain flat: a multi-turn case is represented as one row per turn. A reserved `turnIndex` header groups and orders turns; it and `testCaseName` are excluded from `data` and from schema auto-detection. Per-turn columns vary per row. Shared columns SHALL be repeated on every turn row of a case; on import the shared columns of a case's rows MUST be identical, and a mismatch SHALL be reported as a conflict warning that invalidates the case. Single-turn cases export one row with a blank `turnIndex`.

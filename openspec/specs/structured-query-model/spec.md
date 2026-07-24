@@ -463,9 +463,11 @@ Status: **Implemented**
 The system SHALL support resolving flattened JSONB sub-field names for the `test_suites` entity via
 the `JsonbFieldResolver`. Two new prefix families SHALL be recognised:
 - `deployment_ref::<key>` — resolves to `deployment_ref ->> '<key>'` (text extraction) over the
-  `deployment_ref` JSONB column on the `test_suites` table.
+  `deployment_ref` JSONB column on the `test_suites` table. Exposed sub-fields: `id`, `name`,
+  `version`, `type`.
 - `mcp_deployment_ref::<key>` — resolves to `mcp_deployment_ref ->> '<key>'` (text extraction) over
-  the `mcp_deployment_ref` JSONB column on the `test_suites` table.
+  the `mcp_deployment_ref` JSONB column on the `test_suites` table. Exposed sub-fields: `id`, `name`,
+  `type`, `transport`.
 
 Both families SHALL use the `textPath()` resolution path in `JsonbFieldResolver`, guarded by the
 same `jsonbColumn()` check that ensures the resolver only activates when the entity's bindings
@@ -520,8 +522,9 @@ Status: **Implemented**
 - Execution + translation: `StructuredQueryExecutor`, `QueryResultPage`, and
   `…service.translate.{StructuredQueryBuilder, FilterTranslator, ExprTranslator, JsonbFieldResolver,
   ValueExprToObjectMapper}`. `JsonbFieldResolver` handles `data::`, `response::`, `metric::`,
-  `metricInfo::` families for `eval_summaries` and `deployment_ref::`, `mcp_deployment_ref::` families
-  for `test_suites` — all backed by `jsonbAtAsText` path expressions over the respective JSONB columns.
+  `metricInfo::` families for `eval_summaries` and `deployment_ref::` (`id`, `name`, `version`,
+  `type`) and `mcp_deployment_ref::` (`id`, `name`, `type`, `transport`) families for `test_suites`
+  — all backed by `jsonbAtAsText` path expressions over the respective JSONB columns.
   `ExprTranslator` holds the sole `ObjectProvider<StructuredQueryBuilder>` in
   the pipeline (lazy, breaks the `StructuredQueryBuilder → FilterTranslator/ExprTranslator` constructor
   cycle); `StructuredQueryBuilder.compileSubqueryMembership(SubqueryExpr)` builds and wraps a subquery's

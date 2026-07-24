@@ -26,7 +26,9 @@ import org.springframework.stereotype.Repository;
  * <p>In addition to the raw jOOQ table columns, the following virtual sub-field bindings are added
  * for the {@code deployment_ref} and {@code mcp_deployment_ref} JSONB columns:
  * {@code deployment_ref::id}, {@code deployment_ref::name}, {@code deployment_ref::version},
- * {@code mcp_deployment_ref::id}, {@code mcp_deployment_ref::name}, {@code mcp_deployment_ref::type}.
+ * {@code deployment_ref::type},
+ * {@code mcp_deployment_ref::id}, {@code mcp_deployment_ref::name}, {@code mcp_deployment_ref::type},
+ * {@code mcp_deployment_ref::transport}.
  * Each resolves to a {@code jsonb ->> 'key'} text extraction.
  */
 @Repository
@@ -48,9 +50,12 @@ public class PostgresTestSuiteEntityResolver implements StructuredQueryEntityRes
         addSubField(map, jsonPathAccessor, "deployment_ref::id", TEST_SUITES.DEPLOYMENT_REF, "id");
         addSubField(map, jsonPathAccessor, "deployment_ref::name", TEST_SUITES.DEPLOYMENT_REF, "name");
         addSubField(map, jsonPathAccessor, "deployment_ref::version", TEST_SUITES.DEPLOYMENT_REF, "version");
+        addSubField(map, jsonPathAccessor, "deployment_ref::type", TEST_SUITES.DEPLOYMENT_REF, "type");
         addSubField(map, jsonPathAccessor, "mcp_deployment_ref::id", TEST_SUITES.MCP_DEPLOYMENT_REF, "id");
         addSubField(map, jsonPathAccessor, "mcp_deployment_ref::name", TEST_SUITES.MCP_DEPLOYMENT_REF, "name");
         addSubField(map, jsonPathAccessor, "mcp_deployment_ref::type", TEST_SUITES.MCP_DEPLOYMENT_REF, "type");
+        addSubField(
+                map, jsonPathAccessor, "mcp_deployment_ref::transport", TEST_SUITES.MCP_DEPLOYMENT_REF, "transport");
         this.bindings = Map.copyOf(map);
     }
 

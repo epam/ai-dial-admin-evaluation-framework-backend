@@ -19,8 +19,8 @@ import org.springframework.stereotype.Component;
  * the {@code deployment_ref} and {@code mcp_deployment_ref} JSONB columns, enabling clients to
  * filter, project, and sort by individual deployment reference fields:
  * <ul>
- *   <li>{@code deployment_ref::id}, {@code deployment_ref::name}, {@code deployment_ref::version}</li>
- *   <li>{@code mcp_deployment_ref::id}, {@code mcp_deployment_ref::name}, {@code mcp_deployment_ref::type}</li>
+ *   <li>{@code deployment_ref::id}, {@code deployment_ref::name}, {@code deployment_ref::version}, {@code deployment_ref::type}</li>
+ *   <li>{@code mcp_deployment_ref::id}, {@code mcp_deployment_ref::name}, {@code mcp_deployment_ref::type}, {@code mcp_deployment_ref::transport}</li>
  * </ul>
  */
 @Component
@@ -38,9 +38,12 @@ public class TestSuitesSchemaProvider implements QueryableEntitySchemaProvider {
         schema.add(new QuerySchemaFieldDto("deployment_ref::id", QueryFieldType.STRING, "deployment_ref"));
         schema.add(new QuerySchemaFieldDto("deployment_ref::name", QueryFieldType.STRING, "deployment_ref"));
         schema.add(new QuerySchemaFieldDto("deployment_ref::version", QueryFieldType.STRING, "deployment_ref"));
+        schema.add(new QuerySchemaFieldDto("deployment_ref::type", QueryFieldType.STRING, "deployment_ref"));
         schema.add(new QuerySchemaFieldDto("mcp_deployment_ref::id", QueryFieldType.STRING, "mcp_deployment_ref"));
         schema.add(new QuerySchemaFieldDto("mcp_deployment_ref::name", QueryFieldType.STRING, "mcp_deployment_ref"));
         schema.add(new QuerySchemaFieldDto("mcp_deployment_ref::type", QueryFieldType.STRING, "mcp_deployment_ref"));
+        schema.add(
+                new QuerySchemaFieldDto("mcp_deployment_ref::transport", QueryFieldType.STRING, "mcp_deployment_ref"));
         this.baseSchema = List.copyOf(schema);
     }
 

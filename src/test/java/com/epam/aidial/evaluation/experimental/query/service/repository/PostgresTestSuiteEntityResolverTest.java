@@ -38,23 +38,25 @@ class PostgresTestSuiteEntityResolverTest {
     }
 
     @Test
-    @DisplayName("exposes deployment_ref::id, ::name, ::version as STRING virtual sub-field bindings")
+    @DisplayName("exposes deployment_ref::id, ::name, ::version, ::type as STRING virtual sub-field bindings")
     void shouldExposeDeploymentRefSubFields() {
         final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
 
         assertThat(bindings.get("deployment_ref::id").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("deployment_ref::name").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("deployment_ref::version").type()).isEqualTo(QueryFieldType.STRING);
+        assertThat(bindings.get("deployment_ref::type").type()).isEqualTo(QueryFieldType.STRING);
     }
 
     @Test
-    @DisplayName("exposes mcp_deployment_ref::id, ::name, ::type as STRING virtual sub-field bindings")
+    @DisplayName("exposes mcp_deployment_ref::id, ::name, ::type, ::transport as STRING virtual sub-field bindings")
     void shouldExposeMcpDeploymentRefSubFields() {
         final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
 
         assertThat(bindings.get("mcp_deployment_ref::id").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("mcp_deployment_ref::name").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("mcp_deployment_ref::type").type()).isEqualTo(QueryFieldType.STRING);
+        assertThat(bindings.get("mcp_deployment_ref::transport").type()).isEqualTo(QueryFieldType.STRING);
     }
 
     @Test

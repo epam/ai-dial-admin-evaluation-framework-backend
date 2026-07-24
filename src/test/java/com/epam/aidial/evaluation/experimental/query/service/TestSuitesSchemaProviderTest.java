@@ -37,17 +37,19 @@ class TestSuitesSchemaProviderTest {
     }
 
     @Test
-    @DisplayName("exposes deployment_ref::id, ::name, ::version as STRING fields sourced from deployment_ref")
+    @DisplayName("exposes deployment_ref::id, ::name, ::version, ::type as STRING fields sourced from deployment_ref")
     void shouldExposeDeploymentRefSubFields() {
         assertThat(provider.baseSchema())
                 .contains(
                         new QuerySchemaFieldDto("deployment_ref::id", QueryFieldType.STRING, "deployment_ref"),
                         new QuerySchemaFieldDto("deployment_ref::name", QueryFieldType.STRING, "deployment_ref"),
-                        new QuerySchemaFieldDto("deployment_ref::version", QueryFieldType.STRING, "deployment_ref"));
+                        new QuerySchemaFieldDto("deployment_ref::version", QueryFieldType.STRING, "deployment_ref"),
+                        new QuerySchemaFieldDto("deployment_ref::type", QueryFieldType.STRING, "deployment_ref"));
     }
 
     @Test
-    @DisplayName("exposes mcp_deployment_ref::id, ::name, ::type as STRING fields sourced from mcp_deployment_ref")
+    @DisplayName(
+            "exposes mcp_deployment_ref::id, ::name, ::type, ::transport as STRING fields sourced from mcp_deployment_ref")
     void shouldExposeMcpDeploymentRefSubFields() {
         assertThat(provider.baseSchema())
                 .contains(
@@ -55,7 +57,9 @@ class TestSuitesSchemaProviderTest {
                         new QuerySchemaFieldDto(
                                 "mcp_deployment_ref::name", QueryFieldType.STRING, "mcp_deployment_ref"),
                         new QuerySchemaFieldDto(
-                                "mcp_deployment_ref::type", QueryFieldType.STRING, "mcp_deployment_ref"));
+                                "mcp_deployment_ref::type", QueryFieldType.STRING, "mcp_deployment_ref"),
+                        new QuerySchemaFieldDto(
+                                "mcp_deployment_ref::transport", QueryFieldType.STRING, "mcp_deployment_ref"));
     }
 
     @Test

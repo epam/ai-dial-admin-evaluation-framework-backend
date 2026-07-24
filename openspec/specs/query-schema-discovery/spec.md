@@ -48,9 +48,11 @@ entries SHALL appear alongside (not instead of) the opaque `object`-typed column
 | `deployment_ref::id` | `string` | `deployment_ref` |
 | `deployment_ref::name` | `string` | `deployment_ref` |
 | `deployment_ref::version` | `string` | `deployment_ref` |
+| `deployment_ref::type` | `string` | `deployment_ref` |
 | `mcp_deployment_ref::id` | `string` | `mcp_deployment_ref` |
 | `mcp_deployment_ref::name` | `string` | `mcp_deployment_ref` |
 | `mcp_deployment_ref::type` | `string` | `mcp_deployment_ref` |
+| `mcp_deployment_ref::transport` | `string` | `mcp_deployment_ref` |
 
 Status: **Implemented**
 
@@ -63,14 +65,14 @@ Status: **Implemented**
 #### Scenario: test_suites base schema includes deployment_ref sub-fields
 - **WHEN** `GET /api/v1/queries/entities/schema/test_suites` is called
 - **THEN** the response includes `deployment_ref::id`, `deployment_ref::name`,
-  `deployment_ref::version` each typed `string` with source `deployment_ref`, AND the plain
-  `deployment_ref` entry typed `object`
+  `deployment_ref::version`, `deployment_ref::type` each typed `string` with source `deployment_ref`,
+  AND the plain `deployment_ref` entry typed `object`
 
 #### Scenario: test_suites base schema includes mcp_deployment_ref sub-fields
 - **WHEN** `GET /api/v1/queries/entities/schema/test_suites` is called
 - **THEN** the response includes `mcp_deployment_ref::id`, `mcp_deployment_ref::name`,
-  `mcp_deployment_ref::type` each typed `string` with source `mcp_deployment_ref`, AND the plain
-  `mcp_deployment_ref` entry typed `object`
+  `mcp_deployment_ref::type`, `mcp_deployment_ref::transport` each typed `string` with source
+  `mcp_deployment_ref`, AND the plain `mcp_deployment_ref` entry typed `object`
 
 ### Requirement: Instance-specific detailed schema for complex entities
 The system SHALL expose, at `GET /api/v1/queries/entities/schema/{name}/detailed`, the flat schema of

@@ -21,18 +21,41 @@ class TestSuitesSchemaProviderTest {
     }
 
     @Test
-    @DisplayName("exposes a flat base schema where every field is backed by itself")
-    void shouldExposeFlatBaseSchemaWithSelfSources() {
+    @DisplayName("exposes a flat base schema including table columns and virtual deployment_ref sub-fields")
+    void shouldExposeFlatBaseSchemaWithTableColumnsAndVirtualFields() {
         assertThat(provider.baseSchema())
                 .isNotEmpty()
-                .allSatisfy(field -> assertThat(field.source()).isEqualTo(field.name()))
                 .contains(
                         new QuerySchemaFieldDto("id", QueryFieldType.UUID, "id"),
                         new QuerySchemaFieldDto("suite_type", QueryFieldType.STRING, "suite_type"),
                         new QuerySchemaFieldDto("dataset_id", QueryFieldType.UUID, "dataset_id"),
                         new QuerySchemaFieldDto("response_columns", QueryFieldType.ARRAY, "response_columns"),
                         new QuerySchemaFieldDto("is_valid", QueryFieldType.BOOLEAN, "is_valid"),
-                        new QuerySchemaFieldDto("created_at_ms", QueryFieldType.LONG, "created_at_ms"));
+                        new QuerySchemaFieldDto("created_at_ms", QueryFieldType.LONG, "created_at_ms"),
+                        new QuerySchemaFieldDto("deployment_ref", QueryFieldType.OBJECT, "deployment_ref"),
+                        new QuerySchemaFieldDto("mcp_deployment_ref", QueryFieldType.OBJECT, "mcp_deployment_ref"));
+    }
+
+    @Test
+    @DisplayName("exposes deployment_ref::id, ::name, ::version as STRING fields sourced from deployment_ref")
+    void shouldExposeDeploymentRefSubFields() {
+        assertThat(provider.baseSchema())
+                .contains(
+                        new QuerySchemaFieldDto("deployment_ref::id", QueryFieldType.STRING, "deployment_ref"),
+                        new QuerySchemaFieldDto("deployment_ref::name", QueryFieldType.STRING, "deployment_ref"),
+                        new QuerySchemaFieldDto("deployment_ref::version", QueryFieldType.STRING, "deployment_ref"));
+    }
+
+    @Test
+    @DisplayName("exposes mcp_deployment_ref::id, ::name, ::type as STRING fields sourced from mcp_deployment_ref")
+    void shouldExposeMcpDeploymentRefSubFields() {
+        assertThat(provider.baseSchema())
+                .contains(
+                        new QuerySchemaFieldDto("mcp_deployment_ref::id", QueryFieldType.STRING, "mcp_deployment_ref"),
+                        new QuerySchemaFieldDto(
+                                "mcp_deployment_ref::name", QueryFieldType.STRING, "mcp_deployment_ref"),
+                        new QuerySchemaFieldDto(
+                                "mcp_deployment_ref::type", QueryFieldType.STRING, "mcp_deployment_ref"));
     }
 
     @Test

@@ -395,4 +395,37 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
+
+    @Test
+    @DisplayName("filters test_suites by deployment_ref::name via the execute endpoint")
+    void executesTestSuitesByDeploymentRefName() {
+        String name = "sq-depref-exec-" + UUID.randomUUID();
+        String deploymentRefJson =
+                "{\"id\":\"exec-app-id\",\"name\":\"Exec App\",\"version\":\"2.0\",\"type\":\"dial-application\"}";
+        TestSuite target = metaTestDataHelper.createTestSuiteWithDeploymentRef(name, deploymentRefJson);
+        metaTestDataHelper.createTestSuite("sq-depref-exec-other-" + UUID.randomUUID());
+
+        String json = """
+                {
+                  "entity": "test_suites",
+                  "mode": "row",
+                  "filter": { "op": "eq", "args": [
+                      { "type": "field", "name": "deployment_ref::name" },
+                      { "type": "value", "value_type": "string", "value": "Exec App" } ] },
+                  "select": [
+                      { "expr": { "type": "field", "name": "id" } },
+                      { "expr": { "type": "field", "name": "deployment_ref::name" } } ],
+                  "page": { "type": "offset", "offset": 0, "limit": 10, "include_total": true }
+                }
+                """;
+
+        ResponseEntity<StructuredQueryResultDto> response = post(json);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        StructuredQueryResultDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.rows()).hasSize(1);
+        assertThat(body.rows().get(0).get("id")).isEqualTo(target.getId().toString());
+        assertThat(body.rows().get(0).get("deployment_ref::name")).isEqualTo("Exec App");
+    }
 }

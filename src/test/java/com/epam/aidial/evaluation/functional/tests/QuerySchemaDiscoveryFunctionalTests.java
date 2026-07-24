@@ -202,4 +202,27 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
+
+    @Test
+    @DisplayName("test_suites base schema includes deployment_ref sub-fields and retains the opaque object binding")
+    void shouldReturnTestSuitesBaseSchemaWithDeploymentRefSubFields() {
+        ResponseEntity<QueryEntitySchemaDto> response =
+                restTemplate.getForEntity(queriesUrl("/entities/schema/test_suites"), QueryEntitySchemaDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        QueryEntitySchemaDto schema = response.getBody();
+        assertThat(schema).isNotNull();
+        assertThat(schema.fields())
+                .contains(
+                        new QuerySchemaFieldDto("deployment_ref", QueryFieldType.OBJECT, "deployment_ref"),
+                        new QuerySchemaFieldDto("deployment_ref::id", QueryFieldType.STRING, "deployment_ref"),
+                        new QuerySchemaFieldDto("deployment_ref::name", QueryFieldType.STRING, "deployment_ref"),
+                        new QuerySchemaFieldDto("deployment_ref::version", QueryFieldType.STRING, "deployment_ref"),
+                        new QuerySchemaFieldDto("mcp_deployment_ref", QueryFieldType.OBJECT, "mcp_deployment_ref"),
+                        new QuerySchemaFieldDto("mcp_deployment_ref::id", QueryFieldType.STRING, "mcp_deployment_ref"),
+                        new QuerySchemaFieldDto(
+                                "mcp_deployment_ref::name", QueryFieldType.STRING, "mcp_deployment_ref"),
+                        new QuerySchemaFieldDto(
+                                "mcp_deployment_ref::type", QueryFieldType.STRING, "mcp_deployment_ref"));
+    }
 }

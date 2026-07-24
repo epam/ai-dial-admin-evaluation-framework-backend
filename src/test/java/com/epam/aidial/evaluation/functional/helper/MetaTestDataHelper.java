@@ -146,6 +146,28 @@ public class MetaTestDataHelper {
         return testSuiteRepository.save(suite);
     }
 
+    /**
+     * Creates a test suite with the given deployment reference JSON string stored in the
+     * {@code deployment_ref} column. Intended for tests that filter by {@code deployment_ref::name}
+     * and similar sub-fields via the QueryDSL.
+     */
+    @Transactional("metaTransactionManager")
+    public TestSuite createTestSuiteWithDeploymentRef(String name, String deploymentRefJson) {
+        Dataset dataset = createDataset("DATASET_" + name);
+        TestSuite suite = TestSuite.builder()
+                .name(name)
+                .createdBy("test-user")
+                .datasetId(dataset.getId())
+                .deploymentRef(deploymentRefJson)
+                .disabledTestCaseIds("[]")
+                .responseColumns("[]")
+                .inputBindings("[]")
+                .validationWarnings("[]")
+                .valid(true)
+                .build();
+        return testSuiteRepository.save(suite);
+    }
+
     @Transactional("metaTransactionManager")
     public TestSuiteRun createTestSuiteRun(UUID suiteId) {
         TestSuite suite = testSuiteRepository.findById(suiteId).orElseThrow();

@@ -38,6 +38,20 @@ schema: a list of fields each carrying a name, a flat field type, and the physic
 The base schema SHALL be instance-independent and SHALL list JSONB-backed fields as-is, typed
 `object` or `array`, without flattening them. The schema SHALL be derived from the entity's generated
 jOOQ table so that it follows the physical database schema, with `VARCHAR(36)` columns typed `uuid`.
+
+For the `test_suites` entity, the base schema SHALL additionally include the following virtual
+sub-field entries sourced from the `deployment_ref` and `mcp_deployment_ref` JSONB columns. These
+entries SHALL appear alongside (not instead of) the opaque `object`-typed column entries:
+
+| Field name | Type | Source |
+|---|---|---|
+| `deployment_ref::id` | `string` | `deployment_ref` |
+| `deployment_ref::name` | `string` | `deployment_ref` |
+| `deployment_ref::version` | `string` | `deployment_ref` |
+| `mcp_deployment_ref::id` | `string` | `mcp_deployment_ref` |
+| `mcp_deployment_ref::name` | `string` | `mcp_deployment_ref` |
+| `mcp_deployment_ref::type` | `string` | `mcp_deployment_ref` |
+
 Status: **Implemented**
 
 #### Scenario: Base schema lists JSONB fields unflattened
@@ -45,6 +59,18 @@ Status: **Implemented**
 - **THEN** the response lists the entity's plain columns with their inferred types and lists its
   JSONB-backed fields (e.g. `test_case_data`, `metric_values`, `metric_infos`, `extraction_warnings`)
   as-is with type `object` or `array`, none of them flattened
+
+#### Scenario: test_suites base schema includes deployment_ref sub-fields
+- **WHEN** `GET /api/v1/queries/entities/schema/test_suites` is called
+- **THEN** the response includes `deployment_ref::id`, `deployment_ref::name`,
+  `deployment_ref::version` each typed `string` with source `deployment_ref`, AND the plain
+  `deployment_ref` entry typed `object`
+
+#### Scenario: test_suites base schema includes mcp_deployment_ref sub-fields
+- **WHEN** `GET /api/v1/queries/entities/schema/test_suites` is called
+- **THEN** the response includes `mcp_deployment_ref::id`, `mcp_deployment_ref::name`,
+  `mcp_deployment_ref::type` each typed `string` with source `mcp_deployment_ref`, AND the plain
+  `mcp_deployment_ref` entry typed `object`
 
 ### Requirement: Instance-specific detailed schema for complex entities
 The system SHALL expose, at `GET /api/v1/queries/entities/schema/{name}/detailed`, the flat schema of
@@ -149,14 +175,16 @@ providing a non-UUID value, SHALL be rejected with HTTP 400.
 - Controller: `experimental.query.web.QuerySchemaController` (`/api/v1/queries`).
 - Registry + SPI: `experimental.query.service.QueryEntityRegistry`, `QueryableEntitySchemaProvider`.
 - Base schema derivation: `experimental.query.service.JooqTableSchemaResolver` (+ `QueryFieldBinding`).
-- Providers: `TestSuitesSchemaProvider` (simple), `EvalSummariesSchemaProvider` (complex, run-snapshot
+- Providers: `TestSuitesSchemaProvider` (simple; appends 6 virtual `deployment_ref::*` and
+  `mcp_deployment_ref::*` sub-field entries to the jOOQ-derived base schema), `EvalSummariesSchemaProvider` (complex, run-snapshot
   derived via `TestSuiteRunService` + `RunMetricSnapshotRepository`; families mirror the CSV export
   column planner), `TestCasesSchemaProvider` (complex, dataset-scoped; models
   `EvalSummariesSchemaProvider`; dataset schema loaded via `DatasetService`). DTOs: `QueryEntityDto`,
   `QueryEntitySchemaDto`, `QuerySchemaFieldDto`, `QueryFieldType`.
 - Error mapping: `EntityNotFoundException` → 404, `ValidationException` → 400 via the global handler.
 - Tests: `QuerySchemaDiscoveryFunctionalTests`, `EvalSummariesSchemaProviderTest`,
-  `QueryEntityRegistryTest`, `JooqTableSchemaResolverTest`, `TestSuitesSchemaProviderTest`.
+  `QueryEntityRegistryTest`, `JooqTableSchemaResolverTest`, `TestSuitesSchemaProviderTest`,
+  `PostgresTestSuiteEntityResolverTest`.
 - `test_cases` execute path: `TestCaseQueryRepository` + `PostgresTestCaseQueryRepository` bind
   `test_cases` to the `TEST_CASES` table on `@Qualifier("metaDsl")`, delegating to
   `StructuredQueryExecutor`. Type-aware flattened bindings produced by `TestCaseFieldBindingsBuilder`.

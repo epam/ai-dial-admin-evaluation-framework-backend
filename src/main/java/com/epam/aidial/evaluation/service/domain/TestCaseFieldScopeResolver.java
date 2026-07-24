@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,16 +40,21 @@ public class TestCaseFieldScopeResolver {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** The per-turn sub-schema (fields with {@code perTurn=true}). */
-    public List<FieldDefinitionDto> perTurnSchema(List<FieldDefinitionDto> schema) {
-        return safe(schema).stream()
-                .filter(TestCaseFieldScopeResolver::isPerTurn)
-                .toList();
-    }
-
-    /** The shared sub-schema (fields with {@code perTurn} false/absent). */
-    public List<FieldDefinitionDto> sharedSchema(List<FieldDefinitionDto> schema) {
-        return safe(schema).stream().filter(field -> !isPerTurn(field)).toList();
+    /**
+     * Splits the schema into its shared and per-turn sub-schemas in a single pass, so callers that need
+     * both partitions do not iterate the field list twice.
+     */
+    public SchemaSplit splitSchema(List<FieldDefinitionDto> schema) {
+        final List<FieldDefinitionDto> sharedFields = new ArrayList<>();
+        final List<FieldDefinitionDto> perTurnFields = new ArrayList<>();
+        for (final FieldDefinitionDto field : safe(schema)) {
+            if (isPerTurn(field)) {
+                perTurnFields.add(field);
+            } else {
+                sharedFields.add(field);
+            }
+        }
+        return new SchemaSplit(List.copyOf(sharedFields), List.copyOf(perTurnFields));
     }
 
     /** A field is per-turn only when {@code perTurn} is explicitly {@code true}; null/false is shared. */
@@ -83,4 +89,7 @@ public class TestCaseFieldScopeResolver {
 
     /** A flat data map split by scope: {@code shared} keys and {@code perTurn} keys. */
     public record Partition(Map<String, Object> shared, Map<String, Object> perTurn) {}
+
+    /** A schema split by scope: {@code shared} sub-schema and {@code perTurn} sub-schema. */
+    public record SchemaSplit(List<FieldDefinitionDto> shared, List<FieldDefinitionDto> perTurn) {}
 }

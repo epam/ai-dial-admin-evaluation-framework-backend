@@ -219,16 +219,15 @@ public class TestCaseValidationService {
             boolean hasOverrides,
             UUID datasetId) {
         List<Map<String, Object>> safeTurns = turns != null ? turns : List.of();
-        List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        List<FieldDefinitionDto> sharedSchema = scopeResolver.sharedSchema(testCaseSchema);
-        List<FieldDefinitionDto> perTurnSchema = scopeResolver.perTurnSchema(testCaseSchema);
+        final TestCaseFieldScopeResolver.SchemaSplit schemaSplit = scopeResolver.splitSchema(testCaseSchema);
 
         // Shared (test-case-level) fields are validated once against the shared sub-schema; their warnings
         // carry no turn index.
         ValidationResult sharedResult = validateTestCase(
-                sharedData, sharedSchema, effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
-        warnings.addAll(sharedResult.getWarnings());
+                sharedData, schemaSplit.shared(), effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
+
+        List<ValidationWarningDto> warnings = new ArrayList<>(sharedResult.getWarnings());
 
         int maxTurns = testCaseProperties.getMultiTurn().getMaxTurns();
         if (safeTurns.size() > maxTurns) {
@@ -241,7 +240,12 @@ public class TestCaseValidationService {
 
         for (int i = 0; i < safeTurns.size(); i++) {
             ValidationResult turnResult = validateTestCase(
-                    safeTurns.get(i), perTurnSchema, effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
+                    safeTurns.get(i),
+                    schemaSplit.perTurn(),
+                    effectiveTemplate,
+                    effectiveBindings,
+                    hasOverrides,
+                    datasetId);
             for (ValidationWarningDto w : turnResult.getWarnings()) {
                 w.setTurnIndex(i);
                 warnings.add(w);

@@ -53,9 +53,6 @@ config/logger-levels.json
 test-output/
 test-results/
 
-# Local sandbox data
-sandbox/
-
 # Local plans/drafts
 docs/plans/
 
@@ -86,3 +83,4 @@ bin/
 secrets/
 credentials*
 *-credentials.json
+opencode.json

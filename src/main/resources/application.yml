@@ -86,6 +86,8 @@ test-case:
     max-ids-per-selector: 10000
     max-item-operations: 500
     max-delete-ids: 10000
+  multi-turn:
+    max-turns: 10
 
 # Analytics results configuration
 analytics:

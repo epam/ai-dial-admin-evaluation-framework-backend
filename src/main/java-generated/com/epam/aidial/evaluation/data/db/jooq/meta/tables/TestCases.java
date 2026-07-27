@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -99,6 +100,11 @@ public class TestCases extends TableImpl<TestCasesRecord> {
      * The column <code>meta.test_cases.data</code>.
      */
     public final TableField<TestCasesRecord, JSONB> DATA = createField(DSL.name("data"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'{}'::jsonb"), SQLDataType.JSONB)), this, "");
+
+    /**
+     * The column <code>meta.test_cases.multi_turn_data</code>.
+     */
+    public final TableField<TestCasesRecord, JSONB> MULTI_TURN_DATA = createField(DSL.name("multi_turn_data"), SQLDataType.JSONB, this, "");
 
     private TestCases(Name alias, Table<TestCasesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -192,6 +198,13 @@ public class TestCases extends TableImpl<TestCasesRecord> {
             _datasets = new DatasetsPath(this, Keys.TEST_CASES__FK_TEST_CASES_DATASET_ID, null);
 
         return _datasets;
+    }
+
+    @Override
+    public List<Check<TestCasesRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("chk_test_cases_multi_turn_exclusive"), "(((multi_turn_data IS NULL) OR (data = '{}'::jsonb)))", true)
+        );
     }
 
     @Override

@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.ExecutionInfoRequ
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultItemDto;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -265,6 +266,48 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
         assertThat(analyticsTestDataHelper.countAll()).isEqualTo(1L);
     }
 
+    @Test
+    @DisplayName("turnIndex extends the natural key: same testCaseId+runIndex, different turns, both persist")
+    void shouldPersistDistinctTurnsOfSameTestCase() {
+        UUID testCaseId = UUID.randomUUID();
+        TestCaseRunResultItemDto turn0 = buildTurnItem(testCaseId, "conv", 0, 0, 2);
+        TestCaseRunResultItemDto turn1 = buildTurnItem(testCaseId, "conv", 0, 1, 2);
+
+        BatchWriteRequestDto request = BatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .results(List.of(turn0, turn1))
+                .build();
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(analyticsTestDataHelper.countAll()).isEqualTo(2L);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findResultsByRunId(testSuiteRunId);
+        assertThat(rows.stream().map(r -> ((Number) r.get("turn_index")).intValue()))
+                .containsExactlyInAnyOrder(0, 1);
+        assertThat(rows)
+                .allSatisfy(r ->
+                        assertThat(((Number) r.get("total_turns")).intValue()).isEqualTo(2));
+    }
+
+    @Test
+    @DisplayName("Single-turn write omitting turn fields defaults to turnIndex=0, totalTurns=1")
+    void shouldDefaultTurnFieldsForSingleTurnWrite() {
+        BatchWriteRequestDto request = buildBatchRequest(testSuiteId, testSuiteRunId, 1);
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findResultsByRunId(testSuiteRunId);
+        assertThat(rows).hasSize(1);
+        assertThat(((Number) rows.get(0).get("turn_index")).intValue()).isEqualTo(0);
+        assertThat(((Number) rows.get(0).get("total_turns")).intValue()).isEqualTo(1);
+    }
+
     // --- helpers ---
 
     private BatchWriteRequestDto buildBatchRequest(UUID suiteId, UUID runId, int count) {
@@ -296,5 +339,13 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
                         .traceId("trace-123")
                         .build())
                 .build();
+    }
+
+    private TestCaseRunResultItemDto buildTurnItem(
+            UUID testCaseId, String name, int runIndex, int turnIndex, int totalTurns) {
+        TestCaseRunResultItemDto item = buildItem(testCaseId, name, runIndex);
+        item.setTurnIndex(turnIndex);
+        item.setTotalTurns(totalTurns);
+        return item;
     }
 }

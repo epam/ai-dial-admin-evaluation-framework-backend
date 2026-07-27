@@ -32,6 +32,9 @@ public class ResultBatchWriter {
         private final List<TestCaseRunResult> buffer = new ArrayList<>();
         private final ReentrantLock lock = new ReentrantLock();
         private final AtomicInteger totalFlushed = new AtomicInteger(0);
+        // Progress is counted per test-case run (one unit per completed test-case run), not per persisted
+        // row — a multi-turn case writes N rows but advances progress by exactly one unit.
+        private final AtomicInteger testCasesCompleted = new AtomicInteger(0);
         private final int batchSize;
         private final UUID runId;
         private final UUID suiteId;
@@ -54,14 +57,26 @@ public class ResultBatchWriter {
     }
 
     /**
-     * Adds a result to the buffer. Flushes when batch size is reached.
-     * Thread-safe via ReentrantLock.
+     * Adds a single-test-case-run result to the buffer (single-turn case, or a synthetic ERROR row).
+     * Counts one progress unit. Thread-safe via ReentrantLock.
      */
     public void addResult(RunBuffer buffer, TestCaseRunResult result) {
+        addResults(buffer, List.of(result));
+    }
+
+    /**
+     * Adds all result rows of one test-case run to the buffer (one row for single-turn; N rows for a
+     * multi-turn case). Flushes when batch size is reached and advances run progress by exactly <b>one</b>
+     * unit regardless of how many rows the test-case run wrote. Thread-safe via ReentrantLock.
+     */
+    public void addResults(RunBuffer buffer, List<TestCaseRunResult> results) {
+        if (results == null || results.isEmpty()) {
+            return;
+        }
         List<TestCaseRunResult> toFlush = null;
         buffer.lock.lock();
         try {
-            buffer.buffer.add(result);
+            buffer.buffer.addAll(results);
             if (buffer.buffer.size() >= buffer.batchSize) {
                 toFlush = new ArrayList<>(buffer.buffer);
                 buffer.buffer.clear();
@@ -70,6 +85,9 @@ public class ResultBatchWriter {
             buffer.lock.unlock();
         }
 
+        // One progress unit per test-case run, regardless of how many rows it wrote. Counted here; the SSE
+        // notification is emitted on flush (below) carrying this cumulative test-case count.
+        buffer.testCasesCompleted.incrementAndGet();
         if (toFlush != null) {
             doFlush(buffer, toFlush);
         }
@@ -97,10 +115,13 @@ public class ResultBatchWriter {
     private void doFlush(RunBuffer buffer, List<TestCaseRunResult> batch) {
         transactionalWriter.saveBatch(batch);
         int flushed = buffer.totalFlushed.addAndGet(batch.size());
-        log.debug("Flushed {} results for run {} (total: {})", batch.size(), buffer.runId, flushed);
+        log.debug("Flushed {} result rows for run {} (total: {})", batch.size(), buffer.runId, flushed);
 
+        // Progress is reported in test-case-run units (one per completed test-case run), not rows — so a
+        // multi-turn case that wrote N rows still advances the bar by one. For single-turn runs this equals
+        // the number of results flushed, preserving the previous behavior.
         try {
-            sseService.notifyProgress(buffer.runId, buffer.suiteId, flushed, buffer.totalCases);
+            sseService.notifyProgress(buffer.runId, buffer.suiteId, buffer.testCasesCompleted.get(), buffer.totalCases);
         } catch (Exception e) {
             log.debug("Failed to send progress SSE for run {}: {}", buffer.runId, e.getMessage(), e);
         }

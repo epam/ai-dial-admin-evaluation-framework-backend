@@ -18,6 +18,7 @@ public class TestCaseRunInputRecordMapper {
                 .testCaseId(UUID.fromString(r.getTestCaseId()))
                 .testCaseName(r.getTestCaseName())
                 .testCaseData(toJsonString(r.getTestCaseData()))
+                .multiTurnData(toJsonString(r.getMultiTurnData()))
                 .requestTemplateOverride(toJsonString(r.getRequestTemplateOverride()))
                 .inputBindingsOverride(toJsonString(r.getInputBindingsOverride()))
                 .build();

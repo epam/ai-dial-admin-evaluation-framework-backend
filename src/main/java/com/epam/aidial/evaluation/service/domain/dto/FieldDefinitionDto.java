@@ -1,6 +1,8 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -33,4 +35,19 @@ public class FieldDefinitionDto {
 
     @Size(max = 2000)
     private String description;
+
+    /**
+     * Field scope. {@code true} = per-turn: the value may vary between turns of a multi-turn case and
+     * lives in each {@code multiTurnData[i]} map. {@code false}/absent = shared (test-case-level): the
+     * value is constant across turns and lives in the {@code data} map. Scope is uniform across the
+     * dataset; a missing value is treated as shared, so schemas authored before this field are unchanged.
+     * For single-turn cases every field lives in {@code data} regardless of scope. Kept as a nullable
+     * {@link Boolean} (not a primitive) so pre-existing persisted schemas that omit the field deserialize
+     * cleanly rather than failing on a null-into-primitive coercion.
+     */
+    @Schema(
+            description = "Whether the field varies per turn (true) or is shared/test-case-level (false, default)",
+            example = "false")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean perTurn;
 }

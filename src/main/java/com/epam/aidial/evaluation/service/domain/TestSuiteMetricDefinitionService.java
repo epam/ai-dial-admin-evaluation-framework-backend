@@ -55,6 +55,7 @@ public class TestSuiteMetricDefinitionService {
     private final MetricDefinitionValidationService metricDefinitionValidationService;
     private final ValidationWarningsSerializer warningsSerializer;
     private final JsonbMapper jsonbMapper;
+    private final ConditionExpressionEvaluator conditionExpressionEvaluator;
 
     @Transactional("metaTransactionManager")
     public TestSuiteMetricDefinitionResponseDto create(UUID testSuiteId, TestSuiteMetricDefinitionRequestDto dto) {
@@ -72,6 +73,7 @@ public class TestSuiteMetricDefinitionService {
 
         checkNoDuplicateProperties(dto.getConfigBindings(), "configBindings");
         checkNoDuplicateProperties(dto.getInputBindings(), "inputBindings");
+        conditionExpressionEvaluator.validate(dto.getCondition());
 
         String testCaseSchema = loadDatasetSchema(suite);
         ValidationResult result = metricDefinitionValidationService.validate(
@@ -161,6 +163,7 @@ public class TestSuiteMetricDefinitionService {
 
         checkNoDuplicateProperties(dto.getConfigBindings(), "configBindings");
         checkNoDuplicateProperties(dto.getInputBindings(), "inputBindings");
+        conditionExpressionEvaluator.validate(dto.getCondition());
 
         String testCaseSchema = loadDatasetSchema(suite);
         ValidationResult result = metricDefinitionValidationService.validate(

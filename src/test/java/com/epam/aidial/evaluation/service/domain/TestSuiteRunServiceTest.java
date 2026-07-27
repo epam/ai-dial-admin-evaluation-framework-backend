@@ -61,6 +61,9 @@ class TestSuiteRunServiceTest {
     private TestSuiteRepository testSuiteRepository;
 
     @Mock
+    private TestCaseService testCaseService;
+
+    @Mock
     private RunnableTestCaseCounter runnableTestCaseCounter;
 
     @Mock
@@ -102,6 +105,7 @@ class TestSuiteRunServiceTest {
         service = new TestSuiteRunService(
                 testSuiteRunRepository,
                 testSuiteRepository,
+                testCaseService,
                 runnableTestCaseCounter,
                 properties,
                 evaluationJob,

@@ -27,5 +27,6 @@
         "columnName": "model_answer"
       }
     }
-  ]
+  ],
+  "condition": "turn.last"
 }

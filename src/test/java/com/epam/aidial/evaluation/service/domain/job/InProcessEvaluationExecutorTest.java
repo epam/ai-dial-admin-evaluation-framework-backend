@@ -164,7 +164,7 @@ class InProcessEvaluationExecutorTest {
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input));
         when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), anyInt(), anyList()))
-                .thenReturn(result);
+                .thenReturn(List.of(result));
 
         executor.execute(context);
 
@@ -173,7 +173,7 @@ class InProcessEvaluationExecutorTest {
         assertThat(captor.getValue().getTestCaseId()).isEqualTo(input.getTestCaseId());
 
         verify(testCaseRepository, never()).findValidByDatasetIdExcludingIds(any(), anyList(), anyInt(), anyInt());
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result)));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -188,7 +188,7 @@ class InProcessEvaluationExecutorTest {
         when(testCaseRepository.findValidByDatasetIdExcludingIds(eq(DATASET_ID), eq(List.of()), eq(0), eq(100)))
                 .thenReturn(List.of(testCase));
         when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), anyInt(), anyList()))
-                .thenReturn(TestCaseRunResult.builder()
+                .thenReturn(List.of(TestCaseRunResult.builder()
                         .id(UUID.randomUUID())
                         .testSuiteRunId(UUID.randomUUID())
                         .testSuiteId(SUITE_ID)
@@ -201,7 +201,7 @@ class InProcessEvaluationExecutorTest {
                         .execCompletedAtMs(2000L)
                         .execDurationMs(1000L)
                         .createdAtMs(1000L)
-                        .build());
+                        .build()));
 
         executor.execute(context);
 
@@ -231,13 +231,13 @@ class InProcessEvaluationExecutorTest {
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input));
         when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), eq(0), anyList()))
-                .thenReturn(result);
+                .thenReturn(List.of(result));
 
         executor.execute(context);
 
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(any(TestCaseRunInput.class), any(EvaluationContext.class), eq(0), anyList());
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result)));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -253,8 +253,8 @@ class InProcessEvaluationExecutorTest {
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input1, input2));
-        when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenReturn(result1);
-        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(result2);
+        when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenReturn(List.of(result1));
+        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
         executor.execute(context);
 
@@ -262,8 +262,8 @@ class InProcessEvaluationExecutorTest {
                 .execute(eq(input1), any(EvaluationContext.class), eq(0), anyList());
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input2), any(EvaluationContext.class), eq(0), anyList());
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result1));
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result2));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result1)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -278,8 +278,8 @@ class InProcessEvaluationExecutorTest {
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input));
-        when(evaluationWorker.execute(eq(input), any(), eq(0), anyList())).thenReturn(result0);
-        when(evaluationWorker.execute(eq(input), any(), eq(1), anyList())).thenReturn(result1);
+        when(evaluationWorker.execute(eq(input), any(), eq(0), anyList())).thenReturn(List.of(result0));
+        when(evaluationWorker.execute(eq(input), any(), eq(1), anyList())).thenReturn(List.of(result1));
 
         executor.execute(context);
 
@@ -325,8 +325,8 @@ class InProcessEvaluationExecutorTest {
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input1, input2));
-        when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenReturn(result1);
-        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(result2);
+        when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenReturn(List.of(result1));
+        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
         executor.execute(context);
 
@@ -334,8 +334,8 @@ class InProcessEvaluationExecutorTest {
                 .execute(eq(input1), any(EvaluationContext.class), eq(0), anyList());
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input2), any(EvaluationContext.class), eq(0), anyList());
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result1));
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result2));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result1)));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -353,7 +353,7 @@ class InProcessEvaluationExecutorTest {
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList()))
                 .thenThrow(new RuntimeException("Worker failed"));
-        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(result2);
+        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
         executor.execute(context);
 
@@ -363,13 +363,14 @@ class InProcessEvaluationExecutorTest {
                 .execute(eq(input2), any(EvaluationContext.class), eq(0), anyList());
 
         // result2 (real) is added
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result2));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
 
         // Synthetic ERROR row added for input1
-        ArgumentCaptor<TestCaseRunResult> captor = ArgumentCaptor.forClass(TestCaseRunResult.class);
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResult(eq(buffer), captor.capture());
+        ArgumentCaptor<List<TestCaseRunResult>> captor = ArgumentCaptor.captor();
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResults(eq(buffer), captor.capture());
 
         boolean foundSynthetic = captor.getAllValues().stream()
+                .flatMap(List::stream)
                 .anyMatch(r -> r.getExecutionStatus() == ExecutionStatus.ERROR
                         && input1.getTestCaseId().equals(r.getTestCaseId()));
         assertThat(foundSynthetic).as("synthetic ERROR row for input1").isTrue();
@@ -400,17 +401,17 @@ class InProcessEvaluationExecutorTest {
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input1, input2));
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenAnswer(inv -> {
             Thread.sleep(200);
-            return result1;
+            return List.of(result1);
         });
         when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenAnswer(inv -> {
             Thread.sleep(200);
-            return result2;
+            return List.of(result2);
         });
 
         executor.execute(context);
 
-        verify(resultBatchWriter).addResult(eq(buffer), eq(result1));
-        verify(resultBatchWriter).addResult(eq(buffer), eq(result2));
+        verify(resultBatchWriter).addResults(eq(buffer), eq(List.of(result1)));
+        verify(resultBatchWriter).addResults(eq(buffer), eq(List.of(result2)));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 
@@ -426,16 +427,17 @@ class InProcessEvaluationExecutorTest {
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input1, input2));
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenThrow(new RuntimeException("boom"));
-        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(result2);
+        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
         executor.execute(context);
 
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result2));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
 
-        ArgumentCaptor<TestCaseRunResult> captor = ArgumentCaptor.forClass(TestCaseRunResult.class);
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResult(eq(buffer), captor.capture());
+        ArgumentCaptor<List<TestCaseRunResult>> captor = ArgumentCaptor.captor();
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS).atLeast(2)).addResults(eq(buffer), captor.capture());
 
         TestCaseRunResult synthetic = captor.getAllValues().stream()
+                .flatMap(List::stream)
                 .filter(r -> r.getExecutionStatus() == ExecutionStatus.ERROR)
                 .findFirst()
                 .orElseThrow();
@@ -486,17 +488,17 @@ class InProcessEvaluationExecutorTest {
                     cancellationSignal.set(true);
                     Thread.sleep(500);
                     TestCaseRunInput in = inv.getArgument(0);
-                    return buildResult(in);
+                    return List.of(buildResult(in));
                 });
 
         executor.execute(context);
 
-        ArgumentCaptor<TestCaseRunResult> captor = ArgumentCaptor.forClass(TestCaseRunResult.class);
+        ArgumentCaptor<List<TestCaseRunResult>> captor = ArgumentCaptor.captor();
         verify(resultBatchWriter, atLeastOnce()).flush(eq(buffer));
         List<TestCaseRunResult> added = new ArrayList<>();
         try {
-            verify(resultBatchWriter, atLeastOnce()).addResult(eq(buffer), captor.capture());
-            added.addAll(captor.getAllValues());
+            verify(resultBatchWriter, atLeastOnce()).addResults(eq(buffer), captor.capture());
+            captor.getAllValues().forEach(added::addAll);
         } catch (AssertionError ignored) {
             // No addResult invocations at all — that's fine; nothing was synthesized.
         }
@@ -514,7 +516,7 @@ class InProcessEvaluationExecutorTest {
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input));
         when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), eq(0), anyList()))
-                .thenReturn(result);
+                .thenReturn(List.of(result));
 
         executor.execute(context);
 
@@ -552,7 +554,7 @@ class InProcessEvaluationExecutorTest {
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input1, input2));
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenThrow(new RuntimeException("boom"));
-        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(result2);
+        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
         // First addResult call is the synthetic ERROR row for input1 (ordering may vary,
         // so use a matcher selecting any ERROR-status row to throw on).
@@ -564,13 +566,13 @@ class InProcessEvaluationExecutorTest {
                     return null;
                 })
                 .when(resultBatchWriter)
-                .addResult(eq(buffer), any(TestCaseRunResult.class));
+                .addResults(eq(buffer), anyList());
 
         // Must complete normally (no rethrow).
         executor.execute(context);
 
         // input2's real result still attempted (even though synthesis failed)
-        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResult(eq(buffer), eq(result2));
+        verify(resultBatchWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(buffer), eq(List.of(result2)));
         verify(resultBatchWriter).flush(eq(buffer));
     }
 }

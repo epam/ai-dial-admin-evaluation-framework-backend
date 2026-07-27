@@ -20,6 +20,13 @@ public class TestCase {
     private UUID datasetId;
     private String testCaseName;
     private String data;
+
+    /**
+     * JSON array of turn-data maps for a multi-turn test case (stored as jsonb). Null for a single-turn
+     * case. Mutually exclusive with a populated {@code data} (multi-turn ⇒ {@code data = '{}'}).
+     */
+    private String multiTurnData;
+
     private boolean valid;
     /** JSON array of ValidationWarningDto; stored as jsonb in DB. */
     private String validationWarnings;

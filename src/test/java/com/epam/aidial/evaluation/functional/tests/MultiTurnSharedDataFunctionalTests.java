@@ -1,0 +1,180 @@
+package com.epam.aidial.evaluation.functional.tests;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
+import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
+import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
+/**
+ * Functional tests for coexisting shared (test-case-level) and per-turn data on a multi-turn case: a shared
+ * field is visible to the template on every turn (merged effective view), the suite {@code testCaseFilter}
+ * binds a shared field at row level, and misplacing a shared field inside a turn map is rejected with 400.
+ */
+@DisplayName("Multi-turn Shared-Data Functional Tests")
+public abstract class MultiTurnSharedDataFunctionalTests extends AbstractMultiTurnFunctionalTest {
+
+    /** {@code data::system eq <value>} as a raw StructuredQuery filter map. */
+    private static Map<String, Object> systemEquals(String value) {
+        return Map.of(
+                "op",
+                "eq",
+                "args",
+                List.of(
+                        Map.of("type", "field", "name", "data::system"),
+                        Map.of("type", "value", "value_type", "string", "value", value)));
+    }
+
+    private void stubDeployment() {
+        AtomicInteger call = new AtomicInteger();
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenAnswer(inv -> chatReply("reply-" + call.getAndIncrement()));
+    }
+
+    /**
+     * Chat suite whose dataset declares a per-turn {@code prompt} and a shared {@code system}; the template
+     * injects the shared {@code system} as a system message on every turn plus the per-turn {@code prompt}.
+     */
+    private TestSuiteResponseDto createSharedFieldSuite(String name, Map<String, Object> testCaseFilter) {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name + " " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(
+                        FieldDefinitionDto.builder()
+                                .name("prompt")
+                                .type(SchemaFieldType.STRING)
+                                .required(true)
+                                .perTurn(true)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("system")
+                                .type(SchemaFieldType.STRING)
+                                .required(false)
+                                .perTurn(false)
+                                .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of(
+                                        "messages",
+                                        List.of(
+                                                Map.of("role", "system", "content", "${{system}}"),
+                                                Map.of("role", "user", "content", "${{prompt}}"))))
+                                .build())
+                        .build())
+                .inputBindings(List.of(
+                        InputBindingDto.builder()
+                                .templateVariable("prompt")
+                                .dataField("prompt")
+                                .build(),
+                        InputBindingDto.builder()
+                                .templateVariable("system")
+                                .dataField("system")
+                                .build()))
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("answer")
+                        .expression("choices[0].message.content")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .testCaseFilter(testCaseFilter)
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    @Test
+    @DisplayName("A shared field is injected into every turn's request via the merged effective view")
+    void sharedFieldVisibleOnEveryTurn() {
+        TestSuiteResponseDto suite = createSharedFieldSuite("MT shared visible", null);
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createMultiTurnCase(
+                datasetId, "conv", Map.of("system", "SYSVAL"), List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1")));
+        stubDeployment();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(2);
+        assertThat(results).allSatisfy(r -> {
+            assertThat(String.valueOf(r.get("execution_status"))).isEqualTo("SUCCESS");
+            // The shared `system` value appears in every turn's request body (constant across turns).
+            assertThat(String.valueOf(r.get("request_body"))).contains("SYSVAL");
+        });
+    }
+
+    @Test
+    @DisplayName("A filter on a shared field selects at case level (row-level, constant across turns)")
+    void sharedFieldFilterSelectsAtCaseLevel() {
+        TestSuiteResponseDto suite = createSharedFieldSuite("MT shared filter", systemEquals("keep"));
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createMultiTurnCase(
+                datasetId,
+                "keep-me",
+                Map.of("system", "keep"),
+                List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1")));
+        createMultiTurnCase(datasetId, "drop-me", Map.of("system", "drop"), List.of(Map.of("prompt", "q0")));
+        stubDeployment();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        Map<String, Long> rows = analyticsTestDataHelper.findResultsByRunId(run.getId()).stream()
+                .collect(Collectors.groupingBy(r -> String.valueOf(r.get("test_case_name")), Collectors.counting()));
+        assertThat(rows).containsOnlyKeys("keep-me");
+        assertThat(rows.get("keep-me")).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("A shared field placed inside a turn map is rejected with 400")
+    void sharedFieldInTurnRejected() {
+        TestSuiteResponseDto suite = createSharedFieldSuite("MT shared placement", null);
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("bad-shared")
+                        .multiTurnData(List.of(Map.of("prompt", "q0", "system", "in-turn")))
+                        .build()),
+                String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+}

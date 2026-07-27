@@ -154,6 +154,54 @@ Status: **Planned**
 - **WHEN** client calls PATCH with body that modifies `data`
 - **THEN** system SHALL recalculate valid against the dataset's schema and include validationWarnings if `valid=false`
 
+### Requirement: multiTurnData authoring field
+The test-case request, response, and batch-put DTOs SHALL expose an optional `multiTurnData` (`List<Map<String,Object>>`); the model and `test_cases` table carry a nullable `multi_turn_data JSONB` column. The field is omitted (`@JsonInclude(NON_NULL)`) for single-turn cases. A test case MAY populate `data` **and** `multiTurnData` together: `data` carries the dataset's **shared** (`perTurn=false`) fields — test-case-level values constant across turns — while each `multiTurnData[i]` carries the **per-turn** (`perTurn=true`) fields. The two fields are NO LONGER mutually exclusive; there SHALL be no DB CHECK constraint or application 400 enforcing exclusivity. The multi-turn discriminator remains `multiTurnData != null` (independent of whether `data` is empty). A field placed in the wrong scope bucket — a per-turn field present in `data`, or a shared field present in any turn map — SHALL be rejected with HTTP 400 `VALIDATION_ERROR` at create/PUT/PATCH/batch (a structural placement error, distinct from content warnings).
+Status: **Planned**
+
+#### Scenario: Round-trip a multi-turn case
+- **WHEN** a test case is created with a `multiTurnData` array and read back
+- **THEN** the response includes `multiTurnData` with the same ordered turns and omits it for single-turn cases
+
+#### Scenario: Shared and per-turn data coexist
+- **WHEN** a case is created with `data` carrying the dataset's shared fields and a `multiTurnData` array carrying the per-turn fields
+- **THEN** the write SHALL succeed, both are persisted, and the case is treated as multi-turn (`multiTurnData != null`)
+
+#### Scenario: Misplaced field rejected
+- **WHEN** a write places a per-turn field inside `data`, or a shared field inside a turn map
+- **THEN** the request is rejected with HTTP 400 `VALIDATION_ERROR`
+
+### Requirement: Per-turn validation against the dataset schema
+Test-case validation SHALL be scope-aware. Shared fields SHALL be validated against the `data` map, and per-turn fields SHALL be validated against every element of `multiTurnData`, both using the dataset `test_case_schema`. A required shared field missing from `data`, or a required per-turn field missing from any turn, or a type mismatch in either bucket, SHALL be a content warning (not a 400) that sets `is_valid=false`. The case's `is_valid` is true iff no shared-field warning and every turn passes. Validation warnings aggregate across turns, each per-turn warning carrying the originating turn index. A multi-turn case whose per-turn maps are all empty (`{}`) SHALL be valid provided no required per-turn field is unmet — the turn count alone determines the number of turns run.
+Status: **Planned**
+
+#### Scenario: One invalid turn invalidates the case
+- **WHEN** any turn violates the schema for a per-turn field (missing required, type mismatch, unknown field)
+- **THEN** the case is stored with `is_valid=false` and warnings tagged with the offending turn index
+
+#### Scenario: Missing shared required field invalidates the case
+- **WHEN** the `data` map omits a required shared field
+- **THEN** the case is stored with `is_valid=false` and a warning against `data` (no turn index)
+
+#### Scenario: Empty per-turn maps are valid
+- **WHEN** a multi-turn case has all-shared schema fields and each `multiTurnData[i]` is `{}`, with all required shared fields present in `data`
+- **THEN** the case is valid and runs one test-case run per the turn count
+
+### Requirement: data and multiTurnData are independently PATCH-able
+Both `data` and `multiTurnData` SHALL be part of the merge-PATCH whitelist alongside `testCaseName`. Patching `data` SHALL update only the shared bucket, and patching `multiTurnData` SHALL update only the per-turn bucket; neither SHALL implicitly clear the other. Setting `multiTurnData: null` SHALL revert the case to single-turn. Placement and per-scope validation SHALL run after the merge (misplaced field → 400; content issues → invalidating warnings).
+Status: **Planned**
+
+#### Scenario: PATCH updates shared data without clearing turns
+- **WHEN** a multi-turn case is PATCHed with a `data` object updating a shared field
+- **THEN** the shared field is merged into `data`, `multiTurnData` is unchanged, and the case stays multi-turn
+
+#### Scenario: PATCH updates per-turn data without clearing shared
+- **WHEN** a multi-turn case is PATCHed with a `multiTurnData` array
+- **THEN** the turns are replaced and the existing shared `data` is unchanged
+
+#### Scenario: PATCH reverts to single-turn
+- **WHEN** a multi-turn case is PATCHed with `multiTurnData: null`
+- **THEN** the case becomes single-turn and its `data` is retained as the single-turn map
+
 ### Requirement: Unique testCaseName within Dataset
 The service SHALL enforce that `testCaseName` is unique within a Dataset (case-insensitive). `"TestA"` and `"testa"` are considered duplicates within the same dataset. Create, update (PUT/PATCH when changing name), and CSV import SHALL enforce uniqueness. CSV import `conflictStrategy` continues to govern collision behavior (FAIL/SKIP/OVERRIDE) for both cross-import collisions and within-CSV duplicates. The DB unique constraint is `(dataset_id, LOWER(test_case_name))`; upsert-based strategies leverage it directly.
 Status: **Planned**
@@ -202,7 +250,7 @@ Status: **Planned**
 #### Scenario: Export with FILE fields and materializeFiles=true (ZIP)
 - **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export?materializeFiles=true`
 - **AND** the dataset's `testCaseSchema` has one or more FILE type fields
-- **THEN** system SHALL return `Content-Type: application/zip` with `Content-Disposition: attachment; filename="test-cases-{datasetId}.zip"`; the ZIP SHALL contain `test-cases.csv` with FILE columns as relative paths and a `files/` directory with file bytes downloaded from DIAL storage; streamed (no full in-memory buffering)
+- **THEN** system SHALL return `Content-Type: application/zip` with `Content-Disposition: attachment; filename="test-cases-{datasetId}.zip"`; the ZIP SHALL contain `test-cases.csv` where FILE columns hold relative paths `files/{rowIndex}/{fieldName}/{filename}` (1-based CSV row index and schema field name, ensuring uniqueness) and a `files/` directory with the file bytes downloaded from DIAL storage; streamed (no full in-memory buffering)
 
 #### Scenario: Export with FILE fields and materializeFiles=false
 - **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export?materializeFiles=false`
@@ -225,74 +273,27 @@ Status: **Planned**
 - **WHEN** client sends `includeEnabled=true` (or any value) on the export URL
 - **THEN** system SHALL ignore the parameter (or reject it with HTTP 400 if strict-validation is enabled); no `enabled` column appears in the export under any setting
 
-<!-- Legacy export scenarios below remain as detailed reference for behavior preserved by the migration. URLs are now dataset-rooted. -->
-
-#### Scenario: Export without FILE fields (CSV, unchanged)
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export`
-- **AND** the suite's `testCaseSchema` has no FILE type fields
-- **THEN** system SHALL return `Content-Type: text/csv` with test case data as CSV
-
-#### Scenario: CSV columns reflect unified schema (legacy)
-- **WHEN** system exports CSV
-- **THEN** header SHALL be: `testCaseName`, then `testCaseSchema` fields in schema order; the legacy `includeEnabled` query parameter is no longer honored (see "includeEnabled query param is rejected or ignored" above)
-
-#### Scenario: Export with custom delimiter
-- **WHEN** client calls `GET .../export.csv?delimiter=;`
-- **THEN** system SHALL use semicolon as delimiter
-
-#### Scenario: Export with FILE fields and materializeFiles=true (ZIP)
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export?materializeFiles=true`
-- **AND** the suite's `testCaseSchema` has one or more FILE type fields
-- **THEN** system SHALL return `Content-Type: application/zip` with `Content-Disposition: attachment; filename="test-cases-{suiteId}.zip"`
-- **AND** the ZIP SHALL contain:
-  - `test-cases.csv` — CSV file where FILE columns contain relative paths (e.g., `files/{rowIndex}/{fieldName}/{filename}`) where `rowIndex` is the 1-based CSV row number and `fieldName` is the schema field name, ensuring uniqueness
-  - `files/` directory — containing the actual file bytes downloaded from DIAL storage, organized by row index and field name
-- **AND** the ZIP SHALL be streamed directly to the response (no full in-memory buffering)
-
-#### Scenario: Export with FILE fields and materializeFiles=false (CSV with DIAL URLs)
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export?materializeFiles=false`
-- **AND** the suite's `testCaseSchema` has one or more FILE type fields
-- **THEN** system SHALL return `Content-Type: text/csv` with test case data as CSV
-- **AND** FILE columns SHALL contain the raw DIAL file paths (e.g., `files/@ef/suites/{suiteId}/data.csv`)
-
-#### Scenario: Export with FILE fields default materializeFiles
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export` without specifying `materializeFiles`
-- **AND** the suite's `testCaseSchema` has one or more FILE type fields
-- **THEN** system SHALL default `materializeFiles` to `true` and produce a ZIP
-
 #### Scenario: Export with FILE field but null value
 - **WHEN** a test case has a FILE field with null value (no file attached)
 - **THEN** the CSV column for that field SHALL be empty; no file entry in the ZIP for that test case's field
 
-#### Scenario: Export ARRAY values as JSON
-- **WHEN** system exports test cases with ARRAY-type fields to CSV
-- **AND** a test case has an ARRAY field with value `["item1", "item2"]`
-- **THEN** the CSV cell SHALL contain the valid JSON string `["item1","item2"]`
-- **AND** reimporting this CSV SHALL preserve the value as a JSON array (not a string)
-
-#### Scenario: Export OBJECT values as JSON
-- **WHEN** system exports test cases with OBJECT-type fields to CSV
-- **AND** a test case has an OBJECT field with value `{"key": "value"}`
-- **THEN** the CSV cell SHALL contain the valid JSON string `{"key":"value"}`
-- **AND** reimporting this CSV SHALL preserve the value as a JSON object (not a string)
-
 #### Scenario: Export null ARRAY/OBJECT values
 - **WHEN** system exports a test case where an ARRAY or OBJECT field has a null value
-- **THEN** the CSV cell SHALL be empty (same as current behavior for null values)
+- **THEN** the CSV cell SHALL be empty
 
 #### Scenario: Export primitive values unchanged
 - **WHEN** system exports test cases with STRING, INTEGER, NUMBER, or BOOLEAN fields
-- **THEN** the CSV cell values SHALL use their natural string representation (unchanged from current behavior)
+- **THEN** the CSV cell values SHALL use their natural string representation
 
 ### Requirement: CSV bulk upload with schema detection
-The service SHALL allow bulk uploading TestCases via CSV under the dataset endpoint `POST /api/v1/datasets/{datasetId}/test-cases/import`. All columns map to the unified `data` map. Column names match the dataset's `testCaseSchema` field names. Schema auto-detection, persistence, and replacement behavior depend on the `importMode` parameter. In OVERRIDE mode, schema is always replaced on the dataset from CSV. In APPEND mode, schema is only auto-detected when the dataset schema is empty. In MERGE mode, new CSV columns are merged into the existing dataset schema. The reserved CSV column is `testCaseName` only; the previously-recognized `enabled` column is no longer parsed (TestCase has no `enabled` field).
+The service SHALL allow bulk uploading TestCases via CSV under the dataset endpoint `POST /api/v1/datasets/{datasetId}/test-cases/import`. All columns map to the unified `data` map. Column names match the dataset's `testCaseSchema` field names. Schema auto-detection, persistence, and replacement behavior depend on the `importMode` parameter. In OVERRIDE mode, schema is always replaced on the dataset from CSV. In APPEND mode, schema is only auto-detected when the dataset schema is empty. In MERGE mode, new CSV columns are merged into the existing dataset schema. The reserved CSV columns are `testCaseName` and `turnIndex` (both excluded from `data` and from schema auto-detection); `turnIndex` groups and orders the turns of a multi-turn case (see the `multi-turn-test-case` spec). The previously-recognized `enabled` column is no longer parsed (TestCase has no `enabled` field).
 
 Cell values for ARRAY- and OBJECT-typed fields SHALL be stored as structured JSON values (not strings) when the schema specifies those types; when there is no schema or the field has no schema type, valid JSON arrays/objects SHALL be parsed and stored structurally. `CsvCellParser` SHALL NOT treat `"1"` and `"0"` as boolean literals; only `"true"`/`"false"` (case-insensitive). Integer parsing SHALL use `Long.parseLong()`. Inline coercion SHALL match the schema type when known; post-persist fixup SHALL run after schema auto-detection / merge / OVERRIDE replacement.
 Status: **Planned**
 
 #### Scenario: Import maps all columns to data
 - **WHEN** CSV header has column names matching `testCaseSchema` fields
-- **THEN** system SHALL map all non-testCaseName columns to `data` (the `enabled` column header is no longer reserved and is treated like any other data column — falling under the schema rules of the chosen importMode)
+- **THEN** system SHALL map all columns except the reserved `testCaseName` and `turnIndex` to `data` (the `enabled` column header is no longer reserved and is treated like any other data column — falling under the schema rules of the chosen importMode)
 
 #### Scenario: Header `enabled` is no longer reserved
 - **WHEN** CSV contains a column named `enabled`
@@ -300,7 +301,7 @@ Status: **Planned**
 
 #### Scenario: Auto-detect schema from CSV (no existing schema)
 - **WHEN** the dataset's `testCaseSchema` is empty and CSV is imported (any mode)
-- **THEN** system SHALL auto-detect field definitions from CSV columns: all headers except `testCaseName` become `FieldDefinitionDto` entries with `required: false`; schema field order follows CSV column order
+- **THEN** system SHALL auto-detect field definitions from CSV columns: all headers except the reserved `testCaseName` and `turnIndex` become `FieldDefinitionDto` entries with `required: false` and `description: null`; schema field order follows CSV column order (left to right)
 
 #### Scenario: Auto-detected schema is persisted on the dataset
 - **WHEN** CSV import commits and schema auto-detection or merge occurs
@@ -322,24 +323,14 @@ Status: **Planned**
 - **WHEN** a CSV cell value is in a column declared as `FILE` in the dataset schema and the parsed value is not already a String
 - **THEN** system SHALL coerce the value to String via `String.valueOf(value)`
 
-<!-- Legacy scenarios below remain as reference for CSV import behaviors preserved verbatim by the migration. URLs are now dataset-rooted. -->
-
 #### Scenario: Column name not in schema is discarded (APPEND mode only)
 - **WHEN** client imports with `importMode=APPEND`, the dataset `testCaseSchema` is non-empty, and a CSV column name does not match any schema field
 - **THEN** system SHALL discard that column's values and NOT store them in `data`; no validation warning is added for the unknown column itself
 - **Note:** This filtering applies only to `APPEND` mode with a non-empty dataset schema. In `OVERRIDE` mode all CSV data columns are stored (schema is replaced). In `MERGE` mode all CSV data columns are stored (all columns end up in the merged schema — either existing or newly added).
 
-#### Scenario: Auto-detect schema from CSV (legacy reservation note)
-- **WHEN** the dataset's `testCaseSchema` is empty and CSV is imported (any mode)
-- **THEN** system SHALL auto-detect field definitions from CSV columns: all headers except the single reserved name `testCaseName` become `FieldDefinitionDto` entries with `required: false` and `description: null`; schema field order follows CSV column order (left to right)
-
 #### Scenario: Auto-detect type inference
 - **WHEN** system auto-detects schema from CSV
 - **THEN** system SHALL scan all row values per column and infer type: all non-empty values parse as JSON objects → OBJECT; JSON arrays → ARRAY; literal `true`/`false` (case-insensitive, NOT `1`/`0`) → BOOLEAN; whole numbers (including `1`/`0`) → INTEGER; decimal numbers → NUMBER; otherwise → STRING
-
-#### Scenario: Auto-detected schema is persisted
-- **WHEN** CSV import commits and schema auto-detection or merge occurs
-- **THEN** system SHALL persist the new or merged schema to the TestSuite's `testCaseSchema` and bump `version`; no `inputBindings` are auto-created
 
 #### Scenario: Auto-detected schema in preview
 - **WHEN** client calls the CSV import preview endpoint and `testCaseSchema` would be auto-detected or schema would be replaced/merged

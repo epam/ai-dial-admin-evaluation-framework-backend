@@ -187,6 +187,13 @@ Each TSMD SHALL store `configBindings` and `inputBindings` as JSONB arrays. Each
 - **WHEN** a TSMD is created with a binding `{"property": "model", "source": {"$type": "Constant", "value": null}}`
 - **THEN** system SHALL accept the request (HTTP 201) and persist the null constant value
 
+### Requirement: condition field on a Test Suite Metric Definition
+A Test Suite Metric Definition SHALL carry an optional `condition` string (max 2000 chars), persisted in a new nullable `test_suite_metric_definitions.condition VARCHAR(2000)` column and exposed on the request and response DTOs. Null/blank means the metric always runs. Runtime semantics are specified in the `conditional-metric-execution` spec; write-time syntax validation is specified in `tsmd-validation`.
+
+#### Scenario: Condition round-trips through the API
+- **WHEN** a metric definition is created with a `condition` and read back
+- **THEN** the response includes the same `condition` string; single-turn/unconditional definitions omit or return null
+
 ### Requirement: TSMD response DTO shape
 The TSMD response SHALL include: `id` (UUID), `testSuiteId` (UUID), `metricDeclarationId` (UUID), `metricDeclarationVersionId` (UUID), `name` (String), `metricDeclarationName` (String — the human-readable name of the referenced metric declaration), `configBindings` (list of binding objects), `inputBindings` (list of binding objects), `enabled` (boolean), `valid` (boolean), `validationWarnings` (list of `ValidationWarningDto`, always present, empty array when valid), `createdAt` (epoch ms), `updatedAt` (epoch ms). The `configBindings` and `inputBindings` fields SHALL be serialized as JSON arrays (not as raw JSON strings).
 

@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Field;
 import org.jooq.JSONB;
@@ -43,18 +44,41 @@ public class TestCaseFieldBindingsBuilder {
         return build(datasetSchemaProvider.getSchema(datasetId));
     }
 
-    /** Builds bindings from an already-resolved test-case schema. */
+    /** Builds bindings from an already-resolved test-case schema against {@code TEST_CASES.DATA}. */
     public Map<String, QueryFieldBinding> build(List<FieldDefinitionDto> schema) {
+        return buildInternal(schema, field -> TEST_CASES.DATA);
+    }
+
+    /**
+     * Scope-aware bindings for run selection: each field's flattened {@code data::<field>} path points at
+     * {@code perTurnSource} (the per-turn element {@code elem} inside the ALL-turns-match lateral) when the
+     * field is per-turn ({@code perTurn=true}), and at {@code TEST_CASES.DATA} (the outer row, constant
+     * across turns) when the field is shared. Base {@code TEST_CASES} columns remain correlated to the outer
+     * row. See {@code QueryDslRunnableTestCaseSelector}.
+     */
+    public Map<String, QueryFieldBinding> buildScoped(UUID datasetId, Field<JSONB> perTurnSource) {
+        return buildScoped(datasetSchemaProvider.getSchema(datasetId), perTurnSource);
+    }
+
+    private Map<String, QueryFieldBinding> buildScoped(List<FieldDefinitionDto> schema, Field<JSONB> perTurnSource) {
+        return buildInternal(
+                schema, field -> Boolean.TRUE.equals(field.getPerTurn()) ? perTurnSource : TEST_CASES.DATA);
+    }
+
+    private Map<String, QueryFieldBinding> buildInternal(
+            List<FieldDefinitionDto> schema, FieldSourceProvider fieldSourceProvider) {
         final Map<String, QueryFieldBinding> bindings = new LinkedHashMap<>(schemaResolver.bindings(TEST_CASES));
-        final Field<JSONB> dataColumn = TEST_CASES.DATA;
         for (final FieldDefinitionDto field : schema) {
+            final Field<JSONB> source = fieldSourceProvider.apply(field);
             final String name = DATA_COLUMN_PREFIX + field.getName();
             final QueryFieldType type = schemaFieldTypeMapper.map(field.getType());
             final Field<?> path = type.isJsonb()
-                    ? jsonPathAccessor.jsonbAt(dataColumn, DSL.val(field.getName()))
-                    : jsonPathAccessor.jsonbAtAsText(dataColumn, DSL.val(field.getName()));
+                    ? jsonPathAccessor.jsonbAt(source, DSL.val(field.getName()))
+                    : jsonPathAccessor.jsonbAtAsText(source, DSL.val(field.getName()));
             bindings.put(name, new QueryFieldBinding(name, path, type));
         }
         return Collections.unmodifiableMap(bindings);
     }
+
+    private interface FieldSourceProvider extends Function<FieldDefinitionDto, Field<JSONB>> {}
 }

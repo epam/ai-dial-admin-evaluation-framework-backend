@@ -42,6 +42,27 @@ class MetricOutputMapperTest {
     }
 
     @Test
+    @DisplayName("ConditionError is omitted from metricValues and surfaced wholesale in metricInfos")
+    void shouldMapConditionError() {
+        Map<String, TsmdEvaluationResult> tsmdResults = Map.of(
+                "Toxicity",
+                new TsmdEvaluationResult.ConditionError("Condition did not evaluate to a boolean", List.of("score")));
+
+        ObjectNode values = mapper.buildMetricValues(tsmdResults);
+        ObjectNode infos = mapper.buildMetricInfos(tsmdResults);
+
+        assertThat(values.has("Toxicity"))
+                .as("no metricValues entry for a condition error")
+                .isFalse();
+        assertThat(infos).isNotNull();
+        assertThat(infos.path("Toxicity").path("error").asString())
+                .isEqualTo("Condition did not evaluate to a boolean");
+        assertThat(infos.path("Toxicity").has("score"))
+                .as("wholesale metric-level error, not per-field")
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("Should map value output with details")
     void shouldMapValueWithDetails() {
         Map<String, Object> details = Map.of("reason", "matches exactly");

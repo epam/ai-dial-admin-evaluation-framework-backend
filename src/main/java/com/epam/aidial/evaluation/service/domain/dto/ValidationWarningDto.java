@@ -26,4 +26,10 @@ public class ValidationWarningDto {
 
     @Schema(description = "Stable code for FE display or i18n")
     private ValidationWarningCode code;
+
+    @Schema(
+            description = "0-based index of the multi-turn turn this warning originates from; "
+                    + "null for single-turn cases",
+            example = "1")
+    private Integer turnIndex;
 }

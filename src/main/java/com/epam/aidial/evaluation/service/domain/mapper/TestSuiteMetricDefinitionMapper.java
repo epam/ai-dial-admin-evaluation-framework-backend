@@ -40,6 +40,7 @@ public class TestSuiteMetricDefinitionMapper {
                 .name(entity.getName())
                 .metricDeclarationName(entity.getMetricDeclarationName())
                 .enabled(entity.isEnabled())
+                .condition(entity.getCondition())
                 .valid(entity.isValid())
                 .validationWarnings(warnings)
                 .configBindings(configBindings)
@@ -59,6 +60,7 @@ public class TestSuiteMetricDefinitionMapper {
                 .metricDeclarationVersionId(dto.getMetricDeclarationVersionId())
                 .name(dto.getName())
                 .enabled(dto.isEnabled())
+                .condition(dto.getCondition())
                 .configBindings(jsonbMapper.mapMetricBindings(dto.getConfigBindings()))
                 .inputBindings(jsonbMapper.mapMetricBindings(dto.getInputBindings()))
                 .build();
@@ -114,6 +116,7 @@ public class TestSuiteMetricDefinitionMapper {
         entity.setMetricDeclarationId(dto.getMetricDeclarationId());
         entity.setMetricDeclarationVersionId(dto.getMetricDeclarationVersionId());
         entity.setEnabled(dto.isEnabled());
+        entity.setCondition(dto.getCondition());
         entity.setConfigBindings(jsonbMapper.mapMetricBindings(dto.getConfigBindings()));
         entity.setInputBindings(jsonbMapper.mapMetricBindings(dto.getInputBindings()));
     }

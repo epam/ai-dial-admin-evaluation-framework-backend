@@ -24,6 +24,7 @@ public class TestCaseMapper {
                 .id(entity.getId())
                 .testCaseName(entity.getTestCaseName())
                 .data(warningsSerializer.deserializeMap(entity.getData()))
+                .multiTurnData(warningsSerializer.deserializeTurns(entity.getMultiTurnData()))
                 .valid(entity.isValid())
                 .validationWarnings(
                         includeWarnings ? warningsSerializer.deserializeWarnings(entity.getValidationWarnings()) : null)
@@ -36,10 +37,14 @@ public class TestCaseMapper {
         if (dto == null) {
             return null;
         }
+        // data and multiTurnData are carried through verbatim; mutual exclusivity (both non-empty together)
+        // is enforced as a 400 by MultiTurnFieldsValidator, not silently resolved here. A legit multi-turn
+        // create omits data (defaults to an empty map → "{}"), satisfying the DB CHECK.
         return TestCase.builder()
                 .datasetId(datasetId)
                 .testCaseName(dto.getTestCaseName())
                 .data(warningsSerializer.serializeMap(dto.getData()))
+                .multiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()))
                 .valid(false)
                 .validationWarnings("[]")
                 .build();
@@ -51,6 +56,7 @@ public class TestCaseMapper {
         }
         entity.setTestCaseName(dto.getTestCaseName());
         entity.setData(warningsSerializer.serializeMap(dto.getData()));
+        entity.setMultiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()));
     }
 
     public void updateEntity(TestCase entity, TestCaseBatchPutItemDto dto) {
@@ -59,5 +65,6 @@ public class TestCaseMapper {
         }
         entity.setTestCaseName(dto.getTestCaseName());
         entity.setData(warningsSerializer.serializeMap(dto.getData()));
+        entity.setMultiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()));
     }
 }

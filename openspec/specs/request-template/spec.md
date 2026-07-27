@@ -194,7 +194,7 @@ Each `InputBindingDto` SHALL have: `templateVariable` (String, required, non-bla
 - **THEN** system SHALL respond with HTTP 400
 
 #### Scenario: Duplicate templateVariable in bindings
-- **WHEN** client sends `inputBindings` (or `inputBindingsOverride`) with two or more entries having the same `templateVariable` value
+- **WHEN** client sends `inputBindings` with two or more entries having the same `templateVariable` value
 - **THEN** system SHALL respond with HTTP 400
 
 ### Requirement: Soft validation of template and bindings
@@ -293,40 +293,6 @@ For template variables with `${{var:default}}` syntax, the default value is the 
 #### Scenario: Bound field with no data value and no default
 - **WHEN** binding maps `prompt` to `dataField: "user_prompt"`, template has `"${{prompt}}"` (no default), and `data.user_prompt` is null/missing
 - **THEN** system SHALL record a validation warning: "Required field 'user_prompt' has no value in data"
-
-### Requirement: Per-test-case request template override
-The service SHALL allow each TestCase to optionally override the suite's `requestTemplate` with a `requestTemplateOverride` (nullable `RequestTemplateDto`). When present, it fully replaces the suite template for that test case.
-
-#### Scenario: Test case with template override
-- **WHEN** client creates a TestCase with `requestTemplateOverride` as a valid `RequestTemplateDto`
-- **THEN** system SHALL persist the override and use it instead of the suite template for that test case
-
-#### Scenario: Test case without template override
-- **WHEN** client creates a TestCase without `requestTemplateOverride` or with `requestTemplateOverride: null`
-- **THEN** system SHALL use the suite's `requestTemplate` for that test case
-
-#### Scenario: Override template validation
-- **WHEN** a TestCase has `requestTemplateOverride`
-- **THEN** system SHALL extract template variables from the override and validate against effective bindings
-
-### Requirement: Per-test-case input bindings override
-The service SHALL allow each TestCase to optionally override the suite's `inputBindings` with `inputBindingsOverride` (nullable list of `InputBindingDto`). When present, it fully replaces (not merges with) the suite bindings for that test case.
-
-#### Scenario: Test case with bindings override
-- **WHEN** client creates a TestCase with `inputBindingsOverride` as a list of bindings
-- **THEN** system SHALL persist the override and use it instead of suite bindings for that test case
-
-#### Scenario: Test case without bindings override
-- **WHEN** client creates a TestCase without `inputBindingsOverride` or with `inputBindingsOverride: null`
-- **THEN** system SHALL use the suite's `inputBindings` for that test case
-
-#### Scenario: Override bindings must have valid structure
-- **WHEN** an override binding violates the `InputBindingDto` structure constraints (e.g., both dataField and constantValue set)
-- **THEN** system SHALL respond with HTTP 400
-
-#### Scenario: Override binding references unknown data field
-- **WHEN** an override binding's `dataField` does not match any field in `testCaseSchema`
-- **THEN** system SHALL add a validation warning
 
 ### Requirement: Template variable extraction convenience API
 The service SHALL provide `GET /api/v1/test-suites/{id}/template-variables` to return all extracted template variables with metadata.
@@ -509,8 +475,8 @@ The `ResolvedRequestService` provides two reuse paths for `TryItOutService` (bot
 #### Scenario: Resolution flow
 - **WHEN** assembling a request for a test case
 - **THEN** the runner SHALL:
-  1. Determine effective template: `testCase.requestTemplateOverride ?? suite.requestTemplate`
-  2. Determine effective bindings: `testCase.inputBindingsOverride ?? suite.inputBindings`
+  1. Use the suite's `requestTemplate` (per-test-case overrides were removed when test cases moved to datasets)
+  2. Use the suite's `inputBindings`
   3. Extract all placeholders (`${{var}}`, `${{var:default}}`, `${{var|type}}`, `${{var|type:default}}`) from effective template
   4. For each placeholder, strip any `|type` hint to obtain the bare variable name, then find binding where `templateVariable == varName`
   5. If binding found with `constantValue` → use constant
@@ -523,13 +489,9 @@ The `ResolvedRequestService` provides two reuse paths for `TryItOutService` (bot
   12. **Body resolution is content-type-aware**: for `application/json`, resolve the `content` Map recursively (current behavior). For `multipart/form-data`, resolve each `FormPartDto.value` and `FormPartDto.filename`. For `application/x-www-form-urlencoded`, resolve each `KeyValueTemplateDto.value` placeholder and stringify all resolved values.
   13. Return `ResolvedRequestDto` with the body as the corresponding `ResolvedBodyDto` variant
 
-#### Scenario: Assembly with suite defaults
-- **WHEN** a test case has no overrides
-- **THEN** the runner SHALL use `suite.requestTemplate` + `suite.inputBindings`
-
-#### Scenario: Assembly with per-case overrides
-- **WHEN** a test case has `requestTemplateOverride` and/or `inputBindingsOverride`
-- **THEN** the runner SHALL use the overrides in place of suite defaults
+#### Scenario: Assembly uses suite template and bindings
+- **WHEN** assembling a request for any test case
+- **THEN** the runner SHALL use `suite.requestTemplate` + `suite.inputBindings` (per-test-case overrides no longer exist)
 
 #### Scenario: Full-value placeholder resolution (type-preserving)
 - **WHEN** a template string value consists of exactly one `${{var}}` or `${{var:default}}` placeholder with no surrounding text (e.g. `"temperature": "${{temp:0.7}}"`)
@@ -579,7 +541,7 @@ The `ResolvedRequestService` provides two reuse paths for `TryItOutService` (bot
 - **AND** the `@Transactional(readOnly=true)` scope SHALL be confined to that call, releasing the DB connection before the DIAL Core invocation
 
 ### Requirement: Maximum template size
-The service SHALL enforce a **configurable maximum size** (in bytes) for the serialized request template (URL + query params + headers + body). The limit applies to both `requestTemplate` on a TestSuite and `requestTemplateOverride` on a TestCase. The default limit SHALL be **64KB**. When the serialized template exceeds the limit, the service SHALL reject the request with HTTP 400.
+The service SHALL enforce a **configurable maximum size** (in bytes) for the serialized `requestTemplate` (URL + query params + headers + body) on a TestSuite. The default limit SHALL be **64KB**. When the serialized template exceeds the limit, the service SHALL reject the request with HTTP 400.
 
 #### Scenario: Template within limit
 - **WHEN** client sends a `requestTemplate` whose serialized size is within the configured limit
@@ -590,14 +552,14 @@ The service SHALL enforce a **configurable maximum size** (in bytes) for the ser
 - **THEN** system SHALL respond with HTTP 400
 
 ### Requirement: Maximum input bindings count
-The service SHALL enforce a **configurable maximum count** for `inputBindings` on a TestSuite and for `inputBindingsOverride` on a TestCase. The default limit SHALL be **64**. When the count exceeds the limit, the service SHALL reject the request with HTTP 400.
+The service SHALL enforce a **configurable maximum count** for `inputBindings` on a TestSuite. The default limit SHALL be **64**. When the count exceeds the limit, the service SHALL reject the request with HTTP 400.
 
 #### Scenario: Bindings within limit
-- **WHEN** client sends `inputBindings` (or `inputBindingsOverride`) with count within the configured limit
+- **WHEN** client sends `inputBindings` with count within the configured limit
 - **THEN** system SHALL accept and persist the bindings
 
 #### Scenario: Bindings exceed limit
-- **WHEN** client sends `inputBindings` (or `inputBindingsOverride`) with count exceeding the configured limit
+- **WHEN** client sends `inputBindings` with count exceeding the configured limit
 - **THEN** system SHALL respond with HTTP 400
 
 ### Requirement: Resolved request preview for TestCase
@@ -611,9 +573,9 @@ The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{tes
 - **WHEN** system returns the resolved request
 - **THEN** the `ResolvedRequestDto` SHALL include: `url` (String — resolved URL path after placeholder substitution), `queryParams` (List of key-value pairs — resolved query parameters), `headers` (List of key-value pairs — resolved headers), `body` (`ResolvedBodyDto`, nullable — polymorphic resolved request body matching the template's content type), `warnings` (List of validation warning objects — unresolved placeholders, missing data, URL pattern mismatch, etc.)
 
-#### Scenario: Resolved request uses effective template and bindings
-- **WHEN** the test case has `requestTemplateOverride` and/or `inputBindingsOverride`
-- **THEN** system SHALL use those overrides to compute the resolved request (same resolution rules as assembly)
+#### Scenario: Resolved request uses suite template and bindings
+- **WHEN** computing the resolved request for a test case
+- **THEN** system SHALL use the suite's `requestTemplate` + `inputBindings` with the test case `data` (same resolution rules as assembly; per-test-case overrides no longer exist)
 
 #### Scenario: Missing bindings or data produce warnings in response
 - **WHEN** resolution encounters required variables with no binding or missing data

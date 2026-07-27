@@ -86,12 +86,13 @@ class CsvImportServiceSchemaTest {
                 csvCellParser,
                 schemaTypeCoercer,
                 objectMapper,
-                warningsSerializer);
+                warningsSerializer,
+                new TestCaseFieldScopeResolver());
         datasetId = UUID.randomUUID();
 
         when(csvImportProperties.getMaxFileSize()).thenReturn(DataSize.ofMegabytes(10));
         when(csvImportProperties.getMaxRows()).thenReturn(10000);
-        when(csvImportProperties.getBatchSize()).thenReturn(100);
+        lenient().when(csvImportProperties.getBatchSize()).thenReturn(100);
         when(testCaseValidationService.validateTestCase(any(), any(), any(), any(), anyBoolean(), any()))
                 .thenReturn(ValidationResult.builder()
                         .valid(true)

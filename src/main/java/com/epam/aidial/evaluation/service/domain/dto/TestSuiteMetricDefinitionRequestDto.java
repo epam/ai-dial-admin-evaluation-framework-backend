@@ -61,4 +61,11 @@ public class TestSuiteMetricDefinitionRequestDto {
     @Valid
     @Schema(description = "Bindings for metric input schema properties")
     private List<MetricParameterBindingDto> inputBindings;
+
+    @Size(max = 2000, message = "condition must be less than 2000 characters")
+    @Schema(
+            description = "Optional JSONata expression gating whether this metric runs per result row (per "
+                    + "turn), evaluated over {data, response, turn}. Null/blank means the metric always runs.",
+            example = "turn.last")
+    private String condition;
 }

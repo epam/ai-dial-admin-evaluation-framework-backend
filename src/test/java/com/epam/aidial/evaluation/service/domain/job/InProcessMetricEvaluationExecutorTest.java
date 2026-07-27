@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +17,8 @@ import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.service.domain.ConditionDecision;
+import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import java.math.BigDecimal;
@@ -26,6 +30,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -64,8 +69,16 @@ class InProcessMetricEvaluationExecutorTest {
     @Mock
     private OutputSchemaFieldExtractor outputSchemaFieldExtractor;
 
+    @Mock
+    private ConditionExpressionEvaluator conditionExpressionEvaluator;
+
     @InjectMocks
     private InProcessMetricEvaluationExecutor executor;
+
+    @BeforeEach
+    void stubConditions() {
+        lenient().when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.run());
+    }
 
     @Test
     @DisplayName("All TSMDs complete within perResultTimeoutMs — EvalSummary assembled from actual responses")
@@ -187,6 +200,98 @@ class InProcessMetricEvaluationExecutorTest {
         List<EvalSummaryBatchWriteItemDto> items = captor.getValue();
         assertThat(items).hasSize(1);
         assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("Condition false → metric not dispatched, result stays SUCCESS")
+    void conditionFalse_metricNotDispatched_resultSuccess() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .condition("turn.last")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L);
+
+        TestCaseRunResult result = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        ObjectNode emptyValues = objectMapper.createObjectNode();
+        when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.skip());
+        when(outputMapper.buildMetricValues(any())).thenReturn(emptyValues);
+        when(outputMapper.buildMetricInfos(any())).thenReturn(null);
+
+        executor.execute(context);
+
+        verify(worker, never()).evaluate(any(), any(), any(Semaphore.class), any());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());
+        assertThat(captor.getValue().get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+    }
+
+    @Test
+    @DisplayName("Condition error → metric not dispatched, result stays SUCCESS")
+    void conditionError_metricNotDispatched_resultSuccess() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .condition("response.score")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L);
+
+        TestCaseRunResult result = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        ObjectNode emptyValues = objectMapper.createObjectNode();
+        ObjectNode infos = objectMapper.createObjectNode();
+        when(conditionExpressionEvaluator.evaluate(any(), any()))
+                .thenReturn(ConditionDecision.error("Condition did not evaluate to a boolean"));
+        when(outputMapper.buildMetricValues(any())).thenReturn(emptyValues);
+        when(outputMapper.buildMetricInfos(any())).thenReturn(infos);
+
+        executor.execute(context);
+
+        verify(worker, never()).evaluate(any(), any(), any(Semaphore.class), any());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());
+        assertThat(captor.getValue().get(0).getExecutionStatus())
+                .as("a broken condition must not fail the result row")
+                .isEqualTo(ExecutionStatus.SUCCESS);
     }
 
     private MetricEvaluationContext buildContext(

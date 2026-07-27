@@ -21,6 +21,9 @@ public class TestCaseProperties {
     @Valid
     private Bulk bulk = new Bulk();
 
+    @Valid
+    private MultiTurn multiTurn = new MultiTurn();
+
     @Getter
     @Setter
     public static class Batch {
@@ -44,5 +47,14 @@ public class TestCaseProperties {
 
         @Min(1)
         private int maxDeleteIds;
+    }
+
+    @Getter
+    @Setter
+    public static class MultiTurn {
+
+        /** Maximum number of turns a multi-turn test case may carry; over-cap cases are invalidated. */
+        @Min(1)
+        private int maxTurns;
     }
 }

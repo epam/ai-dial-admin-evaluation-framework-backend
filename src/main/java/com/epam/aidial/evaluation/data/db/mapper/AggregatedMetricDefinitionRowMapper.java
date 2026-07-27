@@ -26,6 +26,7 @@ public class AggregatedMetricDefinitionRowMapper implements RowMapper<Aggregated
                 .configBindings(rs.getString("config_bindings"))
                 .inputBindings(rs.getString("input_bindings"))
                 .enabled(rs.getBoolean("is_enabled"))
+                .condition(rs.getString("condition"))
                 .valid(rs.getBoolean("is_valid"))
                 .validationWarnings(rs.getString("validation_warnings"))
                 .createdAt(rs.getLong("created_at_ms"))

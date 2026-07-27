@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto.analytics;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -31,6 +32,19 @@ public class TestCaseRunResultItemDto {
     @Min(value = 0, message = "runIndex must be >= 0")
     @Max(value = 99999, message = "runIndex must be <= 99999")
     private Integer runIndex;
+
+    @Schema(
+            description = "0-based turn position within a multi-turn test case; defaults to 0 (single-turn) "
+                    + "when omitted.",
+            example = "0")
+    @Min(value = 0, message = "turnIndex must be >= 0")
+    private Integer turnIndex;
+
+    @Schema(
+            description = "Planned turn count of the test case; defaults to 1 (single-turn) when omitted.",
+            example = "1")
+    @Min(value = 1, message = "totalTurns must be >= 1")
+    private Integer totalTurns;
 
     @NotNull(message = "testCaseData is required")
     private JsonNode testCaseData;

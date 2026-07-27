@@ -520,6 +520,7 @@ The following limits are enforced via Bean Validation (`@Size`) in DTOs and cont
 | `test-case.bulk.max-ids-per-selector` | `TEST_CASE_BULK_MAX_IDS_PER_SELECTOR` | `10000` | No | - | Maximum `selector.ids.length` per bulk operation. Also enforced as the upper bound on the id-set materialised from a `filter` selector. |
 | `test-case.bulk.max-item-operations` | `TEST_CASE_BULK_MAX_ITEM_OPERATIONS` | `500` | No | - | Maximum number of heterogeneous per-row operations (`itemOperations`) accepted per `PATCH /test-cases:bulk` request. |
 | `test-case.bulk.max-delete-ids` | `TEST_CASE_BULK_MAX_DELETE_IDS` | `10000` | No | - | Maximum number of IDs accepted in a single bulk-delete-by-IDs request (`DELETE /test-cases:bulk`). |
+| `test-case.multi-turn.max-turns` | `TEST_CASE_MULTI_TURN_MAX_TURNS` | `10` | No | - | Maximum number of turns a multi-turn test case (`multiTurnData`) may carry. A case exceeding this cap is persisted but marked `is_valid=false` with an invalidating warning (not rejected), so it is excluded from runnable selection. |
 
 ---
 

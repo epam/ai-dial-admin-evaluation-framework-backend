@@ -6,8 +6,8 @@ This spec defines the suite snapshot mechanism: freezing suite configuration and
 Status: **Implemented**
 
 ## Key Terms
-- **SuiteSnapshotDto**: Versioned DTO capturing all execution-relevant suite fields at snapshot time. Fields: `snapshotVersion` (default `"1"`), `suiteType`, and type-specific fields (DEPLOYMENT: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`; MCP_TOOL: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`). Annotated with `@JsonIgnoreProperties(ignoreUnknown = true)` for forward compatibility.
-- **SuiteSnapshotBuilder**: `@Component` in `service.domain` that builds `SuiteSnapshotDto` from a `TestSuite` model via `JsonbMapper`. Always sets `snapshotVersion = "1"`.
+- **SuiteSnapshotDto**: Versioned DTO capturing all execution-relevant suite fields at snapshot time. Fields: `snapshotVersion` (default `CURRENT_VERSION` = `"2"`), `suiteType`, and type-specific fields (DEPLOYMENT: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`; MCP_TOOL: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`). Annotated with `@JsonIgnoreProperties(ignoreUnknown = true)` for forward compatibility.
+- **SuiteSnapshotBuilder**: `@Component` in `service.domain` that builds `SuiteSnapshotDto` from a `TestSuite` model via `JsonbMapper`. Always stamps `snapshotVersion = "2"` (`CURRENT_VERSION`).
 - **test_case_run_inputs**: Append-only meta table with columns `run_id`, `position`, `test_case_id`, `test_case_name`, `test_case_data` (JSONB), `request_template_override` (JSONB, nullable), `input_bindings_override` (JSONB, nullable). Primary key `(run_id, position)`.
 - **Snapshot phase**: The first phase of `executeRunAsync` — runs before the RUNNING state transition, uses `ISOLATION_REPEATABLE_READ`, retries on `40001`, idempotent.
 
@@ -91,6 +91,18 @@ Status: **Planned**
 #### Scenario: Legacy-fallback synthesis sources schema from live dataset
 - **WHEN** `resolveSnapshot()` runs against a run row created before the snapshot feature (i.e., `suite_snapshot IS NULL`)
 - **THEN** synthesis SHALL load the live `TestSuite` AND the live `Dataset` referenced by the suite; build a transient `SuiteSnapshotDto` via `SuiteSnapshotBuilder.build(testSuite, dataset)` (version `"2"`, schema sourced from the live dataset); if either the suite or the dataset is missing, fail the run with the corresponding error code
+
+### Requirement: Snapshot freezes multiTurnData per case
+The suite-run snapshot SHALL freeze a multi-turn case's turns by carrying `multi_turn_data` into a new nullable column on `test_case_run_inputs`. Each runnable case produces exactly one input row (single-turn or multi-turn); the existing per-case paging is used. There is no cross-row assembly and no "broken" sentinel — invalid and over-cap cases are already `is_valid=false` and excluded by runnable selection.
+Status: **Implemented**
+
+#### Scenario: Multi-turn case snapshots to one input row
+- **WHEN** a runnable multi-turn case is snapshotted
+- **THEN** one `test_case_run_inputs` row is written carrying its ordered `multi_turn_data`
+
+#### Scenario: Single-turn snapshot unchanged
+- **WHEN** a runnable single-turn case is snapshotted
+- **THEN** one input row is written with `multi_turn_data` null, exactly as today
 
 ### Requirement: Two-tier column selection on test_suite_runs
 The `PostgresTestSuiteRunRepository` SHALL use two distinct SELECT column sets to avoid TOAST overhead.

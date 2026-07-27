@@ -84,8 +84,9 @@ public class EvaluationWorker {
     private final Clock clock;
     private final SseEventParser sseEventParser;
     private final SseEventProcessingProperties sseEventProcessingProperties;
+    private final MultiTurnExecutor multiTurnExecutor;
 
-    public TestCaseRunResult execute(
+    public List<TestCaseRunResult> execute(
             TestCaseRunInput input,
             EvaluationContext context,
             int runIndex,
@@ -111,7 +112,13 @@ public class EvaluationWorker {
         try (Scope scope = traceContext.makeCurrent()) {
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {
-                return executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs);
+                return List.of(executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs));
+            }
+
+            // Multi-turn test cases run through a dedicated sequential turn loop, emitting one result
+            // per turn; the single-turn HTTP path below is unchanged.
+            if (input.getMultiTurnData() != null) {
+                return multiTurnExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);
             }
 
             // Parse test case data for template resolution
@@ -160,7 +167,7 @@ public class EvaluationWorker {
             }
 
             // Invoke deployment with retries
-            return invokeWithRetries(
+            return List.of(invokeWithRetries(
                     input,
                     context,
                     runIndex,
@@ -172,7 +179,7 @@ public class EvaluationWorker {
                     headers,
                     queryParams,
                     body,
-                    resolvedBody);
+                    resolvedBody));
 
         } catch (Exception e) {
             // Request resolution error
@@ -186,7 +193,7 @@ public class EvaluationWorker {
             String errorBody = buildErrorEnvelope("REQUEST_RESOLUTION_ERROR", e.getMessage());
             span.recordException(e);
             span.setStatus(StatusCode.ERROR, e.getMessage());
-            return buildResult(
+            return List.of(buildResult(
                     input,
                     context,
                     runIndex,
@@ -197,7 +204,7 @@ public class EvaluationWorker {
                     ExecutionStatus.ERROR,
                     null,
                     errorBody,
-                    responseColumns);
+                    responseColumns));
         } finally {
             span.end();
         }

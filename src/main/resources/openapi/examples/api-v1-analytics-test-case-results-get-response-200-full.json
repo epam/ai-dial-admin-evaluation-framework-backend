@@ -7,6 +7,8 @@
       "testCaseId": "770e8400-e29b-41d4-a716-446655440002",
       "testCaseName": "test-case-1",
       "runIndex": 0,
+      "turnIndex": 0,
+      "totalTurns": 1,
       "testCaseData": {"prompt": "Hello, world!", "category": "greeting"},
       "requestBody": {"messages": [{"role": "user", "content": "Hello, world!"}]},
       "responseBody": {"choices": [{"message": {"content": "Hi there!"}}]},

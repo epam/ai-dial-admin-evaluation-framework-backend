@@ -100,6 +100,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                 .set(TEST_CASES.DATASET_ID, testCase.getDatasetId().toString())
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
+                .set(TEST_CASES.MULTI_TURN_DATA, toJsonb(testCase.getMultiTurnData()))
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
                         TEST_CASES.VALIDATION_WARNINGS,
@@ -118,6 +119,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         int updated = dsl.update(TEST_CASES)
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
+                .set(TEST_CASES.MULTI_TURN_DATA, toJsonb(testCase.getMultiTurnData()))
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
                         TEST_CASES.VALIDATION_WARNINGS,
@@ -159,6 +161,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                     return (Query) dsl.update(TEST_CASES)
                             .set(TEST_CASES.TEST_CASE_NAME, tc.getTestCaseName())
                             .set(TEST_CASES.DATA, toJsonb(tc.getData()))
+                            .set(TEST_CASES.MULTI_TURN_DATA, toJsonb(tc.getMultiTurnData()))
                             .set(TEST_CASES.IS_VALID, tc.isValid())
                             .set(
                                     TEST_CASES.VALIDATION_WARNINGS,
@@ -230,6 +233,13 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         Condition filterCondition = whereBuilder.build(filters, FilterWhitelists.TEST_CASES);
         Condition combined = DSL.and(TEST_CASES.DATASET_ID.eq(datasetId.toString()), filterCondition);
         return dsl.delete(TEST_CASES).where(combined).execute();
+    }
+
+    @Override
+    public boolean existsMultiTurnByDatasetId(UUID datasetId) {
+        return dsl.fetchExists(dsl.selectOne()
+                .from(TEST_CASES)
+                .where(TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.MULTI_TURN_DATA.isNotNull())));
     }
 
     @Override
@@ -359,6 +369,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                 .set(TEST_CASES.DATASET_ID, testCase.getDatasetId().toString())
                 .set(TEST_CASES.TEST_CASE_NAME, testCase.getTestCaseName())
                 .set(TEST_CASES.DATA, toJsonb(testCase.getData()))
+                .set(TEST_CASES.MULTI_TURN_DATA, toJsonb(testCase.getMultiTurnData()))
                 .set(TEST_CASES.IS_VALID, testCase.isValid())
                 .set(
                         TEST_CASES.VALIDATION_WARNINGS,
@@ -382,13 +393,14 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         // expose an expression-based RETURNING clause for custom expressions like xmax.
         Integer wasUpdate = dsl.resultQuery(
                         "INSERT INTO test_cases ("
-                                + "id, dataset_id, test_case_name, data, is_valid, validation_warnings, "
+                                + "id, dataset_id, test_case_name, data, multi_turn_data, is_valid, validation_warnings, "
                                 + "created_at_ms, updated_at_ms"
                                 + ") VALUES ("
-                                + "{0}, {1}, {2}, {3}::jsonb, {4}, {5}::jsonb, {6}, {7}"
+                                + "{0}, {1}, {2}, {3}::jsonb, {4}::jsonb, {5}, {6}::jsonb, {7}, {8}"
                                 + ") ON CONFLICT (dataset_id, LOWER(test_case_name)) DO UPDATE SET"
                                 + " test_case_name = EXCLUDED.test_case_name,"
                                 + " data = EXCLUDED.data,"
+                                + " multi_turn_data = EXCLUDED.multi_turn_data,"
                                 + " is_valid = EXCLUDED.is_valid,"
                                 + " validation_warnings = EXCLUDED.validation_warnings,"
                                 + " updated_at_ms = EXCLUDED.updated_at_ms"
@@ -397,6 +409,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                         DSL.val(testCase.getDatasetId().toString()),
                         DSL.val(testCase.getTestCaseName()),
                         DSL.val(testCase.getData() != null ? testCase.getData() : "{}"),
+                        DSL.val(testCase.getMultiTurnData()),
                         DSL.val(testCase.isValid()),
                         DSL.val(testCase.getValidationWarnings() != null ? testCase.getValidationWarnings() : "[]"),
                         DSL.val(testCase.getCreatedAt()),
@@ -443,6 +456,7 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
                         .set(TEST_CASES.DATASET_ID, tc.getDatasetId().toString())
                         .set(TEST_CASES.TEST_CASE_NAME, tc.getTestCaseName())
                         .set(TEST_CASES.DATA, toJsonb(tc.getData()))
+                        .set(TEST_CASES.MULTI_TURN_DATA, toJsonb(tc.getMultiTurnData()))
                         .set(TEST_CASES.IS_VALID, tc.isValid())
                         .set(
                                 TEST_CASES.VALIDATION_WARNINGS,

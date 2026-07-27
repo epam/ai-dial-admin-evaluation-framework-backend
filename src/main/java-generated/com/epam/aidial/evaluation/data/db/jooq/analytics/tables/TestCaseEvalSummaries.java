@@ -156,6 +156,16 @@ public class TestCaseEvalSummaries extends TableImpl<TestCaseEvalSummariesRecord
      */
     public final TableField<TestCaseEvalSummariesRecord, JSONB> EXTRACTION_WARNINGS = createField(DSL.name("extraction_warnings"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'::jsonb"), SQLDataType.JSONB)), this, "");
 
+    /**
+     * The column <code>analytics.test_case_eval_summaries.turn_index</code>.
+     */
+    public final TableField<TestCaseEvalSummariesRecord, Integer> TURN_INDEX = createField(DSL.name("turn_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_summaries.total_turns</code>.
+     */
+    public final TableField<TestCaseEvalSummariesRecord, Integer> TOTAL_TURNS = createField(DSL.name("total_turns"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
+
     private TestCaseEvalSummaries(Name alias, Table<TestCaseEvalSummariesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

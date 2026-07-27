@@ -308,7 +308,8 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
 | `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
 | `dataset_id` | VARCHAR(36) | NOT NULL | - | FK to `datasets.id` (CASCADE on delete). Renamed from `test_suite_id` in V1.22. |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Display name |
-| `data` | JSONB | NOT NULL | `'{}'::jsonb` | Unified test case data map |
+| `data` | JSONB | NOT NULL | `'{}'::jsonb` | Unified test case data map (single-turn). Empty `'{}'` for a multi-turn case. |
+| `multi_turn_data` | JSONB | NULL | - | Ordered array of per-turn data maps for a multi-turn test case (V1.27); NULL for single-turn (the discriminator). MAY coexist with a populated `data`: `data` carries the case's shared (test-case-level) fields and each turn map carries the per-turn fields. Field scope is declared per field in `datasets.test_case_schema` (`FieldDefinitionDto.perTurn`). No mutual-exclusivity CHECK constraint. |
 | `is_valid` | BOOLEAN | NOT NULL | - | Validation status |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Structured validation warnings |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
@@ -448,7 +449,8 @@ Snapshot of test case data for a run; written at async phase start under a REPEA
 | `position` | INTEGER | NOT NULL | - | Zero-based order matching `findValidByDatasetIdExcludingIds` sort order |
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Loose reference to the test case (no FK — snapshot is independent of live `test_cases`) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name at snapshot time |
-| `test_case_data` | JSONB | NOT NULL | - | Unified test case data map at snapshot time |
+| `test_case_data` | JSONB | NOT NULL | - | Unified test case data map at snapshot time (single-turn) |
+| `multi_turn_data` | JSONB | NULL | - | Frozen ordered array of per-turn data maps for a multi-turn test case (V1.28); NULL for a single-turn input |
 | `request_template_override` | JSONB | NULL | - | Legacy per-case request template override at snapshot time. Always NULL for runs created after V1.22 (the override surface was removed with the dataset migration); kept for backward compatibility with in-flight pre-V1.22 runs. |
 | `input_bindings_override` | JSONB | NULL | - | Legacy per-case input bindings override at snapshot time. Always NULL for runs created after V1.22; same backward-compatibility reason as above. |
 
@@ -568,6 +570,7 @@ Metric applications within a test suite. Each row binds a metric declaration (wi
 | `config_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Config parameter bindings (List of MetricParameterBindingDto) |
 | `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Input parameter bindings (List of MetricParameterBindingDto) |
 | `is_enabled` | BOOLEAN | NOT NULL | `TRUE` | Whether this TSMD participates in metric evaluation |
+| `condition` | VARCHAR(2000) | NULL | - | Optional JSONata expression (V1.26) gating whether this metric runs per result row (per turn), evaluated over `{data, response, turn}`. NULL/blank ⇒ always run. Validated as syntactically valid JSONata at write time. |
 | `is_valid` | BOOLEAN | NOT NULL | `TRUE` | Whether the last soft validation passed |
 | `validation_warnings` | JSONB | NOT NULL | `'[]'::jsonb` | Soft validation warnings (List of ValidationWarningDto) |
 | `created_at_ms` | BIGINT | NOT NULL | - | Creation timestamp (epoch ms) |
@@ -626,8 +629,10 @@ Test case execution results stored in the analytics database. Each row represent
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Test case ID |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index (0-based) |
-| `test_case_data` | JSONB | NOT NULL | - | Test case input data |
-| `request_body` | JSONB | NULL | - | HTTP request body sent to endpoint |
+| `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn test case (V1.13); 0 for single-turn |
+| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the test case (V1.13); 1 for single-turn |
+| `test_case_data` | JSONB | NOT NULL | - | Test case input data (that turn's data for a multi-turn row) |
+| `request_body` | JSONB | NULL | - | HTTP request body sent to endpoint (full accumulated history for a multi-turn turn) |
 | `response_body` | JSONB | NULL | - | HTTP response body received |
 | `response_status_code` | INTEGER | NULL | - | HTTP response status code |
 | `execution_status` | VARCHAR(20) | NOT NULL | - | SUCCESS, FAILED, TIMEOUT, ERROR |
@@ -649,7 +654,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Includes `created_at_ms` for future partitioning. |
+| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Extended with `turn_index` in V1.13 so each turn is uniquely keyed. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -732,6 +737,8 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Reference to test case (soft FK) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case name at execution time |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index |
+| `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn test case (V1.14); 0 for single-turn |
+| `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the test case (V1.14); 1 for single-turn |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (denormalized from test_case_run_results) |
 | `extracted_columns` | JSONB | NOT NULL | `'{}'::jsonb` | Extracted column values (denormalized) |
@@ -752,7 +759,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_eval_summaries_run_case_comp` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, computation_id, created_at_ms)` | Idempotent writes. Includes `created_at_ms` for future partitioning. |
+| `uq_eval_summaries_run_case_comp` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, computation_id, created_at_ms)` | Idempotent writes. Extended with `turn_index` in V1.14 so each turn's summary is uniquely keyed per computation. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -923,6 +930,9 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.23 | `V1.23__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs) |
 | V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` and `disabled_test_case_ids` at run-creation count and snapshot) |
 | V1.25 | `V1.25__AddOverallScoreThresholdToTestSuites.sql` | Added nullable `overall_score_threshold` DOUBLE PRECISION column to test_suites (per-suite threshold compared against the computed run-level `overall` metric score, same numeric type as the result; NULL = no threshold configured) |
+| V1.26 | `V1.26__AddConditionToTestSuiteMetricDefinitions.sql` | Added nullable `condition` VARCHAR(2000) to test_suite_metric_definitions (optional JSONata gating whether the metric runs per result row/turn; NULL ⇒ always run) |
+| V1.27 | `V1.27__AddMultiTurnDataToTestCases.sql` | Added nullable `multi_turn_data` JSONB to test_cases (ordered array of per-turn data maps). Coexists with `data` (shared vs per-turn fields, scoped in `test_case_schema`); no mutual-exclusivity CHECK constraint. |
+| V1.28 | `V1.28__AddMultiTurnDataToTestCaseRunInputs.sql` | Added nullable `multi_turn_data` JSONB to test_case_run_inputs (frozen multi-turn snapshot; one input row per case) |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 
@@ -939,6 +949,8 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |
 | V1.11 | `V1.11__CreateRocAucScoreFunction.sql` | Created `roc_auc_score(double precision[], double precision[])` SQL function computing the rank-sum ROC AUC score over paired label/probability arrays |
 | V1.12 | `V1.12__AddSuiteAndTimestampToMetricScoreResult.sql` | Added `test_suite_id` and `computed_at_ms` to metric_score_result (backfilled, NOT NULL) with index `idx_metric_score_result_suite_computed` for suite-scoped latest-N retrieval |
+| V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_run_results; extended `uq_results_run_case_index` with `turn_index` |
+| V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; extended `uq_eval_summaries_natural_key` with `turn_index` |
 
 ---
 

@@ -54,13 +54,14 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class TestCaseService {
 
-    private static final Set<String> VALIDATION_RELEVANT_FIELDS = Set.of("data", "testCaseName");
+    private static final Set<String> VALIDATION_RELEVANT_FIELDS = Set.of("data", "multiTurnData", "testCaseName");
 
     private final TestCaseRepository testCaseRepository;
     private final DatasetQueryService datasetQueryService;
     private final DatasetSchemaProvider datasetSchemaProvider;
     private final TestCaseMapper testCaseMapper;
     private final TestCaseValidationService testCaseValidationService;
+    private final MultiTurnFieldsValidator multiTurnFieldsValidator;
     private final FilterParser filterParser;
     private final SortParser sortParser;
     private final ValidationWarningsSerializer warningsSerializer;
@@ -336,6 +337,7 @@ public class TestCaseService {
                 .datasetId(original.getDatasetId())
                 .testCaseName(original.getTestCaseName())
                 .data(original.getData())
+                .multiTurnData(original.getMultiTurnData())
                 .valid(original.isValid())
                 .validationWarnings(original.getValidationWarnings())
                 .createdAt(original.getCreatedAt())
@@ -346,6 +348,7 @@ public class TestCaseService {
     private static boolean equalForUpdate(TestCase a, TestCase b) {
         return Objects.equals(a.getTestCaseName(), b.getTestCaseName())
                 && Objects.equals(a.getData(), b.getData())
+                && Objects.equals(a.getMultiTurnData(), b.getMultiTurnData())
                 && a.isValid() == b.isValid()
                 && Objects.equals(a.getValidationWarnings(), b.getValidationWarnings());
     }
@@ -439,11 +442,29 @@ public class TestCaseService {
      */
     private void runValidation(TestCase entity, List<FieldDefinitionDto> schema) {
         Map<String, Object> dataMap = warningsSerializer.deserializeMap(entity.getData());
-        ValidationResult result = testCaseValidationService.validateTestCase(
-                dataMap, schema, null, List.of(), false, entity.getDatasetId());
+        List<Map<String, Object>> turns = entity.getMultiTurnData() != null
+                ? warningsSerializer.deserializeTurns(entity.getMultiTurnData())
+                : null;
+
+        // Structural invariants first (non-empty array + scope placement) → 400; the max-turns cap is
+        // an invalidating warning handled below, not a 400. `data` (shared) and `multiTurnData` (per-turn)
+        // may coexist; placement is validated against the dataset schema's perTurn flags.
+        multiTurnFieldsValidator.validateStructure(dataMap, turns, schema);
+
+        ValidationResult result = turns != null
+                ? testCaseValidationService.validateMultiTurn(
+                        dataMap, turns, schema, null, List.of(), false, entity.getDatasetId())
+                : testCaseValidationService.validateTestCase(
+                        dataMap, schema, null, List.of(), false, entity.getDatasetId());
         entity.setValid(result.isValid());
         entity.setValidationWarnings(
                 warningsSerializer.serializeWarnings(result.getWarnings() != null ? result.getWarnings() : List.of()));
+    }
+
+    /** True when the dataset contains at least one multi-turn test case. Used by run-creation guards. */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public boolean datasetHasMultiTurnCases(UUID datasetId) {
+        return testCaseRepository.existsMultiTurnByDatasetId(datasetId);
     }
 
     @Transactional("metaTransactionManager")
@@ -526,12 +547,25 @@ public class TestCaseService {
         if (patch.containsKey("testCaseName") && patch.get("testCaseName") != null) {
             entity.setTestCaseName(patch.get("testCaseName").toString());
         }
+        // `data` (shared) and `multiTurnData` (per-turn) are independent buckets: patching one does NOT
+        // clear the other. Post-merge placement + per-scope validation (runValidation) governs correctness.
         if (patch.containsKey("data")) {
             Object v = patch.get("data");
             if (v instanceof Map) {
                 Map<String, Object> patchData = (Map<String, Object>) v;
                 Map<String, Object> merged = mergeMaps(warningsSerializer.deserializeMap(entity.getData()), patchData);
                 entity.setData(warningsSerializer.serializeMap(merged));
+            }
+        }
+        if (patch.containsKey("multiTurnData")) {
+            Object v = patch.get("multiTurnData");
+            if (v == null) {
+                // Reverting to single-turn; the existing `data` map is retained as the single-turn data.
+                entity.setMultiTurnData(null);
+            } else if (v instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> turns = (List<Map<String, Object>>) v;
+                entity.setMultiTurnData(warningsSerializer.serializeTurns(turns));
             }
         }
     }

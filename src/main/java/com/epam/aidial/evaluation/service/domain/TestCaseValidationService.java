@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.configuration.properties.testcase.TestCaseProperties;
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
@@ -30,6 +31,8 @@ public class TestCaseValidationService {
     private final TemplateVariableExtractor templateVariableExtractor;
     private final ValidationProperties validationProperties;
     private final FileRefValidator fileRefValidator;
+    private final TestCaseProperties testCaseProperties;
+    private final TestCaseFieldScopeResolver scopeResolver;
 
     /**
      * Validates test case data against the effective template, bindings, and schema.
@@ -194,6 +197,70 @@ public class TestCaseValidationService {
 
         return ValidationResult.builder()
                 .valid(warnings.isEmpty())
+                .warnings(List.copyOf(warnings))
+                .build();
+    }
+
+    /**
+     * Validates a multi-turn case scope-aware: the shared {@code data} map against the shared sub-schema
+     * ({@code perTurn=false} fields) and every turn against the per-turn sub-schema ({@code perTurn=true}
+     * fields), both using the dataset schema. The case is valid iff no shared-field warning and every turn
+     * passes and the turn count is within the configured cap; each per-turn warning is tagged with its
+     * 0-based {@code turnIndex} (shared-field warnings carry none). Exceeding the max-turns cap adds one
+     * invalidating warning (not a 400). A multi-turn case with all-empty turn maps is valid when no
+     * required per-turn field exists.
+     */
+    public ValidationResult validateMultiTurn(
+            Map<String, Object> sharedData,
+            List<Map<String, Object>> turns,
+            List<FieldDefinitionDto> testCaseSchema,
+            RequestTemplateDto effectiveTemplate,
+            List<InputBindingDto> effectiveBindings,
+            boolean hasOverrides,
+            UUID datasetId) {
+        List<Map<String, Object>> safeTurns = turns != null ? turns : List.of();
+
+        final TestCaseFieldScopeResolver.SchemaSplit schemaSplit = scopeResolver.splitSchema(testCaseSchema);
+
+        // Shared (test-case-level) fields are validated once against the shared sub-schema; their warnings
+        // carry no turn index.
+        ValidationResult sharedResult = validateTestCase(
+                sharedData, schemaSplit.shared(), effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
+
+        List<ValidationWarningDto> warnings = new ArrayList<>(sharedResult.getWarnings());
+
+        int maxTurns = testCaseProperties.getMultiTurn().getMaxTurns();
+        if (safeTurns.size() > maxTurns) {
+            warnings.add(warning(
+                    null,
+                    "$.multiTurnData",
+                    "Multi-turn case has " + safeTurns.size() + " turns, exceeding the maximum of " + maxTurns,
+                    ValidationWarningCode.ADDITIONAL));
+        }
+
+        for (int i = 0; i < safeTurns.size(); i++) {
+            ValidationResult turnResult = validateTestCase(
+                    safeTurns.get(i),
+                    schemaSplit.perTurn(),
+                    effectiveTemplate,
+                    effectiveBindings,
+                    hasOverrides,
+                    datasetId);
+            for (ValidationWarningDto w : turnResult.getWarnings()) {
+                w.setTurnIndex(i);
+                warnings.add(w);
+            }
+        }
+
+        boolean valid = warnings.isEmpty();
+
+        int maxWarnings = validationProperties.getMaxWarningsPerCase();
+        if (warnings.size() > maxWarnings) {
+            warnings.subList(maxWarnings, warnings.size()).clear();
+        }
+
+        return ValidationResult.builder()
+                .valid(valid)
                 .warnings(List.copyOf(warnings))
                 .build();
     }

@@ -24,6 +24,13 @@ public class TestCaseResponseDto {
 
     private Map<String, Object> data;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "Ordered array of per-turn data maps for a multi-turn test case; "
+                    + "omitted for single-turn cases.",
+            example = "[{\"prompt\":\"Hi\"},{\"prompt\":\"And then?\"}]")
+    private List<Map<String, Object>> multiTurnData;
+
     @Schema(example = "true")
     private boolean valid;
 

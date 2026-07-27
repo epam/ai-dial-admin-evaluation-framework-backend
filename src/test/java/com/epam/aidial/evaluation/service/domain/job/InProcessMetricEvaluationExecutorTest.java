@@ -294,6 +294,55 @@ class InProcessMetricEvaluationExecutorTest {
                 .isEqualTo(ExecutionStatus.SUCCESS);
     }
 
+    @Test
+    @DisplayName("Unconditioned metric whose response binding cannot resolve → row summary FAILED")
+    void unresolvableResponseBinding_rowSummaryFailed() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        // No condition ⇒ the metric is dispatched on every row of the chain, including a plumbing row whose
+        // extracted_columns lacks the bound column. BindingResolver throws inside the worker; the executor
+        // records a Failure, and the row's eval summary is FAILED. That FAILED row is the authoring signal
+        // that this metric needs a condition targeting the request that produces the column.
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L);
+
+        TestCaseRunResult plumbingRow = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .requestIndex(0)
+                .requestLabel("setup")
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{\"session_id\":\"sess-1\"}")
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(plumbingRow), null, false));
+        when(worker.evaluate(any(), any(), any(Semaphore.class), any()))
+                .thenThrow(new IllegalArgumentException(
+                        "Response binding references missing column 'answer' in extracted columns"));
+        ObjectNode values = objectMapper.createObjectNode();
+        ObjectNode infos = objectMapper.createObjectNode();
+        when(outputMapper.buildMetricValues(any())).thenReturn(values);
+        when(outputMapper.buildMetricInfos(any())).thenReturn(infos);
+
+        executor.execute(context);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());
+        assertThat(captor.getValue().get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+    }
+
     private MetricEvaluationContext buildContext(
             UUID runId, UUID suiteId, List<AggregatedMetricDefinition> tsmds, long perResultTimeoutMs) {
         MetricEvaluationProperties.Retry retryConfig = new MetricEvaluationProperties.Retry();

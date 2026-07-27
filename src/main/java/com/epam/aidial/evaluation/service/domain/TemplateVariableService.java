@@ -228,7 +228,7 @@ public class TemplateVariableService {
                     SchemaFieldType effectiveType = inferType(
                             var.getName(), var.getDeclaredType(), binding, endpointTypeByName, schemaTypeByName);
                     Object resolvedValue = templateVariableResolver.resolveVariable(
-                            var.getName(), var.getDefaultValue(), binding, data, warnings);
+                            var.getName(), var.getDefaultValue(), binding, ResolutionScope.ofData(data), warnings);
 
                     return TemplateVariableDto.builder()
                             .name(var.getName())

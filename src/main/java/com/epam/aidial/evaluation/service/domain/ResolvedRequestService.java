@@ -83,10 +83,21 @@ public class ResolvedRequestService {
     }
 
     /**
-     * Resolves template with bindings and data per the resolution flow in design.md.
+     * Resolves template with bindings and test case data per the resolution flow in design.md.
+     * Single-request path: no chain values are available, so a {@code responseField} binding cannot resolve.
      */
     public ResolvedRequestDto resolve(
             RequestTemplateDto template, List<InputBindingDto> bindings, Map<String, Object> data) {
+        return resolveInScope(template, bindings, ResolutionScope.ofData(data));
+    }
+
+    /**
+     * Resolves a template against a full {@link ResolutionScope}. Used by the multi-request chain executor,
+     * which supplies both the test case's data and the accumulating map of response columns extracted by
+     * earlier chain requests, so {@code responseField} bindings resolve.
+     */
+    public ResolvedRequestDto resolveInScope(
+            RequestTemplateDto template, List<InputBindingDto> bindings, ResolutionScope scope) {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
         if (template == null) {
@@ -103,11 +114,9 @@ public class ResolvedRequestService {
                         .filter(b -> b != null && b.getTemplateVariable() != null)
                         .collect(Collectors.toMap(InputBindingDto::getTemplateVariable, b -> b, (a, b) -> a));
 
-        Map<String, Object> safeData = data != null ? data : Map.of();
-
         // Resolve URL
         String resolvedUrl = template.getUrlTemplate() != null
-                ? resolveString(template.getUrlTemplate(), bindingByVar, safeData, warnings)
+                ? resolveString(template.getUrlTemplate(), bindingByVar, scope, warnings)
                 : null;
 
         // Resolve query params
@@ -116,9 +125,8 @@ public class ResolvedRequestService {
             resolvedQueryParams = new ArrayList<>();
             for (KeyValueTemplateDto kv : template.getQueryParams()) {
                 if (kv != null) {
-                    String val = kv.getValue() != null
-                            ? resolveString(kv.getValue(), bindingByVar, safeData, warnings)
-                            : null;
+                    String val =
+                            kv.getValue() != null ? resolveString(kv.getValue(), bindingByVar, scope, warnings) : null;
                     resolvedQueryParams.add(KeyValueTemplateDto.builder()
                             .key(kv.getKey())
                             .value(val)
@@ -133,9 +141,8 @@ public class ResolvedRequestService {
             resolvedHeaders = new ArrayList<>();
             for (KeyValueTemplateDto kv : template.getHeaders()) {
                 if (kv != null) {
-                    String val = kv.getValue() != null
-                            ? resolveString(kv.getValue(), bindingByVar, safeData, warnings)
-                            : null;
+                    String val =
+                            kv.getValue() != null ? resolveString(kv.getValue(), bindingByVar, scope, warnings) : null;
                     resolvedHeaders.add(KeyValueTemplateDto.builder()
                             .key(kv.getKey())
                             .value(val)
@@ -145,7 +152,7 @@ public class ResolvedRequestService {
         }
 
         // Resolve body (content-type aware)
-        ResolvedBodyDto resolvedBody = resolveBody(template.getBody(), bindingByVar, safeData, warnings);
+        ResolvedBodyDto resolvedBody = resolveBody(template.getBody(), bindingByVar, scope, warnings);
 
         return ResolvedRequestDto.builder()
                 .url(resolvedUrl)
@@ -159,17 +166,17 @@ public class ResolvedRequestService {
     private ResolvedBodyDto resolveBody(
             RequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
-            Map<String, Object> data,
+            ResolutionScope scope,
             List<ValidationWarningDto> warnings) {
         if (body == null) {
             return null;
         }
         if (body instanceof JsonRequestBodyDto jsonBody) {
-            return resolveJsonBody(jsonBody, bindingByVar, data, warnings);
+            return resolveJsonBody(jsonBody, bindingByVar, scope, warnings);
         } else if (body instanceof MultipartFormDataRequestBodyDto multipartBody) {
-            return resolveMultipartBody(multipartBody, bindingByVar, data, warnings);
+            return resolveMultipartBody(multipartBody, bindingByVar, scope, warnings);
         } else if (body instanceof UrlEncodedFormRequestBodyDto urlEncodedBody) {
-            return resolveUrlEncodedBody(urlEncodedBody, bindingByVar, data, warnings);
+            return resolveUrlEncodedBody(urlEncodedBody, bindingByVar, scope, warnings);
         }
         return null;
     }
@@ -178,12 +185,12 @@ public class ResolvedRequestService {
     private ResolvedJsonBodyDto resolveJsonBody(
             JsonRequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
-            Map<String, Object> data,
+            ResolutionScope scope,
             List<ValidationWarningDto> warnings) {
         if (body.getContent() == null) {
             return ResolvedJsonBodyDto.builder().content(null).build();
         }
-        Object resolved = resolveObject(body.getContent(), bindingByVar, data, warnings);
+        Object resolved = resolveObject(body.getContent(), bindingByVar, scope, warnings);
         Map<String, Object> resolvedMap = resolved instanceof Map ? (Map<String, Object>) resolved : null;
         return ResolvedJsonBodyDto.builder().content(resolvedMap).build();
     }
@@ -191,7 +198,7 @@ public class ResolvedRequestService {
     private ResolvedMultipartBodyDto resolveMultipartBody(
             MultipartFormDataRequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
-            Map<String, Object> data,
+            ResolutionScope scope,
             List<ValidationWarningDto> warnings) {
         if (body.getContent() == null) {
             return ResolvedMultipartBodyDto.builder().parts(List.of()).build();
@@ -202,9 +209,10 @@ public class ResolvedRequestService {
                 continue;
             }
             Object resolvedValue =
-                    part.getValue() != null ? resolveObject(part.getValue(), bindingByVar, data, warnings) : null;
-            String resolvedFilename =
-                    part.getFilename() != null ? resolveString(part.getFilename(), bindingByVar, data, warnings) : null;
+                    part.getValue() != null ? resolveObject(part.getValue(), bindingByVar, scope, warnings) : null;
+            String resolvedFilename = part.getFilename() != null
+                    ? resolveString(part.getFilename(), bindingByVar, scope, warnings)
+                    : null;
             resolvedParts.add(ResolvedFormPartDto.builder()
                     .name(part.getName())
                     .type(part.getType())
@@ -218,7 +226,7 @@ public class ResolvedRequestService {
     private ResolvedUrlEncodedBodyDto resolveUrlEncodedBody(
             UrlEncodedFormRequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
-            Map<String, Object> data,
+            ResolutionScope scope,
             List<ValidationWarningDto> warnings) {
         if (body.getContent() == null) {
             return ResolvedUrlEncodedBodyDto.builder().entries(List.of()).build();
@@ -229,7 +237,7 @@ public class ResolvedRequestService {
                 continue;
             }
             String resolvedValue =
-                    kv.getValue() != null ? resolveString(kv.getValue(), bindingByVar, data, warnings) : null;
+                    kv.getValue() != null ? resolveString(kv.getValue(), bindingByVar, scope, warnings) : null;
             resolvedEntries.add(KeyValueTemplateDto.builder()
                     .key(kv.getKey())
                     .value(resolvedValue)
@@ -241,7 +249,7 @@ public class ResolvedRequestService {
     private String resolveString(
             String value,
             Map<String, InputBindingDto> bindingByVar,
-            Map<String, Object> data,
+            ResolutionScope scope,
             List<ValidationWarningDto> warnings) {
         StringBuffer sb = new StringBuffer();
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(value);
@@ -249,7 +257,7 @@ public class ResolvedRequestService {
             String varName = matcher.group(1).trim();
             String defaultValue = matcher.group(3); // group 3: default value (group 2 is now type hint)
             InputBindingDto binding = bindingByVar.get(varName);
-            Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
+            Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, scope, warnings);
             matcher.appendReplacement(sb, Matcher.quoteReplacement(resolved != null ? resolved.toString() : ""));
         }
         matcher.appendTail(sb);
@@ -260,7 +268,7 @@ public class ResolvedRequestService {
     private Object resolveObject(
             Object value,
             Map<String, InputBindingDto> bindingByVar,
-            Map<String, Object> data,
+            ResolutionScope scope,
             List<ValidationWarningDto> warnings) {
         if (value instanceof String str) {
             // Full-value replacement: if string is exactly one placeholder, return typed value
@@ -272,7 +280,7 @@ public class ResolvedRequestService {
                     String defaultValue = m.group(3); // group 3: default value
                     InputBindingDto binding = bindingByVar.get(varName);
                     Object resolved =
-                            templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
+                            templateVariableResolver.resolveVariable(varName, defaultValue, binding, scope, warnings);
                     // Resolve FILE-typed placeholder to DIAL ref format for JSON/URL-encoded bodies
                     if (SchemaFieldType.FILE.name().equalsIgnoreCase(typeHint)
                             && resolved instanceof String resolvedRef) {
@@ -282,18 +290,18 @@ public class ResolvedRequestService {
                 }
             }
             // String interpolation
-            return resolveString(str, bindingByVar, data, warnings);
+            return resolveString(str, bindingByVar, scope, warnings);
         } else if (value instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 result.put(
-                        String.valueOf(entry.getKey()), resolveObject(entry.getValue(), bindingByVar, data, warnings));
+                        String.valueOf(entry.getKey()), resolveObject(entry.getValue(), bindingByVar, scope, warnings));
             }
             return result;
         } else if (value instanceof List<?> list) {
             List<Object> result = new ArrayList<>();
             for (Object item : list) {
-                result.add(resolveObject(item, bindingByVar, data, warnings));
+                result.add(resolveObject(item, bindingByVar, scope, warnings));
             }
             return result;
         }

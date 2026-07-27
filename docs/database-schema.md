@@ -98,7 +98,9 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `endpoint_ref` | JSONB | NULL | - | Endpoint contract definition (EndpointContractDto) — HTTP suites |
 | `response_columns` | JSONB | NOT NULL | `'[]'::jsonb` | Response column definitions (List of ResponseColumnDefinitionDto) |
 | `request_template` | JSONB | NULL | - | Postman-style request template (RequestTemplateDto) — HTTP suites |
-| `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Bindings from template variables to data fields (List of InputBindingDto) |
+| `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Bindings from template variables to data fields (List of InputBindingDto). A binding sets exactly one of `dataField`, `constantValue`, or `responseField`; `responseField` (multi-request only) names a response column declared by a strictly EARLIER chain request. |
+| `additional_requests` | JSONB | NULL | - | Ordered chain of ADDITIONAL requests (List of ChainRequestDto) for a multi-request suite — chain elements `1..N-1`; request 0 stays in the flat `endpoint_ref`/`request_template`/`input_bindings`/`response_columns` columns. Non-empty ⇒ multi-request; NULL or `[]` ⇒ single-request (all pre-V1.29 rows, no backfill needed). Each element is a complete request spec `{type, label, endpointRef, requestTemplate, inputBindings, responseColumns}`, discriminated by `type` (`HTTP` \| `MCP_TOOL`; absent ⇒ `HTTP`, and `MCP_TOOL` is rejected at save with HTTP 400). `deployment_ref` stays suite-level — every chain request targets the same deployment. Response column names must be unique across the WHOLE chain (400 on duplicate); chain length is capped by `test-suite.multi-request.max-requests` (default 10), enforced at save (400) and again at run creation (409). Captured verbatim into the suite snapshot. See V1.29. |
+| `request_label` | VARCHAR(255) | NULL | - | Optional human-readable label naming request 0. NULL ⇒ the chain normalizer defaults it to `request-1`. Labels must be unique across the RESOLVED chain (after defaulting), so an explicit label colliding with another request's `request-{n}` default is rejected with HTTP 400. Denormalized onto result rows as `request_label`. See V1.29. |
 | `mcp_deployment_ref` | JSONB | NULL | - | MCP deployment reference (McpDeploymentReferenceDto) — MCP suites |
 | `tool_ref` | JSONB | NULL | - | MCP tool reference with schema (ToolReferenceDto) — MCP suites |
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
@@ -631,6 +633,8 @@ Test case execution results stored in the analytics database. Each row represent
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index (0-based) |
 | `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn test case (V1.13); 0 for single-turn |
 | `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the test case (V1.13); 1 for single-turn |
+| `request_index` | INTEGER | NOT NULL | 0 | 0-based chain position of the multi-request suite request that produced this row (V1.15); 0 for single-request suites and all pre-V1.15 rows. Part of the unique key. There is deliberately NO `total_requests` column: chain length is run-level configuration, identical on every row and derivable from the snapshot, and an aborted (fail-fast) chain is identified by its final row's ERROR status. |
+| `request_label` | VARCHAR(255) | NULL | - | That chain request's resolved label (V1.15), denormalized so analytics consumers need no cross-datasource lookup into the meta DB. NOT part of the unique key — a mutable display value, following the convention where `test_case_name` sits beside the keyed `test_case_id`. NULL for pre-V1.15 rows and imported external-run rows that supply none. |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (that turn's data for a multi-turn row) |
 | `request_body` | JSONB | NULL | - | HTTP request body sent to endpoint (full accumulated history for a multi-turn turn) |
 | `response_body` | JSONB | NULL | - | HTTP response body received |
@@ -654,7 +658,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Extended with `turn_index` in V1.13 so each turn is uniquely keyed. Includes `created_at_ms` for future partitioning. |
+| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, request_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Extended with `turn_index` in V1.13 and with `request_index` in V1.15, so each turn and each chain request is uniquely keyed. The `ON CONFLICT` target in `PostgresTestCaseRunResultRepository` must list exactly these columns, or two chain requests of one test-case run would collide and the second write be silently dropped. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -739,6 +743,8 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index |
 | `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn test case (V1.14); 0 for single-turn |
 | `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the test case (V1.14); 1 for single-turn |
+| `request_index` | INTEGER | NOT NULL | 0 | 0-based chain position of the multi-request suite request whose result row this summarizes (V1.15); 0 for single-request suites and all pre-V1.15 rows. Part of the natural key. No `total_requests` column, for the same reason as on `test_case_run_results`. |
+| `request_label` | VARCHAR(255) | NULL | - | That chain request's resolved label (V1.15), denormalized for display. NOT part of the natural key. |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (denormalized from test_case_run_results) |
 | `extracted_columns` | JSONB | NOT NULL | `'{}'::jsonb` | Extracted column values (denormalized) |
@@ -759,7 +765,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_eval_summaries_run_case_comp` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, computation_id, created_at_ms)` | Idempotent writes. Extended with `turn_index` in V1.14 so each turn's summary is uniquely keyed per computation. Includes `created_at_ms` for future partitioning. |
+| `uq_eval_summaries_natural_key` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, turn_index, request_index, computation_id, created_at_ms)` | Idempotent writes. Extended with `turn_index` in V1.14 and with `request_index` in V1.15, so each turn's and each chain request's summary is uniquely keyed per computation. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -933,6 +939,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.26 | `V1.26__AddConditionToTestSuiteMetricDefinitions.sql` | Added nullable `condition` VARCHAR(2000) to test_suite_metric_definitions (optional JSONata gating whether the metric runs per result row/turn; NULL ⇒ always run) |
 | V1.27 | `V1.27__AddMultiTurnDataToTestCases.sql` | Added nullable `multi_turn_data` JSONB to test_cases (ordered array of per-turn data maps). Coexists with `data` (shared vs per-turn fields, scoped in `test_case_schema`); no mutual-exclusivity CHECK constraint. |
 | V1.28 | `V1.28__AddMultiTurnDataToTestCaseRunInputs.sql` | Added nullable `multi_turn_data` JSONB to test_case_run_inputs (frozen multi-turn snapshot; one input row per case) |
+| V1.29 | `V1.29__AddAdditionalRequestsToTestSuites.sql` | Added nullable `additional_requests` JSONB and `request_label` VARCHAR(255) to test_suites (multi-request chain; NULL/`[]` ⇒ single-request, no backfill) |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 
@@ -951,6 +958,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.12 | `V1.12__AddSuiteAndTimestampToMetricScoreResult.sql` | Added `test_suite_id` and `computed_at_ms` to metric_score_result (backfilled, NOT NULL) with index `idx_metric_score_result_suite_computed` for suite-scoped latest-N retrieval |
 | V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_run_results; extended `uq_results_run_case_index` with `turn_index` |
 | V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; extended `uq_eval_summaries_natural_key` with `turn_index` |
+| V1.15 | `V1.15__AddRequestColumnsToResultsAndSummaries.sql` | Added `request_index` (NOT NULL DEFAULT 0) and `request_label` (nullable) to BOTH test_case_run_results and test_case_eval_summaries; extended `uq_results_run_case_index` and `uq_eval_summaries_natural_key` with `request_index`. No `total_requests` column. On a large deployment, replace the drop/re-add with `CREATE UNIQUE INDEX CONCURRENTLY` + constraint swap in a non-transactional migration (same caveat as V1.13/V1.14). |
 
 ---
 

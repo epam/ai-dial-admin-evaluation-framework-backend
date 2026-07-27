@@ -23,6 +23,8 @@ public abstract class TestCaseRunResultMapper {
     @Mapping(target = "id", expression = "java(java.util.UUID.randomUUID())")
     @Mapping(source = "item.turnIndex", target = "turnIndex", defaultValue = "0")
     @Mapping(source = "item.totalTurns", target = "totalTurns", defaultValue = "1")
+    @Mapping(source = "item.requestIndex", target = "requestIndex", defaultValue = "0")
+    @Mapping(source = "item.requestLabel", target = "requestLabel")
     @Mapping(source = "item.executionInfo.status", target = "executionStatus")
     @Mapping(source = "item.executionInfo.startedAt", target = "execStartedAtMs")
     @Mapping(source = "item.executionInfo.completedAt", target = "execCompletedAtMs")

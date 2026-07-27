@@ -48,7 +48,12 @@ public class JsonMapperConfiguration {
         };
     }
 
-    private static JsonMapper createJsonMapper() {
+    /**
+     * The exact mapper configuration the application runs with. Public so tests that round-trip JSONB-backed
+     * DTOs (which rely on the {@link HttpMethod} module and the NON_NULL inclusion) use the production
+     * configuration rather than an approximation of it that can silently drift.
+     */
+    public static JsonMapper createJsonMapper() {
         SimpleModule httpMethodModule = new SimpleModule();
         httpMethodModule.addSerializer(HttpMethod.class, new HttpMethodSerializer());
         httpMethodModule.addDeserializer(HttpMethod.class, new HttpMethodDeserializer());

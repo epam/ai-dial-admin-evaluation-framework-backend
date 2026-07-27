@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -116,6 +117,27 @@ class MetricEvaluationWorkerTest {
         assertThatThrownBy(() -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), context))
                 .isInstanceOf(InterruptedException.class)
                 .hasMessageContaining("cancelled");
+    }
+
+    @Test
+    @DisplayName("A Response binding absent from the row fails before any provider call — the plumbing-row signal")
+    void shouldFailBeforeProviderCall_whenResponseBindingColumnAbsent() throws InterruptedException {
+        // A chain's request-0 ('plumbing') row extracts `session_id`, never `answer`. An unconditioned metric
+        // bound to `answer` therefore cannot resolve on that row. Failing here — before the provider is
+        // called — is the intended signal that the metric needs a condition targeting the producing request.
+        TestCaseRunResult plumbingRow = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("test-case")
+                .testCaseData("{\"question\": \"What is 2+2?\"}")
+                .extractedColumns("{\"session_id\": \"sess-1\"}")
+                .build();
+
+        assertThatThrownBy(() -> worker.evaluate(buildTsmd(), plumbingRow, new Semaphore(1), buildContext(0)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("answer");
+
+        verify(metricProviderClient, never()).evaluate(anyString(), any());
     }
 
     private AggregatedMetricDefinition buildTsmd() {

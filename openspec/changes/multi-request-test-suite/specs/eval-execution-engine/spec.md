@@ -64,6 +64,10 @@ Status: **Planned**
 - **WHEN** a run is cancelled while a worker is blocked waiting for a rate limit token
 - **THEN** the wait SHALL be interrupted and the worker SHALL terminate without issuing the call
 
+#### Scenario: An interrupted token wait leaves no result row
+- **WHEN** a worker's token wait is interrupted by post-grace `shutdownNow()`
+- **THEN** the test case SHALL contribute NO row to `test_case_run_results`, per the existing "No synthetic rows for unfinished cases" requirement. Because the gate reports interruption as a return value rather than an exception (so cancellation is not delayed), the executor SHALL check the thread's interrupt flag after the worker returns and discard the worker's rows. Enforcing this in the executor rather than at each gate call site means no intermediate `catch` — the chain loop's and turn loop's `catch (RuntimeException)`, or a library that swallows the interruption — can reintroduce the row.
+
 ## ADDED Requirements
 
 ### Requirement: Chain loop with accumulating response columns and fail-fast

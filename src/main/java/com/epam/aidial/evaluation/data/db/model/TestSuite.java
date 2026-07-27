@@ -23,6 +23,17 @@ public class TestSuite {
     private String responseColumns;
     private String requestTemplate;
     private String inputBindings;
+
+    /**
+     * Ordered chain of additional requests (JSONB array), holding chain elements {@code 1..N-1}; request 0
+     * stays in the flat {@code endpointRef}/{@code requestTemplate}/{@code inputBindings}/
+     * {@code responseColumns} columns. Null or empty ⇒ single-request suite (pre-existing behavior).
+     */
+    private String additionalRequests;
+
+    /** Optional label naming request 0; defaulted to {@code request-1} during chain normalization. */
+    private String requestLabel;
+
     private String mcpDeploymentRef;
     private String toolRef;
     private String argumentTemplate;

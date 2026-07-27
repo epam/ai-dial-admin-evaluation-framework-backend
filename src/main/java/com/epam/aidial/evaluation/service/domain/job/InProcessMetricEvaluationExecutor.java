@@ -178,7 +178,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
 
         Map<String, TsmdEvaluationResult> tsmdResults = new ConcurrentHashMap<>();
 
-        // Evaluate each metric's condition synchronously (before async dispatch) over {data, response, turn}:
+        // Evaluate each metric's condition synchronously (before async dispatch) over {data, response, turn, request}:
         // RUN → dispatch; SKIP → omit the metric entirely; ERROR → record a metric-level ConditionError
         // (row stays SUCCESS). Only dispatched metrics are reconciled for timeout/failure below.
         ConditionContext conditionContext = ConditionContext.builder()
@@ -186,6 +186,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .responseJson(result.getExtractedColumns())
                 .turnIndex(result.getTurnIndex())
                 .totalTurns(result.getTotalTurns())
+                .requestIndex(result.getRequestIndex())
+                .requestLabel(result.getRequestLabel())
                 .build();
 
         List<AggregatedMetricDefinition> dispatchedTsmds = new ArrayList<>();
@@ -319,6 +321,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .runIndex(result.getRunIndex())
                 .turnIndex(result.getTurnIndex())
                 .totalTurns(result.getTotalTurns())
+                .requestIndex(result.getRequestIndex())
+                .requestLabel(result.getRequestLabel())
                 .testCaseData(parseJsonNode(result.getTestCaseData()))
                 .extractedColumns(parseJsonNode(result.getExtractedColumns()))
                 .executionStatus(executionStatus)

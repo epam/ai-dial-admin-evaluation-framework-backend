@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.service.domain.dto.ChainRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.McpDeploymentReferenceDto;
@@ -45,6 +46,7 @@ public class TestSuiteMapper {
         RequestTemplateDto requestTemplate = jsonbMapper.mapRequestTemplate(entity.getRequestTemplate());
         List<ResponseColumnDefinitionDto> responseColumns = jsonbMapper.mapResponseColumns(entity.getResponseColumns());
         List<InputBindingDto> inputBindings = jsonbMapper.mapInputBindings(entity.getInputBindings());
+        List<ChainRequestDto> additionalRequests = jsonbMapper.mapAdditionalRequests(entity.getAdditionalRequests());
         McpDeploymentReferenceDto mcpDeploymentRef = jsonbMapper.mapMcpDeploymentRef(entity.getMcpDeploymentRef());
         ToolReferenceDto toolRef = jsonbMapper.mapToolRef(entity.getToolRef());
         ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(entity.getArgumentTemplate());
@@ -65,6 +67,8 @@ public class TestSuiteMapper {
                 .responseColumns(responseColumns)
                 .requestTemplate(requestTemplate)
                 .inputBindings(inputBindings)
+                .additionalRequests(additionalRequests)
+                .requestLabel(entity.getRequestLabel())
                 .mcpDeploymentRef(mcpDeploymentRef)
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
@@ -96,6 +100,8 @@ public class TestSuiteMapper {
                 .responseColumns(jsonbMapper.mapResponseColumns(dto.getResponseColumns()))
                 .requestTemplate(jsonbMapper.map(dto.getRequestTemplate()))
                 .inputBindings(jsonbMapper.mapInputBindings(dto.getInputBindings()))
+                .additionalRequests(jsonbMapper.mapAdditionalRequests(dto.getAdditionalRequests()))
+                .requestLabel(dto.getRequestLabel())
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(dto.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()))
@@ -121,6 +127,8 @@ public class TestSuiteMapper {
         entity.setResponseColumns(jsonbMapper.mapResponseColumns(dto.getResponseColumns()));
         entity.setRequestTemplate(jsonbMapper.map(dto.getRequestTemplate()));
         entity.setInputBindings(jsonbMapper.mapInputBindings(dto.getInputBindings()));
+        entity.setAdditionalRequests(jsonbMapper.mapAdditionalRequests(dto.getAdditionalRequests()));
+        entity.setRequestLabel(dto.getRequestLabel());
         entity.setMcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()));
         entity.setToolRef(jsonbMapper.mapToolRef(dto.getToolRef()));
         entity.setArgumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()));
@@ -179,6 +187,15 @@ public class TestSuiteMapper {
             argumentTemplate = argumentTemplate.replace(sourcePrefix, targetPrefix);
         }
 
+        // The chain is copied verbatim and is NOT overridable (see TestSuiteCloneRequestDto). Making it
+        // overridable without also extending the TSMD revalidation trigger set would be a correctness hole:
+        // an override that dropped a response column a TSMD binds to would copy isValid=true verbatim.
+        // Suite-scoped file refs inside chain templates/bindings are rewritten like the flat ones.
+        String additionalRequests = source.getAdditionalRequests();
+        if (additionalRequests != null) {
+            additionalRequests = additionalRequests.replace(sourcePrefix, targetPrefix);
+        }
+
         UUID datasetId = dto.getDatasetId() != null ? dto.getDatasetId() : source.getDatasetId();
 
         return TestSuite.builder()
@@ -193,6 +210,8 @@ public class TestSuiteMapper {
                 .responseColumns(responseColumns)
                 .requestTemplate(requestTemplate)
                 .inputBindings(inputBindings)
+                .additionalRequests(additionalRequests)
+                .requestLabel(source.getRequestLabel())
                 .mcpDeploymentRef(mcpDeploymentRef)
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
@@ -230,6 +249,8 @@ public class TestSuiteMapper {
                         entity.getInputBindings() != null
                                 ? jsonbMapper.mapInputBindings(entity.getInputBindings())
                                 : null)
+                .additionalRequests(jsonbMapper.mapAdditionalRequests(entity.getAdditionalRequests()))
+                .requestLabel(entity.getRequestLabel())
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(entity.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(entity.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(entity.getArgumentTemplate()))

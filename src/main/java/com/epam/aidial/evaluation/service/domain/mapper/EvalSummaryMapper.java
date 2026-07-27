@@ -28,6 +28,8 @@ public abstract class EvalSummaryMapper {
     @Mapping(source = "item.runIndex", target = "runIndex")
     @Mapping(source = "item.turnIndex", target = "turnIndex", defaultValue = "0")
     @Mapping(source = "item.totalTurns", target = "totalTurns", defaultValue = "1")
+    @Mapping(source = "item.requestIndex", target = "requestIndex", defaultValue = "0")
+    @Mapping(source = "item.requestLabel", target = "requestLabel")
     @Mapping(source = "item.testCaseData", target = "testCaseData")
     @Mapping(source = "item.extractedColumns", target = "extractedColumns")
     @Mapping(source = "item.executionStatus", target = "executionStatus")

@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshot
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
+import com.epam.aidial.evaluation.service.domain.ChainNormalizer;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
@@ -69,6 +70,7 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
     private final SchemaFieldTypeMapper schemaFieldTypeMapper;
+    private final ChainNormalizer chainNormalizer;
     private final List<QuerySchemaFieldDto> baseSchema;
 
     public EvalSummariesSchemaProvider(
@@ -76,11 +78,13 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
             RunMetricSnapshotRepository runMetricSnapshotRepository,
             OutputSchemaFieldExtractor outputSchemaFieldExtractor,
             SchemaFieldTypeMapper schemaFieldTypeMapper,
+            ChainNormalizer chainNormalizer,
             JooqTableSchemaResolver schemaResolver) {
         this.testSuiteRunService = testSuiteRunService;
         this.runMetricSnapshotRepository = runMetricSnapshotRepository;
         this.outputSchemaFieldExtractor = outputSchemaFieldExtractor;
         this.schemaFieldTypeMapper = schemaFieldTypeMapper;
+        this.chainNormalizer = chainNormalizer;
         this.baseSchema = schemaResolver.resolve(TEST_CASE_EVAL_SUMMARIES);
     }
 
@@ -155,11 +159,17 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
                 .toList();
     }
 
+    /**
+     * Advertises the run's CHAIN-UNION response columns — request 0's followed by each subsequent chain
+     * request's, in chain order — using the same helper that backs the CSV export planner. Sourcing the
+     * snapshot's flat {@code responseColumns} alone would omit every column owned by a later chain request.
+     *
+     * <p>Names are unique chain-wide, so a {@code response:<column>} field needs no request qualification.
+     * A given result row populates only the columns owned by its own chain request, so a queried
+     * {@code response:<column>} is null on rows produced by other requests.
+     */
     private List<QuerySchemaFieldDto> responseFields(SuiteSnapshotDto snapshot) {
-        final List<ResponseColumnDefinitionDto> responseColumns = snapshot.getResponseColumns();
-        if (responseColumns == null) {
-            return List.of();
-        }
+        final List<ResponseColumnDefinitionDto> responseColumns = chainNormalizer.chainResponseColumns(snapshot);
         return responseColumns.stream()
                 .map(column -> new QuerySchemaFieldDto(
                         RESPONSE_COLUMN_PREFIX + column.getName(),

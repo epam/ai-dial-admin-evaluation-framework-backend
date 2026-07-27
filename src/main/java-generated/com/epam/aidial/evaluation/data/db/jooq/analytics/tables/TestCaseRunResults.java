@@ -171,6 +171,16 @@ public class TestCaseRunResults extends TableImpl<TestCaseRunResultsRecord> {
      */
     public final TableField<TestCaseRunResultsRecord, Integer> TOTAL_TURNS = createField(DSL.name("total_turns"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
 
+    /**
+     * The column <code>analytics.test_case_run_results.request_index</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, Integer> REQUEST_INDEX = createField(DSL.name("request_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>analytics.test_case_run_results.request_label</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, String> REQUEST_LABEL = createField(DSL.name("request_label"), SQLDataType.VARCHAR(255), this, "");
+
     private TestCaseRunResults(Name alias, Table<TestCaseRunResultsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

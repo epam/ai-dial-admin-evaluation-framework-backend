@@ -7,6 +7,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteProperties;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -111,6 +112,8 @@ class TestSuiteServiceTest {
                 authorResolver,
                 endpointSchemaRefResolver,
                 suiteValidationService,
+                new ChainNormalizer(jsonbMapper),
+                new ChainConfigurationValidator(chainProperties()),
                 datasetSchemaProvider,
                 runnableTestCaseSelector,
                 testSuiteMetricDefinitionService,
@@ -156,5 +159,12 @@ class TestSuiteServiceTest {
 
         // The pre-transaction copy targeted a freshly generated dataset id; cleanup must remove it.
         verify(fileService, times(1)).deleteAllByDatasetId(any(UUID.class));
+    }
+
+    /** Real properties instance with the production default chain cap, so chain validation behaves as shipped. */
+    private static TestSuiteProperties chainProperties() {
+        TestSuiteProperties props = new TestSuiteProperties();
+        props.getMultiRequest().setMaxRequests(10);
+        return props;
     }
 }

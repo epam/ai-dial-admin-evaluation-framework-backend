@@ -29,6 +29,18 @@ public class TestCaseRunResultResponseDto {
     @Schema(description = "Total turn count of the test case (1 for single-turn).", example = "1")
     private int totalTurns;
 
+    @Schema(
+            description = "0-based chain position of the multi-request suite request that produced this row "
+                    + "(0 for single-request suites).",
+            example = "0")
+    private int requestIndex;
+
+    @Schema(
+            description = "Resolved label of the chain request that produced this row; null for rows written "
+                    + "before this capability existed or imported without one.",
+            example = "invoke")
+    private String requestLabel;
+
     private JsonNode testCaseData;
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -10,10 +10,17 @@ import lombok.Builder;
  * {@code 0}/{@code 1}. Because a test case's turns are always contiguous {@code 0..N-1}, the last turn
  * is {@code turnIndex == totalTurns - 1}.
  *
+ * <p>It also holds the chain position of the row's producing request ({@code requestIndex}, 0-based) and
+ * that request's resolved label ({@code requestLabel}), exposed through the {@code request} namespace. This
+ * is how a metric is targeted at one request of a multi-request suite: the metric list stays flat and
+ * targeting reuses this existing per-metric {@code condition} rather than adding a second mechanism. A
+ * single-request suite sees {@code request.index = 0} and its resolved default label, so behavior is
+ * unchanged. Note there is deliberately no {@code request.total}/{@code request.last}: unlike turn count,
+ * chain length is configuration — fixed for the run and known while writing the condition.
+ *
  * <p>The carrier exists so that new inputs can be added without changing
- * {@link ConditionExpressionEvaluator#evaluate} — additive builder fields only, no signature churn. The
- * turn position is exposed to conditions through the {@code turn} namespace of the evaluation dictionary
- * (e.g. {@code turn.last}, {@code turn.index}, {@code turn.total}).
+ * {@link ConditionExpressionEvaluator#evaluate} — additive builder fields only, no signature churn.
  */
 @Builder
-public record ConditionContext(String dataJson, String responseJson, int turnIndex, int totalTurns) {}
+public record ConditionContext(
+        String dataJson, String responseJson, int turnIndex, int totalTurns, int requestIndex, String requestLabel) {}

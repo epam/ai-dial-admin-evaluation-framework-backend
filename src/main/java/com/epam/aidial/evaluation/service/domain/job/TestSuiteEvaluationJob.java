@@ -14,6 +14,7 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.service.domain.ChainNormalizer;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
@@ -67,6 +68,7 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteRunSseService sseService;
     private final EvaluationRunProperties evaluationRunProperties;
     private final ObjectMapper objectMapper;
+    private final ChainNormalizer chainNormalizer;
     private final SuiteSnapshotBuilder suiteSnapshotBuilder;
     private final EvaluationExecutor evaluationExecutor;
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
@@ -411,7 +413,8 @@ public class TestSuiteEvaluationJob {
                         exec != null ? exec.getConcurrencyLevel() : null, execProps.getDefaultConcurrencyLevel()))
                 .requestTimeoutMs(ObjectUtils.getIfNull(
                         exec != null ? exec.getRequestTimeoutMs() : null, execProps.getDefaultRequestTimeoutMs()))
-                .rateLimitRps(exec != null ? exec.getRateLimitRps() : execProps.getDefaultRateLimitRps())
+                .rateLimiter(
+                        RunRateLimiter.of(exec != null ? exec.getRateLimitRps() : execProps.getDefaultRateLimitRps()))
                 .maxRetries(ObjectUtils.getIfNull(
                         retry != null ? retry.getMaxRetries() : null, retryProps.getDefaultMaxRetries()))
                 .retryDelayMs(ObjectUtils.getIfNull(
@@ -432,6 +435,9 @@ public class TestSuiteEvaluationJob {
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
+                // Normalized once here so execution sees exactly the chain the snapshot froze, and a live
+                // suite edited after run creation cannot change what this run executes.
+                .chain(chainNormalizer.normalize(snapshot))
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())
                 .argumentTemplateDto(snapshot.getArgumentTemplate())

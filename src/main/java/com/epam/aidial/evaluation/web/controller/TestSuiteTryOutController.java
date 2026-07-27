@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -33,7 +34,10 @@ public class TestSuiteTryOutController {
             summary = "Try it out with variables",
             description =
                     "Resolves the suite's request template using the provided variables as constant-value bindings, "
-                            + "sends the resolved request to the DIAL Core deployment, and returns the response.")
+                            + "sends the resolved request to the DIAL Core deployment, and returns the response. "
+                            + "For a multi-request suite, `requestIndex` selects which chain request to instantiate; "
+                            + "only that one request is sent. Because the caller supplies every value directly, a "
+                            + "later chain request can be tried in isolation with no prefix execution.")
     @ApiResponse(
             responseCode = "200",
             description = "Try-it-out completed successfully",
@@ -50,7 +54,16 @@ public class TestSuiteTryOutController {
     @ApiResponse(responseCode = "504", description = "DIAL Core timeout")
     public TryItOutResponseDto tryWithVariables(
             @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId,
-            @Valid @RequestBody TryItOutWithVariablesRequestDto request) {
-        return tryItOutService.tryWithVariables(testSuiteId, request.getVariables());
+            @Valid @RequestBody TryItOutWithVariablesRequestDto request,
+            @Parameter(
+                            description = "Which chain request of a multi-request suite to instantiate, "
+                                    + "0-based. Defaults to 0 — the suite's flat configuration. Try-out remains a "
+                                    + "single-endpoint operation: ONLY the selected request is sent, no preceding "
+                                    + "chain request is executed. The index rather than the label is the selector "
+                                    + "because the index is a result-row natural-key component.",
+                            example = "0")
+                    @RequestParam(name = "requestIndex", required = false)
+                    Integer requestIndex) {
+        return tryItOutService.tryWithVariables(testSuiteId, request.getVariables(), requestIndex);
     }
 }

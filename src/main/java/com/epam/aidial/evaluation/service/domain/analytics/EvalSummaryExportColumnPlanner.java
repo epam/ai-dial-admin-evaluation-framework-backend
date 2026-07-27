@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.service.domain.ChainNormalizer;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
@@ -39,6 +40,7 @@ import tools.jackson.databind.JsonNode;
 public class EvalSummaryExportColumnPlanner {
 
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
+    private final ChainNormalizer chainNormalizer;
 
     public List<ColumnDescriptor> plan(SuiteSnapshotDto snapshot, List<RunMetricSnapshot> metricSnapshots) {
         List<ColumnDescriptor> descriptors = new ArrayList<>();
@@ -51,6 +53,15 @@ public class EvalSummaryExportColumnPlanner {
         descriptors.add(plain("testCaseId", row -> row.getSummary().getTestCaseId()));
         descriptors.add(plain("testCaseName", row -> row.getSummary().getTestCaseName()));
         descriptors.add(plain("runIndex", row -> row.getSummary().getRunIndex()));
+        // Request and turn identity. Without these, rows multiplied by a chain or by turns are
+        // distinguishable only by opaque UUIDs, making an exported report un-interpretable on its own.
+        // The turn pair closes a pre-existing gap: the planner previously emitted neither, so a multi-turn
+        // CSV had no column telling turns apart. Appended within the identity block, so header-name-based
+        // consumers are unaffected; strictly positional parsers will observe the new columns.
+        descriptors.add(plain("requestIndex", row -> row.getSummary().getRequestIndex()));
+        descriptors.add(plain("requestLabel", row -> row.getSummary().getRequestLabel()));
+        descriptors.add(plain("turnIndex", row -> row.getSummary().getTurnIndex()));
+        descriptors.add(plain("totalTurns", row -> row.getSummary().getTotalTurns()));
         descriptors.add(plain("computationId", row -> row.getSummary().getComputationId()));
 
         // 2. Timestamps (epoch ms — preserved as Long per AGENTS.md "API Timestamp Convention")
@@ -77,14 +88,17 @@ public class EvalSummaryExportColumnPlanner {
             }
         }
 
-        // 5. Inlined response:<columnName> per snapshot responseColumns
-        if (snapshot.getResponseColumns() != null) {
-            for (ResponseColumnDefinitionDto column : snapshot.getResponseColumns()) {
-                String columnName = column.getName();
-                descriptors.add(plain(
-                        EvalSummaryExportColumnConstants.RESPONSE_COLUMN_PREFIX + columnName,
-                        row -> jsonFieldValue(row.extractedColumns(), columnName)));
-            }
+        // 5. Inlined response:<columnName> over the snapshot's CHAIN-UNION response column set — request 0's
+        //    columns followed by each subsequent chain request's, in chain order. Sourcing the flat
+        //    responseColumns alone would silently omit every column owned by a later chain request. Because
+        //    each row's extractedColumns holds only its own request's columns, a multi-request run's rows are
+        //    sparse: cells for columns owned by other requests are empty. Degenerates to the flat list for a
+        //    single-request suite, so those exports are byte-identical to before.
+        for (ResponseColumnDefinitionDto column : chainNormalizer.chainResponseColumns(snapshot)) {
+            String columnName = column.getName();
+            descriptors.add(plain(
+                    EvalSummaryExportColumnConstants.RESPONSE_COLUMN_PREFIX + columnName,
+                    row -> jsonFieldValue(row.extractedColumns(), columnName)));
         }
 
         // 6. Per-metric block: metric:<m>:<f> values, then metricInfo:<m>:<f> details,

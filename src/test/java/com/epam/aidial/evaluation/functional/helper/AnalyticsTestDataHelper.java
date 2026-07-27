@@ -76,6 +76,8 @@ public class AnalyticsTestDataHelper {
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME,
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES.REQUEST_LABEL,
                         TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
@@ -96,6 +98,8 @@ public class AnalyticsTestDataHelper {
                         TEST_CASE_RUN_RESULTS.RUN_INDEX,
                         TEST_CASE_RUN_RESULTS.TURN_INDEX,
                         TEST_CASE_RUN_RESULTS.TOTAL_TURNS,
+                        TEST_CASE_RUN_RESULTS.REQUEST_INDEX,
+                        TEST_CASE_RUN_RESULTS.REQUEST_LABEL,
                         TEST_CASE_RUN_RESULTS.EXECUTION_STATUS,
                         TEST_CASE_RUN_RESULTS.REQUEST_BODY,
                         TEST_CASE_RUN_RESULTS.RESPONSE_BODY,
@@ -204,6 +208,46 @@ public class AnalyticsTestDataHelper {
                 .set(TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS, executionStatus)
                 .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, execDurationMs)
                 .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, JSONB.valueOf(metricValuesJson))
+                .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, createdAtMs)
+                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, createdAtMs)
+                .execute();
+        return id;
+    }
+
+    /**
+     * Variant carrying a chain request's identity ({@code request_index} / {@code request_label}), for
+     * exercising per-request eval summaries of a multi-request suite. Both columns are part of what a query
+     * author filters and groups by, and {@code request_index} is part of the natural key.
+     */
+    @Transactional("analyticsTransactionManager")
+    public UUID createChainEvalSummary(
+            UUID suiteId,
+            UUID suiteRunId,
+            UUID computationId,
+            String testCaseName,
+            int requestIndex,
+            String requestLabel,
+            long execDurationMs,
+            long createdAtMs) {
+        UUID id = UUID.randomUUID();
+        analyticsDsl
+                .insertInto(TEST_CASE_EVAL_SUMMARIES)
+                .set(TEST_CASE_EVAL_SUMMARIES.ID, id.toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID, suiteId.toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID, suiteRunId.toString())
+                .set(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
+                        UUID.randomUUID().toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, UUID.randomUUID().toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, testCaseName)
+                .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, 0)
+                .set(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX, requestIndex)
+                .set(TEST_CASE_EVAL_SUMMARIES.REQUEST_LABEL, requestLabel)
+                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID, computationId.toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA, JSONB.valueOf("{}"))
+                .set(TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS, ExecutionStatus.SUCCESS.name())
+                .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, execDurationMs)
+                .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, JSONB.valueOf("{}"))
                 .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, createdAtMs)
                 .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, createdAtMs)
                 .execute();

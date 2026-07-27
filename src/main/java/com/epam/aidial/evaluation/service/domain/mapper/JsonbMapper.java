@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.mapper;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.service.domain.dto.ChainRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
@@ -36,6 +37,7 @@ public class JsonbMapper {
     private static final TypeReference<List<MetricParameterBindingDto>> METRIC_BINDING_LIST_TYPE =
             new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private static final TypeReference<List<ChainRequestDto>> CHAIN_REQUEST_LIST_TYPE = new TypeReference<>() {};
     private final ObjectMapper objectMapper;
 
     public String map(DeploymentReferenceDto value) {
@@ -84,6 +86,21 @@ public class JsonbMapper {
 
     public List<MetricParameterBindingDto> mapMetricBindings(String json) {
         return readList(json, METRIC_BINDING_LIST_TYPE, "metricBindings");
+    }
+
+    /**
+     * Serializes a suite's {@code additionalRequests} chain (requests {@code 1..N-1}; request 0 lives in
+     * the flat columns). Returns {@code null} for a null input so the column stays null — meaning
+     * "single-request suite", the pre-existing behavior — rather than {@code "[]"}, which would make every
+     * suite look explicitly chain-configured.
+     */
+    public String mapAdditionalRequests(List<ChainRequestDto> value) {
+        return write(value, "additionalRequests");
+    }
+
+    /** The suite's {@code additionalRequests} chain. Empty list when the column is null (single-request). */
+    public List<ChainRequestDto> mapAdditionalRequests(String json) {
+        return readList(json, CHAIN_REQUEST_LIST_TYPE, "additionalRequests");
     }
 
     public String mapMcpDeploymentRef(McpDeploymentReferenceDto value) {

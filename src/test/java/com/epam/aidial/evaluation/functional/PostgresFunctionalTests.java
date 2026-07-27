@@ -55,6 +55,10 @@ import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestAnalyticsFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestExecutionFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestRunGuardFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestTestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnCsvFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
@@ -286,6 +290,18 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestSuiteDatasetTests extends TestSuiteDatasetFunctionalTests {}
+
+    @Nested
+    class MultiRequestTestSuiteTests extends MultiRequestTestSuiteFunctionalTests {}
+
+    @Nested
+    class MultiRequestRunGuardTests extends MultiRequestRunGuardFunctionalTests {}
+
+    @Nested
+    class MultiRequestExecutionTests extends MultiRequestExecutionFunctionalTests {}
+
+    @Nested
+    class MultiRequestAnalyticsTests extends MultiRequestAnalyticsFunctionalTests {}
 
     @Nested
     class RevalidationTaskTests extends RevalidationTaskFunctionalTests {}

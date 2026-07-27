@@ -85,6 +85,7 @@ public class EvaluationWorker {
     private final SseEventParser sseEventParser;
     private final SseEventProcessingProperties sseEventProcessingProperties;
     private final MultiTurnExecutor multiTurnExecutor;
+    private final ChainExecutor chainExecutor;
 
     public List<TestCaseRunResult> execute(
             TestCaseRunInput input,
@@ -119,6 +120,14 @@ public class EvaluationWorker {
             // per turn; the single-turn HTTP path below is unchanged.
             if (input.getMultiTurnData() != null) {
                 return multiTurnExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);
+            }
+
+            // Multi-request suites run their frozen chain sequentially, emitting one result per executed
+            // request. Checked after multi-turn only for clarity of reading — the two are mutually exclusive
+            // by the run-creation guard, so the chain loop never sees multiTurnData. A single-request suite
+            // normalizes to a one-element chain and falls through to the unchanged path below.
+            if (context.getChain() != null && context.getChain().size() > 1) {
+                return chainExecutor.execute(input, context, runIndex, traceId, execStartedAtMs);
             }
 
             // Parse test case data for template resolution
@@ -514,6 +523,24 @@ public class EvaluationWorker {
         long callStartMs = clock.millis();
         String token = context.getToken();
 
+        // Same per-call gate as the HTTP path — an MCP tool invocation is an outgoing call against the
+        // deployment and must be counted against the configured RPS.
+        if (!context.getRateLimiter().tryAcquire()) {
+            long interruptedAt = clock.millis();
+            return buildResult(
+                    input,
+                    context,
+                    runIndex,
+                    traceId,
+                    callStartMs,
+                    interruptedAt,
+                    interruptedAt - callStartMs,
+                    ExecutionStatus.ERROR,
+                    null,
+                    buildErrorEnvelope("CANCELLED", "Interrupted while waiting for a rate limit token"),
+                    responseColumns);
+        }
+
         try {
             McpTransport transport =
                     mcpRef.getTransport() != null ? mcpRef.getTransport() : McpTransport.STREAMABLE_HTTP;
@@ -639,6 +666,26 @@ public class EvaluationWorker {
             Object body) {
 
         long callStartMs = clock.millis();
+
+        // One token per HTTP attempt, retries included: a retry is a real request, and retries cluster
+        // precisely when the target is already returning 429/5xx — the worst moment to bypass the limit.
+        // An interrupted wait returns a not-issued result rather than blocking, so run cancellation is not
+        // delayed by a pending token wait; the executor drops the row because the interrupt flag is set.
+        if (!context.getRateLimiter().tryAcquire()) {
+            long interruptedAt = clock.millis();
+            return buildResult(
+                    input,
+                    context,
+                    runIndex,
+                    traceId,
+                    callStartMs,
+                    interruptedAt,
+                    interruptedAt - callStartMs,
+                    ExecutionStatus.ERROR,
+                    null,
+                    buildErrorEnvelope("CANCELLED", "Interrupted while waiting for a rate limit token"),
+                    responseColumns);
+        }
 
         try (DeploymentInvocationResult result =
                 deploymentInvoker.invokeWithStreaming(method, path, headers, queryParams, body)) {

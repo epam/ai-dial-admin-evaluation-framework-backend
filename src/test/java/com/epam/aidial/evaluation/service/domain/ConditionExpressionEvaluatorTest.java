@@ -91,4 +91,131 @@ class ConditionExpressionEvaluatorTest {
     void malformedRejected() {
         assertThatThrownBy(() -> evaluator.validate("this is (not valid")).isInstanceOf(ValidationException.class);
     }
+
+    private ConditionContext requestCtx(String responseJson, int requestIndex, String requestLabel) {
+        return ConditionContext.builder()
+                .dataJson("{}")
+                .responseJson(responseJson)
+                .turnIndex(0)
+                .totalTurns(1)
+                .requestIndex(requestIndex)
+                .requestLabel(requestLabel)
+                .build();
+    }
+
+    @Test
+    @DisplayName("request.label targets exactly one chain request")
+    void requestLabelTargetsOneRequest() {
+        String condition = "request.label = \"invoke\"";
+
+        assertThat(evaluator.evaluate(condition, requestCtx("{}", 1, "invoke")).isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate(condition, requestCtx("{}", 0, "configure"))
+                        .isSkip())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate(condition, requestCtx("{}", 2, "teardown"))
+                        .isSkip())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("request.index targets exactly one chain request")
+    void requestIndexTargetsOneRequest() {
+        String condition = "request.index = 1";
+
+        assertThat(evaluator.evaluate(condition, requestCtx("{}", 1, "invoke")).isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate(condition, requestCtx("{}", 0, "configure"))
+                        .isSkip())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("A single-request suite sees request.index = 0 and its resolved default label")
+    void singleRequestSeesStableRequestNamespace() {
+        assertThat(evaluator
+                        .evaluate("request.index = 0", requestCtx("{}", 0, "request-1"))
+                        .isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate("request.label = \"request-1\"", requestCtx("{}", 0, "request-1"))
+                        .isRun())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("request combines with response in one expression")
+    void requestCombinesWithResponse() {
+        String condition = "request.label = \"invoke\" and $exists(response.answer)";
+
+        assertThat(evaluator
+                        .evaluate(condition, requestCtx("{\"answer\":\"42\"}", 1, "invoke"))
+                        .isRun())
+                .isTrue();
+        assertThat(evaluator.evaluate(condition, requestCtx("{}", 1, "invoke")).isSkip())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate(condition, requestCtx("{\"answer\":\"42\"}", 0, "configure"))
+                        .isSkip())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("request combines with data in one expression")
+    void requestCombinesWithData() {
+        ConditionContext context = ConditionContext.builder()
+                .dataJson("{\"category\":\"billing\"}")
+                .responseJson("{}")
+                .turnIndex(0)
+                .totalTurns(1)
+                .requestIndex(2)
+                .requestLabel("invoke")
+                .build();
+
+        assertThat(evaluator
+                        .evaluate("request.index = 2 and data.category = \"billing\"", context)
+                        .isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate("request.index = 1 and data.category = \"billing\"", context)
+                        .isSkip())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("request and turn namespaces coexist, both readable from one dictionary")
+    void requestAndTurnCoexist() {
+        ConditionContext context = ConditionContext.builder()
+                .dataJson("{}")
+                .responseJson("{}")
+                .turnIndex(0)
+                .totalTurns(1)
+                .requestIndex(1)
+                .requestLabel("invoke")
+                .build();
+
+        assertThat(evaluator
+                        .evaluate("turn.last and request.label = \"invoke\"", context)
+                        .isRun())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("A null request label is present-but-null, and never equals a label being targeted")
+    void nullRequestLabelIsPresentButNull() {
+        // Only imported rows can carry a null label — the normalizer defaults every executed request's label.
+        // The dictionary preserves explicit nulls (same contract as response columns), so $exists is true while
+        // any equality test against a real label is false, which is what keeps a label-targeted metric off it.
+        assertThat(evaluator
+                        .evaluate("$exists(request.label)", requestCtx("{}", 0, null))
+                        .isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate("request.label = \"invoke\"", requestCtx("{}", 0, null))
+                        .isSkip())
+                .isTrue();
+    }
 }

@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.HttpChainRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.service.domain.dto.ParameterDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ParameterLocation;
@@ -1099,6 +1100,185 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     // Note: testCaseSchema-driven TSMD revalidation (sync via suite PUT and async via revalidation task)
     // moved to DatasetService after task group 4 of introduce-dataset-entity. Suite PUT no longer
     // observes schema changes, so the original premise of these two tests is gone.
+
+    // -----------------------------------------------------------------------
+    // Chain-union response columns — a TSMD may bind to ANY chain request's column
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Should mark TSMD valid when Response binding names a LATER chain request's response column")
+    void shouldMarkValid_whenResponseBindingNamesLaterChainRequestColumn() {
+        // Request 0 declares no response columns; chain request 1 declares `answer`. Validating against the
+        // suite's flat responseColumns alone would report `answer` as an unresolved reference.
+        TestSuiteResponseDto suite = createChainSuiteViaApi("Chain TSMD Suite " + UUID.randomUUID(), List.of("answer"));
+
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/metric-definitions"),
+                jsonEntity(responseBoundTsmdJson("Chain Bound Metric", "answer")),
+                TestSuiteMetricDefinitionResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getValidationWarnings()).isEmpty();
+        assertThat(response.getBody().isValid()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Should mark TSMD invalid when Response binding names no column in the whole chain")
+    void shouldMarkInvalid_whenResponseBindingNamesNoChainColumn() {
+        TestSuiteResponseDto suite =
+                createChainSuiteViaApi("Chain TSMD Miss Suite " + UUID.randomUUID(), List.of("answer"));
+
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/metric-definitions"),
+                jsonEntity(responseBoundTsmdJson("Chain Miss Metric", "not_in_chain")),
+                TestSuiteMetricDefinitionResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().isValid()).isFalse();
+        assertThat(response.getBody().getValidationWarnings()).hasSize(1);
+        assertThat(response.getBody().getValidationWarnings().get(0).getCode())
+                .isEqualTo(ValidationWarningCode.UNRESOLVED_REFERENCE);
+    }
+
+    @Test
+    @DisplayName("Should revalidate dependent TSMDs when a chain element's responseColumns are edited")
+    void shouldRevalidateTsmds_whenChainElementResponseColumnsEdited() {
+        TestSuiteResponseDto suite =
+                createChainSuiteViaApi("Chain Revalidate Suite " + UUID.randomUUID(), List.of("answer"));
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> created = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/metric-definitions"),
+                jsonEntity(responseBoundTsmdJson("Revalidated Metric", "answer")),
+                TestSuiteMetricDefinitionResponseDto.class);
+        assertThat(created.getBody().isValid()).isTrue();
+        UUID tsmdId = created.getBody().getId();
+
+        // Rename the chain element's only response column — the metric's binding target disappears from the
+        // chain union, so revalidation must run even though the FLAT responseColumns did not change at all.
+        ResponseEntity<String> update = updateChainSuiteViaApi(suite, List.of("renamed_answer"));
+        assertThat(update.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> after = restTemplate.getForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/metric-definitions/" + tsmdId),
+                TestSuiteMetricDefinitionResponseDto.class);
+        assertThat(after.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(after.getBody().isValid()).isFalse();
+        assertThat(after.getBody().getValidationWarnings()).hasSize(1);
+        assertThat(after.getBody().getValidationWarnings().get(0).getCode())
+                .isEqualTo(ValidationWarningCode.UNRESOLVED_REFERENCE);
+    }
+
+    @Test
+    @DisplayName("Should mark an unconditioned TSMD on a multi-request suite valid with no condition warning")
+    void shouldMarkValid_whenUnconditionedTsmdOnMultiRequestSuite() {
+        // An unconditioned metric runs on every request's row by design — that is not a configuration defect,
+        // so it must produce no warning of any kind at save time.
+        TestSuiteResponseDto suite =
+                createChainSuiteViaApi("Chain Unconditioned Suite " + UUID.randomUUID(), List.of("answer"));
+
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/metric-definitions"),
+                jsonEntity(TestSuiteMetricDefinitionRequestDto.builder()
+                        .name("Unconditioned Metric")
+                        .metricDeclarationId(SEED_ACCURACY_ID)
+                        .metricDeclarationVersionId(SEED_ACCURACY_VERSION_ID)
+                        .enabled(true)
+                        .configBindings(List.of())
+                        .inputBindings(List.of())
+                        .build()),
+                TestSuiteMetricDefinitionResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody().getCondition()).isNull();
+        assertThat(response.getBody().getValidationWarnings()).isEmpty();
+        assertThat(response.getBody().isValid()).isTrue();
+    }
+
+    /** A TSMD whose required `reference` input is bound to a response column by name. */
+    private String responseBoundTsmdJson(String name, String columnName) {
+        return """
+                {
+                    "name": "%s",
+                    "metricDeclarationId": "%s",
+                    "metricDeclarationVersionId": "%s",
+                    "configBindings": [],
+                    "inputBindings": [
+                        {"property": "reference", "source": {"$type": "Response", "columnName": "%s"}}
+                    ]
+                }
+                """.formatted(name, SEED_ACCURACY_ID, SCHEMA_VERSION_ID, columnName);
+    }
+
+    /**
+     * A two-request suite whose response columns live ONLY on chain request 1, so any validation that reads the
+     * suite's flat {@code responseColumns} sees an empty set. The dataset is created once and reused by
+     * {@link #updateChainSuiteViaApi} so a chain edit is the only revalidation trigger under test.
+     */
+    private TestSuiteResponseDto createChainSuiteViaApi(String name, List<String> chainColumnNames) {
+        UUID datasetId = metaTestDataHelper
+                .createDataset("chain-tsmd-ds-" + UUID.randomUUID(), "[]")
+                .getId();
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites"),
+                jsonEntity(chainSuiteRequest(name, datasetId, chainColumnNames)),
+                TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    private ResponseEntity<String> updateChainSuiteViaApi(TestSuiteResponseDto suite, List<String> chainColumnNames) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setIfMatch("\"" + (suite.getVersion() != null ? suite.getVersion() : 0L) + "\"");
+        return restTemplate.exchange(
+                apiUrl("/test-suites/" + suite.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(chainSuiteRequest(suite.getName(), suite.getDatasetId(), chainColumnNames), headers),
+                String.class);
+    }
+
+    private TestSuiteRequestDto chainSuiteRequest(String name, UUID datasetId, List<String> chainColumnNames) {
+        HttpChainRequestDto element = new HttpChainRequestDto();
+        element.setLabel("invoke");
+        element.setEndpointRef(EndpointContractDto.builder()
+                .method(HttpMethod.POST)
+                .relativeUrlPattern("/v1/invoke")
+                .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                        .schema(Map.of("type", "object", "properties", Map.of()))
+                        .build())
+                .build());
+        element.setRequestTemplate(
+                RequestTemplateDto.builder().urlTemplate("/v1/invoke").build());
+        element.setInputBindings(List.of());
+        element.setResponseColumns(chainColumnNames.stream()
+                .map(columnName -> ResponseColumnDefinitionDto.builder()
+                        .name(columnName)
+                        .expression("$." + columnName)
+                        .type(SchemaFieldType.STRING)
+                        .build())
+                .toList());
+
+        return TestSuiteRequestDto.builder()
+                .name(name)
+                .datasetId(datasetId)
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .responseColumns(List.of())
+                .additionalRequests(List.of(element))
+                .build();
+    }
 
     // --- Helper Methods ---
 

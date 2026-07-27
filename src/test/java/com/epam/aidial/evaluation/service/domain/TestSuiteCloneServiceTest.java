@@ -15,6 +15,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteProperties;
 import com.epam.aidial.evaluation.configuration.properties.validation.RevalidationProperties;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
@@ -24,6 +25,8 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.HttpChainRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
@@ -31,6 +34,8 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteUpdateResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationException;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.sql.SQLException;
@@ -51,6 +56,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestSuiteCloneService — clone() orchestration")
 @ExtendWith(MockitoExtension.class)
@@ -120,6 +126,8 @@ class TestSuiteCloneServiceTest {
                 fileService,
                 testSuiteMapper,
                 suiteValidationService,
+                new ChainNormalizer(new JsonbMapper(new ObjectMapper())),
+                new ChainConfigurationValidator(chainProperties()),
                 datasetSchemaProvider,
                 authorResolver,
                 revalidationProperties,
@@ -506,6 +514,98 @@ class TestSuiteCloneServiceTest {
         verify(tsmdService).revalidateAllForSuite(newId, inheritedSchemaJson, newEntity.getResponseColumns());
     }
 
+    // -----------------------------------------------------------------------
+    // (j) chain validation on clone — the only way a verbatim-copied chain can become invalid
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("(j) a responseColumns override colliding with a copied chain request's column is rejected")
+    void clone_responseColumnsOverrideCollidingWithChain_isRejected() {
+        TestSuite source = buildSource();
+        TestSuite newEntity = buildNewEntity(source);
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+        when(fileService.copyFilesBetweenSuites(any(), any())).thenReturn(List.of());
+        // The override claims `answer`, which chain request 1 already declares — chain-wide names must be unique.
+        HttpChainRequestDto element = new HttpChainRequestDto();
+        element.setLabel("invoke");
+        element.setResponseColumns(
+                List.of(ResponseColumnDefinitionDto.builder().name("answer").build()));
+        when(testSuiteMapper.toRequestDto(newEntity))
+                .thenReturn(TestSuiteRequestDto.builder()
+                        .name(newEntity.getName())
+                        .suiteType(newEntity.getSuiteType())
+                        .datasetId(newEntity.getDatasetId())
+                        .inputBindings(List.of())
+                        .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                                .name("answer")
+                                .build()))
+                        .additionalRequests(List.of(element))
+                        .build());
+        when(endpointSchemaRefResolver.resolve(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThatThrownBy(() -> service.clone(
+                        sourceId,
+                        TestSuiteCloneRequestDto.builder()
+                                .name(cloneName)
+                                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                                        .name("answer")
+                                        .build()))
+                                .build(),
+                        null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("answer");
+
+        // Suite validation never runs and the copied DIAL files are cleaned up — no half-cloned suite persists.
+        verify(suiteValidationService, never()).validateSuite(any(TestSuiteRequestDto.class), isNull(), anyList());
+        verify(tsmdService, never()).revalidateAllForSuite(any(), any(), any());
+        verify(fileService).deleteAllBySuiteId(newEntity.getId());
+    }
+
+    @Test
+    @DisplayName("(k) a clone whose copied chain has no collision validates normally")
+    void clone_nonCollidingChain_validatesNormally() {
+        TestSuite source = buildSource();
+        TestSuite newEntity = buildNewEntity(source);
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+        when(fileService.copyFilesBetweenSuites(any(), any())).thenReturn(List.of());
+        HttpChainRequestDto element = new HttpChainRequestDto();
+        element.setLabel("invoke");
+        element.setResponseColumns(
+                List.of(ResponseColumnDefinitionDto.builder().name("answer").build()));
+        when(testSuiteMapper.toRequestDto(newEntity))
+                .thenReturn(TestSuiteRequestDto.builder()
+                        .name(newEntity.getName())
+                        .suiteType(newEntity.getSuiteType())
+                        .datasetId(newEntity.getDatasetId())
+                        .inputBindings(List.of())
+                        .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                                .name("session_id")
+                                .build()))
+                        .additionalRequests(List.of(element))
+                        .build());
+        when(endpointSchemaRefResolver.resolve(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(datasetSchemaProvider.getSchema(newEntity.getDatasetId())).thenReturn(List.of());
+        when(suiteValidationService.validateSuite(any(TestSuiteRequestDto.class), isNull(), anyList()))
+                .thenReturn(ValidationResult.builder()
+                        .valid(true)
+                        .warnings(List.of())
+                        .build());
+        when(warningsSerializer.serializeWarnings(anyList())).thenReturn("[]");
+        when(tsmdRepository.findBatchByTestSuiteId(any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(testSuiteMapper.toDto(newEntity))
+                .thenReturn(TestSuiteResponseDto.builder().build());
+
+        service.clone(sourceId, cloneRequestWithNameOnly(), null);
+
+        verify(fileService, never()).deleteAllBySuiteId(any());
+    }
+
     private static TestSuiteMetricDefinition findByName(List<TestSuiteMetricDefinition> tsmds, String name) {
         return tsmds.stream().filter(t -> name.equals(t.getName())).findFirst().orElseThrow();
     }
@@ -626,5 +726,12 @@ class TestSuiteCloneServiceTest {
 
     private TestSuiteCloneRequestDto cloneRequestWithNameOnly() {
         return TestSuiteCloneRequestDto.builder().name(cloneName).build();
+    }
+
+    /** Real properties instance with the production default chain cap, so chain validation behaves as shipped. */
+    private static TestSuiteProperties chainProperties() {
+        TestSuiteProperties props = new TestSuiteProperties();
+        props.getMultiRequest().setMaxRequests(10);
+        return props;
     }
 }

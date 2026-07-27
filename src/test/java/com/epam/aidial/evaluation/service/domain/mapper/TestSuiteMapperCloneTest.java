@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -308,6 +309,72 @@ class TestSuiteMapperCloneTest {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // toCloneEntity — the chain is copied verbatim and is not overridable
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("copies additionalRequests and requestLabel verbatim from source")
+    void toCloneEntity_copiesChainVerbatim() {
+        TestSuite source = sourceWithChain();
+        TestSuiteCloneRequestDto dto =
+                TestSuiteCloneRequestDto.builder().name("Clone").build();
+
+        TestSuite cloned = mapper.toCloneEntity(source, dto, newId, createdBy);
+
+        assertThat(cloned.getAdditionalRequests()).isEqualTo(source.getAdditionalRequests());
+        assertThat(cloned.getRequestLabel()).isEqualTo("setup");
+    }
+
+    @Test
+    @DisplayName("a responseColumns override still copies the chain verbatim — the chain is not overridable")
+    void toCloneEntity_responseColumnsOverrideLeavesChainUntouched() {
+        TestSuite source = sourceWithChain();
+        TestSuiteCloneRequestDto dto = TestSuiteCloneRequestDto.builder()
+                .name("Clone")
+                .responseColumns(List.of())
+                .build();
+
+        TestSuite cloned = mapper.toCloneEntity(source, dto, newId, createdBy);
+
+        assertThat(cloned.getResponseColumns()).isEqualTo("[]");
+        assertThat(cloned.getAdditionalRequests()).isEqualTo(source.getAdditionalRequests());
+    }
+
+    @Test
+    @DisplayName("rewrites suite-scoped file refs inside additionalRequests, like the flat template")
+    void toCloneEntity_rewritesFileRefsInAdditionalRequests() {
+        TestSuite source = sourceWithChain();
+        source.setAdditionalRequests(
+                "[{\"label\":\"invoke\",\"requestTemplate\":{\"urlTemplate\":\"" + sourcePrefix + "body.json\"}}]");
+        TestSuiteCloneRequestDto dto =
+                TestSuiteCloneRequestDto.builder().name("Clone").build();
+
+        TestSuite cloned = mapper.toCloneEntity(source, dto, newId, createdBy);
+
+        assertThat(cloned.getAdditionalRequests()).contains(targetPrefix).doesNotContain(sourcePrefix);
+    }
+
+    @Test
+    @DisplayName("a single-request source clones with a null chain, so nothing changes for existing suites")
+    void toCloneEntity_singleRequestSourceKeepsNullChain() {
+        TestSuite source = sourceWithAllFields();
+        TestSuiteCloneRequestDto dto =
+                TestSuiteCloneRequestDto.builder().name("Clone").build();
+
+        TestSuite cloned = mapper.toCloneEntity(source, dto, newId, createdBy);
+
+        assertThat(cloned.getAdditionalRequests()).isNull();
+        assertThat(cloned.getRequestLabel()).isNull();
+    }
+
+    private TestSuite sourceWithChain() {
+        TestSuite source = sourceWithAllFields();
+        source.setRequestLabel("setup");
+        source.setAdditionalRequests("[{\"label\":\"invoke\",\"responseColumns\":[{\"name\":\"answer\"}]}]");
+        return source;
+    }
 
     private TestSuite sourceWithAllFields() {
         return TestSuite.builder()

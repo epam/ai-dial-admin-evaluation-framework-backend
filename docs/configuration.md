@@ -522,6 +522,12 @@ The following limits are enforced via Bean Validation (`@Size`) in DTOs and cont
 | `test-case.bulk.max-delete-ids` | `TEST_CASE_BULK_MAX_DELETE_IDS` | `10000` | No | - | Maximum number of IDs accepted in a single bulk-delete-by-IDs request (`DELETE /test-cases:bulk`). |
 | `test-case.multi-turn.max-turns` | `TEST_CASE_MULTI_TURN_MAX_TURNS` | `10` | No | - | Maximum number of turns a multi-turn test case (`multiTurnData`) may carry. A case exceeding this cap is persisted but marked `is_valid=false` with an invalidating warning (not rejected), so it is excluded from runnable selection. |
 
+### 7.6 Test Suite Configuration
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `test-suite.multi-request.max-requests` | `TEST_SUITE_MULTI_REQUEST_MAX_REQUESTS` | `10` | No | - | Maximum number of requests in a suite's normalized chain — request 0 (the suite's flat `endpointRef`/`requestTemplate`/`inputBindings`/`responseColumns`) plus every `additionalRequests` element. Enforced at suite save (HTTP 400 `VALIDATION_ERROR` naming the length and the cap) **and again** at run creation (HTTP 409 `INVALID_OPERATION`): because the cap is configurable it may be lowered after a suite is persisted, so a save-time check alone would let an over-cap suite run. Unlike the multi-turn cap this one rejects rather than invalidates, since a suite save is a single form submission with no partial-success semantics to preserve. |
+
 ---
 
 ## 8. Observability

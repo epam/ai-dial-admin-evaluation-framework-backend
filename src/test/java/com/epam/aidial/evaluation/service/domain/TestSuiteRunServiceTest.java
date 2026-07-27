@@ -13,6 +13,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
@@ -29,6 +30,7 @@ import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationExcep
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
+import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.io.ByteArrayInputStream;
@@ -116,7 +118,9 @@ class TestSuiteRunServiceTest {
                 sortParser,
                 new ObjectMapper(),
                 evalResultsImportService,
-                evalResultsCsvParser);
+                evalResultsCsvParser,
+                new ChainNormalizer(new JsonbMapper(new ObjectMapper())),
+                new ChainConfigurationValidator(chainProperties()));
 
         testSuiteId = UUID.randomUUID();
         datasetId = UUID.randomUUID();
@@ -264,5 +268,84 @@ class TestSuiteRunServiceTest {
             verify(evaluationJob, never()).executeRunAsync(any(), any(), anyBoolean());
             verify(evaluationJob, never()).registerCancellationSignal(any());
         }
+    }
+
+    @Nested
+    @DisplayName("createRun — chain cap re-check (guard 3b)")
+    class ChainCapGuard {
+
+        @Test
+        @DisplayName("a suite saved under a higher cap is rejected once the cap is lowered")
+        void overCapChainRejectedAfterCapLowered() {
+            // The suite was saved when the cap allowed 3 requests; the deployment has since lowered it to 2.
+            TestSuiteRunService serviceWithLoweredCap = serviceWithCap(2);
+
+            assertThatThrownBy(() -> serviceWithLoweredCap.createRun(testSuiteId, null))
+                    .isInstanceOf(InvalidOperationException.class)
+                    .hasMessageContaining("chain of 3 requests")
+                    .hasMessageContaining("maximum of 2");
+
+            // Guard 3b precedes the runnable-count query, so the cheaper configuration check reports first.
+            verify(runnableTestCaseCounter, never()).countRunnable(any(), any(), any());
+            verify(evaluationJob, never()).executeRunAsync(any(), any(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("a chain exactly at the current cap passes the guard and reaches the runnable-count query")
+        void chainAtCapPassesGuard() {
+            TestSuiteRunService serviceAtCap = serviceWithCap(3);
+            when(runnableTestCaseCounter.countRunnable(eq(datasetId), isNull(), any()))
+                    .thenReturn(0L);
+
+            // Zero runnable test cases is guard 4 — reaching it proves the chain cap guard let the run through.
+            assertThatThrownBy(() -> serviceAtCap.createRun(testSuiteId, null))
+                    .isInstanceOf(InvalidOperationException.class)
+                    .hasMessageContaining("no valid and enabled test cases");
+        }
+
+        /**
+         * A service whose only difference from the shared one is the configured chain cap, wired to a suite
+         * carrying a 3-request chain. The cap is read at run creation, not captured at save, which is exactly
+         * what makes lowering it able to reject an already-saved suite.
+         */
+        private TestSuiteRunService serviceWithCap(int maxRequests) {
+            TestSuiteProperties props = new TestSuiteProperties();
+            props.getMultiRequest().setMaxRequests(maxRequests);
+
+            TestSuite suite = validBoundSuite();
+            suite.setAdditionalRequests("[{\"label\":\"invoke\"},{\"label\":\"measure\"}]");
+            when(testSuiteRepository.findById(testSuiteId)).thenReturn(Optional.of(suite));
+
+            TestSuiteRunProperties.Limits limits = new TestSuiteRunProperties.Limits();
+            limits.setMaxConcurrentRunsGlobal(100);
+            limits.setMaxConcurrentRunsPerSuite(100);
+            TestSuiteRunProperties runProperties = new TestSuiteRunProperties();
+            runProperties.setLimits(limits);
+
+            return new TestSuiteRunService(
+                    testSuiteRunRepository,
+                    testSuiteRepository,
+                    testCaseService,
+                    runnableTestCaseCounter,
+                    runProperties,
+                    evaluationJob,
+                    executionSettingsValidator,
+                    sseService,
+                    mapper,
+                    filterParser,
+                    sortParser,
+                    new ObjectMapper(),
+                    evalResultsImportService,
+                    evalResultsCsvParser,
+                    new ChainNormalizer(new JsonbMapper(new ObjectMapper())),
+                    new ChainConfigurationValidator(props));
+        }
+    }
+
+    /** Real properties instance with the production default chain cap, so chain validation behaves as shipped. */
+    private static TestSuiteProperties chainProperties() {
+        TestSuiteProperties props = new TestSuiteProperties();
+        props.getMultiRequest().setMaxRequests(10);
+        return props;
     }
 }

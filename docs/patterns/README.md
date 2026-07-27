@@ -17,3 +17,4 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [Suite Run Snapshot Phase](suite-run-snapshot.md) | Snapshot tx, `40001` retry, inconsistent-snapshot guard, version handling |
 | [Selective Column Projection (TOAST)](selective-column-projection.md) | Column-tier constants to avoid TOAST decompression on bulk queries |
 | [MCP Tool Invocation](mcp-tool-invocation.md) | Per-call `McpSyncClient` via DIAL Core MCP proxy |
+| [Multi-Request Chain](request-chain.md) | Chain normalization, chain-wide response-column namespace, accumulating-map `responseField` resolution, fail-fast, condition-based metric targeting |

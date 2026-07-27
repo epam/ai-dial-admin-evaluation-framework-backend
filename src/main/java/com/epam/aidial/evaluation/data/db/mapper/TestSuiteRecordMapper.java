@@ -25,6 +25,8 @@ public class TestSuiteRecordMapper {
                 .responseColumns(toJsonString(r.getResponseColumns()))
                 .requestTemplate(toJsonString(r.getRequestTemplate()))
                 .inputBindings(toJsonString(r.getInputBindings()))
+                .additionalRequests(toJsonString(r.getAdditionalRequests()))
+                .requestLabel(r.getRequestLabel())
                 .mcpDeploymentRef(toJsonString(r.getMcpDeploymentRef()))
                 .toolRef(toJsonString(r.getToolRef()))
                 .argumentTemplate(toJsonString(r.getArgumentTemplate()))

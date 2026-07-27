@@ -242,6 +242,33 @@ class InProcessEvaluationExecutorTest {
     }
 
     @Test
+    @DisplayName("A worker that RETURNS rows while interrupted contributes none — no synthetic row on cancel")
+    void execute_workerInterruptedButReturningRows_writesNoRows() {
+        TestCaseRunInput input = buildInput();
+        TestCaseRunResult result = buildResult(input);
+        EvaluationContext context = buildContext(SUITE_ID, 1, 1);
+        ResultBatchWriter.RunBuffer buffer = stubCreateBuffer();
+
+        when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
+        when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input));
+        // The rate-limit gate's shape: interrupted by post-grace shutdownNow, the worker returns an ERROR row
+        // normally instead of throwing, so the executor's InterruptedException branch never runs. Without the
+        // interrupt-flag check the row would be buffered, violating "No synthetic rows for unfinished cases".
+        when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), eq(0), anyList()))
+                .thenAnswer(invocation -> {
+                    Thread.currentThread().interrupt();
+                    return List.of(result);
+                });
+
+        executor.execute(context);
+
+        verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
+                .execute(any(TestCaseRunInput.class), any(EvaluationContext.class), eq(0), anyList());
+        verify(resultBatchWriter).flush(eq(buffer));
+        verify(resultBatchWriter, never()).addResults(any(ResultBatchWriter.RunBuffer.class), anyList());
+    }
+
+    @Test
     @DisplayName("execute with multiple test cases processes all")
     void execute_multipleTestCases_processesAll() {
         TestCaseRunInput input1 = buildInput();
@@ -319,9 +346,11 @@ class InProcessEvaluationExecutorTest {
         TestCaseRunResult result2 = buildResult(input2);
         ResultBatchWriter.RunBuffer buffer = stubCreateBuffer();
 
-        // Use a high rate limit so the test doesn't slow down
-        EvaluationContext context =
-                buildContextBuilder(SUITE_ID, 1, 2).rateLimitRps(100.0).build();
+        // Use a high rate limit so the test doesn't slow down. The gate now lives at each HTTP call site,
+        // so this executor-level context value only matters for what it hands to the workers.
+        EvaluationContext context = buildContextBuilder(SUITE_ID, 1, 2)
+                .rateLimiter(RunRateLimiter.of(100.0))
+                .build();
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input1, input2));

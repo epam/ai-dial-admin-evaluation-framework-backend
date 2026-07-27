@@ -9,6 +9,8 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,12 +21,14 @@ import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingPro
 import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.service.domain.TryItOutService.TryItOutValidationException;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.service.domain.dto.HttpChainRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
@@ -47,6 +51,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -143,6 +148,7 @@ class TryItOutServiceTest {
                 testSuiteRepository,
                 testCaseRepository,
                 resolvedRequestService,
+                new ChainNormalizer(jsonbMapper),
                 deploymentInvoker,
                 mcpToolInvoker,
                 mcpRequestResolver,
@@ -236,13 +242,13 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map(suite.getDeploymentRef())).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract(suite.getEndpointRef())).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            stubTestCaseResolution(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
-            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
 
             assertThat(result).isNotNull();
             assertThat(result.getResolvedRequest().getUrl()).isEqualTo("/chat/completions");
@@ -257,7 +263,7 @@ class TryItOutServiceTest {
         void shouldThrowNotFoundForMissingSuite() {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null))
                     .isInstanceOf(EntityNotFoundException.class);
         }
 
@@ -269,7 +275,7 @@ class TryItOutServiceTest {
             when(jsonbMapper.map((String) null)).thenReturn(null);
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
 
-            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("Deployment reference is required");
         }
@@ -282,7 +288,7 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract((String) null)).thenReturn(null);
 
-            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("Endpoint reference");
         }
@@ -295,7 +301,7 @@ class TryItOutServiceTest {
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
 
-            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null))
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("Request template is required");
         }
@@ -316,9 +322,9 @@ class TryItOutServiceTest {
                             .message("Required variable 'prompt' has no binding")
                             .build()))
                     .build();
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(resolved);
+            stubTestCaseResolution(resolved);
 
-            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null))
                     .isInstanceOf(TryItOutValidationException.class)
                     .hasMessageContaining("prompt");
         }
@@ -348,7 +354,7 @@ class TryItOutServiceTest {
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
-            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello"));
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello"), null);
 
             assertThat(result).isNotNull();
             assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
@@ -375,7 +381,7 @@ class TryItOutServiceTest {
             Map<String, Object> variables = new HashMap<>();
             variables.put("prompt", "Hello");
             variables.put("nullVar", null);
-            service.tryWithVariables(SUITE_ID, variables);
+            service.tryWithVariables(SUITE_ID, variables, null);
 
             ArgumentCaptor<List<InputBindingDto>> captor = ArgumentCaptor.forClass(List.class);
             verify(resolvedRequestService).resolve(any(), captor.capture(), anyMap());
@@ -405,7 +411,7 @@ class TryItOutServiceTest {
             variables.put("", "value");
             variables.put("  ", "value2");
             variables.put("valid", "ok");
-            service.tryWithVariables(SUITE_ID, variables);
+            service.tryWithVariables(SUITE_ID, variables, null);
 
             ArgumentCaptor<List<InputBindingDto>> captor = ArgumentCaptor.forClass(List.class);
             verify(resolvedRequestService).resolve(any(), captor.capture(), anyMap());
@@ -453,7 +459,7 @@ class TryItOutServiceTest {
                             eq(HttpMethod.POST), eq("/path"), headersCaptor.capture(), paramsCaptor.capture(), any()))
                     .thenReturn(nonStreamingResult(200, null));
 
-            service.tryWithVariables(SUITE_ID, Map.of());
+            service.tryWithVariables(SUITE_ID, Map.of(), null);
 
             HttpHeaders capturedHeaders = headersCaptor.getValue();
             assertThat(capturedHeaders.get("X-Custom")).containsExactly("v1", "v2");
@@ -473,7 +479,7 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            stubTestCaseResolution(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
 
             InputStream sseStream =
@@ -492,7 +498,7 @@ class TryItOutServiceTest {
             when(objectMapperMock.createObjectNode()).thenReturn(realObjectMapper.createObjectNode());
             when(objectMapperMock.createArrayNode()).thenReturn(realObjectMapper.createArrayNode());
 
-            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
 
             assertThat(result.getResponse().getStreaming()).isTrue();
             assertThat(result.getResponse().getEvents()).hasSize(1);
@@ -507,7 +513,7 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            stubTestCaseResolution(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
 
             InputStream emptyStream = new ByteArrayInputStream(new byte[0]);
@@ -518,7 +524,7 @@ class TryItOutServiceTest {
             when(objectMapperMock.createObjectNode()).thenReturn(realObjectMapper.createObjectNode());
             when(objectMapperMock.createArrayNode()).thenReturn(realObjectMapper.createArrayNode());
 
-            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
 
             assertThat(result.getResponse().getStreaming()).isTrue();
             assertThat(result.getResponse().getEvents()).isEmpty();
@@ -531,7 +537,7 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            stubTestCaseResolution(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
 
             InputStream sseStream =
@@ -546,7 +552,7 @@ class TryItOutServiceTest {
             when(objectMapperMock.createObjectNode()).thenReturn(realObjectMapper.createObjectNode());
             when(objectMapperMock.createArrayNode()).thenReturn(realObjectMapper.createArrayNode());
 
-            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
 
             assertThat(result.getResponse().getStreaming()).isTrue();
             assertThat(result.getResponse().getEvents()).hasSize(1);
@@ -559,7 +565,7 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            stubTestCaseResolution(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
 
             InputStream sseStream = new ByteArrayInputStream(new byte[0]);
@@ -570,7 +576,7 @@ class TryItOutServiceTest {
             when(objectMapperMock.createObjectNode()).thenReturn(realObjectMapper.createObjectNode());
             when(objectMapperMock.createArrayNode()).thenReturn(realObjectMapper.createArrayNode());
 
-            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
 
             assertThat(result.getResponse().getStreaming()).isTrue();
             assertThat(result.getResponse().getEvents()).isEmpty();
@@ -597,7 +603,7 @@ class TryItOutServiceTest {
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));
 
-            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hi"));
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hi"), null);
 
             assertThat(result.getDurationMs()).isGreaterThanOrEqualTo(0L);
         }
@@ -632,13 +638,13 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            stubTestCaseResolution(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
-            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
 
             assertThat(result.getTraceId()).isEqualTo(expectedTraceId);
         }
@@ -650,7 +656,7 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            stubTestCaseResolution(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -660,7 +666,7 @@ class TryItOutServiceTest {
                     openTelemetry.getTracer("com.epam.aidial.evaluation").spanBuilder("try-it-out.invoke");
             org.mockito.Mockito.clearInvocations(spanBuilder);
 
-            service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
 
             verify(spanBuilder).setAttribute("eval.suite.id", SUITE_ID.toString());
         }
@@ -672,15 +678,253 @@ class TryItOutServiceTest {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
             when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
             when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
-            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            stubTestCaseResolution(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
-            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
 
             assertThat(result.getTraceId()).isNull();
         }
+    }
+
+    @Nested
+    @DisplayName("chain request selection (requestIndex)")
+    class ChainRequestSelection {
+
+        @Test
+        @DisplayName("requestIndex 1 instantiates that element's own endpoint and template — no prefix request is sent")
+        void selectsNamedChainElementOnly() {
+            TestSuite suite = chainSuite();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapAdditionalRequests(CHAIN_JSON)).thenReturn(List.of(secondRequest(List.of())));
+            stubTestCaseResolution(buildResolvedRequest());
+            when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, 1);
+
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            // The GET proves element 1's own endpointRef drove the call — request 0 is a POST.
+            verify(deploymentInvoker, times(1)).invokeWithStreaming(eq(HttpMethod.GET), any(), any(), any(), any());
+            // Exactly one resolution, against element 1's own template — not request 0's.
+            ArgumentCaptor<RequestTemplateDto> templateCaptor = ArgumentCaptor.forClass(RequestTemplateDto.class);
+            verify(resolvedRequestService, times(1)).resolveInScope(templateCaptor.capture(), anyList(), any());
+            assertThat(templateCaptor.getValue().getUrlTemplate()).isEqualTo("/sessions/status");
+        }
+
+        @Test
+        @DisplayName("an omitted requestIndex still selects request 0, keeping every existing caller unchanged")
+        void omittedIndexSelectsRequestZero() {
+            TestSuite suite = chainSuite();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapAdditionalRequests(CHAIN_JSON)).thenReturn(List.of(secondRequest(List.of())));
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            stubTestCaseResolution(buildResolvedRequest());
+            when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, null);
+
+            verify(deploymentInvoker, times(1)).invokeWithStreaming(eq(HttpMethod.POST), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("a requestIndex past the end of the chain is rejected, naming the valid range")
+        void outOfRangeIndexRejected() {
+            TestSuite suite = chainSuite();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapAdditionalRequests(CHAIN_JSON)).thenReturn(List.of(secondRequest(List.of())));
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, 5))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("requestIndex 5")
+                    .hasMessageContaining("2 request(s)")
+                    .hasMessageContaining("0..1");
+            verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("a negative requestIndex is rejected")
+        void negativeIndexRejected() {
+            TestSuite suite = chainSuite();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapAdditionalRequests(CHAIN_JSON)).thenReturn(List.of(secondRequest(List.of())));
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, -1))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("out of range");
+        }
+
+        @Test
+        @DisplayName("a requestIndex of 1 on a single-request suite is rejected — the chain has only index 0")
+        void indexBeyondSingleRequestSuiteRejected() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, 1))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("1 request(s)");
+        }
+
+        @Test
+        @DisplayName("a chain element missing its own endpointRef names the offending element in the error")
+        void missingElementEndpointRefNamesTheElement() {
+            TestSuite suite = chainSuite();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            HttpChainRequestDto element = secondRequest(List.of());
+            element.setEndpointRef(null);
+            when(jsonbMapper.mapAdditionalRequests(CHAIN_JSON)).thenReturn(List.of(element));
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, 1))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessageContaining("Endpoint reference")
+                    .hasMessageContaining("chain request 1")
+                    .hasMessageContaining("invoke");
+        }
+
+        @Test
+        @DisplayName("an unresolvable responseField surfaces as a warning and the request is still sent (200)")
+        void unresolvableResponseFieldWarnsAndStillSends() {
+            TestSuite suite = chainSuite();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapAdditionalRequests(CHAIN_JSON))
+                    .thenReturn(List.of(secondRequest(List.of(InputBindingDto.builder()
+                            .templateVariable("sid")
+                            .responseField("session_id")
+                            .build()))));
+            // Test-case mode runs no earlier request, so `sid` cannot resolve and the resolver reports it REQUIRED.
+            stubTestCaseResolution(resolvedWithRequiredWarnings("sid"));
+            when(urlBuilder.buildUrl("gpt-4", "/sessions/status")).thenReturn("/path");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, 1);
+
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            assertThat(result.getResolvedRequest().getWarnings())
+                    .extracting(ValidationWarningDto::getFieldName)
+                    .containsExactly("sid");
+            verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("a missing test-case data field still blocks, even when the element also has a responseField")
+        void unresolvedDataFieldStillBlocks() {
+            TestSuite suite = chainSuite();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapAdditionalRequests(CHAIN_JSON))
+                    .thenReturn(List.of(secondRequest(List.of(
+                            InputBindingDto.builder()
+                                    .templateVariable("sid")
+                                    .responseField("session_id")
+                                    .build(),
+                            InputBindingDto.builder()
+                                    .templateVariable("prompt")
+                                    .dataField("question")
+                                    .build()))));
+            stubTestCaseResolution(resolvedWithRequiredWarnings("sid", "prompt"));
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, 1))
+                    .isInstanceOf(TryItOutValidationException.class)
+                    .hasMessageContaining("prompt")
+                    // Only the genuinely unresolvable variable is blocking; the chain-bound one is exempt.
+                    .hasMessageNotContaining("sid");
+            verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("variables mode can try a later chain element in isolation, since the caller supplies every value")
+        void variablesModeSelectsLaterElement() {
+            TestSuite suite = chainSuite();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapAdditionalRequests(CHAIN_JSON))
+                    .thenReturn(List.of(secondRequest(List.of(InputBindingDto.builder()
+                            .templateVariable("sid")
+                            .responseField("session_id")
+                            .build()))));
+            when(resolvedRequestService.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
+            when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("sid", "abc"), 1);
+
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            verify(deploymentInvoker, times(1)).invokeWithStreaming(eq(HttpMethod.GET), any(), any(), any(), any());
+        }
+
+        private TestSuite chainSuite() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            suite.setAdditionalRequests(CHAIN_JSON);
+            return suite;
+        }
+
+        /** Chain element 1: its own GET endpoint and template, distinguishable from request 0's POST. */
+        private HttpChainRequestDto secondRequest(List<InputBindingDto> bindings) {
+            HttpChainRequestDto element = new HttpChainRequestDto();
+            element.setLabel("invoke");
+            element.setEndpointRef(EndpointContractDto.builder()
+                    .method(HttpMethod.GET)
+                    .relativeUrlPattern("/sessions/status")
+                    .build());
+            element.setRequestTemplate(
+                    RequestTemplateDto.builder().urlTemplate("/sessions/status").build());
+            element.setInputBindings(bindings);
+            return element;
+        }
+
+        private ResolvedRequestDto resolvedWithRequiredWarnings(String... fieldNames) {
+            return ResolvedRequestDto.builder()
+                    .url("/sessions/status")
+                    .warnings(Arrays.stream(fieldNames)
+                            .map(name -> ValidationWarningDto.builder()
+                                    .fieldName(name)
+                                    .code(ValidationWarningCode.REQUIRED)
+                                    .message("Required variable '" + name + "' has no binding")
+                                    .build())
+                            .toList())
+                    .build();
+        }
+    }
+
+    private static final String CHAIN_JSON = "[{\"label\":\"invoke\"}]";
+
+    /**
+     * Stubs the test-case-mode resolution path. Try-out resolves the SELECTED chain request's own template and
+     * bindings — supporting the `requestIndex` selector — instead of delegating to the suite-level
+     * {@code resolveRequest(suiteId, testCaseId)} helper, so the test case is fetched here and the
+     * scope-aware overload is what gets stubbed.
+     */
+    private void stubTestCaseResolution(ResolvedRequestDto resolved) {
+        lenient().when(jsonbMapper.mapRequestTemplate(anyString())).thenReturn(buildRequestTemplate());
+        lenient().when(jsonbMapper.mapInputBindings(anyString())).thenReturn(List.of());
+        lenient()
+                .when(testCaseRepository.findByIdAndDatasetId(eq(TEST_CASE_ID), any()))
+                .thenReturn(Optional.of(TestCase.builder()
+                        .id(TEST_CASE_ID)
+                        .testCaseName("tc")
+                        .data("{}")
+                        .build()));
+        lenient()
+                .when(resolvedRequestService.resolveInScope(any(), anyList(), any()))
+                .thenReturn(resolved);
+    }
+
+    private static RequestTemplateDto buildRequestTemplate() {
+        return RequestTemplateDto.builder().urlTemplate("/chat/completions").build();
     }
 }

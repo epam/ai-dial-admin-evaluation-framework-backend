@@ -12,7 +12,6 @@ import com.epam.aidial.evaluation.service.domain.ResolvedRequestService;
 import com.epam.aidial.evaluation.service.domain.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.service.domain.SerializedBody;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
@@ -24,9 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -148,7 +145,10 @@ public class MultiTurnExecutor {
                             result.extractionWarningsJson(),
                             turnData));
                 } else {
-                    final boolean requestIssued = result.outcome() != null;
+                    // `issued`, not merely a non-null outcome: a turn whose rate-limit token wait was
+                    // interrupted also reports a non-null ERROR outcome despite never sending anything.
+                    final boolean requestIssued =
+                            result.outcome() != null && result.outcome().issued();
                     if (requestIssued || !context.getCancellationSignal().get()) {
                         results.add(buildTurnRow(
                                 input,
@@ -277,7 +277,8 @@ public class MultiTurnExecutor {
 
         final String requestBodyJson = jsonService.writeOrToString(content);
         final String path = urlBuilder.buildUrl(turn.deploymentId(), resolved.getUrl());
-        final HttpHeaders headers = buildHeaders(resolved.getHeaders());
+        final HttpHeaders headers = DeploymentInvocationSupport.buildHeaders(
+                resolved.getHeaders(), evaluationRunProperties.getExecution().getHeaderBlacklist());
         final MultiValueMap<String, String> queryParams =
                 DeploymentInvocationSupport.buildQueryParams(resolved.getQueryParams());
         final SerializedBody serialized = serializerRegistry.serialize(jsonBody);
@@ -405,23 +406,6 @@ public class MultiTurnExecutor {
         final JsonNode root = jsonService.readTreeOrEmpty(responseBody);
         final JsonNode message = root.path("choices").path(0).path("message");
         return message.isObject() ? message : null;
-    }
-
-    private HttpHeaders buildHeaders(List<KeyValueTemplateDto> resolvedHeaders) {
-        final HttpHeaders headers = new HttpHeaders();
-        final Set<String> blacklist = evaluationRunProperties.getExecution().getHeaderBlacklist().stream()
-                .map(String::toLowerCase)
-                .collect(Collectors.toSet());
-        if (resolvedHeaders != null) {
-            for (KeyValueTemplateDto kv : resolvedHeaders) {
-                if (kv.getKey() != null
-                        && kv.getValue() != null
-                        && !blacklist.contains(kv.getKey().toLowerCase())) {
-                    headers.add(kv.getKey(), kv.getValue());
-                }
-            }
-        }
-        return headers;
     }
 
     /** Everything one turn needs, ready to execute: its index, the per-turn scalar data, and the send context. */

@@ -8,11 +8,8 @@ import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
-import io.github.bucket4j.Bandwidth;
-import io.github.bucket4j.Bucket;
 import io.opentelemetry.context.Context;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -60,8 +57,6 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
         Semaphore semaphore = new Semaphore(concurrency);
         ExecutorService executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
 
-        Bucket rateLimitBucket = createRateLimitBucket(context.getRateLimitRps());
-
         ResultBatchWriter.RunBuffer buffer = resultBatchWriter.createBuffer(
                 context.getResultBatchSize(),
                 context.getRunId(),
@@ -96,10 +91,10 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                                 runIndex + 1,
                                 context.getNumberOfRuns());
 
-                        if (rateLimitBucket != null) {
-                            rateLimitBucket.asBlocking().consume(1);
-                        }
-
+                        // No rate-limit token is consumed here: the gate lives at each individual HTTP call
+                        // site (see RunRateLimiter). Consuming one token per DISPATCH counted dispatches, not
+                        // requests — a test case emitting N calls (multi-turn turns, chain requests, retries)
+                        // put N times the configured RPS on the deployment.
                         semaphore.acquire();
                         if (context.getCancellationSignal().get()) {
                             semaphore.release();
@@ -115,7 +110,26 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                                     try {
                                         List<TestCaseRunResult> results =
                                                 evaluationWorker.execute(capturedInput, context, ri, responseColumns);
-                                        resultBatchWriter.addResults(buffer, results);
+                                        // "No synthetic rows for unfinished cases" is an executor-level
+                                        // invariant, so it is enforced here rather than trusted to every
+                                        // layer below. A worker interrupted by post-grace shutdownNow can
+                                        // still RETURN normally instead of throwing — the rate-limit gate
+                                        // does exactly that, reporting an un-issued call as an ERROR result
+                                        // so cancellation is not delayed by a token wait. Buffering that
+                                        // would persist a row for a case that never finished, which the
+                                        // spec forbids: absence of rows plus status = CANCELLED IS the
+                                        // signal. Checking the interrupt flag catches every such path,
+                                        // including any layer below that swallows the interruption.
+                                        if (Thread.currentThread().isInterrupted()) {
+                                            log.debug(
+                                                    "Test case {} run {} was interrupted; dropping {} row(s) so "
+                                                            + "the cancelled case leaves no synthetic result",
+                                                    capturedInput.getTestCaseId(),
+                                                    ri,
+                                                    results.size());
+                                        } else {
+                                            resultBatchWriter.addResults(buffer, results);
+                                        }
                                         // Intentionally broad: the worker is the last line of defense for a
                                         // single test case. Any failure (including unchecked) MUST be turned
                                         // into a synthetic ERROR row so per-case bugs are visible instead of
@@ -231,17 +245,5 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                     .build());
         }
         return inputs;
-    }
-
-    private static Bucket createRateLimitBucket(Double rateLimitRps) {
-        if (rateLimitRps == null || rateLimitRps <= 0) {
-            return null;
-        }
-        long tokens = Math.max(1, Math.round(rateLimitRps));
-        Bandwidth bandwidth = Bandwidth.builder()
-                .capacity(tokens)
-                .refillGreedy(tokens, Duration.ofSeconds(1))
-                .build();
-        return Bucket.builder().addLimit(bandwidth).build();
     }
 }

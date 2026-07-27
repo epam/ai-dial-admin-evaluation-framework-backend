@@ -9,15 +9,18 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshot
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
+import com.epam.aidial.evaluation.service.domain.ChainNormalizer;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.HttpChainRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -185,12 +188,66 @@ class EvalSummariesSchemaProviderTest {
                 .isInstanceOf(EntityNotFoundException.class);
     }
 
+    @Test
+    @DisplayName("detailed schema advertises response fields from the WHOLE chain, not just the flat request 0")
+    void shouldAdvertiseChainUnionResponseFields() {
+        createProvider();
+        when(testSuiteRunService.getRun(RUN_ID)).thenReturn(runWithSnapshot(chainSnapshot()));
+        when(runMetricSnapshotRepository.findLatestComputationId(RUN_ID)).thenReturn(Optional.empty());
+
+        List<QuerySchemaFieldDto> fields =
+                provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.RUN_ID_FIELD, RUN_ID.toString()));
+
+        // `session_id` belongs to request 0; `answer` and `latency` to chain requests 1 and 2. Sourcing the
+        // family from the flat responseColumns alone would silently hide the latter two from query authors.
+        assertThat(fields)
+                .contains(
+                        new QuerySchemaFieldDto("response::session_id", QueryFieldType.STRING, "extracted_columns"),
+                        new QuerySchemaFieldDto("response::answer", QueryFieldType.STRING, "extracted_columns"),
+                        new QuerySchemaFieldDto("response::latency", QueryFieldType.STRING, "extracted_columns"));
+    }
+
+    @Test
+    @DisplayName("chain response fields keep chain order, request 0's columns first")
+    void chainResponseFieldsKeepChainOrder() {
+        createProvider();
+        when(testSuiteRunService.getRun(RUN_ID)).thenReturn(runWithSnapshot(chainSnapshot()));
+        when(runMetricSnapshotRepository.findLatestComputationId(RUN_ID)).thenReturn(Optional.empty());
+
+        List<String> responseFields =
+                provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.RUN_ID_FIELD, RUN_ID.toString())).stream()
+                        .map(QuerySchemaFieldDto::name)
+                        .filter(name -> name.startsWith("response::"))
+                        .toList();
+
+        assertThat(responseFields).containsExactly("response::session_id", "response::answer", "response::latency");
+    }
+
+    /** A frozen 3-request chain: request 0 in the flat fields, requests 1 and 2 in additionalRequests. */
+    private static SuiteSnapshotDto chainSnapshot() {
+        HttpChainRequestDto invoke = new HttpChainRequestDto();
+        invoke.setLabel("invoke");
+        invoke.setResponseColumns(List.of(responseColumn("answer", SchemaFieldType.STRING)));
+        HttpChainRequestDto measure = new HttpChainRequestDto();
+        measure.setLabel("measure");
+        measure.setResponseColumns(List.of(responseColumn("latency", SchemaFieldType.STRING)));
+
+        return SuiteSnapshotDto.builder()
+                .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                .testCaseSchema(List.of())
+                .requestLabel("setup")
+                .responseColumns(List.of(responseColumn("session_id", SchemaFieldType.STRING)))
+                .additionalRequests(List.of(invoke, measure))
+                .build();
+    }
+
     private void createProvider() {
         provider = new EvalSummariesSchemaProvider(
                 testSuiteRunService,
                 runMetricSnapshotRepository,
                 outputSchemaFieldExtractor,
                 new SchemaFieldTypeMapper(),
+                new ChainNormalizer(new JsonbMapper(new ObjectMapper())),
                 new JooqTableSchemaResolver());
     }
 

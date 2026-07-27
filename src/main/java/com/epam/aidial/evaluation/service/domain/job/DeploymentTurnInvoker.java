@@ -68,7 +68,7 @@ public class DeploymentTurnInvoker {
                 break;
             }
         }
-        return new TurnOutcome(last.status(), last.statusCode(), last.responseBody(), retries);
+        return new TurnOutcome(last.status(), last.statusCode(), last.responseBody(), retries, last.issued());
     }
 
     private TurnOutcome invokeSingle(
@@ -78,13 +78,25 @@ public class DeploymentTurnInvoker {
             HttpHeaders headers,
             MultiValueMap<String, String> queryParams,
             Object body) {
+        // One token per HTTP attempt, retries included: a retry is a real request, and retries cluster
+        // precisely when the target is already returning 429/5xx. An interrupted wait skips the call so run
+        // cancellation is not delayed; the executor drops the row because the interrupt flag is set.
+        //
+        // The CANCELLED envelope is carried in responseBody deliberately: the turn/chain row builders do not
+        // populate log_details for this case (MultiTurnExecutor writes a null, ChainExecutor fills it only
+        // for unresolved response fields), so responseBody is the only field that can distinguish a
+        // rate-limit cancellation from any other ERROR if the row ever does get persisted.
+        if (!context.getRateLimiter().tryAcquire()) {
+            return TurnOutcome.notIssued(DeploymentInvocationSupport.cancelledEnvelope(jsonService));
+        }
+
         try (DeploymentInvocationResult result =
                 deploymentInvoker.invokeWithStreaming(method, path, headers, queryParams, body)) {
             final int statusCode = result.statusCode();
             ExecutionStatus status = DeploymentInvocationSupport.resolveExecutionStatus(statusCode);
 
             if (result.streaming()) {
-                return new TurnOutcome(ExecutionStatus.ERROR, statusCode, null, 0);
+                return TurnOutcome.issued(ExecutionStatus.ERROR, statusCode, null, 0);
             }
 
             String responseBody = jsonService.writeOrToString(result.body());
@@ -97,12 +109,12 @@ public class DeploymentTurnInvoker {
                 responseBody = jsonService.writeOrToString(
                         DeploymentInvocationSupport.truncateUtf8(responseBody, context.getMaxResponseSizeBytes()));
             }
-            return new TurnOutcome(status, statusCode, responseBody, 0);
+            return TurnOutcome.issued(status, statusCode, responseBody, 0);
         } catch (Exception e) {
             final ExecutionStatus status =
                     DeploymentInvocationSupport.isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
             log.warn("Turn invocation failed ({}): {}", status, e.getMessage(), e);
-            return new TurnOutcome(status, null, null, 0);
+            return TurnOutcome.issued(status, null, null, 0);
         }
     }
 }

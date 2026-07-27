@@ -89,6 +89,11 @@ test-case:
   multi-turn:
     max-turns: 10
 
+# Test suite configuration
+test-suite:
+  multi-request:
+    max-requests: 10
+
 # Analytics results configuration
 analytics:
   results:

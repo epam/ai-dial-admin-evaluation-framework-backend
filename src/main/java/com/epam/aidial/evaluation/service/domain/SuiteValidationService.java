@@ -39,6 +39,7 @@ public class SuiteValidationService {
     private final EvaluationRunProperties evaluationRunProperties;
     private final FileRefValidator fileRefValidator;
     private final BindingValidator bindingValidator;
+    private final ChainNormalizer chainNormalizer;
     private final JsonbMapper jsonbMapper;
 
     /**
@@ -80,6 +81,8 @@ public class SuiteValidationService {
                 .responseColumns(jsonbMapper.mapResponseColumns(suite.getResponseColumns()))
                 .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
                 .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()))
+                .additionalRequests(jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests()))
+                .requestLabel(suite.getRequestLabel())
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
@@ -212,23 +215,13 @@ public class SuiteValidationService {
         }
 
         // Header blacklist validation (deployment-specific)
-        if (template != null && template.getHeaders() != null) {
-            List<String> blacklist = evaluationRunProperties.getExecution().getHeaderBlacklist();
-            Set<String> blacklistLower =
-                    blacklist.stream().map(String::toLowerCase).collect(Collectors.toSet());
+        warnings.addAll(validateHeaderBlacklist(template, null));
 
-            for (KeyValueTemplateDto header : template.getHeaders()) {
-                if (header != null
-                        && header.getKey() != null
-                        && blacklistLower.contains(header.getKey().toLowerCase())) {
-                    warnings.add(warning(
-                            header.getKey(),
-                            "$.requestTemplate.headers",
-                            "Header '" + header.getKey() + "' is system-managed and cannot be set in request template",
-                            ValidationWarningCode.ADDITIONAL));
-                }
-            }
-        }
+        // Each chain request beyond request 0 is validated against ITS OWN endpointRef, with every warning
+        // attributed to its chain position. Validating them all against request 0's requestBodySchema would
+        // report a correct `configure` body as invalid against the `/chat/completions` schema, flipping
+        // isValid on a properly configured suite.
+        warnings.addAll(validateChainElements(dto, suiteId, testCaseSchema));
 
         return ValidationResult.builder()
                 .valid(warnings.isEmpty())
@@ -236,13 +229,177 @@ public class SuiteValidationService {
                 .build();
     }
 
+    /**
+     * Soft per-element validation of chain requests {@code 1..N-1}: template presence, unrecognised type
+     * hints, binding cross-validation against the dataset schema, content-type-versus-endpoint-schema
+     * mismatch, and header blacklist — each against that element's own {@code endpointRef}. Every warning
+     * carries the originating {@code requestIndex} so an author can attribute it to a specific request.
+     *
+     * <p>{@code responseField} bindings are exempt from the "required variable has no binding" and
+     * "unknown data field" checks: they resolve at run time from earlier requests' extracted columns, not
+     * from the test-case schema. Their reference correctness is enforced as a hard 400 by
+     * {@code ChainConfigurationValidator}.
+     */
+    private List<ValidationWarningDto> validateChainElements(
+            TestSuiteRequestDto dto, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
+        final List<RequestSpec> chain = chainNormalizer.normalize(dto);
+        if (chain.size() <= 1) {
+            return List.of();
+        }
+        final List<ValidationWarningDto> warnings = new ArrayList<>();
+        for (RequestSpec request : chain) {
+            if (request.index() == 0) {
+                continue; // request 0 is validated by the flat path above
+            }
+            warnings.addAll(validateChainElement(request, suiteId, testCaseSchema));
+        }
+        return warnings;
+    }
+
+    private List<ValidationWarningDto> validateChainElement(
+            RequestSpec request, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
+        final int index = request.index();
+        final String pathPrefix = "$.additionalRequests[" + index + "]";
+        final List<ValidationWarningDto> warnings = new ArrayList<>();
+
+        if (request.endpointRef() == null) {
+            warnings.add(chainWarning(
+                    index,
+                    null,
+                    pathPrefix + ".endpointRef",
+                    "endpointRef is required for request assembly of chain request '" + request.label() + "'",
+                    ValidationWarningCode.REQUIRED));
+        }
+
+        final RequestTemplateDto template = request.requestTemplate();
+        if (template == null) {
+            warnings.add(chainWarning(
+                    index,
+                    null,
+                    pathPrefix,
+                    "requestTemplate is required for request assembly of chain request '" + request.label() + "'",
+                    ValidationWarningCode.REQUIRED));
+        } else if (template.getUrlTemplate() == null
+                || template.getUrlTemplate().isBlank()) {
+            warnings.add(chainWarning(
+                    index,
+                    null,
+                    pathPrefix + ".urlTemplate",
+                    "urlTemplate is required for request assembly of chain request '" + request.label() + "'",
+                    ValidationWarningCode.REQUIRED));
+        }
+
+        final TemplateVariableExtractor.ExtractionResult extraction =
+                templateVariableExtractor.extractWithWarnings(template);
+        for (String typeHintWarning : extraction.getTypeHintWarnings()) {
+            warnings.add(chainWarning(
+                    index, null, pathPrefix + ".requestTemplate", typeHintWarning, ValidationWarningCode.TYPE));
+        }
+
+        // Variables satisfied by a responseField binding are resolved from the chain at run time, so they
+        // must not be reported as unbound; the bindings themselves are hidden from the schema-field checks.
+        final List<InputBindingDto> bindings = request.safeInputBindings();
+        final Set<String> chainBoundVariables = bindings.stream()
+                .filter(b -> b != null
+                        && b.getResponseField() != null
+                        && !b.getResponseField().isBlank())
+                .map(InputBindingDto::getTemplateVariable)
+                .collect(Collectors.toSet());
+        final List<TemplateVariableExtractor.ExtractedVariable> dataVariables = extraction.getVariables().stream()
+                .filter(variable -> !chainBoundVariables.contains(variable.getName()))
+                .toList();
+        final List<InputBindingDto> dataBindings = bindings.stream()
+                .filter(b -> b == null
+                        || b.getResponseField() == null
+                        || b.getResponseField().isBlank())
+                .toList();
+        for (ValidationWarningDto warning :
+                bindingValidator.validate(dataVariables, dataBindings, testCaseSchema, suiteId)) {
+            warnings.add(withChainContext(warning, index, pathPrefix));
+        }
+
+        if (template != null && template.getBody() != null && request.endpointRef() != null) {
+            final RequestBodySchemaDto schemaDto = request.endpointRef().getRequestBodySchema();
+            if (schemaDto != null) {
+                final RequestBodyDto body = template.getBody();
+                if (!body.getContentType().equals(schemaDto.getContentType())) {
+                    warnings.add(chainWarning(
+                            index,
+                            null,
+                            pathPrefix + ".requestTemplate.body",
+                            "Request template content type '" + body.getContentType()
+                                    + "' does not match endpoint schema content type '" + schemaDto.getContentType()
+                                    + "' for chain request '" + request.label() + "'",
+                            ValidationWarningCode.TYPE));
+                }
+            }
+        }
+
+        for (ValidationWarningDto warning : validateHeaderBlacklist(template, index)) {
+            warnings.add(withChainContext(warning, index, pathPrefix));
+        }
+        return warnings;
+    }
+
+    /**
+     * System-managed headers cannot be set in a request template. Shared by request 0 and every chain
+     * element; {@code requestIndex} is null for request 0.
+     */
+    private List<ValidationWarningDto> validateHeaderBlacklist(RequestTemplateDto template, Integer requestIndex) {
+        if (template == null || template.getHeaders() == null) {
+            return List.of();
+        }
+        final List<String> blacklist = evaluationRunProperties.getExecution().getHeaderBlacklist();
+        final Set<String> blacklistLower =
+                blacklist.stream().map(String::toLowerCase).collect(Collectors.toSet());
+        final List<ValidationWarningDto> warnings = new ArrayList<>();
+        for (KeyValueTemplateDto header : template.getHeaders()) {
+            if (header != null
+                    && header.getKey() != null
+                    && blacklistLower.contains(header.getKey().toLowerCase())) {
+                warnings.add(chainWarning(
+                        requestIndex,
+                        header.getKey(),
+                        "$.requestTemplate.headers",
+                        "Header '" + header.getKey() + "' is system-managed and cannot be set in request template",
+                        ValidationWarningCode.ADDITIONAL));
+            }
+        }
+        return warnings;
+    }
+
+    /** Re-stamps a warning produced by a shared validator with the chain request it came from. */
+    private static ValidationWarningDto withChainContext(ValidationWarningDto warning, int index, String pathPrefix) {
+        return ValidationWarningDto.builder()
+                .fieldName(warning.getFieldName())
+                .path(pathPrefix + stripLeadingDollar(warning.getPath()))
+                .message(warning.getMessage())
+                .code(warning.getCode())
+                .turnIndex(warning.getTurnIndex())
+                .requestIndex(index)
+                .build();
+    }
+
+    private static String stripLeadingDollar(String path) {
+        if (path == null) {
+            return "";
+        }
+        return path.startsWith("$") ? path.substring(1) : path;
+    }
+
     private static ValidationWarningDto warning(
             String fieldName, String path, String message, ValidationWarningCode code) {
+        return chainWarning(null, fieldName, path, message, code);
+    }
+
+    private static ValidationWarningDto chainWarning(
+            Integer requestIndex, String fieldName, String path, String message, ValidationWarningCode code) {
         return ValidationWarningDto.builder()
                 .fieldName(fieldName)
                 .path(path)
                 .message(message)
                 .code(code)
+                .requestIndex(requestIndex)
                 .build();
     }
 }

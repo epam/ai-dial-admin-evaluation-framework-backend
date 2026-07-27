@@ -108,6 +108,9 @@ class EvaluationWorkerTest {
     @Mock
     private MultiTurnExecutor multiTurnExecutor;
 
+    @Mock
+    private ChainExecutor chainExecutor;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneId.of("UTC"));
 
@@ -134,7 +137,8 @@ class EvaluationWorkerTest {
                 FIXED_CLOCK,
                 sseEventParser,
                 sseEventProcessingProperties,
-                multiTurnExecutor);
+                multiTurnExecutor,
+                chainExecutor);
     }
 
     @Test

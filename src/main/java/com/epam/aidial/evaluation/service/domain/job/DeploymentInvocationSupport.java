@@ -1,11 +1,19 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.QuietJsonService;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
+import com.epam.aidial.evaluation.service.domain.dto.ResolvedBodyDto;
+import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.springframework.http.HttpHeaders;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Stateless helpers shared by the deployment-invocation paths ({@code EvaluationWorker},
@@ -16,6 +24,26 @@ import org.springframework.util.MultiValueMap;
 public final class DeploymentInvocationSupport {
 
     private DeploymentInvocationSupport() {}
+
+    /** Error code used when a call was never issued because its rate-limit token wait was interrupted. */
+    public static final String CANCELLED_ERROR_CODE = "CANCELLED";
+
+    private static final String CANCELLED_MESSAGE = "Interrupted while waiting for a rate limit token";
+
+    /**
+     * The error envelope for a call that was never issued because run cancellation interrupted its
+     * rate-limit token wait. Shared so every gate call site reports the interruption identically — the
+     * single-request path builds the same {@code {"error":{"code","message"}}} shape, and a turn/chain row
+     * that ever reaches the database must be as diagnosable as that one.
+     */
+    public static String cancelledEnvelope(QuietJsonService jsonService) {
+        final ObjectNode error = jsonService.createObjectNode();
+        error.put("code", CANCELLED_ERROR_CODE);
+        error.put("message", CANCELLED_MESSAGE);
+        final ObjectNode root = jsonService.createObjectNode();
+        root.set("error", error);
+        return jsonService.writeOrToString(root);
+    }
 
     /** Maps an HTTP status code to an execution status: 2xx → SUCCESS, 401/403 → ERROR, everything else → FAILED. */
     public static ExecutionStatus resolveExecutionStatus(int statusCode) {
@@ -82,6 +110,45 @@ public final class DeploymentInvocationSupport {
             return value;
         }
         return new String(bytes, 0, (int) maxBytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Builds request headers from resolved key/value pairs, dropping any whose name is blacklisted
+     * (case-insensitively) and any with a null key or value. Shared by the multi-turn turn loop and the
+     * multi-request chain step, which previously carried byte-identical copies.
+     *
+     * <p>{@code EvaluationWorker} keeps its own variant deliberately: it additionally logs each skipped
+     * header, which the per-turn and per-chain-request paths would emit once per turn/request.
+     */
+    public static HttpHeaders buildHeaders(
+            List<KeyValueTemplateDto> resolvedHeaders, Collection<String> headerBlacklist) {
+        final HttpHeaders headers = new HttpHeaders();
+        final Set<String> blacklist = headerBlacklist == null
+                ? Set.of()
+                : headerBlacklist.stream().map(String::toLowerCase).collect(Collectors.toSet());
+        if (resolvedHeaders != null) {
+            for (KeyValueTemplateDto kv : resolvedHeaders) {
+                if (kv.getKey() != null
+                        && kv.getValue() != null
+                        && !blacklist.contains(kv.getKey().toLowerCase())) {
+                    headers.add(kv.getKey(), kv.getValue());
+                }
+            }
+        }
+        return headers;
+    }
+
+    /**
+     * Serializes a resolved body for the {@code request_body} analytics column: a JSON body stores just its
+     * content map (no {@code contentType} wrapper), anything else stores the body object itself. Shared so
+     * the chain path and the single-request path cannot drift in what they persist.
+     */
+    public static String serializeBodyForAnalytics(ResolvedBodyDto body, QuietJsonService jsonService) {
+        if (body == null) {
+            return null;
+        }
+        final Object toSerialize = body instanceof ResolvedJsonBodyDto jsonBody ? jsonBody.getContent() : body;
+        return jsonService.writeOrToString(toSerialize);
     }
 
     /** Builds a query-param multi-value map from resolved key/value pairs, skipping any with a null key or value. */

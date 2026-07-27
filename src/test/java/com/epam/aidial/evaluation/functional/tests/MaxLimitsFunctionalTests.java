@@ -175,7 +175,7 @@ public abstract class MaxLimitsFunctionalTests extends BaseFunctionalTest {
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).contains("Exactly one of dataField or constantValue must be set");
+        assertThat(response.getBody()).contains("Exactly one of dataField, constantValue or responseField must be set");
     }
 
     @Test
@@ -197,7 +197,7 @@ public abstract class MaxLimitsFunctionalTests extends BaseFunctionalTest {
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).contains("Exactly one of dataField or constantValue must be set");
+        assertThat(response.getBody()).contains("Exactly one of dataField, constantValue or responseField must be set");
     }
 
     @Test

@@ -56,6 +56,7 @@ public class TestSuiteMetricDefinitionService {
     private final ValidationWarningsSerializer warningsSerializer;
     private final JsonbMapper jsonbMapper;
     private final ConditionExpressionEvaluator conditionExpressionEvaluator;
+    private final ChainNormalizer chainNormalizer;
 
     @Transactional("metaTransactionManager")
     public TestSuiteMetricDefinitionResponseDto create(UUID testSuiteId, TestSuiteMetricDefinitionRequestDto dto) {
@@ -82,7 +83,10 @@ public class TestSuiteMetricDefinitionService {
                 version.getConfigSchema(),
                 version.getInputSchema(),
                 testCaseSchema,
-                suite.getResponseColumns(),
+                // Chain-union, not the flat responseColumns: a metric may legitimately bind to a column
+                // declared by any request in the chain, and sourcing the flat list alone would report such a
+                // binding as an unresolved reference.
+                chainNormalizer.chainResponseColumnsJson(suite),
                 version.getOutputSchema());
 
         TestSuiteMetricDefinition entity = mapper.toEntity(dto, testSuiteId);
@@ -172,7 +176,10 @@ public class TestSuiteMetricDefinitionService {
                 version.getConfigSchema(),
                 version.getInputSchema(),
                 testCaseSchema,
-                suite.getResponseColumns(),
+                // Chain-union, not the flat responseColumns: a metric may legitimately bind to a column
+                // declared by any request in the chain, and sourcing the flat list alone would report such a
+                // binding as an unresolved reference.
+                chainNormalizer.chainResponseColumnsJson(suite),
                 version.getOutputSchema());
 
         mapper.update(existing, dto);

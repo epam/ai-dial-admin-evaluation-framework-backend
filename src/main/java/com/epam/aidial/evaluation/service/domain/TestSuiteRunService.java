@@ -67,6 +67,8 @@ public class TestSuiteRunService {
     private final ObjectMapper objectMapper;
     private final EvalResultsImportService evalResultsImportService;
     private final EvalResultsCsvParser evalResultsCsvParser;
+    private final ChainNormalizer chainNormalizer;
+    private final ChainConfigurationValidator chainConfigurationValidator;
 
     @Transactional("metaTransactionManager")
     public TestSuiteRunResponseDto createRun(UUID testSuiteId, RunConfigDto config) {
@@ -86,6 +88,25 @@ public class TestSuiteRunService {
         if (!testSuite.isValid()) {
             throw new InvalidOperationException("Cannot create a run for test suite with id: " + testSuiteId
                     + ". The test suite is not in a valid state.");
+        }
+
+        // Guard 3b — chain cap re-check. The cap is CONFIGURABLE, so it may have been lowered after this
+        // suite was saved; a save-time check alone would let an over-cap suite run. Placed before the
+        // runnable-count query: it is a cheaper configuration-correctness check, and "your chain is too long"
+        // is a better diagnostic than "no runnable test cases" when both hold.
+        final int chainLength = chainNormalizer.normalize(testSuite).size();
+        final int maxRequests = chainConfigurationValidator.maxRequests();
+        if (chainLength > maxRequests) {
+            throw new InvalidOperationException("Cannot create a run: test suite " + testSuiteId + " has a chain of "
+                    + chainLength + " requests, exceeding the currently configured maximum of " + maxRequests);
+        }
+
+        // Guard 3c — multi-request suites cannot run over a dataset containing multi-turn cases. Checked at
+        // run creation rather than suite save because dataset content is mutable (a save-time check would be
+        // both wrong and evadable) and stored suite validity is configuration-only.
+        if (chainLength > 1 && testCaseService.datasetHasMultiTurnCases(testSuite.getDatasetId())) {
+            throw new InvalidOperationException(
+                    "Cannot create a run: multi-request suites do not support multi-turn test cases");
         }
 
         // Multi-turn test cases are supported only for HTTP chat-completions suites. Reject an MCP suite

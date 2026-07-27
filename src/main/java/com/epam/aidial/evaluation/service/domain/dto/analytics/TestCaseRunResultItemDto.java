@@ -46,6 +46,25 @@ public class TestCaseRunResultItemDto {
     @Min(value = 1, message = "totalTurns must be >= 1")
     private Integer totalTurns;
 
+    @Schema(
+            description = "0-based chain position of the multi-request suite request that produced this row; "
+                    + "defaults to 0 when omitted. Participates in the row's natural key, so two items sharing "
+                    + "testCaseId/runIndex/turnIndex but differing here both persist. NOT bounded against any "
+                    + "suite snapshot's chain length: this endpoint accepts results from EXTERNAL test suite "
+                    + "runs, which have no snapshot chain to bound it against.",
+            example = "0")
+    @Min(value = 0, message = "requestIndex must be >= 0")
+    private Integer requestIndex;
+
+    @Schema(
+            description = "Resolved label of the chain request that produced this row, taken verbatim from the "
+                    + "payload. NOT derived from or cross-validated against a suite snapshot — an external run "
+                    + "has no chain from which a label could be derived. Display-only and not part of the "
+                    + "natural key, so a label inconsistent with a suite's configuration breaks nothing.",
+            example = "invoke")
+    @Size(max = 255, message = "requestLabel must not exceed 255 characters")
+    private String requestLabel;
+
     @NotNull(message = "testCaseData is required")
     private JsonNode testCaseData;
 

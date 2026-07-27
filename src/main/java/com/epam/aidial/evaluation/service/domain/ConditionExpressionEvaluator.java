@@ -12,7 +12,7 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Single entry point for metric-execution conditions. A condition is a JSONata expression evaluated
- * against a {@code {"data", "response", "turn"}} dictionary (delegated to {@link JsonataEvaluationService}).
+ * against a {@code {"data", "response", "turn", "request"}} dictionary (delegated to {@link JsonataEvaluationService}).
  *
  * <p>{@link #validate} is used at write time (hard 400 on a malformed condition). {@link #evaluate}
  * is used at run time and never throws — it maps every outcome to a {@link ConditionDecision}.
@@ -29,6 +29,9 @@ public class ConditionExpressionEvaluator {
     private static final String TURN_INDEX = "index";
     private static final String TURN_TOTAL = "total";
     private static final String TURN_LAST = "last";
+    private static final String REQUEST_NAMESPACE = "request";
+    private static final String REQUEST_INDEX = "index";
+    private static final String REQUEST_LABEL = "label";
 
     private final JsonataEvaluationService jsonataEvaluationService;
     private final ObjectMapper objectMapper;
@@ -67,7 +70,7 @@ public class ConditionExpressionEvaluator {
     }
 
     /**
-     * Serializes the context into {@code {"data": ..., "response": ..., "turn": {...}}}. Built from parsed
+     * Serializes the context into {@code {"data": ..., "response": ..., "turn": {...}, "request": {...}}}. Built from parsed
      * {@code JsonNode} trees and serialized as an {@code ObjectNode} so explicit JSON nulls are preserved
      * (the shared {@code NON_NULL} mapper would drop null-valued map entries, making a present-but-null
      * column look absent — see AGENTS.md JSONB-null caveat).
@@ -76,6 +79,13 @@ public class ConditionExpressionEvaluator {
      * {@code turn.last} to run only on the final turn, or {@code turn.index}/{@code turn.total}. Because a
      * test case's turns are contiguous {@code 0..N-1}, {@code turn.last} is {@code index == total - 1}.
      * A single-turn result is {@code index=0, total=1, last=true}.
+     *
+     * <p>The {@code request} namespace carries the chain position and label of the request that produced the
+     * row, so a metric can be targeted at one request of a multi-request suite — e.g.
+     * {@code request.label = "invoke"}. {@code label} is the PREFERRED form because it survives reordering:
+     * inserting a request earlier in the chain shifts every subsequent {@code request.index}, silently
+     * retargeting an index-based condition with no error. {@code index} remains available for unlabeled
+     * chains. A single-request suite evaluates {@code request.index = 0} with the resolved default label.
      */
     private String buildDictionaryJson(ConditionContext context) {
         final ObjectNode root = objectMapper.createObjectNode();
@@ -87,6 +97,11 @@ public class ConditionExpressionEvaluator {
         turn.put(TURN_TOTAL, context.totalTurns());
         turn.put(TURN_LAST, context.turnIndex() == context.totalTurns() - 1);
         root.set(TURN_NAMESPACE, turn);
+
+        final ObjectNode request = objectMapper.createObjectNode();
+        request.put(REQUEST_INDEX, context.requestIndex());
+        request.put(REQUEST_LABEL, context.requestLabel());
+        root.set(REQUEST_NAMESPACE, request);
 
         return objectMapper.writeValueAsString(root);
     }

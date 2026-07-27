@@ -27,6 +27,7 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -468,6 +469,69 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         assertThatThrownBy(() -> queryRepository.execute(query))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("[0, 1]");
+    }
+
+    @Test
+    @DisplayName("filters a multi-request run's summaries by request_label, returning only that request's rows")
+    void filtersByRequestLabel() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        // One test case, three chain requests — the rows differ only by request identity.
+        analyticsTestDataHelper.createChainEvalSummary(
+                suiteId, runId, computationId, "case-a", 0, "setup", 100L, 1_000L);
+        analyticsTestDataHelper.createChainEvalSummary(
+                suiteId, runId, computationId, "case-a", 1, "invoke", 200L, 2_000L);
+        analyticsTestDataHelper.createChainEvalSummary(
+                suiteId, runId, computationId, "case-a", 2, "measure", 300L, 3_000L);
+
+        FilterNode filter = new LogicalNode(
+                LogicalOp.AND, List.of(runIdEq(runId), eq("request_label", ValueType.STRING, "invoke")));
+
+        QueryResultPage page = queryRepository.execute(
+                rowQuery(filter, List.of(col(new FieldExpr("request_label")), col(new FieldExpr("request_index")))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(page.rows().getFirst().get("request_label")).isEqualTo("invoke");
+        assertThat(page.rows().getFirst().get("request_index")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName(
+            "request_index and request_label are queryable base-schema columns, so a run's chain rows group by them")
+    void groupsByRequestIdentity() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        analyticsTestDataHelper.createChainEvalSummary(
+                suiteId, runId, computationId, "case-a", 0, "setup", 100L, 1_000L);
+        analyticsTestDataHelper.createChainEvalSummary(
+                suiteId, runId, computationId, "case-b", 0, "setup", 300L, 2_000L);
+        analyticsTestDataHelper.createChainEvalSummary(
+                suiteId, runId, computationId, "case-a", 1, "invoke", 500L, 3_000L);
+
+        StructuredQuery query = new StructuredQuery(
+                "eval_summaries",
+                runIdEq(runId),
+                QueryMode.AGGREGATE,
+                false,
+                List.of(
+                        col(new FieldExpr("request_label")),
+                        new OutputColumn(
+                                new FnExpr("avg", false, List.of(new FieldExpr("exec_duration_ms"))), "avg_duration")),
+                List.of("request_label"),
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        QueryResultPage page = queryRepository.execute(query);
+
+        assertThat(page.rows()).hasSize(2);
+        Map<String, Object> byLabel = page.rows().stream()
+                .collect(Collectors.toMap(
+                        row -> String.valueOf(row.get("request_label")), row -> row.get("avg_duration")));
+        assertThat(Double.parseDouble(String.valueOf(byLabel.get("setup")))).isCloseTo(200.0, within(0.001));
+        assertThat(Double.parseDouble(String.valueOf(byLabel.get("invoke")))).isCloseTo(500.0, within(0.001));
     }
 
     private static FnExpr percentileCont(String fraction, String column) {

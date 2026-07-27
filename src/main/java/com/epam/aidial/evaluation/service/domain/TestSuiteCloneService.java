@@ -58,6 +58,8 @@ public class TestSuiteCloneService {
     private final FileService fileService;
     private final TestSuiteMapper testSuiteMapper;
     private final SuiteValidationService suiteValidationService;
+    private final ChainNormalizer chainNormalizer;
+    private final ChainConfigurationValidator chainConfigurationValidator;
     private final DatasetSchemaProvider datasetSchemaProvider;
     private final AuthorResolver authorResolver;
     private final RevalidationProperties revalidationProperties;
@@ -75,6 +77,8 @@ public class TestSuiteCloneService {
             FileService fileService,
             TestSuiteMapper testSuiteMapper,
             SuiteValidationService suiteValidationService,
+            ChainNormalizer chainNormalizer,
+            ChainConfigurationValidator chainConfigurationValidator,
             DatasetSchemaProvider datasetSchemaProvider,
             AuthorResolver authorResolver,
             RevalidationProperties revalidationProperties,
@@ -90,6 +94,8 @@ public class TestSuiteCloneService {
         this.fileService = fileService;
         this.testSuiteMapper = testSuiteMapper;
         this.suiteValidationService = suiteValidationService;
+        this.chainNormalizer = chainNormalizer;
+        this.chainConfigurationValidator = chainConfigurationValidator;
         this.datasetSchemaProvider = datasetSchemaProvider;
         this.authorResolver = authorResolver;
         this.revalidationProperties = revalidationProperties;
@@ -234,6 +240,12 @@ public class TestSuiteCloneService {
         }
         dto.setEndpointRef(endpointSchemaRefResolver.resolve(dto.getEndpointRef()));
 
+        // The chain is copied verbatim and is not overridable, so it can only become invalid here through a
+        // responseColumns override that collides with a copied chain request's column name. Running the same
+        // hard chain validation as suite save turns that into a 400 instead of persisting a clone whose chain
+        // declares one name twice.
+        chainConfigurationValidator.validate(chainNormalizer.normalize(dto));
+
         List<FieldDefinitionDto> datasetSchema =
                 schemaDatasetId != null ? datasetSchemaProvider.getSchema(schemaDatasetId) : List.of();
         ValidationResult result = suiteValidationService.validateSuite(dto, null, datasetSchema);
@@ -316,7 +328,7 @@ public class TestSuiteCloneService {
 
                 if (tsmdRevalidation.required()) {
                     testSuiteMetricDefinitionService.revalidateAllForSuite(
-                            newId, tsmdRevalidation.schema(), newSuiteEntity.getResponseColumns());
+                            newId, tsmdRevalidation.schema(), chainNormalizer.chainResponseColumnsJson(newSuiteEntity));
                 }
 
                 return null;

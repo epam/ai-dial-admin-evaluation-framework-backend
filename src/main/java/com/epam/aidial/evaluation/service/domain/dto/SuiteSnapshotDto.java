@@ -55,6 +55,28 @@ public class SuiteSnapshotDto {
     @Schema(description = "Response column definitions")
     private List<ResponseColumnDefinitionDto> responseColumns;
 
+    /**
+     * The frozen chain, <b>mirroring the live suite's shape</b>: request 0 stays represented by the flat
+     * {@code endpointRef}/{@code requestTemplate}/{@code inputBindings}/{@code responseColumns} and
+     * {@link #requestLabel}, with this array holding requests {@code 1..N-1} in order. A pre-normalized
+     * complete request array is deliberately NOT stored, so request 0 is never duplicated within one
+     * snapshot document and there is no which-is-authoritative ambiguity. Readers apply the same
+     * {@code ChainNormalizer} used for a live suite.
+     *
+     * <p>Adding this field did NOT bump {@link #CURRENT_VERSION}: an absent {@code additionalRequests}
+     * denotes a single-request chain, which is precisely the pre-existing behavior, so no
+     * version-conditional interpretation is required. Follows the {@code overallScore} precedent.
+     * Null/absent for MCP_TOOL suites — MCP chaining is not supported.
+     */
+    @Schema(
+            description = "Frozen chain of additional requests (requests 1..N-1) for a multi-request suite. "
+                    + "Absent means a single-request chain — the pre-existing behavior — so its addition "
+                    + "needed no snapshot version bump.")
+    private List<ChainRequestDto> additionalRequests;
+
+    @Schema(description = "Label naming request 0 at snapshot time; null ⇒ defaults to 'request-1'")
+    private String requestLabel;
+
     @Schema(description = "Test case schema field definitions")
     private List<FieldDefinitionDto> testCaseSchema;
 

@@ -21,7 +21,7 @@ class TemplateVariableResolverTest {
                 .build();
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("model", null, binding, null, warnings);
+        Object result = resolver.resolveVariable("model", null, binding, ResolutionScope.ofData(null), warnings);
 
         assertThat(result).isEqualTo("gpt-4");
         assertThat(warnings).isEmpty();
@@ -36,7 +36,7 @@ class TemplateVariableResolverTest {
         Map<String, Object> data = Map.of("promptField", "Hello world");
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("prompt", null, binding, data, warnings);
+        Object result = resolver.resolveVariable("prompt", null, binding, ResolutionScope.ofData(data), warnings);
 
         assertThat(result).isEqualTo("Hello world");
         assertThat(warnings).isEmpty();
@@ -51,7 +51,7 @@ class TemplateVariableResolverTest {
         Map<String, Object> data = Map.of();
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("prompt", "fallback", binding, data, warnings);
+        Object result = resolver.resolveVariable("prompt", "fallback", binding, ResolutionScope.ofData(data), warnings);
 
         assertThat(result).isEqualTo("fallback");
         assertThat(warnings).isEmpty();
@@ -61,7 +61,7 @@ class TemplateVariableResolverTest {
     void shouldResolveUnboundVariableWithDefault() {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("temperature", "0.7", null, null, warnings);
+        Object result = resolver.resolveVariable("temperature", "0.7", null, ResolutionScope.ofData(null), warnings);
 
         assertThat(result).isEqualTo("0.7");
         assertThat(warnings).isEmpty();
@@ -71,7 +71,7 @@ class TemplateVariableResolverTest {
     void shouldReturnNullAndWarnForUnboundVariableWithoutDefault() {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("prompt", null, null, null, warnings);
+        Object result = resolver.resolveVariable("prompt", null, null, ResolutionScope.ofData(null), warnings);
 
         assertThat(result).isNull();
         assertThat(warnings).hasSize(1);
@@ -87,7 +87,7 @@ class TemplateVariableResolverTest {
         Map<String, Object> data = Map.of();
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("prompt", null, binding, data, warnings);
+        Object result = resolver.resolveVariable("prompt", null, binding, ResolutionScope.ofData(data), warnings);
 
         assertThat(result).isNull();
         assertThat(warnings).hasSize(1);
@@ -103,7 +103,7 @@ class TemplateVariableResolverTest {
         Map<String, Object> data = Map.of("temp", 0.7);
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("temperature", null, binding, data, warnings);
+        Object result = resolver.resolveVariable("temperature", null, binding, ResolutionScope.ofData(data), warnings);
 
         assertThat(result).isEqualTo(0.7);
         assertThat(result).isInstanceOf(Double.class);
@@ -118,7 +118,7 @@ class TemplateVariableResolverTest {
                 .build();
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("stream", null, binding, null, warnings);
+        Object result = resolver.resolveVariable("stream", null, binding, ResolutionScope.ofData(null), warnings);
 
         assertThat(result).isEqualTo(true);
         assertThat(result).isInstanceOf(Boolean.class);
@@ -136,7 +136,8 @@ class TemplateVariableResolverTest {
         Map<String, Object> data = Map.of("modelField", "gpt-3.5");
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("model", "default-model", binding, data, warnings);
+        Object result =
+                resolver.resolveVariable("model", "default-model", binding, ResolutionScope.ofData(data), warnings);
 
         assertThat(result).isEqualTo("gpt-4");
         assertThat(warnings).isEmpty();
@@ -150,7 +151,7 @@ class TemplateVariableResolverTest {
                 .build();
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
-        Object result = resolver.resolveVariable("prompt", "default", binding, null, warnings);
+        Object result = resolver.resolveVariable("prompt", "default", binding, ResolutionScope.ofData(null), warnings);
 
         assertThat(result).isEqualTo("default");
         assertThat(warnings).isEmpty();

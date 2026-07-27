@@ -60,7 +60,12 @@ class SuiteValidationServiceTest {
         templateVariableExtractor = new TemplateVariableExtractor();
         bindingValidator = new BindingValidator(fileRefValidator);
         service = new SuiteValidationService(
-                templateVariableExtractor, evaluationRunProperties, fileRefValidator, bindingValidator, jsonbMapper);
+                templateVariableExtractor,
+                evaluationRunProperties,
+                fileRefValidator,
+                bindingValidator,
+                new ChainNormalizer(jsonbMapper),
+                jsonbMapper);
         lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
         lenient().when(execution.getHeaderBlacklist()).thenReturn(List.of());
     }

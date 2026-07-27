@@ -1,0 +1,166 @@
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Session-Scoped Chat Suite",
+  "description": "Creates a session, configures it, invokes the model, then tears the session down",
+  "suiteType": "DEPLOYMENT",
+  "deploymentRef": {
+    "id": "deploy-001",
+    "name": "Production Deployment",
+    "version": "1.0",
+    "type": "dial-application"
+  },
+  "endpointRef": {
+    "method": "POST",
+    "relativeUrlPattern": "/session",
+    "requestBodySchema": {
+      "contentType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "tenant": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "responseColumns": [
+    {
+      "name": "session_id",
+      "displayName": "Session Id",
+      "expression": "id",
+      "type": "STRING"
+    }
+  ],
+  "requestTemplate": {
+    "urlTemplate": "/session",
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "tenant": "${{tenant:acme}}"
+      }
+    }
+  },
+  "inputBindings": [],
+  "valid": true,
+  "validationWarnings": [],
+  "version": 1,
+  "createdBy": "user@example.com",
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000,
+  "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+  "disabledTestCaseIds": [],
+  "requestLabel": "create-session",
+  "additionalRequests": [
+    {
+      "type": "HTTP",
+      "label": "configure",
+      "endpointRef": {
+        "method": "PUT",
+        "relativeUrlPattern": "/session/config",
+        "requestBodySchema": {
+          "contentType": "application/json",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "requestTemplate": {
+        "urlTemplate": "/session/config",
+        "body": {
+          "contentType": "application/json",
+          "content": {
+            "sessionId": "${{session}}",
+            "mode": "${{mode:strict}}"
+          }
+        }
+      },
+      "inputBindings": [
+        {
+          "templateVariable": "session",
+          "responseField": "session_id"
+        }
+      ],
+      "responseColumns": []
+    },
+    {
+      "type": "HTTP",
+      "label": "invoke",
+      "endpointRef": {
+        "method": "POST",
+        "relativeUrlPattern": "/chat/completions",
+        "requestBodySchema": {
+          "contentType": "application/json",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string"
+              },
+              "messages": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "requestTemplate": {
+        "urlTemplate": "/chat/completions",
+        "body": {
+          "contentType": "application/json",
+          "content": {
+            "sessionId": "${{session}}",
+            "messages": "${{messages}}"
+          }
+        }
+      },
+      "inputBindings": [
+        {
+          "templateVariable": "session",
+          "responseField": "session_id"
+        },
+        {
+          "templateVariable": "messages",
+          "dataField": "messages"
+        }
+      ],
+      "responseColumns": [
+        {
+          "name": "answer",
+          "displayName": "Model Answer",
+          "expression": "choices[0].message.content",
+          "type": "STRING"
+        }
+      ]
+    },
+    {
+      "type": "HTTP",
+      "label": "teardown",
+      "endpointRef": {
+        "method": "DELETE",
+        "relativeUrlPattern": "/session/{id}"
+      },
+      "requestTemplate": {
+        "urlTemplate": "/session/${{session}}"
+      },
+      "inputBindings": [
+        {
+          "templateVariable": "session",
+          "responseField": "session_id"
+        }
+      ],
+      "responseColumns": []
+    }
+  ]
+}

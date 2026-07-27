@@ -14,7 +14,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
-import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.ForeignKey;
@@ -198,13 +197,6 @@ public class TestCases extends TableImpl<TestCasesRecord> {
             _datasets = new DatasetsPath(this, Keys.TEST_CASES__FK_TEST_CASES_DATASET_ID, null);
 
         return _datasets;
-    }
-
-    @Override
-    public List<Check<TestCasesRecord>> getChecks() {
-        return Arrays.asList(
-            Internal.createCheck(this, DSL.name("chk_test_cases_multi_turn_exclusive"), "(((multi_turn_data IS NULL) OR (data = '{}'::jsonb)))", true)
-        );
     }
 
     @Override

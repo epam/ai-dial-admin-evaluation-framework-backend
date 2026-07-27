@@ -58,6 +58,8 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
                         .set(TEST_CASE_RUN_RESULTS.RUN_INDEX, r.getRunIndex())
                         .set(TEST_CASE_RUN_RESULTS.TURN_INDEX, r.getTurnIndex())
                         .set(TEST_CASE_RUN_RESULTS.TOTAL_TURNS, r.getTotalTurns())
+                        .set(TEST_CASE_RUN_RESULTS.REQUEST_INDEX, r.getRequestIndex())
+                        .set(TEST_CASE_RUN_RESULTS.REQUEST_LABEL, r.getRequestLabel())
                         .set(TEST_CASE_RUN_RESULTS.TEST_CASE_DATA, toJsonb(r.getTestCaseData()))
                         .set(TEST_CASE_RUN_RESULTS.REQUEST_BODY, toJsonb(r.getRequestBody()))
                         .set(TEST_CASE_RUN_RESULTS.RESPONSE_BODY, toJsonb(r.getResponseBody()))
@@ -79,6 +81,9 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
                                 TEST_CASE_RUN_RESULTS.TEST_CASE_ID,
                                 TEST_CASE_RUN_RESULTS.RUN_INDEX,
                                 TEST_CASE_RUN_RESULTS.TURN_INDEX,
+                                // Must match the widened unique index exactly, or two chain requests of
+                                // one test-case run would collide and the second write be silently dropped.
+                                TEST_CASE_RUN_RESULTS.REQUEST_INDEX,
                                 TEST_CASE_RUN_RESULTS.CREATED_AT_MS)
                         .doNothing())
                 .toList();

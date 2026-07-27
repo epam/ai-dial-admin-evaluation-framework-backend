@@ -18,11 +18,9 @@ import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.McpDeploymentReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
@@ -47,6 +45,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -75,6 +74,7 @@ public class TryItOutService {
     private final TestSuiteRepository testSuiteRepository;
     private final TestCaseRepository testCaseRepository;
     private final ResolvedRequestService resolvedRequestService;
+    private final ChainNormalizer chainNormalizer;
     private final DialCoreDeploymentInvoker deploymentInvoker;
     private final McpToolInvoker mcpToolInvoker;
     private final McpRequestResolver mcpRequestResolver;
@@ -91,7 +91,7 @@ public class TryItOutService {
     private final DialCoreProperties dialCoreProperties;
     private final SseEventProcessingProperties sseEventProcessingProperties;
 
-    public TryItOutResponseDto tryWithTestCase(UUID testSuiteId, UUID testCaseId) {
+    public TryItOutResponseDto tryWithTestCase(UUID testSuiteId, UUID testCaseId, Integer requestIndex) {
         TestSuite suite = loadSuite(testSuiteId);
 
         if (isMcpSuite(suite)) {
@@ -115,17 +115,32 @@ public class TryItOutService {
             return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
         }
 
-        DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
-        EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
-        validateSuitePreconditions(deploymentRef, endpointRef, suite.getRequestTemplate());
+        final DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
+        final RequestSpec selected = selectChainRequest(suite, requestIndex);
+        validateSuitePreconditions(deploymentRef, selected);
 
-        ResolvedRequestDto resolved = resolvedRequestService.resolveRequest(testSuiteId, testCaseId);
-        validateResolutionResult(resolved);
+        final TestCase testCase = testCaseRepository
+                .findByIdAndDatasetId(testCaseId, suite.getDatasetId())
+                .orElseThrow(() -> new EntityNotFoundException("TestCase " + testCaseId + " not found in dataset "
+                        + suite.getDatasetId() + " (referenced by suite " + testSuiteId + ")"));
 
-        return invokeAndBuildResponse(resolved, deploymentRef, endpointRef.getMethod(), testSuiteId);
+        final ResolvedRequestDto resolved = resolvedRequestService.resolveInScope(
+                selected.requestTemplate(),
+                selected.safeInputBindings(),
+                // Try-out sends exactly ONE request, so no earlier chain request has run and a responseField
+                // has no producing request to resolve from. An empty scope makes those variables fall back to
+                // their placeholder default when declared; otherwise they surface as a warning below and the
+                // request is still sent, because a 200 naming the unresolved variable tells the author more
+                // than a 400.
+                ResolutionScope.ofData(parseTestCaseData(testCase.getData())));
+
+        validateResolutionResultForChainRequest(resolved, selected);
+
+        return invokeAndBuildResponse(
+                resolved, deploymentRef, selected.endpointRef().getMethod(), testSuiteId);
     }
 
-    public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<String, Object> variables) {
+    public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<String, Object> variables, Integer requestIndex) {
         TestSuite suite = loadSuite(testSuiteId);
 
         if (isMcpSuite(suite)) {
@@ -141,16 +156,69 @@ public class TryItOutService {
             return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
         }
 
-        DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
-        EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
-        RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
-        validateSuitePreconditions(deploymentRef, endpointRef, suite.getRequestTemplate());
+        final DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
+        final RequestSpec selected = selectChainRequest(suite, requestIndex);
+        validateSuitePreconditions(deploymentRef, selected);
 
-        List<InputBindingDto> bindings = convertVariablesToBindings(variables);
-        ResolvedRequestDto resolved = resolvedRequestService.resolve(template, bindings, Map.of());
+        // In variables mode the caller supplies every value directly — including any that would come from a
+        // prior chain request — so a later chain request CAN be tried in isolation with no prefix execution.
+        final List<InputBindingDto> bindings = convertVariablesToBindings(variables);
+        final ResolvedRequestDto resolved =
+                resolvedRequestService.resolve(selected.requestTemplate(), bindings, Map.of());
         validateResolutionResult(resolved);
 
-        return invokeAndBuildResponse(resolved, deploymentRef, endpointRef.getMethod(), testSuiteId);
+        return invokeAndBuildResponse(
+                resolved, deploymentRef, selected.endpointRef().getMethod(), testSuiteId);
+    }
+
+    /**
+     * Selects which chain request to instantiate. Try-out stays a SINGLE-endpoint operation: it resolves and
+     * sends exactly one request and never executes a chain, so no preceding request is issued even when a
+     * later one is selected. {@code requestIndex} rather than a label is the selector because the index is a
+     * result-row natural-key component and therefore the stable handle for clients. Defaults to request 0,
+     * the suite's flat configuration — unchanged behavior for every existing caller.
+     */
+    private RequestSpec selectChainRequest(TestSuite suite, Integer requestIndex) {
+        final List<RequestSpec> chain = chainNormalizer.normalize(suite);
+        final int index = requestIndex != null ? requestIndex : 0;
+        if (index < 0 || index >= chain.size()) {
+            throw new ValidationException("requestIndex " + index + " is out of range: the suite's chain has "
+                    + chain.size() + " request(s), so valid indices are 0.." + (chain.size() - 1));
+        }
+        return chain.get(index);
+    }
+
+    /**
+     * Test-case mode cannot resolve a {@code responseField} — there is no producing request. Rather than
+     * rejecting, the unresolved variable is surfaced as a warning on the returned {@code resolvedRequest} and
+     * the request is still sent. Genuinely missing test-case data still fails, as before.
+     */
+    private void validateResolutionResultForChainRequest(ResolvedRequestDto resolved, RequestSpec selected) {
+        final Set<String> chainBoundVariables = selected.safeInputBindings().stream()
+                .filter(b -> b != null
+                        && b.getResponseField() != null
+                        && !b.getResponseField().isBlank())
+                .map(InputBindingDto::getTemplateVariable)
+                .collect(Collectors.toSet());
+        if (chainBoundVariables.isEmpty()) {
+            validateResolutionResult(resolved);
+            return;
+        }
+        if (resolved.getUrl() == null) {
+            throw new ValidationException("Resolved URL is required for invocation");
+        }
+        final List<ValidationWarningDto> blocking = resolved.getWarnings() != null
+                ? resolved.getWarnings().stream()
+                        .filter(w -> w.getCode() == ValidationWarningCode.REQUIRED)
+                        .filter(w -> !chainBoundVariables.contains(w.getFieldName()))
+                        .toList()
+                : List.of();
+        if (!blocking.isEmpty()) {
+            final String unresolvedVars =
+                    blocking.stream().map(ValidationWarningDto::getFieldName).collect(Collectors.joining(", "));
+            throw new TryItOutValidationException(
+                    "Unresolved required template variables: [" + unresolvedVars + "]", resolved);
+        }
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {
@@ -159,17 +227,26 @@ public class TryItOutService {
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found: " + testSuiteId));
     }
 
-    private void validateSuitePreconditions(
-            DeploymentReferenceDto deploymentRef, EndpointContractDto endpointRef, String requestTemplateJson) {
+    /**
+     * Preconditions are checked against the SELECTED chain request's own {@code endpointRef} and template, not
+     * the suite's flat fields — a chain request targets its own path and method with its own body schema.
+     */
+    private void validateSuitePreconditions(DeploymentReferenceDto deploymentRef, RequestSpec selected) {
         if (deploymentRef == null) {
             throw new ValidationException("Deployment reference is required for try-it-out");
         }
-        if (endpointRef == null || endpointRef.getMethod() == null) {
-            throw new ValidationException("Endpoint reference with HTTP method is required for try-it-out");
+        if (selected.endpointRef() == null || selected.endpointRef().getMethod() == null) {
+            throw new ValidationException(
+                    "Endpoint reference with HTTP method is required for try-it-out" + describeRequest(selected));
         }
-        if (requestTemplateJson == null || requestTemplateJson.isBlank()) {
-            throw new ValidationException("Request template is required for try-it-out");
+        if (selected.requestTemplate() == null) {
+            throw new ValidationException("Request template is required for try-it-out" + describeRequest(selected));
         }
+    }
+
+    /** Names the offending chain request in a precondition message; empty for a single-request suite. */
+    private static String describeRequest(RequestSpec selected) {
+        return selected.index() == 0 ? "" : " (chain request " + selected.index() + ", '" + selected.label() + "')";
     }
 
     private void validateResolutionResult(ResolvedRequestDto resolved) {

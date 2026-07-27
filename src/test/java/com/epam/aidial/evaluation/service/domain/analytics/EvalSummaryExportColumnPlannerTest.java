@@ -5,11 +5,14 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.service.domain.ChainNormalizer;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.HttpChainRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -19,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("EvalSummaryExportColumnPlanner")
@@ -34,7 +38,8 @@ class EvalSummaryExportColumnPlannerTest {
 
     @BeforeEach
     void setUp() {
-        planner = new EvalSummaryExportColumnPlanner(outputSchemaFieldExtractor);
+        planner = new EvalSummaryExportColumnPlanner(
+                outputSchemaFieldExtractor, new ChainNormalizer(new JsonbMapper(new ObjectMapper())));
     }
 
     @Test
@@ -54,6 +59,10 @@ class EvalSummaryExportColumnPlannerTest {
                         "testCaseId",
                         "testCaseName",
                         "runIndex",
+                        "requestIndex",
+                        "requestLabel",
+                        "turnIndex",
+                        "totalTurns",
                         "computationId",
                         "createdAt",
                         "computedAt",
@@ -397,5 +406,63 @@ class EvalSummaryExportColumnPlannerTest {
             }
         }
         return -1;
+    }
+
+    @Test
+    @DisplayName("response:: columns are the CHAIN UNION, in chain order across every request")
+    void responseColumnsAreTheChainUnion() {
+        HttpChainRequestDto invoke = new HttpChainRequestDto();
+        invoke.setLabel("invoke");
+        invoke.setResponseColumns(List.of(responseColumn("answer"), responseColumn("usage")));
+
+        SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                .responseColumns(List.of(responseColumn("session_id")))
+                .additionalRequests(List.of(invoke))
+                .build();
+
+        List<ColumnDescriptor> result = planner.plan(snapshot, List.of());
+
+        assertThat(result)
+                .extracting(ColumnDescriptor::name)
+                .filteredOn(name -> name.startsWith("response::"))
+                .containsExactly("response::session_id", "response::answer", "response::usage");
+    }
+
+    @Test
+    @DisplayName("a single-request snapshot's response:: columns equal its flat responseColumns, as before")
+    void singleRequestResponseColumnsUnchanged() {
+        SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                .responseColumns(List.of(responseColumn("answer"), responseColumn("usage")))
+                .build();
+
+        List<ColumnDescriptor> result = planner.plan(snapshot, List.of());
+
+        assertThat(result)
+                .extracting(ColumnDescriptor::name)
+                .filteredOn(name -> name.startsWith("response::"))
+                .containsExactly("response::answer", "response::usage");
+    }
+
+    @Test
+    @DisplayName("a chain request's columns are still planned when request 0 declares none")
+    void laterRequestColumnsPlannedWithoutFlatColumns() {
+        HttpChainRequestDto invoke = new HttpChainRequestDto();
+        invoke.setLabel("invoke");
+        invoke.setResponseColumns(List.of(responseColumn("answer")));
+
+        SuiteSnapshotDto snapshot =
+                SuiteSnapshotDto.builder().additionalRequests(List.of(invoke)).build();
+
+        List<ColumnDescriptor> result = planner.plan(snapshot, List.of());
+
+        assertThat(result).extracting(ColumnDescriptor::name).contains("response::answer");
+    }
+
+    private static ResponseColumnDefinitionDto responseColumn(String name) {
+        return ResponseColumnDefinitionDto.builder()
+                .name(name)
+                .expression("$." + name)
+                .type(SchemaFieldType.STRING)
+                .build();
     }
 }

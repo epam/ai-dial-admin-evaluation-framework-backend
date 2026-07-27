@@ -43,6 +43,7 @@ public class RevalidationService {
     private final DatasetRepository datasetRepository;
     private final TestCaseValidationService testCaseValidationService;
     private final SuiteValidationService suiteValidationService;
+    private final ChainNormalizer chainNormalizer;
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final JsonbMapper jsonbMapper;
     private final RevalidationProperties revalidationProperties;
@@ -250,7 +251,7 @@ public class RevalidationService {
             try {
                 ValidationResult validationResult = suiteValidationService.validateSuite(suite, datasetSchema);
                 testSuiteMetricDefinitionService.revalidateAllForSuite(
-                        suite.getId(), datasetSchemaJson, suite.getResponseColumns());
+                        suite.getId(), datasetSchemaJson, chainNormalizer.chainResponseColumnsJson(suite));
                 testSuiteRepository.updateValidation(
                         suite.getId(),
                         validationResult.isValid(),

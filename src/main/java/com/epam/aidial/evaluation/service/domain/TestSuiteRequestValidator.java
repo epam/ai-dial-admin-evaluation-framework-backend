@@ -25,6 +25,7 @@ import tools.jackson.databind.ObjectMapper;
 public class TestSuiteRequestValidator {
 
     private final JsonataEvaluationService jsonataEvaluationService;
+    private final ChainNormalizer chainNormalizer;
     private final SchemaValidationService schemaValidationService;
     private final ObjectMapper objectMapper;
     private final ValidationProperties validationProperties;
@@ -79,31 +80,86 @@ public class TestSuiteRequestValidator {
                 }
             }
         }
-        List<ResponseColumnDefinitionDto> responseColumns = dto.getResponseColumns();
-        if (responseColumns != null && !responseColumns.isEmpty()) {
-            Set<String> seenNames = new HashSet<>();
-            for (int i = 0; i < responseColumns.size(); i++) {
-                ResponseColumnDefinitionDto col = responseColumns.get(i);
-                if (col == null) {
-                    continue;
-                }
-                if (col.getName() == null || col.getName().isBlank()) {
-                    throw new ValidationException("responseColumns[" + i + "]: name must not be blank");
-                }
-                if (!seenNames.add(col.getName())) {
-                    throw new ValidationException("responseColumns: duplicate column name '" + col.getName() + "'");
-                }
-                if (col.getExpression() == null || col.getExpression().isBlank()) {
-                    throw new ValidationException("responseColumns[" + i + "]: expression must not be blank");
-                }
-                try {
-                    jsonataEvaluationService.validateExpression(col.getExpression());
-                } catch (ValidationException ex) {
-                    throw new ValidationException(
-                            "responseColumns[" + i + "] ('" + col.getName() + "').expression: " + ex.getMessage());
+        // Every request in the chain gets the same response-column checks, request 0 included. Running them
+        // only against the flat responseColumns would let a chain element save a blank name or a malformed
+        // JSONata expression with 201, degrading at run time to a null column plus a per-row extraction
+        // warning instead of the 400 the identical mistake earns on request 0.
+        for (RequestSpec request : chainNormalizer.normalize(dto)) {
+            validateElementEndpointSchemas(request);
+            validateResponseColumns(request.safeResponseColumns(), requestPathPrefix(request));
+        }
+    }
+
+    /**
+     * A chain element carries its own {@code endpointRef}, so its body/response schemas need the same
+     * well-formedness check as request 0's — nothing else validates them.
+     */
+    private void validateElementEndpointSchemas(RequestSpec request) {
+        if (request.index() == 0 || request.endpointRef() == null) {
+            // Request 0's endpointRef is validated above with its established message paths.
+            return;
+        }
+        final String prefix = requestPathPrefix(request) + "endpointRef";
+        Optional<String> err = schemaValidationService.getSchemaValidationError(
+                request.endpointRef().getRequestBodySchema());
+        if (err.isPresent()) {
+            throw new ValidationException(prefix + ".requestBodySchema: " + err.get());
+        }
+        err = schemaValidationService.getSchemaValidationError(
+                request.endpointRef().getResponseBodySchema());
+        if (err.isPresent()) {
+            throw new ValidationException(prefix + ".responseBodySchema: " + err.get());
+        }
+        final List<ParameterDefinitionDto> params = request.endpointRef().getParameters();
+        if (params != null) {
+            for (int i = 0; i < params.size(); i++) {
+                final ParameterDefinitionDto p = params.get(i);
+                if (p != null) {
+                    final Optional<String> paramErr = schemaValidationService.getSchemaValidationError(p.getSchema());
+                    if (paramErr.isPresent()) {
+                        throw new ValidationException(prefix + ".parameters[" + i + "].schema: " + paramErr.get());
+                    }
                 }
             }
         }
+    }
+
+    private void validateResponseColumns(List<ResponseColumnDefinitionDto> responseColumns, String pathPrefix) {
+        if (responseColumns == null || responseColumns.isEmpty()) {
+            return;
+        }
+        Set<String> seenNames = new HashSet<>();
+        for (int i = 0; i < responseColumns.size(); i++) {
+            ResponseColumnDefinitionDto col = responseColumns.get(i);
+            if (col == null) {
+                continue;
+            }
+            if (col.getName() == null || col.getName().isBlank()) {
+                throw new ValidationException(pathPrefix + "responseColumns[" + i + "]: name must not be blank");
+            }
+            if (!seenNames.add(col.getName())) {
+                throw new ValidationException(
+                        pathPrefix + "responseColumns: duplicate column name '" + col.getName() + "'");
+            }
+            if (col.getExpression() == null || col.getExpression().isBlank()) {
+                throw new ValidationException(pathPrefix + "responseColumns[" + i + "]: expression must not be blank");
+            }
+            try {
+                jsonataEvaluationService.validateExpression(col.getExpression());
+            } catch (ValidationException ex) {
+                throw new ValidationException(pathPrefix + "responseColumns[" + i + "] ('" + col.getName()
+                        + "').expression: " + ex.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Message path for a normalized chain request: empty for request 0 (its errors keep their established,
+     * chain-unaware paths) and {@code additionalRequests[n].} for later elements, where {@code n} is the
+     * element's index in the persisted array — one less than its chain index.
+     */
+    private static String requestPathPrefix(RequestSpec request) {
+        return request.index() == 0 ? "" : "additionalRequests[" + (request.index() - 1) + "].";
     }
 
     /**
@@ -123,19 +179,31 @@ public class TestSuiteRequestValidator {
         if (dto.getMcpDeploymentRef() != null) {
             validateJsonFieldSize(dto.getMcpDeploymentRef(), "mcpDeploymentRef");
         }
-        if (dto.getInputBindings() != null
-                && dto.getInputBindings().size() > validationProperties.getMaxBindingsCount()) {
-            throw new ValidationException(
-                    "inputBindings count (" + dto.getInputBindings().size() + ") exceeds maximum of "
-                            + validationProperties.getMaxBindingsCount());
+        // Per-request, over the normalized chain: a chain element's bindings are resolved by the same
+        // Collectors.toMap(..., (a, b) -> a) that silently keeps the first of two bindings for one template
+        // variable, so an unchecked duplicate loses a binding with no warning anywhere.
+        for (RequestSpec request : chainNormalizer.normalize(dto)) {
+            final String prefix = requestPathPrefix(request);
+            if (request.index() > 0 && request.requestTemplate() != null) {
+                validateJsonFieldSize(request.requestTemplate(), prefix + "requestTemplate");
+            }
+            validateBindings(request.inputBindings(), prefix);
         }
-        if (dto.getInputBindings() != null) {
-            Set<String> seen = new HashSet<>();
-            for (InputBindingDto b : dto.getInputBindings()) {
-                if (b != null && b.getTemplateVariable() != null && !seen.add(b.getTemplateVariable())) {
-                    throw new ValidationException(
-                            "Duplicate templateVariable '" + b.getTemplateVariable() + "' in inputBindings");
-                }
+    }
+
+    private void validateBindings(List<InputBindingDto> bindings, String pathPrefix) {
+        if (bindings == null) {
+            return;
+        }
+        if (bindings.size() > validationProperties.getMaxBindingsCount()) {
+            throw new ValidationException(pathPrefix + "inputBindings count (" + bindings.size()
+                    + ") exceeds maximum of " + validationProperties.getMaxBindingsCount());
+        }
+        Set<String> seen = new HashSet<>();
+        for (InputBindingDto b : bindings) {
+            if (b != null && b.getTemplateVariable() != null && !seen.add(b.getTemplateVariable())) {
+                throw new ValidationException("Duplicate templateVariable '" + b.getTemplateVariable() + "' in "
+                        + pathPrefix + "inputBindings");
             }
         }
     }

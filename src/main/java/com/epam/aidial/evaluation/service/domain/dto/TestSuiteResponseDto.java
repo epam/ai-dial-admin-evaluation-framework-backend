@@ -43,6 +43,17 @@ public class TestSuiteResponseDto {
     private RequestTemplateDto requestTemplate;
     private List<InputBindingDto> inputBindings;
 
+    @Schema(
+            description = "Ordered chain of additional requests (requests 1..N-1) in stored order. "
+                    + "Absent or empty for a single-request suite.")
+    private List<ChainRequestDto> additionalRequests;
+
+    @Schema(
+            description = "Label naming request 0. Null when not configured, in which case request 0 "
+                    + "resolves to the default label `request-1`.",
+            example = "configure")
+    private String requestLabel;
+
     @Schema(description = "MCP deployment reference (MCP_TOOL suites only)")
     private McpDeploymentReferenceDto mcpDeploymentRef;
 

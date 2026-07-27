@@ -39,10 +39,17 @@ public class SuiteSnapshotBuilder {
                     .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
                     .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
         } else {
+            // The chain is frozen mirroring the live shape: request 0 in the flat fields, requests 1..N-1 in
+            // additionalRequests. Left null for MCP_TOOL suites, where chaining is not supported.
             builder.deploymentRef(jsonbMapper.map(suite.getDeploymentRef()))
                     .endpointRef(jsonbMapper.mapEndpointContract(suite.getEndpointRef()))
                     .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
-                    .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
+                    .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()))
+                    .additionalRequests(
+                            suite.getAdditionalRequests() != null
+                                    ? jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests())
+                                    : null)
+                    .requestLabel(suite.getRequestLabel());
         }
 
         return builder.build();

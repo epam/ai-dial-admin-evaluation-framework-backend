@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.service.domain.RequestSpec;
 import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
@@ -37,7 +38,17 @@ public class EvaluationContext {
     // Execution settings (merged with defaults)
     private final int concurrencyLevel;
     private final long requestTimeoutMs;
-    private final Double rateLimitRps;
+
+    /**
+     * Run-wide gate acquired once per outgoing HTTP call — including every multi-turn turn, every
+     * multi-request chain request, and every retry. Shared by all workers of the run, which is what makes
+     * the limit run-wide. A no-op gate when the run configures no {@code rateLimitRps}.
+     *
+     * <p>Defaulted rather than left null so a context assembled without one never NPEs at a call site: an
+     * absent gate means "no rate limit", which is exactly the semantics of an unset {@code rateLimitRps}.
+     */
+    @Builder.Default
+    private final RunRateLimiter rateLimiter = RunRateLimiter.disabled();
 
     // Retry policy (merged with defaults)
     private final int maxRetries;
@@ -68,6 +79,15 @@ public class EvaluationContext {
     private final RequestTemplateDto snapshotRequestTemplate;
     private final List<InputBindingDto> snapshotInputBindings;
     private final List<ResponseColumnDefinitionDto> snapshotResponseColumns;
+
+    /**
+     * The run's frozen chain, normalized from the snapshot by {@code ChainNormalizer} — element 0 synthesized
+     * from the flat snapshot fields above, elements {@code 1..N-1} from the snapshot's
+     * {@code additionalRequests}. Size 1 for a single-request suite, which is the dispatch discriminator:
+     * {@code chain.size() > 1} routes to the chain executor. Normalizing here means execution, export
+     * planning, and schema discovery all see one consistent representation of "the chain".
+     */
+    private final List<RequestSpec> chain;
 
     // Pre-deserialized typed DTOs (deserialized once at run init, immutable for run duration)
     private final McpDeploymentReferenceDto mcpDeploymentRefDto;

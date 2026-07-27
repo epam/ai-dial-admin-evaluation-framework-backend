@@ -32,4 +32,10 @@ public class ValidationWarningDto {
                     + "null for single-turn cases",
             example = "1")
     private Integer turnIndex;
+
+    @Schema(
+            description = "0-based chain position of the multi-request suite request this warning "
+                    + "originates from; null for warnings not attributable to a specific request",
+            example = "2")
+    private Integer requestIndex;
 }

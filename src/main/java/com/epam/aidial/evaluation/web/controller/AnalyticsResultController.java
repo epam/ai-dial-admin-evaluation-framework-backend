@@ -47,7 +47,12 @@ public class AnalyticsResultController {
     }
 
     @GetMapping
-    @Operation(summary = "List test case run results with cursor-based pagination")
+    @Operation(
+            summary = "List test case run results with cursor-based pagination",
+            description = "Intra-run row ORDER IS NOT GUARANTEED. Keyset pagination orders by "
+                    + "`(createdAtMs, id)`, and because `createdAtMs` is constant for every row of a run and "
+                    + "`id` is a random UUID, the effective order within a run is arbitrary. Clients needing "
+                    + "chain or turn order MUST sort by `(runIndex, requestIndex, turnIndex)`.")
     public CursorPageResponseDto<TestCaseRunResultResponseDto> list(
             @Parameter(description = "Filter conditions") @FilterParam List<String> filter,
             @Parameter(description = "Page size") @RequestParam(required = false) Integer size,

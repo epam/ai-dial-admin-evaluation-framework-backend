@@ -341,6 +341,34 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         return (Double) get(22);
     }
 
+    /**
+     * Setter for <code>meta.test_suites.additional_requests</code>.
+     */
+    public void setAdditionalRequests(JSONB value) {
+        set(23, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suites.additional_requests</code>.
+     */
+    public JSONB getAdditionalRequests() {
+        return (JSONB) get(23);
+    }
+
+    /**
+     * Setter for <code>meta.test_suites.request_label</code>.
+     */
+    public void setRequestLabel(String value) {
+        set(24, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suites.request_label</code>.
+     */
+    public String getRequestLabel() {
+        return (String) get(24);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -364,7 +392,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     /**
      * Create a detached, initialised TestSuitesRecord
      */
-    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, JSONB testCaseFilter, Double overallScoreThreshold) {
+    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, JSONB testCaseFilter, Double overallScoreThreshold, JSONB additionalRequests, String requestLabel) {
         super(TestSuites.TEST_SUITES);
 
         setId(id);
@@ -390,6 +418,8 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         setOverallScore(overallScore);
         setTestCaseFilter(testCaseFilter);
         setOverallScoreThreshold(overallScoreThreshold);
+        setAdditionalRequests(additionalRequests);
+        setRequestLabel(requestLabel);
         resetTouchedOnNotNull();
     }
 }

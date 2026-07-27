@@ -27,6 +27,17 @@ public class EvalSummary {
     @Builder.Default
     private int totalTurns = 1;
 
+    /**
+     * 0-based chain position of the multi-request suite request whose result row this summarizes; 0 for
+     * single-request suites. Part of the natural key, so each chain request's summary is uniquely keyed per
+     * computation.
+     */
+    @Builder.Default
+    private int requestIndex = 0;
+
+    /** That request's resolved label, denormalized for display. Not part of the natural key. */
+    private String requestLabel;
+
     private UUID computationId;
     private String testCaseData;
     private String extractedColumns;

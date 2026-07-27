@@ -97,6 +97,7 @@ class RevalidationServiceTest {
                 datasetRepository,
                 testCaseValidationService,
                 suiteValidationService,
+                new ChainNormalizer(jsonbMapper),
                 testSuiteMetricDefinitionService,
                 jsonbMapper,
                 revalidationProperties,

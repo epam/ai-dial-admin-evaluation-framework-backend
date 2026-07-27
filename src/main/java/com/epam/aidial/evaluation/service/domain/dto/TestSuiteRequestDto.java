@@ -68,6 +68,32 @@ public class TestSuiteRequestDto {
     private List<InputBindingDto> inputBindings;
 
     @Valid
+    @Schema(
+            description = "Optional ordered chain of ADDITIONAL requests, making this a multi-request suite. "
+                    + "Non-empty ⇒ multi-request; absent, null, or `[]` ⇒ single-request, behaving exactly as "
+                    + "before. Request 0 is the suite's flat `endpointRef`/`requestTemplate`/`inputBindings`/"
+                    + "`responseColumns`; these entries are requests 1..N-1, executed sequentially and "
+                    + "independently (no conversational message accumulation) against the suite-level "
+                    + "`deploymentRef`. A later request may consume an earlier one's extracted response column "
+                    + "via an `inputBindings` entry with `responseField`. Each executed request writes its own "
+                    + "result row. Response column names must be unique across the whole chain. Chain length is "
+                    + "capped by `test-suite.multi-request.max-requests`. Multi-request suites cannot be run "
+                    + "against a dataset containing multi-turn test cases.",
+            example = "[{\"type\":\"HTTP\",\"label\":\"invoke\",\"endpointRef\":{\"method\":\"POST\","
+                    + "\"relativeUrlPattern\":\"/chat/completions\"},\"requestTemplate\":{\"urlTemplate\":"
+                    + "\"/chat/completions\"},\"inputBindings\":[{\"templateVariable\":\"session\","
+                    + "\"responseField\":\"session_id\"}],\"responseColumns\":[{\"name\":\"answer\","
+                    + "\"expression\":\"choices[0].message.content\"}]}]")
+    private List<ChainRequestDto> additionalRequests;
+
+    @Size(max = 255)
+    @Schema(
+            description = "Optional label naming request 0 (the suite's flat request). Defaulted to "
+                    + "`request-1` when absent. Labels must be unique across the resolved chain.",
+            example = "configure")
+    private String requestLabel;
+
+    @Valid
     @Schema(description = "MCP deployment reference (required for MCP_TOOL suites)")
     private McpDeploymentReferenceDto mcpDeploymentRef;
 

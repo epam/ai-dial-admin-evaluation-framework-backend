@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.service.domain.dto.ChainRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
@@ -70,6 +71,8 @@ public class TestSuiteService {
     private final AuthorResolver authorResolver;
     private final EndpointSchemaRefResolver endpointSchemaRefResolver;
     private final SuiteValidationService suiteValidationService;
+    private final ChainNormalizer chainNormalizer;
+    private final ChainConfigurationValidator chainConfigurationValidator;
     private final DatasetSchemaProvider datasetSchemaProvider;
     private final RunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
@@ -142,6 +145,7 @@ public class TestSuiteService {
         String createdBy = authorResolver.getCreatedBy(jwt);
         TestSuiteRequestDto normalized = normalizeRequest(testSuiteRequestDto);
         validateTestCaseFilter(testSuiteRequestDto.getDatasetId(), normalized.getTestCaseFilter());
+        chainConfigurationValidator.validate(chainNormalizer.normalize(normalized));
         TestSuite testSuite = testSuiteMapper.toEntity(normalized, createdBy);
 
         ValidationResult suiteValidation = suiteValidationService.validateSuite(normalized, null, datasetSchema);
@@ -186,6 +190,7 @@ public class TestSuiteService {
                 : List.of();
         TestSuiteRequestDto normalized = normalizeRequest(testSuiteRequestDto);
         validateTestCaseFilter(testSuiteRequestDto.getDatasetId(), normalized.getTestCaseFilter());
+        chainConfigurationValidator.validate(chainNormalizer.normalize(normalized));
 
         boolean tsmdResponseColumnsChanged = isResponseColumnsChanged(existing, normalized);
         testSuiteMapper.update(existing, normalized);
@@ -206,7 +211,7 @@ public class TestSuiteService {
             if (tsmdResponseColumnsChanged) {
                 String datasetSchemaJson = jsonbMapper.mapFieldDefinitions(datasetSchema);
                 testSuiteMetricDefinitionService.revalidateAllForSuite(
-                        id, datasetSchemaJson, updated.getResponseColumns());
+                        id, datasetSchemaJson, chainNormalizer.chainResponseColumnsJson(updated));
             }
             return testSuiteMapper.toDto(updated);
         } catch (DataIntegrityViolationException ex) {
@@ -473,14 +478,44 @@ public class TestSuiteService {
         if (dto.getResponseColumns() == null) {
             dto.setResponseColumns(List.of());
         } else {
-            for (ResponseColumnDefinitionDto col : dto.getResponseColumns()) {
-                if (col != null && col.getType() == null) {
-                    col.setType(SchemaFieldType.STRING);
-                }
-            }
+            defaultResponseColumnTypes(dto.getResponseColumns());
         }
         dto.setEndpointRef(endpointSchemaRefResolver.resolve(dto.getEndpointRef()));
+        normalizeChainElements(dto.getAdditionalRequests());
         return dto;
+    }
+
+    /**
+     * Applies the same per-element normalization to every chain request that request 0 already receives:
+     * response-column type defaulting and {@code endpointRef} schema-ref resolution. Skipped entirely for a
+     * single-request suite, where the list is null.
+     */
+    private void normalizeChainElements(List<ChainRequestDto> additionalRequests) {
+        if (additionalRequests == null) {
+            return;
+        }
+        for (ChainRequestDto element : additionalRequests) {
+            if (element == null) {
+                continue;
+            }
+            if (element.getInputBindings() == null) {
+                element.setInputBindings(List.of());
+            }
+            if (element.getResponseColumns() == null) {
+                element.setResponseColumns(List.of());
+            } else {
+                defaultResponseColumnTypes(element.getResponseColumns());
+            }
+            element.setEndpointRef(endpointSchemaRefResolver.resolve(element.getEndpointRef()));
+        }
+    }
+
+    private static void defaultResponseColumnTypes(List<ResponseColumnDefinitionDto> columns) {
+        for (ResponseColumnDefinitionDto col : columns) {
+            if (col != null && col.getType() == null) {
+                col.setType(SchemaFieldType.STRING);
+            }
+        }
     }
 
     /**
@@ -493,8 +528,14 @@ public class TestSuiteService {
     private boolean isResponseColumnsChanged(TestSuite existing, TestSuiteRequestDto normalized) {
         TestSuite temp = new TestSuite();
         temp.setResponseColumns(existing.getResponseColumns());
+        temp.setAdditionalRequests(existing.getAdditionalRequests());
+        temp.setRequestLabel(existing.getRequestLabel());
         testSuiteMapper.update(temp, normalized);
-        return !jsonEquals(existing.getResponseColumns(), temp.getResponseColumns());
+        // Compared on the CHAIN UNION, not the flat column: editing a chain element's responseColumns changes
+        // what a TSMD's response bindings can resolve against just as much as editing request 0's does, so it
+        // must trigger the same revalidation.
+        return !jsonEquals(
+                chainNormalizer.chainResponseColumnsJson(existing), chainNormalizer.chainResponseColumnsJson(temp));
     }
 
     private boolean jsonEquals(String a, String b) {

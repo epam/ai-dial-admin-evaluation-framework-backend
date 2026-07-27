@@ -3,7 +3,6 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
@@ -66,7 +65,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveSimplePlaceholderInJsonBody() {
-            when(templateVariableResolver.resolveVariable(eq("user_prompt"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("user_prompt"), isNull(), any(), any(), anyList()))
                     .thenReturn("Hello world");
 
             var template = RequestTemplateDto.builder()
@@ -89,9 +88,9 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveMultiplePlaceholdersInJsonBody() {
-            when(templateVariableResolver.resolveVariable(eq("model"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("model"), isNull(), any(), any(), anyList()))
                     .thenReturn("gpt-4");
-            when(templateVariableResolver.resolveVariable(eq("temp"), eq("0.7"), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("temp"), eq("0.7"), any(), any(), anyList()))
                     .thenReturn("0.7");
 
             var template = RequestTemplateDto.builder()
@@ -111,7 +110,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldPreserveTypedValueForFullPlaceholderInJsonBody() {
-            when(templateVariableResolver.resolveVariable(eq("temperature"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("temperature"), isNull(), any(), any(), anyList()))
                     .thenReturn(0.7);
 
             var template = RequestTemplateDto.builder()
@@ -129,7 +128,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveNestedObjectsInJsonBody() {
-            when(templateVariableResolver.resolveVariable(eq("inner_val"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("inner_val"), isNull(), any(), any(), anyList()))
                     .thenReturn("resolved_inner");
 
             var template = RequestTemplateDto.builder()
@@ -171,9 +170,9 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldStringifyWhenPlaceholderIsEmbeddedInJsonBody() {
-            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), any(), anyList()))
                     .thenReturn("Alice");
-            when(templateVariableResolver.resolveVariable(eq("score"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("score"), isNull(), any(), any(), anyList()))
                     .thenReturn("95");
 
             var template = RequestTemplateDto.builder()
@@ -190,7 +189,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldHandleListValuesInJsonBody() {
-            when(templateVariableResolver.resolveVariable(eq("item"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("item"), isNull(), any(), any(), anyList()))
                     .thenReturn("resolved_item");
 
             var template = RequestTemplateDto.builder()
@@ -242,7 +241,7 @@ class ResolvedRequestServiceTest {
         void shouldResolveTypeHintedPlaceholderToValue() {
             String shortRef = "@ef/suites/abc/file.bin";
             String dialRef = "files/real-bucket/suites/abc/file.bin";
-            when(templateVariableResolver.resolveVariable(eq("some_prop"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("some_prop"), isNull(), any(), any(), anyList()))
                     .thenReturn(shortRef);
             when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
@@ -267,7 +266,7 @@ class ResolvedRequestServiceTest {
         void shouldFallBackToDefaultForTypeHintedPlaceholder() {
             String shortRef = "public/default.txt";
             String dialRef = "files/public/default.txt";
-            when(templateVariableResolver.resolveVariable(eq("doc"), eq(shortRef), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("doc"), eq(shortRef), any(), any(), anyList()))
                     .thenReturn(shortRef);
             when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
@@ -286,7 +285,7 @@ class ResolvedRequestServiceTest {
         @Test
         @DisplayName("${{var}} without type hint still resolves correctly")
         void shouldResolveNonTypeHintedPlaceholderUnchanged() {
-            when(templateVariableResolver.resolveVariable(eq("plain_var"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("plain_var"), isNull(), any(), any(), anyList()))
                     .thenReturn("plain-value");
 
             var template = RequestTemplateDto.builder()
@@ -304,7 +303,7 @@ class ResolvedRequestServiceTest {
         @Test
         @DisplayName("${{var:default}} without type hint still resolves correctly")
         void shouldResolveNonTypeHintedWithDefaultUnchanged() {
-            when(templateVariableResolver.resolveVariable(eq("temp"), eq("0.7"), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("temp"), eq("0.7"), any(), any(), anyList()))
                     .thenReturn(0.7);
 
             var template = RequestTemplateDto.builder()
@@ -322,7 +321,7 @@ class ResolvedRequestServiceTest {
         @Test
         @DisplayName("${{var|string}} in embedded interpolation strips type hint correctly")
         void shouldStripTypeHintInEmbeddedInterpolation() {
-            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("name"), isNull(), any(), any(), anyList()))
                     .thenReturn("Alice");
 
             var template = RequestTemplateDto.builder()
@@ -341,7 +340,7 @@ class ResolvedRequestServiceTest {
         @DisplayName("${{var|file}} preserves typed value in full-value path")
         void shouldPreserveTypedValueForTypeHintedFullPlaceholder() {
             var arrayValue = List.of("a", "b", "c");
-            when(templateVariableResolver.resolveVariable(eq("items"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("items"), isNull(), any(), any(), anyList()))
                     .thenReturn(arrayValue);
 
             var template = RequestTemplateDto.builder()
@@ -361,7 +360,7 @@ class ResolvedRequestServiceTest {
         void shouldResolveFileTypedPlaceholderToDialRef() {
             String shortRef = "@ef/suites/abc/doc.pdf";
             String dialRef = "files/real-bucket/suites/abc/doc.pdf";
-            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), any(), anyList()))
                     .thenReturn(shortRef);
             when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
@@ -382,7 +381,7 @@ class ResolvedRequestServiceTest {
         void shouldResolveFileTypedPlaceholderNestedInJsonObject() {
             String shortRef = "@ef/suites/abc/report.pdf";
             String dialRef = "files/real-bucket/suites/abc/report.pdf";
-            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), any(), anyList()))
                     .thenReturn(shortRef);
             when(dialFileRefResolver.resolveToDialRef(shortRef)).thenReturn(dialRef);
 
@@ -404,7 +403,7 @@ class ResolvedRequestServiceTest {
         @DisplayName("${{var|file}} non-string resolved value is not passed to resolveToDialRef")
         void shouldNotResolveNonStringFileTypedValue() {
             var mapValue = Map.of("key", "value");
-            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("doc"), isNull(), any(), any(), anyList()))
                     .thenReturn(mapValue);
 
             var template = RequestTemplateDto.builder()
@@ -426,7 +425,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveTextPartValue() {
-            when(templateVariableResolver.resolveVariable(eq("user_input"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("user_input"), isNull(), any(), any(), anyList()))
                     .thenReturn("resolved text");
 
             var template = RequestTemplateDto.builder()
@@ -451,7 +450,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveFilePartFilename() {
-            when(templateVariableResolver.resolveVariable(eq("doc_name"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("doc_name"), isNull(), any(), any(), anyList()))
                     .thenReturn("report");
 
             var template = RequestTemplateDto.builder()
@@ -474,9 +473,9 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveBothValueAndFilename() {
-            when(templateVariableResolver.resolveVariable(eq("content"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("content"), isNull(), any(), any(), anyList()))
                     .thenReturn("file bytes");
-            when(templateVariableResolver.resolveVariable(eq("fname"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("fname"), isNull(), any(), any(), anyList()))
                     .thenReturn("output");
 
             var template = RequestTemplateDto.builder()
@@ -500,9 +499,9 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveMultiplePartsIndependently() {
-            when(templateVariableResolver.resolveVariable(eq("prompt_val"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("prompt_val"), isNull(), any(), any(), anyList()))
                     .thenReturn("What is AI?");
-            when(templateVariableResolver.resolveVariable(eq("context_val"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("context_val"), isNull(), any(), any(), anyList()))
                     .thenReturn("technical");
 
             var template = RequestTemplateDto.builder()
@@ -531,7 +530,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldPreserveTypedValueForFullPlaceholderInMultipartPart() {
-            when(templateVariableResolver.resolveVariable(eq("json_data"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("json_data"), isNull(), any(), any(), anyList()))
                     .thenReturn(Map.of("key", "value"));
 
             var template = RequestTemplateDto.builder()
@@ -587,7 +586,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveNestedMapInFormPartValue() {
-            when(templateVariableResolver.resolveVariable(eq("nested_val"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("nested_val"), isNull(), any(), any(), anyList()))
                     .thenReturn("inner_resolved");
 
             var template = RequestTemplateDto.builder()
@@ -615,7 +614,7 @@ class ResolvedRequestServiceTest {
                     .templateVariable("user_input")
                     .dataField("inputCol")
                     .build();
-            when(templateVariableResolver.resolveVariable(eq("user_input"), isNull(), eq(binding), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("user_input"), isNull(), eq(binding), any(), anyList()))
                     .thenReturn("data-driven value");
 
             var template = RequestTemplateDto.builder()
@@ -643,7 +642,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolvePlaceholderInUrlEncodedValue() {
-            when(templateVariableResolver.resolveVariable(eq("user_name"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("user_name"), isNull(), any(), any(), anyList()))
                     .thenReturn("john_doe");
 
             var template = RequestTemplateDto.builder()
@@ -666,9 +665,9 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveMultipleUrlEncodedEntries() {
-            when(templateVariableResolver.resolveVariable(eq("grant"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("grant"), isNull(), any(), any(), anyList()))
                     .thenReturn("authorization_code");
-            when(templateVariableResolver.resolveVariable(eq("code_val"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("code_val"), isNull(), any(), any(), anyList()))
                     .thenReturn("abc123");
 
             var template = RequestTemplateDto.builder()
@@ -696,7 +695,7 @@ class ResolvedRequestServiceTest {
         @Test
         void shouldStringifyNonStringResolvedValueInUrlEncoded() {
             // URL-encoded values go through resolveString, which calls toString()
-            when(templateVariableResolver.resolveVariable(eq("count"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("count"), isNull(), any(), any(), anyList()))
                     .thenReturn(42);
 
             var template = RequestTemplateDto.builder()
@@ -716,7 +715,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldStringifyBooleanInUrlEncoded() {
-            when(templateVariableResolver.resolveVariable(eq("enabled"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("enabled"), isNull(), any(), any(), anyList()))
                     .thenReturn(true);
 
             var template = RequestTemplateDto.builder()
@@ -748,7 +747,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldPreserveKeyInUrlEncodedEntry() {
-            when(templateVariableResolver.resolveVariable(eq("token"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("token"), isNull(), any(), any(), anyList()))
                     .thenReturn("secret123");
 
             var template = RequestTemplateDto.builder()
@@ -786,7 +785,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveEmbeddedPlaceholderInUrlEncodedValue() {
-            when(templateVariableResolver.resolveVariable(eq("host"), isNull(), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("host"), isNull(), any(), any(), anyList()))
                     .thenReturn("example.com");
 
             var template = RequestTemplateDto.builder()
@@ -810,7 +809,7 @@ class ResolvedRequestServiceTest {
                     .templateVariable("client_id")
                     .dataField("clientIdCol")
                     .build();
-            when(templateVariableResolver.resolveVariable(eq("client_id"), isNull(), eq(binding), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("client_id"), isNull(), eq(binding), any(), anyList()))
                     .thenReturn("my-client-app");
 
             var template = RequestTemplateDto.builder()
@@ -832,7 +831,7 @@ class ResolvedRequestServiceTest {
 
         @Test
         void shouldResolveWithDefaultValueInUrlEncoded() {
-            when(templateVariableResolver.resolveVariable(eq("scope"), eq("openid"), any(), anyMap(), anyList()))
+            when(templateVariableResolver.resolveVariable(eq("scope"), eq("openid"), any(), any(), anyList()))
                     .thenReturn("openid");
 
             var template = RequestTemplateDto.builder()

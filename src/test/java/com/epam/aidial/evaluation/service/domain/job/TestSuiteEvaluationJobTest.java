@@ -20,6 +20,7 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.service.domain.ChainNormalizer;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
@@ -27,6 +28,7 @@ import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
+import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
@@ -105,6 +107,7 @@ class TestSuiteEvaluationJobTest {
                 sseService,
                 evaluationRunProperties,
                 objectMapper,
+                new ChainNormalizer(new JsonbMapper(objectMapper)),
                 suiteSnapshotBuilder,
                 evaluationExecutor,
                 testSuiteMetricDefinitionService,

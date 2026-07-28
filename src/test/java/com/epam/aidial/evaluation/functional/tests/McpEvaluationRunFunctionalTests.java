@@ -73,6 +73,12 @@ public abstract class McpEvaluationRunFunctionalTests extends AbstractMcpFunctio
         assertThat(results).allMatch(r -> r.get("request_body") != null);
         assertThat(results).allMatch(r -> r.get("response_body") != null);
         assertThat(results).allMatch(r -> r.get("response_status_code") == null);
+        // An MCP suite is single-request too, so its rows carry request 0 and the resolved default label
+        // rather than a NULL request_label.
+        assertThat(results).allSatisfy(r -> {
+            assertThat(((Number) r.get("request_index")).intValue()).isZero();
+            assertThat(r.get("request_label")).isEqualTo("request-1");
+        });
     }
 
     @Test

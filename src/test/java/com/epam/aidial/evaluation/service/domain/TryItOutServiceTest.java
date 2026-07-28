@@ -51,7 +51,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -804,8 +803,9 @@ class TryItOutServiceTest {
                             .templateVariable("sid")
                             .responseField("session_id")
                             .build()))));
-            // Test-case mode runs no earlier request, so `sid` cannot resolve and the resolver reports it REQUIRED.
-            stubTestCaseResolution(resolvedWithRequiredWarnings("sid"));
+            // Test-case mode runs no earlier request, so `sid` cannot resolve. The resolver reports that as
+            // UNRESOLVED_REFERENCE (not REQUIRED), which is precisely why it does not block the call.
+            stubTestCaseResolution(resolvedWithWarnings(Map.of("sid", ValidationWarningCode.UNRESOLVED_REFERENCE)));
             when(urlBuilder.buildUrl("gpt-4", "/sessions/status")).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
@@ -835,7 +835,8 @@ class TryItOutServiceTest {
                                     .templateVariable("prompt")
                                     .dataField("question")
                                     .build()))));
-            stubTestCaseResolution(resolvedWithRequiredWarnings("sid", "prompt"));
+            stubTestCaseResolution(resolvedWithWarnings(Map.of(
+                    "sid", ValidationWarningCode.UNRESOLVED_REFERENCE, "prompt", ValidationWarningCode.REQUIRED)));
 
             assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID, 1))
                     .isInstanceOf(TryItOutValidationException.class)
@@ -887,14 +888,22 @@ class TryItOutServiceTest {
             return element;
         }
 
-        private ResolvedRequestDto resolvedWithRequiredWarnings(String... fieldNames) {
+        /**
+         * A resolution result carrying one warning per entry, with the code the real
+         * {@code TemplateVariableResolver} would emit for that binding kind. The code matters: an unresolvable
+         * {@code responseField} is reported as {@code UNRESOLVED_REFERENCE} and is deliberately non-blocking,
+         * while a missing {@code dataField} is {@code REQUIRED} and blocks. Stubbing the wrong code here would
+         * silently invert what these tests prove — see {@code TemplateVariableResolverTest}, which pins the
+         * codes against the real resolver.
+         */
+        private ResolvedRequestDto resolvedWithWarnings(Map<String, ValidationWarningCode> codesByField) {
             return ResolvedRequestDto.builder()
                     .url("/sessions/status")
-                    .warnings(Arrays.stream(fieldNames)
-                            .map(name -> ValidationWarningDto.builder()
-                                    .fieldName(name)
-                                    .code(ValidationWarningCode.REQUIRED)
-                                    .message("Required variable '" + name + "' has no binding")
+                    .warnings(codesByField.entrySet().stream()
+                            .map(e -> ValidationWarningDto.builder()
+                                    .fieldName(e.getKey())
+                                    .code(e.getValue())
+                                    .message("Variable '" + e.getKey() + "' could not be resolved")
                                     .build())
                             .toList())
                     .build();

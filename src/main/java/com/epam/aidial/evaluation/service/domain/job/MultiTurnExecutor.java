@@ -221,6 +221,10 @@ public class MultiTurnExecutor {
                 .runIndex(runIndex)
                 .turnIndex(turnIndex)
                 .totalTurns(totalTurns)
+                // Multi-turn and multi-request are mutually exclusive, so every turn row belongs to request 0
+                // of a one-element chain. Written explicitly so request_label is non-null here too — a
+                // condition on request.label must behave the same for a turn row as for a chain row.
+                .requestLabel(context.primaryRequestLabel())
                 .testCaseData(jsonService.writeOrToString(turnData))
                 .requestBody(requestBodyJson)
                 .responseBody(outcome != null ? outcome.responseBody() : null)
@@ -371,6 +375,7 @@ public class MultiTurnExecutor {
                 .runIndex(runIndex)
                 .turnIndex(0)
                 .totalTurns(1)
+                .requestLabel(context.primaryRequestLabel())
                 .testCaseData(input.getTestCaseData())
                 .requestBody(null)
                 .responseBody(null)

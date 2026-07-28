@@ -140,6 +140,15 @@ the deployment. The chain reuses `DeploymentTurnInvoker`, so it needs no separat
 strings, so keying on one would mean renaming a request changes the row's identity. Exact precedent:
 `test_case_name` sits beside the keyed `test_case_id`.
 
+`request_label` is written on **every** row an executor produces, not only chain rows —
+`EvaluationWorker` (single-request HTTP and MCP), `MultiTurnExecutor` (per turn), `ChainExecutor`
+(per request), and the executor's synthetic-error path all set it, resolving via
+`EvaluationContext.primaryRequestLabel()` for the non-chain paths. That is what makes the optional-label
+design work: `ChainNormalizer` defaults an undeclared label to `request-{n}`, so a `condition` on
+`request.label` and the CSV `requestLabel` column behave identically for a single-request suite and a
+chain. Leaving it null on the non-chain paths would silently break both. The column stays nullable only
+for rows imported through the batch-write API, whose labels are client-supplied.
+
 There is **no `total_requests` column**. The `turn_index`/`total_turns` pairing does not carry over:
 `turn.total`/`turn.last` exist because turn count is **data**-dependent (it varies per test case, so a
 condition author cannot know N), whereas request count is **config**-dependent — fixed for the run,

@@ -45,7 +45,6 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -134,7 +133,7 @@ public class TryItOutService {
                 // than a 400.
                 ResolutionScope.ofData(parseTestCaseData(testCase.getData())));
 
-        validateResolutionResultForChainRequest(resolved, selected);
+        validateResolutionResult(resolved);
 
         return invokeAndBuildResponse(
                 resolved, deploymentRef, selected.endpointRef().getMethod(), testSuiteId);
@@ -188,39 +187,6 @@ public class TryItOutService {
         return chain.get(index);
     }
 
-    /**
-     * Test-case mode cannot resolve a {@code responseField} — there is no producing request. Rather than
-     * rejecting, the unresolved variable is surfaced as a warning on the returned {@code resolvedRequest} and
-     * the request is still sent. Genuinely missing test-case data still fails, as before.
-     */
-    private void validateResolutionResultForChainRequest(ResolvedRequestDto resolved, RequestSpec selected) {
-        final Set<String> chainBoundVariables = selected.safeInputBindings().stream()
-                .filter(b -> b != null
-                        && b.getResponseField() != null
-                        && !b.getResponseField().isBlank())
-                .map(InputBindingDto::getTemplateVariable)
-                .collect(Collectors.toSet());
-        if (chainBoundVariables.isEmpty()) {
-            validateResolutionResult(resolved);
-            return;
-        }
-        if (resolved.getUrl() == null) {
-            throw new ValidationException("Resolved URL is required for invocation");
-        }
-        final List<ValidationWarningDto> blocking = resolved.getWarnings() != null
-                ? resolved.getWarnings().stream()
-                        .filter(w -> w.getCode() == ValidationWarningCode.REQUIRED)
-                        .filter(w -> !chainBoundVariables.contains(w.getFieldName()))
-                        .toList()
-                : List.of();
-        if (!blocking.isEmpty()) {
-            final String unresolvedVars =
-                    blocking.stream().map(ValidationWarningDto::getFieldName).collect(Collectors.joining(", "));
-            throw new TryItOutValidationException(
-                    "Unresolved required template variables: [" + unresolvedVars + "]", resolved);
-        }
-    }
-
     private TestSuite loadSuite(UUID testSuiteId) {
         return testSuiteRepository
                 .findById(testSuiteId)
@@ -249,6 +215,17 @@ public class TryItOutService {
         return selected.index() == 0 ? "" : " (chain request " + selected.index() + ", '" + selected.label() + "')";
     }
 
+    /**
+     * Blocks invocation only on {@code REQUIRED} warnings — a template variable with no usable value and no
+     * default.
+     *
+     * <p>An unresolved {@code responseField} is deliberately NOT blocking: try-it-out sends exactly one
+     * request, so no earlier chain request has run and the variable is reported as
+     * {@code UNRESOLVED_REFERENCE} by {@code TemplateVariableResolver}. That code is excluded here by design —
+     * a 200 whose returned {@code resolvedRequest} names the unresolved variable tells the author more than a
+     * 400 would. Do not widen this filter to all warning codes without re-deciding that trade-off; doing so
+     * would make every later chain request untriable in test-case mode.
+     */
     private void validateResolutionResult(ResolvedRequestDto resolved) {
         if (resolved.getUrl() == null) {
             throw new ValidationException("Resolved URL is required for invocation");

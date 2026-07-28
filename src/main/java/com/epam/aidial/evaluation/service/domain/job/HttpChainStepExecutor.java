@@ -121,7 +121,8 @@ public class HttpChainStepExecutor implements ChainStepExecutor {
                     outcome.statusCode(),
                     requestBodyJson,
                     outcome.responseBody(),
-                    outcome.retryCount());
+                    outcome.retryCount(),
+                    outcome.issued());
         }
 
         // Extraction is scoped to THIS request's own response columns, so the row's extracted_columns holds
@@ -138,13 +139,20 @@ public class HttpChainStepExecutor implements ChainStepExecutor {
                 extraction.extractedColumns(),
                 extraction.extractionWarnings(),
                 toValueMap(extraction.extractedColumns()),
-                List.of());
+                List.of(),
+                true);
     }
 
     /**
-     * Response columns this request binds to via {@code responseField} that are absent from the accumulated
-     * map AND whose placeholder declares no default. A declared default is honored by
+     * Response columns this request binds to via {@code responseField} that have <b>no usable value</b> in the
+     * accumulated map AND whose placeholder declares no default. A declared default is honored by
      * {@code TemplateVariableResolver}, so those are not reported here.
+     *
+     * <p>"No usable value" means a null value, not merely an absent key: a column whose JSONata matched
+     * nothing is still <i>present</i> in the producing request's {@code extracted_columns} as an explicit JSON
+     * null (see {@code ResponseColumnExtractor.putNull}), so a key-presence test would pass while
+     * {@code TemplateVariableResolver} — which requires a non-null value — treats it as unresolved. That
+     * disagreement is exactly the case this check exists to catch, so the two MUST use the same predicate.
      */
     private List<String> findUnresolvableResponseFields(RequestSpec request, Map<String, Object> responseValues) {
         final List<InputBindingDto> chainBindings = request.safeInputBindings().stream()
@@ -163,7 +171,7 @@ public class HttpChainStepExecutor implements ChainStepExecutor {
 
         final Set<String> missing = new HashSet<>();
         for (InputBindingDto binding : chainBindings) {
-            if (responseValues.containsKey(binding.getResponseField())) {
+            if (responseValues.get(binding.getResponseField()) != null) {
                 continue;
             }
             if (variablesWithDefault.contains(binding.getTemplateVariable())) {

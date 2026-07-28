@@ -32,7 +32,13 @@ public class TestCaseRunResultFactory {
 
     private final ObjectMapper objectMapper;
 
-    public TestCaseRunResult errorResult(TestCaseRunInput input, int runIndex, Throwable cause, long nowMs) {
+    /**
+     * @param requestLabel the run's request-0 label, so this row carries the same non-null
+     *                     {@code request_label} as every row an executor writes; a synthetic row is still a
+     *                     result row in the grid and the CSV export
+     */
+    public TestCaseRunResult errorResult(
+            TestCaseRunInput input, int runIndex, Throwable cause, long nowMs, String requestLabel) {
         String envelope = buildEnvelope(cause);
         return TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
@@ -40,6 +46,7 @@ public class TestCaseRunResultFactory {
                 .testCaseId(input.getTestCaseId())
                 .testCaseName(input.getTestCaseName())
                 .runIndex(runIndex)
+                .requestLabel(requestLabel)
                 .testCaseData(input.getTestCaseData())
                 .executionStatus(ExecutionStatus.ERROR)
                 .responseBody(envelope)

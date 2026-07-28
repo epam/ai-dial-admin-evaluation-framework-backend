@@ -90,9 +90,29 @@ Status: **Planned**
 - **WHEN** a `responseField` cannot be resolved and its placeholder declares no default
 - **THEN** that request persists one ERROR row and the chain aborts
 
+#### Scenario: A column that matched nothing counts as unresolved
+- **WHEN** an earlier request returns 2xx but a response column's expression matches nothing, so the column is recorded as an explicit null, and a later request binds a `responseField` to it
+- **THEN** that later request is treated as having a missing dependency — present-but-null is not resolved — and, with no declared placeholder default, persists one ERROR row and aborts the chain rather than sending a call built from an unresolved placeholder
+
+#### Scenario: A step never sent under cancellation leaves no row
+- **WHEN** a chain request is abandoned before sending because run cancellation interrupted its rate-limit token wait
+- **THEN** that request contributes no result row, consistent with "No synthetic rows for unfinished cases"; an un-issued step with no cancellation in progress still persists its diagnostic ERROR row
+
 #### Scenario: No message history is threaded between chain requests
 - **WHEN** two chain requests both resolve bodies containing a `messages` array
 - **THEN** each request's body carries only its own resolved messages, with no accumulation of prior messages or assistant replies
+
+### Requirement: Every result row carries a resolved request label
+Every result row written by the execution engine SHALL carry a non-null `request_label`: rows from the single-request HTTP path, the MCP path, each multi-turn turn, each chain request, and the executor's synthetic error row for a failed worker. The label SHALL be the normalized chain's request-0 label for all non-chain paths and the corresponding request's own label for chain rows. `request_label` MAY remain null only for rows imported through the batch-write API, whose labels are client-supplied.
+Status: **Planned**
+
+#### Scenario: Single-request run carries the resolved default label
+- **WHEN** a single-request suite that declares no `requestLabel` executes
+- **THEN** every result row carries `request_index = 0` and `request_label = "request-1"`, so a `condition` on `request.label` and the CSV `requestLabel` column behave the same as for a chain
+
+#### Scenario: Turn rows carry the request label too
+- **WHEN** a multi-turn test case of a single-request suite executes
+- **THEN** every turn row carries the same `request_index = 0` and resolved `request_label`
 
 ### Requirement: Chain step executor registry
 Chain step execution SHALL be dispatched through a registry of step executors keyed by the chain element's `type` discriminator (`HTTP`, `MCP_TOOL`). Only the `HTTP` executor SHALL be functional; the `MCP_TOOL` executor SHALL throw `UnsupportedOperationException`. The existing single-request MCP execution path SHALL NOT be routed through this registry and SHALL remain unchanged.

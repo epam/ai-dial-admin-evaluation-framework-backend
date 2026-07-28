@@ -37,9 +37,21 @@ public final class DeploymentInvocationSupport {
      * that ever reaches the database must be as diagnosable as that one.
      */
     public static String cancelledEnvelope(QuietJsonService jsonService) {
+        return errorEnvelope(CANCELLED_ERROR_CODE, CANCELLED_MESSAGE, jsonService);
+    }
+
+    /**
+     * The {@code {"error":{"code","message"}}} envelope stored in {@code response_body} for a row whose call
+     * produced no response of its own. The single builder for that shape: the single-request path, the chain
+     * step's unexpected-failure path, and the cancellation envelope above all route through here, so a
+     * consumer parsing {@code response_body} sees one structure regardless of which executor wrote the row.
+     * A null {@code message} is normalized to {@code "Unknown error"} rather than a JSON null, so the field is
+     * always a string.
+     */
+    public static String errorEnvelope(String code, String message, QuietJsonService jsonService) {
         final ObjectNode error = jsonService.createObjectNode();
-        error.put("code", CANCELLED_ERROR_CODE);
-        error.put("message", CANCELLED_MESSAGE);
+        error.put("code", code);
+        error.put("message", message != null ? message : "Unknown error");
         final ObjectNode root = jsonService.createObjectNode();
         root.set("error", error);
         return jsonService.writeOrToString(root);

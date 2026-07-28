@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.service.domain.QuietJsonService;
 import com.epam.aidial.evaluation.service.domain.RequestSpec;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,7 +81,13 @@ public class ChainExecutor {
                     runStep(request, context, testCaseData, accumulated, input.getTestCaseId());
             final long requestEnd = clock.millis();
 
-            results.add(buildRow(input, context, runIndex, traceId, request, outcome, requestStart, requestEnd));
+            // Same rule as the multi-turn sibling: a step abandoned at the rate-limit gate never sent anything,
+            // so under cancellation it contributes no row — "no synthetic rows for unfinished cases". An
+            // un-issued step with no cancellation (an unresolvable dependency) still writes its ERROR row,
+            // which is the only record of why the chain aborted.
+            if (outcome.issued() || !context.getCancellationSignal().get()) {
+                results.add(buildRow(input, context, runIndex, traceId, request, outcome, requestStart, requestEnd));
+            }
 
             if (!outcome.isSuccess()) {
                 log.warn(
@@ -113,7 +120,12 @@ public class ChainExecutor {
             Map<String, Object> testCaseData,
             Map<String, Object> accumulated,
             UUID testCaseId) {
-        final ChainStepRequest step = new ChainStepRequest(request, context, testCaseData, Map.copyOf(accumulated));
+        // Collections.unmodifiableMap over a defensive copy, NOT Map.copyOf: an extracted column whose JSONata
+        // matched nothing is accumulated as an explicit null, and Map.copyOf rejects null values with an NPE
+        // thrown outside the try below — which would escape as a whole-worker failure instead of this chain's
+        // own fail-fast ERROR row.
+        final ChainStepRequest step = new ChainStepRequest(
+                request, context, testCaseData, Collections.unmodifiableMap(new LinkedHashMap<>(accumulated)));
         try {
             return stepExecutorRegistry.require(request.type()).execute(step);
         } catch (RuntimeException e) {
@@ -124,7 +136,9 @@ public class ChainExecutor {
                     testCaseId,
                     e.getMessage(),
                     e);
-            return ChainStepOutcome.failed(ExecutionStatus.ERROR, null, null, buildErrorEnvelope(e), 0);
+            // issued = true: an unexpected throw is a genuine failure of this step, not a step declined at the
+            // gate, so its row MUST survive — it is the only trace of the bug.
+            return ChainStepOutcome.failed(ExecutionStatus.ERROR, null, null, buildErrorEnvelope(e), 0, true);
         }
     }
 
@@ -184,14 +198,9 @@ public class ChainExecutor {
     }
 
     private String buildErrorEnvelope(RuntimeException e) {
-        final var error = jsonService.createObjectNode();
-        error.put("code", "CHAIN_STEP_ERROR");
-        error.put(
-                "message",
-                e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
-        final var root = jsonService.createObjectNode();
-        root.set("error", error);
-        return jsonService.writeOrToString(root);
+        final String message =
+                e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        return DeploymentInvocationSupport.errorEnvelope("CHAIN_STEP_ERROR", message, jsonService);
     }
 
     private Map<String, Object> parseTestCaseData(String dataJson) {

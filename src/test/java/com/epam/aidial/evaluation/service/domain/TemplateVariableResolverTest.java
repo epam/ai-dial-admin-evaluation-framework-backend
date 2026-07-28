@@ -3,8 +3,10 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
+import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -12,6 +14,81 @@ import org.junit.jupiter.api.Test;
 class TemplateVariableResolverTest {
 
     private final TemplateVariableResolver resolver = new TemplateVariableResolver();
+
+    @Test
+    void shouldResolveResponseFieldFromScope() {
+        InputBindingDto binding = InputBindingDto.builder()
+                .templateVariable("sid")
+                .responseField("session_id")
+                .build();
+        List<ValidationWarningDto> warnings = new ArrayList<>();
+
+        Object result = resolver.resolveVariable(
+                "sid", null, binding, ResolutionScope.of(Map.of(), Map.of("session_id", "abc")), warnings);
+
+        assertThat(result).isEqualTo("abc");
+        assertThat(warnings).isEmpty();
+    }
+
+    @Test
+    void shouldFallBackToDefaultWhenResponseFieldMissing() {
+        InputBindingDto binding = InputBindingDto.builder()
+                .templateVariable("sid")
+                .responseField("session_id")
+                .build();
+        List<ValidationWarningDto> warnings = new ArrayList<>();
+
+        Object result =
+                resolver.resolveVariable("sid", "none", binding, ResolutionScope.of(Map.of(), Map.of()), warnings);
+
+        assertThat(result).isEqualTo("none");
+        assertThat(warnings).isEmpty();
+    }
+
+    @Test
+    void shouldWarnUnresolvedReferenceNotRequiredWhenResponseFieldUnresolvable() {
+        InputBindingDto binding = InputBindingDto.builder()
+                .templateVariable("sid")
+                .responseField("session_id")
+                .build();
+        List<ValidationWarningDto> warnings = new ArrayList<>();
+
+        Object result =
+                resolver.resolveVariable("sid", null, binding, ResolutionScope.of(Map.of(), Map.of()), warnings);
+
+        assertThat(result).isNull();
+        // The CODE is load-bearing, not incidental: TryItOutService blocks invocation on REQUIRED only, which
+        // is what lets a later chain request be tried in test-case mode (warn + send) while a missing dataField
+        // still returns 400. Re-coding this as REQUIRED would make every chain request untriable.
+        assertThat(warnings).singleElement().satisfies(w -> {
+            assertThat(w.getCode()).isEqualTo(ValidationWarningCode.UNRESOLVED_REFERENCE);
+            assertThat(w.getFieldName()).isEqualTo("session_id");
+            assertThat(w.getPath()).isEqualTo("$.response.session_id");
+        });
+    }
+
+    @Test
+    void shouldTreatNullValuedResponseFieldAsUnresolvable() {
+        InputBindingDto binding = InputBindingDto.builder()
+                .templateVariable("sid")
+                .responseField("session_id")
+                .build();
+        List<ValidationWarningDto> warnings = new ArrayList<>();
+
+        // An extracted column whose expression matched nothing is present-but-null; it must behave as missing,
+        // which is the predicate HttpChainStepExecutor's pre-flight dependency check has to match.
+        Object result = resolver.resolveVariable(
+                "sid",
+                null,
+                binding,
+                ResolutionScope.of(Map.of(), Collections.singletonMap("session_id", null)),
+                warnings);
+
+        assertThat(result).isNull();
+        assertThat(warnings)
+                .singleElement()
+                .satisfies(w -> assertThat(w.getCode()).isEqualTo(ValidationWarningCode.UNRESOLVED_REFERENCE));
+    }
 
     @Test
     void shouldResolveConstantValueBinding() {

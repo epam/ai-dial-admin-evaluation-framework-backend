@@ -42,7 +42,7 @@ class TestCaseRunResultFactoryTest {
     void errorResult_buildsExpectedEnvelope() throws Exception {
         TestCaseRunInput input = buildInput();
 
-        TestCaseRunResult row = factory.errorResult(input, 2, new RuntimeException("boom"), NOW_MS);
+        TestCaseRunResult row = factory.errorResult(input, 2, new RuntimeException("boom"), NOW_MS, "request-1");
 
         assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
         assertThat(row.getResponseStatusCode()).isNull();
@@ -70,7 +70,7 @@ class TestCaseRunResultFactoryTest {
             }
         };
 
-        TestCaseRunResult row = factory.errorResult(input, 0, cause, NOW_MS);
+        TestCaseRunResult row = factory.errorResult(input, 0, cause, NOW_MS, "request-1");
 
         JsonNode envelope = objectMapper.readTree(row.getResponseBody());
         assertThat(envelope.get("error").get("message").asString()).isEmpty();
@@ -88,7 +88,7 @@ class TestCaseRunResultFactoryTest {
         };
 
         assertThatNoException().isThrownBy(() -> {
-            TestCaseRunResult row = factory.errorResult(input, 0, adversarial, NOW_MS);
+            TestCaseRunResult row = factory.errorResult(input, 0, adversarial, NOW_MS, "request-1");
             assertThat(row).isNotNull();
             assertThat(row.getResponseBody()).isNotBlank();
             // Must be valid JSON regardless of the adversarial input
@@ -101,7 +101,7 @@ class TestCaseRunResultFactoryTest {
     void errorResult_copiesInputFields() {
         TestCaseRunInput input = buildInput();
 
-        TestCaseRunResult row = factory.errorResult(input, 7, new RuntimeException("x"), NOW_MS);
+        TestCaseRunResult row = factory.errorResult(input, 7, new RuntimeException("x"), NOW_MS, "request-1");
 
         assertThat(row.getId()).isNotNull();
         assertThat(row.getTestSuiteRunId()).isEqualTo(input.getRunId());

@@ -30,6 +30,7 @@ import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -217,6 +218,70 @@ class HttpChainStepExecutorTest {
 
         assertThat(outcome.unresolvedResponseFields()).isEmpty();
         assertThat(outcome.isSuccess()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a responseField present but NULL in the accumulated map fails before any call is issued")
+    void nullValuedResponseFieldShortCircuits() {
+        // ResponseColumnExtractor records a column whose JSONata matched nothing as an explicit JSON null, so
+        // the key IS present in the accumulated map. TemplateVariableResolver requires a non-null value, so a
+        // key-presence check here would let the chain fire request 1 with an unresolved placeholder — exactly
+        // the semantically nonsense call this pre-flight check exists to prevent.
+        RequestSpec spec = new RequestSpec(
+                1,
+                "invoke",
+                ChainRequestType.HTTP,
+                endpoint(HttpMethod.POST, "/p"),
+                RequestTemplateDto.builder()
+                        .urlTemplate("/p")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("session", "${{session}}"))
+                                .build())
+                        .build(),
+                List.of(InputBindingDto.builder()
+                        .templateVariable("session")
+                        .responseField("session_id")
+                        .build()),
+                List.of());
+
+        ChainStepOutcome outcome = executor.execute(
+                new ChainStepRequest(spec, context(), Map.of(), Collections.singletonMap("session_id", null)));
+
+        assertThat(outcome.isSuccess()).isFalse();
+        assertThat(outcome.unresolvedResponseFields()).containsExactly("session_id");
+        assertThat(outcome.issued()).isFalse();
+        verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a null-valued responseField WITH a declared default still sends the request")
+    void nullValuedResponseFieldWithDefaultProceeds() {
+        RequestSpec spec = new RequestSpec(
+                1,
+                "invoke",
+                ChainRequestType.HTTP,
+                endpoint(HttpMethod.POST, "/p"),
+                RequestTemplateDto.builder()
+                        .urlTemplate("/p")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("session", "${{session|string:none}}"))
+                                .build())
+                        .build(),
+                List.of(InputBindingDto.builder()
+                        .templateVariable("session")
+                        .responseField("session_id")
+                        .build()),
+                List.of());
+        stubResolution("/p");
+        stubStatus(200, Map.of("ok", true));
+        when(urlBuilder.buildUrl(any(), any())).thenReturn("/p");
+
+        ChainStepOutcome outcome = executor.execute(
+                new ChainStepRequest(spec, context(), Map.of(), Collections.singletonMap("session_id", null)));
+
+        assertThat(outcome.unresolvedResponseFields()).isEmpty();
+        assertThat(outcome.isSuccess()).isTrue();
+        verify(deploymentInvoker).invokeWithStreaming(any(), any(), any(), any(), any());
     }
 
     // ---- harness ----

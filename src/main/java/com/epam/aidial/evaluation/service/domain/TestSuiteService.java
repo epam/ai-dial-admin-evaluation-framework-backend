@@ -526,10 +526,10 @@ public class TestSuiteService {
      * Compared semantically (ignores key order). Must be called BEFORE mapper.update() mutates existing.
      */
     private boolean isResponseColumnsChanged(TestSuite existing, TestSuiteRequestDto normalized) {
+        // A blank entity is enough: update(...) writes every chain-shaping field (responseColumns,
+        // additionalRequests, requestLabel) unconditionally from the DTO, so seeding it from `existing` first
+        // would only be overwritten — and would hide the case where the DTO clears a field.
         TestSuite temp = new TestSuite();
-        temp.setResponseColumns(existing.getResponseColumns());
-        temp.setAdditionalRequests(existing.getAdditionalRequests());
-        temp.setRequestLabel(existing.getRequestLabel());
         testSuiteMapper.update(temp, normalized);
         // Compared on the CHAIN UNION, not the flat column: editing a chain element's responseColumns changes
         // what a TSMD's response bindings can resolve against just as much as editing request 0's does, so it

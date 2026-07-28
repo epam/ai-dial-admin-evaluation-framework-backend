@@ -14,13 +14,16 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("ChainExecutor")
 class ChainExecutorTest {
@@ -183,6 +186,61 @@ class ChainExecutorTest {
                 .isEmpty();
     }
 
+    @Test
+    @DisplayName("a column whose expression matched nothing accumulates as a null without breaking the next step")
+    void nullExtractedValueDoesNotBreakAccumulation() {
+        RecordingStepExecutor step = new RecordingStepExecutor();
+        // ResponseColumnExtractor writes an explicit JSON null for a column that matched nothing, so the
+        // accumulated map legitimately holds null values. An immutable copy that rejects nulls would throw
+        // here — outside the step's try/catch — and fail the whole worker instead of this chain.
+        step.extractedPerIndex.put(0, Collections.singletonMap("session_id", null));
+        ChainExecutor executor = executorWith(step);
+
+        List<TestCaseRunResult> results =
+                executor.execute(input(), context(chain("setup", "invoke")), 0, "t", FIXED_CLOCK.millis());
+
+        assertThat(step.invokedIndices).containsExactly(0, 1);
+        assertThat(step.seenResponseValues.get(1)).containsEntry("session_id", null);
+        assertThat(results).hasSize(2);
+        assertThat(results)
+                .extracting(TestCaseRunResult::getExecutionStatus)
+                .containsExactly(ExecutionStatus.SUCCESS, ExecutionStatus.SUCCESS);
+    }
+
+    @Test
+    @DisplayName("a step abandoned at the rate-limit gate under cancellation contributes no row")
+    void notIssuedStepUnderCancellationWritesNoRow() {
+        RecordingStepExecutor step = new RecordingStepExecutor();
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        step.notIssuedAtIndex = 1;
+        step.cancelAfterIndex = 1;
+        step.cancellationSignal = cancelled;
+        ChainExecutor executor = executorWith(step);
+
+        List<TestCaseRunResult> results =
+                executor.execute(input(), context(chain("a", "b", "c"), cancelled), 0, "t", FIXED_CLOCK.millis());
+
+        // Request 1 was entered but never sent, and the run is cancelling: "no synthetic rows for unfinished
+        // cases" means only request 0's real row survives.
+        assertThat(step.invokedIndices).containsExactly(0, 1);
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().getRequestIndex()).isZero();
+    }
+
+    @Test
+    @DisplayName("an un-issued step with no cancellation still writes its diagnostic ERROR row")
+    void notIssuedStepWithoutCancellationKeepsItsRow() {
+        RecordingStepExecutor step = new RecordingStepExecutor();
+        step.notIssuedAtIndex = 1;
+        ChainExecutor executor = executorWith(step);
+
+        List<TestCaseRunResult> results =
+                executor.execute(input(), context(chain("a", "b", "c")), 0, "t", FIXED_CLOCK.millis());
+
+        assertThat(results).hasSize(2);
+        assertThat(results.get(1).getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+    }
+
     // ---- harness ----
 
     private ChainExecutor executorWith(ChainStepExecutor step) {
@@ -234,7 +292,7 @@ class ChainExecutorTest {
      * Stub step executor that records what each step was handed and can be told to fail, throw, report an
      * unresolvable dependency, or trip a cancellation signal at a chosen chain index.
      */
-    private static final class RecordingStepExecutor implements ChainStepExecutor {
+    private final class RecordingStepExecutor implements ChainStepExecutor {
 
         private final List<Integer> invokedIndices = new ArrayList<>();
         private final Map<Integer, Map<String, Object>> seenResponseValues = new java.util.HashMap<>();
@@ -242,6 +300,7 @@ class ChainExecutorTest {
         private Integer failAtIndex;
         private Integer throwAtIndex;
         private Integer unresolvableAtIndex;
+        private Integer notIssuedAtIndex;
         private Integer cancelAfterIndex;
         private AtomicBoolean cancellationSignal;
 
@@ -262,11 +321,14 @@ class ChainExecutorTest {
             if (throwAtIndex != null && index == throwAtIndex) {
                 throw new IllegalStateException("boom at " + index);
             }
+            if (notIssuedAtIndex != null && index == notIssuedAtIndex) {
+                return ChainStepOutcome.failed(ExecutionStatus.ERROR, null, null, "{}", 0, false);
+            }
             if (unresolvableAtIndex != null && index == unresolvableAtIndex) {
                 return ChainStepOutcome.unresolvedDependency(null, List.of("session_id"));
             }
             if (failAtIndex != null && index == failAtIndex) {
-                return ChainStepOutcome.failed(ExecutionStatus.FAILED, 500, "{}", "{\"error\":\"x\"}", 1);
+                return ChainStepOutcome.failed(ExecutionStatus.FAILED, 500, "{}", "{\"error\":\"x\"}", 1, true);
             }
 
             Map<String, Object> extracted = extractedPerIndex.getOrDefault(index, Map.of());
@@ -279,18 +341,25 @@ class ChainExecutorTest {
                     toJson(extracted),
                     "[]",
                     extracted,
-                    List.of());
+                    List.of(),
+                    true);
         }
 
-        private static String toJson(Map<String, Object> map) {
-            if (map.isEmpty()) {
-                return "{}";
-            }
-            StringBuilder sb = new StringBuilder("{");
-            map.forEach(
-                    (k, v) -> sb.append('"').append(k).append("\":\"").append(v).append("\","));
-            sb.setLength(sb.length() - 1);
-            return sb.append('}').toString();
+        /**
+         * Serializes the step's extracted columns exactly as {@code ResponseColumnExtractor} does — an
+         * {@code ObjectNode} with {@code putNull} for a column whose expression matched nothing — so a
+         * null-valued column reaches the accumulator as a real JSON null rather than the string "null".
+         */
+        private String toJson(Map<String, Object> map) {
+            ObjectNode node = objectMapper.createObjectNode();
+            map.forEach((k, v) -> {
+                if (v == null) {
+                    node.putNull(k);
+                } else {
+                    node.set(k, objectMapper.convertValue(v, JsonNode.class));
+                }
+            });
+            return objectMapper.writeValueAsString(node);
         }
     }
 }

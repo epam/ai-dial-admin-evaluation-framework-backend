@@ -94,4 +94,19 @@ public class EvaluationContext {
     private final ToolReferenceDto toolRefDto;
     private final ArgumentTemplateDto argumentTemplateDto;
     private final List<InputBindingDto> inputBindings;
+
+    /**
+     * The label of chain request 0 — the label every row produced OUTSIDE the chain executor carries, since
+     * those paths (single-request HTTP, MCP, multi-turn turns, the executor's synthetic error row) all
+     * describe request 0 of a one-element chain.
+     *
+     * <p>{@code ChainNormalizer} defaults an undeclared label to {@code request-1}, so this is non-null for
+     * every real run and {@code request_label} is non-null on every result row — the invariant the grid,
+     * the CSV export, and a {@code condition} on {@code request.label} all rely on. Null only for a context
+     * built without a chain (tests); the column stays nullable for rows imported through the batch-write API,
+     * whose labels are client-supplied.
+     */
+    public String primaryRequestLabel() {
+        return chain == null || chain.isEmpty() ? null : chain.getFirst().label();
+    }
 }

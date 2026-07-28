@@ -110,6 +110,12 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
         });
         assertThat(results.stream().map(r -> ((Number) r.get("turn_index")).intValue()))
                 .containsExactlyInAnyOrder(0, 1);
+        // A multi-turn suite is single-request, so every turn row belongs to request 0 and carries the
+        // resolved default label — request_label is non-null on turn rows, not only on chain rows.
+        assertThat(results).allSatisfy(r -> {
+            assertThat(((Number) r.get("request_index")).intValue()).isZero();
+            assertThat(r.get("request_label")).isEqualTo("request-1");
+        });
 
         // Turn 1's request body carries the accumulated history: turn 0's user message + assistant reply.
         Map<String, Object> turn1 = results.stream()

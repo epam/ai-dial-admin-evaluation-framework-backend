@@ -150,7 +150,11 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                                                     e);
                                             try {
                                                 TestCaseRunResult synthetic = testCaseRunResultFactory.errorResult(
-                                                        capturedInput, ri, e, clock.millis());
+                                                        capturedInput,
+                                                        ri,
+                                                        e,
+                                                        clock.millis(),
+                                                        context.primaryRequestLabel());
                                                 resultBatchWriter.addResults(buffer, List.of(synthetic));
                                             } catch (Exception synthEx) {
                                                 log.error(

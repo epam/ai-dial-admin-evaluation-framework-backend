@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.service.domain.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.service.domain.McpRequestResolver;
 import com.epam.aidial.evaluation.service.domain.McpResponseSerializer;
+import com.epam.aidial.evaluation.service.domain.QuietJsonService;
 import com.epam.aidial.evaluation.service.domain.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.service.domain.ResolvedRequestService;
 import com.epam.aidial.evaluation.service.domain.ResponseColumnExtractor;
@@ -26,7 +27,6 @@ import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
@@ -86,6 +86,7 @@ public class EvaluationWorker {
     private final SseEventProcessingProperties sseEventProcessingProperties;
     private final MultiTurnExecutor multiTurnExecutor;
     private final ChainExecutor chainExecutor;
+    private final QuietJsonService jsonService;
 
     public List<TestCaseRunResult> execute(
             TestCaseRunInput input,
@@ -239,7 +240,7 @@ public class EvaluationWorker {
         long maxRetryDelay = context.getMaxRetryDelayMs();
 
         // Serialize resolved body (not wire format) for analytics storage
-        String requestBodyJson = serializeBodyForAnalytics(resolvedBody);
+        String requestBodyJson = DeploymentInvocationSupport.serializeBodyForAnalytics(resolvedBody, jsonService);
         List<RetryAttemptLog> retryAttempts = new ArrayList<>();
         TestCaseRunResult lastResult = null;
 
@@ -398,7 +399,7 @@ public class EvaluationWorker {
             McpRequestResolver.ResolutionResult resolutionResult =
                     mcpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData);
             Map<String, Object> resolvedArgs = resolutionResult.getArguments();
-            String requestBodyJson = serializeBody(resolvedArgs);
+            String requestBodyJson = jsonService.writeOrToString(resolvedArgs);
 
             // Invoke with retries
             return invokeMcpWithRetries(
@@ -526,19 +527,7 @@ public class EvaluationWorker {
         // Same per-call gate as the HTTP path — an MCP tool invocation is an outgoing call against the
         // deployment and must be counted against the configured RPS.
         if (!context.getRateLimiter().tryAcquire()) {
-            long interruptedAt = clock.millis();
-            return buildResult(
-                    input,
-                    context,
-                    runIndex,
-                    traceId,
-                    callStartMs,
-                    interruptedAt,
-                    interruptedAt - callStartMs,
-                    ExecutionStatus.ERROR,
-                    null,
-                    buildErrorEnvelope("CANCELLED", "Interrupted while waiting for a rate limit token"),
-                    responseColumns);
+            return notIssuedResult(input, context, runIndex, traceId, callStartMs, responseColumns);
         }
 
         try {
@@ -672,19 +661,7 @@ public class EvaluationWorker {
         // An interrupted wait returns a not-issued result rather than blocking, so run cancellation is not
         // delayed by a pending token wait; the executor drops the row because the interrupt flag is set.
         if (!context.getRateLimiter().tryAcquire()) {
-            long interruptedAt = clock.millis();
-            return buildResult(
-                    input,
-                    context,
-                    runIndex,
-                    traceId,
-                    callStartMs,
-                    interruptedAt,
-                    interruptedAt - callStartMs,
-                    ExecutionStatus.ERROR,
-                    null,
-                    buildErrorEnvelope("CANCELLED", "Interrupted while waiting for a rate limit token"),
-                    responseColumns);
+            return notIssuedResult(input, context, runIndex, traceId, callStartMs, responseColumns);
         }
 
         try (DeploymentInvocationResult result =
@@ -712,7 +689,7 @@ public class EvaluationWorker {
                 }
             } else {
                 // Non-streaming response
-                responseBody = serializeBody(result.body());
+                responseBody = jsonService.writeOrToString(result.body());
 
                 // Check size limit
                 if (responseBody != null) {
@@ -765,6 +742,35 @@ public class EvaluationWorker {
                     errorBody,
                     responseColumns);
         }
+    }
+
+    /**
+     * The row for a call that was never issued because run cancellation interrupted its rate-limit token wait.
+     * Shared by the HTTP and MCP gate sites, which previously carried the same block twice with independently
+     * hardcoded envelopes. The row is expected to be discarded by {@code InProcessEvaluationExecutor} (the
+     * interrupt flag is set), so this exists to keep the not-issued case diagnosable if it ever survives —
+     * hence the same {@code CANCELLED} envelope {@code DeploymentTurnInvoker} uses.
+     */
+    private TestCaseRunResult notIssuedResult(
+            TestCaseRunInput input,
+            EvaluationContext context,
+            int runIndex,
+            String traceId,
+            long callStartMs,
+            List<ResponseColumnDefinitionDto> responseColumns) {
+        long interruptedAt = clock.millis();
+        return buildResult(
+                input,
+                context,
+                runIndex,
+                traceId,
+                callStartMs,
+                interruptedAt,
+                interruptedAt - callStartMs,
+                ExecutionStatus.ERROR,
+                null,
+                DeploymentInvocationSupport.cancelledEnvelope(jsonService),
+                responseColumns);
     }
 
     private ExecutionStatus resolveExecutionStatus(int statusCode) {
@@ -876,6 +882,10 @@ public class EvaluationWorker {
                 .testCaseId(input.getTestCaseId())
                 .testCaseName(input.getTestCaseName())
                 .runIndex(runIndex)
+                // request_index stays at its 0 default: this path IS request 0 of a one-element chain. The
+                // label is written explicitly so the column is non-null for single-request and MCP runs too,
+                // not just for rows the chain executor produces.
+                .requestLabel(context.primaryRequestLabel())
                 .testCaseData(input.getTestCaseData())
                 .requestBody(requestBodyJson)
                 .responseBody(responseBody)
@@ -893,26 +903,6 @@ public class EvaluationWorker {
                 .build();
     }
 
-    private String serializeBodyForAnalytics(ResolvedBodyDto body) {
-        if (body == null) {
-            return null;
-        }
-        // For JSON bodies, store just the content map (no contentType wrapper)
-        Object toSerialize = body instanceof ResolvedJsonBodyDto jsonBody ? jsonBody.getContent() : body;
-        return serializeBody(toSerialize);
-    }
-
-    private String serializeBody(Object body) {
-        if (body == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(body);
-        } catch (JacksonException e) {
-            return body.toString();
-        }
-    }
-
     private String truncateResponse(String responseBody, long maxBytes) {
         byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
         if (bytes.length <= maxBytes) {
@@ -927,15 +917,6 @@ public class EvaluationWorker {
     }
 
     private String buildErrorEnvelope(String code, String message) {
-        try {
-            var error = objectMapper.createObjectNode();
-            error.put("code", code);
-            error.put("message", message != null ? message : "Unknown error");
-            var root = objectMapper.createObjectNode();
-            root.set("error", error);
-            return objectMapper.writeValueAsString(root);
-        } catch (JacksonException e) {
-            return "{\"error\":{\"code\":\"" + code + "\",\"message\":\"serialization failed\"}}";
-        }
+        return DeploymentInvocationSupport.errorEnvelope(code, message, jsonService);
     }
 }

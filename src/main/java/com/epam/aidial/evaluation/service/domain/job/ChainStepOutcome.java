@@ -20,6 +20,11 @@ import java.util.Map;
  * @param unresolvedResponseFields response columns a {@code responseField} binding needed but that were
  *                             absent with no declared placeholder default — non-empty means the step was
  *                             not sent and the chain must abort
+ * @param issued               whether this step actually issued its HTTP call. False only when it was
+ *                             abandoned before sending — an unresolvable dependency, or a rate-limit token
+ *                             wait interrupted by run cancellation. An un-issued step under cancellation
+ *                             contributes no row (see {@code ChainExecutor}); an un-issued step with no
+ *                             cancellation still writes its diagnostic ERROR row.
  */
 public record ChainStepOutcome(
         ExecutionStatus status,
@@ -30,7 +35,8 @@ public record ChainStepOutcome(
         String extractedColumnsJson,
         String extractionWarningsJson,
         Map<String, Object> extractedValues,
-        List<String> unresolvedResponseFields) {
+        List<String> unresolvedResponseFields,
+        boolean issued) {
 
     /** True when the step completed and the chain may continue to the next request. */
     public boolean isSuccess() {
@@ -52,13 +58,23 @@ public record ChainStepOutcome(
                 "{}",
                 "[]",
                 Map.of(),
-                List.copyOf(missingColumns));
+                List.copyOf(missingColumns),
+                false);
     }
 
-    /** A step that failed before or during its call, with nothing extracted. */
+    /**
+     * A step that failed before or during its call, with nothing extracted. {@code issued} distinguishes a
+     * genuine call failure from a step abandoned at the rate-limit gate, which must not leave a row behind
+     * when the run is being cancelled.
+     */
     public static ChainStepOutcome failed(
-            ExecutionStatus status, Integer statusCode, String requestBodyJson, String responseBody, int retryCount) {
+            ExecutionStatus status,
+            Integer statusCode,
+            String requestBodyJson,
+            String responseBody,
+            int retryCount,
+            boolean issued) {
         return new ChainStepOutcome(
-                status, statusCode, requestBodyJson, responseBody, retryCount, "{}", "[]", Map.of(), List.of());
+                status, statusCode, requestBodyJson, responseBody, retryCount, "{}", "[]", Map.of(), List.of(), issued);
     }
 }

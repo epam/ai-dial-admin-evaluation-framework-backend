@@ -22,11 +22,14 @@ import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.service.domain.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.service.domain.McpRequestResolver;
 import com.epam.aidial.evaluation.service.domain.McpResponseSerializer;
+import com.epam.aidial.evaluation.service.domain.QuietJsonService;
 import com.epam.aidial.evaluation.service.domain.RequestBodySerializerRegistry;
+import com.epam.aidial.evaluation.service.domain.RequestSpec;
 import com.epam.aidial.evaluation.service.domain.ResolvedRequestService;
 import com.epam.aidial.evaluation.service.domain.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.service.domain.SerializedBody;
 import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.service.domain.dto.ChainRequestType;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
@@ -138,7 +141,30 @@ class EvaluationWorkerTest {
                 sseEventParser,
                 sseEventProcessingProperties,
                 multiTurnExecutor,
-                chainExecutor);
+                chainExecutor,
+                new QuietJsonService(objectMapper));
+    }
+
+    @Test
+    @DisplayName("a single-request row carries request index 0 and the resolved default request label")
+    void execute_singleRequest_carriesRequestIdentity() throws Exception {
+        TestCaseRunInput input = buildTestCaseRunInput();
+        EvaluationContext context = buildContext();
+        stubCommonMocks();
+        when(deploymentInvoker.invokeWithStreaming(
+                        any(HttpMethod.class), anyString(), any(HttpHeaders.class), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200, false, Map.of("choices", List.of()), null, new HttpHeaders()));
+        when(responseColumnExtractor.extract(anyList(), anyString()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+
+        List<TestCaseRunResult> results = worker.execute(input, context, 0, List.of());
+
+        // request_label must be non-null OUTSIDE the chain executor too: the CSV export column and a
+        // `request.label` condition behave identically for a single-request suite and a chain.
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().getRequestIndex()).isZero();
+        assertThat(results.getFirst().getRequestLabel()).isEqualTo("request-1");
     }
 
     @Test
@@ -708,7 +734,22 @@ class EvaluationWorkerTest {
                         .urlTemplate("/chat/completions")
                         .build())
                 .snapshotInputBindings(List.of())
-                .snapshotResponseColumns(List.of());
+                .snapshotResponseColumns(List.of())
+                // Every real run's context carries a normalized chain; a single-request suite normalizes to
+                // one element whose label defaults to "request-1".
+                .chain(List.of(new RequestSpec(
+                        0,
+                        "request-1",
+                        ChainRequestType.HTTP,
+                        EndpointContractDto.builder()
+                                .method(HttpMethod.POST)
+                                .relativeUrlPattern("/chat/completions")
+                                .build(),
+                        RequestTemplateDto.builder()
+                                .urlTemplate("/chat/completions")
+                                .build(),
+                        List.of(),
+                        List.of())));
     }
 
     private TestCaseRunInput buildTestCaseRunInput() {

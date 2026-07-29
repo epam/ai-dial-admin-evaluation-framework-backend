@@ -343,10 +343,38 @@ An entry whose aggregate is SQL NULL is **omitted** from `scores` rather than em
 null.
 
 Execution status does not participate in matching — a FAILED row still matches and is still counted in
-`matchedRowCount`. `matchedSuccessRowCount` is reported separately and is an **upper bound** on the
-aggregate denominator, not the denominator: a metric can be absent from a row that stayed SUCCESS (e.g. a
-conditional metric that did not run). This is by design — the user's interest is the intersection of test
-cases, not per-metric denominator parity.
+`matchedRowCount`. `matchedSuccessRowCount` is reported separately, and exists for one concrete purpose: the
+FE renders "28/29" and "27/29" per run, i.e. how many of the **compared** rows succeeded. Its denominator is
+`matchedRowCount`.
+
+**It is emphatically not any statistic's denominator, and not even an upper bound on one.** Two verified
+facts make the two numbers independent:
+
+1. A row's `execution_status` is SUCCESS only if the endpoint call succeeded **and every metric evaluated
+   cleanly**. `InProcessMetricEvaluationExecutor:281` writes `hasError ? FAILED : SUCCESS`, where
+   `checkForErrors` (`:286-301`) trips on any TSMD `Failure` *or* any output field of type `"error"`. One bad
+   metric out of ten stamps the whole row FAILED.
+2. The statistics do **not** filter on status at all — `BuiltInMetricStatistics.runScopedFilter()` (`:99-105`)
+   is run + computation only. And a sibling metric's failure does not erase the healthy metrics' values:
+   `MetricOutputMapper.buildMetricValues` (`:53-63`) maps every `Success` TSMD's values and writes explicit
+   nulls only for the `Failure` ones.
+
+So with 10 matched rows carrying metrics A and B, where B errors on 4: `matchedSuccessRowCount` is 6 while
+metric A's AVG denominator is 10 — the success count is *lower* than the denominator. Each metric has its own
+denominator, unknowable from any single row count, which is precisely why none is offered.
+
+(An earlier draft of this document claimed `matchedSuccessRowCount` was "an upper bound on the aggregate
+denominator", reasoning from conditional metrics being absent on a SUCCESS row. That reasoning ignored
+direction 1 above and was wrong in both directions; the field's justification is the FE's success ratio, not
+denominator approximation.)
+
+*Alternative rejected:* counting success from `test_case_run_results.execution_status` (joined via the
+`NOT NULL` `test_case_run_result_id`) instead, which would mean "the test case executed" independent of metric
+health. It is equally cheap, and arguably the more literal reading of "successful test cases" — but
+`FilterWhitelists:204-206` exposes the **eval-summary** `executionStatus` as the status clients filter and
+count on for this entity, so a comparison view using the run-result column would report a different numerator
+than the run view does for the very same rows. Consistency with the existing surface decides it. Revisit only
+if the FE wants "executed OK despite an unusable metric" as a distinct number.
 
 A `::numeric` cast on a metric value cannot fail, so no defensive handling is needed: values are
 number-or-null by construction (`MetricOutputFieldDto.value` is `BigDecimal`, and
@@ -466,9 +494,10 @@ binds every column automatically), so a SUCCESS-only mean is expressible with th
 exclusion filter and needs no second server-side field.
 
 *Alternative rejected:* SUCCESS-only (`… FILTER (WHERE matched AND execution_status = 'SUCCESS')`,
-denominator `matchedSuccessRowCount`). It avoids the ERROR-zero bias, but its denominator is the count this
-design already documents as an *upper bound* rather than an exact denominator (decision 12), so the field
-would be harder to interpret than the one it replaced.
+denominator `matchedSuccessRowCount`). It avoids the ERROR-zero bias, but decision 12 establishes that a row
+is non-SUCCESS when merely **one metric** errored — its endpoint call, and therefore its duration, is a
+perfectly valid measurement. A SUCCESS-only average would silently discard real timings because an unrelated
+metric misbehaved, which is a worse distortion than the ERROR-zero bias it set out to avoid.
 
 **Granularity: one sample per eval-summary row** — per turn, per repetition. `turn_index` defaults to `0`
 and `total_turns` to `1` (`V1.14:5-6`), so for every single-turn suite this is identical to one sample per

@@ -31,7 +31,11 @@ Matching SHALL be name-based rather than test-case-id-based, so that a test case
 
 A row SHALL match if and only if its key occurs in the other run's population. Where a run contains more than one row for a single key, **all** of those rows SHALL match — no row SHALL be excluded from the matched population merely because another row shares its key. Consequently `matchedRowCount + size(unmatchedEvalSummaryIds)` SHALL equal `totalRowCount` for every run, and `unmatchedEvalSummaryIds` ordering SHALL be stable across identical requests.
 
-Execution status SHALL NOT participate in the match key. `matchedSuccessRowCount` SHALL report how many matched rows have a SUCCESS status, and is an upper bound on any statistic's denominator rather than the denominator itself, because a metric MAY be absent from a row that is SUCCESS.
+Execution status SHALL NOT participate in the match key.
+
+`matchedSuccessRowCount` SHALL report how many of the run's matched rows have a SUCCESS execution status, so that a client can present a per-run success ratio over the compared population (e.g. "28/29" for one run beside "27/29" for the other). Its denominator SHALL be `matchedRowCount`.
+
+A row SHALL be counted as successful only when its stored execution status is SUCCESS, which for a row produced by the evaluation pipeline means the test case executed **and** every metric evaluated without error. Consequently a row carrying usable values for most of its metrics and an error for one SHALL NOT be counted as successful. `matchedSuccessRowCount` SHALL NOT be interpreted as any statistic's sample size: statistics are computed over matched rows irrespective of execution status, and a non-successful row still contributes its healthy metrics' values, so a metric's denominator MAY exceed `matchedSuccessRowCount`.
 Status: **Planned**
 
 #### Scenario: Names match case-insensitively
@@ -57,6 +61,14 @@ Status: **Planned**
 #### Scenario: A failed row still matches
 - **WHEN** a matched row has execution status FAILED
 - **THEN** it is included in `matchedRowCount` and excluded from `matchedSuccessRowCount`
+
+#### Scenario: Per-run success ratios are reported over the compared population
+- **WHEN** two runs overlap on 29 rows, of which one run has 28 successful and the other 27
+- **THEN** the first run reports `matchedRowCount` 29 with `matchedSuccessRowCount` 28, and the second reports 29 with 27
+
+#### Scenario: A row with one errored metric is not counted as successful
+- **WHEN** a matched row's test case executed successfully but one of its metrics returned an error, leaving its other metrics with usable values
+- **THEN** the row is excluded from `matchedSuccessRowCount` while its healthy metrics' values still contribute to those metrics' statistics, so a metric's denominator exceeds `matchedSuccessRowCount`
 
 ### Requirement: Statistics and overall score recomputed over matched rows only
 The system SHALL recompute, per run and over only that run's matched rows, each built-in per-metric statistic for every numeric metric field discovered from the run's metric snapshots, plus the run-level `overall` score derived from the run's suite-snapshot `overallScore` definition.

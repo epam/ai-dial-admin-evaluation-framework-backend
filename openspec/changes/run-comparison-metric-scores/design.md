@@ -105,7 +105,11 @@ this decision and the collapse behave identically. It does **not** cover the imp
 
 Two further benefits: `matchedRowCount + size(unmatchedEvalSummaryIds) == totalRowCount` becomes a
 tautology rather than a rule someone must uphold; and the only Postgres-only construct the design
-introduced (`DISTINCT ON`) disappears, along with the sort it forces on each side.
+introduced (`DISTINCT ON`) disappears.
+
+An earlier draft of this paragraph also claimed the per-side form removes the sorts `DISTINCT ON` forced.
+Measurement (see decision 3) shows that holds for the counts query only: the ids query sorts regardless,
+because its deterministic `ORDER BY` requires ordered output whatever the join shape.
 
 ### 3. Per-side anti-joins now; a group-by if the analytics store becomes ClickHouse
 
@@ -138,6 +142,31 @@ wrong shape. The saved two queries are invisible against the ~200 aggregate quer
 
 A semi-join (`WHERE EXISTS (…)`) is equally correct; `LEFT JOIN … IS NULL` was chosen only to avoid
 depending on sublink pull-up.
+
+**Measured** (`EXPLAIN (ANALYZE, BUFFERS)`, Postgres 17.4 in Testcontainers, 6 200 rows per run, ~80 %
+overlap, after `ANALYZE`; the statements were captured from jOOQ's own execute log, so they are the ones
+the repository issues):
+
+| Query | Plan | Time |
+|---|---|---|
+| `countMatches` | `Aggregate` ← **`Hash Left Join`** ← two `Bitmap Index Scan`s on `idx_eval_summaries_run_computation`, probe side `HashAggregate`d for the `DISTINCT` | 9.4 ms |
+| `findUnmatchedIds` | `Incremental Sort` ← **`Merge Anti Join`** ← two `Sort`s over the same bitmap index scans | 28.7 ms |
+
+Both confirm the index is used and neither degenerates to a sequential scan or a nested loop, which was the
+claim worth checking. Two details differ from what the design predicted:
+
+- The planner rewrites `LEFT JOIN … WHERE k.name_lower IS NULL` into a genuine **anti-join** rather than
+  materialising matched rows and discarding them. So the `NOT EXISTS` formulation this decision declined
+  would very likely have produced the same plan — the sublink-pull-up worry was unfounded, though the
+  choice costs nothing.
+- The ids query is **not** hash-joined and does sort twice. That is not a defect of the join shape: its
+  `ORDER BY lower(test_case_name), run_index, turn_index, id` contract needs ordered output, and choosing a
+  merge anti-join is how the planner gets three of those four keys for free — `Incremental Sort` then sorts
+  only within each presorted group (38 groups, 27 kB peak). A hash join would have to sort everything
+  afterwards.
+
+At this size both are far below the ~200 aggregate queries that dominate the request, so the join is not
+the thing to optimise if the endpoint proves slow.
 
 Both queries pin `computation_id` as well as the run id. Re-evaluations mint a new `computation_id`
 and all of them coexist in the table, so omitting it would match across computations. The invariant

@@ -3,12 +3,16 @@ package com.epam.aidial.evaluation.service.domain.dto.analytics;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.UUID;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /** One run's side of a comparison. Every value describes this run, never the run it was compared against. */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Schema(description = "One run's matched-row counts and recomputed metric scores")
 public class RunComparisonRunDto {
 

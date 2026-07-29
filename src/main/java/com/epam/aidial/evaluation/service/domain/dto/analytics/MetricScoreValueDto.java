@@ -1,12 +1,16 @@
 package com.epam.aidial.evaluation.service.domain.dto.analytics;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /** One recomputed metric-score value. Never carries a null {@code value} — a null aggregate is omitted. */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Schema(description = "A single metric-score statistic recomputed over the matched rows")
 public class MetricScoreValueDto {
 

@@ -32,7 +32,11 @@ Status: **Implemented**
 
 #### Scenario: Indexes
 - **WHEN** the migration is applied
-- **THEN** indexes SHALL be created on: `(test_suite_run_id, computation_id)` for run-scoped grid queries (the primary query path), `(computation_id)` for computation-scoped queries, `(id)` for direct lookups
+- **THEN** indexes SHALL be created on: `(test_suite_run_id, computation_id)` for run-scoped grid queries (the primary query path), `(computation_id)` for computation-scoped queries, `(id)` for direct lookups, and `(test_suite_run_id, computed_at_ms DESC, computation_id)` for latest-computation resolution
+
+#### Scenario: Latest-computation resolution is a top-1 index probe
+- **WHEN** the analytics Flyway migration `V1.15__AddEvalSummariesRunComputedAtIndex.sql` is applied
+- **THEN** `idx_eval_summaries_run_computed_at` SHALL exist on `(test_suite_run_id, computed_at_ms DESC, computation_id)`, so `WHERE test_suite_run_id = ? ORDER BY computed_at_ms DESC LIMIT 1` is served as a single top-1 index descent with `computation_id` available from the index tuple rather than a scan of the run's rows plus a sort
 
 #### Scenario: No foreign keys
 - **WHEN** the migration is applied
@@ -146,10 +150,14 @@ Status: **Implemented**
 
 #### Scenario: Latest computation resolution
 - **WHEN** computation is "latest" or omitted
-- **THEN** system SHALL resolve the latest computation_id from `run_metric_snapshots` WHERE `test_suite_run_id = :runId` ORDER BY `computed_at_ms DESC LIMIT 1`
+- **THEN** system SHALL resolve the latest computation_id from `test_case_eval_summaries` WHERE `test_suite_run_id = :runId` ORDER BY `computed_at_ms DESC LIMIT 1`
+
+#### Scenario: Latest computation resolution does not depend on metrics
+- **WHEN** computation is "latest" or omitted for a run whose suite had no enabled+valid TSMDs (so the run has eval summaries but no `run_metric_snapshots` rows)
+- **THEN** system SHALL resolve that run's computation_id and return its rows
 
 #### Scenario: No computation exists
-- **WHEN** computation resolution finds no snapshots for the run
+- **WHEN** computation resolution finds no eval summaries for the run
 - **THEN** system SHALL return HTTP 200 with an empty page result
 
 #### Scenario: Required filter — runId always required
@@ -293,7 +301,7 @@ Status: **Implemented**
 - **THEN** `analytics.eval-summaries.batch.max-request-size-bytes` SHALL be configurable with a default of 10485760 (10 MB)
 
 ### Requirement: Computation versioning model
-Metric computations SHALL be versioned via `computation_id` with no mutable `is_latest` flag. "Latest" SHALL be resolved at query time.
+Metric computations SHALL be versioned via `computation_id` with no mutable `is_latest` flag. "Latest" SHALL be resolved at query time, from the table the caller reads.
 Status: **Implemented**
 
 #### Scenario: Recalculation creates new computation
@@ -302,7 +310,19 @@ Status: **Implemented**
 
 #### Scenario: Latest resolution
 - **WHEN** the API needs to determine the latest computation for a run
-- **THEN** it SHALL query `run_metric_snapshots` for the maximum `computed_at_ms` for that run and use the corresponding `computation_id`
+- **THEN** it SHALL query `test_case_eval_summaries` for the maximum `computed_at_ms` for that run and use the corresponding `computation_id`
+
+#### Scenario: Latest resolution is independent of a run's row count
+- **WHEN** the latest computation of a run is resolved and the run has many eval summary rows spread across more than one computation
+- **THEN** resolution SHALL return the `computation_id` with the greatest `computed_at_ms` for that run, whatever the number of rows involved
+
+#### Scenario: Latest resolution requires readable rows
+- **WHEN** a computation wrote `run_metric_snapshots` rows for a run but wrote no eval summaries (e.g. its batch write failed)
+- **THEN** latest resolution SHALL NOT select that computation, and SHALL select the run's most recent computation that does have eval summaries
+
+#### Scenario: Metric-catalog lookups stay on run metric snapshots
+- **WHEN** a caller needs the metric column families of a run's latest computation rather than its readable rows (Query DSL detailed schema discovery)
+- **THEN** it SHALL resolve that computation from `run_metric_snapshots` and SHALL return no metric families for a run that has none
 
 #### Scenario: Comparison between computations
 - **WHEN** client provides two computation UUIDs
@@ -373,10 +393,11 @@ Status: **Implemented**
 ## Implementation Notes
 - Controller: `EvalSummaryController` — `@LogExecution`, `@Validated`; `RunMetricSnapshotController` — `@LogExecution`, `@Validated`
 - Service: `EvalSummaryService` in `service.domain.analytics` — reads run from meta for validation, writes to analytics; `RunMetricSnapshotService` in `service.domain.analytics`
-- Repository: `PostgresEvalSummaryRepository` — `@Qualifier("analyticsJdbcTemplate")`, batch insert with ON CONFLICT DO NOTHING; `findAll()`/`count()`/`aggregate()` use `SELECT_LIST_COLUMNS` (excludes `metric_infos`, `extraction_warnings`, `request_body`, `response_body`); `findById()` uses `SELECT_BY_ID_DETAIL_SQL` with LEFT JOIN on `test_case_run_results` to include `request_body`, `response_body`, and all columns including `metric_infos` and `extraction_warnings`; `PostgresRunMetricSnapshotRepository` — same qualifier
+- Repository: `PostgresEvalSummaryRepository` — typed jOOQ `DSLContext` with `@Qualifier("analyticsDsl")`, batch insert with ON CONFLICT DO NOTHING; `findAll()`/`count()`/`aggregate()` project a list-tier column set (excludes `metric_infos`, `extraction_warnings`, `request_body`, `response_body`); `findById()` (and the export-with-bodies list query) LEFT JOINs `test_case_run_results` to include `request_body`, `response_body`, and all columns including `metric_infos` and `extraction_warnings`; `findLatestComputationId(runId)` resolves "latest" for the read path; `existsByRunIdAndComputationId(runId, computationId)` answers export's explicit-computation existence check via `fetchExists`; `PostgresRunMetricSnapshotRepository` — same qualifier, and its own `findLatestComputationId` is retained for Query DSL metric-family discovery only
+- Computation resolution: `ComputationResolver` in `service.domain.analytics` — maps `computation` (explicit UUID | `latest` | `null`) to a `computationId`, resolving `latest` through `EvalSummaryRepository.findLatestComputationId`; shared by list, count, aggregate, export, preview, and the `metric_score_results` `"latest"`-sentinel path
 - Model: `EvalSummary` — JSONB fields as `String` (raw JSON) in data model; includes `extractionWarnings`, `requestBody`, `responseBody` (nullable); `RunMetricSnapshot` — bindings as `String` (raw JSON)
 - Cursor: Reuse existing `Cursor` record and `CursorCodec` from analytics layer
 - Mapper: `EvalSummaryMapper` (MapStruct) — maps between model and DTOs; `@AfterMapping` defaults `extractionWarnings` to `"[]"` if null; `RunMetricSnapshotMapper`
 - DTOs: `EvalSummaryResponseDto` (excludes `metricInfos`, `extractionWarnings`, `requestBody`, `responseBody` for list), `EvalSummaryDetailResponseDto` (includes all fields for get-by-id, nullable fields use `@JsonInclude(NON_NULL)`), `EvalSummaryBatchWriteRequestDto`, `RunMetricSnapshotResponseDto`, `RunMetricSnapshotBatchWriteRequestDto`, `MetricAggregationResponseDto`
 - Filter whitelist: New `FilterWhitelists.EVAL_SUMMARIES` with JSONB_NUMERIC type for metric value filtering
-- Migrations: `V1.5__CreateTestCaseEvalSummariesTable.sql`, `V1.6__CreateRunMetricSnapshotsTable.sql`, `V1.7__AddExtractionWarningsToEvalSummaries.sql`, `V1.8__NormalizeErrorShapedMetricValues.sql` in `db/migration/analytics/POSTGRES/`
+- Migrations: `V1.5__CreateTestCaseEvalSummariesTable.sql`, `V1.6__CreateRunMetricSnapshotsTable.sql`, `V1.7__AddExtractionWarningsToEvalSummaries.sql`, `V1.8__NormalizeErrorShapedMetricValues.sql`, `V1.15__AddEvalSummariesRunComputedAtIndex.sql` in `db/migration/analytics/POSTGRES/`

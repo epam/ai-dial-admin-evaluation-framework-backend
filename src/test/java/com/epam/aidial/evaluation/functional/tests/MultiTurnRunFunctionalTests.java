@@ -121,6 +121,33 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
     }
 
     @Test
+    @DisplayName("2-turn metric-less case yields one eval summary per turn with turn_index 0..N-1")
+    void twoTurnCase_writesOneMetricLessEvalSummaryPerTurn() {
+        // This suite carries no TSMDs, so the run is metric-less and every turn must still be readable.
+        TestSuiteResponseDto suite = createChatSuite("MT 2-turn summaries");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createMultiTurnCase(datasetId, "conv-summaries", List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1")));
+
+        AtomicInteger call = new AtomicInteger();
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenAnswer(inv -> chatReply("reply-" + call.getAndIncrement()));
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> summaries = analyticsTestDataHelper.findEvalSummariesByRunId(run.getId());
+        assertThat(summaries).hasSize(2);
+        assertThat(summaries).allSatisfy(summary -> {
+            assertThat(((Number) summary.get("total_turns")).intValue()).isEqualTo(2);
+            assertThat((String) summary.get("metric_values")).isEqualTo("{}");
+        });
+        assertThat(summaries.stream().map(s -> ((Number) s.get("turn_index")).intValue()))
+                .containsExactlyInAnyOrder(0, 1);
+        assertThat(analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId()))
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("Fail-fast: a failing turn stops the run with earlier SUCCESS rows kept")
     void failFast_stopsRun() {
         TestSuiteResponseDto suite = createChatSuite("MT fail-fast");

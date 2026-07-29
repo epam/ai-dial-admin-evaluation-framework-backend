@@ -777,8 +777,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should complete run without eval summaries when no TSMDs configured")
-    void shouldCompleteRunWithoutEvalSummariesWhenNoTsmds() {
+    @DisplayName("Should write metric-less eval summaries when no TSMDs configured")
+    void shouldWriteMetricLessEvalSummariesWhenNoTsmds() {
         TestSuiteResponseDto suite = createTestSuiteWithResponseColumn("Suite No Metrics");
         createTestCaseForSuite(suite.getId(), "TC1", Map.of("expected", "test"));
 
@@ -794,10 +794,21 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
-        // No eval summaries or snapshots created
-        assertThat(analyticsTestDataHelper.findEvalSummariesByRunId(run.getId()))
-                .isEmpty();
+        // One metric-less eval summary per result row: empty metric_values, no metric_infos.
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        List<Map<String, Object>> summaries = analyticsTestDataHelper.findEvalSummariesByRunId(run.getId());
+        assertThat(results).isNotEmpty();
+        assertThat(summaries).hasSameSizeAs(results);
+        assertThat(summaries).allSatisfy(summary -> {
+            assertThat((String) summary.get("metric_values")).isEqualTo("{}");
+            assertThat(summary.get("metric_infos")).isNull();
+        });
+
+        // No metrics ⇒ no run metric snapshots and no Phase-3 metric scores.
         assertThat(analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId()))
+                .isEmpty();
+        UUID computationId = UUID.fromString((String) summaries.get(0).get("computation_id"));
+        assertThat(metricScoreResultRepository.findByRunAndComputation(run.getId(), computationId))
                 .isEmpty();
     }
 

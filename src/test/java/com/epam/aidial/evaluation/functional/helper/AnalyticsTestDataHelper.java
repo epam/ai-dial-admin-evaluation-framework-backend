@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.JSONB;
 import org.jooq.Record;
+import org.jooq.impl.DSL;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
@@ -45,6 +46,22 @@ public class AnalyticsTestDataHelper {
                 .from(TEST_CASE_RUN_RESULTS)
                 .limit(1)
                 .fetchOptional(r -> r.getValue(TEST_CASE_RUN_RESULTS.CREATED_AT_MS));
+    }
+
+    /**
+     * Reads an index definition out of the {@code pg_indexes} catalog view. The view has no generated
+     * jOOQ table, so it is referenced through plain-SQL field/table names — still the analytics
+     * {@code DSLContext}, and the SQL stays inside this helper.
+     *
+     * @return the {@code indexdef} of the index, or empty when the table has no such index
+     */
+    public Optional<String> findIndexDefinition(String tableName, String indexName) {
+        return analyticsDsl
+                .select(DSL.field("indexdef", String.class))
+                .from(DSL.table("pg_indexes"))
+                .where(DSL.field("tablename", String.class).eq(tableName))
+                .and(DSL.field("indexname", String.class).eq(indexName))
+                .fetchOptional(r -> r.getValue(DSL.field("indexdef", String.class)));
     }
 
     @Transactional("analyticsTransactionManager")
@@ -174,7 +191,8 @@ public class AnalyticsTestDataHelper {
 
     /**
      * Variant carrying explicit {@code test_case_data} and {@code metric_values} JSON, for exercising
-     * the flattened {@code data:}/{@code metric:} field paths.
+     * the flattened {@code data:}/{@code metric:} field paths. {@code computed_at_ms} mirrors
+     * {@code created_at_ms}.
      */
     @Transactional("analyticsTransactionManager")
     public UUID createEvalSummary(
@@ -185,6 +203,37 @@ public class AnalyticsTestDataHelper {
             String executionStatus,
             long execDurationMs,
             long createdAtMs,
+            String testCaseDataJson,
+            String metricValuesJson) {
+        return createEvalSummary(
+                suiteId,
+                suiteRunId,
+                computationId,
+                testCaseName,
+                executionStatus,
+                execDurationMs,
+                createdAtMs,
+                createdAtMs,
+                testCaseDataJson,
+                metricValuesJson);
+    }
+
+    /**
+     * Variant separating {@code created_at_ms} from {@code computed_at_ms}, for latest-computation
+     * resolution fixtures. Reads filter on {@code created_at_ms = <run's createdAt>}, so summaries of
+     * one run must share that value while differing in {@code computed_at_ms} — which is what
+     * {@code ORDER BY computed_at_ms DESC LIMIT 1} resolves "latest" by.
+     */
+    @Transactional("analyticsTransactionManager")
+    public UUID createEvalSummary(
+            UUID suiteId,
+            UUID suiteRunId,
+            UUID computationId,
+            String testCaseName,
+            String executionStatus,
+            long execDurationMs,
+            long createdAtMs,
+            long computedAtMs,
             String testCaseDataJson,
             String metricValuesJson) {
         UUID id = UUID.randomUUID();
@@ -205,7 +254,7 @@ public class AnalyticsTestDataHelper {
                 .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, execDurationMs)
                 .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, JSONB.valueOf(metricValuesJson))
                 .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, createdAtMs)
-                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, createdAtMs)
+                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, computedAtMs)
                 .execute();
         return id;
     }

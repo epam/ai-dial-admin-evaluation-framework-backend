@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
@@ -11,6 +12,7 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchW
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryDetailResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricAggregationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ResultCountResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;
@@ -40,12 +42,21 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     private UUID testSuiteId;
     private UUID testSuiteRunId;
 
+    /**
+     * Reads filter on {@code created_at_ms = <the run's createdAt>}, so summaries seeded directly
+     * through the DSL (rather than through the batch-write API, which derives it from the run) must
+     * carry this value or they are invisible to every read endpoint.
+     */
+    private long testSuiteRunCreatedAtMs;
+
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
         analyticsTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId = metaTestDataHelper.createTestSuite("EvalSummary Suite").getId();
-        testSuiteRunId = metaTestDataHelper.createTestSuiteRun(testSuiteId).getId();
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(testSuiteId);
+        testSuiteRunId = run.getId();
+        testSuiteRunCreatedAtMs = run.getCreatedAt();
     }
 
     // --- Batch Write Tests ---
@@ -467,11 +478,11 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
 
         // Insert older computation with 2 summaries
         insertRunMetricSnapshotsWithTimestamp(testSuiteRunId, computationId1, baseTime);
-        insertEvalSummariesWithComputation(computationId1, 2);
+        insertEvalSummariesWithComputation(computationId1, 2, baseTime);
 
         // Insert newer computation with 3 summaries
         insertRunMetricSnapshotsWithTimestamp(testSuiteRunId, computationId2, baseTime + 1000);
-        insertEvalSummariesWithComputation(computationId2, 3);
+        insertEvalSummariesWithComputation(computationId2, 3, baseTime + 1000);
 
         var response = restTemplate.exchange(
                 apiUrl("/analytics/eval-summaries?filter=runId:eq:" + testSuiteRunId + "&computation=latest&size=10"),
@@ -492,8 +503,9 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
         insertRunMetricSnapshots(testSuiteRunId, computationId1);
         insertRunMetricSnapshots(testSuiteRunId, computationId2);
 
-        insertEvalSummariesWithComputation(computationId1, 2);
-        insertEvalSummariesWithComputation(computationId2, 3);
+        long baseTime = System.currentTimeMillis();
+        insertEvalSummariesWithComputation(computationId1, 2, baseTime);
+        insertEvalSummariesWithComputation(computationId2, 3, baseTime + 1000);
 
         var response = restTemplate.exchange(
                 apiUrl("/analytics/eval-summaries?filter=runId:eq:" + testSuiteRunId + "&computation=" + computationId1
@@ -506,7 +518,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should return empty page when no snapshots exist")
+    @DisplayName("Should return empty page when no eval summaries exist")
     void shouldReturnEmptyPageWhenNoSnapshots() {
         var response = restTemplate.exchange(
                 apiUrl("/analytics/eval-summaries?filter=runId:eq:" + testSuiteRunId + "&computation=latest&size=10"),
@@ -663,7 +675,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should return 0 count when no computation exists")
+    @DisplayName("Should return 0 count when no eval summaries exist")
     void shouldReturnZeroForNoComputation() {
         var response = restTemplate.getForEntity(
                 apiUrl("/analytics/eval-summaries/count?filter=runId:eq:" + testSuiteRunId + "&computation=latest"),
@@ -703,7 +715,162 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
         assertThat(analyticsTestDataHelper.countEvalSummaries()).isEqualTo(1L);
     }
 
+    // --- Metric-less run tests ---
+
+    @Test
+    @DisplayName("Metric-less run: list, count and aggregate all resolve without any run metric snapshots")
+    void metricLessRunIsReadableThroughListCountAndAggregate() {
+        UUID computationId = UUID.randomUUID();
+        insertMetricLessSummaries(computationId, testSuiteRunCreatedAtMs, List.of("ml-1", "ml-2", "ml-3"));
+
+        var listResponse = restTemplate.exchange(
+                apiUrl("/analytics/eval-summaries?filter=runId:eq:" + testSuiteRunId + "&size=10"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<CursorPageResponseDto<Object>>() {});
+
+        assertThat(listResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(listResponse.getBody().getContent()).hasSize(3);
+        assertThat(listResponse.getBody().getContent()).allSatisfy(item -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = (Map<String, Object>) item;
+            assertThat(row.get("metricValues")).isEqualTo(Map.of());
+        });
+
+        var countResponse = restTemplate.getForEntity(
+                apiUrl("/analytics/eval-summaries/count?filter=runId:eq:" + testSuiteRunId),
+                ResultCountResponseDto.class);
+        assertThat(countResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(countResponse.getBody().getCount()).isEqualTo(3);
+
+        // Aggregation resolves the computation (previously null, since no snapshots existed) and
+        // reports an empty metric: nothing to average over.
+        var aggregateResponse = restTemplate.getForEntity(
+                apiUrl("/analytics/eval-summaries/aggregate?filter=runId:eq:" + testSuiteRunId
+                        + "&metrics=Accuracy.score"),
+                MetricAggregationResponseDto.class);
+
+        assertThat(aggregateResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(aggregateResponse.getBody().getComputationId()).isEqualTo(computationId);
+        assertThat(aggregateResponse.getBody().getMetrics()).hasSize(1);
+        var metric = aggregateResponse.getBody().getMetrics().get(0);
+        assertThat(metric.getCount()).isEqualTo(0L);
+        assertThat(metric.getAvg()).isNull();
+        assertThat(metric.getMin()).isNull();
+        assertThat(metric.getMax()).isNull();
+    }
+
+    @Test
+    @DisplayName("Metric-less run with two computations: latest resolves the newer one, explicit UUID the older")
+    void metricLessRunResolvesLatestAcrossTwoComputations() {
+        UUID older = UUID.randomUUID();
+        UUID newer = UUID.randomUUID();
+        insertMetricLessSummaries(older, testSuiteRunCreatedAtMs, List.of("old-1", "old-2"), 1_000L);
+        insertMetricLessSummaries(newer, testSuiteRunCreatedAtMs, List.of("new-1", "new-2", "new-3"), 2_000L);
+
+        var latest = restTemplate.exchange(
+                apiUrl("/analytics/eval-summaries?filter=runId:eq:" + testSuiteRunId + "&computation=latest&size=10"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<CursorPageResponseDto<Object>>() {});
+        assertThat(latest.getBody().getContent()).hasSize(3);
+
+        var explicitOlder = restTemplate.exchange(
+                apiUrl("/analytics/eval-summaries?filter=runId:eq:" + testSuiteRunId + "&computation=" + older
+                        + "&size=10"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<CursorPageResponseDto<Object>>() {});
+        assertThat(explicitOlder.getBody().getContent()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("Latest resolution skips a newer computation that wrote only run metric snapshots")
+    void latestResolutionRequiresReadableRows() {
+        UUID withSummaries = UUID.randomUUID();
+        UUID snapshotsOnly = UUID.randomUUID();
+        insertMetricLessSummaries(withSummaries, testSuiteRunCreatedAtMs, List.of("readable-1", "readable-2"), 1_000L);
+        // Newer by computed_at_ms, but it produced nothing readable — under the old snapshot-based
+        // resolver this would have won and the page would have come back empty.
+        insertRunMetricSnapshotsWithTimestamp(testSuiteRunId, snapshotsOnly, 2_000L);
+
+        var response = restTemplate.exchange(
+                apiUrl("/analytics/eval-summaries?filter=runId:eq:" + testSuiteRunId + "&computation=latest&size=10"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<CursorPageResponseDto<Object>>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getContent()).hasSize(2);
+        assertThat(response.getBody().getContent()).allSatisfy(item -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = (Map<String, Object>) item;
+            assertThat((String) row.get("testCaseName")).startsWith("readable-");
+        });
+    }
+
+    @Test
+    @DisplayName("Latest resolution over many rows across two computations returns the newer computation's rows")
+    void latestResolutionIsIndependentOfRowCount() {
+        UUID older = UUID.randomUUID();
+        UUID newer = UUID.randomUUID();
+        List<String> olderNames = new ArrayList<>();
+        List<String> newerNames = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            olderNames.add("bulk-old-" + i);
+            newerNames.add("bulk-new-" + i);
+        }
+        insertMetricLessSummaries(older, testSuiteRunCreatedAtMs, olderNames, 1_000L);
+        insertMetricLessSummaries(newer, testSuiteRunCreatedAtMs, newerNames, 2_000L);
+
+        var response = restTemplate.getForEntity(
+                apiUrl("/analytics/eval-summaries/count?filter=runId:eq:" + testSuiteRunId + "&computation=latest"),
+                ResultCountResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().getCount()).isEqualTo(30);
+    }
+
+    @Test
+    @DisplayName("The latest-computation resolution index exists on test_case_eval_summaries")
+    void resolutionIndexExists() {
+        var indexDefinition = analyticsTestDataHelper.findIndexDefinition(
+                "test_case_eval_summaries", "idx_eval_summaries_run_computed_at");
+
+        assertThat(indexDefinition).isPresent();
+        // Contains, not equals: Postgres renders indexdef schema-qualified and with USING btree.
+        assertThat(indexDefinition.get()).contains("(test_suite_run_id, computed_at_ms DESC, computation_id)");
+    }
+
     // --- Helpers ---
+
+    private void insertMetricLessSummaries(UUID computationId, long createdAtMs, List<String> testCaseNames) {
+        insertMetricLessSummaries(computationId, createdAtMs, testCaseNames, createdAtMs);
+    }
+
+    /**
+     * Seeds metric-less eval summaries (and their {@code test_case_run_results} rows) directly, with
+     * no {@code run_metric_snapshots} — the shape a run over a suite with zero enabled+valid TSMDs
+     * produces.
+     */
+    private void insertMetricLessSummaries(
+            UUID computationId, long createdAtMs, List<String> testCaseNames, long computedAtMs) {
+        for (String testCaseName : testCaseNames) {
+            analyticsTestDataHelper.createTestRunResult(
+                    testSuiteRunId, testSuiteId, UUID.randomUUID(), testCaseName, "{}", "{}", createdAtMs);
+            analyticsTestDataHelper.createEvalSummary(
+                    testSuiteId,
+                    testSuiteRunId,
+                    computationId,
+                    testCaseName,
+                    ExecutionStatus.SUCCESS.name(),
+                    100L,
+                    createdAtMs,
+                    computedAtMs,
+                    "{\"prompt\":\"p\"}",
+                    "{}");
+        }
+    }
 
     private EvalSummaryBatchWriteRequestDto buildEvalSummaryBatchRequest(
             UUID suiteId, UUID runId, UUID computationId, int count) {
@@ -809,7 +976,12 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
                 apiUrl("/analytics/eval-summaries"), jsonEntity(request), EvalSummaryBatchWriteResponseDto.class);
     }
 
-    private void insertEvalSummariesWithComputation(UUID computationId, int count) {
+    /**
+     * {@code computedAtMs} is explicit rather than "now": latest-computation resolution orders by
+     * {@code computed_at_ms}, so two computations written in the same millisecond would make
+     * {@code ORDER BY computed_at_ms DESC LIMIT 1} arbitrary.
+     */
+    private void insertEvalSummariesWithComputation(UUID computationId, int count, long computedAtMs) {
         List<EvalSummaryBatchWriteItemDto> items = new ArrayList<>();
         for (int ii = 0; ii < count; ii++) {
             items.add(buildEvalSummaryItem(UUID.randomUUID(), "comp-case-" + computationId + "-" + ii, 0));
@@ -818,7 +990,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
                 .testSuiteId(testSuiteId)
                 .testSuiteRunId(testSuiteRunId)
                 .computationId(computationId)
-                .computedAtMs(System.currentTimeMillis())
+                .computedAtMs(computedAtMs)
                 .items(items)
                 .build();
         restTemplate.postForEntity(

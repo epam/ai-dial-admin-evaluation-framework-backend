@@ -973,8 +973,8 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
     }
 
     @Test
-    @DisplayName("Should produce no EvalSummary records when all TSMDs are disabled or invalid")
-    void shouldProduceNoEvalSummaries_whenAllTsmdsDisabledOrInvalid() {
+    @DisplayName("Should produce metric-less EvalSummary records when all TSMDs are disabled or invalid")
+    void shouldProduceMetricLessEvalSummaries_whenAllTsmdsDisabledOrInvalid() {
         // Create suite via API with testCaseSchema=[expected]
         TestSuiteResponseDto suite = createSuiteViaApi(
                 "All Disabled Suite " + UUID.randomUUID(),
@@ -1033,8 +1033,16 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
                 awaitRunTerminal(runResponse.getBody().getId(), 15);
         assertThat(completedRun.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
-        // Metric evaluation phase was skipped — no EvalSummary records produced
-        assertThat(analyticsTestDataHelper.countEvalSummaries()).isEqualTo(0L);
+        // No enabled+valid TSMD ⇒ one metric-less eval summary per result row, and no snapshots.
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(completedRun.getId());
+        List<Map<String, Object>> summaries = analyticsTestDataHelper.findEvalSummariesByRunId(completedRun.getId());
+        assertThat(results).isNotEmpty();
+        assertThat(summaries).hasSameSizeAs(results);
+        assertThat(summaries)
+                .allSatisfy(summary ->
+                        assertThat((String) summary.get("metric_values")).isEqualTo("{}"));
+        assertThat(analyticsTestDataHelper.findRunMetricSnapshotsByRunId(completedRun.getId()))
+                .isEmpty();
     }
 
     @Test

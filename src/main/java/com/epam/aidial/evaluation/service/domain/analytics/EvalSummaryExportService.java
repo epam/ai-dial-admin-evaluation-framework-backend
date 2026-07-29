@@ -234,9 +234,15 @@ public class EvalSummaryExportService {
                             .filter(s -> computationId.equals(s.getComputationId()))
                             .toList();
 
+            // An explicit computation exists if it produced eval summaries — not if it produced metric
+            // snapshots. A metric-less run legitimately has none, and exports a metric-free manifest.
+            // The `latest` branch needs no such check: after resolution moved to eval summaries, its
+            // orElseThrow above already answers this question.
             boolean explicitComputationUuid = computation != null && !LATEST_SENTINEL.equalsIgnoreCase(computation);
-            if (explicitComputationUuid && metricSnapshots.isEmpty()) {
-                throw new EntityNotFoundException("No computation snapshot found for run "
+            if (explicitComputationUuid
+                    && !evalSummaryRepository.existsByRunIdAndComputationId(
+                            metaSetup.run().getId(), computationId)) {
+                throw new EntityNotFoundException("No eval summaries found for run "
                         + metaSetup.run().getId() + " (computation=" + computation + ")");
             }
 

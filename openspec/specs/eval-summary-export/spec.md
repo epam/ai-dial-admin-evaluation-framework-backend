@@ -31,7 +31,7 @@ Status: **Implemented**
 
 #### Scenario: Computation defaults to latest
 - **WHEN** the request body omits `computation`
-- **THEN** the service SHALL resolve the latest `computation_id` for the run by ordering `run_metric_snapshots.computed_at_ms` descending
+- **THEN** the service SHALL resolve the latest `computation_id` for the run by ordering `test_case_eval_summaries.computed_at_ms` descending
 
 #### Scenario: Empty or omitted delimiter defaults to comma
 - **WHEN** `delimiter` is null, omitted from the request body, or the empty string
@@ -58,7 +58,7 @@ Status: **Implemented**
 - **THEN** the service SHALL treat the single element `data.tags:eq:foo,bar` as one filter token (the comma is part of the value), distinct from the comma-splitting behavior of URL query-param parsing
 
 ### Requirement: Column set is derived from run snapshot
-The column set SHALL be derived exclusively from the run's frozen `test_suite_runs.suite_snapshot` and the resolved computation's `run_metric_snapshots`. The service SHALL NOT read the live `TestSuite` or live `TestSuiteMetricDefinition` rows to construct columns.
+The column set SHALL be derived exclusively from the run's frozen `test_suite_runs.suite_snapshot` and the resolved computation's `run_metric_snapshots`. The service SHALL NOT read the live `TestSuite` or live `TestSuiteMetricDefinition` rows to construct columns. When the resolved computation has no `run_metric_snapshots` rows, the metric-derived column families are simply absent.
 Status: **Implemented**
 
 #### Scenario: Live suite changes do not affect old-run exports
@@ -70,6 +70,10 @@ Status: **Implemented**
 - **WHEN** a metric definition's `output_schema` was X at the time of computation C, and is later edited to X′
 - **AND** the client exports `(runId, C)` after the edit
 - **THEN** the flattened metric columns SHALL reflect X (read from `run_metric_snapshots.output_schema`), not X′
+
+#### Scenario: Adding metrics later does not retro-fit old exports
+- **WHEN** a run was executed with no TSMDs and the suite later gains TSMDs
+- **THEN** exporting that earlier run SHALL still yield the metric-free manifest, because its computation has no `run_metric_snapshots` rows
 
 ### Requirement: Column header family-separator convention
 Column names derived from the run's `suite_snapshot` testCaseSchema, the snapshot's responseColumns, or the resolved computation's `RunMetricSnapshot`s SHALL use the double-colon sequence `::` as the family-separator between the family name (`data`, `response`, `metric`, `metricInfo`, `metricError`) and the embedded identifier(s). The `::` sequence SHALL be the only family-separator emitted by the export; neither a single colon `:` nor the dot character SHALL be used for this role. The canonical separator constant SHALL be defined as `EvalSummaryExportColumnConstants.COLUMN_SEPARATOR = "::"` and used by all column-name composition sites.
@@ -258,7 +262,7 @@ Status: **Implemented**
 - **THEN** the service SHALL return `HTTP 400` with error code `VALIDATION_ERROR` and an error body listing `data::unknownField`
 
 ### Requirement: Filter and computation behave as on the list endpoint
-The `filter` and `computation` fields SHALL behave identically to the existing `GET /api/v1/analytics/eval-summaries` list endpoint. `filter` strings SHALL be parsed with the existing filter parser and validated against `FilterWhitelists.EVAL_SUMMARIES`. `computation` SHALL accept either a UUID or the literal string `"latest"`.
+The `filter` and `computation` fields SHALL behave identically to the existing `GET /api/v1/analytics/eval-summaries` list endpoint. `filter` strings SHALL be parsed with the existing filter parser and validated against `FilterWhitelists.EVAL_SUMMARIES`. `computation` SHALL accept either a UUID or the literal string `"latest"`. Whether a computation exists SHALL be decided by the presence of eval-summary rows for that `(runId, computationId)` pair, never by the presence of `run_metric_snapshots` rows.
 Status: **Implemented**
 
 #### Scenario: Filter narrows the export
@@ -271,15 +275,35 @@ Status: **Implemented**
 
 #### Scenario: Explicit computation UUID
 - **WHEN** the request specifies `computation: "<uuid>"` and that UUID exists for the run
-- **THEN** the export SHALL use that specific computation's snapshots and eval-summary rows
+- **THEN** the export SHALL use that specific computation's eval-summary rows, and its `run_metric_snapshots` rows when the computation has any
 
 #### Scenario: Unknown computation UUID returns 404
-- **WHEN** the request specifies `computation: "<uuid>"` that is a syntactically well-formed UUID but no `run_metric_snapshots` row exists for that `(runId, computationId)` pair (or `computation: "latest"` is supplied but the run has no snapshots at all)
+- **WHEN** the request specifies `computation: "<uuid>"` that is a syntactically well-formed UUID but no eval-summary row exists for that `(runId, computationId)` pair (or `computation: "latest"` is supplied but the run has no eval summaries at all)
 - **THEN** the service SHALL return `HTTP 404` with error code `NOT_FOUND`
+
+#### Scenario: Computation without metric snapshots is not a 404
+- **WHEN** the request specifies a `computation` (explicit UUID or `"latest"`) that has eval-summary rows but no `run_metric_snapshots` rows
+- **THEN** the service SHALL return `HTTP 200` and export those rows with a metric-free column manifest
 
 #### Scenario: Malformed computation string returns 400
 - **WHEN** the request specifies `computation` as a non-UUID, non-`"latest"` string (e.g. `"abc"`, `"123"`)
 - **THEN** the service SHALL return `HTTP 400` with error code `VALIDATION_ERROR`
+
+### Requirement: Export of a run without metrics
+The export and preview endpoints SHALL support runs whose suite had no enabled+valid TSMDs, i.e. runs that have eval summaries but no `run_metric_snapshots` rows. For such a run the column manifest SHALL contain the identity, timestamp, execution, `data::<field>`, `response::<column>`, and JSON-blob/body column families only, and SHALL omit every `metric::*`, `metricInfo::*`, and `metricError::*` column. The absence of metric snapshots SHALL NOT be treated as a missing computation.
+Status: **Implemented**
+
+#### Scenario: Metric-free column manifest
+- **WHEN** a client exports a run that has eval summaries and no `run_metric_snapshots` rows
+- **THEN** the CSV SHALL contain one row per eval summary, with the `data::*` columns derived from the run snapshot's `testCaseSchema` and the `response::*` columns from its `responseColumns`, and SHALL contain no column whose name starts with `metric::`, `metricInfo::`, or `metricError::`
+
+#### Scenario: Preview of a metric-free run
+- **WHEN** a client calls the preview endpoint for such a run
+- **THEN** it SHALL return HTTP 200 with a metric-free headers array — the full manifest per the "Preview headers array is the full manifest" scenario of the "Preview endpoint" requirement, so including `requestBody` and `responseBody` even though the default CSV header omits them — followed by the previewed data rows, and containing no `metric::*`, `metricInfo::*`, or `metricError::*` entry
+
+#### Scenario: Explicit columns on a metric-free run
+- **WHEN** a client requests an explicit `columns` subset containing a `metric::*` column for such a run
+- **THEN** the service SHALL reject the request with `HTTP 400` and error code `VALIDATION_ERROR`, because that column is not in the planner-derived manifest — the same rule as any unknown column
 
 ### Requirement: Legacy run snapshot handling
 Legacy runs — runs whose `test_suite_runs.suite_snapshot` is null or blank — are NOT supported by the export. Both the export endpoint and the preview endpoint SHALL reject such runs with `HTTP 422` and error code `SNAPSHOT_SUITE_MISSING`. The live `TestSuite` SHALL NOT be consulted as a fallback. Runs whose `suite_snapshot.snapshotVersion` is not understood by the service SHALL be rejected with `HTTP 422` and error code `UNSUPPORTED_SNAPSHOT_VERSION`.
@@ -386,10 +410,10 @@ Status: **Implemented**
 Implemented under the following packages:
 
 - `com.epam.aidial.evaluation.web.controller.EvalSummaryController` — two new methods (`exportCsv`, `previewExport`).
-- `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportService` — orchestration + streaming via dual-datasource `TransactionTemplate`s (per-page commits for the analytics scan).
-- `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportColumnPlanner` — pure column-derivation component (always emits `requestBody`/`responseBody` at the tail).
-- `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportColumnSelector` — column-subset resolution + validation (strips bodies on the empty-input branch).
-- `com.epam.aidial.evaluation.service.domain.analytics.ComputationResolver` — `computation: String → Optional<UUID>` resolution shared with the list endpoint.
+- `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportService` — orchestration + streaming via dual-datasource `TransactionTemplate`s (per-page commits for the analytics scan). The explicit-computation not-found guard asks `EvalSummaryRepository.existsByRunIdAndComputationId` (jOOQ `fetchExists`, no rows fetched), not whether the computation has `RunMetricSnapshot` rows; the `"latest"` path keeps its `computationResolver.resolve(...).orElseThrow(EntityNotFoundException…)` 404, which is itself an eval-summary answer.
+- `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportColumnPlanner` — pure column-derivation component (always emits `requestBody`/`responseBody` at the tail); skips the whole per-metric block for an empty snapshot list.
+- `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportColumnSelector` — column-subset resolution + validation (strips bodies on the empty-input branch); its unknown-column validation is what rejects a `metric::*` request against a metric-free manifest.
+- `com.epam.aidial.evaluation.service.domain.analytics.ComputationResolver` — `computation: String → Optional<UUID>` resolution shared with the list endpoint; `"latest"` resolves against `test_case_eval_summaries`.
 - `com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryExportRequestDto` — request body.
 - `com.epam.aidial.evaluation.data.db.analytics.repository.PostgresEvalSummaryRepository` — new `findAllForExport` (non-JOIN) and `findAllForExportWithBodies` (LEFT JOIN to `test_case_run_results` via subquery to avoid `test_suite_run_id` ambiguity) cursor variants sharing a common `findAllInternal`.
 - `com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser` — shared delimiter parser; `TestCaseController` delegates to it.

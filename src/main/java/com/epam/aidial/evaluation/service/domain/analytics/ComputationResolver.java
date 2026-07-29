@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.analytics;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,7 +14,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>Accepts either an explicit UUID literal or the sentinel {@code "latest"} (case-insensitive;
  * {@code null} is also treated as {@code "latest"}). When the resolution targets {@code "latest"},
- * the repository is queried for the most recent {@code computed_at_ms} matching {@code runId}.
+ * the eval-summary repository is queried for the most recent {@code computed_at_ms} matching
+ * {@code runId}.
  *
  * <p>This component does not open its own transaction. Callers are responsible for opening a
  * {@code @Transactional("analyticsTransactionManager")} scope (or an equivalent
@@ -27,7 +28,10 @@ import org.springframework.stereotype.Component;
  *       their domain-appropriate not-found behavior. (Today no caller verifies existence here;
  *       the repository call that follows surfaces the empty case naturally.)</li>
  *   <li>{@code "latest"} (or {@code null}): returns {@code Optional} of the latest computation
- *       UUID for the run, or {@code Optional.empty()} when no snapshot rows exist for the run.</li>
+ *       UUID for the run, or {@code Optional.empty()} when there are no eval summaries for the
+ *       run. Resolution reads {@code test_case_eval_summaries} — the table every caller goes on
+ *       to read — so "latest" means "latest computation with readable rows" and a run whose suite
+ *       had no metrics (hence no {@code run_metric_snapshots}) still resolves.</li>
  *   <li>Malformed (non-UUID, non-{@code "latest"}): throws {@link ValidationException}.</li>
  * </ul>
  */
@@ -39,11 +43,11 @@ public class ComputationResolver {
 
     private static final String LATEST_SENTINEL = "latest";
 
-    private final RunMetricSnapshotRepository snapshotRepository;
+    private final EvalSummaryRepository evalSummaryRepository;
 
     public Optional<UUID> resolve(String computation, UUID runId) {
         if (computation == null || LATEST_SENTINEL.equalsIgnoreCase(computation)) {
-            return snapshotRepository.findLatestComputationId(runId);
+            return evalSummaryRepository.findLatestComputationId(runId);
         }
         try {
             return Optional.of(UUID.fromString(computation));

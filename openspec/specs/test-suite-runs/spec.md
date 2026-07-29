@@ -417,7 +417,12 @@ Status: **Implemented**
 
 #### Scenario: Metric evaluation chained after deployment evaluation
 - **WHEN** the deployment evaluation phase completes (all test cases executed) and the run is not cancelled
-- **THEN** the job SHALL build a `MetricEvaluationContext` (loading aggregated TSMDs, generating computationId/computedAtMs, building provider semaphores) and call `MetricEvaluationExecutor.execute(context)`. The executor handles the "no TSMDs" case by returning early without writing any records.
+- **THEN** the job SHALL build a `MetricEvaluationContext` (loading aggregated TSMDs, generating computationId/computedAtMs, building provider semaphores) and call `MetricEvaluationExecutor.execute(context)`. The executor SHALL run for any TSMD count, including zero — with an empty TSMD list it writes eval summaries with empty `metric_values` and no run metric snapshots (see metric-evaluation spec).
+
+#### Scenario: Run without metrics still yields results
+- **WHEN** a run's suite has no enabled+valid TSMDs
+- **AND** the eval-summary batch write succeeds (as for a metric-bearing run, a failed analytics write sets the cancellation signal and the run ends CANCELLED)
+- **THEN** the run SHALL still reach COMPLETED and its eval summaries SHALL be readable through the eval-summary list, count, aggregate, and export endpoints
 
 #### Scenario: Cancellation between phases
 - **WHEN** the deployment evaluation phase completes and the cancellation signal is set before metric evaluation starts

@@ -225,6 +225,13 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
         UUID newer = UUID.randomUUID();
         analyticsTestDataHelper.createRunMetricSnapshot(runId, older, "Relevancy", OUTPUT_SCHEMA, 1_000L);
         analyticsTestDataHelper.createRunMetricSnapshot(runId, newer, "Relevancy", OUTPUT_SCHEMA, 2_000L);
+        // "latest" is resolved from eval summaries, so each computation needs readable rows —
+        // with the same computed_at_ms as its snapshot so the newer computation still wins.
+        UUID suiteId = UUID.randomUUID();
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId, runId, older, "case-older", "SUCCESS", 10L, 1_000L, 1_000L, "{}", "{}");
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId, runId, newer, "case-newer", "SUCCESS", 10L, 1_000L, 2_000L, "{}", "{}");
         metricScoreService.saveAll(List.of(
                 result(runId, older, "AVG", "Relevancy.score", 0.4),
                 result(runId, newer, "AVG", "Relevancy.score", 0.8)));

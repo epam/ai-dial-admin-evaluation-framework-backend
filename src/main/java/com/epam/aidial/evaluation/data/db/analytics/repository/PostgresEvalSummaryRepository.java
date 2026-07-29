@@ -170,11 +170,10 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
 
     @Override
     public boolean existsByRunIdAndComputationId(UUID runId, UUID computationId) {
-        return dsl.fetchExists(
-                dsl.selectOne()
-                        .from(TEST_CASE_EVAL_SUMMARIES)
-                        .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                        .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString())));
+        return dsl.fetchExists(dsl.selectOne()
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString())));
     }
 
     @Override

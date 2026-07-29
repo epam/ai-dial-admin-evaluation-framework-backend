@@ -27,8 +27,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>Everything else passes through untouched: a real {@code computation_id eq <uuid>},
  * {@code computation_id in [...]}, an omitted {@code computation_id} (⇒ all computations), or a query
- * with no single-run filter. When the run has no computations yet, the sentinel is left in place and the
- * engine rejects it (a run with no computations has no results anyway).
+ * with no single-run filter. When the run has no eval summaries — the table {@link ComputationResolver}
+ * resolves "latest" from — the sentinel is left in place and the engine rejects it (a run with no
+ * eval summaries has no metric scores to return anyway).
  */
 @Component
 @LogExecution

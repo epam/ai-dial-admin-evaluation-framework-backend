@@ -45,25 +45,25 @@ A task is not complete until its tests have been **executed** and pass — stati
 
 ## 5. Orchestration (6 tasks — implement across two batches)
 
-- [ ] 5.1 Add `service/domain/analytics/RunComparisonProvider.java` (one method) and the response DTOs in `service/domain/dto/analytics/` — `RunComparisonResponseDto`, `RunComparisonRunDto` (`runId`, `computationId`, `totalRowCount`, `matchedRowCount`, `matchedSuccessRowCount`, `Double avgExecDurationMs`, `unmatchedEvalSummaryIds`, `scores`), `MetricScoreValueDto`, with `@Schema` examples. `avgExecDurationMs` is `Double` and **nullable** — the global `NON_NULL` inclusion drops it when a run has no matched rows, which is the specified behaviour, not an oversight (done: interface + DTOs in the stable layer, nothing experimental imported)
-- [ ] 5.2 Add `RunComparisonService implements RunComparisonProvider` in `experimental/query/service/metricscore/` with an **explicit constructor** injecting `@Qualifier("analyticsTransactionManager") PlatformTransactionManager` and building a read-only `TransactionTemplate` — there is **no** `TransactionTemplate` bean;
+- [x] 5.1 Add `service/domain/analytics/RunComparisonProvider.java` (one method) and the response DTOs in `service/domain/dto/analytics/` — `RunComparisonResponseDto`, `RunComparisonRunDto` (`runId`, `computationId`, `totalRowCount`, `matchedRowCount`, `matchedSuccessRowCount`, `Double avgExecDurationMs`, `unmatchedEvalSummaryIds`, `scores`), `MetricScoreValueDto`, with `@Schema` examples. `avgExecDurationMs` is `Double` and **nullable** — the global `NON_NULL` inclusion drops it when a run has no matched rows, which is the specified behaviour, not an oversight (done: interface + DTOs in the stable layer, nothing experimental imported)
+- [x] 5.2 Add `RunComparisonService implements RunComparisonProvider` in `experimental/query/service/metricscore/` with an **explicit constructor** injecting `@Qualifier("analyticsTransactionManager") PlatformTransactionManager` and building a read-only `TransactionTemplate` — there is **no** `TransactionTemplate` bean;
   `@Qualifier("analyticsTransactionTemplate")` fails context startup. The three collaborators are
   `TestSuiteRunService.getRun` for the meta reads (via the owning service — it already throws
   `EntityNotFoundException` ⇒ 404), plus `EvalSummaryRepository` and `RunMetricSnapshotRepository` injected
   **directly** (done: context boots — rerun 1.4; class carries `@LogExecution` per AGENTS.md)
-- [ ] 5.3 Implement guards in the spec's order: exactly 2 distinct ids (400) → `getRun` ×2, unknown ⇒ 404 → same-suite (409) → null-`suiteSnapshot` (422, version **not** checked) → then inside the analytics transaction `ComputationResolver.resolve(null, runId)` ×2 (409 on empty) → the exclusion-list cap (409, task 5.4) (done: each guard unit-tested, and a different-suite pair where one run is legacy returns 409 rather than 422)
-- [ ] 5.4 Stats → cap → ids: `countMatches` per side (its `avgExecDurationMs` passes straight through to the
+- [x] 5.3 Implement guards in the spec's order: exactly 2 distinct ids (400) → `getRun` ×2, unknown ⇒ 404 → same-suite (409) → null-`suiteSnapshot` (422, version **not** checked) → then inside the analytics transaction `ComputationResolver.resolve(null, runId)` ×2 (409 on empty) → the exclusion-list cap (409, task 5.4) (done: each guard unit-tested, and a different-suite pair where one run is legacy returns 409 rather than 422)
+- [x] 5.4 Stats → cap → ids: `countMatches` per side (its `avgExecDurationMs` passes straight through to the
   response, `BigDecimal → Double`, null-safe — no service-side arithmetic);
   `totalRowCount - matchedRowCount > maxUnmatchedRows` ⇒ 409
   **before** any id is fetched, message in exclusion terms naming the count, the limit and the property name; then
   `findUnmatchedIds` per side (done: unit test asserts `findUnmatchedIds` is never invoked when the cap trips, and
   that `matchedRowCount + unmatched.size() == totalRowCount`)
-- [ ] 5.5 Snapshots → discovery → short-circuits: load each run's snapshots via
+- [x] 5.5 Snapshots → discovery → short-circuits: load each run's snapshots via
   `RunMetricSnapshotRepository.findByRunIdAndComputationId(runId, resolvedComputationId)` and discover fields via
   `MetricFieldDiscoverer`, passing the **full** discovered list to the aggregator; zero matches ⇒ `scores: []` with
   no aggregate query; no discovered fields ⇒ `scores: []` (done: unit test asserts no
   `structuredQueryService.execute` call on either short-circuit)
-- [ ] 5.6 Add `RunComparisonServiceTest` — all guards, single computation resolution reused for both queries, both short-circuits, `includeOverall` follows Phase 3's rule, the overall path receives the **un-filtered** field list, cap-before-ids, and **asymmetric `matchedRowCount` accepted rather than rejected** (done: executed and green)
+- [x] 5.6 Add `RunComparisonServiceTest` — all guards, single computation resolution reused for both queries, both short-circuits, `includeOverall` follows Phase 3's rule, the overall path receives the **un-filtered** field list, cap-before-ids, and **asymmetric `matchedRowCount` accepted rather than rejected** (done: executed and green)
 
 ## 6. Web layer and OpenAPI
 

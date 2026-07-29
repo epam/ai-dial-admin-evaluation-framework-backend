@@ -221,12 +221,13 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     void shouldMatchOnTurnIndex() {
         seedSnapshot(runA, computationA);
         seedSnapshot(runB, computationB);
-        // The same case name run as a 3-turn conversation in A and a 2-turn one in B.
-        seedTurn(runA, computationA, 0, 3, 0.5);
-        seedTurn(runA, computationA, 1, 3, 0.5);
-        seedTurn(runA, computationA, 2, 3, 9.0);
-        seedTurn(runB, computationB, 0, 2, 0.5);
-        seedTurn(runB, computationB, 1, 2, 0.5);
+        // The same case name run as a 3-turn conversation in A and a 2-turn one in B. Durations differ per
+        // turn so the average can distinguish per-turn sampling from a per-conversation one.
+        seedTurn(runA, computationA, 0, 3, 0.5, 100L);
+        seedTurn(runA, computationA, 1, 3, 0.5, 300L);
+        seedTurn(runA, computationA, 2, 3, 9.0, 9000L);
+        seedTurn(runB, computationB, 0, 2, 0.5, 100L);
+        seedTurn(runB, computationB, 1, 2, 0.5, 100L);
 
         final RunComparisonResponseDto response = compare(runA, runB);
         final RunComparisonRunDto sideA = response.getRuns().get(0);
@@ -238,6 +239,36 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         assertThat(sideB.getMatchedRowCount()).isEqualTo(2L);
         assertThat(sideB.getUnmatchedEvalSummaryIds()).isEmpty();
         // total_turns is not part of the key: 3-turn and 2-turn rows still match at turns 0 and 1.
+        assertThat(score(sideA, "MAX", METRIC_FIELD)).isEqualTo(0.5);
+        // Each turn is one sample: (100 + 300) / 2. Summing the conversation first would give 400, and
+        // including the unmatched third turn would give 3133.33…
+        assertThat(sideA.getAvgExecDurationMs()).isEqualTo(200.0);
+    }
+
+    @Test
+    @DisplayName("Should match per repetition, so extra repetitions of one run do not match")
+    void shouldMatchOnRunIndex() {
+        seedSnapshot(runA, computationA);
+        seedSnapshot(runB, computationB);
+        // One test case executed with numberOfRuns 3 in A and 2 in B. Unlike the full-overlap fixture, the
+        // repetition counts differ — which is the only shape that detects run_index dropping out of the
+        // match key altogether, rather than merely out of the join condition.
+        seedRepetition(runA, computationA, 0, 0.5);
+        seedRepetition(runA, computationA, 1, 0.5);
+        seedRepetition(runA, computationA, 2, 9.0);
+        seedRepetition(runB, computationB, 0, 0.5);
+        seedRepetition(runB, computationB, 1, 0.5);
+
+        final RunComparisonResponseDto response = compare(runA, runB);
+        final RunComparisonRunDto sideA = response.getRuns().get(0);
+        final RunComparisonRunDto sideB = response.getRuns().get(1);
+
+        // Exactly one pair per shared repetition index; A's third repetition has no counterpart.
+        assertThat(sideA.getMatchedRowCount()).isEqualTo(2L);
+        assertThat(sideA.getUnmatchedEvalSummaryIds()).hasSize(1);
+        assertThat(sideB.getMatchedRowCount()).isEqualTo(2L);
+        assertThat(sideB.getUnmatchedEvalSummaryIds()).isEmpty();
+        // The unmatched repetition's outlier value stays out of A's statistics.
         assertThat(score(sideA, "MAX", METRIC_FIELD)).isEqualTo(0.5);
     }
 
@@ -558,10 +589,12 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     /** One turn of a multi-turn conversation, all turns sharing the case name. */
-    private void seedTurn(UUID runId, UUID computationId, int turnIndex, int totalTurns, double score) {
+    private void seedTurn(
+            UUID runId, UUID computationId, int turnIndex, int totalTurns, double score, long execDurationMs) {
         analyticsTestDataHelper.createEvalSummary(fixture(runId, computationId, "Conversation", score)
                 .turnIndex(turnIndex)
                 .totalTurns(totalTurns)
+                .execDurationMs(execDurationMs)
                 .build());
     }
 

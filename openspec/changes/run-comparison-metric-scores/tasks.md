@@ -3,9 +3,9 @@ A task is not complete until its tests have been **executed** and pass — stati
 
 ## 1. Configuration and context boot
 
-- [ ] 1.1 Add `configuration/properties/analytics/RunComparisonProperties.java` — `@ConfigurationProperties(prefix = "analytics.comparison")`, `@Validated`, `@LogExecution`, `@Min(1) Integer maxUnmatchedRows`, **no Java field initializer** (done: class compiles, no default in Java)
-- [ ] 1.2 Add `analytics.comparison.max-unmatched-rows: 5000` under the existing `analytics:` block in `src/main/resources/application.yml` (done: value present, is the only place the default lives)
-- [ ] 1.3 Add a new `### 6.13 Analytics Run Comparison` section under the `## 6. Evaluation Engine` top-level group
+- [x] 1.1 Add `configuration/properties/analytics/RunComparisonProperties.java` — `@ConfigurationProperties(prefix = "analytics.comparison")`, `@Validated`, `@LogExecution`, `@Min(1) Integer maxUnmatchedRows`, **no Java field initializer** (done: class compiles, no default in Java)
+- [x] 1.2 Add `analytics.comparison.max-unmatched-rows: 5000` under the existing `analytics:` block in `src/main/resources/application.yml` (done: value present, is the only place the default lives)
+- [x] 1.3 Add a new `### 6.13 Analytics Run Comparison` section under the `## 6. Evaluation Engine` top-level group
   with the six-column table (`Property | Environment Variable | Default | Required | Applied when | Description`)
   and one row: `analytics.comparison.max-unmatched-rows` | `ANALYTICS_COMPARISON_MAX_UNMATCHED_ROWS` | `5000` |
   `No` | `-` | maximum non-matching eval-summary rows a single run-comparison may report **per run**; exceeding
@@ -13,7 +13,7 @@ A task is not complete until its tests have been **executed** and pass — stati
   size (≈0.35 MB at the default). Also add the matching `### 6.13` bullet to the document's Table of Contents
   (`docs/configuration.md:5-49` enumerates every subsection) (done: new numbered section under group 6, six
   columns, `Required` is one of the four permitted terms, TOC bullet present)
-- [ ] 1.4 Run one existing context-booting functional test to prove the new `@ConfigurationProperties` bean binds: `./gradlew test --tests "com.epam.aidial.evaluation.functional.PostgresFunctionalTests\$NoSecurityStartupTests"` (done: green — a compile-clean build does **not** prove the context starts)
+- [x] 1.4 Run one existing context-booting functional test to prove the new `@ConfigurationProperties` bean binds: `./gradlew test --tests "com.epam.aidial.evaluation.functional.PostgresFunctionalTests\$NoSecurityStartupTests"` (done: green — a compile-clean build does **not** prove the context starts)
 
 ## 2. Data layer — per-side anti-join
 

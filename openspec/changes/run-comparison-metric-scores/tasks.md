@@ -67,9 +67,9 @@ A task is not complete until its tests have been **executed** and pass — stati
 
 ## 6. Web layer and OpenAPI
 
-- [ ] 6.1 Add `web/controller/RunComparisonController.java` — `@RestController @Validated @LogExecution`, `@RequestMapping("/api/v1/analytics/metric-scores")`, `GET /comparison`, `@RequestParam @Size(min=2, max=2) List<UUID> runIds`; injects `RunComparisonProvider`, **not** the impl; do **not** use `@FilterParam` (done: endpoint responds; controller imports nothing from `experimental..`)
-- [ ] 6.2 Add OpenAPI annotations and `src/main/resources/openapi/examples/api-v1-analytics-metric-scores-comparison-GET-response-200-{minimal,full}.json`, referenced via `@ExampleObject`. The `minimal` example is the full-match case, so it MUST show `avgExecDurationMs` present with `unmatchedEvalSummaryIds: []`; the `full` example MUST show the FE's follow-up filter as a **nested `not`-wrapped `in`** node — there is no `not_in` operator (this is not a filter/sort list endpoint — no `OpenApiQueryParamCustomizer`/`FilterWhitelists`/`SortWhitelists` registry entry) (done: examples render in Swagger UI and match the DTOs)
-- [ ] 6.3 Run `./gradlew test --tests "…architectural.LayeredArchitectureTest"` (done: passes **unmodified** — `web` reaches the impl only through the `service`-layer interface)
+- [x] 6.1 Add `web/controller/RunComparisonController.java` — `@RestController @Validated @LogExecution`, `@RequestMapping("/api/v1/analytics/metric-scores")`, `GET /comparison`, `@RequestParam @Size(min=2, max=2) List<UUID> runIds`; injects `RunComparisonProvider`, **not** the impl; do **not** use `@FilterParam` (done: endpoint responds; controller imports nothing from `experimental..`)
+- [x] 6.2 Add OpenAPI annotations and `src/main/resources/openapi/examples/api-v1-analytics-metric-scores-comparison-GET-response-200-{minimal,full}.json`, referenced via `@ExampleObject`. The `minimal` example is the full-match case, so it MUST show `avgExecDurationMs` present with `unmatchedEvalSummaryIds: []`; the `full` example MUST show the FE's follow-up filter as a **nested `not`-wrapped `in`** node — there is no `not_in` operator (this is not a filter/sort list endpoint — no `OpenApiQueryParamCustomizer`/`FilterWhitelists`/`SortWhitelists` registry entry) (done: examples render in Swagger UI and match the DTOs)
+- [x] 6.3 Run `./gradlew test --tests "…architectural.LayeredArchitectureTest"` (done: passes **unmodified** — `web` reaches the impl only through the `service`-layer interface)
 
 ## 7. Functional tests (8 tasks — implement across two batches)
 

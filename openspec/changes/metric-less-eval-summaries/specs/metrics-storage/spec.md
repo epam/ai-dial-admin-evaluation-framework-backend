@@ -20,10 +20,6 @@ Status: **Planned**
 - **WHEN** the migrations are applied
 - **THEN** indexes SHALL be created on: `(test_suite_run_id, computation_id)` for run-scoped grid queries (the primary query path), `(computation_id)` for computation-scoped queries, `(id)` for direct lookups, and `(test_suite_run_id, computed_at_ms DESC, computation_id)` for latest-computation resolution
 
-#### Scenario: Latest-computation resolution is index-only
-- **WHEN** the latest computation of a run is resolved
-- **THEN** the query SHALL be satisfiable from the `(test_suite_run_id, computed_at_ms DESC, computation_id)` index alone, so its cost SHALL NOT grow with the number of summary rows the run has
-
 #### Scenario: No foreign keys
 - **WHEN** the migration is applied
 - **THEN** no foreign key constraints SHALL exist (soft references to meta DB and test_case_run_results only)
@@ -103,6 +99,10 @@ Status: **Planned**
 #### Scenario: Latest resolution
 - **WHEN** the API needs to determine the latest computation for a run
 - **THEN** it SHALL query `test_case_eval_summaries` for the maximum `computed_at_ms` for that run and use the corresponding `computation_id`
+
+#### Scenario: Latest resolution is independent of a run's row count
+- **WHEN** the latest computation of a run is resolved and the run has many eval summary rows spread across more than one computation
+- **THEN** resolution SHALL return the `computation_id` with the greatest `computed_at_ms` for that run, whatever the number of rows involved
 
 #### Scenario: Latest resolution requires readable rows
 - **WHEN** a computation wrote `run_metric_snapshots` rows for a run but wrote no eval summaries (e.g. its batch write failed)

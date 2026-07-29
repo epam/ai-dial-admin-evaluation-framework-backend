@@ -30,6 +30,7 @@ Status: **Planned**
 
 #### Scenario: Run without metrics still yields results
 - **WHEN** a run's suite has no enabled+valid TSMDs
+- **AND** the eval-summary batch write succeeds (as for a metric-bearing run, a failed analytics write sets the cancellation signal and the run ends CANCELLED)
 - **THEN** the run SHALL still reach COMPLETED and its eval summaries SHALL be readable through the eval-summary list, count, aggregate, and export endpoints
 
 #### Scenario: Cancellation between phases

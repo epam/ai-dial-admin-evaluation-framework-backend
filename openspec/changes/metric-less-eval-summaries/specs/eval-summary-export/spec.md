@@ -10,13 +10,49 @@ Status: **Planned**
 
 #### Scenario: Preview of a metric-free run
 - **WHEN** a client calls the preview endpoint for such a run
-- **THEN** it SHALL return HTTP 200 with the same metric-free header row and the previewed data rows
+- **THEN** it SHALL return HTTP 200 with a metric-free headers array — the full manifest per the "Preview headers array is the full manifest" scenario of the "Preview endpoint" requirement, so including `requestBody` and `responseBody` even though the default CSV header omits them — followed by the previewed data rows, and containing no `metric::*`, `metricInfo::*`, or `metricError::*` entry
 
 #### Scenario: Explicit columns on a metric-free run
 - **WHEN** a client requests an explicit `columns` subset containing a `metric::*` column for such a run
 - **THEN** the service SHALL reject the request with `HTTP 400` and error code `VALIDATION_ERROR`, because that column is not in the planner-derived manifest — the same rule as any unknown column
 
 ## MODIFIED Requirements
+
+### Requirement: Request body schema for export
+The endpoint SHALL accept an `EvalSummaryExportRequestDto` JSON body with the following fields: `runId` (UUID, required), `computation` (string, optional; UUID or `"latest"`, default `"latest"`), `columns` (string array, optional, ordered, default empty), `filter` (string array, optional, default empty), `delimiter` (string, optional, single ASCII character, default `","`). The DTO SHALL NOT carry a `detailed` field; inclusion of `requestBody`/`responseBody` is governed solely by their presence in `columns` (see "Request and response bodies via explicit columns"). The `filter` array SHALL be size-capped at `ValidationConstants.MAX_LIST_FILTER_PARAMS`; each element SHALL be taken verbatim (no comma-splitting is applied to body-supplied filter entries, unlike URL query-param parsing).
+Status: **Planned**
+
+#### Scenario: Missing runId
+- **WHEN** the request body omits `runId` or sets it to null
+- **THEN** the service SHALL return `HTTP 400` with error code `VALIDATION_ERROR`
+
+#### Scenario: Computation defaults to latest
+- **WHEN** the request body omits `computation`
+- **THEN** the service SHALL resolve the latest `computation_id` for the run by ordering `test_case_eval_summaries.computed_at_ms` descending
+
+#### Scenario: Empty or omitted delimiter defaults to comma
+- **WHEN** `delimiter` is null, omitted from the request body, or the empty string
+- **THEN** the service SHALL use `,` (U+002C COMMA) as the CSV delimiter (matching the existing `TestCaseController.parseDelimiter` semantic; no error is raised)
+
+#### Scenario: Invalid delimiter
+- **WHEN** `delimiter` is longer than one character, or contains a non-ASCII character
+- **THEN** the service SHALL return `HTTP 400` with error code `VALIDATION_ERROR`
+
+#### Scenario: Columns subset size limit
+- **WHEN** `columns` has more than `ValidationConstants.MAX_EXPORT_COLUMNS` entries
+- **THEN** the service SHALL return `HTTP 400` with error code `VALIDATION_ERROR`
+
+#### Scenario: Planner output column count limit
+- **WHEN** the column planner's output (derived from the run's frozen snapshot + resolved `RunMetricSnapshot`s) contains more than `ValidationConstants.MAX_EXPORT_COLUMNS` descriptors
+- **THEN** the service SHALL fail the request with `HTTP 400` and error code `VALIDATION_ERROR`, and the error message SHALL include both the offending column count and the cap value. This check SHALL execute **after** planning and **before** selector subsetting, so a request that supplies a small `columns` array against an over-wide run cannot bypass the cap.
+
+#### Scenario: Filter array size limit
+- **WHEN** `filter` has more than `ValidationConstants.MAX_LIST_FILTER_PARAMS` entries
+- **THEN** the service SHALL return `HTTP 400` with error code `VALIDATION_ERROR`
+
+#### Scenario: Filter elements are taken verbatim (no comma-splitting)
+- **WHEN** the request body supplies `filter: ["data.tags:eq:foo,bar"]`
+- **THEN** the service SHALL treat the single element `data.tags:eq:foo,bar` as one filter token (the comma is part of the value), distinct from the comma-splitting behavior of URL query-param parsing
 
 ### Requirement: Filter and computation behave as on the list endpoint
 The `filter` and `computation` fields SHALL behave identically to the existing `GET /api/v1/analytics/eval-summaries` list endpoint. `filter` strings SHALL be parsed with the existing filter parser and validated against `FilterWhitelists.EVAL_SUMMARIES`. `computation` SHALL accept either a UUID or the literal string `"latest"`. Whether a computation exists SHALL be decided by the presence of eval-summary rows for that `(runId, computationId)` pair, never by the presence of `run_metric_snapshots` rows.
@@ -66,6 +102,6 @@ Status: **Planned**
 
 ## Implementation notes
 
-- `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportService` — the explicit-computation not-found guard is re-pointed from "no `RunMetricSnapshot` rows" to "no eval summaries for `(runId, computationId)`", using a presence check that does not fetch rows.
+- `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportService` — the explicit-computation not-found guard is re-pointed from "no `RunMetricSnapshot` rows" to "no eval summaries for `(runId, computationId)`", via `EvalSummaryRepository.existsByRunIdAndComputationId` (jOOQ `fetchExists`, no rows fetched). The `"latest"` path keeps its existing `computationResolver.resolve(...).orElseThrow(EntityNotFoundException…)` 404, which after the resolver switch is itself an eval-summary answer. The repository is already injected, so no new dependency.
 - `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportColumnPlanner` — unchanged; it already skips the whole per-metric block for an empty snapshot list.
 - `com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportColumnSelector` — unchanged; unknown-column validation already produces the 400 for a `metric::*` request against a metric-free manifest.

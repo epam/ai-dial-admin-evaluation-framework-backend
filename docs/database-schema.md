@@ -768,6 +768,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 | `idx_eval_summaries_run_computation` | `(test_suite_run_id, computation_id)` | BTREE | Lookup by run and computation batch |
 | `idx_eval_summaries_computation` | `(computation_id)` | BTREE | Lookup by computation batch |
 | `idx_eval_summaries_id` | `(id)` | BTREE | Standalone index for efficient `findById` lookups (PK has `created_at_ms` as leading column) |
+| `idx_eval_summaries_run_computed_at` | `(test_suite_run_id, computed_at_ms DESC, computation_id)` | BTREE | Latest-computation resolution (V1.15): serves `WHERE test_suite_run_id = ? ORDER BY computed_at_ms DESC LIMIT 1` as a top-1 descent with `computation_id` available from the index tuple |
 
 ### JSONB Column Schemas
 
@@ -951,6 +952,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.12 | `V1.12__AddSuiteAndTimestampToMetricScoreResult.sql` | Added `test_suite_id` and `computed_at_ms` to metric_score_result (backfilled, NOT NULL) with index `idx_metric_score_result_suite_computed` for suite-scoped latest-N retrieval |
 | V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_run_results; extended `uq_results_run_case_index` with `turn_index` |
 | V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; extended `uq_eval_summaries_natural_key` with `turn_index` |
+| V1.15 | `V1.15__AddEvalSummariesRunComputedAtIndex.sql` | Added index `idx_eval_summaries_run_computed_at` on test_case_eval_summaries `(test_suite_run_id, computed_at_ms DESC, computation_id)` for latest-computation resolution off the fact table |
 
 ---
 

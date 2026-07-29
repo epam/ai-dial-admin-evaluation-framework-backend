@@ -39,6 +39,20 @@ public interface EvalSummaryRepository {
 
     long count(List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs);
 
+    /**
+     * Resolves the run's most recent computation from the rows callers actually read, so a run
+     * whose suite had no metrics — and therefore no {@code run_metric_snapshots} — still resolves.
+     * Returns empty when the run has no eval summaries.
+     */
+    Optional<UUID> findLatestComputationId(UUID runId);
+
+    /**
+     * Tells whether the given computation produced any eval summary for the run, without
+     * fetching rows. Used by the export path to decide not-found for an explicit
+     * {@code computation=<uuid>}, which must not depend on metric snapshots existing.
+     */
+    boolean existsByRunIdAndComputationId(UUID runId, UUID computationId);
+
     List<MetricAggregationResult> aggregate(
             List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs, List<MetricPath> metrics);
 }

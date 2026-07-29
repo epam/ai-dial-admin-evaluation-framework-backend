@@ -159,6 +159,25 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     }
 
     @Override
+    public Optional<UUID> findLatestComputationId(UUID runId) {
+        return dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .orderBy(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc())
+                .limit(1)
+                .fetchOptional(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)));
+    }
+
+    @Override
+    public boolean existsByRunIdAndComputationId(UUID runId, UUID computationId) {
+        return dsl.fetchExists(
+                dsl.selectOne()
+                        .from(TEST_CASE_EVAL_SUMMARIES)
+                        .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                        .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString())));
+    }
+
+    @Override
     public List<MetricAggregationResult> aggregate(
             List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs, List<MetricPath> metrics) {
         if (metrics == null || metrics.isEmpty()) {

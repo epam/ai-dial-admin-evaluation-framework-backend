@@ -86,3 +86,4 @@ bin/
 secrets/
 credentials*
 *-credentials.json
+opencode.json

@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.functional.helper;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;

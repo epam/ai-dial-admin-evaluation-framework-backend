@@ -87,7 +87,7 @@ public class FilteredMetricScoreAggregator {
         final StructuredQuery query = withIdPredicate(statistic.query(), idPredicate);
         final List<MetricScoreValueDto> values = new ArrayList<>();
         for (final MetricField metricField : request.metricFields()) {
-            final Map<String, Expr> params = baseParams(request);
+            final Map<String, Expr> params = runAndComputationIdParams(request);
             params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
             final Double value = executeScalar(
                     query, params, MetricScoreConstants.VALUE_ALIAS, statistic.name(), metricField.flattenedName());
@@ -122,12 +122,12 @@ public class FilteredMetricScoreAggregator {
             // Unparseable custom_function; already logged by the resolver.
             return Optional.empty();
         }
-        final String valueAlias = singleValueAlias(resolved);
+        final String valueAlias = findValueAlias(resolved);
         if (valueAlias == null) {
             return Optional.empty();
         }
 
-        final Map<String, Expr> params = baseParams(request);
+        final Map<String, Expr> params = runAndComputationIdParams(request);
         if (isDefault) {
             params.put(
                     MetricScoreConstants.PARAM_METRIC_FIELD,
@@ -194,7 +194,7 @@ public class FilteredMetricScoreAggregator {
      * {@code CustomFunction} is stored opaquely and never validated as a runnable query, so its shape is
      * checked here and it may use an alias of its own.
      */
-    private String singleValueAlias(StructuredQuery query) {
+    private String findValueAlias(StructuredQuery query) {
         if (!MetricScoreConstants.ENTITY_EVAL_SUMMARIES.equals(query.entity())) {
             log.warn(
                     "Skipping metric score 'overall': definition targets entity '{}', expected '{}'",
@@ -237,7 +237,7 @@ public class FilteredMetricScoreAggregator {
         }
     }
 
-    private Map<String, Expr> baseParams(FilteredMetricScoreRequest request) {
+    private Map<String, Expr> runAndComputationIdParams(FilteredMetricScoreRequest request) {
         final Map<String, Expr> params = new HashMap<>();
         params.put(
                 MetricScoreConstants.PARAM_RUN_ID,

@@ -47,7 +47,7 @@ public class RunComparisonService implements RunComparisonProvider {
     private final EvalSummaryRepository evalSummaryRepository;
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final MetricFieldDiscoverer metricFieldDiscoverer;
-    private final FilteredMetricScoreAggregator aggregator;
+    private final FilteredMetricScoreAggregator scoreAggregator;
     private final RunComparisonProperties properties;
     private final TransactionTemplate analyticsTransactionTemplate;
 
@@ -57,7 +57,7 @@ public class RunComparisonService implements RunComparisonProvider {
             EvalSummaryRepository evalSummaryRepository,
             RunMetricSnapshotRepository runMetricSnapshotRepository,
             MetricFieldDiscoverer metricFieldDiscoverer,
-            FilteredMetricScoreAggregator aggregator,
+            FilteredMetricScoreAggregator scoreAggregator,
             RunComparisonProperties properties,
             @Qualifier("analyticsTransactionManager") PlatformTransactionManager analyticsTxManager) {
         this.testSuiteRunService = testSuiteRunService;
@@ -65,10 +65,8 @@ public class RunComparisonService implements RunComparisonProvider {
         this.evalSummaryRepository = evalSummaryRepository;
         this.runMetricSnapshotRepository = runMetricSnapshotRepository;
         this.metricFieldDiscoverer = metricFieldDiscoverer;
-        this.aggregator = aggregator;
+        this.scoreAggregator = scoreAggregator;
         this.properties = properties;
-        // There is no TransactionTemplate bean in this application; every user builds its own from the
-        // qualified manager. Read-only: this endpoint never writes.
         this.analyticsTransactionTemplate = new TransactionTemplate(analyticsTxManager);
         this.analyticsTransactionTemplate.setReadOnly(true);
     }
@@ -81,8 +79,8 @@ public class RunComparisonService implements RunComparisonProvider {
         final TestSuiteRunResponseDto first = testSuiteRunService.getRun(runIds.get(0));
         final TestSuiteRunResponseDto second = testSuiteRunService.getRun(runIds.get(1));
         requireSameSuite(first, second);
-        final OverallScoreDefinition firstDefinition = overallScoreDefinition(first);
-        final OverallScoreDefinition secondDefinition = overallScoreDefinition(second);
+        final OverallScoreDefinition firstOverallScoreDef = overallScoreDefinition(first);
+        final OverallScoreDefinition secondOverallScoreDef = overallScoreDefinition(second);
 
         // ComputationResolver requires an ambient analytics transaction (its own contract), and one
         // transaction also gives every aggregate query a consistent snapshot. @Transactional on a
@@ -91,50 +89,52 @@ public class RunComparisonService implements RunComparisonProvider {
             final UUID firstComputation = requireComputation(first.getId());
             final UUID secondComputation = requireComputation(second.getId());
 
-            final SideInputs firstSide =
-                    resolveSide(first.getId(), firstComputation, second.getId(), secondComputation);
-            final SideInputs secondSide =
-                    resolveSide(second.getId(), secondComputation, first.getId(), firstComputation);
+            final AggregationInputs firstInputs =
+                    resolveInputs(first.getId(), firstComputation, second.getId(), secondComputation);
+            final AggregationInputs secondInputs =
+                    resolveInputs(second.getId(), secondComputation, first.getId(), firstComputation);
 
             return RunComparisonResponseDto.builder()
-                    .runs(List.of(compareSide(firstSide, firstDefinition), compareSide(secondSide, secondDefinition)))
+                    .runs(List.of(
+                            aggregateScores(firstInputs, firstOverallScoreDef),
+                            aggregateScores(secondInputs, secondOverallScoreDef)))
                     .build();
         });
     }
 
     /** Counts, then the cap, then — only if it passes — the ids. */
-    private SideInputs resolveSide(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId) {
+    private AggregationInputs resolveInputs(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId) {
         final EvalSummaryMatchStats stats =
                 evalSummaryRepository.countMatches(runId, computationId, otherRunId, otherComputationId);
         requireUnmatchedWithinCap(runId, stats);
         final List<UUID> unmatchedIds =
                 evalSummaryRepository.findUnmatchedIds(runId, computationId, otherRunId, otherComputationId);
-        return new SideInputs(runId, computationId, stats, unmatchedIds);
+        return new AggregationInputs(runId, computationId, stats, unmatchedIds);
     }
 
-    private RunComparisonRunDto compareSide(SideInputs side, OverallScoreDefinition definition) {
-        final EvalSummaryMatchStats stats = side.stats();
+    private RunComparisonRunDto aggregateScores(AggregationInputs inputs, OverallScoreDefinition overallScoreDef) {
+        final EvalSummaryMatchStats stats = inputs.stats();
         final List<RunMetricSnapshot> snapshots =
-                runMetricSnapshotRepository.findByRunIdAndComputationId(side.runId(), side.computationId());
+                runMetricSnapshotRepository.findByRunIdAndComputationId(inputs.runId(), inputs.computationId());
         final List<MetricScoreValueDto> scores = stats.matchedRows() == 0
                 // Nothing matched: every aggregate would be NULL and therefore omitted, so skip the queries
                 // rather than binding the entire run for a guaranteed-empty result.
                 ? List.of()
-                : aggregator.aggregate(new FilteredMetricScoreRequest(
-                        side.runId(),
-                        side.computationId(),
-                        side.unmatchedIds(),
+                : scoreAggregator.aggregate(new FilteredMetricScoreRequest(
+                        inputs.runId(),
+                        inputs.computationId(),
+                        inputs.unmatchedIds(),
                         metricFieldDiscoverer.discover(snapshots),
-                        definition));
+                        overallScoreDef));
 
         return RunComparisonRunDto.builder()
-                .runId(side.runId())
-                .computationId(side.computationId())
+                .runId(inputs.runId())
+                .computationId(inputs.computationId())
                 .totalRowCount(stats.totalRows())
                 .matchedRowCount(stats.matchedRows())
                 .matchedSuccessRowCount(stats.matchedSuccessRows())
                 .avgExecDurationMs(toDouble(stats.avgExecDurationMs()))
-                .unmatchedEvalSummaryIds(side.unmatchedIds())
+                .unmatchedEvalSummaryIds(inputs.unmatchedIds())
                 .scores(scores)
                 .build();
     }
@@ -191,6 +191,7 @@ public class RunComparisonService implements RunComparisonProvider {
         return value == null ? null : value.doubleValue();
     }
 
-    /** One side's resolved inputs, so the two directions are computed symmetrically. */
-    private record SideInputs(UUID runId, UUID computationId, EvalSummaryMatchStats stats, List<UUID> unmatchedIds) {}
+    /** One side's resolved inputs, so the two directions are aggregated symmetrically. */
+    private record AggregationInputs(
+            UUID runId, UUID computationId, EvalSummaryMatchStats stats, List<UUID> unmatchedIds) {}
 }

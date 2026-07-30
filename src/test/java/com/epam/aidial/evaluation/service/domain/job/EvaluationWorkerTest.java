@@ -155,8 +155,8 @@ class EvaluationWorkerTest {
                         any(HttpMethod.class), anyString(), any(HttpHeaders.class), any(), any()))
                 .thenReturn(invocationResult);
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -193,8 +193,8 @@ class EvaluationWorkerTest {
                         any(HttpMethod.class), anyString(), any(HttpHeaders.class), any(), any()))
                 .thenReturn(invocationResult);
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -222,8 +222,8 @@ class EvaluationWorkerTest {
                         any(HttpMethod.class), anyString(), any(HttpHeaders.class), any(), any()))
                 .thenReturn(invocationResult);
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -248,8 +248,8 @@ class EvaluationWorkerTest {
                         any(HttpMethod.class), anyString(), any(HttpHeaders.class), any(), any()))
                 .thenThrow(new RuntimeException(new HttpTimeoutException("Request timed out")));
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -275,8 +275,8 @@ class EvaluationWorkerTest {
                         any(HttpMethod.class), anyString(), any(HttpHeaders.class), any(), any()))
                 .thenThrow(new RuntimeException(new IOException("Connection refused")));
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -306,8 +306,8 @@ class EvaluationWorkerTest {
                         any(HttpMethod.class), anyString(), any(HttpHeaders.class), any(), any()))
                 .thenReturn(invocationResult);
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -338,8 +338,8 @@ class EvaluationWorkerTest {
                 .thenReturn(failResult)
                 .thenReturn(successResult);
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -374,8 +374,8 @@ class EvaluationWorkerTest {
                         any(HttpMethod.class), anyString(), any(HttpHeaders.class), any(), any()))
                 .thenReturn(clientErrorResult);
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -436,8 +436,8 @@ class EvaluationWorkerTest {
                 new DeploymentInvocationResult(200, false, Map.of("choices", List.of()), null, new HttpHeaders());
         when(deploymentInvoker.invokeWithStreaming(any(), anyString(), any(), any(), any()))
                 .thenReturn(invocationResult);
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         TestCaseRunResult result =
@@ -492,8 +492,8 @@ class EvaluationWorkerTest {
                         any(HttpMethod.class), anyString(), headersCaptor.capture(), any(), any()))
                 .thenReturn(invocationResult);
 
-        when(responseColumnExtractor.extract(anyList(), anyString()))
-                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+        when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
         // when
         worker.execute(input, context, 0, responseColumns);
@@ -532,8 +532,8 @@ class EvaluationWorkerTest {
                     .thenReturn(callResult);
             when(mcpResponseSerializer.serialize(callResult))
                     .thenReturn("{\"content\":[{\"type\":\"text\",\"text\":\"result text\"}]}");
-            when(responseColumnExtractor.extract(anyList(), anyString()))
-                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+            when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
             TestCaseRunResult result =
                     worker.execute(input, context, 0, List.of()).getFirst();
@@ -561,8 +561,8 @@ class EvaluationWorkerTest {
             when(mcpToolInvoker.callTool(any(), any(), any(), any(), any())).thenReturn(errorResult);
             when(mcpResponseSerializer.serialize(errorResult))
                     .thenReturn("{\"content\":[{\"type\":\"text\",\"text\":\"tool error\"}],\"isError\":true}");
-            when(responseColumnExtractor.extract(anyList(), anyString()))
-                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+            when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
             TestCaseRunResult result =
                     worker.execute(input, context, 0, List.of()).getFirst();
@@ -583,8 +583,8 @@ class EvaluationWorkerTest {
                             .build());
             when(mcpToolInvoker.callTool(any(), any(), any(), any(), any()))
                     .thenThrow(new McpInvocationException(504, "MCP_TIMEOUT", "MCP tool invocation timed out"));
-            when(responseColumnExtractor.extract(anyList(), anyString()))
-                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+            when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
             TestCaseRunResult result =
                     worker.execute(input, context, 0, List.of()).getFirst();
@@ -607,8 +607,8 @@ class EvaluationWorkerTest {
             when(mcpToolInvoker.callTool(any(), any(), any(), any(), any()))
                     .thenThrow(new McpInvocationException(
                             502, "MCP_CONNECTION_ERROR", "Failed to connect to MCP endpoint"));
-            when(responseColumnExtractor.extract(anyList(), anyString()))
-                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+            when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
             TestCaseRunResult result =
                     worker.execute(input, context, 0, List.of()).getFirst();
@@ -633,8 +633,8 @@ class EvaluationWorkerTest {
                             .build());
             when(mcpToolInvoker.callTool(any(), any(), any(), any(), any())).thenReturn(callResult);
             when(mcpResponseSerializer.serialize(callResult)).thenThrow(new JacksonException("serialization error") {});
-            when(responseColumnExtractor.extract(anyList(), anyString()))
-                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]"));
+            when(responseColumnExtractor.extract(anyList(), anyString(), any()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
             TestCaseRunResult result =
                     worker.execute(input, context, 0, List.of()).getFirst();

@@ -803,6 +803,15 @@ public class EvaluationWorker {
                 responseColumns);
     }
 
+    /**
+     * Builds the persisted result row, extracting response columns with the {@code requestBodyJson}
+     * already computed by the caller for {@code TestCaseRunResult.requestBody} fed uniformly into the
+     * extractor's {@code $request} frame binding (see {@link ResponseColumnExtractor}). For a single-turn
+     * DEPLOYMENT HTTP case this is the resolved-and-serialized request body actually sent
+     * ({@link #serializeBodyForAnalytics}); for an MCP tool call it is the serialized resolved tool
+     * arguments ({@link #serializeBody}) — a coherent "what was sent" value in both cases, even though
+     * an MCP row has no HTTP request body in the traditional sense.
+     */
     private TestCaseRunResult buildResult(
             TestCaseRunInput input,
             EvaluationContext context,
@@ -820,7 +829,7 @@ public class EvaluationWorker {
             List<ResponseColumnDefinitionDto> responseColumns) {
 
         ResponseColumnExtractor.ExtractionResult extraction =
-                responseColumnExtractor.extract(responseColumns, responseBody);
+                responseColumnExtractor.extract(responseColumns, responseBody, requestBodyJson);
 
         return TestCaseRunResult.builder()
                 .id(UUID.randomUUID())

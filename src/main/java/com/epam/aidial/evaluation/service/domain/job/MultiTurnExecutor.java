@@ -233,7 +233,7 @@ public class MultiTurnExecutor {
                 .extractedColumns(extractedColumnsJson)
                 .extractionWarnings(extractionWarningsJson)
                 .retryCount(outcome != null ? outcome.retryCount() : 0)
-                .logDetails(null)
+                .logDetails(outcome != null ? outcome.logDetails() : null)
                 .createdAtMs(context.getCreatedAtMs())
                 .build();
     }

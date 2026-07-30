@@ -204,7 +204,7 @@ public class TestCaseEvalSummaries extends TableImpl<TestCaseEvalSummariesRecord
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_EVAL_SUMMARIES_COMPUTATION, Indexes.IDX_EVAL_SUMMARIES_ID, Indexes.IDX_EVAL_SUMMARIES_RUN_COMPUTATION, Indexes.UQ_EVAL_SUMMARIES_NATURAL_KEY);
+        return Arrays.asList(Indexes.IDX_EVAL_SUMMARIES_COMPUTATION, Indexes.IDX_EVAL_SUMMARIES_ID, Indexes.IDX_EVAL_SUMMARIES_RUN_COMPUTATION, Indexes.IDX_EVAL_SUMMARIES_RUN_COMPUTED_AT, Indexes.UQ_EVAL_SUMMARIES_NATURAL_KEY);
     }
 
     @Override

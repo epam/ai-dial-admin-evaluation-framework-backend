@@ -31,6 +31,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteUpdateResultDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -41,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -157,6 +159,75 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(runId);
         assertThat(snapshots).hasSize(1);
         assertThat(snapshots.get(0).get("tsmd_name")).isEqualTo("Accuracy");
+    }
+
+    @Test
+    @DisplayName("Should import results for a metric-less suite and expose them through the eval-summary list")
+    void shouldImportResultsForMetricLessSuite() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("expected")
+                .type(SchemaFieldType.STRING)
+                .required(true)
+                .build()));
+        TestSuiteResponseDto suite = createSuiteWithResponseColumn("Suite For Metric-less Eval Import", datasetId);
+
+        String csv = buildCsv(
+                List.of(
+                        "testCaseName",
+                        "runIndex",
+                        "responseBody",
+                        "responseStatusCode",
+                        "executionStatus",
+                        "startedAt",
+                        "completedAt",
+                        "testCaseData",
+                        "extractedColumns"),
+                List.of(
+                        List.of(
+                                "tc-1",
+                                "0",
+                                "{\"choices\":[{\"message\":{\"content\":\"Imported answer 1.\"}}]}",
+                                "200",
+                                "SUCCESS",
+                                "1000",
+                                "1500",
+                                "{\"expected\":\"answer1\"}",
+                                "{\"answer\":\"Imported answer 1.\"}"),
+                        List.of(
+                                "tc-2",
+                                "0",
+                                "{\"choices\":[{\"message\":{\"content\":\"Imported answer 2.\"}}]}",
+                                "200",
+                                "SUCCESS",
+                                "1000",
+                                "1500",
+                                "{\"expected\":\"answer2\"}",
+                                "{\"answer\":\"Imported answer 2.\"}")));
+
+        ResponseEntity<TestSuiteRunResponseDto> importResponse =
+                postImportCsv(suite.getId(), csv, TestSuiteRunResponseDto.class);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        UUID runId = importResponse.getBody().getId();
+        assertThat(awaitRunTerminal(runId, 15).getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        // Phase 2 runs unconditionally on the import path too, so the imported rows are readable.
+        assertThat(analyticsTestDataHelper.findRunMetricSnapshotsByRunId(runId)).isEmpty();
+
+        var listResponse = restTemplate.exchange(
+                apiUrl("/analytics/eval-summaries?filter=runId:eq:" + runId + "&size=10"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<CursorPageResponseDto<Object>>() {});
+
+        assertThat(listResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(listResponse.getBody().getContent()).hasSize(2);
+        assertThat(listResponse.getBody().getContent()).allSatisfy(item -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = (Map<String, Object>) item;
+            assertThat(row.get("metricValues")).isEqualTo(Map.of());
+            assertThat((String) row.get("testCaseName")).startsWith("tc-");
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -453,6 +524,22 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
     }
 
     private TestSuiteResponseDto createSuiteWithResponseColumnAndMetric(String name, UUID datasetId) {
+        TestSuiteResponseDto suite = createSuiteWithResponseColumn(name, datasetId);
+
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        metricDeclarationTestDataProvider.insertSeedVersionForAccuracy();
+        UUID declarationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID versionId = UUID.fromString("770e8400-e29b-41d4-a716-446655440001");
+        String inputBindings = """
+                [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
+                """;
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                suite.getId(), declarationId, versionId, "Accuracy", "[]", inputBindings.trim());
+
+        return suite;
+    }
+
+    private TestSuiteResponseDto createSuiteWithResponseColumn(String name, UUID datasetId) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name)
                 .description("Description for " + name)
@@ -489,17 +576,6 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         TestSuiteResponseDto suite = response.getBody();
         assertThat(suite).isNotNull();
-
-        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
-        metricDeclarationTestDataProvider.insertSeedVersionForAccuracy();
-        UUID declarationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        UUID versionId = UUID.fromString("770e8400-e29b-41d4-a716-446655440001");
-        String inputBindings = """
-                [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
-                """;
-        metaTestDataHelper.createTestSuiteMetricDefinition(
-                suite.getId(), declarationId, versionId, "Accuracy", "[]", inputBindings.trim());
-
         return suite;
     }
 }

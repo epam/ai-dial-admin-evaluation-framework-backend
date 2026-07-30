@@ -94,6 +94,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         UUID computationId = UUID.randomUUID();
         insertRunMetricSnapshots(completedRun.getId(), computationId);
+        insertEvalSummaries(testSuiteId, completedRun.getId(), computationId, 2);
 
         EvalSummaryExportRequestDto request = EvalSummaryExportRequestDto.builder()
                 .runId(completedRun.getId())
@@ -115,6 +116,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         UUID computationId = UUID.randomUUID();
         insertRunMetricSnapshots(completedRun.getId(), computationId);
+        insertEvalSummaries(testSuiteId, completedRun.getId(), computationId, 2);
 
         EvalSummaryExportRequestDto request = EvalSummaryExportRequestDto.builder()
                 .runId(completedRun.getId())
@@ -143,7 +145,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName("Export with computation=latest when no snapshots exist returns HTTP 404")
+    @DisplayName("Export with computation=latest when no eval summaries exist returns HTTP 404")
     void exportLatestWithNoSnapshotsReturns404() {
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
 
@@ -178,6 +180,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         UUID computationId = UUID.randomUUID();
         insertRunMetricSnapshots(completedRun.getId(), computationId);
+        insertEvalSummaries(testSuiteId, completedRun.getId(), computationId, 2);
 
         EvalSummaryExportRequestDto request = EvalSummaryExportRequestDto.builder()
                 .runId(completedRun.getId())
@@ -216,6 +219,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         UUID computationId = UUID.randomUUID();
         insertRunMetricSnapshots(completedRun.getId(), computationId);
+        insertEvalSummaries(testSuiteId, completedRun.getId(), computationId, 2);
 
         ResponseEntity<String> response = restTemplate.exchange(
                 previewUrl(completedRun.getId(), null) + "&filter=noSuchField:eq:x",
@@ -712,6 +716,100 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(response.getBody()).contains("UNSUPPORTED_SNAPSHOT_VERSION");
+    }
+
+    @Test
+    @DisplayName("Metric-free run: export and preview emit a metric-free manifest, 200 for its computation, "
+            + "404 for an unknown one, and 400 for an explicit metric column")
+    void metricFreeRunExportsWithoutMetricColumns() {
+        String testCaseSchemaJson = "[{\"name\":\"prompt\",\"type\":\"STRING\"}]";
+        String responseColumnsJson = "[{\"name\":\"answer\",\"expression\":\"$.a\",\"type\":\"STRING\"}]";
+        metaTestDataHelper.updateSuiteSchema(testSuiteId, testCaseSchemaJson, responseColumnsJson);
+
+        TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
+        UUID computationId = UUID.randomUUID();
+        insertMetricLessEvalSummaries(completedRun.getId(), computationId);
+
+        // (a) Default export: identity + data:: + response:: columns, and no metric column family.
+        EvalSummaryExportRequestDto defaultRequest = EvalSummaryExportRequestDto.builder()
+                .runId(completedRun.getId())
+                .build();
+        ResponseEntity<String> defaultResponse =
+                restTemplate.postForEntity(exportUrl(), jsonEntity(defaultRequest), String.class);
+
+        assertThat(defaultResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String header = defaultResponse.getBody().split("\\r?\\n", 2)[0];
+        assertThat(header).contains("testCaseName", "executionStatus", "data::prompt", "response::answer");
+        assertThat(header).doesNotContain("metric::", "metricInfo::", "metricError::");
+
+        // (b) Explicit computation of a metric-free run is found (previously 404 on empty snapshots).
+        EvalSummaryExportRequestDto explicitRequest = EvalSummaryExportRequestDto.builder()
+                .runId(completedRun.getId())
+                .computation(computationId.toString())
+                .build();
+        assertThat(restTemplate
+                        .postForEntity(exportUrl(), jsonEntity(explicitRequest), String.class)
+                        .getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+
+        // (c) A computation that produced nothing is still not found.
+        EvalSummaryExportRequestDto unknownRequest = EvalSummaryExportRequestDto.builder()
+                .runId(completedRun.getId())
+                .computation(UUID.randomUUID().toString())
+                .build();
+        assertThat(restTemplate
+                        .postForEntity(exportUrl(), jsonEntity(unknownRequest), String.class)
+                        .getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+
+        // (d) Preview returns the full manifest — including the body columns the default CSV omits —
+        // and still no metric columns.
+        ResponseEntity<List<List<Object>>> previewResponse = restTemplate.exchange(
+                previewUrl(completedRun.getId(), null),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<List<List<Object>>>() {});
+
+        assertThat(previewResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Object> previewHeaders = previewResponse.getBody().get(0);
+        assertThat(previewHeaders).contains("data::prompt", "response::answer", "requestBody", "responseBody");
+        assertThat(previewHeaders)
+                .noneSatisfy(name -> assertThat((String) name)
+                        .satisfiesAnyOf(
+                                value -> assertThat(value).startsWith("metric::"),
+                                value -> assertThat(value).startsWith("metricInfo::"),
+                                value -> assertThat(value).startsWith("metricError::")));
+
+        // (e) An explicit metric column is unknown against a metric-free manifest.
+        EvalSummaryExportRequestDto metricColumnRequest = EvalSummaryExportRequestDto.builder()
+                .runId(completedRun.getId())
+                .columns(List.of("metric::Accuracy::score"))
+                .build();
+        ResponseEntity<String> metricColumnResponse =
+                restTemplate.postForEntity(exportUrl(), jsonEntity(metricColumnRequest), String.class);
+
+        assertThat(metricColumnResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(metricColumnResponse.getBody()).contains("VALIDATION_ERROR", "metric::Accuracy::score");
+    }
+
+    private void insertMetricLessEvalSummaries(UUID runId, UUID computationId) {
+        List<EvalSummaryBatchWriteItemDto> items = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            EvalSummaryBatchWriteItemDto item = buildBasicSummaryItem(UUID.randomUUID(), "metric-free-" + i);
+            item.setMetricValues(JsonNodeFactory.instance.objectNode());
+            ObjectNode extractedColumns = JsonNodeFactory.instance.objectNode();
+            extractedColumns.put("answer", "answer-" + i);
+            item.setExtractedColumns(extractedColumns);
+            items.add(item);
+        }
+        EvalSummaryBatchWriteRequestDto request = EvalSummaryBatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(runId)
+                .computationId(computationId)
+                .computedAtMs(System.currentTimeMillis())
+                .items(items)
+                .build();
+        restTemplate.postForEntity(apiUrl("/analytics/eval-summaries"), jsonEntity(request), String.class);
     }
 
     private String exportUrl() {

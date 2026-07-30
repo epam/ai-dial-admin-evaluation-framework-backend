@@ -63,8 +63,11 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     @Override
     public void execute(MetricEvaluationContext context) {
         if (context.getAggregatedTsmds().isEmpty()) {
-            log.info("No TSMDs in context for run {}, skipping metric evaluation", context.getTestSuiteRunId());
-            return;
+            // A metric-less run still writes one eval summary per result row (empty metric_values,
+            // no metric_infos, no run metric snapshots), so its responses and extracted columns
+            // remain readable through the eval-summary endpoints. Everything below degenerates
+            // correctly on an empty TSMD list — no separate metric-less branch.
+            log.info("No TSMDs in context for run {}, writing metric-less eval summaries", context.getTestSuiteRunId());
         }
 
         log.info(

@@ -2,11 +2,14 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
@@ -42,7 +45,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
-@DisplayName("InProcessMetricEvaluationExecutor — per-result timeout")
+@DisplayName("InProcessMetricEvaluationExecutor")
 @ExtendWith(MockitoExtension.class)
 class InProcessMetricEvaluationExecutorTest {
 
@@ -54,8 +57,11 @@ class InProcessMetricEvaluationExecutorTest {
     @Mock
     private MetricEvaluationWorker worker;
 
-    @Mock
-    private MetricOutputMapper outputMapper;
+    // A spy over the real mapper, not a mock: the metric-less tests assert the {@code {}} /
+    // {@code null} shape the mapper itself produces, which an unstubbed mock would report as
+    // {@code null} and a stubbed one would make tautological.
+    @Spy
+    private MetricOutputMapper outputMapper = new MetricOutputMapper(new ObjectMapper());
 
     @Mock
     private EvalSummaryBatchWriteClient evalSummaryBatchWriteClient;
@@ -125,8 +131,8 @@ class InProcessMetricEvaluationExecutorTest {
 
         ObjectNode values = objectMapper.createObjectNode();
         values.putObject("Accuracy").put("score", 1);
-        when(outputMapper.buildMetricValues(any())).thenReturn(values);
-        when(outputMapper.buildMetricInfos(any())).thenReturn(null);
+        doReturn(values).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
 
         executor.execute(context);
 
@@ -188,8 +194,8 @@ class InProcessMetricEvaluationExecutorTest {
         infos.putObject("SlowMetric")
                 .putObject("score")
                 .put("error", "Metric evaluation timed out for TSMD SlowMetric");
-        when(outputMapper.buildMetricValues(any())).thenReturn(values);
-        when(outputMapper.buildMetricInfos(any())).thenReturn(infos);
+        doReturn(values).when(outputMapper).buildMetricValues(any());
+        doReturn(infos).when(outputMapper).buildMetricInfos(any());
 
         executor.execute(context);
 
@@ -233,8 +239,8 @@ class InProcessMetricEvaluationExecutorTest {
 
         ObjectNode emptyValues = objectMapper.createObjectNode();
         when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.skip());
-        when(outputMapper.buildMetricValues(any())).thenReturn(emptyValues);
-        when(outputMapper.buildMetricInfos(any())).thenReturn(null);
+        doReturn(emptyValues).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
 
         executor.execute(context);
 
@@ -279,8 +285,8 @@ class InProcessMetricEvaluationExecutorTest {
         ObjectNode infos = objectMapper.createObjectNode();
         when(conditionExpressionEvaluator.evaluate(any(), any()))
                 .thenReturn(ConditionDecision.error("Condition did not evaluate to a boolean"));
-        when(outputMapper.buildMetricValues(any())).thenReturn(emptyValues);
-        when(outputMapper.buildMetricInfos(any())).thenReturn(infos);
+        doReturn(emptyValues).when(outputMapper).buildMetricValues(any());
+        doReturn(infos).when(outputMapper).buildMetricInfos(any());
 
         executor.execute(context);
 
@@ -292,6 +298,119 @@ class InProcessMetricEvaluationExecutorTest {
         assertThat(captor.getValue().get(0).getExecutionStatus())
                 .as("a broken condition must not fail the result row")
                 .isEqualTo(ExecutionStatus.SUCCESS);
+    }
+
+    @Test
+    @DisplayName("Empty TSMD list — one metric-less EvalSummary per result row and no metric work at all")
+    void emptyTsmds_writeOneMetricLessSummaryPerResult() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L);
+
+        TestCaseRunResult first = successResult(runId, suiteId, "tc1");
+        TestCaseRunResult second = successResult(runId, suiteId, "tc2");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(first, second), null, false));
+
+        executor.execute(context);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());
+
+        List<EvalSummaryBatchWriteItemDto> items = captor.getValue();
+        assertThat(items).hasSize(2);
+        assertThat(items).allSatisfy(item -> {
+            assertThat(item.getMetricValues()).isNotNull();
+            assertThat(item.getMetricValues().isEmpty()).isTrue();
+            assertThat(item.getMetricInfos()).isNull();
+        });
+
+        // No snapshot rows: the client is still called, with an empty list it discards.
+        verify(runMetricSnapshotBatchWriteClient).batchWrite(eq(runId), any(), any(), argThat(List::isEmpty));
+        verifyNoInteractions(worker);
+        verifyNoInteractions(conditionExpressionEvaluator);
+    }
+
+    @Test
+    @DisplayName("Empty TSMD list — per-row status is preserved and every non-metric field is carried through")
+    void emptyTsmds_preserveStatusAndPayload() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L);
+
+        TestCaseRunResult success = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("turn-1-of-2")
+                .runIndex(3)
+                .turnIndex(1)
+                .totalTurns(2)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{\"prompt\":\"hi\"}")
+                .extractedColumns("{\"answer\":\"there\"}")
+                .extractionWarnings("[\"missing: score\"]")
+                .execDurationMs(42L)
+                .responseStatusCode(200)
+                .build();
+        TestCaseRunResult failed = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("transport-failure")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.FAILED)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .execDurationMs(7L)
+                .responseStatusCode(500)
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(success, failed), null, false));
+
+        executor.execute(context);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());
+
+        List<EvalSummaryBatchWriteItemDto> items = captor.getValue();
+        assertThat(items)
+                .extracting(EvalSummaryBatchWriteItemDto::getExecutionStatus)
+                .containsExactly(ExecutionStatus.SUCCESS, ExecutionStatus.FAILED);
+
+        EvalSummaryBatchWriteItemDto successItem = items.get(0);
+        assertThat(successItem.getRunIndex()).isEqualTo(3);
+        assertThat(successItem.getTurnIndex()).isEqualTo(1);
+        assertThat(successItem.getTotalTurns()).isEqualTo(2);
+        assertThat(successItem.getExecDurationMs()).isEqualTo(42L);
+        assertThat(successItem.getResponseStatusCode()).isEqualTo(200);
+        assertThat(successItem.getTestCaseData().get("prompt").asString()).isEqualTo("hi");
+        assertThat(successItem.getExtractedColumns().get("answer").asString()).isEqualTo("there");
+        assertThat(successItem.getExtractionWarnings().get(0).asString()).isEqualTo("missing: score");
+
+        EvalSummaryBatchWriteItemDto failedItem = items.get(1);
+        assertThat(failedItem.getExecDurationMs()).isEqualTo(7L);
+        assertThat(failedItem.getResponseStatusCode()).isEqualTo(500);
+    }
+
+    private static TestCaseRunResult successResult(UUID runId, UUID suiteId, String testCaseName) {
+        return TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName(testCaseName)
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
     }
 
     private MetricEvaluationContext buildContext(

@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.runner.job;
 
-import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
@@ -19,37 +18,56 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 /**
- * Runs a given list of test cases concurrently against a deployment, using virtual threads bounded by
- * a semaphore. DB-free: takes its test cases as a plain list and delivers results to a
- * {@link ResultBatchWriter}, so a standalone runner (no DB) can reuse the exact same
- * dispatch/rate-limit/cancellation logic that {@code InProcessEvaluationExecutor} uses for DB-backed runs.
+ * Runs test cases concurrently against a deployment, using virtual threads bounded by a semaphore.
+ * DB-free: delivers results to a {@link ResultBatchWriter}, so a standalone runner (no DB) can reuse the
+ * exact same dispatch/rate-limit/cancellation logic that {@code InProcessEvaluationExecutor} uses for
+ * DB-backed runs.
+ *
+ * <p>Session-scoped: one instance per run, created by {@link TestCaseRunnerFactory}, not a Spring bean —
+ * it holds the run's {@link Semaphore}/rate-limit {@link Bucket} as instance state for the run's whole
+ * lifetime, so both stay correctly bounded/paced across every {@link #submit(List)} call (e.g. once per
+ * DB page from {@code InProcessEvaluationExecutor}) rather than resetting per call. Callers submit every
+ * page's worth of test cases, then call {@link #awaitCompletion()} exactly once at the end.
  */
 @Slf4j
-@Component
-@LogExecution
-@RequiredArgsConstructor
 public class TestCaseRunner {
 
     private final EvaluationWorker evaluationWorker;
     private final TestCaseRunResultFactory testCaseRunResultFactory;
     private final Clock clock;
+    private final EvaluationContext context;
+    private final List<ResponseColumnDefinitionDto> responseColumns;
+    private final ResultBatchWriter resultsWriter;
+    private final String token;
 
-    public void run(
-            List<TestCaseRunInput> testCases,
+    private final Semaphore semaphore;
+    private final ExecutorService executor;
+    private final Bucket rateLimitBucket;
+    private final List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+    TestCaseRunner(
+            EvaluationWorker evaluationWorker,
+            TestCaseRunResultFactory testCaseRunResultFactory,
+            Clock clock,
             EvaluationContext context,
             List<ResponseColumnDefinitionDto> responseColumns,
             ResultBatchWriter resultsWriter) {
-        Semaphore semaphore = new Semaphore(context.getConcurrencyLevel());
-        ExecutorService executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
-        Bucket rateLimitBucket = createRateLimitBucket(context.getRateLimitRps());
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-        String token = context.getToken();
+        this.evaluationWorker = evaluationWorker;
+        this.testCaseRunResultFactory = testCaseRunResultFactory;
+        this.clock = clock;
+        this.context = context;
+        this.responseColumns = responseColumns;
+        this.resultsWriter = resultsWriter;
+        this.token = context.getToken();
+        this.semaphore = new Semaphore(context.getConcurrencyLevel());
+        this.executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
+        this.rateLimitBucket = createRateLimitBucket(context.getRateLimitRps());
+    }
 
+    public void submit(List<TestCaseRunInput> testCases) {
         try {
             for (TestCaseRunInput input : testCases) {
                 for (int runIndex = 0; runIndex < context.getNumberOfRuns(); runIndex++) {
@@ -124,7 +142,15 @@ public class TestCaseRunner {
                     futures.add(future);
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.info("Executor interrupted for run {}", context.getRunId());
+            context.getCancellationSignal().set(true);
+        }
+    }
 
+    public void awaitCompletion() {
+        try {
             // Stop accepting new tasks; wait either unbounded (normal) or grace-bounded (cancelled).
             executor.shutdown();
             if (!context.getCancellationSignal().get()) {

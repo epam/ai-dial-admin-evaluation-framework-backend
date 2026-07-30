@@ -18,6 +18,7 @@ import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.ResultBatchWriter;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
+import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
@@ -43,6 +44,9 @@ class InProcessEvaluationExecutorTest {
     private TestCaseRunInputRepository testCaseRunInputRepository;
 
     @Mock
+    private TestCaseRunnerFactory testCaseRunnerFactory;
+
+    @Mock
     private TestCaseRunner testCaseRunner;
 
     @Mock
@@ -59,7 +63,7 @@ class InProcessEvaluationExecutorTest {
     @BeforeEach
     void setUp() {
         executor = new InProcessEvaluationExecutor(
-                testCaseRepository, testCaseRunInputRepository, testCaseRunner, resultBatchWriterFactory);
+                testCaseRepository, testCaseRunInputRepository, testCaseRunnerFactory, resultBatchWriterFactory);
     }
 
     private EvaluationContext buildContext(UUID suiteId, int numberOfRuns, int numberOfTestCases) {
@@ -131,6 +135,10 @@ class InProcessEvaluationExecutorTest {
                 .thenReturn(writer);
     }
 
+    private void stubCreateRunner(EvaluationContext context) {
+        when(testCaseRunnerFactory.create(eq(context), anyList(), eq(writer))).thenReturn(testCaseRunner);
+    }
+
     // ------------------------------------------------------------------
     // Snapshot path (inputs table)
     // ------------------------------------------------------------------
@@ -141,6 +149,7 @@ class InProcessEvaluationExecutorTest {
         TestCaseRunInput input = buildInput();
         EvaluationContext context = buildContext(SUITE_ID, 1, 1);
         stubCreateWriter();
+        stubCreateRunner(context);
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input));
@@ -149,12 +158,13 @@ class InProcessEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseRunInput>> pageCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseRunner).run(pageCaptor.capture(), eq(context), anyList(), eq(writer));
+        verify(testCaseRunner).submit(pageCaptor.capture());
         assertThat(pageCaptor.getValue())
                 .extracting(TestCaseRunInput::getTestCaseId)
                 .containsExactly(input.getTestCaseId());
 
         verify(testCaseRepository, never()).findValidByDatasetIdExcludingIds(any(), anyList(), anyInt(), anyInt());
+        verify(testCaseRunner).awaitCompletion();
         verify(writer).flush();
     }
 
@@ -164,6 +174,7 @@ class InProcessEvaluationExecutorTest {
         TestCase testCase = buildTestCase();
         EvaluationContext context = buildContext(SUITE_ID, 1, 1);
         stubCreateWriter();
+        stubCreateRunner(context);
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(false);
         when(testCaseRepository.findValidByDatasetIdExcludingIds(eq(DATASET_ID), eq(List.of()), eq(0), eq(100)))
@@ -173,13 +184,14 @@ class InProcessEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseRunInput>> pageCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseRunner).run(pageCaptor.capture(), eq(context), anyList(), eq(writer));
+        verify(testCaseRunner).submit(pageCaptor.capture());
         TestCaseRunInput wrapped = pageCaptor.getValue().get(0);
         assertThat(wrapped.getTestCaseId()).isEqualTo(testCase.getId());
         assertThat(wrapped.getTestCaseName()).isEqualTo(testCase.getTestCaseName());
         assertThat(wrapped.getTestCaseData()).isEqualTo(testCase.getData());
 
         verify(testCaseRunInputRepository, never()).findByRunId(any(), anyInt(), anyInt());
+        verify(testCaseRunner).awaitCompletion();
         verify(writer).flush();
     }
 
@@ -188,18 +200,22 @@ class InProcessEvaluationExecutorTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("The writer created by the factory is passed straight through to TestCaseRunner.run")
-    void execute_passesFactoryCreatedWriterToTestCaseRunner() {
-        TestCaseRunInput input = buildInput();
-        EvaluationContext context = buildContext(SUITE_ID, 1, 1);
+    @DisplayName("The runner created by the factory receives the whole page and is awaited once")
+    void execute_submitsWholePageAndAwaitsCompletionOnce() {
+        TestCaseRunInput input1 = buildInput();
+        TestCaseRunInput input2 = buildInput();
+        EvaluationContext context = buildContext(SUITE_ID, 1, 2);
         stubCreateWriter();
+        stubCreateRunner(context);
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
-        when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input));
+        when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input1, input2));
 
         executor.execute(context);
 
-        verify(testCaseRunner).run(anyList(), eq(context), anyList(), eq(writer));
+        verify(testCaseRunnerFactory).create(eq(context), anyList(), eq(writer));
+        verify(testCaseRunner).submit(eq(List.of(input1, input2)));
+        verify(testCaseRunner, times(1)).awaitCompletion();
         verify(writer).flush();
     }
 
@@ -209,6 +225,7 @@ class InProcessEvaluationExecutorTest {
         TestCaseRunInput input = buildInput();
         EvaluationContext context = buildContext(SUITE_ID, 1, 1);
         stubCreateWriter();
+        stubCreateRunner(context);
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(List.of(input));
@@ -223,6 +240,7 @@ class InProcessEvaluationExecutorTest {
     void shouldRethrow_whenDispatchLoopFails() {
         EvaluationContext context = buildContext(SUITE_ID, 1, 1);
         stubCreateWriter();
+        stubCreateRunner(context);
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
         when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100))
@@ -232,7 +250,8 @@ class InProcessEvaluationExecutorTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("DB down");
 
-        verify(testCaseRunner, never()).run(any(), any(), any(), any());
+        verify(testCaseRunner, never()).submit(any());
+        verify(testCaseRunner, never()).awaitCompletion();
         // Best-effort flush invoked (catch + finally — at least once).
         verify(writer, atLeastOnce()).flush();
     }

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,12 +51,14 @@ class TestCaseRunnerTest {
 
     private TestCaseRunResultFactory testCaseRunResultFactory;
 
-    private TestCaseRunner testCaseRunner;
-
     @BeforeEach
     void setUp() {
         testCaseRunResultFactory = new TestCaseRunResultFactory(new ObjectMapper());
-        testCaseRunner = new TestCaseRunner(evaluationWorker, testCaseRunResultFactory, fixedClock);
+    }
+
+    private TestCaseRunner createRunner(EvaluationContext context) {
+        return new TestCaseRunner(
+                evaluationWorker, testCaseRunResultFactory, fixedClock, context, List.of(), resultsWriter);
     }
 
     private EvaluationContext buildContext(int numberOfRuns, int numberOfTestCases) {
@@ -112,16 +115,18 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName("run with single test case calls worker and delivers results to writer")
-    void run_singleTestCase_callsWorkerAndDeliversResults() {
+    @DisplayName("submit with single test case calls worker and delivers results to writer")
+    void submit_singleTestCase_callsWorkerAndDeliversResults() {
         TestCaseRunInput input = buildInput();
         TestCaseRunResult result = buildResult(input);
         EvaluationContext context = buildContext(1, 1);
+        TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), eq(0), anyList()))
                 .thenReturn(List.of(result));
 
-        testCaseRunner.run(List.of(input), context, List.of(), resultsWriter);
+        runner.submit(List.of(input));
+        runner.awaitCompletion();
 
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(any(TestCaseRunInput.class), any(EvaluationContext.class), eq(0), anyList());
@@ -129,18 +134,20 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName("run with multiple test cases processes all")
-    void run_multipleTestCases_processesAll() {
+    @DisplayName("submit with multiple test cases processes all")
+    void submit_multipleTestCases_processesAll() {
         TestCaseRunInput input1 = buildInput();
         TestCaseRunInput input2 = buildInput();
         TestCaseRunResult result1 = buildResult(input1);
         TestCaseRunResult result2 = buildResult(input2);
         EvaluationContext context = buildContext(1, 2);
+        TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenReturn(List.of(result1));
         when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
-        testCaseRunner.run(List.of(input1, input2), context, List.of(), resultsWriter);
+        runner.submit(List.of(input1, input2));
+        runner.awaitCompletion();
 
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input1), any(EvaluationContext.class), eq(0), anyList());
@@ -151,17 +158,19 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName("run with multiple runs calls worker per run")
-    void run_multipleRuns_callsWorkerPerRun() {
+    @DisplayName("submit with multiple runs calls worker per run")
+    void submit_multipleRuns_callsWorkerPerRun() {
         TestCaseRunInput input = buildInput();
         TestCaseRunResult result0 = buildResult(input);
         TestCaseRunResult result1 = buildResult(input);
         EvaluationContext context = buildContext(2, 1);
+        TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input), any(), eq(0), anyList())).thenReturn(List.of(result0));
         when(evaluationWorker.execute(eq(input), any(), eq(1), anyList())).thenReturn(List.of(result1));
 
-        testCaseRunner.run(List.of(input), context, List.of(), resultsWriter);
+        runner.submit(List.of(input));
+        runner.awaitCompletion();
 
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input), any(EvaluationContext.class), eq(0), anyList());
@@ -170,20 +179,22 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName("run with cancellation before dispatch stops early")
-    void run_cancellationBeforeDispatch_stopsEarly() {
+    @DisplayName("submit with cancellation before dispatch stops early")
+    void submit_cancellationBeforeDispatch_stopsEarly() {
         AtomicBoolean cancellationSignal = new AtomicBoolean(true);
         EvaluationContext context =
                 buildContextBuilder(1, 1).cancellationSignal(cancellationSignal).build();
+        TestCaseRunner runner = createRunner(context);
 
-        testCaseRunner.run(List.of(buildInput()), context, List.of(), resultsWriter);
+        runner.submit(List.of(buildInput()));
+        runner.awaitCompletion();
 
         verify(evaluationWorker, never()).execute(any(), any(), any(Integer.class), anyList());
     }
 
     @Test
-    @DisplayName("run with rate limiting processes all test cases")
-    void run_withRateLimiting_processesAllTestCases() {
+    @DisplayName("submit with rate limiting processes all test cases")
+    void submit_withRateLimiting_processesAllTestCases() {
         TestCaseRunInput input1 = buildInput();
         TestCaseRunInput input2 = buildInput();
         TestCaseRunResult result1 = buildResult(input1);
@@ -192,11 +203,13 @@ class TestCaseRunnerTest {
         // Use a high rate limit so the test doesn't slow down
         EvaluationContext context =
                 buildContextBuilder(1, 2).rateLimitRps(100.0).build();
+        TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenReturn(List.of(result1));
         when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
-        testCaseRunner.run(List.of(input1, input2), context, List.of(), resultsWriter);
+        runner.submit(List.of(input1, input2));
+        runner.awaitCompletion();
 
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input1), any(EvaluationContext.class), eq(0), anyList());
@@ -207,18 +220,20 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName("run with worker exception synthesizes ERROR row and continues with other cases")
-    void run_workerException_continuesWithOtherCases() {
+    @DisplayName("submit with worker exception synthesizes ERROR row and continues with other cases")
+    void submit_workerException_continuesWithOtherCases() {
         TestCaseRunInput input1 = buildInput();
         TestCaseRunInput input2 = buildInput();
         TestCaseRunResult result2 = buildResult(input2);
         EvaluationContext context = buildContext(1, 2);
+        TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList()))
                 .thenThrow(new RuntimeException("Worker failed"));
         when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
-        testCaseRunner.run(List.of(input1, input2), context, List.of(), resultsWriter);
+        runner.submit(List.of(input1, input2));
+        runner.awaitCompletion();
 
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input1), any(EvaluationContext.class), eq(0), anyList());
@@ -252,6 +267,7 @@ class TestCaseRunnerTest {
                 .concurrencyLevel(2)
                 .cancellationGracePeriodMs(50L)
                 .build();
+        TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenAnswer(inv -> {
             Thread.sleep(200);
@@ -262,7 +278,8 @@ class TestCaseRunnerTest {
             return List.of(result2);
         });
 
-        testCaseRunner.run(List.of(input1, input2), context, List.of(), resultsWriter);
+        runner.submit(List.of(input1, input2));
+        runner.awaitCompletion();
 
         verify(resultsWriter).addResults(eq(List.of(result1)));
         verify(resultsWriter).addResults(eq(List.of(result2)));
@@ -275,11 +292,13 @@ class TestCaseRunnerTest {
         TestCaseRunInput input2 = buildInput();
         TestCaseRunResult result2 = buildResult(input2);
         EvaluationContext context = buildContext(1, 2);
+        TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenThrow(new RuntimeException("boom"));
         when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
 
-        testCaseRunner.run(List.of(input1, input2), context, List.of(), resultsWriter);
+        runner.submit(List.of(input1, input2));
+        runner.awaitCompletion();
 
         verify(resultsWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(List.of(result2)));
 
@@ -318,6 +337,7 @@ class TestCaseRunnerTest {
                 .cancellationSignal(cancellationSignal)
                 .cancellationGracePeriodMs(50L)
                 .build();
+        TestCaseRunner runner = createRunner(context);
 
         // Each worker flips the cancellation signal then blocks. The main thread either
         // (a) reaches the post-dispatch signal check after a worker flipped it → bounded
@@ -335,7 +355,8 @@ class TestCaseRunnerTest {
                     return List.of(buildResult(in));
                 });
 
-        testCaseRunner.run(List.of(input1, input2), context, List.of(), resultsWriter);
+        runner.submit(List.of(input1, input2));
+        runner.awaitCompletion();
 
         ArgumentCaptor<List<TestCaseRunResult>> captor = ArgumentCaptor.captor();
         List<TestCaseRunResult> delivered = new ArrayList<>();
@@ -356,6 +377,7 @@ class TestCaseRunnerTest {
         TestCaseRunResult result2 = buildResult(input2);
         EvaluationContext context =
                 buildContextBuilder(1, 2).concurrencyLevel(2).build();
+        TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenThrow(new RuntimeException("boom"));
         when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
@@ -373,9 +395,34 @@ class TestCaseRunnerTest {
                 .addResults(anyList());
 
         // Must complete normally (no rethrow).
-        testCaseRunner.run(List.of(input1, input2), context, List.of(), resultsWriter);
+        runner.submit(List.of(input1, input2));
+        runner.awaitCompletion();
 
         // input2's real result still attempted (even though synthesis failed)
         verify(resultsWriter, timeout(ASYNC_TIMEOUT_MS)).addResults(eq(List.of(result2)));
+    }
+
+    @Test
+    @DisplayName("awaitCompletion across multiple submit calls (simulating multiple DB pages) keeps rate limiter state")
+    void awaitCompletion_multipleSubmitCallsAcrossPages_reusesSameRunnerState() {
+        TestCaseRunInput input1 = buildInput();
+        TestCaseRunInput input2 = buildInput();
+        TestCaseRunResult result1 = buildResult(input1);
+        TestCaseRunResult result2 = buildResult(input2);
+        EvaluationContext context = buildContext(1, 2);
+        TestCaseRunner runner = createRunner(context);
+
+        when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenReturn(List.of(result1));
+        when(evaluationWorker.execute(eq(input2), any(), eq(0), anyList())).thenReturn(List.of(result2));
+
+        // Simulate two separate DB pages: submit() called once per page, awaitCompletion() once at the end.
+        runner.submit(List.of(input1));
+        runner.submit(List.of(input2));
+        runner.awaitCompletion();
+
+        verify(evaluationWorker, times(1)).execute(eq(input1), any(EvaluationContext.class), eq(0), anyList());
+        verify(evaluationWorker, times(1)).execute(eq(input2), any(EvaluationContext.class), eq(0), anyList());
+        verify(resultsWriter).addResults(eq(List.of(result1)));
+        verify(resultsWriter).addResults(eq(List.of(result2)));
     }
 }

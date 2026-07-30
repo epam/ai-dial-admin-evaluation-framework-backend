@@ -141,6 +141,29 @@ The dual-datasource, experimental-query-layer, and DB-model rules from the EF ba
 
 **Alternative considered:** Keep a separate small `@Transactional`-annotated bean (as in Decision 11) and inject it into `PostgresResultBatchWriter`. Rejected: it would keep two indirections (`PostgresResultBatchWriter` → save-bean → repository) for no benefit now that `TransactionTemplate` cleanly solves the self-invocation problem without a second bean.
 
+### Decision 14: `TestCaseRunner` becomes a session-scoped scheduler (corrects Decision 12's "accepted negligible" note)
+
+**Decision:** `TestCaseRunner` stops being a stateless Spring `@Component` with a one-shot `run(List<TestCaseRunInput>, EvaluationContext, List<ResponseColumnDefinitionDto>, ResultBatchWriter)` method. It becomes a plain per-run object (same non-bean pattern as `PostgresResultBatchWriter` in Decision 13), constructed once per run and fed test cases one at a time as `InProcessEvaluationExecutor` pages them in from the DB:
+```java
+public class TestCaseRunner {
+    // built once in the constructor: Semaphore, Context.taskWrapping(...) executor,
+    // rate-limit Bucket, futures list — all held as instance state for the run's lifetime
+    public void submit(List<TestCaseRunInput> testCases) { /* today's per-item/per-runIndex dispatch loop, verbatim */ }
+    public void awaitCompletion() { /* today's post-dispatch shutdown/join/grace-period logic, verbatim */ }
+}
+```
+`submit` takes a `List<TestCaseRunInput>` (not a single input) — matching the pre-existing mental model of "hand the runner a list of test cases to run" — and can be called multiple times (e.g. once per DB page) before a single `awaitCompletion()`. A new `TestCaseRunnerFactory` (`runner.job`, `@Component @LogExecution`, stays in the shared module since its dependencies — `EvaluationWorker`, `TestCaseRunResultFactory`, `Clock` — are all shared-module-visible) exposes `create(context, responseColumns, resultsWriter) → new TestCaseRunner(...)`. `InProcessEvaluationExecutor` creates one `TestCaseRunner` per run (immediately after creating its `ResultBatchWriter`), calls `.submit(page)` once per fetched page, then calls `.awaitCompletion()` exactly once after the whole loop ends.
+
+**Why:** Decision 12 accepted "calling `TestCaseRunner.run()` once per page" as a negligible trade-off (only losing DB-fetch/tail-execution overlap). Two problems surfaced that are **not** negligible:
+1. **Rate-limit bucket resets every page.** Bucket4j's token bucket is wall-clock-time-based and starts full on construction; recreating it every ~100 test cases (`PAGE_SIZE`) grants a fresh burst allowance at every page boundary instead of one continuous budget for the whole run — a real correctness regression from the pre-extraction behavior (one bucket for the whole run), with real risk of exceeding a downstream provider's actual rate limit on large suites.
+2. **Concurrency drains to empty at every page boundary.** The pre-extraction code shared one `Semaphore`/`ExecutorService` for the whole run, so a finishing task's slot was immediately taken by whatever was next in the single continuous dispatch loop — concurrency stayed saturated across page boundaries. Calling `run()` once per page forces a full drain (every in-flight task in that page must finish) before the next page is even fetched, creating a recurring drain-then-refill "convoy" effect at every page boundary — a real throughput cost for large suites, not merely the DB-fetch latency Decision 12 described.
+
+Both problems have the same root cause: `TestCaseRunner` conflated "execute one test case" (already cleanly separated as `EvaluationWorker`) with "orchestrate many submissions under shared concurrency/rate-limiting/cancellation" — an inherently stateful, run-scoped responsibility, not a one-shot call. Splitting the scheduling responsibility into a session-scoped object (constructed once, fed submissions over time, finished once) restores the pre-extraction semantics exactly, while still paging from the DB rather than loading a suite's test cases fully into memory.
+
+**Semaphore did not strictly need this fix on its own:** since `InProcessEvaluationExecutor`'s page loop calls `submit`/(previously)`run` strictly sequentially, a fresh semaphore is always "at rest" (all permits available) by the time the previous call/page fully drains — so page-scoped vs. run-scoped semaphore construction was already behaviorally equivalent. It's restructured anyway, for symmetry with the bucket and because both naturally belong to the same session object.
+
+**Not a real issue:** `Context.taskWrapping(executor)`'s OpenTelemetry context capture happens per-task at submission time, not at executor-construction time, so recreating the executor per page never affected context propagation — a concern raised and then ruled out during this investigation.
+
 ## Risks / Trade-offs
 
 **[Risk] Large-scale import churn causes merge conflicts with in-flight feature branches.**

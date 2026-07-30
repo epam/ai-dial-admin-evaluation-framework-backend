@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.ResultBatchWriter;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
+import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +31,7 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
 
     private final TestCaseRepository testCaseRepository;
     private final TestCaseRunInputRepository testCaseRunInputRepository;
-    private final TestCaseRunner testCaseRunner;
+    private final TestCaseRunnerFactory testCaseRunnerFactory;
     private final PostgresResultBatchWriterFactory resultBatchWriterFactory;
 
     @Override
@@ -49,6 +50,7 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                 context.getRunId(),
                 context.getSuiteId(),
                 context.getNumberOfTestCases() * context.getNumberOfRuns());
+        TestCaseRunner testCaseRunner = testCaseRunnerFactory.create(context, responseColumns, writer);
 
         boolean useInputsTable = testCaseRunInputRepository.existsByRunId(context.getRunId());
 
@@ -61,11 +63,13 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
                 }
 
                 page = fetchPage(context, useInputsTable, offset);
-                testCaseRunner.run(page, context, responseColumns, writer);
+                testCaseRunner.submit(page);
 
                 offset += PAGE_SIZE;
             } while (page.size() == PAGE_SIZE
                     && !context.getCancellationSignal().get());
+
+            testCaseRunner.awaitCompletion();
         } catch (Exception e) {
             log.warn("Executor error for run {}: {}", context.getRunId(), e.getMessage(), e);
             try {

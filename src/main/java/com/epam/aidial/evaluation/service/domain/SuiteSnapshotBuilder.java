@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;

@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.configuration.datasource;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.net.URI;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;

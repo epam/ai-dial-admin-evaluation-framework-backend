@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.experimental.query.service.translate;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
@@ -11,6 +10,7 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.FunctionContext;
 import com.epam.aidial.evaluation.experimental.query.service.translate.function.QueryFunctionRegistry;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;

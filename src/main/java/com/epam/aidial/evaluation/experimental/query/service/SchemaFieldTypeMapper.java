@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.experimental.query.service;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import org.springframework.stereotype.Component;
 
 /**

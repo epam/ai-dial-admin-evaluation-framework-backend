@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.grafana.GrafanaProperties;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;

@@ -8,12 +8,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.client.dialcore.DialCoreClientException;
-import com.epam.aidial.evaluation.client.dialcore.DialFileClient;
-import com.epam.aidial.evaluation.client.dialcore.dto.DialFileMetadataDto;
-import com.epam.aidial.evaluation.configuration.properties.dial.DialFileStorageProperties;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.dto.DialFileMetadataDto;
+import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;

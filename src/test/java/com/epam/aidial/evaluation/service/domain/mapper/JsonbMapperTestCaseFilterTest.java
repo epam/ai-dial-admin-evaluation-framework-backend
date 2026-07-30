@@ -11,7 +11,8 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("JsonbMapper testCaseFilter")
 class JsonbMapperTestCaseFilterTest {
 
-    private final JsonbMapper mapper = new JsonbMapper(new ObjectMapper());
+    private final JsonbMapper mapper = new JsonbMapper(
+            new ObjectMapper(), new com.epam.aidial.evaluation.runner.util.JsonbMapper(new ObjectMapper()));
 
     @Test
     @DisplayName("round-trips a filter object through write then read")

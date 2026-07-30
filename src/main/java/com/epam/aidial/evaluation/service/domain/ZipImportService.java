@@ -1,7 +1,8 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.client.dialcore.DialFileClient;
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;

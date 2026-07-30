@@ -22,6 +22,7 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.RevalidationTaskRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer.CoercionResult;
 import com.epam.aidial.evaluation.service.domain.dto.RevalidationStatus;
@@ -29,7 +30,6 @@ import com.epam.aidial.evaluation.service.domain.dto.RevalidationTaskDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -88,7 +88,8 @@ class RevalidationServiceTest {
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper);
+        JsonbMapper jsonbMapper =
+                new JsonbMapper(objectMapper, new com.epam.aidial.evaluation.runner.util.JsonbMapper(objectMapper));
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
         service = new RevalidationService(
                 revalidationTaskRepository,

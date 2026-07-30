@@ -2,9 +2,9 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.configuration.properties.dial.DialFileStorageProperties;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import java.nio.charset.StandardCharsets;
 import java.util.List;

@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.experimental.query.service.translate;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
@@ -13,6 +12,7 @@ import com.epam.aidial.evaluation.experimental.query.model.ParamExpr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.HashSet;
 import java.util.List;

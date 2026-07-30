@@ -6,12 +6,12 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
-import com.epam.aidial.evaluation.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreDeploymentDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteUpstreamDto;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialModelInfoDto;

@@ -8,10 +8,10 @@ import static org.mockito.Mockito.verify;
 
 import com.epam.aidial.evaluation.configuration.properties.analytics.AnalyticsResultsProperties;
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
-import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.UUID;

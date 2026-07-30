@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.configuration.properties.dial.DialFileStorageProperties;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;

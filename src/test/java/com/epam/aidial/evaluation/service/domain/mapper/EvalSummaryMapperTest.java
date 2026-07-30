@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.configuration.properties.grafana.GrafanaProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.GrafanaLinkBuilder;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryDetailResponseDto;

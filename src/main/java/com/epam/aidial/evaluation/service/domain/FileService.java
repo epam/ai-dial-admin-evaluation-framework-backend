@@ -2,13 +2,14 @@ package com.epam.aidial.evaluation.service.domain;
 
 import static java.util.Objects.requireNonNull;
 
-import com.epam.aidial.evaluation.client.dialcore.DialCoreClientException;
-import com.epam.aidial.evaluation.client.dialcore.DialFileClient;
-import com.epam.aidial.evaluation.client.dialcore.dto.DialFileMetadataDto;
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.configuration.properties.dial.DialFileStorageProperties;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.client.dialcore.dto.DialFileMetadataDto;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;

@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto.analytics;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

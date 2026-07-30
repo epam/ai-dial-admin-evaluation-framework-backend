@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.web.filter;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.PayloadTooLargeException;
 import com.epam.aidial.evaluation.web.handler.ErrorCode;
 import com.epam.aidial.evaluation.web.handler.ErrorView;

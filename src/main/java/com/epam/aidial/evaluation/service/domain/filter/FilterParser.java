@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.service.domain.filter;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.FilterValidationException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;

@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import java.util.Collection;
 import java.util.List;

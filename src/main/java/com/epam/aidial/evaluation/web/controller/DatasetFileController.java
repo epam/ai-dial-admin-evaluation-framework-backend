@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.web.controller;
 
-import com.epam.aidial.evaluation.client.dialcore.dto.DialFileMetadataDto;
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.client.dialcore.dto.DialFileMetadataDto;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.FileService;
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import io.swagger.v3.oas.annotations.Operation;

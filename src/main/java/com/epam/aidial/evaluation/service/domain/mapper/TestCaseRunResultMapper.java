@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.mapper;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.GrafanaLinkBuilder;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultResponseDto;

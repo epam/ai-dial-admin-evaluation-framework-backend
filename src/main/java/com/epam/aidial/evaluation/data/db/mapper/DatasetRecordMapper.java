@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.data.db.mapper;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.DatasetsRecord;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.UUID;
 import org.jooq.JSONB;
 import org.springframework.stereotype.Component;

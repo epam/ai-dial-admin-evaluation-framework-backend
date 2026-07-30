@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.experimental.query.service.metricscore;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
@@ -8,6 +7,7 @@ import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;

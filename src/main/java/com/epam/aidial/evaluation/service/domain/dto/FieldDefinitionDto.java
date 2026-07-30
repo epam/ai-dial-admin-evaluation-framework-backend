@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -45,9 +45,6 @@ public class FieldDefinitionDto {
      * {@link Boolean} (not a primitive) so pre-existing persisted schemas that omit the field deserialize
      * cleanly rather than failing on a null-into-primitive coercion.
      */
-    @Schema(
-            description = "Whether the field varies per turn (true) or is shared/test-case-level (false, default)",
-            example = "false")
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Boolean perTurn;
 }

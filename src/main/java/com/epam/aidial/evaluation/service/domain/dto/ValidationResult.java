@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

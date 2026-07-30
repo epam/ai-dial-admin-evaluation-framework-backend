@@ -3,9 +3,9 @@ package com.epam.aidial.evaluation.experimental.query.service;
 import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants.DATA_COLUMN_PREFIX;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.repository.sql.json.JsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.DatasetSchemaProvider;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import java.util.Collections;

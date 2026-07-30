@@ -2,9 +2,9 @@ package com.epam.aidial.evaluation.data.db.mapper;
 
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuiteRunsRecord;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.UUID;
 import org.jooq.JSONB;
 import org.jooq.Record;

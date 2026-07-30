@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;

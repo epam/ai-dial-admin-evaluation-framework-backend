@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.web.controller;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.TestCaseService;
 import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkPatchRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkPatchResponseDto;

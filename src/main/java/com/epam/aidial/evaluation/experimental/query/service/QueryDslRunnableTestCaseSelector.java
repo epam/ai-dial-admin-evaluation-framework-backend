@@ -2,12 +2,12 @@ package com.epam.aidial.evaluation.experimental.query.service;
 
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.experimental.query.model.FilterNode;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.service.translate.FilterTranslator;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import java.util.Collection;

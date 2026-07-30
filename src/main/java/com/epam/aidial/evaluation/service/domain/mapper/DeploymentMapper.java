@@ -16,7 +16,7 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteRespons
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteUpstreamDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialTransport;
-import com.epam.aidial.evaluation.client.mcp.McpTransport;
+import com.epam.aidial.evaluation.runner.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;

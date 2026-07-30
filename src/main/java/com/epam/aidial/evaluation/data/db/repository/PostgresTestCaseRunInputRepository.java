@@ -3,9 +3,9 @@ package com.epam.aidial.evaluation.data.db.repository;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASE_RUN_INPUTS;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.mapper.TestCaseRunInputRecordMapper;
-import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;

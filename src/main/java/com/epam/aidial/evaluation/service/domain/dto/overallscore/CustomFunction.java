@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain.dto.overallscore;
 
-import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import java.util.Map;
 
@@ -11,6 +10,4 @@ import java.util.Map;
  * free-form escape hatch for any catalog function not covered by {@link Mean}/{@link WeightedMean} (e.g.
  * {@code roc_auc}).
  */
-public record CustomFunction(
-        @NotNull @Schema(description = "Raw StructuredQuery expression object")
-        Map<String, Object> expression) implements OverallScoreDefinition {}
+public record CustomFunction(@NotNull Map<String, Object> expression) implements OverallScoreDefinition {}

@@ -4,7 +4,6 @@ import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.METRIC_DECLARA
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.METRIC_DECLARATION_VERSIONS;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_METRIC_DEFINITIONS;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.mapper.AggregatedMetricDefinitionRowMapper;
 import com.epam.aidial.evaluation.data.db.mapper.TestSuiteMetricDefinitionRecordMapper;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
@@ -18,6 +17,7 @@ import com.epam.aidial.evaluation.data.db.repository.sql.PageRequestSqlBuilder;
 import com.epam.aidial.evaluation.data.db.repository.sql.SortWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;

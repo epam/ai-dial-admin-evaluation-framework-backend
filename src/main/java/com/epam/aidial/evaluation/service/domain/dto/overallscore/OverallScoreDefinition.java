@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.service.domain.dto.overallscore;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * A suite's run-level {@code overall} metric-score definition. Discriminated by {@code type}:
@@ -22,8 +21,4 @@ import io.swagger.v3.oas.annotations.media.Schema;
     @JsonSubTypes.Type(value = WeightedMean.class, name = "weighted_mean"),
     @JsonSubTypes.Type(value = CustomFunction.class, name = "custom_function")
 })
-@Schema(
-        description = "Polymorphic overall-score definition. Discriminated by `type`.",
-        discriminatorProperty = "type",
-        subTypes = {Mean.class, WeightedMean.class, CustomFunction.class})
 public sealed interface OverallScoreDefinition permits Mean, WeightedMean, CustomFunction {}

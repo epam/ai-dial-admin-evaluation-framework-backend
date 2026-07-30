@@ -23,7 +23,8 @@ class RunMetricSnapshotMapperTest {
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
         JacksonMapper jacksonMapper = new JacksonMapper(objectMapper);
-        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper);
+        JsonbMapper jsonbMapper =
+                new JsonbMapper(objectMapper, new com.epam.aidial.evaluation.runner.util.JsonbMapper(objectMapper));
         RunMetricSnapshotMapperImpl mapperImpl = new RunMetricSnapshotMapperImpl();
         setField(mapperImpl, "jacksonMapper", jacksonMapper);
         mapperImpl.jsonbMapper = jsonbMapper;

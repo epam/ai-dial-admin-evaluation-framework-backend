@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain.dto.overallscore;
 
-import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -13,11 +12,8 @@ import java.math.BigDecimal;
  * create/update.
  */
 public record WeightedMetric(
-        @NotBlank @Size(max = 255) @Schema(description = "TSMD name", example = "RAG Retrieval")
-        String metricName,
+        @NotBlank @Size(max = 255) String metricName,
 
-        @NotBlank @Size(max = 255) @Schema(description = "Metric output field name", example = "F1")
-        String outputField,
+        @NotBlank @Size(max = 255) String outputField,
 
-        @NotNull @Schema(description = "Weight applied to this metric's average", example = "1.0")
-        BigDecimal weight) {}
+        @NotNull BigDecimal weight) {}

@@ -4,7 +4,7 @@ import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteDto;
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapper;
 import java.util.LinkedHashMap;

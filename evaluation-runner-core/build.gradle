@@ -109,6 +109,10 @@ dependencies {
     implementation 'jakarta.validation:jakarta.validation-api'
     implementation 'org.hibernate.validator:hibernate-validator'
 
+    // OpenAPI annotations only (no springdoc/web starter) — lets DTOs carry @Schema metadata for the
+    // EF backend's springdoc scanner; annotation-only, no runtime behavior of its own
+    compileOnly 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.47'
+
     // Schema validation
     implementation 'com.networknt:json-schema-validator:3.0.6'
 

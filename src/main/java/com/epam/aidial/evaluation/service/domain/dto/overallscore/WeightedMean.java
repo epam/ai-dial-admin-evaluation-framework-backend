@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto.overallscore;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
@@ -10,4 +11,6 @@ import java.util.List;
  * Duplicate {@code (metricName, outputField)} entries are allowed and combine via ordinary arithmetic
  * (equivalent to a single entry with the summed weight).
  */
-public record WeightedMean(@NotEmpty @Valid List<WeightedMetric> weights) implements OverallScoreDefinition {}
+public record WeightedMean(
+        @NotEmpty @Valid @Schema(description = "Metric/weight rows, one per UI table row")
+        List<WeightedMetric> weights) implements OverallScoreDefinition {}

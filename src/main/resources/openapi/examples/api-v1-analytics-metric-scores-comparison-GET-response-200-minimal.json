@@ -1,0 +1,46 @@
+{
+  "runs": [
+    {
+      "runId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "computationId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "totalRowCount": 40,
+      "matchedRowCount": 40,
+      "matchedSuccessRowCount": 40,
+      "avgExecDurationMs": 1240.5,
+      "unmatchedEvalSummaryIds": [],
+      "scores": [
+        {
+          "metricScoreName": "AVG",
+          "metricName": "Accuracy.score",
+          "value": 0.83
+        },
+        {
+          "metricScoreName": "overall",
+          "metricName": "overall",
+          "value": 0.83
+        }
+      ]
+    },
+    {
+      "runId": "1c8b4f2a-7d61-4c9e-8a35-6f0e2b91d4a7",
+      "computationId": "c2f4e6a8-91b3-4d57-8e02-5a7c3b1f9d64",
+      "totalRowCount": 40,
+      "matchedRowCount": 40,
+      "matchedSuccessRowCount": 39,
+      "avgExecDurationMs": 1105.0,
+      "unmatchedEvalSummaryIds": [],
+      "scores": [
+        {
+          "metricScoreName": "AVG",
+          "metricName": "Accuracy.score",
+          "value": 0.79
+        },
+        {
+          "metricScoreName": "overall",
+          "metricName": "overall",
+          "value": 0.79
+        }
+      ]
+    }
+  ]
+}

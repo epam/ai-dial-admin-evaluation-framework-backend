@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
+import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
@@ -55,4 +56,30 @@ public interface EvalSummaryRepository {
 
     List<MetricAggregationResult> aggregate(
             List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs, List<MetricPath> metrics);
+
+    /**
+     * Counts one run's rows against another run's population, matching on
+     * {@code lower(test_case_name)} + {@code run_index} + {@code turn_index} and also returning the matched
+     * rows' mean {@code exec_duration_ms}.
+     *
+     * <p>A row matches if and only if its key occurs in {@code otherRunId}'s population, so where this run
+     * holds several rows for one key <strong>all</strong> of them match and none is dropped. The other side
+     * is reduced to a distinct key set before joining, which makes fan-out impossible — so the counts and
+     * the average are plain aggregates over this run's own rows, each contributing exactly once. Reversing
+     * the arguments yields the other side's numbers.
+     *
+     * <p>Materialises no rows, so a caller can enforce a bound on the unmatched-id list
+     * ({@code totalRows - matchedRows}) before fetching a single id.
+     */
+    EvalSummaryMatchStats countMatches(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId);
+
+    /**
+     * Ids of {@code runId}'s rows that have <strong>no</strong> counterpart key in {@code otherRunId}'s
+     * population — the same match rule as {@link #countMatches}, inverted.
+     *
+     * <p>Deterministically ordered, so identical requests return an identical list. Callers exclude these
+     * ids to reproduce the matched population; an empty result therefore means the whole run matched and no
+     * exclusion is needed.
+     */
+    List<UUID> findUnmatchedIds(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId);
 }

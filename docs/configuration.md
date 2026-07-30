@@ -38,6 +38,7 @@ This document is the operator-facing reference for every configurable property o
    - [Metric Providers](#610-metric-providers)
    - [Metric Evaluation](#611-metric-evaluation)
    - [SSE Event Processing](#612-sse-event-processing)
+   - [Analytics Run Comparison](#613-analytics-run-comparison)
 7. [Data Management](#7-data-management)
    - [Pagination](#71-pagination)
    - [CSV Export](#72-csv-export)
@@ -469,6 +470,14 @@ Global, path-agnostic cap for SSE stream parsing. The per-path idle (inactivity)
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `sse-event-processing.max-total-duration-ms` | `SSE_EVENT_PROCESSING_MAX_TOTAL_DURATION_MS` | `3600000` | No | - | Absolute maximum wall-clock time in milliseconds to spend parsing a single SSE stream, regardless of activity. Crossing it stops parsing with `TIMEOUT` and returns the events accumulated so far. Set high (default 1 hour) so it acts as a safety ceiling, not a working timeout. Minimum `1000`. |
+
+### 6.13 Analytics Run Comparison
+
+Bound for `GET /api/v1/analytics/metric-scores/comparison`, which recomputes metric-score statistics over only the eval-summary rows two runs have in common and returns the ids of the rows that did **not** match, so a client can reproduce that population by excluding them.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `analytics.comparison.max-unmatched-rows` | `ANALYTICS_COMPARISON_MAX_UNMATCHED_ROWS` | `5000` | No | - | Maximum number of non-matching eval-summary rows a single run comparison may report **per run**; exceeding it fails the request with HTTP 409 naming both the count and this limit. Bounds the returned exclusion id list, the `IN` bind count (an overflow of the database parameter ceiling would otherwise surface as HTTP 500) and the worst-case response size — about 0.35 MB at the default, and reached only at *low* overlap, since two runs that match completely report an empty exclusion list. Minimum `1`. |
 
 ---
 

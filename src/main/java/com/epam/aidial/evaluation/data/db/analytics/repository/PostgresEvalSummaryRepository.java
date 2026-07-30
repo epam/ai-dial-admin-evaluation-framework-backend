@@ -6,10 +6,13 @@ import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.mapper.EvalSummaryRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
+import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
+import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.repository.sql.FilterWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
@@ -28,6 +31,7 @@ import org.jooq.JSONB;
 import org.jooq.Query;
 import org.jooq.Record;
 import org.jooq.SelectLimitStep;
+import org.jooq.Table;
 import org.jooq.impl.DSL;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -39,6 +43,14 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES")
 public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
+
+    private static final String PROBE_TABLE = "k";
+    private static final String OTHER_RUN_ALIAS = "other";
+    private static final String PROBE_NAME_LOWER = "name_lower";
+    private static final String TOTAL_ROWS = "total_rows";
+    private static final String MATCHED_ROWS = "matched_rows";
+    private static final String MATCHED_SUCCESS_ROWS = "matched_success_rows";
+    private static final String AVG_EXEC_DURATION_MS = "avg_exec_duration_ms";
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -202,6 +214,103 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                     count));
         }
         return results;
+    }
+
+    @Override
+    public EvalSummaryMatchStats countMatches(
+            UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId) {
+        Table<?> probe = otherRunKeys(otherRunId, otherComputationId);
+        Condition matched = probeKey(probe).isNotNull();
+
+        Record row = dsl.select(
+                        DSL.count().as(TOTAL_ROWS),
+                        DSL.count(probeKey(probe)).as(MATCHED_ROWS),
+                        DSL.count()
+                                .filterWhere(matched.and(
+                                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS.eq(ExecutionStatus.SUCCESS.name())))
+                                .as(MATCHED_SUCCESS_ROWS),
+                        DSL.avg(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS)
+                                .filterWhere(matched)
+                                .as(AVG_EXEC_DURATION_MS))
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .leftJoin(probe)
+                .on(matchCondition(probe))
+                .where(runScope(runId, computationId))
+                .fetchOne();
+
+        if (row == null) {
+            // An unfiltered aggregate always yields exactly one row; defensive only.
+            return new EvalSummaryMatchStats(0L, 0L, 0L, null);
+        }
+        return new EvalSummaryMatchStats(
+                row.get(TOTAL_ROWS, long.class),
+                row.get(MATCHED_ROWS, long.class),
+                row.get(MATCHED_SUCCESS_ROWS, long.class),
+                row.get(AVG_EXEC_DURATION_MS, BigDecimal.class));
+    }
+
+    @Override
+    public List<UUID> findUnmatchedIds(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId) {
+        Table<?> probe = otherRunKeys(otherRunId, otherComputationId);
+
+        return dsl.select(TEST_CASE_EVAL_SUMMARIES.ID)
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .leftJoin(probe)
+                .on(matchCondition(probe))
+                .where(runScope(runId, computationId).and(probeKey(probe).isNull()))
+                .orderBy(
+                        DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME),
+                        TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES.ID)
+                .fetch(r -> UUID.fromString(r.value1()));
+    }
+
+    /**
+     * The other run's <strong>distinct</strong> match keys, as a derived table to left-join against.
+     *
+     * <p>Distinctness applies to the keys being probed, never to the rows being reported on, so it cannot
+     * drop a row from any aggregate. It also makes the derived table unique on the join key, so the join
+     * cannot fan out and every reported row contributes exactly once.
+     */
+    private Table<?> otherRunKeys(UUID otherRunId, UUID otherComputationId) {
+        // Aliased so the derived table's own scan is unambiguous against the outer query's use of the
+        // same table — without it the inner predicates read as if they might be correlated.
+        TestCaseEvalSummaries other = TEST_CASE_EVAL_SUMMARIES.as(OTHER_RUN_ALIAS);
+        return dsl.selectDistinct(
+                        DSL.lower(other.TEST_CASE_NAME).as(PROBE_NAME_LOWER), other.RUN_INDEX, other.TURN_INDEX)
+                .from(other)
+                .where(other.TEST_SUITE_RUN_ID
+                        .eq(otherRunId.toString())
+                        .and(other.COMPUTATION_ID.eq(otherComputationId.toString())))
+                .asTable(PROBE_TABLE);
+    }
+
+    /**
+     * The probe table's name column. Non-null for every probe row (the underlying column is {@code NOT
+     * NULL}), so after the left join it is null exactly for an unmatched row — which is what makes
+     * {@code count(...)} of it the matched-row count.
+     */
+    private Field<String> probeKey(Table<?> probe) {
+        return probe.field(PROBE_NAME_LOWER, String.class);
+    }
+
+    private Condition matchCondition(Table<?> probe) {
+        return probeKey(probe)
+                .eq(DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME))
+                .and(probe.field(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX))
+                .and(probe.field(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX));
+    }
+
+    /**
+     * Pins both the run and the computation. Re-evaluating a run mints a new {@code computation_id} and all
+     * of them coexist in the table, so omitting it would match rows across computations.
+     */
+    private Condition runScope(UUID runId, UUID computationId) {
+        return TEST_CASE_EVAL_SUMMARIES
+                .TEST_SUITE_RUN_ID
+                .eq(runId.toString())
+                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()));
     }
 
     private CursorPage<EvalSummary> findAllInternal(

@@ -101,6 +101,8 @@ analytics:
     batch:
       max-items: 10000
       max-request-size-bytes: 10485760  # 10MB
+  comparison:
+    max-unmatched-rows: ${ANALYTICS_COMPARISON_MAX_UNMATCHED_ROWS:5000}
 
 # Test suite run configuration
 test-suite-run:

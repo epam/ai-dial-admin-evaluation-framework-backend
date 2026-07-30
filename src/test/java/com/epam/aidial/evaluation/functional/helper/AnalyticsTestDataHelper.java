@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.jooq.BatchBindStep;
 import org.jooq.DSLContext;
 import org.jooq.JSONB;
 import org.jooq.Record;
@@ -187,27 +188,104 @@ public class AnalyticsTestDataHelper {
             long createdAtMs,
             String testCaseDataJson,
             String metricValuesJson) {
+        return createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(suiteRunId)
+                .computationId(computationId)
+                .testCaseName(testCaseName)
+                .executionStatus(executionStatus)
+                .execDurationMs(execDurationMs)
+                .createdAtMs(createdAtMs)
+                .testCaseDataJson(testCaseDataJson)
+                .metricValuesJson(metricValuesJson)
+                .build());
+    }
+
+    /**
+     * Full-control variant: the only one that can vary {@code run_index} / {@code turn_index} /
+     * {@code total_turns}, which together with the (lower-cased) test case name form the run-comparison
+     * match key. The positional overloads above delegate here with those three at their defaults.
+     *
+     * @return the inserted eval summary ID
+     */
+    @Transactional("analyticsTransactionManager")
+    public UUID createEvalSummary(EvalSummaryFixture fixture) {
         UUID id = UUID.randomUUID();
         analyticsDsl
                 .insertInto(TEST_CASE_EVAL_SUMMARIES)
                 .set(TEST_CASE_EVAL_SUMMARIES.ID, id.toString())
-                .set(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID, suiteId.toString())
-                .set(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID, suiteRunId.toString())
+                .set(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID,
+                        fixture.getSuiteId().toString())
+                .set(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
+                        fixture.getRunId().toString())
                 .set(
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
                         UUID.randomUUID().toString())
                 .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, UUID.randomUUID().toString())
-                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, testCaseName)
-                .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, 0)
-                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID, computationId.toString())
-                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA, JSONB.valueOf(testCaseDataJson))
-                .set(TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS, executionStatus)
-                .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, execDurationMs)
-                .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, JSONB.valueOf(metricValuesJson))
-                .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, createdAtMs)
-                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, createdAtMs)
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, fixture.getTestCaseName())
+                .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, fixture.getRunIndex())
+                .set(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX, fixture.getTurnIndex())
+                .set(TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS, fixture.getTotalTurns())
+                .set(
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
+                        fixture.getComputationId().toString())
+                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA, JSONB.valueOf(fixture.getTestCaseDataJson()))
+                .set(TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS, fixture.getExecutionStatus())
+                .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, fixture.getExecDurationMs())
+                .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, JSONB.valueOf(fixture.getMetricValuesJson()))
+                .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, fixture.getCreatedAtMs())
+                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, fixture.getCreatedAtMs())
                 .execute();
         return id;
+    }
+
+    /**
+     * Inserts {@code count} eval summaries with distinct, sequentially numbered test case names, in one
+     * batch. Exists for the run-comparison cap test, which needs thousands of rows that match nothing: at one
+     * statement per row that fixture dominates the suite's runtime, and the rows carry no individuality
+     * worth expressing.
+     */
+    @Transactional("analyticsTransactionManager")
+    public void createDistinctlyNamedEvalSummaries(
+            UUID suiteId, UUID suiteRunId, UUID computationId, String namePrefix, int count, long createdAtMs) {
+        BatchBindStep batch = analyticsDsl.batch(analyticsDsl
+                .insertInto(
+                        TEST_CASE_EVAL_SUMMARIES,
+                        TEST_CASE_EVAL_SUMMARIES.ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
+                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
+                        TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
+                        TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS)
+                .values((String) null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+        for (int i = 0; i < count; i++) {
+            batch = batch.bind(
+                    UUID.randomUUID().toString(),
+                    suiteId.toString(),
+                    suiteRunId.toString(),
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    namePrefix + i,
+                    0,
+                    computationId.toString(),
+                    JSONB.valueOf("{}"),
+                    ExecutionStatus.SUCCESS.name(),
+                    100L,
+                    JSONB.valueOf("{}"),
+                    createdAtMs,
+                    createdAtMs);
+        }
+        batch.execute();
     }
 
     /**

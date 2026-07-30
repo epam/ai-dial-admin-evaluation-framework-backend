@@ -1,8 +1,5 @@
 package com.epam.aidial.evaluation.experimental.query.service.metricscore;
 
-import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants.COLUMN_SEPARATOR;
-import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants.METRIC_COLUMN_PREFIX;
-
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
@@ -15,7 +12,6 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
-import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -61,7 +57,7 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
     private final BuiltInMetricStatistics builtInStatistics;
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final MetricScoreService metricScoreService;
-    private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
+    private final MetricFieldDiscoverer metricFieldDiscoverer;
     private final StructuredQueryService structuredQueryService;
     private final OverallScoreDefinitionResolver overallScoreDefinitionResolver;
 
@@ -73,7 +69,7 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         final long computedAtMs = ctx.getComputedAtMs();
         final List<RunMetricSnapshot> snapshots = runMetricSnapshotRepository.findByRunIdAndComputationId(
                 ctx.getTestSuiteRunId(), ctx.getComputationId());
-        final List<MetricField> metricFields = discoverMetricFields(snapshots);
+        final List<MetricField> metricFields = metricFieldDiscoverer.discover(snapshots);
         if (metricFields.isEmpty()) {
             log.debug(
                     "No numeric metric fields for run {} computation {}; skipping metric score computation",
@@ -203,20 +199,6 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         }
     }
 
-    /** Flattens the run's metric snapshots into the numeric {@code metric:<tsmd>:<field>} columns. */
-    private List<MetricField> discoverMetricFields(List<RunMetricSnapshot> snapshots) {
-        final List<MetricField> fields = new ArrayList<>();
-        for (final RunMetricSnapshot snapshot : snapshots) {
-            for (final String outputField : outputSchemaFieldExtractor.extractFieldNames(snapshot.getOutputSchema())) {
-                final String flattenedName =
-                        METRIC_COLUMN_PREFIX + snapshot.getTsmdName() + COLUMN_SEPARATOR + outputField;
-                final String metricName = snapshot.getTsmdName() + "." + outputField;
-                fields.add(new MetricField(flattenedName, metricName));
-            }
-        }
-        return fields;
-    }
-
     private static List<String> metricFieldNames(List<MetricField> metricFields) {
         return metricFields.stream().map(MetricField::flattenedName).toList();
     }
@@ -239,7 +221,4 @@ public class MetricScoreComputationExecutor implements MetricScoreComputation {
         return ctx.getCancellationSignal() != null
                 && ctx.getCancellationSignal().get();
     }
-
-    /** A flattened numeric metric column: its DSL field name ({@code metric:<tsmd>:<field>}) and the stored {@code metric_name}. */
-    private record MetricField(String flattenedName, String metricName) {}
 }

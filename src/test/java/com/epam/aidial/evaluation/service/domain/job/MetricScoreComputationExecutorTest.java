@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.experimental.query.service.metricscore.BuiltInMetricStatistics;
+import com.epam.aidial.evaluation.experimental.query.service.metricscore.MetricFieldDiscoverer;
 import com.epam.aidial.evaluation.experimental.query.service.metricscore.MetricScoreComputationExecutor;
 import com.epam.aidial.evaluation.experimental.query.service.metricscore.OverallScoreDefinitionResolver;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
@@ -69,7 +70,7 @@ class MetricScoreComputationExecutorTest {
             builtInStatistics,
             runMetricSnapshotRepository,
             metricScoreService,
-            outputSchemaFieldExtractor,
+            new MetricFieldDiscoverer(outputSchemaFieldExtractor),
             structuredQueryService,
             new OverallScoreDefinitionResolver(builtInStatistics, OBJECT_MAPPER));
 

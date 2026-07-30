@@ -170,6 +170,15 @@ public class MetaTestDataHelper {
 
     @Transactional("metaTransactionManager")
     public TestSuiteRun createTestSuiteRun(UUID suiteId) {
+        return createTestSuiteRun(suiteId, RunStatus.COMPLETED);
+    }
+
+    /**
+     * Variant with an explicit terminal status, for callers asserting that a feature is (or is not) gated on
+     * how a run ended — the run comparison, for one, deliberately accepts a CANCELLED run.
+     */
+    @Transactional("metaTransactionManager")
+    public TestSuiteRun createTestSuiteRun(UUID suiteId, RunStatus status) {
         TestSuite suite = testSuiteRepository.findById(suiteId).orElseThrow();
         Dataset dataset = datasetRepository.findById(suite.getDatasetId()).orElseThrow();
         String snapshotJson = String.format(
@@ -184,7 +193,7 @@ public class MetaTestDataHelper {
         TestSuiteRun run = TestSuiteRun.builder()
                 .testSuiteId(suiteId)
                 .testRunName("run-" + UUID.randomUUID())
-                .status(RunStatus.COMPLETED.name())
+                .status(status.name())
                 .runConfig("{\"numberOfRuns\":1}")
                 .numberOfTestCases(0)
                 .suiteSnapshot(snapshotJson)

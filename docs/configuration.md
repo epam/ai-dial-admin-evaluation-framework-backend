@@ -39,6 +39,7 @@ This document is the operator-facing reference for every configurable property o
    - [Metric Evaluation](#611-metric-evaluation)
    - [SSE Event Processing](#612-sse-event-processing)
    - [Analytics Run Comparison](#613-analytics-run-comparison)
+   - [JSONata Evaluation](#614-jsonata-evaluation)
 7. [Data Management](#7-data-management)
    - [Pagination](#71-pagination)
    - [CSV Export](#72-csv-export)
@@ -478,6 +479,15 @@ Bound for `GET /api/v1/analytics/metric-scores/comparison`, which recomputes met
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `analytics.comparison.max-unmatched-rows` | `ANALYTICS_COMPARISON_MAX_UNMATCHED_ROWS` | `5000` | No | - | Maximum number of non-matching eval-summary rows a single run comparison may report **per run**; exceeding it fails the request with HTTP 409 naming both the count and this limit. Bounds the returned exclusion id list, the `IN` bind count (an overflow of the database parameter ceiling would otherwise surface as HTTP 500) and the worst-case response size — about 0.35 MB at the default, and reached only at *low* overlap, since two runs that match completely report an empty exclusion list. Minimum `1`. |
+
+### 6.14 JSONata Evaluation
+
+Runtime bounds applied to every JSONata expression evaluation (request-template body evaluation and response-column/condition evaluation) via `Frame.setRuntimeBounds`, protecting worker threads from a runaway or unbounded-recursion JSONata expression.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `jsonata.evaluation-timeout-ms` | `JSONATA_EVALUATION_TIMEOUT_MS` | `10000` | No | - | Maximum wall-clock time in milliseconds a single JSONata expression evaluation may run before it is aborted. Minimum `1`. |
+| `jsonata.max-recursion-depth` | `JSONATA_MAX_RECURSION_DEPTH` | `1000` | No | - | Maximum call-stack recursion depth a single JSONata expression evaluation may reach before it is aborted. Minimum `1`. |
 
 ---
 

@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.epam.aidial.evaluation.configuration.properties.JsonataProperties;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,7 +17,11 @@ class ConditionExpressionEvaluatorTest {
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        evaluator = new ConditionExpressionEvaluator(new DashjoinJsonataEvaluationService(objectMapper), objectMapper);
+        JsonataProperties jsonataProperties = new JsonataProperties();
+        jsonataProperties.setEvaluationTimeoutMs(5000L);
+        jsonataProperties.setMaxRecursionDepth(500);
+        evaluator = new ConditionExpressionEvaluator(
+                new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties), objectMapper);
     }
 
     private ConditionContext ctx(String dataJson, String responseJson, int turnIndex, int totalTurns) {

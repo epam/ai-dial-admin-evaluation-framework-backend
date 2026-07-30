@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.configuration.properties.JsonataProperties;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.service.domain.dto.FormPartDto;
@@ -27,13 +28,14 @@ import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("ResolvedRequestService")
 @ExtendWith(MockitoExtension.class)
@@ -57,8 +59,38 @@ class ResolvedRequestServiceTest {
     @Mock
     private DialFileRefResolver dialFileRefResolver;
 
-    @InjectMocks
+    /**
+     * {@link ResolvedRequestService} now delegates JSON body resolution through
+     * {@link RequestBodyEvaluator} (real JSONata evaluation, per WP2), so it is wired by hand here
+     * with a real {@link TemplateContentResolver}/{@link JsonataSourcePreprocessor}/
+     * {@link DashjoinJsonataEvaluationService} chain (rather than {@code @InjectMocks}) so the
+     * existing behavioral assertions below — written against the pre-JSONata structural resolution —
+     * stay valid: a plain JSON object is a syntactic subset of JSONata and evaluates back to itself.
+     */
     private ResolvedRequestService service;
+
+    @BeforeEach
+    void setUp() {
+        TemplateContentResolver templateContentResolver =
+                new TemplateContentResolver(templateVariableResolver, dialFileRefResolver);
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonataProperties jsonataProperties = new JsonataProperties();
+        jsonataProperties.setEvaluationTimeoutMs(5000L);
+        jsonataProperties.setMaxRecursionDepth(500);
+        JsonataEvaluationService jsonataEvaluationService =
+                new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
+        JsonataSourcePreprocessor jsonataSourcePreprocessor =
+                new JsonataSourcePreprocessor(templateVariableResolver, dialFileRefResolver, objectMapper);
+        RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
+                templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
+        service = new ResolvedRequestService(
+                testSuiteRepository,
+                testCaseRepository,
+                jsonbMapper,
+                warningsSerializer,
+                templateContentResolver,
+                requestBodyEvaluator);
+    }
 
     @Nested
     @DisplayName("JSON body resolution")

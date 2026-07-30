@@ -34,9 +34,28 @@ class RequestBodyDtoSerializationTest {
             assertThat(deserialized).isInstanceOf(JsonRequestBodyDto.class);
             assertThat(json).contains("\"contentType\":\"application/json\"");
             JsonRequestBodyDto result = (JsonRequestBodyDto) deserialized;
-            assertThat(result.getContent()).containsEntry("prompt", "Hello");
-            assertThat(result.getContent()).containsEntry("temperature", 0.7);
+            assertThat(result.getContent()).isInstanceOf(Map.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> content = (Map<String, Object>) result.getContent();
+            assertThat(content).containsEntry("prompt", "Hello");
+            assertThat(content).containsEntry("temperature", 0.7);
             assertThat(result.getContentType()).isEqualTo("application/json");
+        }
+
+        @Test
+        @DisplayName("JsonRequestBodyDto round-trip preserves String (JSONata source) content")
+        void jsonRequestBodyDtoStringContentRoundTrip() throws JacksonException {
+            String jsonataSource = "$append($history, [{\"role\": \"user\", \"content\": \"${{question}}\"}])";
+            JsonRequestBodyDto dto =
+                    JsonRequestBodyDto.builder().content(jsonataSource).build();
+
+            String json = objectMapper.writeValueAsString(dto);
+            RequestBodyDto deserialized = objectMapper.readValue(json, RequestBodyDto.class);
+
+            assertThat(deserialized).isInstanceOf(JsonRequestBodyDto.class);
+            JsonRequestBodyDto result = (JsonRequestBodyDto) deserialized;
+            assertThat(result.getContent()).isInstanceOf(String.class);
+            assertThat(result.getContent()).isEqualTo(jsonataSource);
         }
 
         @Test

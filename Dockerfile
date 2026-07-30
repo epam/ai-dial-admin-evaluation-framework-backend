@@ -7,6 +7,7 @@ COPY settings.gradle .
 COPY gradle.properties .
 COPY lombok.config .
 COPY src/ src/
+COPY evaluation-runner-core/ evaluation-runner-core/
 
 RUN gradle --no-daemon clean bootJar
 

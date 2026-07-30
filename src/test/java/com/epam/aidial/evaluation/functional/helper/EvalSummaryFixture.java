@@ -27,6 +27,14 @@ public class EvalSummaryFixture {
     private final String testCaseName;
     private final long createdAtMs;
 
+    /**
+     * Nullable, and read through {@link #getComputedAtMs()} rather than the generated getter: latest-computation
+     * resolution orders by {@code computed_at_ms}, so a test seeding two computations must separate them
+     * explicitly, while every other test wants it to mirror {@code createdAtMs} — a value {@code @Builder.Default}
+     * cannot reference.
+     */
+    private final Long computedAtMs;
+
     @Builder.Default
     private final String executionStatus = ExecutionStatus.SUCCESS.name();
 
@@ -47,4 +55,8 @@ public class EvalSummaryFixture {
 
     @Builder.Default
     private final int totalTurns = 1;
+
+    public long getComputedAtMs() {
+        return computedAtMs != null ? computedAtMs : createdAtMs;
+    }
 }

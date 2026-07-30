@@ -338,22 +338,6 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should succeed with zero counts for a run that has no eval summary rows")
-    void shouldSucceedWhenRunHasNoRows() {
-        // Snapshots exist (so a computation resolves) but nothing was ever summarised.
-        seedSnapshot(runA, computationA);
-        seedSnapshot(runB, computationB);
-
-        final RunComparisonRunDto sideA = compare(runA, runB).getRuns().get(0);
-
-        assertThat(sideA.getTotalRowCount()).isZero();
-        assertThat(sideA.getMatchedRowCount()).isZero();
-        assertThat(sideA.getUnmatchedEvalSummaryIds()).isEmpty();
-        assertThat(sideA.getScores()).isEmpty();
-        assertThat(sideA.getAvgExecDurationMs()).isNull();
-    }
-
-    @Test
     @DisplayName("Should reject a comparison of a run against itself with 400")
     void shouldRejectSameRunTwice() {
         seedSnapshot(runA, computationA);
@@ -407,10 +391,12 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("Should reject a run with no metric computation with 409")
     void shouldRejectRunWithoutComputation() {
-        // Run B has eval summaries but no run_metric_snapshots, so no computation is resolvable for it.
+        // Run B has no eval summaries at all. "Latest" is resolved from test_case_eval_summaries — the
+        // table the comparison then reads — so a run with no rows has no computation and nothing to
+        // compare, whether or not it ever wrote run_metric_snapshots.
         seedSnapshot(runA, computationA);
+        seedSnapshot(runB, computationB);
         seedScore(runA, computationA, "Case", 0.5);
-        seedScore(runB, computationB, "Case", 0.5);
 
         final ResponseEntity<String> response = compareRaw(runA, runB);
 

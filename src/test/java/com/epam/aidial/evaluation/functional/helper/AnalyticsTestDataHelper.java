@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.BatchBindStep;
-1import org.jooq.DSLContext;
+import org.jooq.DSLContext;
 import org.jooq.JSONB;
 import org.jooq.Record;
 import org.jooq.impl.DSL;
@@ -254,7 +254,7 @@ public class AnalyticsTestDataHelper {
                 .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, fixture.getExecDurationMs())
                 .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, JSONB.valueOf(fixture.getMetricValuesJson()))
                 .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, fixture.getCreatedAtMs())
-                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, fixture.getCreatedAtMs())
+                .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, fixture.getComputedAtMs())
                 .execute();
         return id;
     }

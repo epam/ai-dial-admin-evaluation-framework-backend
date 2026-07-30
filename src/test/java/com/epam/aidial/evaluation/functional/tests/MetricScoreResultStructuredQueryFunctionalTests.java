@@ -30,6 +30,7 @@ import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFiel
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryExecutor;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
@@ -228,10 +229,24 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
         // "latest" is resolved from eval summaries, so each computation needs readable rows —
         // with the same computed_at_ms as its snapshot so the newer computation still wins.
         UUID suiteId = UUID.randomUUID();
-        analyticsTestDataHelper.createEvalSummary(
-                suiteId, runId, older, "case-older", "SUCCESS", 10L, 1_000L, 1_000L, "{}", "{}");
-        analyticsTestDataHelper.createEvalSummary(
-                suiteId, runId, newer, "case-newer", "SUCCESS", 10L, 1_000L, 2_000L, "{}", "{}");
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(older)
+                .testCaseName("case-older")
+                .execDurationMs(10L)
+                .createdAtMs(1_000L)
+                .computedAtMs(1_000L)
+                .build());
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(newer)
+                .testCaseName("case-newer")
+                .execDurationMs(10L)
+                .createdAtMs(1_000L)
+                .computedAtMs(2_000L)
+                .build());
         metricScoreService.saveAll(List.of(
                 result(runId, older, "AVG", "Relevancy.score", 0.4),
                 result(runId, newer, "AVG", "Relevancy.score", 0.8)));

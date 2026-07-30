@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
@@ -858,17 +859,15 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
         for (String testCaseName : testCaseNames) {
             analyticsTestDataHelper.createTestRunResult(
                     testSuiteRunId, testSuiteId, UUID.randomUUID(), testCaseName, "{}", "{}", createdAtMs);
-            analyticsTestDataHelper.createEvalSummary(
-                    testSuiteId,
-                    testSuiteRunId,
-                    computationId,
-                    testCaseName,
-                    ExecutionStatus.SUCCESS.name(),
-                    100L,
-                    createdAtMs,
-                    computedAtMs,
-                    "{\"prompt\":\"p\"}",
-                    "{}");
+            analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                    .suiteId(testSuiteId)
+                    .runId(testSuiteRunId)
+                    .computationId(computationId)
+                    .testCaseName(testCaseName)
+                    .createdAtMs(createdAtMs)
+                    .computedAtMs(computedAtMs)
+                    .testCaseDataJson("{\"prompt\":\"p\"}")
+                    .build());
         }
     }
 

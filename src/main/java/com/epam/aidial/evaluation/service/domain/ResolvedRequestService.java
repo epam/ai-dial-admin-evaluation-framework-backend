@@ -218,8 +218,7 @@ public class ResolvedRequestService {
         }
         Map<String, Object> resolvedMap;
         try {
-            resolvedMap =
-                    requestBodyEvaluator.evaluate(body.getContent(), bindingByVar, data, frameBindings, warnings);
+            resolvedMap = requestBodyEvaluator.evaluate(body.getContent(), bindingByVar, data, frameBindings, warnings);
         } catch (RequestBodyEvaluationException e) {
             log.warn("Failed to evaluate JSON request body template for preview: {}", e.getMessage(), e);
             warnings.add(ValidationWarningDto.builder()

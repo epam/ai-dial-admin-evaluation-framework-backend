@@ -10,7 +10,7 @@ Status: **Implemented**
 
 #### Scenario: Multi-turn dataset with no per-turn binding collapses to one request
 - **WHEN** a multi-turn test case has `multiTurnData` with N > 1 elements, but none of the suite's effective input bindings reference a `perTurn: true` field
-- **THEN** the case executes exactly one request built from the case's shared `data`, producing one result row with `turnIndex`/`totalTurns` set to `null` (same as a single-turn case), not N result rows
+- **THEN** the case executes exactly one request built from the case's shared `data`, producing one result row with `turnIndex`/`totalTurns` left at the builder/DB defaults `0`/`1` (byte-identical to a single-turn case; `turn_index`/`total_turns` are non-nullable `int` columns, never `null` — see analytics migration `V1.13__AddTurnColumnsToTestCaseRunResults.sql`), not N result rows
 
 #### Scenario: Single-turn case with a per-turn binding still runs once
 - **WHEN** a single-turn test case (`multiTurnData` absent) is bound to a suite whose template references a `perTurn: true` field

@@ -3,7 +3,6 @@ package com.epam.aidial.evaluation.service.domain.job;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -107,7 +106,11 @@ class TurnLoopExecutorTest {
         RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
                 templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
         ResolvedRequestService resolvedRequestService = new ResolvedRequestService(
-                null, null, jsonbMapper, mock(ValidationWarningsSerializer.class), templateContentResolver,
+                null,
+                null,
+                jsonbMapper,
+                mock(ValidationWarningsSerializer.class),
+                templateContentResolver,
                 requestBodyEvaluator);
         ResponseColumnExtractor responseColumnExtractor = new ResponseColumnExtractor(
                 jsonataEvaluationService,
@@ -166,8 +169,10 @@ class TurnLoopExecutorTest {
                 .cancellationGracePeriodMs(5000L)
                 .cancellationSignal(new AtomicBoolean(false))
                 .createdAtMs(FIXED_CLOCK.millis())
-                .snapshotDeploymentRef(
-                        DeploymentReferenceDto.builder().id("gpt-4").name("GPT-4").build())
+                .snapshotDeploymentRef(DeploymentReferenceDto.builder()
+                        .id("gpt-4")
+                        .name("GPT-4")
+                        .build())
                 .snapshotEndpointRef(EndpointContractDto.builder()
                         .method(HttpMethod.POST)
                         .relativeUrlPattern("/v1/chat")
@@ -199,7 +204,8 @@ class TurnLoopExecutorTest {
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
-        List<TestCaseRunResult> results = executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -242,7 +248,8 @@ class TurnLoopExecutorTest {
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
-        List<TestCaseRunResult> results = executor.execute(input, context, 0, List.of(), "trace-2", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-2", FIXED_CLOCK.millis());
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -282,13 +289,12 @@ class TurnLoopExecutorTest {
                 .build());
 
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
-                .thenReturn(
-                        new TurnOutcome(
-                                ExecutionStatus.SUCCESS,
-                                200,
-                                "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"reply-0\"}}]}",
-                                0,
-                                null))
+                .thenReturn(new TurnOutcome(
+                        ExecutionStatus.SUCCESS,
+                        200,
+                        "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"reply-0\"}}]}",
+                        0,
+                        null))
                 .thenReturn(new TurnOutcome(
                         ExecutionStatus.SUCCESS,
                         200,
@@ -321,17 +327,16 @@ class TurnLoopExecutorTest {
     void bodyEvaluationFailure_producesErrorRowAndStopsRun() {
         // No stubCommonInfra(): evaluation fails before url/header/serializer resolution is ever reached.
         // JSONata source that evaluates to a scalar, not a JSON object -> RequestBodyEvaluationException.
-        TestCaseRunInput input = baseInputBuilder()
-                .testCaseName("bad-body")
-                .testCaseData("{}")
-                .build();
+        TestCaseRunInput input =
+                baseInputBuilder().testCaseName("bad-body").testCaseData("{}").build();
         EvaluationContext context = baseContextBuilder()
                 .snapshotRequestTemplate(jsonBodyTemplate("1 + 1"))
                 .snapshotInputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
-        List<TestCaseRunResult> results = executor.execute(input, context, 0, List.of(), "trace-4", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-4", FIXED_CLOCK.millis());
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -351,7 +356,8 @@ class TurnLoopExecutorTest {
                 .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"},{\"prompt\":\"q2\"}]")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", List.of(Map.of("content", "${{prompt}}")))))
+                .snapshotRequestTemplate(
+                        jsonBodyTemplate(Map.of("messages", List.of(Map.of("content", "${{prompt}}")))))
                 .snapshotInputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")
                         .dataField("prompt")
@@ -367,7 +373,8 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null))
                 .thenReturn(new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":\"boom\"}", 0, null));
 
-        List<TestCaseRunResult> results = executor.execute(input, context, 0, List.of(), "trace-5", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-5", FIXED_CLOCK.millis());
 
         assertThat(results).hasSize(2);
         assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
@@ -380,10 +387,8 @@ class TurnLoopExecutorTest {
     @Test
     @DisplayName("Cancellation before the first turn produces no rows")
     void cancellationBeforeFirstTurn_producesNoRows() {
-        TestCaseRunInput input = baseInputBuilder()
-                .testCaseName("cancelled")
-                .testCaseData("{}")
-                .build();
+        TestCaseRunInput input =
+                baseInputBuilder().testCaseName("cancelled").testCaseData("{}").build();
         EvaluationContext context = baseContextBuilder()
                 .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", List.of())))
                 .snapshotInputBindings(List.of())
@@ -391,7 +396,8 @@ class TurnLoopExecutorTest {
                 .cancellationSignal(new AtomicBoolean(true))
                 .build();
 
-        List<TestCaseRunResult> results = executor.execute(input, context, 0, List.of(), "trace-6", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-6", FIXED_CLOCK.millis());
 
         assertThat(results).isEmpty();
     }
@@ -410,7 +416,8 @@ class TurnLoopExecutorTest {
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
-        List<TestCaseRunResult> results = executor.execute(input, context, 0, List.of(), "trace-7", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-7", FIXED_CLOCK.millis());
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();

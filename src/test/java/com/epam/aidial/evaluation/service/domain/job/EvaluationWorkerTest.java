@@ -174,7 +174,8 @@ class EvaluationWorkerTest {
         when(responseColumnExtractor.extract(anyList(), anyString(), any()))
                 .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
 
-        TestCaseRunResult result = worker.execute(input, context, 0, responseColumns).getFirst();
+        TestCaseRunResult result =
+                worker.execute(input, context, 0, responseColumns).getFirst();
 
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
         assertThat(result.getResponseBody()).contains("REQUEST_RESOLUTION_ERROR");

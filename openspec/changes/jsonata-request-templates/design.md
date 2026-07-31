@@ -90,7 +90,8 @@ that text is parsed as JSONata, with three substitution modes depending on where
 Replace `MultiTurnExecutor`'s fixed `N = multiTurnData.length` with: `N = multiTurnData.length` **if and
 only if** the effective template's input bindings reference at least one dataset field with
 `FieldDefinitionDto.perTurn = true`; otherwise `N = 1`. Single-turn suites are the `N = 1` degenerate case
-(`turnIndex`/`totalTurns` stay `null`, byte-identical to today). A multi-turn dataset bound to a suite with
+(`turnIndex`/`totalTurns` are left at the non-nullable `0`/`1` builder/DB defaults, byte-identical to
+today). A multi-turn dataset bound to a suite with
 no per-turn binding sends exactly one request built from the shared `data` — it does not resend history
 `multiTurnData.length` times for no reason. A single-turn case whose suite happens to bind a `perTurn=true`
 field runs with `N = 1` and gets the same unresolved-placeholder warning behavior as an unbound variable

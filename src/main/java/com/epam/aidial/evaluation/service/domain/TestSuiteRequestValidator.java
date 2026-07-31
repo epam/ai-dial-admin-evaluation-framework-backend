@@ -142,8 +142,7 @@ public class TestSuiteRequestValidator {
             }
             return;
         }
-        throw new ValidationException(
-                "requestTemplate.body.content: must be a JSON object or a JSONata source string");
+        throw new ValidationException("requestTemplate.body.content: must be a JSON object or a JSONata source string");
     }
 
     /**

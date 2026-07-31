@@ -33,7 +33,10 @@ class TestSuiteRequestValidatorTest {
         validationProperties.setMaxTemplateSizeBytes(65536);
         validationProperties.setMaxBindingsCount(64);
         validator = new TestSuiteRequestValidator(
-                jsonataEvaluationService, mock(SchemaValidationService.class), new ObjectMapper(), validationProperties);
+                jsonataEvaluationService,
+                mock(SchemaValidationService.class),
+                new ObjectMapper(),
+                validationProperties);
     }
 
     // --- requestTemplate.body.content JSONata String validation ---

@@ -5,8 +5,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
-import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
-import com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
+import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapperImpl;

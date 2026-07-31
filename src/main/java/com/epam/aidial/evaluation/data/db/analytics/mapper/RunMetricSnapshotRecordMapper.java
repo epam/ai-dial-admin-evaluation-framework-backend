@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.data.db.analytics.mapper;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.RunMetricSnapshotsRecord;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.UUID;
 import org.jooq.JSONB;
 import org.springframework.stereotype.Component;

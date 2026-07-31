@@ -4,10 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import com.epam.aidial.evaluation.configuration.JsonMapperConfiguration;
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.WeightedMean;

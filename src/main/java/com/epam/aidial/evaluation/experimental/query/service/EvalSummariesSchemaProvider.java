@@ -7,15 +7,15 @@ import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConsta
 import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants.RESPONSE_COLUMN_PREFIX;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
-import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;

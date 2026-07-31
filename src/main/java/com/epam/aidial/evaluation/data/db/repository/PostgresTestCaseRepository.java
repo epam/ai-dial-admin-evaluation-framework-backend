@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.data.db.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.mapper.TestCaseRecordMapper;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
@@ -15,6 +14,7 @@ import com.epam.aidial.evaluation.data.db.repository.sql.PageRequestSqlBuilder;
 import com.epam.aidial.evaluation.data.db.repository.sql.SortWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collection;

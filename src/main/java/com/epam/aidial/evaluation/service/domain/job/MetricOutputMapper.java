@@ -3,7 +3,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricErrorDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;

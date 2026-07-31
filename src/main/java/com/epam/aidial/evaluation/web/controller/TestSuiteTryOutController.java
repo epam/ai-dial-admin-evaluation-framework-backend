@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.web.controller;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.TryItOutService;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutWithVariablesRequestDto;

@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;

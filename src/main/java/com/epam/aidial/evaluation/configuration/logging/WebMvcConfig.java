@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.configuration.logging;
 
 import com.epam.aidial.evaluation.configuration.security.AuthorizationHeaderInterceptor;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;

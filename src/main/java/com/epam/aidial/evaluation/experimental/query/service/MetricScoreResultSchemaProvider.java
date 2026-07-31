@@ -2,9 +2,9 @@ package com.epam.aidial.evaluation.experimental.query.service;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import org.springframework.stereotype.Component;
 

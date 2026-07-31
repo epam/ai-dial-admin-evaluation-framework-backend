@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.experimental.query.web;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

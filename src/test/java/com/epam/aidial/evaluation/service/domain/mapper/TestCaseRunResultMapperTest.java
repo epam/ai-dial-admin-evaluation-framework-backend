@@ -2,8 +2,9 @@ package com.epam.aidial.evaluation.service.domain.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
-import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ExecutionInfoRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultItemDto;
 import java.lang.reflect.Field;

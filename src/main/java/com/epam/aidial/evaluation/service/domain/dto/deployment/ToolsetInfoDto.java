@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto.deployment;
 
-import com.epam.aidial.evaluation.client.mcp.McpTransport;
+import com.epam.aidial.evaluation.runner.client.mcp.McpTransport;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import lombok.AllArgsConstructor;

@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.web.controller;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.MetricDeclarationService;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;

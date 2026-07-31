@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.experimental.query.service;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntitySchemaDto;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;

@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.model;
 
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

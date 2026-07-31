@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.experimental.query.service.translate.function;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Locale;

@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto.analytics;
 
+import com.epam.aidial.evaluation.runner.dto.analytics.ExtractionWarningDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;

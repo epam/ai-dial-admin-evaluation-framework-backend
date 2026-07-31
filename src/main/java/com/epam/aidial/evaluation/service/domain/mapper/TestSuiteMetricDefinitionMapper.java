@@ -1,15 +1,16 @@
 package com.epam.aidial.evaluation.service.domain.mapper;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteMetricDefinition;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.AggregatedMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

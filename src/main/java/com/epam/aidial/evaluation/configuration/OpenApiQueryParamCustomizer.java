@@ -1,11 +1,11 @@
 package com.epam.aidial.evaluation.configuration;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.pagination.PaginationProperties;
 import com.epam.aidial.evaluation.data.db.repository.sql.FilterSpec;
 import com.epam.aidial.evaluation.data.db.repository.sql.FilterWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.SortSpec;
 import com.epam.aidial.evaluation.data.db.repository.sql.SortWhitelists;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;

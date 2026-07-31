@@ -6,9 +6,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.client.mcp.McpInvocationException;
-import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.client.mcp.McpInvocationException;
+import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableSource;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;

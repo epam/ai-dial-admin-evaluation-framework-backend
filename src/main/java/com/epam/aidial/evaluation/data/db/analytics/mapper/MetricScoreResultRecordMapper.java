@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.data.db.analytics.mapper;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.MetricScoreResultRecord;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 

@@ -12,13 +12,15 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
@@ -187,7 +189,8 @@ class TemplateVariableServiceTest {
 
         private final TestSuiteRepository testSuiteRepository = mock(TestSuiteRepository.class);
         private final DatasetSchemaProvider datasetSchemaProvider = mock(DatasetSchemaProvider.class);
-        private final JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper());
+        private final JsonbMapper jsonbMapper =
+                new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
         private final TestCaseService testCaseService = mock(TestCaseService.class);
 
         private final TemplateVariableService wiredService = new TemplateVariableService(
@@ -277,7 +280,8 @@ class TemplateVariableServiceTest {
         private final TestSuiteRepository testSuiteRepository = mock(TestSuiteRepository.class);
         private final DatasetSchemaProvider datasetSchemaProvider = mock(DatasetSchemaProvider.class);
         private final TestCaseService testCaseService = mock(TestCaseService.class);
-        private final JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper());
+        private final JsonbMapper jsonbMapper =
+                new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
 
         private final TemplateVariableService wiredService = new TemplateVariableService(
                 testSuiteRepository,

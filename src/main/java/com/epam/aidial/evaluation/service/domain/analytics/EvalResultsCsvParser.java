@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.service.domain.analytics;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.analytics.AnalyticsResultsProperties;
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
-import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.DatasetSchemaProvider;
 import com.epam.aidial.evaluation.service.domain.SchemaValidationService;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;

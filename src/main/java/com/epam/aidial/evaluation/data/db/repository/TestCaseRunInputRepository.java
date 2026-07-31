@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.data.db.repository;
 
-import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;

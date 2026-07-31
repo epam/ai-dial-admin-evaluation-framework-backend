@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

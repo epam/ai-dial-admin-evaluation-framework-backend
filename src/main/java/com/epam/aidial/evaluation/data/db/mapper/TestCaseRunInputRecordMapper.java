@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.data.db.mapper;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestCaseRunInputsRecord;
-import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import java.util.UUID;
 import org.jooq.JSONB;
 import org.springframework.stereotype.Component;

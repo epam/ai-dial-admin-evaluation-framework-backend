@@ -6,9 +6,9 @@ import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConsta
 import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants.METRIC_INFO_COLUMN_PREFIX;
 import static com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants.RESPONSE_COLUMN_PREFIX;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.repository.sql.json.JsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;

@@ -3,7 +3,6 @@ package com.epam.aidial.evaluation.data.db.repository;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Sequences.TEST_SUITE_RUN_NAME_SEQ;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.mapper.TestSuiteRunRecordMapper;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
@@ -15,6 +14,7 @@ import com.epam.aidial.evaluation.data.db.repository.sql.PageRequestSqlBuilder;
 import com.epam.aidial.evaluation.data.db.repository.sql.SortWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;

@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.service.infrastructure.health;
 
-import com.epam.aidial.evaluation.client.dialcore.DialFileClient;
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.health.contributor.Health;

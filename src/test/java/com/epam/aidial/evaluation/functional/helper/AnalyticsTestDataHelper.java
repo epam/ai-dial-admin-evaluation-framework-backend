@@ -4,7 +4,7 @@ import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.RUN_METRI
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

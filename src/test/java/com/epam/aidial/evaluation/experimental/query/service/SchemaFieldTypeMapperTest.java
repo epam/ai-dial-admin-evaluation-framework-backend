@@ -3,7 +3,7 @@ package com.epam.aidial.evaluation.experimental.query.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

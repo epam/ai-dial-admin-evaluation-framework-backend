@@ -19,13 +19,15 @@ import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetUpdateResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.RevalidationTaskDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
@@ -36,7 +38,6 @@ import com.epam.aidial.evaluation.service.domain.exception.VersionConflictExcept
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.mapper.DatasetMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.sql.SQLException;
 import java.util.List;
@@ -102,7 +103,7 @@ class DatasetServiceTest {
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper);
+        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
         DatasetMapper datasetMapper = new DatasetMapper(jsonbMapper, warningsSerializer);
         service = new DatasetService(

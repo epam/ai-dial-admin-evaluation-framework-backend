@@ -1,12 +1,12 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.ParameterDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.ParameterDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

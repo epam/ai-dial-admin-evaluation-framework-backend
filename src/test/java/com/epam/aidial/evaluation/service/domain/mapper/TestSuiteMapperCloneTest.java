@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
-import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import java.util.UUID;
@@ -28,7 +30,7 @@ class TestSuiteMapperCloneTest {
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper);
+        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
         mapper = new TestSuiteMapper(jsonbMapper, warningsSerializer, objectMapper);
     }

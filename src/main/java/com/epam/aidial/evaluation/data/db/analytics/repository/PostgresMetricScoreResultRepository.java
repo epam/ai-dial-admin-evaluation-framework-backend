@@ -2,9 +2,9 @@ package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.mapper.MetricScoreResultRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

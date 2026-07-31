@@ -2,12 +2,12 @@ package com.epam.aidial.evaluation.experimental.query.service.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITES;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.repository.sql.json.JsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.jooq.DSLContext;

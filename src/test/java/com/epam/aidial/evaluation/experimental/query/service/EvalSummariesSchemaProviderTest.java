@@ -9,11 +9,11 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshot
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;

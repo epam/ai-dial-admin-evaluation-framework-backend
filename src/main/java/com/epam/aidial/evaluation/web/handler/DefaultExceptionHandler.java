@@ -1,10 +1,11 @@
 package com.epam.aidial.evaluation.web.handler;
 
-import com.epam.aidial.evaluation.client.dialcore.DialCoreClientException;
-import com.epam.aidial.evaluation.client.dialcore.DialCoreErrorCode;
-import com.epam.aidial.evaluation.client.dialcore.DialCoreErrorMapper;
-import com.epam.aidial.evaluation.client.mcp.McpInvocationException;
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreErrorCode;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreErrorMapper;
+import com.epam.aidial.evaluation.runner.client.mcp.McpInvocationException;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.TryItOutService.TryItOutValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
@@ -18,7 +19,6 @@ import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingE
 import com.epam.aidial.evaluation.service.domain.exception.TooManyRunsException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
-import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;

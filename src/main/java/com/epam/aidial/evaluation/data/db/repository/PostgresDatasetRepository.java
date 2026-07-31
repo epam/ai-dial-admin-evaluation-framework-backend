@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.data.db.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.DATASETS;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.exception.OptimisticLockException;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.DatasetsRecord;
 import com.epam.aidial.evaluation.data.db.mapper.DatasetRecordMapper;
@@ -17,6 +16,7 @@ import com.epam.aidial.evaluation.data.db.repository.sql.PageRequestSqlBuilder;
 import com.epam.aidial.evaluation.data.db.repository.sql.SortWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;

@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.mapper;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.GrafanaLinkBuilder;
 import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorDetailsDto;

@@ -1,12 +1,12 @@
 package com.epam.aidial.evaluation.experimental.query.service;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityRegistry;
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryExecutor;
 import com.epam.aidial.evaluation.experimental.query.service.translate.QueryParameterResolver;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.Map;
 import java.util.Set;

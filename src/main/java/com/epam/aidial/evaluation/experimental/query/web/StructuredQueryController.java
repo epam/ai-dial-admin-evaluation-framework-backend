@@ -1,10 +1,10 @@
 package com.epam.aidial.evaluation.experimental.query.web;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.experimental.query.service.dto.StructuredQueryResultDto;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;

@@ -1,11 +1,11 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.ParameterDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.UrlEncodedFormRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.ParameterDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodySchemaDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
 import java.util.HashSet;

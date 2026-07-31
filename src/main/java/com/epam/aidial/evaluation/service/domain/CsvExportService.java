@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvExportProperties;
 import com.epam.aidial.evaluation.configuration.properties.pagination.PaginationProperties;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
@@ -9,6 +8,7 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;

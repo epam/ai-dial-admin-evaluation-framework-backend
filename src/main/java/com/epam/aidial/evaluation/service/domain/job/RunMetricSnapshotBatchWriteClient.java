@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.analytics.RunMetricSnapshotService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;

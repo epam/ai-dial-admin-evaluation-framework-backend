@@ -2,12 +2,12 @@ package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.ParameterDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.ParameterLocation;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.ParameterDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.ParameterLocation;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;

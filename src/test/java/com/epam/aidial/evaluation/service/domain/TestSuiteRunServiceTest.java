@@ -14,12 +14,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
-import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;

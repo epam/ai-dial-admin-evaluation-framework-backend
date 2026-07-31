@@ -101,6 +101,9 @@ repositories {
 dependencies {
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
 
+    // Shared execution engine module
+    implementation project(':evaluation-runner-core')
+
     // Core
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-restclient'

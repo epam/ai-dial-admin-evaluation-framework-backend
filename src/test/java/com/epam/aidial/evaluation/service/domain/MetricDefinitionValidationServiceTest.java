@@ -1,15 +1,16 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import static com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode.INVALID_OUTPUT_SCHEMA;
+import static com.epam.aidial.evaluation.runner.dto.ValidationWarningCode.INVALID_OUTPUT_SCHEMA;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
+import com.epam.aidial.evaluation.service.domain.dto.MetricBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -344,8 +345,7 @@ class MetricDefinitionValidationServiceTest {
         assertThat(result.getWarnings()).anyMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE);
     }
 
-    private static MetricParameterBindingDto binding(
-            String property, com.epam.aidial.evaluation.service.domain.dto.MetricBindingSourceDto source) {
+    private static MetricParameterBindingDto binding(String property, MetricBindingSourceDto source) {
         return MetricParameterBindingDto.builder()
                 .property(property)
                 .source(source)

@@ -13,6 +13,10 @@ context: |
   - Security: OIDC/JWT multi-issuer (configurable; can be disabled for local/tests)
   - API docs: OpenAPI/Swagger UI (springdoc)
   - Testing: JUnit 5 + Testcontainers (Postgres); run with `./gradlew test`
+  - Build layout: multi-module Gradle build — root project (this app) + `evaluation-runner-core` subproject
+    (DB-free, reusable Phase 1 execution engine library under root package `com.epam.aidial.evaluation.runner`,
+    contributed to the root app via Spring Boot autoconfiguration). Run its tests with
+    `./gradlew :evaluation-runner-core:test`.
 
   # Architecture — Layered
 
@@ -46,6 +50,17 @@ context: |
      - One constants class per bounded context (e.g., ValidationConstants, SecurityConstants)
 
   7. utils (com.epam.aidial.evaluation.utils) — shared utilities
+
+  8. runner (com.epam.aidial.evaluation.runner, separate `evaluation-runner-core` Gradle subproject) —
+     shared Phase 1 execution engine (EvaluationWorker, MultiTurnExecutor, RequestResolver, DIAL Core/MCP
+     clients, SSE parsing, response column extraction)
+     - DB-free: no JDBC/jOOQ/Flyway dependency (enforced by RunnerModuleConstraintsTest)
+     - One-way dependency: the EF backend (root project) depends on this module; this module must never
+       depend back on com.epam.aidial.evaluation.* outside its own runner.* subtree
+     - Contributes its beans via Spring Boot autoconfiguration
+       (EvaluationRunnerAutoConfiguration + META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports) —
+       no manual @Import/@ComponentScan needed in the root app
+     - Exists so a future standalone CI runner can share exact execution-logic parity with the EF backend
 
   # Layering Principle (authoritative — all artifact rules defer to this)
 

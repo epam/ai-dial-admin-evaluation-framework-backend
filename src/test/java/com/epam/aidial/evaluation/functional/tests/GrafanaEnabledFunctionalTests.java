@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
-import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;

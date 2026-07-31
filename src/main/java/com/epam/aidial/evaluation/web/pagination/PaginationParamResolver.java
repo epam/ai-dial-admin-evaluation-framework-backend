@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.web.pagination;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.pagination.PaginationProperties;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

@@ -3,8 +3,9 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.epam.aidial.evaluation.configuration.properties.JsonataProperties;
-import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
+import com.epam.aidial.evaluation.runner.exception.ValidationException;
+import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

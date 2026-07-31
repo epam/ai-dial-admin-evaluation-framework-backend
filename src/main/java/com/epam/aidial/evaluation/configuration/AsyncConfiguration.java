@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.configuration;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.concurrent.ThreadPoolExecutor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

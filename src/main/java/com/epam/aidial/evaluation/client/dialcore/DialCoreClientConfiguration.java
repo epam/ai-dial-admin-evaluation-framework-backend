@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.client.dialcore;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
-import com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
+import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.context.Context;
 import java.time.Duration;

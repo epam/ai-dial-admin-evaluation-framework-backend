@@ -3,8 +3,8 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
+import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

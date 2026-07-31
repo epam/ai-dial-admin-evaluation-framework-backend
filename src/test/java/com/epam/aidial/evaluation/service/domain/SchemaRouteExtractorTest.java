@@ -7,10 +7,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
-import com.epam.aidial.evaluation.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteUpstreamDto;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapperImpl;

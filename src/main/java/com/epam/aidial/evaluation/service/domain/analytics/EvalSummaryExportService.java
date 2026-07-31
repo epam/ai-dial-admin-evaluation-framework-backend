@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain.analytics;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvExportProperties;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
@@ -14,6 +13,7 @@ import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryExportRequestDto;

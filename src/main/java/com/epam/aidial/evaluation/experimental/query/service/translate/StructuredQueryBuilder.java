@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.experimental.query.service.translate;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.CursorPage;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.model.NullsOrder;
@@ -16,6 +15,7 @@ import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityRegistry;
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryEntityResolver;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
 import java.util.HashMap;

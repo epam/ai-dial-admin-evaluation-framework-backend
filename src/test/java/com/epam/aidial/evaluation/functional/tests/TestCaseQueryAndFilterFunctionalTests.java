@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
-import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import java.util.List;

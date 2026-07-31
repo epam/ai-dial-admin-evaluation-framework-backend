@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.web.controller;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.ResolvedRequestService;
-import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;

@@ -1,14 +1,14 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;

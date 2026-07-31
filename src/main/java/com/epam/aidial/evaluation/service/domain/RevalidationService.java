@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.validation.RevalidationProperties;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.RevalidationTask;
@@ -12,6 +11,8 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.RevalidationTaskRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer.CoercionResult;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
@@ -20,7 +21,6 @@ import com.epam.aidial.evaluation.service.domain.dto.RevalidationTaskDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;

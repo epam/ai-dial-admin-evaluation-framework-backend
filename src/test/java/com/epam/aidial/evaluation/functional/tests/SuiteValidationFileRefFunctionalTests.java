@@ -3,18 +3,19 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
-import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
-import com.epam.aidial.evaluation.service.domain.dto.FormPartDto;
-import com.epam.aidial.evaluation.service.domain.dto.FormPartType;
-import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.MultipartFormDataRequestBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.MultipartFormDataRequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FormPartDto;
+import com.epam.aidial.evaluation.runner.dto.FormPartType;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -182,7 +183,7 @@ public abstract class SuiteValidationFileRefFunctionalTests extends BaseFunction
                         .build())
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/chat")
-                        .body(com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto.builder()
+                        .body(JsonRequestBodyDto.builder()
                                 .content(java.util.Map.of("attachment", "${{doc|file}}"))
                                 .build())
                         .build())

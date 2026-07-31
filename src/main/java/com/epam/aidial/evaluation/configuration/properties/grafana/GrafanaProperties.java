@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.configuration.properties.grafana;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;

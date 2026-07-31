@@ -1,19 +1,20 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvColumnInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
@@ -24,7 +25,6 @@ import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundExcepti
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationDetector;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;

@@ -2,16 +2,16 @@ package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.FormPartDto;
-import com.epam.aidial.evaluation.service.domain.dto.FormPartType;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.MultipartFormDataRequestBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.FormPartDto;
+import com.epam.aidial.evaluation.runner.dto.FormPartType;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableSource;
-import com.epam.aidial.evaluation.service.domain.dto.UrlEncodedFormRequestBodyDto;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;

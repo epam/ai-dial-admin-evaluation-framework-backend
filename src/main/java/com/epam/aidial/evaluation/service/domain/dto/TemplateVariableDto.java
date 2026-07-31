@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Set;

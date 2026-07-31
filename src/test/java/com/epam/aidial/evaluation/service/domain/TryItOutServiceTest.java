@@ -12,33 +12,39 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
-import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
-import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
-import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingProperties;
-import com.epam.aidial.evaluation.configuration.properties.dial.DialCoreProperties;
-import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
+import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
+import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
+import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
+import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
+import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.job.SseEvent;
+import com.epam.aidial.evaluation.runner.job.SseEventParser;
+import com.epam.aidial.evaluation.runner.job.SseParseResult;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
+import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
+import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
+import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
+import com.epam.aidial.evaluation.runner.service.RequestResolver;
+import com.epam.aidial.evaluation.runner.service.SerializedBody;
 import com.epam.aidial.evaluation.service.domain.TryItOutService.TryItOutValidationException;
-import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
-import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningCode;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import com.epam.aidial.evaluation.service.domain.job.SseEvent;
-import com.epam.aidial.evaluation.service.domain.job.SseEventParser;
-import com.epam.aidial.evaluation.service.domain.job.SseParseResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import io.opentelemetry.api.OpenTelemetry;
 import java.io.ByteArrayInputStream;
@@ -81,6 +87,9 @@ class TryItOutServiceTest {
 
     @Mock
     private ResolvedRequestService resolvedRequestService;
+
+    @Mock
+    private RequestResolver requestResolver;
 
     @Mock
     private DialCoreDeploymentInvoker deploymentInvoker;
@@ -143,6 +152,7 @@ class TryItOutServiceTest {
                 testSuiteRepository,
                 testCaseRepository,
                 resolvedRequestService,
+                requestResolver,
                 deploymentInvoker,
                 mcpToolInvoker,
                 mcpRequestResolver,
@@ -342,7 +352,7 @@ class TryItOutServiceTest {
                                     .content(Map.of("prompt", "${{prompt}}"))
                                     .build())
                             .build());
-            when(resolvedRequestService.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
                     .thenReturn("/openai/deployments/gpt-4/chat/completions");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
@@ -367,7 +377,7 @@ class TryItOutServiceTest {
                     .thenReturn(RequestTemplateDto.builder()
                             .urlTemplate("/chat/completions")
                             .build());
-            when(resolvedRequestService.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));
@@ -378,7 +388,7 @@ class TryItOutServiceTest {
             service.tryWithVariables(SUITE_ID, variables);
 
             ArgumentCaptor<List<InputBindingDto>> captor = ArgumentCaptor.forClass(List.class);
-            verify(resolvedRequestService).resolve(any(), captor.capture(), anyMap());
+            verify(requestResolver).resolve(any(), captor.capture(), anyMap());
             List<InputBindingDto> bindings = captor.getValue();
             assertThat(bindings).hasSize(1);
             assertThat(bindings.get(0).getTemplateVariable()).isEqualTo("prompt");
@@ -396,7 +406,7 @@ class TryItOutServiceTest {
                     .thenReturn(RequestTemplateDto.builder()
                             .urlTemplate("/chat/completions")
                             .build());
-            when(resolvedRequestService.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));
@@ -408,7 +418,7 @@ class TryItOutServiceTest {
             service.tryWithVariables(SUITE_ID, variables);
 
             ArgumentCaptor<List<InputBindingDto>> captor = ArgumentCaptor.forClass(List.class);
-            verify(resolvedRequestService).resolve(any(), captor.capture(), anyMap());
+            verify(requestResolver).resolve(any(), captor.capture(), anyMap());
             assertThat(captor.getValue()).hasSize(1);
             assertThat(captor.getValue().get(0).getTemplateVariable()).isEqualTo("valid");
         }
@@ -443,7 +453,7 @@ class TryItOutServiceTest {
                             .build())
                     .warnings(List.of())
                     .build();
-            when(resolvedRequestService.resolve(any(), anyList(), anyMap())).thenReturn(resolved);
+            when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(resolved);
             when(urlBuilder.buildUrl("gpt-4", "/chat/completions")).thenReturn("/path");
 
             ArgumentCaptor<HttpHeaders> headersCaptor = ArgumentCaptor.forClass(HttpHeaders.class);
@@ -592,7 +602,7 @@ class TryItOutServiceTest {
                     .thenReturn(RequestTemplateDto.builder()
                             .urlTemplate("/chat/completions")
                             .build());
-            when(resolvedRequestService.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
+            when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
             when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));

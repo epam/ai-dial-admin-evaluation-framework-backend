@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;

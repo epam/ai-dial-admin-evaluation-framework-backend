@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.configuration;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import io.swagger.v3.oas.models.examples.Example;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.parameters.RequestBody;

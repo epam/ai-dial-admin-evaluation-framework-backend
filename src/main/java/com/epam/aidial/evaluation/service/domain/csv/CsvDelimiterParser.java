@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.csv;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import org.springframework.stereotype.Component;
 

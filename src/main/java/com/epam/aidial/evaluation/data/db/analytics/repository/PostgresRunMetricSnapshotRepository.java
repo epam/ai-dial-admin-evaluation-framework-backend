@@ -2,9 +2,9 @@ package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.RUN_METRIC_SNAPSHOTS;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.mapper.RunMetricSnapshotRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

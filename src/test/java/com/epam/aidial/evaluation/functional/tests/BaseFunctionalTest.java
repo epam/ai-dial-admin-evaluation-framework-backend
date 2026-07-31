@@ -2,8 +2,8 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.ValidationWarningDto;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.TestRestTemplate;

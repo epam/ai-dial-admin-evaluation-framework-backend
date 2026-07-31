@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.exception.InvalidFilterException;
 import com.epam.aidial.evaluation.data.db.exception.OptimisticLockException;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
@@ -10,6 +9,7 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;

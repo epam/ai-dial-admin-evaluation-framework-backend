@@ -1,11 +1,11 @@
 package com.epam.aidial.evaluation.experimental.query.service.metricscore;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.analytics.RunComparisonProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.analytics.ComputationResolver;
 import com.epam.aidial.evaluation.service.domain.analytics.RunComparisonProvider;

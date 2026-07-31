@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.experimental.query.service.metricscore;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ComparisonNode;
@@ -17,6 +16,7 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricScoreValueDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;

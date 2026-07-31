@@ -6,17 +6,17 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
-import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
@@ -320,7 +320,7 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
     /**
      * A streaming reply whose DIAL {@code custom_content.attachments[0]} is split across two SSE deltas
      * (index 0's {@code type} in the first chunk, {@code title} in the second) — {@link
-     * com.epam.aidial.evaluation.service.domain.job.CustomContentAccumulator} must merge them by index.
+     * com.epam.aidial.evaluation.runner.job.CustomContentAccumulator} must merge them by index.
      */
     private DeploymentInvocationResult streamingReplyWithAttachment(int turnIndex) {
         String sse = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"reply-" + turnIndex
@@ -335,7 +335,7 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
     /**
      * DEPLOYMENT suite bound to a dataset with one shared field ({@code topic}, not perTurn) and one
      * per-turn field ({@code prompt}) that the suite's single input binding never references. Per {@link
-     * com.epam.aidial.evaluation.service.domain.job.PerTurnBindingDetector}, a multi-turn case built
+     * com.epam.aidial.evaluation.runner.job.PerTurnBindingDetector}, a multi-turn case built
      * against this suite must collapse to {@code N = 1} regardless of how many {@code multiTurnData}
      * entries it carries.
      */

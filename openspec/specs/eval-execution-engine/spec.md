@@ -59,17 +59,33 @@ Status: **Implemented**
 - **THEN** the executor SHALL read inputs using paginated queries
 
 ### Requirement: Single test case evaluation (worker)
-The `EvaluationWorker` SHALL accept a `TestCaseRunInput` (carrying frozen test case data and optional overrides) plus an `EvaluationContext` (carrying snapshot fields). It SHALL resolve the request body using snapshot fields from context + test case data + per-case overrides (no DB read), call the target deployment endpoint, capture the response (including streaming), extract response columns, and build a `TestCaseRunResult`.
+The `EvaluationWorker` SHALL accept a `TestCaseRunInput` (carrying frozen test case data and optional overrides) plus an `EvaluationContext` (carrying snapshot fields). It SHALL resolve the request body using snapshot fields from context + test case data + per-case overrides (no DB read), call the target deployment endpoint, capture the response (including streaming), extract response columns, and build a `TestCaseRunResult`. Resolution SHALL be performed by injecting `RequestResolver` (from `evaluation-runner-core`) — not `ResolvedRequestService` (which remains in the EF backend and carries DB dependencies for the Try-It-Out path). `EvaluationWorker` itself now resides in the shared module, under package `com.epam.aidial.evaluation.runner.job`.
 Status: **Implemented**
 
-#### Scenario: Snapshot-based request resolution
+#### Scenario: Snapshot-based request resolution via RequestResolver
 - **WHEN** a test case is dispatched for execution
-- **THEN** the worker SHALL resolve the full request using `ResolvedRequestService.resolve(effectiveTemplate, effectiveBindings, testCaseData)` where:
+- **THEN** the worker SHALL resolve the full request using `requestResolver.resolve(effectiveTemplate, effectiveBindings, testCaseData)` where:
   - `effectiveTemplate` = `input.getRequestTemplateOverride()` if non-null, else `context.getSnapshotRequestTemplate()`
   - `effectiveBindings` = `input.getInputBindingsOverride()` if non-null, else `context.getSnapshotInputBindings()`
   - `testCaseData` = deserialized from `input.getTestCaseData()`
-  - `deploymentRef` and `endpointRef` read from `context.getSnapshotDeploymentRef()` and `context.getSnapshotEndpointRef()`
-  - The worker SHALL NOT call `resolveRequest(suiteId, tcId)` (no DB reads during execution)
+  - `deploymentRef` and `endpointRef` are read from `context.getSnapshotDeploymentRef()` and `context.getSnapshotEndpointRef()`
+  - The worker SHALL NOT call `resolveRequest(suiteId, tcId)` (no DB reads during execution) and SHALL NOT call `ResolvedRequestService.resolve(...)` — that method no longer exists; the equivalent logic lives on the injected `RequestResolver`
+
+#### Scenario: EvaluationWorker injects RequestResolver, not ResolvedRequestService
+- **WHEN** the shared module's `EvaluationWorker` bean is created
+- **THEN** its constructor SHALL accept `RequestResolver` (from `runner.service`) as the resolution dependency — not `ResolvedRequestService` (which is an EF backend class)
+
+#### Scenario: Package paths corrected for evaluation-runner-core move
+- **WHEN** locating the classes referenced by this spec's "Implementation Notes" section (baseline `eval-execution-engine/spec.md`)
+- **THEN** the following corrected fully-qualified names apply (superseding the baseline's now-stale paths):
+  - `EvaluationWorker`: `com.epam.aidial.evaluation.runner.job.EvaluationWorker` (was `com.epam.aidial.evaluation.service.domain.job.EvaluationWorker`)
+  - `EvaluationContext`: `com.epam.aidial.evaluation.runner.job.EvaluationContext` (was `com.epam.aidial.evaluation.service.domain.job.EvaluationContext`)
+  - `StreamingResponseAccumulator`: `com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator` (was `com.epam.aidial.evaluation.service.domain.job.StreamingResponseAccumulator`)
+  - `TestCaseRunResultFactory`: `com.epam.aidial.evaluation.runner.job.TestCaseRunResultFactory` (was `com.epam.aidial.evaluation.service.domain.job.TestCaseRunResultFactory`)
+  - `ResultBatchWriter`: the name now denotes an interface at `com.epam.aidial.evaluation.runner.job.ResultBatchWriter` (`addResults(List<TestCaseRunResult>)`, `flush()`). The baseline's concrete `com.epam.aidial.evaluation.service.domain.job.ResultBatchWriter` class and its `ResultBatchWriterTransactional` collaborator no longer exist; they are replaced by `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriterFactory` (Spring bean, creates one writer per run) and `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriter` (plain per-run instance, not a Spring bean), both in the EF backend, implementing the shared interface
+  - `EvaluationRunProperties`: `com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties` (was `com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties`)
+  - `DeploymentInvocationResult`: `com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult` (was `com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult`)
+  - `EvaluationExecutor`, `InProcessEvaluationExecutor`, `ExecutionSettingsValidator` remain unmoved, in `com.epam.aidial.evaluation.service.domain.job` (EF backend) — these classes have DB dependencies and were not part of the shared-module extraction
 
 ### Requirement: Multi-turn dispatch and per-turn result emission
 The worker that executes one run input SHALL return a list of results. When the input carries `multi_turn_data`, execution is delegated to the multi-turn turn loop, which emits one result per executed turn; otherwise the existing single-turn path is used and returns a single result. MCP inputs are unchanged. Each result carries `turn_index` and `total_turns` (single-turn = `0/1`).
@@ -681,17 +697,49 @@ Status: **Implemented**
 - **WHEN** response columns use MCP-specific JSONata paths (e.g., `$.isError`, `$.content[0].text`, `$.structuredContent.results`)
 - **THEN** the extraction SHALL work correctly because the serialized JSON preserves the MCP envelope structure
 
+### Requirement: EvaluationWorker resides in `evaluation-runner-core`
+The `EvaluationWorker` class SHALL reside in the `evaluation-runner-core` module under package `com.epam.aidial.evaluation.runner.job`. The EF backend's `InProcessEvaluationExecutor` SHALL inject it from the shared module.
+
+Status: **Implemented**
+
+#### Scenario: EvaluationWorker is a shared-module bean
+- **WHEN** the EF backend application context starts
+- **THEN** the `EvaluationWorker` bean SHALL originate from `evaluation-runner-core` (via `EvaluationRunnerAutoConfiguration`) and be injectable into `InProcessEvaluationExecutor` without the EF backend declaring it as a bean
+
+#### Scenario: EvaluationWorker has no EF backend import
+- **WHEN** ArchUnit's `RunnerModuleConstraintsTest` is run in the shared module
+- **THEN** `EvaluationWorker` SHALL have no import from `com.epam.aidial.evaluation` (the EF backend package)
+
+### Requirement: TestCaseRunResult type used by EvaluationWorker comes from `evaluation-runner-core`
+The `TestCaseRunResult` type produced by `EvaluationWorker.execute(...)` and consumed by `InProcessEvaluationExecutor` and the EF backend's `PostgresResultBatchWriter` (implementing the shared module's `ResultBatchWriter` interface) SHALL be `com.epam.aidial.evaluation.runner.model.TestCaseRunResult`. The EF backend's analytics `TestCaseRunResultRecordMapper` SHALL map this shared type to the jOOQ-generated `TestCaseRunResultsRecord`.
+
+Status: **Implemented**
+
+#### Scenario: EvaluationWorker returns shared TestCaseRunResult
+- **WHEN** `EvaluationWorker.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs)` completes
+- **THEN** it SHALL return `List<com.epam.aidial.evaluation.runner.model.TestCaseRunResult>`
+
+#### Scenario: InProcessEvaluationExecutor consumes shared TestCaseRunResult
+- **WHEN** `InProcessEvaluationExecutor` collects results from `EvaluationWorker` (via `TestCaseRunner`)
+- **THEN** it SHALL pass them to a `com.epam.aidial.evaluation.runner.job.ResultBatchWriter` instance (created per-run by `PostgresResultBatchWriterFactory`) whose `addResults(List<TestCaseRunResult>)` parameter is `List<com.epam.aidial.evaluation.runner.model.TestCaseRunResult>`
+
+#### Scenario: Analytics RecordMapper maps from shared model
+- **WHEN** `TestCaseRunResultRecordMapper.from(TestCaseRunResult result)` is called in the EF backend
+- **THEN** it SHALL produce a `TestCaseRunResultsRecord` by reading fields from `com.epam.aidial.evaluation.runner.model.TestCaseRunResult` — no data conversion, only field mapping
+
 ## Implementation Notes
-- Executor interface: `com.epam.aidial.evaluation.service.domain.job.EvaluationExecutor`
-- In-process executor: `com.epam.aidial.evaluation.service.domain.job.InProcessEvaluationExecutor`
-- Worker: `com.epam.aidial.evaluation.service.domain.job.EvaluationWorker`
-- Context: `com.epam.aidial.evaluation.service.domain.job.EvaluationContext`
-- Streaming accumulator: `com.epam.aidial.evaluation.service.domain.job.StreamingResponseAccumulator`
-- Batch writer: `com.epam.aidial.evaluation.service.domain.job.ResultBatchWriter`
-- Transactional writer: `com.epam.aidial.evaluation.service.domain.job.ResultBatchWriterTransactional`
-- Settings validator: `com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator`
-- Config properties: `com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties`
-- Deployment invoker result: `com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult`
+- Executor interface: `com.epam.aidial.evaluation.service.domain.job.EvaluationExecutor` (unmoved — EF backend)
+- In-process executor: `com.epam.aidial.evaluation.service.domain.job.InProcessEvaluationExecutor` (unmoved — EF backend)
+- Worker: `com.epam.aidial.evaluation.runner.job.EvaluationWorker` (moved to `evaluation-runner-core`)
+- Context: `com.epam.aidial.evaluation.runner.job.EvaluationContext` (moved to `evaluation-runner-core`)
+- Streaming accumulator: `com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator` (moved to `evaluation-runner-core`)
+- Result factory: `com.epam.aidial.evaluation.runner.job.TestCaseRunResultFactory` (moved to `evaluation-runner-core`)
+- Batch writer interface: `com.epam.aidial.evaluation.runner.job.ResultBatchWriter` (`addResults(List<TestCaseRunResult>)`, `flush()` — moved to `evaluation-runner-core` as a DB-free interface)
+- Postgres batch writer: `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriter` (plain per-run instance) and `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriterFactory` (Spring bean) — EF backend, implement the shared `ResultBatchWriter` interface; supersede the baseline's `ResultBatchWriter`/`ResultBatchWriterTransactional` classes, which no longer exist
+- Settings validator: `com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator` (unmoved — EF backend)
+- Config properties: `com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties` (moved to `evaluation-runner-core`)
+- Deployment invoker result: `com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult` (moved to `evaluation-runner-core`)
+- Request resolution: `com.epam.aidial.evaluation.runner.service.RequestResolver` (`evaluation-runner-core`) — `EvaluationWorker`/`MultiTurnExecutor` inject it directly; the EF backend's `com.epam.aidial.evaluation.service.domain.ResolvedRequestService` retains only the DB-backed Try-It-Out overload (`resolveRequest(UUID, UUID)`) and delegates to the injected `RequestResolver`
 - Modified: `EvaluationWorker` — add suite type branching at `execute()` entry point. MCP retry logic reuses the existing `invokeWithRetries()` method by extracting the inner execution logic into a strategy function. MCP transport propagation: reads `mcpDeploymentRef.transport`, defaults to `STREAMABLE_HTTP` when null, passes to `McpToolInvoker.callTool()`.
 - Modified: `EvaluationContext` — carries `suiteType` and deserialized MCP-specific references (`mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`) loaded from the suite at run initialization time.
 - MCP field loading chain: `TestSuiteEvaluationJob` deserializes MCP fields from the suite's JSONB strings and passes them into `EvaluationContext.builder()` as typed objects (conditionally for `MCP_TOOL` suites only). `inputBindings` is loaded alongside other MCP fields.

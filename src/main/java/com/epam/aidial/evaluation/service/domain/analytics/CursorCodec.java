@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.analytics;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Base64;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

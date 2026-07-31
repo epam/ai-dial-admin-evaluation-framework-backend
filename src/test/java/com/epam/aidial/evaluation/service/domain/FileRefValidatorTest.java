@@ -3,7 +3,7 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.lenient;
 
-import com.epam.aidial.evaluation.configuration.properties.dial.DialFileStorageProperties;
+import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;

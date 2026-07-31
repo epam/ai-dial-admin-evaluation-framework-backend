@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain.analytics;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.analytics.EvalSummaryProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
@@ -12,6 +11,7 @@ import com.epam.aidial.evaluation.data.db.exception.InvalidFilterException;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteRequestDto;

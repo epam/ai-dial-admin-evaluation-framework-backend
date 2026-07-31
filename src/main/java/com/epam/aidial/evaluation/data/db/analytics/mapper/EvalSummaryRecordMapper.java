@@ -3,10 +3,10 @@ package com.epam.aidial.evaluation.data.db.analytics.mapper;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalSummariesRecord;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.util.UUID;
 import org.jooq.JSONB;
 import org.jooq.Record;

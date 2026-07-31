@@ -2,12 +2,12 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.experimental.query.service.dto.StructuredQueryResultDto;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import java.util.ArrayList;
 import java.util.List;

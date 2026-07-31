@@ -2,10 +2,10 @@ package com.epam.aidial.evaluation.experimental.query.service.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.experimental.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Map;
 import org.jooq.DSLContext;
 import org.jooq.Table;

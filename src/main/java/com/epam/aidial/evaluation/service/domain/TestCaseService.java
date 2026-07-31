@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.testcase.TestCaseProperties;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
@@ -8,6 +7,8 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseBatchPutItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
@@ -28,7 +29,6 @@ import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViola
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.mapper.TestCaseMapper;
-import com.epam.aidial.evaluation.service.domain.mapper.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.util.ArrayList;
 import java.util.Collection;

@@ -1,19 +1,20 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
-import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
-import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
-import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
@@ -404,7 +405,6 @@ public class TestSuiteEvaluationJob {
                 .runId(run.getId())
                 .suiteId(run.getTestSuiteId())
                 .datasetId(datasetId)
-                .testSuiteRun(run)
                 .numberOfRuns(config.getNumberOfRuns())
                 .numberOfTestCases(run.getNumberOfTestCases())
                 .concurrencyLevel(ObjectUtils.getIfNull(
@@ -432,12 +432,35 @@ public class TestSuiteEvaluationJob {
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
-                .snapshotTestCaseSchema(snapshot.getTestCaseSchema())
+                .snapshotTestCaseSchema(toRunnerFieldDefinitions(snapshot.getTestCaseSchema()))
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())
                 .argumentTemplateDto(snapshot.getArgumentTemplate())
                 .inputBindings(snapshot.getInputBindings())
                 .build();
+    }
+
+    /**
+     * Converts the EF backend's own {@code FieldDefinitionDto} (the dataset schema representation used
+     * everywhere else in the app) to the {@code evaluation-runner-core} module's duplicate of the same
+     * shape, so {@link EvaluationContext#getSnapshotTestCaseSchema()} — read by the module's own {@code
+     * PerTurnBindingDetector} — never needs a module-to-main-app dependency.
+     */
+    private static List<com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto> toRunnerFieldDefinitions(
+            List<com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto> fields) {
+        if (fields == null) {
+            return null;
+        }
+        return fields.stream()
+                .map(field -> com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto.builder()
+                        .name(field.getName())
+                        .displayName(field.getDisplayName())
+                        .type(field.getType())
+                        .required(field.isRequired())
+                        .description(field.getDescription())
+                        .perTurn(field.getPerTurn())
+                        .build())
+                .toList();
     }
 
     private SuiteSnapshotDto resolveSnapshot(TestSuiteRun run) {

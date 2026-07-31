@@ -1,42 +1,58 @@
 package com.epam.aidial.evaluation.service.domain.mapper;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-@Slf4j
+/**
+ * Maps every JSONB-backed field on {@code TestSuite}/{@code Dataset}/{@code TestSuiteMetricDefinition} and
+ * their DTOs, except the two execution-path fields ({@code requestTemplate}, {@code inputBindings}) whose
+ * read direction is owned by the shared module's {@link RunnerJsonbMapper} and delegated to here, so
+ * there is a single source of truth for parsing those two fields (see Decision 10 in the
+ * {@code evaluation-runner-core-module} change's {@code design.md}).
+ */
 @Component
 @LogExecution
 @RequiredArgsConstructor
 public class JsonbMapper {
 
     private static final TypeReference<List<FieldDefinitionDto>> FIELD_DEF_LIST_TYPE = new TypeReference<>() {};
-    private static final TypeReference<List<InputBindingDto>> BINDING_LIST_TYPE = new TypeReference<>() {};
     private static final TypeReference<List<ResponseColumnDefinitionDto>> RESPONSE_COL_LIST_TYPE =
             new TypeReference<>() {};
     private static final TypeReference<List<MetricParameterBindingDto>> METRIC_BINDING_LIST_TYPE =
             new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final ObjectMapper objectMapper;
+    private final RunnerJsonbMapper runnerJsonbMapper;
+
+    public RequestTemplateDto mapRequestTemplate(String json) {
+        return runnerJsonbMapper.mapRequestTemplate(json);
+    }
+
+    public List<InputBindingDto> mapInputBindings(String json) {
+        return runnerJsonbMapper.mapInputBindings(json);
+    }
+
+    public String mapInputBindings(List<InputBindingDto> value) {
+        return writeList(value, "inputBindings");
+    }
 
     public String map(DeploymentReferenceDto value) {
         return write(value, "deploymentRef");
@@ -60,14 +76,6 @@ public class JsonbMapper {
 
     public List<FieldDefinitionDto> mapFieldDefinitions(String json) {
         return readList(json, FIELD_DEF_LIST_TYPE, "testCaseSchema");
-    }
-
-    public String mapInputBindings(List<InputBindingDto> value) {
-        return writeList(value, "inputBindings");
-    }
-
-    public List<InputBindingDto> mapInputBindings(String json) {
-        return readList(json, BINDING_LIST_TYPE, "inputBindings");
     }
 
     public String mapResponseColumns(List<ResponseColumnDefinitionDto> value) {
@@ -112,10 +120,6 @@ public class JsonbMapper {
 
     public EndpointContractDto mapEndpointContract(String json) {
         return read(json, EndpointContractDto.class, "endpointRef");
-    }
-
-    public RequestTemplateDto mapRequestTemplate(String json) {
-        return read(json, RequestTemplateDto.class, "requestTemplate");
     }
 
     public String mapJsonSchema(Map<String, Object> value) {
@@ -171,44 +175,6 @@ public class JsonbMapper {
             return objectMapper.readValue(json, MAP_TYPE);
         } catch (JacksonException ex) {
             throw new IllegalArgumentException("Failed to deserialize testCaseFilter", ex);
-        }
-    }
-
-    /**
-     * Extracts deployment ID from serialized deploymentRef JSONB.
-     */
-    public String extractDeploymentId(String deploymentRefJson) {
-        if (deploymentRefJson == null || deploymentRefJson.isBlank()) {
-            return null;
-        }
-        try {
-            JsonNode node = objectMapper.readTree(deploymentRefJson);
-            JsonNode idNode = node.get("id");
-            return idNode != null ? idNode.asString() : null;
-        } catch (JacksonException e) {
-            log.warn("Failed to extract deploymentId: {}", e.getMessage(), e);
-            return null;
-        }
-    }
-
-    /**
-     * Extracts HTTP method from serialized endpointRef JSONB.
-     * Defaults to POST if not specified.
-     */
-    public HttpMethod extractHttpMethod(String endpointRefJson) {
-        if (endpointRefJson == null || endpointRefJson.isBlank()) {
-            return HttpMethod.POST;
-        }
-        try {
-            JsonNode node = objectMapper.readTree(endpointRefJson);
-            JsonNode methodNode = node.get("method");
-            if (methodNode != null && !methodNode.isNull()) {
-                return HttpMethod.valueOf(methodNode.asString().toUpperCase());
-            }
-            return HttpMethod.POST;
-        } catch (JacksonException e) {
-            log.warn("Failed to extract HTTP method: {}", e.getMessage(), e);
-            return HttpMethod.POST;
         }
     }
 

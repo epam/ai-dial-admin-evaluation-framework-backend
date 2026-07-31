@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.data.db.mapper;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.UUID;

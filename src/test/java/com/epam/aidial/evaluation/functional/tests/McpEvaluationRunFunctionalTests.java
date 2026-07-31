@@ -6,13 +6,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.client.mcp.McpInvocationException;
-import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
-import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.client.mcp.McpInvocationException;
+import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;

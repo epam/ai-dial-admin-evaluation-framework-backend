@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.web.controller;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.TemplateVariableService;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
 import io.swagger.v3.oas.annotations.Operation;

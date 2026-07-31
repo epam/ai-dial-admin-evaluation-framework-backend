@@ -2,7 +2,7 @@ package com.epam.aidial.evaluation.service.domain.csv;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

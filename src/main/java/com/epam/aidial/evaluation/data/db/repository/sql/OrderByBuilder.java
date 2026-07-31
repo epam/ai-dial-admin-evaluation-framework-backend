@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.data.db.repository.sql;
 
-import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.model.pagination.SortKey;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

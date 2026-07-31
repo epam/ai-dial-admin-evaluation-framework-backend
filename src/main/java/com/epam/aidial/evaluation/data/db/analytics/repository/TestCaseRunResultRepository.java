@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
+import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

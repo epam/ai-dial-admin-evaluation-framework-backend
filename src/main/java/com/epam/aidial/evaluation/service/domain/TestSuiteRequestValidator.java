@@ -29,6 +29,7 @@ import tools.jackson.databind.ObjectMapper;
 public class TestSuiteRequestValidator {
 
     private final JsonataEvaluationService jsonataEvaluationService;
+    private final JsonataSourcePreprocessor jsonataSourcePreprocessor;
     private final SchemaValidationService schemaValidationService;
     private final ObjectMapper objectMapper;
     private final ValidationProperties validationProperties;
@@ -121,6 +122,14 @@ public class TestSuiteRequestValidator {
      * source {@code String} (parses as valid JSONata) or a legacy structural {@code Map}
      * (unchanged, no JSONata validation needed since a Map is validated at resolution time). Any
      * other content type (not null, not Map, not String) is rejected.
+     *
+     * <p>A bare {@code ${{var}}} placeholder (e.g. {@code {"q": ${{question}}}}) is not, by itself,
+     * valid JSONata — it only becomes valid once {@link JsonataSourcePreprocessor} substitutes it at
+     * run time. Validating the raw source would therefore reject a well-formed bare-mode template.
+     * {@link JsonataSourcePreprocessor#neutralize(String)} replaces every placeholder with a fixed
+     * neutral token first (JSON {@code null} for quoted-full-value/bare, empty string for embedded),
+     * so validation sees the same syntactic shape the runtime preprocessor produces, without needing
+     * bindings or test-case data to be available yet.
      */
     private void validateRequestTemplateBody(RequestTemplateDto requestTemplate) {
         if (requestTemplate == null) {
@@ -135,8 +144,9 @@ public class TestSuiteRequestValidator {
             return;
         }
         if (content instanceof String jsonataSource) {
+            String neutralized = jsonataSourcePreprocessor.neutralize(jsonataSource);
             try {
-                jsonataEvaluationService.validateExpression(jsonataSource);
+                jsonataEvaluationService.validateExpression(neutralized);
             } catch (ValidationException ex) {
                 throw new ValidationException("requestTemplate.body.content: " + ex.getMessage());
             }

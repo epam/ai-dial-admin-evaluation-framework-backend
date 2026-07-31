@@ -79,6 +79,7 @@ import tools.jackson.databind.ObjectMapper;
 public class TurnLoopExecutor {
 
     private static final String BODY_EVALUATION_ERROR_CODE = "REQUEST_BODY_EVALUATION_ERROR";
+    private static final String RESOLUTION_ERROR_CODE = "REQUEST_RESOLUTION_ERROR";
 
     private final ResolvedRequestService resolvedRequestService;
     private final DialCoreUrlBuilder urlBuilder;
@@ -200,6 +201,9 @@ public class TurnLoopExecutor {
                     e);
             final int safeIndex = Math.min(turnIndex, totalTurns - 1);
             final long now = clock.millis();
+            final TurnOutcome outcome = buildResolutionErrorOutcome(e);
+            final ResponseColumnExtractor.ExtractionResult extraction =
+                    responseColumnExtractor.extract(responseColumns, outcome.responseBody());
             results.add(buildTurnRow(
                     input,
                     context,
@@ -210,15 +214,30 @@ public class TurnLoopExecutor {
                     plan.stampTurnIndices() ? safeIndex : null,
                     plan.stampTurnIndices() ? totalTurns : null,
                     ExecutionStatus.ERROR,
+                    outcome,
                     null,
-                    null,
-                    "{}",
-                    "[]",
+                    extraction.extractedColumns(),
+                    extraction.extractionWarnings(),
                     plan.stampTurnIndices()
                             ? jsonService.writeOrToString(turnDataList.get(safeIndex))
                             : plan.verbatimDataJson()));
         }
         return results;
+    }
+
+    /**
+     * Synthesizes the {@code REQUEST_RESOLUTION_ERROR} envelope for a per-turn request-building failure
+     * that escapes {@link #runOneTurn} (e.g. an invalid {@code FILE} ref via {@code DialFileRefResolver},
+     * an unsupported content type from {@link RequestBodySerializerRegistry}, or a URL-build failure) —
+     * mirroring the pre-unification {@code EvaluationWorker}'s single-turn resolution-error path so the
+     * persisted row still carries a diagnosable {@code responseBody} envelope and reconciled extraction
+     * warnings instead of {@code null}/{@code null}.
+     */
+    private TurnOutcome buildResolutionErrorOutcome(RuntimeException e) {
+        final String errorBody =
+                DeploymentInvocationSupport.buildErrorEnvelope(RESOLUTION_ERROR_CODE, e.getMessage(), objectMapper);
+        final String logDetails = buildErrorLogDetails("Request resolution failed: " + e.getMessage());
+        return new TurnOutcome(ExecutionStatus.ERROR, null, errorBody, 0, logDetails);
     }
 
     /**

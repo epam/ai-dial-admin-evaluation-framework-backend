@@ -51,4 +51,4 @@ Status: **Implemented**
 ## Implementation Notes
 
 - `DashjoinJsonataEvaluationService` gains the 3-arg (`$request`/`$response` frame) evaluate overload; documented as a narrow, explicit exception to (not a repeal of) the "only class that imports `com.dashjoin.jsonata`" invariant if the frame-population/`Jsonata.NULL_VALUE`-binding logic also lives there — see `jsonata-request-templates/design.md` Decision 5/6 and Flag F2.
-- `JsonataReservedNames` (new constants class) is the single source for both the built-in-function-name set (reused, not re-derived, from the query-DSL function registry) and the `request`/`response` reserved names; `TestSuiteRequestValidator` consumes it for the new 400 check.
+- `JsonataReservedNames` (new constants class) is the single source for both the built-in-function-name set (a hand-maintained list of JSONata built-in function names, unrelated to the query-DSL function registry — which enumerates SQL/jOOQ functions for a different subsystem) and the `request`/`response` reserved names; `TestSuiteRequestValidator` consumes it for the new 400 check.

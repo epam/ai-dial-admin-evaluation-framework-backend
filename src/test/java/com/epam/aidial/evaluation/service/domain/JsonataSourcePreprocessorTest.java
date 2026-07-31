@@ -318,6 +318,101 @@ class JsonataSourcePreprocessorTest {
     }
 
     @Nested
+    @DisplayName("Block comment handling")
+    class BlockComments {
+
+        @Test
+        @DisplayName("a placeholder after a comment containing an apostrophe is still substituted")
+        void placeholderAfterCommentWithApostrophe() {
+            setUp();
+            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
+                    .thenReturn(5);
+
+            String result = preprocessor.preprocess("/* it's a comment */ ${{x}}", Map.of(), Map.of(), warnings);
+
+            assertThat(result).isEqualTo("/* it's a comment */ 5");
+        }
+
+        @Test
+        @DisplayName(
+                "a placeholder-shaped span inside a comment is left alone (comment content passed through verbatim)")
+        void placeholderInsideCommentIsNotSubstituted() {
+            setUp();
+
+            String source = "/* example: ${{x}} */ 1 + 1";
+            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+
+            assertThat(result).isEqualTo(source);
+        }
+
+        @Test
+        @DisplayName("an unterminated comment does not throw and copies the remainder verbatim")
+        void unterminatedCommentDoesNotThrow() {
+            setUp();
+
+            String source = "1 + 1 /* unterminated ${{x}}";
+            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+
+            assertThat(result).isEqualTo(source);
+        }
+    }
+
+    @Nested
+    @DisplayName("neutralize(String) — placeholder-neutral write-time validation shape")
+    class Neutralize {
+
+        @Test
+        @DisplayName("bare placeholder in value position neutralizes to JSON null")
+        void barePlaceholderNeutralizesToNull() {
+            setUp();
+
+            String result = preprocessor.neutralize("{\"q\": ${{question}}}");
+
+            assertThat(result).isEqualTo("{\"q\": null}");
+        }
+
+        @Test
+        @DisplayName("bare placeholder as a function argument neutralizes to JSON null")
+        void barePlaceholderAsFunctionArgumentNeutralizesToNull() {
+            setUp();
+
+            String result = preprocessor.neutralize("$append($history, ${{messages}})");
+
+            assertThat(result).isEqualTo("$append($history, null)");
+        }
+
+        @Test
+        @DisplayName("quoted full-value placeholder neutralizes to JSON null")
+        void quotedFullValuePlaceholderNeutralizesToNull() {
+            setUp();
+
+            String result = preprocessor.neutralize("{\"q\": \"${{question}}\"}");
+
+            assertThat(result).isEqualTo("{\"q\": null}");
+        }
+
+        @Test
+        @DisplayName("embedded-in-literal placeholder neutralizes to an empty string, leaving surrounding text intact")
+        void embeddedPlaceholderNeutralizesToEmptyString() {
+            setUp();
+
+            String result = preprocessor.neutralize("\"Hello ${{name}}!\"");
+
+            assertThat(result).isEqualTo("\"Hello !\"");
+        }
+
+        @Test
+        @DisplayName("neutralize never invokes the template variable resolver or the DIAL file resolver")
+        void neutralizeNeverTouchesResolvers() {
+            setUp();
+
+            preprocessor.neutralize("{\"q\": ${{question}}, \"d\": \"${{doc|file}}\"}");
+
+            org.mockito.Mockito.verifyNoInteractions(templateVariableResolver, dialFileRefResolver);
+        }
+    }
+
+    @Nested
     @DisplayName("Binding-driven resolution")
     class BindingDriven {
 

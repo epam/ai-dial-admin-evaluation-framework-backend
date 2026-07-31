@@ -32,8 +32,11 @@ class TestSuiteRequestValidatorTest {
         ValidationProperties validationProperties = new ValidationProperties();
         validationProperties.setMaxTemplateSizeBytes(65536);
         validationProperties.setMaxBindingsCount(64);
+        JsonataSourcePreprocessor jsonataSourcePreprocessor = new JsonataSourcePreprocessor(
+                mock(TemplateVariableResolver.class), mock(DialFileRefResolver.class), new ObjectMapper());
         validator = new TestSuiteRequestValidator(
                 jsonataEvaluationService,
+                jsonataSourcePreprocessor,
                 mock(SchemaValidationService.class),
                 new ObjectMapper(),
                 validationProperties);
@@ -59,6 +62,50 @@ class TestSuiteRequestValidatorTest {
                 "{\"messages\": $append($history, [{\"role\": \"user\", \"content\": \"${{q}}\"}])}");
 
         assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Bare placeholder in object value position is accepted (not valid JSONata until substituted)")
+    void shouldAcceptBarePlaceholderInValuePosition() {
+        TestSuiteRequestDto dto = requestWithBodyContent("{\"q\": ${{question}}}");
+
+        assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Bare placeholder as a function argument is accepted")
+    void shouldAcceptBarePlaceholderAsFunctionArgument() {
+        TestSuiteRequestDto dto = requestWithBodyContent("$append($history, ${{messages}})");
+
+        assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Quoted full-value placeholder is still accepted")
+    void shouldAcceptQuotedFullValuePlaceholder() {
+        TestSuiteRequestDto dto = requestWithBodyContent("{\"q\": \"${{question}}\"}");
+
+        assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Genuinely invalid JSONata (unbalanced brackets) is still rejected")
+    void shouldRejectGenuinelyInvalidJsonataAlongsideBarePlaceholder() {
+        TestSuiteRequestDto dto = requestWithBodyContent("{\"a\": [1,2}");
+
+        assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("requestTemplate.body.content");
+    }
+
+    @Test
+    @DisplayName("A placeholder followed by invalid syntax is still rejected")
+    void shouldRejectBarePlaceholderFollowedByInvalidSyntax() {
+        TestSuiteRequestDto dto = requestWithBodyContent("{\"q\": ${{question}} +}");
+
+        assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("requestTemplate.body.content");
     }
 
     @Test

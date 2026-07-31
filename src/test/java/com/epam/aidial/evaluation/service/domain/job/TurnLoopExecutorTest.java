@@ -347,6 +347,36 @@ class TurnLoopExecutorTest {
     }
 
     @Test
+    @DisplayName(
+            "Resolution failure outside body evaluation produces a REQUEST_RESOLUTION_ERROR envelope and stops the run")
+    void resolutionFailure_producesResolutionErrorEnvelopeAndStopsRun() {
+        when(urlBuilder.buildUrl(any(), anyString())).thenReturn("/openai/deployments/gpt-4/chat/completions");
+        when(evaluationRunProperties.getExecution()).thenReturn(execution);
+        when(execution.getHeaderBlacklist()).thenReturn(List.of());
+        when(serializerRegistry.serialize(any()))
+                .thenThrow(new IllegalStateException("Unsupported content type: application/xml"));
+
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("bad-serializer")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, List.of(), "trace-8", FIXED_CLOCK.millis());
+
+        assertThat(results).hasSize(1);
+        TestCaseRunResult row = results.getFirst();
+        assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(row.getResponseBody()).contains("REQUEST_RESOLUTION_ERROR").contains("Unsupported content type");
+        assertThat(row.getLogDetails()).contains("Request resolution failed");
+    }
+
+    @Test
     @DisplayName("Fail-fast: a failing turn stops the loop, earlier turns keep their SUCCESS rows")
     void failFast_stopsLoopAfterFailingTurn() {
         stubCommonInfra();

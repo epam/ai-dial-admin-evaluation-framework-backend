@@ -135,9 +135,10 @@ computing a diff). Applies uniformly to single-turn, multi-turn, and MCP.
 Two new hard validation failures at suite create/update:
 1. A `String`-content request body must parse as valid JSONata (`jsonataEvaluationService.validateExpression`,
    reusing the existing parse-only validation path) — invalid syntax → HTTP 400.
-2. A response column `name` must not collide with a JSONata built-in function name (the registry the
-   query-DSL function catalog already enumerates — reused here, not re-derived) or with the reserved frame
-   names `request`/`response` — collision → HTTP 400. This closes off the ambiguity of `$request` meaning
+2. A response column `name` must not collide with a JSONata built-in function name (a hand-maintained
+   constants list in `JsonataReservedNames` — unrelated to the query-DSL function catalog, which enumerates
+   SQL/jOOQ functions for a different subsystem) or with the reserved frame names `request`/`response` —
+   collision → HTTP 400. This closes off the ambiguity of `$request` meaning
    "the frame variable" vs. "a response column named request" referenced as `$request` after extraction.
 - *Why hard 400, not a soft warning:* both are structural authoring errors with no sensible partial
   behavior (an unparseable JSONata source can't be "partially" evaluated; a name collision is
@@ -280,3 +281,16 @@ unparseable JSONata source or an unresolvable reserved-name collision.
   evaluate-with-frame overload.
 - `service.domain.job.StreamingResponseAccumulator`: extended for DIAL custom-content accumulation.
 - `service.domain.TestSuiteRequestValidator`: two new 400 checks (Decision 7).
+
+## Accepted parity deviations
+
+Unifying single-turn execution into `TurnLoopExecutor` intentionally changed two minor measurement/edge-case
+behaviors versus the pre-unification single-turn path, both accepted as matching the old multi-turn path's
+semantics instead:
+
+- **`execStartedAtMs`/`execDurationMs` scope**: for the `N = 1` case these now span resolution + retries +
+  backoff (the whole turn), where pre-change single-turn measured only the final attempt. This matches what
+  `MultiTurnExecutor` already measured for `N > 1`.
+- **Cancellation before attempt 0**: a cancellation signal observed before the first attempt now suppresses
+  the row entirely for `N = 1`, where pre-change single-turn always issued attempt 0 regardless. This matches
+  the old multi-turn cancellation semantics.

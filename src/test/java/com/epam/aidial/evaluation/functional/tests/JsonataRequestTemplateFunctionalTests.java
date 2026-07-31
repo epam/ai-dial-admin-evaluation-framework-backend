@@ -149,6 +149,30 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
     }
 
     @Test
+    @DisplayName("Suite with a bare-placeholder JSONata body (no surrounding quotes) is created and runs end-to-end")
+    void barePlaceholderBody_singleTurn_createsAndRunsEndToEnd() {
+        TestSuiteResponseDto suite = createBarePlaceholderSuite("MT bare placeholder body");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createSingleTurnCase(datasetId, "single-bare", Map.of("prompt", "hello-bare"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(chatReply("bare-answer"));
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(1);
+        Map<String, Object> result = results.get(0);
+        assertThat(String.valueOf(result.get("execution_status"))).isEqualTo("SUCCESS");
+        // The bare placeholder (no surrounding quotes: "content": ${{prompt}}) resolved to the JSON
+        // serialization of the bound String value ("hello-bare"), proving the write-time-accepted bare
+        // mode also evaluates correctly at run time.
+        assertThat(String.valueOf(result.get("request_body"))).contains("hello-bare");
+        assertThat(String.valueOf(result.get("extracted_columns"))).contains("bare-answer");
+    }
+
+    @Test
     @DisplayName("Multi-turn case with no perTurn binding collapses to a single request built from shared data")
     void noPerTurnBinding_multiTurnCase_collapsesToOneRequestFromSharedData() {
         TestSuiteResponseDto suite = createNoPerTurnBindingSuite("MT no-perturn-binding");
@@ -241,6 +265,56 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
                 Map.of("output", List.of(Map.of("content", List.of(Map.of("text", text))))),
                 null,
                 new HttpHeaders());
+    }
+
+    /**
+     * DEPLOYMENT suite authored as a JSONata source-string body with a bare placeholder — i.e. the
+     * placeholder appears outside any string literal, as the entire value of the {@code content} field
+     * ({@code "content": ${{prompt}}}, no surrounding quotes) rather than quoted or embedded. Proves the
+     * write-time-accepted bare mode (see {@code TestSuiteRequestValidator}'s placeholder-neutralized
+     * validation) round-trips correctly at run time too.
+     */
+    private TestSuiteResponseDto createBarePlaceholderSuite(String name) {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name + " " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .content("{\"messages\": [{\"role\": \"user\", \"content\": ${{prompt}}}]}")
+                                .build())
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("answer")
+                        .expression("choices[0].message.content")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
     }
 
     /**

@@ -88,7 +88,7 @@ public class TestSuiteRunService {
                     + ". The test suite is not in a valid state.");
         }
 
-        // Multi-turn test cases are supported only for HTTP chat-completions suites. Reject an MCP suite
+        // Multi-turn test cases are supported for any DEPLOYMENT HTTP suite shape. Reject an MCP suite
         // whose dataset contains any multi-turn case (409 INVALID_OPERATION).
         if (testSuite.getSuiteType() == SuiteType.MCP_TOOL
                 && testCaseService.datasetHasMultiTurnCases(testSuite.getDatasetId())) {

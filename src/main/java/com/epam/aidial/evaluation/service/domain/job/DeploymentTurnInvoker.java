@@ -19,13 +19,13 @@ import org.springframework.util.MultiValueMap;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Per-turn deployment invoker with retry/backoff for the multi-turn test case executor. Owns the retry loop
- * (exponential backoff, cancellation checks, retry-attempt logging), a single DIAL Core call — streaming
- * (SSE, assembled via {@link StreamingResponseAccumulator}) or non-streaming, both subject to the same
- * oversize-body handling — HTTP-status → {@link ExecutionStatus} mapping, and timeout detection. Returns a
- * {@link TurnOutcome} carrying the final status, HTTP status code, raw response body, retry count, and
- * {@code logDetails} JSON for the turn. Mirrors {@code EvaluationWorker}'s single-turn invocation path
- * ({@code invokeWithRetries}/{@code invokeSingle}) so a later unification of the two loops loses no behavior.
+ * Per-turn deployment invoker with retry/backoff, the sole invocation path for the unified turn loop
+ * ({@link TurnLoopExecutor}) covering every DEPLOYMENT HTTP test case, single-turn and multi-turn alike.
+ * Owns the retry loop (exponential backoff, cancellation checks, retry-attempt logging), a single DIAL Core
+ * call — streaming (SSE, assembled via {@link StreamingResponseAccumulator}) or non-streaming, both subject
+ * to the same oversize-body handling — HTTP-status → {@link ExecutionStatus} mapping, and timeout detection.
+ * Returns a {@link TurnOutcome} carrying the final status, HTTP status code, raw response body, retry count,
+ * and {@code logDetails} JSON for the turn.
  */
 @Slf4j
 @Component

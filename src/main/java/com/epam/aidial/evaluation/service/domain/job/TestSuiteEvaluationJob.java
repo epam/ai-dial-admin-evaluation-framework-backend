@@ -432,6 +432,7 @@ public class TestSuiteEvaluationJob {
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
+                .snapshotTestCaseSchema(snapshot.getTestCaseSchema())
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())
                 .argumentTemplateDto(snapshot.getArgumentTemplate())

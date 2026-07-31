@@ -1,33 +1,20 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
-import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
-import com.epam.aidial.evaluation.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.client.mcp.McpInvocationException;
 import com.epam.aidial.evaluation.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
-import com.epam.aidial.evaluation.configuration.properties.SseEventProcessingProperties;
-import com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties;
 import com.epam.aidial.evaluation.constants.TracingConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.ExecutionStatus;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestCaseRunInput;
-import com.epam.aidial.evaluation.service.domain.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.service.domain.McpRequestResolver;
 import com.epam.aidial.evaluation.service.domain.McpResponseSerializer;
-import com.epam.aidial.evaluation.service.domain.RequestBodySerializerRegistry;
-import com.epam.aidial.evaluation.service.domain.ResolvedRequestService;
 import com.epam.aidial.evaluation.service.domain.ResponseColumnExtractor;
-import com.epam.aidial.evaluation.service.domain.SerializedBody;
 import com.epam.aidial.evaluation.service.domain.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
-import com.epam.aidial.evaluation.service.domain.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.McpDeploymentReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResolvedBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResolvedJsonBodyDto;
-import com.epam.aidial.evaluation.service.domain.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
@@ -44,24 +31,18 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Executes a single test case: resolves request from snapshot template/bindings + input row data,
- * calls endpoint, captures response/timing, extracts columns, and builds TestCaseRunResult.
+ * Dispatches a single test case to the right execution path: every DEPLOYMENT HTTP case (single-turn and
+ * multi-turn alike) runs through {@link TurnLoopExecutor}; an MCP_TOOL case resolves arguments and calls
+ * the tool directly here, with its own retry loop and response handling.
  */
 @Slf4j
 @Component
@@ -69,22 +50,15 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class EvaluationWorker {
 
-    private final ResolvedRequestService resolvedRequestService;
-    private final DialCoreDeploymentInvoker deploymentInvoker;
-    private final DialCoreUrlBuilder urlBuilder;
-    private final RequestBodySerializerRegistry serializerRegistry;
     private final ResponseColumnExtractor responseColumnExtractor;
     private final ObjectMapper objectMapper;
     private final JsonbMapper jsonbMapper;
-    private final EvaluationRunProperties evaluationRunProperties;
     private final OpenTelemetry openTelemetry;
     private final McpToolInvoker mcpToolInvoker;
     private final McpRequestResolver mcpRequestResolver;
     private final McpResponseSerializer mcpResponseSerializer;
     private final Clock clock;
-    private final SseEventParser sseEventParser;
-    private final SseEventProcessingProperties sseEventProcessingProperties;
-    private final MultiTurnExecutor multiTurnExecutor;
+    private final TurnLoopExecutor turnLoopExecutor;
 
     public List<TestCaseRunResult> execute(
             TestCaseRunInput input,
@@ -115,71 +89,10 @@ public class EvaluationWorker {
                 return List.of(executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs));
             }
 
-            // Multi-turn test cases run through a dedicated sequential turn loop, emitting one result
-            // per turn; the single-turn HTTP path below is unchanged.
-            if (input.getMultiTurnData() != null) {
-                return multiTurnExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);
-            }
-
-            // Parse test case data for template resolution
-            Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
-
-            // Resolve effective template and bindings (per-test-case overrides take priority)
-            RequestTemplateDto effectiveTemplate = input.getRequestTemplateOverride() != null
-                    ? jsonbMapper.mapRequestTemplate(input.getRequestTemplateOverride())
-                    : context.getSnapshotRequestTemplate();
-            List<InputBindingDto> effectiveBindings = input.getInputBindingsOverride() != null
-                    ? jsonbMapper.mapInputBindings(input.getInputBindingsOverride())
-                    : context.getSnapshotInputBindings();
-
-            // Resolve request using snapshot template and input row data
-            ResolvedRequestDto resolved =
-                    resolvedRequestService.resolve(effectiveTemplate, effectiveBindings, testCaseData);
-
-            // Build URL from snapshot deployment ref
-            String deploymentId = context.getSnapshotDeploymentRef() != null
-                    ? context.getSnapshotDeploymentRef().getId()
-                    : null;
-            String endpointUrl = resolved.getUrl();
-            String path = urlBuilder.buildUrl(deploymentId, endpointUrl);
-
-            // Build HTTP method from snapshot endpoint ref
-            HttpMethod method = context.getSnapshotEndpointRef() != null
-                    ? context.getSnapshotEndpointRef().getMethod()
-                    : null;
-
-            // Build headers (filter blacklisted) — traceparent injected by RestClient interceptor
-            HttpHeaders headers = buildHeaders(resolved.getHeaders(), context);
-
-            // Build query params
-            MultiValueMap<String, String> queryParams = buildQueryParams(resolved.getQueryParams());
-
-            // Serialize body via content-type-aware registry
-            ResolvedBodyDto resolvedBody = resolved.getBody();
-            Object body = null;
-            if (resolvedBody != null) {
-                SerializedBody serialized = serializerRegistry.serialize(resolvedBody);
-                // Skip setting Content-Type for multipart — RestClient auto-generates boundary
-                if (!MediaType.MULTIPART_FORM_DATA.equals(serialized.contentType())) {
-                    headers.setContentType(serialized.contentType());
-                }
-                body = serialized.body();
-            }
-
-            // Invoke deployment with retries
-            return List.of(invokeWithRetries(
-                    input,
-                    context,
-                    runIndex,
-                    responseColumns,
-                    traceId,
-                    execStartedAtMs,
-                    method,
-                    path,
-                    headers,
-                    queryParams,
-                    body,
-                    resolvedBody));
+            // Every DEPLOYMENT HTTP case — single-turn and multi-turn alike — runs through the unified
+            // turn loop; N (turn count) is decided inside the executor (Decision 4 of the
+            // jsonata-request-templates change), not here.
+            return turnLoopExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);
 
         } catch (Exception e) {
             // Request resolution error
@@ -208,96 +121,6 @@ public class EvaluationWorker {
         } finally {
             span.end();
         }
-    }
-
-    private TestCaseRunResult invokeWithRetries(
-            TestCaseRunInput input,
-            EvaluationContext context,
-            int runIndex,
-            List<ResponseColumnDefinitionDto> responseColumns,
-            String traceId,
-            long execStartedAtMs,
-            HttpMethod method,
-            String path,
-            HttpHeaders headers,
-            MultiValueMap<String, String> queryParams,
-            Object body,
-            ResolvedBodyDto resolvedBody) {
-
-        int maxRetries = context.getMaxRetries();
-        long retryDelayMs = context.getRetryDelayMs();
-        double multiplier = context.getRetryBackoffMultiplier();
-        long maxRetryDelay = context.getMaxRetryDelayMs();
-
-        // Serialize resolved body (not wire format) for analytics storage
-        String requestBodyJson = serializeBodyForAnalytics(resolvedBody);
-        List<RetryAttemptLog> retryAttempts = new ArrayList<>();
-        TestCaseRunResult lastResult = null;
-
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
-            if (attempt > 0) {
-                // Check cancellation before retry
-                if (context.getCancellationSignal().get()) {
-                    break;
-                }
-
-                long delay = Math.min((long) (retryDelayMs * Math.pow(multiplier, attempt - 1)), maxRetryDelay);
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-
-                if (context.getCancellationSignal().get()) {
-                    break;
-                }
-            }
-
-            long attemptStartMs = clock.millis();
-            lastResult = invokeSingle(
-                    input,
-                    context,
-                    runIndex,
-                    responseColumns,
-                    traceId,
-                    execStartedAtMs,
-                    method,
-                    path,
-                    headers,
-                    queryParams,
-                    body);
-
-            if (!shouldRetry(lastResult, attempt, maxRetries)) {
-                break;
-            }
-
-            // Record failed attempt for logDetails
-            long attemptDurationMs = clock.millis() - attemptStartMs;
-            String errorType = resolveErrorType(lastResult.getExecutionStatus());
-            retryAttempts.add(
-                    new RetryAttemptLog(attempt + 1, lastResult.getResponseStatusCode(), errorType, attemptDurationMs));
-        }
-
-        // Set retry tracking on final result
-        int retryCount = retryAttempts.size();
-        String logDetails = retryCount > 0 ? buildLogDetailsJson(retryAttempts) : null;
-
-        return buildResult(
-                input,
-                context,
-                runIndex,
-                traceId,
-                lastResult.getExecStartedAtMs(),
-                lastResult.getExecCompletedAtMs(),
-                lastResult.getExecDurationMs(),
-                lastResult.getExecutionStatus(),
-                lastResult.getResponseStatusCode(),
-                lastResult.getResponseBody(),
-                requestBodyJson,
-                retryCount,
-                logDetails,
-                responseColumns);
     }
 
     private String resolveErrorType(ExecutionStatus status) {
@@ -333,33 +156,6 @@ public class EvaluationWorker {
     }
 
     private record RetryAttemptLog(int attemptIndex, Integer statusCode, String errorType, long durationMs) {}
-
-    private boolean shouldRetry(TestCaseRunResult result, int attempt, int maxRetries) {
-        if (attempt >= maxRetries) {
-            return false;
-        }
-        ExecutionStatus status = result.getExecutionStatus();
-        Integer statusCode = result.getResponseStatusCode();
-
-        // Retryable: TIMEOUT, ERROR (network), 429, 5xx
-        if (status == ExecutionStatus.TIMEOUT) {
-            return true;
-        }
-        if (status == ExecutionStatus.ERROR && statusCode == null) {
-            // Network error (no status code)
-            return true;
-        }
-        if (statusCode != null) {
-            if (statusCode == 429) {
-                return true;
-            }
-            if (statusCode >= 500) {
-                return true;
-            }
-            // 401/403 not retried
-        }
-        return false;
-    }
 
     // ---- MCP execution path ----
 
@@ -623,113 +419,6 @@ public class EvaluationWorker {
         }
     }
 
-    // ---- HTTP/Deployment execution path ----
-
-    private TestCaseRunResult invokeSingle(
-            TestCaseRunInput input,
-            EvaluationContext context,
-            int runIndex,
-            List<ResponseColumnDefinitionDto> responseColumns,
-            String traceId,
-            long execStartedAtMs,
-            HttpMethod method,
-            String path,
-            HttpHeaders headers,
-            MultiValueMap<String, String> queryParams,
-            Object body) {
-
-        long callStartMs = clock.millis();
-
-        try (DeploymentInvocationResult result =
-                deploymentInvoker.invokeWithStreaming(method, path, headers, queryParams, body)) {
-
-            int statusCode = result.statusCode();
-            ExecutionStatus execStatus = resolveExecutionStatus(statusCode);
-
-            String responseBody;
-
-            if (result.streaming()) {
-                // Streaming response: idle timeout = per-run request timeout; absolute cap = global property.
-                StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
-                        sseEventParser,
-                        objectMapper,
-                        context.getRequestTimeoutMs(),
-                        sseEventProcessingProperties.getMaxTotalDurationMs(),
-                        context.getMaxResponseSizeBytes());
-                accumulator.accumulate(result.eventStream());
-
-                responseBody = accumulator.getResponseBody();
-
-                if (accumulator.getExecutionStatus() != ExecutionStatus.SUCCESS) {
-                    execStatus = accumulator.getExecutionStatus();
-                }
-            } else {
-                // Non-streaming response
-                responseBody = serializeBody(result.body());
-
-                // Check size limit
-                if (responseBody != null) {
-                    long bodyBytes = responseBody.getBytes(StandardCharsets.UTF_8).length;
-                    if (bodyBytes > context.getMaxResponseSizeBytes()) {
-                        responseBody = truncateResponse(responseBody, context.getMaxResponseSizeBytes());
-                        execStatus = ExecutionStatus.ERROR;
-                    }
-                }
-            }
-
-            long execCompletedAtMs = clock.millis();
-            long execDurationMs = execCompletedAtMs - callStartMs;
-
-            return buildResult(
-                    input,
-                    context,
-                    runIndex,
-                    traceId,
-                    callStartMs,
-                    execCompletedAtMs,
-                    execDurationMs,
-                    execStatus,
-                    statusCode,
-                    responseBody,
-                    responseColumns);
-
-        } catch (Exception e) {
-            long now = clock.millis();
-            long duration = now - callStartMs;
-
-            ExecutionStatus status;
-            if (isTimeoutException(e)) {
-                status = ExecutionStatus.TIMEOUT;
-            } else {
-                status = ExecutionStatus.ERROR;
-            }
-
-            String errorBody = buildErrorEnvelope("INVOCATION_ERROR", e.getMessage());
-            return buildResult(
-                    input,
-                    context,
-                    runIndex,
-                    traceId,
-                    callStartMs,
-                    now,
-                    duration,
-                    status,
-                    null,
-                    errorBody,
-                    responseColumns);
-        }
-    }
-
-    private ExecutionStatus resolveExecutionStatus(int statusCode) {
-        if (statusCode >= 200 && statusCode < 300) {
-            return ExecutionStatus.SUCCESS;
-        }
-        if (statusCode == 401 || statusCode == 403) {
-            return ExecutionStatus.ERROR;
-        }
-        return ExecutionStatus.FAILED;
-    }
-
     private boolean isTimeoutException(Exception e) {
         Throwable cause = e;
         while (cause != null) {
@@ -740,38 +429,6 @@ public class EvaluationWorker {
             cause = cause.getCause();
         }
         return false;
-    }
-
-    private HttpHeaders buildHeaders(List<KeyValueTemplateDto> resolvedHeaders, EvaluationContext context) {
-        HttpHeaders headers = new HttpHeaders();
-        Set<String> blacklist = evaluationRunProperties.getExecution().getHeaderBlacklist().stream()
-                .map(String::toLowerCase)
-                .collect(Collectors.toSet());
-
-        if (resolvedHeaders != null) {
-            for (KeyValueTemplateDto kv : resolvedHeaders) {
-                if (kv.getKey() != null && kv.getValue() != null) {
-                    if (blacklist.contains(kv.getKey().toLowerCase())) {
-                        log.debug("Skipping blacklisted header: {}", kv.getKey());
-                        continue;
-                    }
-                    headers.add(kv.getKey(), kv.getValue());
-                }
-            }
-        }
-        return headers;
-    }
-
-    private MultiValueMap<String, String> buildQueryParams(List<KeyValueTemplateDto> resolvedParams) {
-        MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
-        if (resolvedParams != null) {
-            for (KeyValueTemplateDto kv : resolvedParams) {
-                if (kv.getKey() != null && kv.getValue() != null) {
-                    queryParams.add(kv.getKey(), kv.getValue());
-                }
-            }
-        }
-        return queryParams;
     }
 
     private TestCaseRunResult buildResult(
@@ -806,11 +463,11 @@ public class EvaluationWorker {
     /**
      * Builds the persisted result row, extracting response columns with the {@code requestBodyJson}
      * already computed by the caller for {@code TestCaseRunResult.requestBody} fed uniformly into the
-     * extractor's {@code $request} frame binding (see {@link ResponseColumnExtractor}). For a single-turn
-     * DEPLOYMENT HTTP case this is the resolved-and-serialized request body actually sent
-     * ({@link #serializeBodyForAnalytics}); for an MCP tool call it is the serialized resolved tool
-     * arguments ({@link #serializeBody}) — a coherent "what was sent" value in both cases, even though
-     * an MCP row has no HTTP request body in the traditional sense.
+     * extractor's {@code $request} frame binding (see {@link ResponseColumnExtractor}). Only used by the
+     * MCP execution path here — DEPLOYMENT HTTP cases are built by {@link TurnLoopExecutor}. For an MCP
+     * tool call, {@code requestBodyJson} is the serialized resolved tool arguments ({@link #serializeBody})
+     * — a coherent "what was sent" value even though an MCP row has no HTTP request body in the
+     * traditional sense.
      */
     private TestCaseRunResult buildResult(
             TestCaseRunInput input,
@@ -853,15 +510,6 @@ public class EvaluationWorker {
                 .logDetails(logDetails)
                 .createdAtMs(context.getCreatedAtMs())
                 .build();
-    }
-
-    private String serializeBodyForAnalytics(ResolvedBodyDto body) {
-        if (body == null) {
-            return null;
-        }
-        // For JSON bodies, store just the content map (no contentType wrapper)
-        Object toSerialize = body instanceof ResolvedJsonBodyDto jsonBody ? jsonBody.getContent() : body;
-        return serializeBody(toSerialize);
     }
 
     private String serializeBody(Object body) {

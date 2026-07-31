@@ -6,8 +6,18 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
+import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
+import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import java.util.List;
@@ -17,16 +27,68 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
  * Functional tests for array-based multi-turn test cases: authoring round-trip + mutual exclusivity, and
- * end-to-end sequential turn-loop execution (history accumulation, per-turn result rows, fail-fast) against
- * a mocked chat-completions deployment.
+ * end-to-end sequential turn-loop execution (history accumulation via the JSONata request-template frame,
+ * per-turn result rows, fail-fast) against a mocked chat-completions deployment.
  */
 @DisplayName("Multi-turn Run Functional Tests")
 public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunctionalTest {
+
+    /**
+     * Chat suite whose request-template body is authored as a JSONata source string that accumulates
+     * history via the {@code $history} frame variable (bound from the previous turn's {@code history}
+     * response column) instead of the old hardcoded {@code messages}-array auto-accumulation. Turn 0
+     * evaluates with {@code $history} unbound (undefined-append), matching the new per-turn contract.
+     */
+    private TestSuiteResponseDto createHistoryAccumulatingChatSuite(String name) {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name + " " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .perTurn(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .content("{\"messages\": $append($history, "
+                                        + "[{\"role\": \"user\", \"content\": \"${{prompt}}\"}])}")
+                                .build())
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("history")
+                        .expression("$append($request.messages, [$response.choices[0].message])")
+                        .type(SchemaFieldType.ARRAY)
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
 
     // -------------------- Authoring --------------------
 
@@ -89,9 +151,13 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
     // -------------------- Execution --------------------
 
     @Test
-    @DisplayName("2-turn test case persists two SUCCESS rows and accumulates history")
+    @DisplayName("2-turn test case persists two SUCCESS rows and accumulates history via the JSONata frame")
     void twoTurnCase_accumulatesHistory() {
-        TestSuiteResponseDto suite = createChatSuite("MT 2-turn");
+        // Per the jsonata-request-templates change, history accumulation is no longer a hardcoded
+        // messages-array concatenation: it is entirely the author's JSONata expression
+        // ($append($history, [...])), fed by the previous turn's `history` response column via the
+        // request-template frame (Decision 5).
+        TestSuiteResponseDto suite = createHistoryAccumulatingChatSuite("MT 2-turn");
         UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
         createMultiTurnCase(datasetId, "conv-2turn", List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1")));
 

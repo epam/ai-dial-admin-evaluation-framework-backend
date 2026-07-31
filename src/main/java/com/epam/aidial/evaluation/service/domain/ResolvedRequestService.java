@@ -73,10 +73,37 @@ public class ResolvedRequestService {
     }
 
     /**
-     * Resolves template with bindings and data per the resolution flow in design.md.
+     * Resolves template with bindings and data per the resolution flow in design.md. This is the
+     * <b>preview</b> variant: a JSON body's JSONata evaluation runs with an empty request-template frame
+     * (no turn history available in a suite/test-case preview), and a JSONata evaluation failure is
+     * downgraded to a validation warning (never thrown) so preview/try-it-out never fails outright.
      */
     public ResolvedRequestDto resolve(
             RequestTemplateDto template, List<InputBindingDto> bindings, Map<String, Object> data) {
+        return resolveInternal(template, bindings, data, Map.of(), true);
+    }
+
+    /**
+     * Resolves template with bindings and data for the <b>run</b> path: identical url/query/headers/body
+     * handling to {@link #resolve}, except a JSON body's JSONata evaluation runs with {@code frameBindings}
+     * (the previous turn's reconciled extracted response columns, or empty for turn 0 / a single-turn case)
+     * and lets {@link RequestBodyEvaluationException} propagate — the run-path fail-fast contract requires
+     * the caller to turn an evaluation failure into an ERROR row, not a silently-downgraded warning.
+     */
+    public ResolvedRequestDto resolveForRun(
+            RequestTemplateDto template,
+            List<InputBindingDto> bindings,
+            Map<String, Object> data,
+            Map<String, Object> frameBindings) {
+        return resolveInternal(template, bindings, data, frameBindings != null ? frameBindings : Map.of(), false);
+    }
+
+    private ResolvedRequestDto resolveInternal(
+            RequestTemplateDto template,
+            List<InputBindingDto> bindings,
+            Map<String, Object> data,
+            Map<String, Object> frameBindings,
+            boolean preview) {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
         if (template == null) {
@@ -135,7 +162,8 @@ public class ResolvedRequestService {
         }
 
         // Resolve body (content-type aware)
-        ResolvedBodyDto resolvedBody = resolveBody(template.getBody(), bindingByVar, safeData, warnings);
+        ResolvedBodyDto resolvedBody =
+                resolveBody(template.getBody(), bindingByVar, safeData, warnings, frameBindings, preview);
 
         return ResolvedRequestDto.builder()
                 .url(resolvedUrl)
@@ -150,12 +178,14 @@ public class ResolvedRequestService {
             RequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            Map<String, Object> frameBindings,
+            boolean preview) {
         if (body == null) {
             return null;
         }
         if (body instanceof JsonRequestBodyDto jsonBody) {
-            return resolveJsonBody(jsonBody, bindingByVar, data, warnings);
+            return resolveJsonBody(jsonBody, bindingByVar, data, warnings, frameBindings, preview);
         } else if (body instanceof MultipartFormDataRequestBodyDto multipartBody) {
             return resolveMultipartBody(multipartBody, bindingByVar, data, warnings);
         } else if (body instanceof UrlEncodedFormRequestBodyDto urlEncodedBody) {
@@ -165,22 +195,31 @@ public class ResolvedRequestService {
     }
 
     /**
-     * Resolves the JSON body template by evaluating it as JSONata (with an empty request-template
-     * frame — no previous-turn history is available in a suite/test-case preview). A JSONata
-     * evaluation failure must never fail preview/try-it-out: it is downgraded to a validation
-     * warning and the resolved body content is {@code null}.
+     * Resolves the JSON body template by evaluating it as JSONata against {@code frameBindings}. For a
+     * preview resolution, a JSONata evaluation failure must never fail preview/try-it-out: it is downgraded
+     * to a validation warning and the resolved body content is {@code null}. For a run resolution, the
+     * failure propagates as {@link RequestBodyEvaluationException} — the caller (the turn loop) is
+     * responsible for turning it into a fail-fast ERROR row.
      */
     private ResolvedJsonBodyDto resolveJsonBody(
             JsonRequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            Map<String, Object> frameBindings,
+            boolean preview) {
         if (body.getContent() == null) {
             return ResolvedJsonBodyDto.builder().content(null).build();
         }
+        if (!preview) {
+            Map<String, Object> resolvedMap =
+                    requestBodyEvaluator.evaluate(body.getContent(), bindingByVar, data, frameBindings, warnings);
+            return ResolvedJsonBodyDto.builder().content(resolvedMap).build();
+        }
         Map<String, Object> resolvedMap;
         try {
-            resolvedMap = requestBodyEvaluator.evaluate(body.getContent(), bindingByVar, data, Map.of(), warnings);
+            resolvedMap =
+                    requestBodyEvaluator.evaluate(body.getContent(), bindingByVar, data, frameBindings, warnings);
         } catch (RequestBodyEvaluationException e) {
             log.warn("Failed to evaluate JSON request body template for preview: {}", e.getMessage(), e);
             warnings.add(ValidationWarningDto.builder()

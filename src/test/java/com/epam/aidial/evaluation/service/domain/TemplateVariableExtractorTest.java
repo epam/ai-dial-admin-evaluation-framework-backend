@@ -269,6 +269,38 @@ class TemplateVariableExtractorTest {
     }
 
     @Nested
+    @DisplayName("String-content (JSONata source) body extraction")
+    class StringContentBodyExtraction {
+
+        @Test
+        @DisplayName("Should extract placeholders from a String-content JSONata source body")
+        void shouldExtractPlaceholdersFromJsonataSourceStringBody() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content("{\"messages\": $append($history, [{\"role\": \"user\", \"content\": "
+                                    + "\"${{q}}\"}]), \"temperature\": ${{opt:0.5}}}")
+                            .build())
+                    .build();
+
+            var result = extractor.extract(template);
+
+            assertThat(result).hasSize(2);
+            assertThat(result)
+                    .extracting(TemplateVariableExtractor.ExtractedVariable::getName)
+                    .containsExactlyInAnyOrder("q", "opt");
+            assertThat(result)
+                    .extracting(TemplateVariableExtractor.ExtractedVariable::getSources)
+                    .allMatch(sources -> sources.equals(Set.of(TemplateVariableSource.BODY)));
+            var opt = result.stream()
+                    .filter(v -> v.getName().equals("opt"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(opt.isHasDefault()).isTrue();
+            assertThat(opt.getDefaultValue()).isEqualTo("0.5");
+        }
+    }
+
+    @Nested
     class MultipartFormDataBodyExtraction {
 
         @Test

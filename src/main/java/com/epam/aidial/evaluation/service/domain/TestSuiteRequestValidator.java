@@ -2,10 +2,14 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.logging.LogExecution;
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
+import com.epam.aidial.evaluation.constants.JsonataReservedNames;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.InputBindingDto;
+import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.ParameterDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.RequestBodyDto;
+import com.epam.aidial.evaluation.service.domain.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -79,6 +83,8 @@ public class TestSuiteRequestValidator {
                 }
             }
         }
+        validateRequestTemplateBody(dto.getRequestTemplate());
+
         List<ResponseColumnDefinitionDto> responseColumns = dto.getResponseColumns();
         if (responseColumns != null && !responseColumns.isEmpty()) {
             Set<String> seenNames = new HashSet<>();
@@ -93,6 +99,10 @@ public class TestSuiteRequestValidator {
                 if (!seenNames.add(col.getName())) {
                     throw new ValidationException("responseColumns: duplicate column name '" + col.getName() + "'");
                 }
+                if (JsonataReservedNames.RESERVED_COLUMN_NAMES.contains(col.getName())) {
+                    throw new ValidationException("responseColumns[" + i + "] ('" + col.getName()
+                            + "'): name is reserved (JSONata built-in function or frame variable)");
+                }
                 if (col.getExpression() == null || col.getExpression().isBlank()) {
                     throw new ValidationException("responseColumns[" + i + "]: expression must not be blank");
                 }
@@ -104,6 +114,36 @@ public class TestSuiteRequestValidator {
                 }
             }
         }
+    }
+
+    /**
+     * Validates an {@code application/json} request body whose {@code content} is a JSONata
+     * source {@code String} (parses as valid JSONata) or a legacy structural {@code Map}
+     * (unchanged, no JSONata validation needed since a Map is validated at resolution time). Any
+     * other content type (not null, not Map, not String) is rejected.
+     */
+    private void validateRequestTemplateBody(RequestTemplateDto requestTemplate) {
+        if (requestTemplate == null) {
+            return;
+        }
+        RequestBodyDto body = requestTemplate.getBody();
+        if (!(body instanceof JsonRequestBodyDto jsonBody)) {
+            return;
+        }
+        Object content = jsonBody.getContent();
+        if (content == null || content instanceof Map) {
+            return;
+        }
+        if (content instanceof String jsonataSource) {
+            try {
+                jsonataEvaluationService.validateExpression(jsonataSource);
+            } catch (ValidationException ex) {
+                throw new ValidationException("requestTemplate.body.content: " + ex.getMessage());
+            }
+            return;
+        }
+        throw new ValidationException(
+                "requestTemplate.body.content: must be a JSON object or a JSONata source string");
     }
 
     /**

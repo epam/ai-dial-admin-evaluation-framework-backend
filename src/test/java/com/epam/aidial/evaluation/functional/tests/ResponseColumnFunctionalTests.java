@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.service.domain.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.service.domain.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.service.domain.dto.ParameterDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.ParameterLocation;
@@ -266,6 +267,60 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
+    // --- jsonata-request-templates WP3: write-time 400s for JSONata request bodies + reserved names ---
+
+    @Test
+    @DisplayName("Should return 400 when requestTemplate.body.content is a syntactically invalid JSONata String")
+    void shouldReturn400ForInvalidJsonataStringContentBody() {
+        // Given: unclosed bracket makes the JSONata source invalid
+        TestSuiteRequestDto request = buildRequestWithJsonataBody("Suite Invalid JSONata Body", "{\"a\": [1, 2}");
+
+        // When
+        ResponseEntity<String> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), String.class);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("requestTemplate.body.content");
+    }
+
+    @Test
+    @DisplayName("Should return 400 when a response column name collides with the reserved frame variable 'request'")
+    void shouldReturn400ForReservedResponseColumnName() {
+        // Given: a response column named "request" collides with the $request frame variable
+        List<ResponseColumnDefinitionDto> columns = List.of(ResponseColumnDefinitionDto.builder()
+                .name("request")
+                .expression("choices[0].message.content")
+                .build());
+
+        // When
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites"),
+                jsonEntity(buildRequestWithColumns("Suite Reserved Column Name", columns)),
+                String.class);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("request").contains("reserved");
+    }
+
+    @Test
+    @DisplayName("Should accept a suite whose requestTemplate.body.content is a valid JSONata source String")
+    void shouldAcceptValidJsonataStringContentBody() {
+        // Given: a valid JSONata source string using $append (object-constructor authoring style)
+        TestSuiteRequestDto request = buildRequestWithJsonataBody(
+                "Suite Valid JSONata Body",
+                "{\"messages\": $append([], [{\"role\": \"user\", \"content\": \"${{q:hi}}\"}])}");
+
+        // When
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+    }
+
     // --- Task 9.9: run execution produces extractedColumns in results ---
 
     @Test
@@ -480,6 +535,26 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
                 .requestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
                 .responseColumns(columns)
+                .build();
+    }
+
+    private TestSuiteRequestDto buildRequestWithJsonataBody(String name, String jsonataBodyContent) {
+        return TestSuiteRequestDto.builder()
+                .name(name)
+                .deploymentRef(
+                        DeploymentReferenceDto.builder().id("d1").name("D1").build())
+                .endpointRef(buildEndpointContract("/v1/chat"))
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("expected")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(jsonataBodyContent)
+                                .build())
+                        .build())
                 .build();
     }
 

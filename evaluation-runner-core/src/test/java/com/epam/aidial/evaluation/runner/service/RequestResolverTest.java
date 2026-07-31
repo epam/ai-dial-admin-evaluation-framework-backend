@@ -23,6 +23,7 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedMultipartBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedUrlEncodedBodyDto;
 import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -245,6 +246,23 @@ class RequestResolverTest {
             assertThat(jsonBody.getContent()).containsEntry("model", "gpt-4");
             assertThat(jsonBody.getContent()).containsEntry("temperature", 0.7);
             assertThat(jsonBody.getContent()).containsEntry("stream", true);
+        }
+
+        @Test
+        void shouldDowngradeJsonataEvaluationFailureToRequestBodyEvaluationErrorWarningWithNullContent() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content("choices[0.message.content")
+                            .build())
+                    .build();
+
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            assertThat(jsonBody.getContent()).isNull();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_EVALUATION_ERROR
+                            && "$.requestTemplate.body".equals(w.getPath()));
         }
     }
 

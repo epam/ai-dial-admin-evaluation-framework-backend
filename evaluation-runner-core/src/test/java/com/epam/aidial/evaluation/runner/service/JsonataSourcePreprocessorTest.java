@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
@@ -319,6 +320,62 @@ class JsonataSourcePreprocessorTest {
     }
 
     @Nested
+    @DisplayName("Unmodeled-lexeme handling (backtick names, regex literals)")
+    class UnmodeledLexemes {
+
+        @Test
+        @DisplayName("a backtick-quoted name containing an apostrophe does not flip the quote state and "
+                + "a following placeholder is still substituted")
+        void backtickNameWithApostropheFollowedByPlaceholder() {
+            setUp();
+            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
+                    .thenReturn(5);
+
+            String result = preprocessor.preprocess("`it's a field`.value + ${{x}}", Map.of(), Map.of(), warnings);
+
+            assertThat(result).isEqualTo("`it's a field`.value + 5");
+        }
+
+        @Test
+        @DisplayName("a regex literal containing a quote does not flip the quote state and a following "
+                + "placeholder is still substituted")
+        void regexLiteralContainingQuoteFollowedByPlaceholder() {
+            setUp();
+            when(templateVariableResolver.resolveVariable(eq("x"), isNull(), any(), anyMap(), any()))
+                    .thenReturn(5);
+
+            String result = preprocessor.preprocess("$match(input, /a\"b/) and ${{x}}", Map.of(), Map.of(), warnings);
+
+            assertThat(result).isEqualTo("$match(input, /a\"b/) and 5");
+        }
+
+        @Test
+        @DisplayName("a division expression between two placeholders resolves both sides, not misdetected as regex")
+        void divisionBetweenTwoPlaceholdersIsNotMisdetectedAsRegex() {
+            setUp();
+            when(templateVariableResolver.resolveVariable(eq("a"), isNull(), any(), anyMap(), any()))
+                    .thenReturn(10);
+            when(templateVariableResolver.resolveVariable(eq("b"), isNull(), any(), anyMap(), any()))
+                    .thenReturn(2);
+
+            String result = preprocessor.preprocess("${{a}} / ${{b}}", Map.of(), Map.of(), warnings);
+
+            assertThat(result).isEqualTo("10 / 2");
+        }
+
+        @Test
+        @DisplayName("an unterminated regex literal does not throw and copies the remainder verbatim")
+        void unterminatedRegexDoesNotThrow() {
+            setUp();
+            String source = "$match(x, /abc";
+
+            String result = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+
+            assertThat(result).isEqualTo(source);
+        }
+    }
+
+    @Nested
     @DisplayName("Block comment handling")
     class BlockComments {
 
@@ -409,7 +466,45 @@ class JsonataSourcePreprocessorTest {
 
             preprocessor.neutralize("{\"q\": ${{question}}, \"d\": \"${{doc|file}}\"}");
 
-            org.mockito.Mockito.verifyNoInteractions(templateVariableResolver, dialFileRefResolver);
+            verifyNoInteractions(templateVariableResolver, dialFileRefResolver);
+        }
+    }
+
+    @Nested
+    @DisplayName("Malformed placeholder grammar — preprocess()/neutralize() agree on non-placeholder spans")
+    class MalformedPlaceholderGrammar {
+
+        @Test
+        @DisplayName("a default value containing an unescaped object literal still matches the grammar and "
+                + "truncates at the first \"}}\" — neutralize() and preprocess() agree on the resulting span "
+                + "boundary (the documented no-'}' default-value contract), leaving the same trailing brace")
+        void defaultValueWithObjectLiteralTruncatesConsistentlyBetweenBothPaths() {
+            setUp();
+            String source = "${{cfg:{\"a\":1}}}";
+
+            String neutralized = preprocessor.neutralize(source);
+            String preprocessed = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+
+            // Both paths locate the identical span end (the object's own closing brace plus the first
+            // placeholder-closing brace) and both leave the same trailing "}" verbatim afterwards — this
+            // already-invalid text fails JSONata parsing at write time (see
+            // TestSuiteRequestValidatorTest), not silently passing validation only to fail at run time.
+            assertThat(neutralized).isEqualTo(preprocessed);
+            assertThat(neutralized).endsWith("}");
+        }
+
+        @Test
+        @DisplayName("a bare default value containing an object literal is not force-neutralized to null "
+                + "(the write-time/run-time asymmetry this fix closes)")
+        void defaultValueWithArrayOfObjectsIsNotForceNeutralizedToNull() {
+            setUp();
+            String source = "${{fallback:[{\"role\":\"system\"}]}}";
+
+            String neutralized = preprocessor.neutralize(source);
+            String preprocessed = preprocessor.preprocess(source, Map.of(), Map.of(), warnings);
+
+            assertThat(neutralized).isEqualTo(preprocessed);
+            assertThat(neutralized).doesNotContain("null");
         }
     }
 

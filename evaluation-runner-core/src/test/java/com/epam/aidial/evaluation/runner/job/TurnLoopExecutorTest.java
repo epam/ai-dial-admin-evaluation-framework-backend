@@ -408,6 +408,36 @@ class TurnLoopExecutorTest {
     }
 
     @Test
+    @DisplayName("A FAILED turn still runs response-column extraction against the error response body")
+    void failedTurn_stillExtractsResponseColumnsFromErrorBody() {
+        stubCommonInfra();
+        TestCaseRunInput input =
+                baseInputBuilder().testCaseName("http-error").testCaseData("{}").build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+        List<ResponseColumnDefinitionDto> responseColumns = List.of(ResponseColumnDefinitionDto.builder()
+                .name("errMsg")
+                .expression("error.message")
+                .build());
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(
+                        new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":{\"message\":\"boom\"}}", 0, null));
+
+        List<TestCaseRunResult> results =
+                executor.execute(input, context, 0, responseColumns, "trace-7", FIXED_CLOCK.millis());
+
+        assertThat(results).hasSize(1);
+        TestCaseRunResult row = results.getFirst();
+        assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(row.getExtractedColumns()).contains("\"errMsg\":\"boom\"");
+        assertThat(row.getExtractedColumns()).isNotEqualTo("{}");
+    }
+
+    @Test
     @DisplayName("Cancellation before the first turn produces no rows")
     void cancellationBeforeFirstTurn_producesNoRows() {
         TestCaseRunInput input =

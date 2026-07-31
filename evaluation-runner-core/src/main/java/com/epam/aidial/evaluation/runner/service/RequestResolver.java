@@ -202,7 +202,7 @@ public class RequestResolver {
             warnings.add(ValidationWarningDto.builder()
                     .path("$.requestTemplate.body")
                     .message("Failed to evaluate request body template: " + e.getMessage())
-                    .code(ValidationWarningCode.TYPE)
+                    .code(ValidationWarningCode.REQUEST_BODY_EVALUATION_ERROR)
                     .build());
             resolvedMap = null;
         }

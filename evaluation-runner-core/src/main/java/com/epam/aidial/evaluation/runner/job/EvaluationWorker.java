@@ -83,16 +83,24 @@ public class EvaluationWorker {
         Baggage baggage = EvalBaggage.withExecutionContext(
                 context.getRunId(), context.getSuiteId(), input.getTestCaseId(), runIndex);
         Context traceContext = Context.current().with(span).with(baggage);
-        try (Scope scope = traceContext.makeCurrent()) {
+        try (Scope _ = traceContext.makeCurrent()) {
             // Check suite type for MCP branching
             if (context.getSuiteType() == SuiteType.MCP_TOOL) {
                 return List.of(executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs));
             }
 
-            // Every DEPLOYMENT HTTP case — single-turn and multi-turn alike — runs through the unified
-            // turn loop; N (turn count) is decided inside the executor (Decision 4 of the
-            // jsonata-request-templates change), not here.
-            return turnLoopExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);
+            List<TestCaseRunResult> results =
+                    turnLoopExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);
+
+            results.stream()
+                    .filter(row -> row.getExecutionStatus() == ExecutionStatus.ERROR)
+                    .findFirst()
+                    .ifPresent(errorRow -> span.setStatus(
+                            StatusCode.ERROR,
+                            errorRow.getLogDetails() != null
+                                    ? errorRow.getLogDetails()
+                                    : "Test case execution failed"));
+            return results;
 
         } catch (Exception e) {
             // Request resolution error

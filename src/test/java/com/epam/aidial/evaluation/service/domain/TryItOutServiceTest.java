@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -331,6 +332,32 @@ class TryItOutServiceTest {
             assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
                     .isInstanceOf(TryItOutValidationException.class)
                     .hasMessageContaining("prompt");
+        }
+
+        @Test
+        @DisplayName("should throw TryItOutValidationException and never invoke the deployment when the JSON body "
+                + "failed JSONata evaluation (REQUEST_BODY_EVALUATION_ERROR warning)")
+        void shouldAbortWithoutInvokingDeploymentForBodyEvaluationError() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+
+            ResolvedRequestDto resolved = ResolvedRequestDto.builder()
+                    .url("/chat/completions")
+                    .body(ResolvedJsonBodyDto.builder().content(null).build())
+                    .warnings(List.of(ValidationWarningDto.builder()
+                            .path("$.requestTemplate.body")
+                            .code(ValidationWarningCode.REQUEST_BODY_EVALUATION_ERROR)
+                            .message("Failed to evaluate request body template: boom")
+                            .build()))
+                    .build();
+            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(resolved);
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+                    .isInstanceOf(TryItOutValidationException.class);
+
+            verifyNoInteractions(deploymentInvoker);
         }
     }
 

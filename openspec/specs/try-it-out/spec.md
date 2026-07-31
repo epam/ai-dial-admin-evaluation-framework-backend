@@ -106,6 +106,13 @@ The system SHALL validate the test suite configuration before invoking the deplo
 
 > **Note:** This scenario applies to both suite types: DEPLOYMENT suites check URL template variables, MCP_TOOL suites check argument template variables.
 
+#### Scenario: JSON request body fails JSONata evaluation (DEPLOYMENT suite only)
+- **WHEN** the resolved request produces a warning with `REQUEST_BODY_EVALUATION_ERROR` code (the JSON body's JSONata evaluation failed and the resolved body content was downgraded to `null`)
+- **THEN** the system SHALL return HTTP 400 with error code `VALIDATION_ERROR`, the same way as an unresolvable `REQUIRED` warning
+- **AND** the deployment SHALL NOT be invoked
+
+> **Note:** This is distinct from the preview/GET resolved-request endpoint, which keeps its existing graceful degradation (a `null` body content with a warning, no abort) — only the try-it-out invocation paths (test case and variables) abort before calling the live deployment.
+
 ---
 
 ### Requirement: Try it out with MCP tool call (test case)

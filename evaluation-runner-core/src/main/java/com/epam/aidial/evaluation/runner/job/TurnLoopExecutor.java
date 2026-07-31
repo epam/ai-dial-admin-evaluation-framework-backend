@@ -172,6 +172,10 @@ public class TurnLoopExecutor {
                 } else {
                     final boolean requestIssued = step.outcome() != null;
                     if (requestIssued || !context.getCancellationSignal().get()) {
+                        final ResponseColumnExtractor.ExtractionResult abortExtraction = step.outcome() != null
+                                ? responseColumnExtractor.extract(
+                                        responseColumns, step.outcome().responseBody(), step.requestBodyJson())
+                                : new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of());
                         results.add(buildTurnRow(
                                 input,
                                 context,
@@ -184,8 +188,8 @@ public class TurnLoopExecutor {
                                 step.status(),
                                 step.outcome(),
                                 step.requestBodyJson(),
-                                "{}",
-                                "[]",
+                                abortExtraction.extractedColumns(),
+                                abortExtraction.extractionWarnings(),
                                 persistedDataJson));
                     }
                     break;

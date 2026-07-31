@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,6 +27,8 @@ import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -75,6 +78,9 @@ class EvaluationWorkerTest {
 
     @Mock
     private TurnLoopExecutor turnLoopExecutor;
+
+    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    private Span span;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneId.of("UTC"));
@@ -179,6 +185,65 @@ class EvaluationWorkerTest {
 
         assertThat(result.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
         assertThat(result.getResponseBody()).contains("REQUEST_RESOLUTION_ERROR");
+    }
+
+    @Test
+    @DisplayName("Should mark the span ERROR when TurnLoopExecutor returns a row with ExecutionStatus.ERROR")
+    void execute_turnLoopExecutorReturnsErrorRow_marksSpanError() {
+        stubSpanChainReturns(span);
+
+        TestCaseRunInput input = buildTestCaseRunInput();
+        EvaluationContext context = buildContext();
+        List<ResponseColumnDefinitionDto> responseColumns = List.of();
+        TestCaseRunResult errorRow = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .executionStatus(ExecutionStatus.ERROR)
+                .logDetails("{\"error\":\"boom\"}")
+                .build();
+        when(turnLoopExecutor.execute(eq(input), eq(context), eq(0), eq(responseColumns), any(), anyLong()))
+                .thenReturn(List.of(errorRow));
+
+        worker.execute(input, context, 0, responseColumns);
+
+        verify(span).setStatus(StatusCode.ERROR, "{\"error\":\"boom\"}");
+    }
+
+    @Test
+    @DisplayName("Should not mark the span ERROR when TurnLoopExecutor returns only SUCCESS/FAILED rows")
+    void execute_turnLoopExecutorReturnsOnlySuccessOrFailedRows_doesNotMarkSpanError() {
+        stubSpanChainReturns(span);
+
+        TestCaseRunInput input = buildTestCaseRunInput();
+        EvaluationContext context = buildContext();
+        List<ResponseColumnDefinitionDto> responseColumns = List.of();
+        TestCaseRunResult successRow = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .build();
+        TestCaseRunResult failedRow = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .executionStatus(ExecutionStatus.FAILED)
+                .build();
+        when(turnLoopExecutor.execute(eq(input), eq(context), eq(0), eq(responseColumns), any(), anyLong()))
+                .thenReturn(List.of(successRow, failedRow));
+
+        worker.execute(input, context, 0, responseColumns);
+
+        verify(span, never()).setStatus(eq(StatusCode.ERROR), any());
+    }
+
+    private void stubSpanChainReturns(Span stubbedSpan) {
+        when(openTelemetry
+                        .getTracer(anyString())
+                        .spanBuilder(anyString())
+                        .setAttribute(anyString(), anyString())
+                        .setAttribute(anyString(), anyString())
+                        .setAttribute(anyString(), anyString())
+                        .setAttribute(anyString(), anyString())
+                        .setAttribute(anyString(), anyString())
+                        .setAttribute(anyString(), anyString())
+                        .startSpan())
+                .thenReturn(stubbedSpan);
     }
 
     // ------------------------------------------------------------------

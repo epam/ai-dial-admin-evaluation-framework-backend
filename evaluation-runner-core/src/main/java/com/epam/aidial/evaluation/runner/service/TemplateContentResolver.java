@@ -37,13 +37,13 @@ public class TemplateContentResolver {
      * {@code ${{var|type:default}}}. Group 1: variable name. Group 2 (optional): type hint. Group 3
      * (optional): default value.
      */
-    static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{\\{([^:|}]+)(?:\\|([^:}]+))?(?::([^}]*))?\\}\\}");
+    static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{\\{([^:|}]+)(?:\\|([^:}]+))?(?::([^}]*))?}}");
 
     /**
      * Matches a string that is exactly one placeholder with no surrounding text.
      * Uses [^}]+ which already covers type-hinted placeholders like ${{var|file}}.
      */
-    static final Pattern FULL_VALUE_PATTERN = Pattern.compile("^\\$\\{\\{[^}]+\\}\\}$");
+    static final Pattern FULL_VALUE_PATTERN = Pattern.compile("^\\$\\{\\{[^}]+}}$");
 
     private final TemplateVariableResolver templateVariableResolver;
     private final DialFileRefResolver dialFileRefResolver;

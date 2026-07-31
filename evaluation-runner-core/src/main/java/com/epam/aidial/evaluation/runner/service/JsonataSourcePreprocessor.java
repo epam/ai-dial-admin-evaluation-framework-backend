@@ -14,7 +14,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Resolves {@code ${{}}} placeholders embedded in a JSONata <em>source</em> string (as opposed to a
- * structural JSON object) via a quote-state textual scanner, before the combined text is parsed and
+ * structural JSON object) via a lexeme-aware textual scanner, before the combined text is parsed and
  * evaluated as JSONata.
  *
  * <p>Placeholders can appear in one of three positions, each substituted differently:
@@ -31,13 +31,39 @@ import tools.jackson.databind.ObjectMapper;
  *       value, same as quoted-full-value.</li>
  * </ol>
  *
- * <p>The scanner tracks whether the current position is inside a {@code '...'} or {@code "..."}
- * string literal (honoring backslash escapes); everything else — including backtick-quoted field
- * names — is treated as plain code and passed through untouched. A {@code /* ... *&#47;} block
- * comment is recognized and skipped as a unit before quote-state tracking sees it, so a quote
- * character inside a comment does not derail the scan; the comment's own content (including any
- * placeholder-shaped text inside it) is passed through untouched, exactly like backtick-quoted text.
- * Value resolution priority is identical to {@link TemplateVariableResolver}
+ * <p>A placeholder span is located by matching {@link TemplateContentResolver#PLACEHOLDER_PATTERN}
+ * anchored at the current scan position (not by a naive {@code indexOf("}}")} search) — its default-value
+ * group is {@code [^}]*}, so per the documented contract a default value must not itself contain a
+ * {@code }} character. A {@code ${{...}}} span at a position where the pattern does not match (e.g. a
+ * default value containing a literal {@code }}) is not a recognized placeholder at all: the scanner falls
+ * through to plain-text handling one character at a time, so the raw {@code ${{...}}} text — including
+ * any embedded quotes — reaches the JSONata parser unresolved and is rejected there like any other
+ * malformed source. This same
+ * pattern-anchored matching is shared by {@link #preprocess} and {@link #neutralize} (via {@link #scan}),
+ * so both agree on exactly which spans are placeholders — {@link #neutralize} no longer force-substitutes
+ * a span that {@link #preprocess} would otherwise leave verbatim, which previously let a JSONata-invalid
+ * placeholder-shaped span validate at write time (200) only to fail every run.
+ *
+ * <p>Beyond {@code ${{}}} placeholders, the scanner models exactly four other JSONata lexeme shapes, so a
+ * quote character inside any of them cannot flip the scanner's string-literal quote-state and derail
+ * later placeholder detection:
+ * <ul>
+ *   <li>{@code '...'} / {@code "..."} string literals (honoring backslash escapes) — the only shapes
+ *       that can themselves carry a resolved placeholder value;</li>
+ *   <li>{@code `...`} backtick-quoted field names — copied through verbatim to the next backtick (no
+ *       escape mechanism, matching the JSONata tokenizer), or to end-of-source if unterminated;</li>
+ *   <li>{@code /* ... *&#47;} block comments — recognized and skipped as a unit; a quote or
+ *       placeholder-shaped span inside a comment is passed through untouched;</li>
+ *   <li>{@code /pattern/flags} regex literals — recognized only in an operand-starting position (start
+ *       of source, or the nearest non-whitespace character back is one of <code>( , = ! &lt; &gt; ~ &amp;
+ *       ? : [</code>), mirroring the dashjoin JSONata tokenizer's prefix/infix disambiguation so
+ *       {@code a / b} (division) is never misdetected as the start of a regex; bracket depth and
+ *       backslash-escaping are tracked so an unescaped {@code /} inside {@code (...)}/{@code [...]}/
+ *       {@code {...}} does not close the literal early.</li>
+ * </ul>
+ * An unterminated literal, comment, backtick name, or regex is copied through to end-of-source verbatim
+ * rather than throwing — write-time JSONata validation is responsible for rejecting genuinely malformed
+ * source. Value resolution priority is identical to {@link TemplateVariableResolver}
  * (constantValue &gt; data[dataField] &gt; template default &gt; null + REQUIRED warning); an
  * unresolved value serializes as JSON {@code null} for the full-value/bare positions (a valid JSONata
  * literal), and as an empty string for the embedded position (mirroring
@@ -64,11 +90,17 @@ public class JsonataSourcePreprocessor {
      * {@code null} for a full-value/bare placeholder, and the empty string for an embedded one. Used by
      * {@link #neutralize(String)} — it never touches bindings, test-case data, or the DIAL file
      * resolver, so it is safe to run before any of those are available.
+     *
+     * <p>{@link #resolveFullOrBare} only neutralizes a span that itself matches
+     * {@link TemplateContentResolver#PLACEHOLDER_PATTERN} — the same check {@link #preprocess}'s real
+     * substitutor applies via {@link #resolveFullOrBarePlaceholder} — so a span that would NOT be
+     * substituted at run time is passed through verbatim here too, keeping {@link #neutralize} and
+     * {@link #preprocess} in agreement on exactly which spans are placeholders.
      */
     private static final PlaceholderSubstitutor NEUTRAL_SUBSTITUTOR = new PlaceholderSubstitutor() {
         @Override
         public String resolveFullOrBare(String placeholder) {
-            return "null";
+            return isRecognizedPlaceholder(placeholder) ? "null" : placeholder;
         }
 
         @Override
@@ -139,10 +171,10 @@ public class JsonataSourcePreprocessor {
     }
 
     /**
-     * Scans {@code source} once, tracking quote/comment state, and delegates every placeholder
+     * Scans {@code source} once, tracking lexeme state (string literals, backtick-quoted names, block
+     * comments, regex literals, and {@code ${{}}} placeholder spans), and delegates every placeholder
      * occurrence to {@code substitutor}. Shared by {@link #preprocess} (real resolution) and
-     * {@link #neutralize} (fixed neutral tokens) so both see identical quote/comment/placeholder
-     * detection.
+     * {@link #neutralize} (fixed neutral tokens) so both see identical lexeme/placeholder detection.
      */
     private String scan(String source, PlaceholderSubstitutor substitutor) {
         StringBuilder result = new StringBuilder();
@@ -151,28 +183,50 @@ public class JsonataSourcePreprocessor {
         while (i < length) {
             if (source.startsWith("/*", i)) {
                 i = consumeComment(source, i, result);
-            } else {
-                char c = source.charAt(i);
-                if (c == '"' || c == '\'') {
-                    i = consumeStringLiteral(source, i, c, result, substitutor);
-                } else if (source.startsWith("${{", i)) {
-                    int close = source.indexOf("}}", i + 3);
-                    if (close < 0) {
-                        // Malformed placeholder (no closing "}}") — copy the remainder verbatim; write-time
-                        // JSONata validation is responsible for rejecting genuinely malformed source.
-                        result.append(source, i, length);
-                        break;
-                    }
-                    String placeholder = source.substring(i, close + 2);
-                    result.append(substitutor.resolveFullOrBare(placeholder));
-                    i = close + 2;
-                } else {
+                continue;
+            }
+            char c = source.charAt(i);
+            if (c == '"' || c == '\'') {
+                i = consumeStringLiteral(source, i, c, result, substitutor);
+            } else if (c == '`') {
+                i = consumeBacktickName(source, i, result);
+            } else if (c == '/' && isOperandStartPosition(source, i)) {
+                i = consumeRegexLiteral(source, i, result);
+            } else if (source.startsWith("${{", i)) {
+                Matcher m = matchPlaceholderAt(source, i);
+                if (m == null) {
+                    // Not a placeholder per PLACEHOLDER_PATTERN's grammar (e.g. a default value containing
+                    // a literal "}}") — fall through to plain-text handling one character at a time, so the
+                    // raw "${{" text (and everything after it) reaches the JSONata parser unresolved.
                     result.append(c);
                     i++;
+                } else {
+                    String placeholder = source.substring(i, m.end());
+                    result.append(substitutor.resolveFullOrBare(placeholder));
+                    i = m.end();
                 }
+            } else {
+                result.append(c);
+                i++;
             }
         }
         return result.toString();
+    }
+
+    /**
+     * Matches {@link TemplateContentResolver#PLACEHOLDER_PATTERN} anchored at position {@code i} (not
+     * merely somewhere at-or-after it), returning the successful {@link Matcher} or {@code null} when the
+     * text starting at {@code i} does not form a well-formed placeholder span.
+     */
+    private static Matcher matchPlaceholderAt(String source, int i) {
+        Matcher m = TemplateContentResolver.PLACEHOLDER_PATTERN.matcher(source);
+        m.region(i, source.length());
+        return m.lookingAt() ? m : null;
+    }
+
+    /** Whether {@code text} itself is a well-formed {@code ${{}}} placeholder span. */
+    private static boolean isRecognizedPlaceholder(String text) {
+        return TemplateContentResolver.PLACEHOLDER_PATTERN.matcher(text).find();
     }
 
     /**
@@ -192,6 +246,93 @@ public class JsonataSourcePreprocessor {
         }
         result.append(source, start, close + 2);
         return close + 2;
+    }
+
+    /**
+     * Copies a {@code `...`} backtick-quoted name starting at {@code start} (the opening backtick)
+     * through to the next backtick unchanged — the JSONata tokenizer has no escape mechanism for
+     * backtick-quoted names, so neither does this scan. Returns the index immediately following the
+     * closing backtick, or end-of-source when unterminated (copied verbatim, same graceful handling as an
+     * unterminated string literal/comment).
+     */
+    private static int consumeBacktickName(String source, int start, StringBuilder result) {
+        int length = source.length();
+        int close = source.indexOf('`', start + 1);
+        if (close < 0) {
+            result.append(source, start, length);
+            return length;
+        }
+        result.append(source, start, close + 1);
+        return close + 1;
+    }
+
+    /** Characters after which a following {@code /} may start a regex literal (an operand may start there). */
+    private static final String REGEX_OPERAND_PRECEDING_CHARS = "(,=!<>~&?:[";
+
+    /**
+     * Whether position {@code i} in {@code source} is a valid position for a JSONata regex literal to
+     * start — i.e. an operand may start there — mirroring the dashjoin JSONata tokenizer's prefix/infix
+     * disambiguation of {@code /} between "start of a regex" and "division operator": true at start of
+     * source, or when the nearest non-whitespace character before {@code i} is one of
+     * {@code ( , = ! < > ~ & ? : [}. Anything else (a name, number, string, or closing bracket) means an
+     * operand just ended, so {@code /} is division.
+     */
+    private static boolean isOperandStartPosition(String source, int i) {
+        int j = i - 1;
+        while (j >= 0 && Character.isWhitespace(source.charAt(j))) {
+            j--;
+        }
+        return j < 0 || REGEX_OPERAND_PRECEDING_CHARS.indexOf(source.charAt(j)) >= 0;
+    }
+
+    /**
+     * Consumes a {@code /pattern/flags} regex literal starting at {@code start} (the opening {@code /}),
+     * copying it through unchanged — its content is never scanned for quotes or placeholders. Bracket
+     * depth ({@code (`[`{}}) and backslash-escaping are tracked exactly like the dashjoin tokenizer's own
+     * {@code scanRegex}, so an unescaped {@code /} nested inside a bracketed group does not close the
+     * literal early. Returns the index immediately following the (optional {@code i}/{@code m}) flags, or
+     * end-of-source when unterminated (copied verbatim, same graceful handling as an unterminated string
+     * literal/comment/backtick name).
+     */
+    private static int consumeRegexLiteral(String source, int start, StringBuilder result) {
+        int length = source.length();
+        int i = start + 1;
+        int depth = 0;
+        while (i < length) {
+            char c = source.charAt(i);
+            boolean escaped = source.charAt(i - 1) == '\\';
+            if (c == '/' && depth == 0 && !isEscapedSlash(source, i)) {
+                int end = i + 1;
+                while (end < length && (source.charAt(end) == 'i' || source.charAt(end) == 'm')) {
+                    end++;
+                }
+                result.append(source, start, end);
+                return end;
+            }
+            if (!escaped) {
+                if (c == '(' || c == '[' || c == '{') {
+                    depth++;
+                } else if (c == ')' || c == ']' || c == '}') {
+                    depth--;
+                }
+            }
+            i++;
+        }
+        // Unterminated regex literal — copy the remainder verbatim; write-time JSONata validation is
+        // responsible for rejecting genuinely malformed source.
+        result.append(source, start, length);
+        return length;
+    }
+
+    /** True when the {@code /} at {@code position} is preceded by an odd (escaping) run of backslashes. */
+    private static boolean isEscapedSlash(String source, int position) {
+        int backslashCount = 0;
+        int j = position - 1;
+        while (j >= 0 && source.charAt(j) == '\\') {
+            backslashCount++;
+            j--;
+        }
+        return backslashCount % 2 != 0;
     }
 
     /**

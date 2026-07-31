@@ -145,8 +145,12 @@ API-specific Java code is needed for it).
    (verified by WP8 functional tests) since JSON ⊂ JSONata is what guarantees no regression.
 3. WP6 swaps `MultiTurnExecutor`'s fixed loop for the unified turn loop and removes the now-dead
    `messages`/`choices[0].message` special-casing; this is the only wave with an intended behavior change
-   for existing multi-turn suites (they keep working because their templates already resolve to JSON
-   objects — the loop-length rule change only matters for suites that add per-turn bindings retroactively).
+   for existing multi-turn suites. Their templates still parse/evaluate (JSON ⊂ JSONata), but the
+   hardcoded implicit history-array-of-messages accumulation is gone — a pre-existing suite that relied on
+   it stops accumulating history across turns until its author adds an explicit JSONata expression (e.g.
+   `$append($history, [...])`) over the suite's own response columns. This is accepted, not a regression to
+   guard against: the implicit-history feature was unshipped/unused, so there is no suite in production
+   depending on it, and history is now deliberately user-defined.
 4. WP7 extends streaming accumulation for DIAL custom content; WP8 runs the full functional suite,
    syncs delta specs into main specs, and updates `AGENTS.md`/OpenAPI examples.
 5. No feature flag — this is an in-process executor rewrite with no external contract break for existing

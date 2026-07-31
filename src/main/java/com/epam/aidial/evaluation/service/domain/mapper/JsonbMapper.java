@@ -40,14 +40,14 @@ public class JsonbMapper {
             new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final ObjectMapper objectMapper;
-    private final RunnerJsonbMapper executionJsonbMapper;
+    private final RunnerJsonbMapper runnerJsonbMapper;
 
     public RequestTemplateDto mapRequestTemplate(String json) {
-        return executionJsonbMapper.mapRequestTemplate(json);
+        return runnerJsonbMapper.mapRequestTemplate(json);
     }
 
     public List<InputBindingDto> mapInputBindings(String json) {
-        return executionJsonbMapper.mapInputBindings(json);
+        return runnerJsonbMapper.mapInputBindings(json);
     }
 
     public String mapInputBindings(List<InputBindingDto> value) {

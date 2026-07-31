@@ -127,21 +127,27 @@
   by `MultiTurnRunFunctionalTests`) vs. without (N=1 collapse, new); streaming DIAL custom-content
   accumulation across turns (new); reserved-name 400s at suite save time and JSONata write-time 400 for
   invalid String-content source (already covered by `ResponseColumnFunctionalTests`, not duplicated).
-- [ ] 8.2 Sync delta specs (`multi-turn-test-case`, `request-template`, `response-columns` under this
+- [x] 8.2 Sync delta specs (`multi-turn-test-case`, `request-template`, `response-columns` under this
   change's `specs/`) into `openspec/specs/` via `/opsx:sync` — verify with `git diff` that main specs
   gained content and did not lose existing requirements. Deferred to `/opsx:archive` per
   `openspec/config.yaml` `rules.archive` ("Delta spec sync" bullet) — not performed as part of WP8 itself;
   the delta specs under this change's `specs/` were reviewed and corrected for accuracy in the meantime
-  (see WP8 notes below).
+  (see WP8 notes below). Done during archive: all three main specs gained requirements (multi-turn 6→7,
+  request-template 16→21, response-columns 11→14); the stale `MultiTurnExecutor`/hardcoded
+  `messages`/`choices[0].message` requirement in `multi-turn-test-case` was replaced by its accurate
+  JSONata-frame-driven successor (no other existing requirement text or scenario was removed).
 - [x] 8.3 Update `AGENTS.md`: replace the `multi-turn-test-case` inline convention's "Assistant reply path
   is the hardcoded OpenAI `choices[0].message`; turns are always non-streaming" line with the JSONata
   frame-driven / streaming description; add the request-template JSONata evaluation seam as a new inline
   convention or linked pattern doc if it's substantial enough (per AGENTS.md Maintenance guidelines).
 - [x] 8.4 Update OpenAPI examples for `RequestBodyDto` (String-content variant) and any changed
   `ResolvedRequestDto`/`ResolvedJsonBodyDto` examples.
-- [ ] 8.5 Update `openspec/specs/README.md` summaries for `multi-turn-test-case`, `request-template`,
+- [x] 8.5 Update `openspec/specs/README.md` summaries for `multi-turn-test-case`, `request-template`,
   `response-columns` if their one-line summaries become materially inaccurate after sync (per Spec Index
   Maintenance Policy). Deferred to `/opsx:archive` alongside 8.2 (README auto-sync is an archive-time
-  step per `rules.archive`, and depends on the sync in 8.2 having happened first).
+  step per `rules.archive`, and depends on the sync in 8.2 having happened first). Done during archive:
+  all three summaries rewritten to drop the stale "sequential chat-completions"/"full-history resend"
+  wording and describe the JSONata-frame-driven turn loop, unconditional JSON-body JSONata evaluation, and
+  the `$request`/`$response` frame + reserved-name rule.
 - [x] 8.6 Run `./gradlew clean build` (full build: tests + Checkstyle + Spotless check + ArchUnit/
   LayeredArchitecture + JooqSchemaDrift + LoggingConvention) and confirm green before archiving.

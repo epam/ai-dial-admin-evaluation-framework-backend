@@ -104,7 +104,7 @@ context: |
   Request Templates, Observability, Security, OpenAPI Examples, Analytics Results,
   Eval Summaries (metric-enriched results), Run Metric Snapshots,
   Metric Score Statistics (code-defined per-metric aggregates via Query DSL, Phase-3 computation, `metric_score_results` query entity),
-  Multi-turn Test Cases (single test case carrying a `multiTurnData` turn array coexisting with shared `data`, per-field scope via `FieldDefinitionDto.perTurn`; merged per-turn effective view; sequential turn-loop execution; per-turn analytics rows; flat CSV multiplication),
+  Multi-turn Test Cases (single test case carrying a `multiTurnData` turn array coexisting with shared `data`, per-field scope via `FieldDefinitionDto.perTurn`; merged per-turn effective view; JSONata-frame-driven turn-loop execution via `TurnLoopExecutor` — turn count gated by per-turn bindings, history via the author's JSONata expression over prior response columns, no hardcoded chat-completions path; per-turn analytics rows; flat CSV multiplication),
   Conditional Metric Execution (optional per-TSMD JSONata `condition` gating whether a metric runs per turn).
   Infrastructure: Analytics Datasource (dual datasource — meta + analytics),
   Typed SQL DSL (jOOQ 3.20 — all repositories use DSLContext; generated sources in data.db.jooq.{meta,analytics}; drift guard via JooqSchemaDriftTest),

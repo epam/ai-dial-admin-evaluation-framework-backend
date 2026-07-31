@@ -16,14 +16,14 @@ import tools.jackson.databind.ObjectMapper;
  * the EF backend's own {@code service.domain.mapper.JsonbMapper}, which delegates here for these two
  * methods (see Decision 10 in the {@code evaluation-runner-core-module} change's {@code design.md}).
  *
- * <p>Bean name is explicit ({@code "runnerJsonbMapper"}) to avoid a {@code ConflictingBeanDefinitionException}:
- * the EF backend's {@code service.domain.mapper.JsonbMapper} shares this class's simple name, and Spring's
- * default component naming would otherwise register both as {@code jsonbMapper}.
+ * <p>Named {@code RunnerJsonbMapper} (bean name {@code "runnerJsonbMapper"}) rather than plain
+ * {@code JsonbMapper} so the EF backend's own {@code service.domain.mapper.JsonbMapper} can inject this
+ * class by simple name/import instead of a fully-qualified reference.
  */
 @Component("runnerJsonbMapper")
 @LogExecution
 @RequiredArgsConstructor
-public class JsonbMapper {
+public class RunnerJsonbMapper {
 
     private static final TypeReference<List<InputBindingDto>> BINDING_LIST_TYPE = new TypeReference<>() {};
     private final ObjectMapper objectMapper;

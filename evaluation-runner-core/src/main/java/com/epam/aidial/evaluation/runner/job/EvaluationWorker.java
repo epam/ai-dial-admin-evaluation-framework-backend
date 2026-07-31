@@ -30,7 +30,7 @@ import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
 import com.epam.aidial.evaluation.runner.util.EvalBaggage;
-import com.epam.aidial.evaluation.runner.util.JsonbMapper;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.opentelemetry.api.OpenTelemetry;
@@ -75,7 +75,7 @@ public class EvaluationWorker {
     private final RequestBodySerializerRegistry serializerRegistry;
     private final ResponseColumnExtractor responseColumnExtractor;
     private final ObjectMapper objectMapper;
-    private final JsonbMapper jsonbMapper;
+    private final RunnerJsonbMapper jsonbMapper;
     private final EvaluationRunProperties evaluationRunProperties;
     private final OpenTelemetry openTelemetry;
     private final McpToolInvoker mcpToolInvoker;

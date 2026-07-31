@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
@@ -23,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * Maps every JSONB-backed field on {@code TestSuite}/{@code Dataset}/{@code TestSuiteMetricDefinition} and
  * their DTOs, except the two execution-path fields ({@code requestTemplate}, {@code inputBindings}) whose
- * read direction is owned by the shared module's {@code runner.util.JsonbMapper} and delegated to here, so
+ * read direction is owned by the shared module's {@link RunnerJsonbMapper} and delegated to here, so
  * there is a single source of truth for parsing those two fields (see Decision 10 in the
  * {@code evaluation-runner-core-module} change's {@code design.md}).
  */
@@ -39,7 +40,7 @@ public class JsonbMapper {
             new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final ObjectMapper objectMapper;
-    private final com.epam.aidial.evaluation.runner.util.JsonbMapper executionJsonbMapper;
+    private final RunnerJsonbMapper executionJsonbMapper;
 
     public RequestTemplateDto mapRequestTemplate(String json) {
         return executionJsonbMapper.mapRequestTemplate(json);

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
@@ -32,8 +33,7 @@ class DatasetSchemaProviderTest {
 
     @BeforeEach
     void setUp() {
-        JsonbMapper jsonbMapper = new JsonbMapper(
-                new ObjectMapper(), new com.epam.aidial.evaluation.runner.util.JsonbMapper(new ObjectMapper()));
+        JsonbMapper jsonbMapper = new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
         provider = new DatasetSchemaProvider(datasetRepository, jsonbMapper);
     }
 

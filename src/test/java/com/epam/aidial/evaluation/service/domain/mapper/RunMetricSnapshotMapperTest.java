@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.mapper;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotResponseDto;
 import java.lang.reflect.Field;
@@ -23,8 +24,7 @@ class RunMetricSnapshotMapperTest {
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
         JacksonMapper jacksonMapper = new JacksonMapper(objectMapper);
-        JsonbMapper jsonbMapper =
-                new JsonbMapper(objectMapper, new com.epam.aidial.evaluation.runner.util.JsonbMapper(objectMapper));
+        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
         RunMetricSnapshotMapperImpl mapperImpl = new RunMetricSnapshotMapperImpl();
         setField(mapperImpl, "jacksonMapper", jacksonMapper);
         mapperImpl.jsonbMapper = jsonbMapper;

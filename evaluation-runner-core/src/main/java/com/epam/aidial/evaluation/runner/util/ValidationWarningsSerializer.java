@@ -145,7 +145,7 @@ public class ValidationWarningsSerializer {
      * Returns empty map on failure (graceful degradation for non-critical reads).
      *
      * <p><strong>Note:</strong> For critical user data (parameters, facts), consider using
-     * {@link com.epam.aidial.evaluation.runner.util.JsonbMapper} methods which throw on failure.
+     * {@link com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper} methods which throw on failure.
      *
      * @param json JSON object string (may be null or blank)
      * @return map, never null (returns empty map on null/blank/error)

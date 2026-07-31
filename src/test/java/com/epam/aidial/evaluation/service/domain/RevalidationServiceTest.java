@@ -22,6 +22,7 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.RevalidationTaskRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer.CoercionResult;
@@ -88,8 +89,7 @@ class RevalidationServiceTest {
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        JsonbMapper jsonbMapper =
-                new JsonbMapper(objectMapper, new com.epam.aidial.evaluation.runner.util.JsonbMapper(objectMapper));
+        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
         service = new RevalidationService(
                 revalidationTaskRepository,

@@ -20,6 +20,7 @@ import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
@@ -102,8 +103,7 @@ class DatasetServiceTest {
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        JsonbMapper jsonbMapper =
-                new JsonbMapper(objectMapper, new com.epam.aidial.evaluation.runner.util.JsonbMapper(objectMapper));
+        JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
         DatasetMapper datasetMapper = new DatasetMapper(jsonbMapper, warningsSerializer);
         service = new DatasetService(

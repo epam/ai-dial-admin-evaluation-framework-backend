@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -11,8 +12,7 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("JsonbMapper testCaseFilter")
 class JsonbMapperTestCaseFilterTest {
 
-    private final JsonbMapper mapper = new JsonbMapper(
-            new ObjectMapper(), new com.epam.aidial.evaluation.runner.util.JsonbMapper(new ObjectMapper()));
+    private final JsonbMapper mapper = new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
 
     @Test
     @DisplayName("round-trips a filter object through write then read")

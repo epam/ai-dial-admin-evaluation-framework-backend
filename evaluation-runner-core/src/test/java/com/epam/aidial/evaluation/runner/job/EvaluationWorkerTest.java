@@ -37,7 +37,7 @@ import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
-import com.epam.aidial.evaluation.runner.util.JsonbMapper;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.opentelemetry.api.OpenTelemetry;
@@ -85,7 +85,7 @@ class EvaluationWorkerTest {
     private ResponseColumnExtractor responseColumnExtractor;
 
     @Mock
-    private JsonbMapper jsonbMapper;
+    private RunnerJsonbMapper jsonbMapper;
 
     @Mock
     private EvaluationRunProperties evaluationRunProperties;

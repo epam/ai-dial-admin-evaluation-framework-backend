@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
@@ -188,8 +189,8 @@ class TemplateVariableServiceTest {
 
         private final TestSuiteRepository testSuiteRepository = mock(TestSuiteRepository.class);
         private final DatasetSchemaProvider datasetSchemaProvider = mock(DatasetSchemaProvider.class);
-        private final JsonbMapper jsonbMapper = new JsonbMapper(
-                new ObjectMapper(), new com.epam.aidial.evaluation.runner.util.JsonbMapper(new ObjectMapper()));
+        private final JsonbMapper jsonbMapper =
+                new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
         private final TestCaseService testCaseService = mock(TestCaseService.class);
 
         private final TemplateVariableService wiredService = new TemplateVariableService(
@@ -279,8 +280,8 @@ class TemplateVariableServiceTest {
         private final TestSuiteRepository testSuiteRepository = mock(TestSuiteRepository.class);
         private final DatasetSchemaProvider datasetSchemaProvider = mock(DatasetSchemaProvider.class);
         private final TestCaseService testCaseService = mock(TestCaseService.class);
-        private final JsonbMapper jsonbMapper = new JsonbMapper(
-                new ObjectMapper(), new com.epam.aidial.evaluation.runner.util.JsonbMapper(new ObjectMapper()));
+        private final JsonbMapper jsonbMapper =
+                new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
 
         private final TemplateVariableService wiredService = new TemplateVariableService(
                 testSuiteRepository,

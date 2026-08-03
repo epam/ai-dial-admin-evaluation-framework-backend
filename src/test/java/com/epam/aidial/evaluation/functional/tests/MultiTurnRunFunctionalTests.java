@@ -69,7 +69,7 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/chat")
                         .body(JsonRequestBodyDto.builder()
-                                .content("{\"messages\": $append($history, "
+                                .jsonataContent("{\"messages\": $append($history, "
                                         + "[{\"role\": \"user\", \"content\": \"${{prompt}}\"}])}")
                                 .build())
                         .build())

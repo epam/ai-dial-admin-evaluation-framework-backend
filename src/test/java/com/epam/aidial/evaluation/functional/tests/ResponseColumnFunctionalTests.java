@@ -270,8 +270,9 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
     // --- jsonata-request-templates WP3: write-time 400s for JSONata request bodies + reserved names ---
 
     @Test
-    @DisplayName("Should return 400 when requestTemplate.body.content is a syntactically invalid JSONata String")
-    void shouldReturn400ForInvalidJsonataStringContentBody() {
+    @DisplayName(
+            "Should return 400 when requestTemplate.body.jsonataContent is a syntactically invalid JSONata " + "String")
+    void shouldReturn400ForInvalidJsonataContentBody() {
         // Given: unclosed bracket makes the JSONata source invalid
         TestSuiteRequestDto request = buildRequestWithJsonataBody("Suite Invalid JSONata Body", "{\"a\": [1, 2}");
 
@@ -281,7 +282,7 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).contains("requestTemplate.body.content");
+        assertThat(response.getBody()).contains("requestTemplate.body.jsonataContent");
     }
 
     @Test
@@ -305,8 +306,8 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should accept a suite whose requestTemplate.body.content is a valid JSONata source String")
-    void shouldAcceptValidJsonataStringContentBody() {
+    @DisplayName("Should accept a suite whose requestTemplate.body.jsonataContent is a valid JSONata source String")
+    void shouldAcceptValidJsonataContentBody() {
         // Given: a valid JSONata source string using $append (object-constructor authoring style)
         TestSuiteRequestDto request = buildRequestWithJsonataBody(
                 "Suite Valid JSONata Body",
@@ -552,7 +553,7 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/chat")
                         .body(JsonRequestBodyDto.builder()
-                                .content(jsonataBodyContent)
+                                .jsonataContent(jsonataBodyContent)
                                 .build())
                         .build())
                 .build();

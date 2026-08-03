@@ -203,6 +203,38 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
         verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
     }
 
+    @Test
+    @DisplayName("POST /test-suites with both body.content and body.jsonataContent set returns 400 VALIDATION_ERROR")
+    void bothContentAndJsonataContentSet_returns400ValidationError() {
+        String requestJson = """
+                {
+                    "name": "Both body fields %s",
+                    "deploymentRef": {"id": "deployment-1", "name": "Deployment One", "version": "v1"},
+                    "endpointRef": {
+                        "method": "POST",
+                        "relativeUrlPattern": "/v1/chat",
+                        "requestBodySchema": {"contentType": "application/json", "schema": {"type": "object"}}
+                    },
+                    "requestTemplate": {
+                        "urlTemplate": "/v1/chat",
+                        "body": {
+                            "contentType": "application/json",
+                            "content": {"a": 1},
+                            "jsonataContent": "{\\"a\\": 1}"
+                        }
+                    }
+                }
+                """.formatted(UUID.randomUUID());
+
+        ResponseEntity<String> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(requestJson), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .contains("VALIDATION_ERROR")
+                .contains("content and jsonataContent are mutually exclusive");
+    }
+
     // -------------------- fixtures --------------------
 
     /**
@@ -235,7 +267,7 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/responses")
                         .body(JsonRequestBodyDto.builder()
-                                .content("{\"input\": $append($history, "
+                                .jsonataContent("{\"input\": $append($history, "
                                         + "[{\"role\": \"user\", \"content\": \"${{q}}\"}]), \"model\": \"gpt-x\"}")
                                 .build())
                         .build())
@@ -297,7 +329,7 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/chat")
                         .body(JsonRequestBodyDto.builder()
-                                .content("{\"messages\": [{\"role\": \"user\", \"content\": ${{prompt}}}]}")
+                                .jsonataContent("{\"messages\": [{\"role\": \"user\", \"content\": ${{prompt}}}]}")
                                 .build())
                         .build())
                 .inputBindings(List.of(InputBindingDto.builder()

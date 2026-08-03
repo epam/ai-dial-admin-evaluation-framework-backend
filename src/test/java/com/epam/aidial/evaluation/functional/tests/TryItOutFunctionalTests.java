@@ -105,7 +105,7 @@ public abstract class TryItOutFunctionalTests extends BaseFunctionalTest {
                 // Valid JSONata syntax (parses fine at write time) that fails only when evaluated,
                 // since the referenced function does not exist.
                 .body(JsonRequestBodyDto.builder()
-                        .content("{\"prompt\": $doesNotExistFunction()}")
+                        .jsonataContent("{\"prompt\": $doesNotExistFunction()}")
                         .build())
                 .build();
         TestSuiteRequestDto req = TestSuiteRequestDto.builder()
@@ -130,6 +130,10 @@ public abstract class TryItOutFunctionalTests extends BaseFunctionalTest {
                 String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        // The evaluation failure was downgraded to a REQUEST_BODY_EVALUATION_ERROR validation warning by
+        // RequestResolver's preview path (never a silently-dropped body); TryItOutService then turns that
+        // warning into this 400.
+        assertThat(response.getBody()).contains("REQUEST_BODY_EVALUATION_ERROR");
         verifyNoInteractions(deploymentInvoker);
     }
 

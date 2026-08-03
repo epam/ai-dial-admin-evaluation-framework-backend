@@ -176,6 +176,21 @@ class RequestResolverTest {
         }
 
         @Test
+        @DisplayName("a body with neither content nor jsonataContent set resolves to content = null, no warnings")
+        void shouldResolveNullContentWhenNeitherFieldSet() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder().build())
+                    .build();
+
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+
+            assertThat(result.getBody()).isInstanceOf(ResolvedJsonBodyDto.class);
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            assertThat(jsonBody.getContent()).isNull();
+            assertThat(result.getWarnings()).isEmpty();
+        }
+
+        @Test
         void shouldReturnNullBodyWhenTemplateHasNoBody() {
             var template =
                     RequestTemplateDto.builder().urlTemplate("/api/v1/test").build();
@@ -252,7 +267,7 @@ class RequestResolverTest {
         void shouldDowngradeJsonataEvaluationFailureToRequestBodyEvaluationErrorWarningWithNullContent() {
             var template = RequestTemplateDto.builder()
                     .body(JsonRequestBodyDto.builder()
-                            .content("choices[0.message.content")
+                            .jsonataContent("choices[0.message.content")
                             .build())
                     .build();
 

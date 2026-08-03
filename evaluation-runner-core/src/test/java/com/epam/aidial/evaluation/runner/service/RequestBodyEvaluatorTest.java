@@ -72,7 +72,7 @@ class RequestBodyEvaluatorTest {
             content.put("explicit_double_one", 1.0);
             content.put("user", null);
 
-            Map<String, Object> result = evaluator.evaluate(content, Map.of(), Map.of(), Map.of(), warnings);
+            Map<String, Object> result = evaluator.evaluate(content, null, Map.of(), Map.of(), Map.of(), warnings);
 
             assertThat(result.get("model")).isEqualTo("gpt-4");
             assertThat(result.get("temperature")).isEqualTo(0.7);
@@ -92,15 +92,20 @@ class RequestBodyEvaluatorTest {
                     .thenReturn("Hello world");
             Map<String, Object> content = Map.of("prompt", "${{prompt}}");
 
-            Map<String, Object> result = evaluator.evaluate(content, Map.of(), Map.of(), Map.of(), warnings);
+            Map<String, Object> result = evaluator.evaluate(content, null, Map.of(), Map.of(), Map.of(), warnings);
 
             assertThat(result).containsEntry("prompt", "Hello world");
         }
+    }
+
+    @Nested
+    @DisplayName("Neither field set")
+    class NeitherFieldSet {
 
         @Test
-        @DisplayName("null content returns null (no body)")
-        void nullContentReturnsNull() {
-            Map<String, Object> result = evaluator.evaluate(null, Map.of(), Map.of(), Map.of(), warnings);
+        @DisplayName("both content and jsonataContent null returns null (no body)")
+        void bothNullReturnsNull() {
+            Map<String, Object> result = evaluator.evaluate(null, null, Map.of(), Map.of(), Map.of(), warnings);
 
             assertThat(result).isNull();
         }
@@ -115,7 +120,7 @@ class RequestBodyEvaluatorTest {
         void unboundHistoryYieldsUndefinedAppendSemantics() {
             String source = "{\"messages\": $append($history, [1])}";
 
-            Map<String, Object> result = evaluator.evaluate(source, Map.of(), Map.of(), Map.of(), warnings);
+            Map<String, Object> result = evaluator.evaluate(null, source, Map.of(), Map.of(), Map.of(), warnings);
 
             assertThat(result.get("messages")).isEqualTo(List.of(1));
         }
@@ -126,7 +131,7 @@ class RequestBodyEvaluatorTest {
             String source = "{\"messages\": $append($history, [1])}";
             Map<String, Object> frameBindings = Map.of("history", List.of(0));
 
-            Map<String, Object> result = evaluator.evaluate(source, Map.of(), Map.of(), frameBindings, warnings);
+            Map<String, Object> result = evaluator.evaluate(null, source, Map.of(), Map.of(), frameBindings, warnings);
 
             assertThat(result.get("messages")).isEqualTo(List.of(0, 1));
         }
@@ -141,7 +146,7 @@ class RequestBodyEvaluatorTest {
                     .thenReturn(List.of(newMessage));
             String source = "{\"messages\": $append($history, ${{newMessages}})}";
 
-            Map<String, Object> result = evaluator.evaluate(source, Map.of(), Map.of(), Map.of(), warnings);
+            Map<String, Object> result = evaluator.evaluate(null, source, Map.of(), Map.of(), Map.of(), warnings);
 
             assertThat(result.get("messages")).isEqualTo(List.of(newMessage));
         }
@@ -153,7 +158,7 @@ class RequestBodyEvaluatorTest {
                     .thenReturn("she said \"hi\" \\ then\nleft");
             String source = "{\"content\": \"prefix: ${{text}}\"}";
 
-            Map<String, Object> result = evaluator.evaluate(source, Map.of(), Map.of(), Map.of(), warnings);
+            Map<String, Object> result = evaluator.evaluate(null, source, Map.of(), Map.of(), Map.of(), warnings);
 
             assertThat(result.get("content")).isEqualTo("prefix: she said \"hi\" \\ then\nleft");
         }
@@ -165,7 +170,7 @@ class RequestBodyEvaluatorTest {
                     .thenReturn("${{other}}");
             String source = "{\"content\": \"value: ${{evil}}\"}";
 
-            Map<String, Object> result = evaluator.evaluate(source, Map.of(), Map.of(), Map.of(), warnings);
+            Map<String, Object> result = evaluator.evaluate(null, source, Map.of(), Map.of(), Map.of(), warnings);
 
             assertThat(result.get("content")).isEqualTo("value: ${{other}}");
         }
@@ -178,7 +183,7 @@ class RequestBodyEvaluatorTest {
             Map<String, Object> frameBindings = new HashMap<>();
             frameBindings.put("x", null);
 
-            Map<String, Object> result = evaluator.evaluate(source, Map.of(), Map.of(), frameBindings, warnings);
+            Map<String, Object> result = evaluator.evaluate(null, source, Map.of(), Map.of(), frameBindings, warnings);
 
             assertThat(result.get("boundExists")).isEqualTo(true);
             assertThat(result.get("unboundExists")).isEqualTo(false);
@@ -189,7 +194,7 @@ class RequestBodyEvaluatorTest {
         void invalidJsonataSyntaxThrows() {
             String source = "{\"a\": (unclosed}";
 
-            assertThatThrownBy(() -> evaluator.evaluate(source, Map.of(), Map.of(), Map.of(), warnings))
+            assertThatThrownBy(() -> evaluator.evaluate(null, source, Map.of(), Map.of(), Map.of(), warnings))
                     .isInstanceOf(RequestBodyEvaluationException.class);
         }
     }
@@ -203,7 +208,7 @@ class RequestBodyEvaluatorTest {
         void arrayResultThrows() {
             String source = "[1, 2, 3]";
 
-            assertThatThrownBy(() -> evaluator.evaluate(source, Map.of(), Map.of(), Map.of(), warnings))
+            assertThatThrownBy(() -> evaluator.evaluate(null, source, Map.of(), Map.of(), Map.of(), warnings))
                     .isInstanceOf(RequestBodyEvaluationException.class)
                     .hasMessageContaining("JSON object");
         }
@@ -213,21 +218,7 @@ class RequestBodyEvaluatorTest {
         void numericResultThrows() {
             String source = "42";
 
-            assertThatThrownBy(() -> evaluator.evaluate(source, Map.of(), Map.of(), Map.of(), warnings))
-                    .isInstanceOf(RequestBodyEvaluationException.class);
-        }
-    }
-
-    @Nested
-    @DisplayName("Unsupported content type")
-    class UnsupportedContentType {
-
-        @Test
-        @DisplayName("a List content (neither Map nor String) throws RequestBodyEvaluationException")
-        void listContentThrows() {
-            List<Object> content = List.of("not", "supported");
-
-            assertThatThrownBy(() -> evaluator.evaluate(content, Map.of(), Map.of(), Map.of(), warnings))
+            assertThatThrownBy(() -> evaluator.evaluate(null, source, Map.of(), Map.of(), Map.of(), warnings))
                     .isInstanceOf(RequestBodyEvaluationException.class);
         }
     }

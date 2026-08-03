@@ -140,10 +140,19 @@ class TurnLoopExecutorTest {
         });
     }
 
-    private RequestTemplateDto jsonBodyTemplate(Object content) {
+    private RequestTemplateDto jsonBodyTemplate(Map<String, Object> content) {
         return RequestTemplateDto.builder()
                 .urlTemplate("/v1/chat")
                 .body(JsonRequestBodyDto.builder().content(content).build())
+                .build();
+    }
+
+    private RequestTemplateDto jsonataBodyTemplate(String jsonataContent) {
+        return RequestTemplateDto.builder()
+                .urlTemplate("/v1/chat")
+                .body(JsonRequestBodyDto.builder()
+                        .jsonataContent(jsonataContent)
+                        .build())
                 .build();
     }
 
@@ -264,7 +273,7 @@ class TurnLoopExecutorTest {
                 .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"}]")
                 .build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(source))
+                .snapshotRequestTemplate(jsonataBodyTemplate(source))
                 .snapshotInputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")
                         .dataField("prompt")
@@ -323,7 +332,7 @@ class TurnLoopExecutorTest {
         TestCaseRunInput input =
                 baseInputBuilder().testCaseName("bad-body").testCaseData("{}").build();
         EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate("1 + 1"))
+                .snapshotRequestTemplate(jsonataBodyTemplate("1 + 1"))
                 .snapshotInputBindings(List.of())
                 .snapshotTestCaseSchema(List.of())
                 .build();

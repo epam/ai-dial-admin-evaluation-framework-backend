@@ -27,14 +27,14 @@ The service SHALL allow storing a `requestTemplate` (`RequestTemplateDto`, nulla
 - `urlTemplate` (String, nullable): Valid URL path that can contain `${{variable}}` placeholders (e.g., `/api/v1/models/${{model_id}}/completions`). When null, a **soft validation warning** SHALL be added (e.g. "urlTemplate is required for request assembly"). When non-null, the value SHALL be a **valid path** (literal segments and `${{var}}` placeholders only); invalid values SHALL produce a soft validation warning. After resolving all placeholders, the **final request URL SHALL match** `endpointRef.relativeUrlPattern`.
 - `queryParams` (List of `KeyValueTemplateDto`, nullable): Query parameters. Each entry has a literal `key` and a `value` that can contain `${{variable}}` or `${{variable:default}}` placeholders.
 - `headers` (List of `KeyValueTemplateDto`, nullable): Custom headers. Same structure as `queryParams`.
-- `body` (`RequestBodyDto`, nullable): Polymorphic request body with `contentType` discriminator. When null, the endpoint has no request body. For `application/json`, `content` is `Object` — either a `Map<String, Object>` (legacy authoring: structural `${{}}` resolution, then the resolved Map is JSON-serialized and JSONata-evaluated — a plain JSON body evaluates to itself, so this is behaviorally identical to today for any suite not using JSONata-specific syntax) or a `String` (JSONata source: `${{}}` placeholders preprocessed into the source text, then the combined text evaluated directly). For `multipart/form-data` (content: `List<FormPartDto>`) and `application/x-www-form-urlencoded` (content: `List<KeyValueTemplateDto>` — reuses existing key-value pair type, supports duplicate keys), `content` is unchanged (List-typed, `${{}}`-only, no JSONata involvement). The `${{variable}}` and `${{variable:default}}` placeholder syntax is supported within all body content types, as before. See the "Unconditional JSONata evaluation of JSON request bodies" and related requirements below for the full JSON-body evaluation contract.
+- `body` (`RequestBodyDto`, nullable): Polymorphic request body with `contentType` discriminator. When null, the endpoint has no request body. For `application/json` the body carries two mutually exclusive, independently typed fields: `content` (`Map<String, Object>`, nullable — legacy authoring: structural `${{}}` resolution, then the resolved Map is JSON-serialized and JSONata-evaluated; a plain JSON body evaluates to itself, so this is behaviorally identical for any suite not using JSONata-specific syntax) and `jsonataContent` (`String`, nullable — JSONata source: `${{}}` placeholders preprocessed into the source text, then the combined text evaluated directly). Both non-null SHALL be rejected with HTTP 400; both null means no request body. For `multipart/form-data` (content: `List<FormPartDto>`) and `application/x-www-form-urlencoded` (content: `List<KeyValueTemplateDto>` — reuses existing key-value pair type, supports duplicate keys), `content` is unchanged (List-typed, `${{}}`-only, no JSONata involvement) and there is no `jsonataContent` field. The `${{variable}}` and `${{variable:default}}` placeholder syntax is supported within all body content types, as before. See the "Unconditional JSONata evaluation of JSON request bodies", "Mutual exclusivity of `content` and `jsonataContent`", and related requirements below for the full JSON-body evaluation contract.
 
 #### Scenario: Template with JSON body as a Map (legacy, unchanged behavior)
 - **WHEN** client creates a template with `body: { "contentType": "application/json", "content": { "model": "${{model}}", "messages": "${{messages}}" } }`
 - **THEN** system SHALL accept and persist the template; placeholders in `content` are extracted as template variables with source BODY; at resolution time the Map is structurally resolved, serialized, and JSONata-evaluated, producing the identical request body a pre-JSONata resolution would have produced
 
 #### Scenario: Template with JSON body as a JSONata source string
-- **WHEN** client creates a template with `body: { "contentType": "application/json", "content": "{\"messages\": $append($history, [{\"role\":\"user\",\"content\":\"${{prompt}}\"}]), \"temperature\": 0.7}" }`
+- **WHEN** client creates a template with `body: { "contentType": "application/json", "jsonataContent": "{\"messages\": $append($history, [{\"role\":\"user\",\"content\":\"${{prompt}}\"}]), \"temperature\": 0.7}" }`
 - **THEN** system SHALL accept and persist the template; `${{prompt}}` is extracted as a template variable with source BODY; at resolution time `${{prompt}}` is preprocessed into the source text before the combined text is evaluated as JSONata
 
 #### Scenario: Template with multipart/form-data body
@@ -90,26 +90,98 @@ The service SHALL allow storing a `requestTemplate` (`RequestTemplateDto`, nulla
 - **WHEN** client sends `requestTemplate: null` vs `requestTemplate: { "urlTemplate": null, "queryParams": null, "headers": null, "body": null }`
 - **THEN** system SHALL treat these as semantically equivalent — both produce the same validation warnings and behavior
 
+### Requirement: Mutual exclusivity of `content` and `jsonataContent`
+
+An `application/json` request body SHALL carry its template in exactly one of two fields: `content` (`Map<String, Object>`, legacy structural template) or `jsonataContent` (`String`, JSONata source). When both are non-null the service SHALL reject the suite create/update with HTTP 400 (`VALIDATION_ERROR`). When both are null the body SHALL be treated as "no request body", identical to `content: null` alone.
+
+Status: **Implemented**
+
+#### Scenario: Both fields set is rejected
+
+- **WHEN** client saves a suite with `body: { "contentType": "application/json", "content": { "a": 1 }, "jsonataContent": "{\"a\": 1}" }`
+- **THEN** system SHALL respond with HTTP 400 and code `VALIDATION_ERROR`, and SHALL NOT persist the suite
+
+#### Scenario: Only `content` set is accepted
+
+- **WHEN** client saves a suite with `body: { "contentType": "application/json", "content": { "model": "${{model}}" } }`
+- **THEN** system SHALL accept and persist the template, and resolution SHALL follow the legacy structural path
+
+#### Scenario: Only `jsonataContent` set is accepted
+
+- **WHEN** client saves a suite with `body: { "contentType": "application/json", "jsonataContent": "{\"model\": \"gpt-4\", \"messages\": $append($history, [{\"role\": \"user\", \"content\": \"${{question}}\"}])}" }`
+- **THEN** system SHALL accept and persist the template, and resolution SHALL preprocess `${{question}}` into the source text before evaluating it as JSONata
+
+#### Scenario: Neither field set means no request body
+
+- **WHEN** client saves a suite with `body: { "contentType": "application/json" }` (both `content` and `jsonataContent` absent)
+- **THEN** system SHALL treat the request as having no body, and the resolved body content SHALL be null
+
+#### Scenario: A JSON string in `content` is rejected
+
+- **WHEN** client saves a suite with `body: { "contentType": "application/json", "content": "{\"model\": \"gpt-4\"}" }` (a String value in the Map-typed field)
+- **THEN** system SHALL respond with HTTP 400 — a JSONata source SHALL be sent in `jsonataContent`, not in `content`
+
+### Requirement: JSONata syntax validation for `jsonataContent` request bodies
+
+When a `requestTemplate.body.jsonataContent` is present, the service SHALL validate at suite create/update time that the source parses as syntactically valid JSONata after every `${{}}` placeholder has been replaced with a fixed neutral token (JSON `null` for quoted-full-value and bare placeholders, an empty string for embedded ones). An invalid source SHALL be rejected with HTTP 400. A `Map`-typed `content` SHALL NOT be JSONata-validated at write time (it is validated at resolution time, as before).
+
+Status: **Implemented**
+
+#### Scenario: Valid `jsonataContent` accepted
+
+- **WHEN** client saves a suite with `body.jsonataContent` as a syntactically valid JSONata source string
+- **THEN** system SHALL accept and persist the template
+
+#### Scenario: Invalid `jsonataContent` rejected
+
+- **WHEN** client saves a suite with `body.jsonataContent` as a String containing a JSONata syntax error
+- **THEN** system SHALL respond with HTTP 400 with a message identifying `requestTemplate.body.jsonataContent`
+
+#### Scenario: Bare placeholder does not fail write-time validation
+
+- **WHEN** client saves a suite with `body.jsonataContent` of `{"q": ${{question}}}` — not valid JSONata until the placeholder is substituted
+- **THEN** system SHALL neutralize the placeholder before validating and SHALL accept the template
+
+### Requirement: Template variable extraction from `jsonataContent`
+
+`${{}}` placeholders in `requestTemplate.body.jsonataContent` SHALL be extracted as template variables with source `BODY`, exactly as placeholders in a `Map`-typed `content` are. Extraction SHALL apply to both the suite-level and test-case-level template-variable APIs and to the binding cross-validation that consumes them.
+
+Status: **Implemented**
+
+#### Scenario: Variable in `jsonataContent` is extracted with source BODY
+
+- **WHEN** a suite's `body.jsonataContent` is `{"messages": $append($history, [{"role": "user", "content": "${{question}}"}])}`
+- **THEN** `GET /api/v1/test-suites/{id}/template-variables` SHALL return a variable named `question` with `sources = [BODY]`
+
+#### Scenario: Bound `jsonataContent` variable does not produce validation warnings
+
+- **WHEN** a suite's only placeholder lives in `body.jsonataContent` and `inputBindings` binds that variable to an existing dataset field
+- **THEN** suite validation SHALL report neither an unbound-required-variable warning for that variable nor an orphan-binding warning for that binding
+
 ### Requirement: Unconditional JSONata evaluation of JSON request bodies
-Every `application/json` request body — Map-authored or String-authored, single-turn or multi-turn — SHALL be evaluated as a JSONata expression before being sent. There SHALL be no content-inspection or mode flag that decides whether to evaluate; a plain JSON literal is valid JSONata source that evaluates to itself (JSON is a syntactic subset of JSONata), so this SHALL NOT change the resolved body of any pre-existing Map-authored template that does not itself use JSONata-specific syntax (functions, `$` variables, operators).
+Every `application/json` request body — `content`-authored (Map) or `jsonataContent`-authored (String), single-turn or multi-turn — SHALL be evaluated as a JSONata expression before being sent. There SHALL be no content-inspection or mode flag that decides whether to evaluate; the field a template is authored in selects only how the body text is produced (structural resolution + serialization vs. textual placeholder preprocessing), never whether evaluation happens. A plain JSON literal is valid JSONata source that evaluates to itself (JSON is a syntactic subset of JSONata), so this SHALL NOT change the resolved body of any pre-existing Map-authored template that does not itself use JSONata-specific syntax (functions, `$` variables, operators).
 
 #### Scenario: Legacy Map body with no JSONata syntax is unaffected
 - **WHEN** a suite's `requestTemplate.body.content` is a plain Map with only literal values and `${{variable}}` placeholders (no JSONata functions or `$` references)
 - **THEN** the resolved request body sent to the deployment is identical to the body that would have been produced by pre-JSONata structural resolution alone
 
+#### Scenario: Field choice does not gate evaluation
+- **WHEN** a suite's body is authored in `jsonataContent` and another suite's equivalent body is authored in `content`
+- **THEN** both SHALL be JSONata-evaluated before being sent, and both SHALL be subject to the same runtime object contract
+
 ### Requirement: Placeholder resolution precedes JSONata evaluation
-`${{variable}}`/`${{variable|type:default}}` placeholders SHALL be resolved to typed values (using the existing binding-priority and default rules) and spliced into the request body's raw text before that text is parsed and evaluated as JSONata source. Three textual substitution modes SHALL apply depending on where the placeholder appears in the source text: quoted-full-value (the placeholder is the entire content of a quoted string, e.g. `"${{temp:0.7}}"`) is replaced with the JSON serialization of the resolved typed value, so a number/boolean/array/object becomes real JSONata literal syntax rather than a quoted string; embedded-in-literal (the placeholder appears alongside other text inside a string literal, e.g. `"Hello ${{name}}"`) is replaced with the JSON-string-escaped form of the stringified resolved value, preserving the surrounding literal as one string; bare (the placeholder appears outside any string literal — reachable only in String-content JSONata source, e.g. spliced as a function argument) is replaced with the JSON serialization of the resolved value, same rule as quoted-full-value.
+`${{variable}}`/`${{variable|type:default}}` placeholders SHALL be resolved to typed values (using the existing binding-priority and default rules) and spliced into the request body's raw text before that text is parsed and evaluated as JSONata source. Three textual substitution modes SHALL apply depending on where the placeholder appears in the source text: quoted-full-value (the placeholder is the entire content of a quoted string, e.g. `"${{temp:0.7}}"`) is replaced with the JSON serialization of the resolved typed value, so a number/boolean/array/object becomes real JSONata literal syntax rather than a quoted string; embedded-in-literal (the placeholder appears alongside other text inside a string literal, e.g. `"Hello ${{name}}"`) is replaced with the JSON-string-escaped form of the stringified resolved value, preserving the surrounding literal as one string; bare (the placeholder appears outside any string literal — reachable only in `jsonataContent` source, e.g. spliced as a function argument) is replaced with the JSON serialization of the resolved value, same rule as quoted-full-value.
 
 #### Scenario: Quoted-full-value placeholder in a JSONata string source
-- **WHEN** a String-content body source contains `"temperature": "${{temp:0.7}}"` and `temp` resolves to the typed number `0.7`
+- **WHEN** a `jsonataContent` source contains `"temperature": "${{temp:0.7}}"` and `temp` resolves to the typed number `0.7`
 - **THEN** the substituted source text contains `"temperature": 0.7` (a JSONata number literal, not a quoted string)
 
 #### Scenario: Embedded placeholder in a JSONata string source
-- **WHEN** a String-content body source contains `"greeting": "Hello ${{name}}"` and `name` resolves to `"World \"quoted\""`
+- **WHEN** a `jsonataContent` source contains `"greeting": "Hello ${{name}}"` and `name` resolves to `"World \"quoted\""`
 - **THEN** the substituted source text JSON-string-escapes the resolved value so the result remains one valid string literal (e.g. `"greeting": "Hello World \"quoted\""`)
 
 #### Scenario: Bare placeholder spliced into a JSONata expression
-- **WHEN** a String-content body source contains `{"messages": $append($history, ${{newMessages}}), ...}` and `newMessages` resolves to an array
+- **WHEN** a `jsonataContent` source contains `{"messages": $append($history, ${{newMessages}}), ...}` and `newMessages` resolves to an array
 - **THEN** the substituted source text contains that array's JSON serialization at the splice point, producing a syntactically valid JSONata function-call argument
 
 #### Scenario: Resolved text cannot smuggle in JSONata syntax
@@ -131,23 +203,12 @@ The result of JSONata-evaluating a request body SHALL be a JSON object. When the
 The service SHALL document that JSONata evaluation (backed by `com.dashjoin:jsonata`) represents numbers as Java `double` internally. Consequently an explicit decimal literal with no fractional part (e.g. `1.0`) MAY be echoed back as an integral value (e.g. `1`) after evaluation, and an integer value above `2^53` (`9007199254740992`) MAY lose precision, rounding to the nearest representable `double`. This is a documented library limitation, not a defect to be silently worked around; suites requiring exact large-integer fidelity (e.g. snowflake-style IDs) in a JSONata-evaluated body SHOULD carry them as strings.
 
 #### Scenario: Explicit double with no fractional part loses double-ness
-- **WHEN** a request body contains an explicit `1.0` literal (Map-authored, serialized before evaluation, or String-authored source)
+- **WHEN** a request body contains an explicit `1.0` literal (`content`-authored, serialized before evaluation, or `jsonataContent`-authored source)
 - **THEN** the value sent in the evaluated request body MAY be the integral `1` rather than `1.0`
 
 #### Scenario: Long above 2^53 loses precision
 - **WHEN** a request body contains an integer value above `2^53` (e.g. `9007199254740993`)
 - **THEN** the evaluated value MAY differ from the input by rounding to the nearest representable `double` (e.g. `9007199254740992`); this is not treated as an evaluation error
-
-### Requirement: JSONata syntax validation for String-content request bodies
-When a `requestTemplate.body.content` is a `String` (JSONata source), the service SHALL validate at suite create/update time that the source parses as syntactically valid JSONata. An invalid source SHALL be rejected with HTTP 400.
-
-#### Scenario: Valid JSONata String-content body accepted
-- **WHEN** client saves a suite with `body.content` as a syntactically valid JSONata source string
-- **THEN** system SHALL accept and persist the template
-
-#### Scenario: Invalid JSONata String-content body rejected
-- **WHEN** client saves a suite with `body.content` as a String containing a JSONata syntax error
-- **THEN** system SHALL respond with HTTP 400
 
 ### Requirement: KeyValueTemplate structure
 `KeyValueTemplateDto` SHALL have: `key` (String, required, non-blank — the literal parameter or header name) and `value` (String, required — can contain `${{variable}}` or `${{variable:default}}` placeholders, or be a literal value).
@@ -529,7 +590,7 @@ Status: **Implemented**
 - **THEN** the system SHALL use `TemplateVariableExtractor.extractFromArgumentTemplate(argumentTemplate)` which recursively scans `argumentTemplate.arguments` for `${{variable}}` placeholders using the same extraction logic as HTTP templates
 
 ### Requirement: Runtime request assembly contract
-The service defines the contract for assembling an HTTP request from template, bindings, and test case data (for use by future runner implementation and try-it-out feature).
+The service SHALL assemble an HTTP request from template, bindings, and test case data according to the contract below (used by the runner implementation and the try-it-out feature).
 
 The `ResolvedRequestService` provides two reuse paths for `TryItOutService` (both in `service.domain`):
 - **`resolveRequest(UUID testSuiteId, UUID testCaseId)`** — public, `@Transactional(readOnly=true)`. Used by the test-case try-it-out path to delegate the full suite/case loading + resolution flow.
@@ -549,7 +610,7 @@ The `ResolvedRequestService` provides two reuse paths for `TryItOutService` (bot
   9. Replace placeholders using resolution mode: **full-value** (entire string is one `${{...}}`) → replace with typed resolved value preserving its type; **embedded** (multiple placeholders or surrounding text) → stringify and concatenate into a string
   10. For full-value defaults, interpret per schema type (e.g. `"0.7"` → number `0.7` when type is NUMBER; `"true"` → boolean `true` when type is BOOLEAN)
   11. Validate that the resolved URL matches `endpointRef.relativeUrlPattern`; if not, add a validation warning
-  12. **Body resolution is content-type-aware**: for `application/json`, resolve per the JSON-body requirements above — a Map `content` is resolved recursively then serialized and JSONata-evaluated; a String `content` has its placeholders preprocessed into the source text, which is then evaluated directly as JSONata (`RequestBodyEvaluator`). For `multipart/form-data`, resolve each `FormPartDto.value` and `FormPartDto.filename` (unaffected by JSONata). For `application/x-www-form-urlencoded`, resolve each `KeyValueTemplateDto.value` placeholder and stringify all resolved values (unaffected by JSONata).
+  12. **Body resolution is content-type-aware**: for `application/json`, resolve per the JSON-body requirements above — when `content` (Map) is present it is resolved recursively then serialized and JSONata-evaluated; when `jsonataContent` (String) is present its placeholders are preprocessed into the source text, which is then evaluated directly as JSONata (`RequestBodyEvaluator` selects the path by which field is present, not by inspecting a value's runtime type); when both are null the resolved body content is null. For `multipart/form-data`, resolve each `FormPartDto.value` and `FormPartDto.filename` (unaffected by JSONata). For `application/x-www-form-urlencoded`, resolve each `KeyValueTemplateDto.value` placeholder and stringify all resolved values (unaffected by JSONata).
   13. Return `ResolvedRequestDto` with the body as the corresponding `ResolvedBodyDto` variant
 
 #### Scenario: Assembly uses suite template and bindings
@@ -660,5 +721,5 @@ The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{tes
 - The shared component includes `|file` constant-value validation — applies to both suite types
 - MCP path does NOT perform content-type mismatch, header blacklist, or endpoint schema checks (these are deployment-specific)
 - Warning codes and paths are consistent between deployment and MCP paths for frontend uniformity
-- JSON request-body evaluation seam (`service.domain`): `JsonataSourcePreprocessor` (textual `${{}}` placeholder substitution into raw body-text per the three substitution modes), `TemplateContentResolver` (Map-content structural-resolution path and String-content preprocess-only path converge on one body-text output), `RequestBodyEvaluator` (JSONata-evaluates the resolved body text via `JsonataEvaluationService`/`DashjoinJsonataEvaluationService`, enforces the JSON-object runtime contract). `TestSuiteRequestValidator` rejects an invalid String-content JSONata source and a `responseColumns[i].name` colliding with `JsonataReservedNames` (see `response-columns` spec) at suite create/update time. `ResolvedRequestService`'s preview path is wired through `RequestBodyEvaluator` so `GET .../resolved-request` reflects the JSONata-evaluated body.
+- JSON request-body evaluation seam (`service.domain`): `JsonataSourcePreprocessor` (textual `${{}}` placeholder substitution into raw body-text per the three substitution modes), `TemplateContentResolver` (Map `content` structural-resolution path and `jsonataContent` preprocess-only path converge on one body-text output), `RequestBodyEvaluator` (JSONata-evaluates the resolved body text via `JsonataEvaluationService`/`DashjoinJsonataEvaluationService`, enforces the JSON-object runtime contract). `TestSuiteRequestValidator` rejects an invalid `jsonataContent` JSONata source and a body with both `content` and `jsonataContent` set, as well as a `responseColumns[i].name` colliding with `JsonataReservedNames` (see `response-columns` spec) at suite create/update time. `ResolvedRequestService`'s preview path is wired through `RequestBodyEvaluator` so `GET .../resolved-request` reflects the JSONata-evaluated body.
 - `JsonataProperties` (`@ConfigurationProperties(prefix = "jsonata")`: `evaluationTimeoutMs`, `maxRecursionDepth`) bounds JSONata evaluation via `Frame.setRuntimeBounds`; defaults live in `application.yml`, documented in `docs/configuration.md`.

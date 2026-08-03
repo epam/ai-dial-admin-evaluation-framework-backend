@@ -16,19 +16,30 @@ import lombok.NoArgsConstructor;
 public class JsonRequestBodyDto extends RequestBodyDto {
 
     /**
-     * Either a legacy structural JSON object (a {@code Map}, resolved via {@code ${{}}} placeholder
-     * substitution then evaluated as JSONata — JSON is a syntactic subset of JSONata, so a plain
-     * object echoes itself) or a JSONata source expression ({@code String}, {@code ${{}}} placeholders
-     * preprocessed first, then evaluated directly). Both converge on the same evaluation path.
+     * Legacy structural JSON object template: resolved via {@code ${{}}} placeholder substitution then
+     * evaluated as JSONata — JSON is a syntactic subset of JSONata, so a plain object echoes itself.
+     * Mutually exclusive with {@link #jsonataContent}; both converge on the same evaluation path.
      */
     @Schema(
-            description = "Request body template: a legacy JSON object (Map) or a JSONata source expression "
-                    + "(String). Both are JSONata-evaluated before being sent — a plain JSON object evaluates "
-                    + "to itself.",
-            oneOf = {Map.class, String.class},
+            description = "Legacy structural request body template: a JSON object resolved via ${{}} placeholder "
+                    + "substitution, then JSONata-evaluated before being sent (a plain object evaluates to "
+                    + "itself). Mutually exclusive with jsonataContent.",
+            example = "{ \"model\": \"${{model}}\", \"messages\": \"${{messages}}\" }")
+    private Map<String, Object> content;
+
+    /**
+     * JSONata source expression template: {@code ${{}}} placeholders are preprocessed into the raw source
+     * text, then the combined text is evaluated directly as JSONata. Mutually exclusive with
+     * {@link #content}; both converge on the same evaluation path.
+     */
+    @Schema(
+            description = "JSONata source expression request body template: ${{}} placeholders are "
+                    + "preprocessed into the source text, then the combined text is evaluated directly as "
+                    + "JSONata. Mutually exclusive with content.",
+            type = "string",
             example = "{ \"model\": \"gpt-4\", \"messages\": $append($history, [{\"role\": \"user\", \"content\": "
                     + "\"${{question}}\"}]), \"stream\": false }")
-    private Object content;
+    private String jsonataContent;
 
     @Override
     public String getContentType() {

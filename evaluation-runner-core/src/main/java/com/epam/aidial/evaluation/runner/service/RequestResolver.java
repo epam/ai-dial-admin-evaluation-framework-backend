@@ -186,17 +186,18 @@ public class RequestResolver {
             List<ValidationWarningDto> warnings,
             Map<String, Object> frameBindings,
             boolean preview) {
-        if (body.getContent() == null) {
+        if (body.getContent() == null && body.getJsonataContent() == null) {
             return ResolvedJsonBodyDto.builder().content(null).build();
         }
         if (!preview) {
-            Map<String, Object> resolvedMap =
-                    requestBodyEvaluator.evaluate(body.getContent(), bindingByVar, data, frameBindings, warnings);
+            Map<String, Object> resolvedMap = requestBodyEvaluator.evaluate(
+                    body.getContent(), body.getJsonataContent(), bindingByVar, data, frameBindings, warnings);
             return ResolvedJsonBodyDto.builder().content(resolvedMap).build();
         }
         Map<String, Object> resolvedMap;
         try {
-            resolvedMap = requestBodyEvaluator.evaluate(body.getContent(), bindingByVar, data, frameBindings, warnings);
+            resolvedMap = requestBodyEvaluator.evaluate(
+                    body.getContent(), body.getJsonataContent(), bindingByVar, data, frameBindings, warnings);
         } catch (RequestBodyEvaluationException e) {
             log.warn("Failed to evaluate JSON request body template for preview: {}", e.getMessage(), e);
             warnings.add(ValidationWarningDto.builder()

@@ -1,7 +1,7 @@
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "name": "Multi-turn Chat Suite (JSONata Body)",
-  "description": "requestTemplate.body.content authored as a JSONata source string instead of the legacy JSON object; history is accumulated purely via the $history frame variable, bound from the previous turn's 'history' response column — there is no hardcoded messages/choices path",
+  "description": "requestTemplate.body.jsonataContent authored as a JSONata source string instead of the legacy JSON object in body.content; history is accumulated purely via the $history frame variable, bound from the previous turn's 'history' response column — there is no hardcoded messages/choices path",
   "suiteType": "DEPLOYMENT",
   "deploymentRef": {
     "id": "deploy-001",
@@ -38,7 +38,7 @@
     "urlTemplate": "/chat/completions",
     "body": {
       "contentType": "application/json",
-      "content": "{\"model\": \"gpt-4\", \"messages\": $append($history, [{\"role\": \"user\", \"content\": \"${{question}}\"}]), \"stream\": false}"
+      "jsonataContent": "{\"model\": \"gpt-4\", \"messages\": $append($history, [{\"role\": \"user\", \"content\": \"${{question}}\"}]), \"stream\": false}"
     }
   },
   "inputBindings": [

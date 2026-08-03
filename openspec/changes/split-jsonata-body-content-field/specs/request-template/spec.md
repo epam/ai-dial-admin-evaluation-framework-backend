@@ -4,7 +4,7 @@
 
 An `application/json` request body SHALL carry its template in exactly one of two fields: `content` (`Map<String, Object>`, legacy structural template) or `jsonataContent` (`String`, JSONata source). When both are non-null the service SHALL reject the suite create/update with HTTP 400 (`VALIDATION_ERROR`). When both are null the body SHALL be treated as "no request body", identical to `content: null` alone.
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Both fields set is rejected
 
@@ -35,7 +35,7 @@ Status: **Planned**
 
 When a `requestTemplate.body.jsonataContent` is present, the service SHALL validate at suite create/update time that the source parses as syntactically valid JSONata after every `${{}}` placeholder has been replaced with a fixed neutral token (JSON `null` for quoted-full-value and bare placeholders, an empty string for embedded ones). An invalid source SHALL be rejected with HTTP 400. A `Map`-typed `content` SHALL NOT be JSONata-validated at write time (it is validated at resolution time, as before).
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Valid `jsonataContent` accepted
 
@@ -56,7 +56,7 @@ Status: **Planned**
 
 `${{}}` placeholders in `requestTemplate.body.jsonataContent` SHALL be extracted as template variables with source `BODY`, exactly as placeholders in a `Map`-typed `content` are. Extraction SHALL apply to both the suite-level and test-case-level template-variable APIs and to the binding cross-validation that consumes them.
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Variable in `jsonataContent` is extracted with source BODY
 

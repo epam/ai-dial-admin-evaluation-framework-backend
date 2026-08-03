@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,23 +48,23 @@ class TestSuiteRequestValidatorTest {
                 validationProperties);
     }
 
-    // --- requestTemplate.body.content JSONata String validation ---
+    // --- requestTemplate.body.jsonataContent JSONata String validation ---
 
     @Test
-    @DisplayName("Invalid JSONata String-content request body is rejected")
-    void shouldRejectInvalidJsonataStringContentBody() {
-        TestSuiteRequestDto dto = requestWithBodyContent("choices[0.message.content");
+    @DisplayName("Invalid JSONata jsonataContent request body is rejected")
+    void shouldRejectInvalidJsonataContentBody() {
+        TestSuiteRequestDto dto = requestWithJsonataBodyContent("choices[0.message.content");
 
         assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("requestTemplate.body.content")
+                .hasMessageContaining("requestTemplate.body.jsonataContent")
                 .hasMessageContaining("Invalid JSONata expression");
     }
 
     @Test
-    @DisplayName("Valid JSONata String-content request body is accepted")
-    void shouldAcceptValidJsonataStringContentBody() {
-        TestSuiteRequestDto dto = requestWithBodyContent(
+    @DisplayName("Valid JSONata jsonataContent request body is accepted")
+    void shouldAcceptValidJsonataContentBody() {
+        TestSuiteRequestDto dto = requestWithJsonataBodyContent(
                 "{\"messages\": $append($history, [{\"role\": \"user\", \"content\": \"${{q}}\"}])}");
 
         assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
@@ -72,7 +73,7 @@ class TestSuiteRequestValidatorTest {
     @Test
     @DisplayName("Bare placeholder in object value position is accepted (not valid JSONata until substituted)")
     void shouldAcceptBarePlaceholderInValuePosition() {
-        TestSuiteRequestDto dto = requestWithBodyContent("{\"q\": ${{question}}}");
+        TestSuiteRequestDto dto = requestWithJsonataBodyContent("{\"q\": ${{question}}}");
 
         assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
     }
@@ -80,7 +81,7 @@ class TestSuiteRequestValidatorTest {
     @Test
     @DisplayName("Bare placeholder as a function argument is accepted")
     void shouldAcceptBarePlaceholderAsFunctionArgument() {
-        TestSuiteRequestDto dto = requestWithBodyContent("$append($history, ${{messages}})");
+        TestSuiteRequestDto dto = requestWithJsonataBodyContent("$append($history, ${{messages}})");
 
         assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
     }
@@ -88,7 +89,7 @@ class TestSuiteRequestValidatorTest {
     @Test
     @DisplayName("Quoted full-value placeholder is still accepted")
     void shouldAcceptQuotedFullValuePlaceholder() {
-        TestSuiteRequestDto dto = requestWithBodyContent("{\"q\": \"${{question}}\"}");
+        TestSuiteRequestDto dto = requestWithJsonataBodyContent("{\"q\": \"${{question}}\"}");
 
         assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
     }
@@ -96,38 +97,50 @@ class TestSuiteRequestValidatorTest {
     @Test
     @DisplayName("Genuinely invalid JSONata (unbalanced brackets) is still rejected")
     void shouldRejectGenuinelyInvalidJsonataAlongsideBarePlaceholder() {
-        TestSuiteRequestDto dto = requestWithBodyContent("{\"a\": [1,2}");
+        TestSuiteRequestDto dto = requestWithJsonataBodyContent("{\"a\": [1,2}");
 
         assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("requestTemplate.body.content");
+                .hasMessageContaining("requestTemplate.body.jsonataContent");
     }
 
     @Test
     @DisplayName("A placeholder followed by invalid syntax is still rejected")
     void shouldRejectBarePlaceholderFollowedByInvalidSyntax() {
-        TestSuiteRequestDto dto = requestWithBodyContent("{\"q\": ${{question}} +}");
+        TestSuiteRequestDto dto = requestWithJsonataBodyContent("{\"q\": ${{question}} +}");
 
         assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("requestTemplate.body.content");
+                .hasMessageContaining("requestTemplate.body.jsonataContent");
+    }
+
+    // --- content / jsonataContent mutual exclusivity ---
+
+    @Test
+    @DisplayName("Both content and jsonataContent set is rejected")
+    void shouldRejectBothContentAndJsonataContentSet() {
+        TestSuiteRequestDto dto = requestWithBothBodyFields(
+                Map.of("a", 1), "{\"messages\": $append($history, [{\"role\": \"user\", \"content\": \"x\"}])}");
+
+        assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("requestTemplate.body: content and jsonataContent are mutually exclusive");
     }
 
     @Test
-    @DisplayName("Non-Map, non-String request body content is rejected")
-    void shouldRejectNonObjectNonStringContent() {
-        TestSuiteRequestDto dto = requestWithBodyContent(42);
+    @DisplayName("Map content is not JSONata-validated at write time")
+    void shouldAcceptMapContentWithoutJsonataValidation() {
+        // "choices[0.message.content" is invalid JSONata syntax, but here it is a plain Map value —
+        // content is only structurally resolved and JSONata-evaluated at run time, never validated at write time.
+        TestSuiteRequestDto dto = requestWithMapBodyContent(Map.of("expression", "choices[0.message.content"));
 
-        assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
-                .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("requestTemplate.body.content")
-                .hasMessageContaining("must be a JSON object or a JSONata source string");
+        assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
     }
 
     @Test
     @DisplayName("Null request body content is accepted (no body)")
     void shouldAcceptNullBodyContent() {
-        TestSuiteRequestDto dto = requestWithBodyContent(null);
+        TestSuiteRequestDto dto = requestWithMapBodyContent(null);
 
         assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
     }
@@ -172,12 +185,37 @@ class TestSuiteRequestValidatorTest {
         assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
     }
 
-    private TestSuiteRequestDto requestWithBodyContent(Object content) {
+    private TestSuiteRequestDto requestWithMapBodyContent(Map<String, Object> content) {
         return TestSuiteRequestDto.builder()
                 .name("Suite")
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/chat")
                         .body(JsonRequestBodyDto.builder().content(content).build())
+                        .build())
+                .build();
+    }
+
+    private TestSuiteRequestDto requestWithJsonataBodyContent(String jsonataContent) {
+        return TestSuiteRequestDto.builder()
+                .name("Suite")
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .jsonataContent(jsonataContent)
+                                .build())
+                        .build())
+                .build();
+    }
+
+    private TestSuiteRequestDto requestWithBothBodyFields(Map<String, Object> content, String jsonataContent) {
+        return TestSuiteRequestDto.builder()
+                .name("Suite")
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(content)
+                                .jsonataContent(jsonataContent)
+                                .build())
                         .build())
                 .build();
     }

@@ -176,6 +176,31 @@ class TemplateVariableServiceTest {
             assertThat(vars.get(0).isHasDefault()).isTrue();
             assertThat(vars.get(0).getDefaultValue()).isEqualTo("0.7");
         }
+
+        @Test
+        @DisplayName("Should resolve a jsonataContent-authored body variable the same as a Map-authored one")
+        void shouldResolveVariableFromJsonataContentBody() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .jsonataContent("{\"doc\": \"${{doc|file}}\"}")
+                            .build())
+                    .build();
+            var bindings = List.of(InputBindingDto.builder()
+                    .templateVariable("doc")
+                    .dataField("title")
+                    .build());
+            var schema = List.of(FieldDefinitionDto.builder()
+                    .name("title")
+                    .type(SchemaFieldType.STRING)
+                    .build());
+
+            List<TemplateVariableDto> vars = service.resolveVariables(template, bindings, schema, null, null);
+
+            assertThat(vars).hasSize(1);
+            assertThat(vars.get(0).getName()).isEqualTo("doc");
+            assertThat(vars.get(0).getDeclaredType()).isEqualTo(SchemaFieldType.FILE);
+            assertThat(vars.get(0).getEffectiveType()).isEqualTo(SchemaFieldType.FILE);
+        }
     }
 
     /**
@@ -265,6 +290,34 @@ class TemplateVariableServiceTest {
             assertThat(vars).hasSize(1);
             assertThat(vars.get(0).getName()).isEqualTo("query");
             assertThat(vars.get(0).getEffectiveType()).isEqualTo(SchemaFieldType.STRING);
+        }
+
+        @Test
+        @DisplayName("jsonataContent-authored request body (JSONB round-tripped) is extracted for type inference")
+        void jsonataContentRequestBodyRoundTripsThroughJsonbAndInfersType() {
+            UUID suiteId = UUID.randomUUID();
+            UUID datasetId = UUID.randomUUID();
+            TestSuite suite = TestSuite.builder()
+                    .id(suiteId)
+                    .datasetId(datasetId)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .requestTemplate("{\"body\":{\"contentType\":\"application/json\",\"jsonataContent\":"
+                            + "\"{\\\"doc\\\": \\\"${{doc}}\\\"}\"}}")
+                    .inputBindings("[{\"templateVariable\":\"doc\",\"dataField\":\"input_doc\"}]")
+                    .endpointRef(null)
+                    .build();
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(suite));
+            when(datasetSchemaProvider.getSchema(datasetId))
+                    .thenReturn(List.of(FieldDefinitionDto.builder()
+                            .name("input_doc")
+                            .type(SchemaFieldType.FILE)
+                            .build()));
+
+            List<TemplateVariableDto> vars = wiredService.getTemplateVariables(suiteId);
+
+            assertThat(vars).hasSize(1);
+            assertThat(vars.get(0).getName()).isEqualTo("doc");
+            assertThat(vars.get(0).getEffectiveType()).isEqualTo(SchemaFieldType.FILE);
         }
     }
 

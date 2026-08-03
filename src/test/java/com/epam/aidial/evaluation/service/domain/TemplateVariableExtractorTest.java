@@ -269,15 +269,15 @@ class TemplateVariableExtractorTest {
     }
 
     @Nested
-    @DisplayName("String-content (JSONata source) body extraction")
-    class StringContentBodyExtraction {
+    @DisplayName("jsonataContent (JSONata source) body extraction")
+    class JsonataContentBodyExtraction {
 
         @Test
-        @DisplayName("Should extract placeholders from a String-content JSONata source body")
+        @DisplayName("Should extract placeholders from a jsonataContent JSONata source body")
         void shouldExtractPlaceholdersFromJsonataSourceStringBody() {
             var template = RequestTemplateDto.builder()
                     .body(JsonRequestBodyDto.builder()
-                            .content("{\"messages\": $append($history, [{\"role\": \"user\", \"content\": "
+                            .jsonataContent("{\"messages\": $append($history, [{\"role\": \"user\", \"content\": "
                                     + "\"${{q}}\"}]), \"temperature\": ${{opt:0.5}}}")
                             .build())
                     .build();
@@ -297,6 +297,32 @@ class TemplateVariableExtractorTest {
                     .orElseThrow();
             assertThat(opt.isHasDefault()).isTrue();
             assertThat(opt.getDefaultValue()).isEqualTo("0.5");
+        }
+
+        @Test
+        @DisplayName("Should extract from content (Map) and jsonataContent (String) when each is set on a "
+                + "separate template")
+        void shouldExtractFromContentAndJsonataContentOnSeparateTemplates() {
+            var mapAuthoredTemplate = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content(Map.of("model", "${{map_var}}"))
+                            .build())
+                    .build();
+            var jsonataAuthoredTemplate = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .jsonataContent("{\"model\": \"${{jsonata_var}}\"}")
+                            .build())
+                    .build();
+
+            var mapResult = extractor.extract(mapAuthoredTemplate);
+            var jsonataResult = extractor.extract(jsonataAuthoredTemplate);
+
+            assertThat(mapResult).hasSize(1);
+            assertThat(mapResult.get(0).getName()).isEqualTo("map_var");
+            assertThat(mapResult.get(0).getSources()).containsExactly(TemplateVariableSource.BODY);
+            assertThat(jsonataResult).hasSize(1);
+            assertThat(jsonataResult.get(0).getName()).isEqualTo("jsonata_var");
+            assertThat(jsonataResult.get(0).getSources()).containsExactly(TemplateVariableSource.BODY);
         }
     }
 

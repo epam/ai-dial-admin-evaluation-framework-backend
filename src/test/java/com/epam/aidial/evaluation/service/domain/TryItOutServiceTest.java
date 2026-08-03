@@ -393,6 +393,33 @@ class TryItOutServiceTest {
         }
 
         @Test
+        @DisplayName("should succeed with a jsonataContent-authored (instead of Map content-authored) template")
+        void shouldSucceedWithJsonataContentAuthoredTemplate() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            when(jsonbMapper.mapRequestTemplate("{}"))
+                    .thenReturn(RequestTemplateDto.builder()
+                            .urlTemplate("/chat/completions")
+                            .body(JsonRequestBodyDto.builder()
+                                    .jsonataContent("{\"prompt\": \"${{prompt}}\"}")
+                                    .build())
+                            .build());
+            when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
+            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+                    .thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello"));
+
+            assertThat(result).isNotNull();
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            assertThat(result.getResponse().getStreaming()).isNull();
+        }
+
+        @Test
         @DisplayName("should skip null-value variables")
         @SuppressWarnings("unchecked")
         void shouldSkipNullValueVariables() {

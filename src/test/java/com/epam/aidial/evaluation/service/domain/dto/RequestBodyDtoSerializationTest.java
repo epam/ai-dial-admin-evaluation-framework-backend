@@ -39,7 +39,7 @@ class RequestBodyDtoSerializationTest {
     class RequestBodyDtoTests {
 
         @Test
-        @DisplayName("JsonRequestBodyDto round-trip preserves type and content")
+        @DisplayName("JsonRequestBodyDto round-trip preserves type and content as a JSON object")
         void jsonRequestBodyDtoRoundTrip() throws JacksonException {
             JsonRequestBodyDto dto = JsonRequestBodyDto.builder()
                     .content(Map.of("prompt", "Hello", "temperature", 0.7))
@@ -50,29 +50,58 @@ class RequestBodyDtoSerializationTest {
 
             assertThat(deserialized).isInstanceOf(JsonRequestBodyDto.class);
             assertThat(json).contains("\"contentType\":\"application/json\"");
+            assertThat(json).contains("\"content\":{");
             JsonRequestBodyDto result = (JsonRequestBodyDto) deserialized;
             assertThat(result.getContent()).isInstanceOf(Map.class);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> content = (Map<String, Object>) result.getContent();
+            Map<String, Object> content = result.getContent();
             assertThat(content).containsEntry("prompt", "Hello");
             assertThat(content).containsEntry("temperature", 0.7);
+            assertThat(result.getJsonataContent()).isNull();
             assertThat(result.getContentType()).isEqualTo("application/json");
         }
 
         @Test
-        @DisplayName("JsonRequestBodyDto round-trip preserves String (JSONata source) content")
-        void jsonRequestBodyDtoStringContentRoundTrip() throws JacksonException {
+        @DisplayName("JsonRequestBodyDto round-trip preserves jsonataContent as a JSON string")
+        void jsonRequestBodyDtoJsonataContentRoundTrip() throws JacksonException {
             String jsonataSource = "$append($history, [{\"role\": \"user\", \"content\": \"${{question}}\"}])";
             JsonRequestBodyDto dto =
-                    JsonRequestBodyDto.builder().content(jsonataSource).build();
+                    JsonRequestBodyDto.builder().jsonataContent(jsonataSource).build();
 
             String json = objectMapper.writeValueAsString(dto);
             RequestBodyDto deserialized = objectMapper.readValue(json, RequestBodyDto.class);
 
             assertThat(deserialized).isInstanceOf(JsonRequestBodyDto.class);
+            assertThat(json).contains("\"jsonataContent\":\"");
             JsonRequestBodyDto result = (JsonRequestBodyDto) deserialized;
-            assertThat(result.getContent()).isInstanceOf(String.class);
-            assertThat(result.getContent()).isEqualTo(jsonataSource);
+            assertThat(result.getJsonataContent()).isInstanceOf(String.class);
+            assertThat(result.getJsonataContent()).isEqualTo(jsonataSource);
+            assertThat(result.getContent()).isNull();
+        }
+
+        @Test
+        @DisplayName("A String value in content fails deserialization (content is Map-typed, not String)")
+        void stringValueInContentFailsDeserialization() {
+            String json = """
+                    {"contentType":"application/json","content":"{\\"model\\": \\"gpt-4\\"}"}""";
+
+            assertThatThrownBy(() -> objectMapper.readValue(json, RequestBodyDto.class))
+                    .isInstanceOf(JacksonException.class);
+        }
+
+        @Test
+        @DisplayName("content and jsonataContent round-trip independently when both are set")
+        void contentAndJsonataContentRoundTripIndependently() throws JacksonException {
+            JsonRequestBodyDto dto = JsonRequestBodyDto.builder()
+                    .content(Map.of("prompt", "Hello"))
+                    .jsonataContent("{\"model\": \"gpt-4\"}")
+                    .build();
+
+            String json = objectMapper.writeValueAsString(dto);
+            RequestBodyDto deserialized = objectMapper.readValue(json, RequestBodyDto.class);
+
+            JsonRequestBodyDto result = (JsonRequestBodyDto) deserialized;
+            assertThat(result.getContent()).containsEntry("prompt", "Hello");
+            assertThat(result.getJsonataContent()).isEqualTo("{\"model\": \"gpt-4\"}");
         }
 
         @Test

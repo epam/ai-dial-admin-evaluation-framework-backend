@@ -5,9 +5,9 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.service.domain.DatasetSchemaProvider;
-import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

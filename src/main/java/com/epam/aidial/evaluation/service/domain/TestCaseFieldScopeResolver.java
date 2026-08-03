@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
-import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

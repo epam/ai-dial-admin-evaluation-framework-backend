@@ -13,12 +13,12 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;

@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;

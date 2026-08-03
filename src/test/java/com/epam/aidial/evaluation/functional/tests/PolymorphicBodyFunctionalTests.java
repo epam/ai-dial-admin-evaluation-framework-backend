@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationRes
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartSchemaDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartType;
@@ -25,7 +26,6 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedUrlEncodedBodyDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodySchemaDto;
-import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;

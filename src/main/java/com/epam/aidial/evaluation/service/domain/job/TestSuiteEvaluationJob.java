@@ -58,8 +58,6 @@ public class TestSuiteEvaluationJob {
     private static final String SQLSTATE_SERIALIZATION_FAILURE = "40001";
     private static final int SNAPSHOT_PAGE_SIZE = 100;
 
-    private static final TypeReference<List<UUID>> UUID_LIST = new TypeReference<>() {};
-
     private final TestSuiteRunRepository repository;
     private final TestSuiteRepository testSuiteRepository;
     private final DatasetRepository datasetRepository;
@@ -432,35 +430,12 @@ public class TestSuiteEvaluationJob {
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
-                .snapshotTestCaseSchema(toRunnerFieldDefinitions(snapshot.getTestCaseSchema()))
+                .snapshotTestCaseSchema(snapshot.getTestCaseSchema())
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())
                 .argumentTemplateDto(snapshot.getArgumentTemplate())
                 .inputBindings(snapshot.getInputBindings())
                 .build();
-    }
-
-    /**
-     * Converts the EF backend's own {@code FieldDefinitionDto} (the dataset schema representation used
-     * everywhere else in the app) to the {@code evaluation-runner-core} module's duplicate of the same
-     * shape, so {@link EvaluationContext#getSnapshotTestCaseSchema()} — read by the module's own {@code
-     * PerTurnBindingDetector} — never needs a module-to-main-app dependency.
-     */
-    private static List<com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto> toRunnerFieldDefinitions(
-            List<com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto> fields) {
-        if (fields == null) {
-            return null;
-        }
-        return fields.stream()
-                .map(field -> com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto.builder()
-                        .name(field.getName())
-                        .displayName(field.getDisplayName())
-                        .type(field.getType())
-                        .required(field.isRequired())
-                        .description(field.getDescription())
-                        .perTurn(field.getPerTurn())
-                        .build())
-                .toList();
     }
 
     private SuiteSnapshotDto resolveSnapshot(TestSuiteRun run) {

@@ -120,10 +120,12 @@ public class TestSuiteRequestValidator {
     }
 
     /**
-     * Validates an {@code application/json} request body whose {@code content} is a JSONata
-     * source {@code String} (parses as valid JSONata) or a legacy structural {@code Map}
-     * (unchanged, no JSONata validation needed since a Map is validated at resolution time). Any
-     * other content type (not null, not Map, not String) is rejected.
+     * Validates an {@code application/json} request body's two mutually exclusive carriers:
+     * {@code content} ({@code Map<String, Object>}, legacy structural template — no JSONata
+     * validation needed since a Map is validated at resolution time) and {@code jsonataContent}
+     * ({@code String}, JSONata source — validated here as valid JSONata). Both non-null is
+     * rejected; both null (or the body/template itself being null) means no request body and is
+     * accepted without further checks.
      *
      * <p>A bare {@code ${{var}}} placeholder (e.g. {@code {"q": ${{question}}}}) is not, by itself,
      * valid JSONata — it only becomes valid once {@link JsonataSourcePreprocessor} substitutes it at
@@ -141,20 +143,19 @@ public class TestSuiteRequestValidator {
         if (!(body instanceof JsonRequestBodyDto jsonBody)) {
             return;
         }
-        Object content = jsonBody.getContent();
-        if (content == null || content instanceof Map) {
-            return;
+        Map<String, Object> content = jsonBody.getContent();
+        String jsonataContent = jsonBody.getJsonataContent();
+        if (content != null && jsonataContent != null) {
+            throw new ValidationException("requestTemplate.body: content and jsonataContent are mutually exclusive");
         }
-        if (content instanceof String jsonataSource) {
-            String neutralized = jsonataSourcePreprocessor.neutralize(jsonataSource);
+        if (jsonataContent != null) {
+            String neutralized = jsonataSourcePreprocessor.neutralize(jsonataContent);
             try {
                 jsonataEvaluationService.validateExpression(neutralized);
             } catch (ValidationException ex) {
-                throw new ValidationException("requestTemplate.body.content: " + ex.getMessage());
+                throw new ValidationException("requestTemplate.body.jsonataContent: " + ex.getMessage());
             }
-            return;
         }
-        throw new ValidationException("requestTemplate.body.content: must be a JSON object or a JSONata source string");
     }
 
     /**

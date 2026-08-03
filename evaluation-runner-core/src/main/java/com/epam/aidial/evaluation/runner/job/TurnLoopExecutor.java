@@ -78,9 +78,6 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class TurnLoopExecutor {
 
-    private static final String BODY_EVALUATION_ERROR_CODE = "REQUEST_BODY_EVALUATION_ERROR";
-    private static final String RESOLUTION_ERROR_CODE = "REQUEST_RESOLUTION_ERROR";
-
     private final RequestResolver requestResolver;
     private final DialCoreUrlBuilder urlBuilder;
     private final RequestBodySerializerRegistry serializerRegistry;
@@ -238,8 +235,8 @@ public class TurnLoopExecutor {
      * warnings instead of {@code null}/{@code null}.
      */
     private TurnOutcome buildResolutionErrorOutcome(RuntimeException e) {
-        final String errorBody =
-                DeploymentInvocationSupport.buildErrorEnvelope(RESOLUTION_ERROR_CODE, e.getMessage(), objectMapper);
+        final String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                ExecutionErrorCodes.REQUEST_RESOLUTION_ERROR, e.getMessage(), objectMapper);
         final String logDetails = buildErrorLogDetails("Request resolution failed: " + e.getMessage());
         return new TurnOutcome(ExecutionStatus.ERROR, null, errorBody, 0, logDetails);
     }
@@ -307,7 +304,7 @@ public class TurnLoopExecutor {
 
     private TurnOutcome buildBodyEvaluationErrorOutcome(RequestBodyEvaluationException e) {
         final String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
-                BODY_EVALUATION_ERROR_CODE, e.getMessage(), objectMapper);
+                ExecutionErrorCodes.REQUEST_BODY_EVALUATION_ERROR, e.getMessage(), objectMapper);
         final String logDetails = buildErrorLogDetails("Request body evaluation failed: " + e.getMessage());
         return new TurnOutcome(ExecutionStatus.ERROR, null, errorBody, 0, logDetails);
     }

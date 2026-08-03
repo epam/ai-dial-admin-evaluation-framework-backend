@@ -52,7 +52,7 @@ context: |
   7. utils (com.epam.aidial.evaluation.utils) — shared utilities
 
   8. runner (com.epam.aidial.evaluation.runner, separate `evaluation-runner-core` Gradle subproject) —
-     shared Phase 1 execution engine (EvaluationWorker, MultiTurnExecutor, RequestResolver, DIAL Core/MCP
+     shared Phase 1 execution engine (EvaluationWorker, TurnLoopExecutor, RequestResolver, DIAL Core/MCP
      clients, SSE parsing, response column extraction)
      - DB-free: no JDBC/jOOQ/Flyway dependency (enforced by RunnerModuleConstraintsTest)
      - One-way dependency: the EF backend (root project) depends on this module; this module must never

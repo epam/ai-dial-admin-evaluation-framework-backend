@@ -106,7 +106,6 @@ public final class DeploymentInvocationSupport {
     /**
      * Resolves the {@code logDetails} error-type label for a failed/retried attempt: TIMEOUT for a timeout,
      * NETWORK_ERROR for a status-code-less ERROR (transport/network failure), HTTP_ERROR otherwise (4xx/5xx).
-     * Mirrors {@code EvaluationWorker.resolveErrorType}.
      */
     public static String resolveErrorType(ExecutionStatus status) {
         return switch (status) {
@@ -124,9 +123,9 @@ public final class DeploymentInvocationSupport {
     public record RetryAttemptLog(int attemptIndex, Integer statusCode, String errorType, long durationMs) {}
 
     /**
-     * Builds the {@code {"retryAttempts":[...]}} logDetails JSON for a list of retry attempts, in the same
-     * shape produced by {@code EvaluationWorker.buildLogDetailsJson}. Returns null (and logs a warning) when
-     * {@code attempts} is empty or serialization fails.
+     * Builds the {@code {"retryAttempts":[...]}} logDetails JSON for a list of retry attempts. Returns null
+     * when {@code attempts} is empty (nothing was retried), and null plus a logged warning when serialization
+     * fails.
      */
     public static String buildRetryLogDetailsJson(List<RetryAttemptLog> attempts, ObjectMapper objectMapper) {
         if (attempts == null || attempts.isEmpty()) {
@@ -150,14 +149,14 @@ public final class DeploymentInvocationSupport {
             root.set("retryAttempts", array);
             return objectMapper.writeValueAsString(root);
         } catch (JacksonException e) {
-            log.warn("Failed to serialize turn retry logDetails: {}", e.getMessage(), e);
+            log.warn("Failed to serialize retry logDetails: {}", e.getMessage(), e);
             return null;
         }
     }
 
     /**
-     * Builds the {@code {"error":{"code":...,"message":...}}} envelope used for INVOCATION_ERROR response
-     * bodies, in the same shape produced by {@code EvaluationWorker.buildErrorEnvelope}.
+     * Builds the {@code {"error":{"code":...,"message":...}}} envelope used for the error response bodies of
+     * both the DEPLOYMENT and MCP paths; {@code code} comes from {@link ExecutionErrorCodes}.
      */
     public static String buildErrorEnvelope(String code, String message, ObjectMapper objectMapper) {
         try {

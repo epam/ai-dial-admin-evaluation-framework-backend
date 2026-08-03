@@ -111,7 +111,8 @@ public class EvaluationWorker {
                     e.getMessage(),
                     e);
             long now = clock.millis();
-            String errorBody = buildErrorEnvelope("REQUEST_RESOLUTION_ERROR", e.getMessage());
+            String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                    ExecutionErrorCodes.REQUEST_RESOLUTION_ERROR, e.getMessage(), objectMapper);
             span.recordException(e);
             span.setStatus(StatusCode.ERROR, e.getMessage());
             return List.of(buildResult(
@@ -130,40 +131,6 @@ public class EvaluationWorker {
             span.end();
         }
     }
-
-    private String resolveErrorType(ExecutionStatus status) {
-        return switch (status) {
-            case TIMEOUT -> "TIMEOUT";
-            case ERROR -> "NETWORK_ERROR";
-            default -> "HTTP_ERROR";
-        };
-    }
-
-    private String buildLogDetailsJson(List<RetryAttemptLog> attempts) {
-        try {
-            var root = objectMapper.createObjectNode();
-            var array = objectMapper.createArrayNode();
-            for (RetryAttemptLog attempt : attempts) {
-                var node = objectMapper.createObjectNode();
-                node.put("attemptIndex", attempt.attemptIndex());
-                if (attempt.statusCode() != null) {
-                    node.put("statusCode", attempt.statusCode());
-                } else {
-                    node.putNull("statusCode");
-                }
-                node.put("errorType", attempt.errorType());
-                node.put("durationMs", attempt.durationMs());
-                array.add(node);
-            }
-            root.set("retryAttempts", array);
-            return objectMapper.writeValueAsString(root);
-        } catch (JacksonException e) {
-            log.warn("Failed to serialize logDetails: {}", e.getMessage(), e);
-            return null;
-        }
-    }
-
-    private record RetryAttemptLog(int attemptIndex, Integer statusCode, String errorType, long durationMs) {}
 
     // ---- MCP execution path ----
 
@@ -215,7 +182,8 @@ public class EvaluationWorker {
                     e.getMessage(),
                     e);
             long now = clock.millis();
-            String errorBody = buildErrorEnvelope("MCP_RESOLUTION_ERROR", e.getMessage());
+            String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                    ExecutionErrorCodes.MCP_RESOLUTION_ERROR, e.getMessage(), objectMapper);
             span.recordException(e);
             span.setStatus(StatusCode.ERROR, e.getMessage());
             return buildResult(
@@ -250,7 +218,7 @@ public class EvaluationWorker {
         double multiplier = context.getRetryBackoffMultiplier();
         long maxRetryDelay = context.getMaxRetryDelayMs();
 
-        List<RetryAttemptLog> retryAttempts = new ArrayList<>();
+        List<DeploymentInvocationSupport.RetryAttemptLog> retryAttempts = new ArrayList<>();
         TestCaseRunResult lastResult = null;
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
@@ -279,13 +247,13 @@ public class EvaluationWorker {
             }
 
             long attemptDurationMs = clock.millis() - attemptStartMs;
-            String errorType = resolveErrorType(lastResult.getExecutionStatus());
-            retryAttempts.add(
-                    new RetryAttemptLog(attempt + 1, lastResult.getResponseStatusCode(), errorType, attemptDurationMs));
+            String errorType = DeploymentInvocationSupport.resolveErrorType(lastResult.getExecutionStatus());
+            retryAttempts.add(new DeploymentInvocationSupport.RetryAttemptLog(
+                    attempt + 1, lastResult.getResponseStatusCode(), errorType, attemptDurationMs));
         }
 
         int retryCount = retryAttempts.size();
-        String logDetails = retryCount > 0 ? buildLogDetailsJson(retryAttempts) : null;
+        String logDetails = DeploymentInvocationSupport.buildRetryLogDetailsJson(retryAttempts, objectMapper);
 
         return buildResult(
                 input,
@@ -373,7 +341,8 @@ public class EvaluationWorker {
             } else {
                 status = ExecutionStatus.ERROR;
             }
-            String errorBody = buildErrorEnvelope("MCP_INVOCATION_ERROR", e.getMessage());
+            String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                    ExecutionErrorCodes.MCP_INVOCATION_ERROR, e.getMessage(), objectMapper);
             return buildResult(
                     input,
                     context,
@@ -388,8 +357,10 @@ public class EvaluationWorker {
                     responseColumns);
         } catch (RuntimeException e) {
             long now = clock.millis();
-            ExecutionStatus status = isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
-            String errorBody = buildErrorEnvelope("MCP_INVOCATION_ERROR", e.getMessage());
+            ExecutionStatus status =
+                    DeploymentInvocationSupport.isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
+            String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                    ExecutionErrorCodes.MCP_INVOCATION_ERROR, e.getMessage(), objectMapper);
             return buildResult(
                     input,
                     context,
@@ -425,18 +396,6 @@ public class EvaluationWorker {
             log.warn("Failed to parse test case data: {}", e.getMessage(), e);
             return Map.of();
         }
-    }
-
-    private boolean isTimeoutException(Exception e) {
-        Throwable cause = e;
-        while (cause != null) {
-            String name = cause.getClass().getSimpleName();
-            if (name.contains("Timeout") || name.contains("timeout")) {
-                return true;
-            }
-            cause = cause.getCause();
-        }
-        return false;
     }
 
     private TestCaseRunResult buildResult(
@@ -531,29 +490,21 @@ public class EvaluationWorker {
         }
     }
 
+    /**
+     * Byte-truncates an oversize MCP response and JSON-escapes the remainder so the persisted
+     * {@code response_body} stays valid JSON (same contract as the DEPLOYMENT path, which escapes the
+     * {@link DeploymentInvocationSupport#truncateUtf8} result in {@link DeploymentTurnInvoker}).
+     */
     private String truncateResponse(String responseBody, long maxBytes) {
-        byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length <= maxBytes) {
+        String truncated = DeploymentInvocationSupport.truncateUtf8(responseBody, maxBytes);
+        if (responseBody.equals(truncated)) {
             return responseBody;
         }
-        String truncated = new String(bytes, 0, (int) maxBytes, StandardCharsets.UTF_8);
         try {
             return objectMapper.writeValueAsString(truncated);
         } catch (JacksonException e) {
+            log.warn("Failed to serialize truncated MCP response: {}", e.getMessage(), e);
             return "\"<response truncated>\"";
-        }
-    }
-
-    private String buildErrorEnvelope(String code, String message) {
-        try {
-            var error = objectMapper.createObjectNode();
-            error.put("code", code);
-            error.put("message", message != null ? message : "Unknown error");
-            var root = objectMapper.createObjectNode();
-            root.set("error", error);
-            return objectMapper.writeValueAsString(root);
-        } catch (JacksonException e) {
-            return "{\"error\":{\"code\":\"" + code + "\",\"message\":\"serialization failed\"}}";
         }
     }
 }

@@ -33,8 +33,6 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class DeploymentTurnInvoker {
 
-    private static final String INVOCATION_ERROR_CODE = "INVOCATION_ERROR";
-
     private final DialCoreDeploymentInvoker deploymentInvoker;
     private final QuietJsonService jsonService;
     private final SseEventParser sseEventParser;
@@ -140,8 +138,8 @@ public class DeploymentTurnInvoker {
             final ExecutionStatus status =
                     DeploymentInvocationSupport.isTimeoutException(e) ? ExecutionStatus.TIMEOUT : ExecutionStatus.ERROR;
             log.warn("Turn invocation failed ({}): {}", status, e.getMessage(), e);
-            final String errorBody =
-                    DeploymentInvocationSupport.buildErrorEnvelope(INVOCATION_ERROR_CODE, e.getMessage(), objectMapper);
+            final String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                    ExecutionErrorCodes.INVOCATION_ERROR, e.getMessage(), objectMapper);
             return new TurnOutcome(status, null, errorBody, 0, null);
         }
     }

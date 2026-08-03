@@ -29,7 +29,7 @@ The `evaluation-runner-core` module SHALL contain exactly the Phase 1 test-case 
 **Classes owned by `evaluation-runner-core`:**
 
 *Execution workers (package `runner.job`):*
-`EvaluationWorker`, `MultiTurnExecutor`, `DeploymentTurnInvoker`, `DeploymentInvocationSupport`, `EvaluationContext`, `TurnOutcome`, `TestCaseRunner` (concurrent-dispatch logic: semaphore/virtual-thread executor, Bucket4j rate limiting, cancellation grace period, synthetic-error-row handling — extracted from the EF backend's `InProcessEvaluationExecutor`), `TestCaseRunResultFactory` (builds a synthetic error `TestCaseRunResult` from a `TestCaseRunInput`, run index, exception, and clock millis — pure function, no template resolution or DB access), `ResultBatchWriter` (interface: `addResults(List<TestCaseRunResult>)`, `flush()` — an instance is scoped to one run; the interface itself is DB-free and lives here, but its Postgres-backed implementation, `PostgresResultBatchWriter`/`PostgresResultBatchWriterFactory`, lives in the EF backend's `service.domain.job` package since it depends on `TestCaseRunResultRepository`, `TestSuiteRunSseService`, and the analytics `TransactionTemplate`)
+`EvaluationWorker`, `TurnLoopExecutor`, `PerTurnBindingDetector`, `DeploymentTurnInvoker`, `DeploymentInvocationSupport`, `ExecutionErrorCodes`, `EvaluationContext`, `TurnOutcome`, `TestCaseRunner` (concurrent-dispatch logic: semaphore/virtual-thread executor, Bucket4j rate limiting, cancellation grace period, synthetic-error-row handling — extracted from the EF backend's `InProcessEvaluationExecutor`), `TestCaseRunResultFactory` (builds a synthetic error `TestCaseRunResult` from a `TestCaseRunInput`, run index, exception, and clock millis — pure function, no template resolution or DB access), `ResultBatchWriter` (interface: `addResults(List<TestCaseRunResult>)`, `flush()` — an instance is scoped to one run; the interface itself is DB-free and lives here, but its Postgres-backed implementation, `PostgresResultBatchWriter`/`PostgresResultBatchWriterFactory`, lives in the EF backend's `service.domain.job` package since it depends on `TestCaseRunResultRepository`, `TestSuiteRunSseService`, and the analytics `TransactionTemplate`)
 
 *SSE and streaming (package `runner.job`):*
 `SseEventParser`, `SseEvent`, `SseParseResult`, `StreamingResponseAccumulator`
@@ -62,7 +62,7 @@ The `evaluation-runner-core` module SHALL contain exactly the Phase 1 test-case 
 `EvaluationRunProperties`, `SseEventProcessingProperties`, `DialCoreProperties`, `McpClientProperties`, `DialFileStorageProperties`
 
 *Domain model (package `runner.model`):*
-`TestCaseRunResult`, `TestCaseRunInput` (the execution path's input counterpart to `TestCaseRunResult` — pure POJO, used by `EvaluationWorker`/`MultiTurnExecutor`/`TestCaseRunner` and by the EF backend's repository/mapper layer)
+`TestCaseRunResult`, `TestCaseRunInput` (the execution path's input counterpart to `TestCaseRunResult` — pure POJO, used by `EvaluationWorker`/`TurnLoopExecutor`/`TestCaseRunner` and by the EF backend's repository/mapper layer)
 
 *Autoconfiguration (package `runner.config`):*
 `EvaluationRunnerAutoConfiguration`
@@ -110,7 +110,7 @@ The `evaluation-runner-core` module SHALL provide a Spring Boot autoconfiguratio
 
 #### Scenario: EF backend picks up shared beans without manual wiring
 - **WHEN** the EF backend application starts with `evaluation-runner-core` on its classpath
-- **THEN** `EvaluationWorker`, `MultiTurnExecutor`, `RequestResolver`, `ResponseColumnExtractor`, `DialCoreDeploymentInvoker`, `McpToolInvoker`, `SseEventParser`, and all other shared beans SHALL be available in the application context without any `@Import` or `@ComponentScan` annotation in the EF backend's application class
+- **THEN** `EvaluationWorker`, `TurnLoopExecutor`, `RequestResolver`, `ResponseColumnExtractor`, `DialCoreDeploymentInvoker`, `McpToolInvoker`, `SseEventParser`, and all other shared beans SHALL be available in the application context without any `@Import` or `@ComponentScan` annotation in the EF backend's application class
 
 #### Scenario: Autoconfiguration is idempotent
 - **WHEN** `EvaluationRunnerAutoConfiguration` is loaded
@@ -149,7 +149,7 @@ The dual-datasource rules, experimental-layer rules, and DB-model rules from the
 - **THEN** no class in `com.epam.aidial.evaluation.runner.client` SHALL have a dependency on any class in `com.epam.aidial.evaluation.runner.job`
 
 ### Requirement: `RequestResolver` extracted from `ResolvedRequestService`
-A new `@Component RequestResolver` SHALL be created in the shared module containing the `resolve(RequestTemplateDto template, List<InputBindingDto> bindings, Map<String,Object> data)` logic currently implemented in `ResolvedRequestService`. `EvaluationWorker` and `MultiTurnExecutor` SHALL inject `RequestResolver` directly. The EF backend's `ResolvedRequestService` SHALL retain the `@Transactional resolveRequest(UUID suiteId, UUID testCaseId)` overload and SHALL inject `RequestResolver` to reuse the shared resolution logic.
+A new `@Component RequestResolver` SHALL be created in the shared module containing the `resolve(RequestTemplateDto template, List<InputBindingDto> bindings, Map<String,Object> data)` logic currently implemented in `ResolvedRequestService`. `TurnLoopExecutor` SHALL inject `RequestResolver` directly. The EF backend's `ResolvedRequestService` SHALL retain the `@Transactional resolveRequest(UUID suiteId, UUID testCaseId)` overload and SHALL inject `RequestResolver` to reuse the shared resolution logic.
 
 #### Scenario: EvaluationWorker uses RequestResolver, not ResolvedRequestService
 - **WHEN** `EvaluationWorker` resolves a request during test case execution

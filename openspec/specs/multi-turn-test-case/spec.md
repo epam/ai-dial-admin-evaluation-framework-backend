@@ -112,7 +112,7 @@ Status: **Implemented**
 - **THEN** it is rejected with HTTP 409 `INVALID_OPERATION`
 
 ## Implementation Notes
-- Executor: `service.domain.job.TurnLoopExecutor` (replaces the fixed-`N` loop previously in `MultiTurnExecutor`), `PerTurnBindingDetector` (turn-count decision), `RequestBodyEvaluator` (JSONata evaluation + object-contract check), `DeploymentTurnInvoker` (now streaming), `CustomContentAccumulator` (DIAL `custom_content` chunk merge), dispatched from `EvaluationWorker.execute`.
+- Executor: `runner.job.TurnLoopExecutor` (replaces the fixed-`N` loop previously in `MultiTurnExecutor`), `PerTurnBindingDetector` (turn-count decision), `RequestBodyEvaluator` (JSONata evaluation + object-contract check), `DeploymentTurnInvoker` (now streaming), `CustomContentAccumulator` (DIAL `custom_content` chunk merge), dispatched from `EvaluationWorker.execute`.
 - CSV grouping in `service.domain.CsvImportService` / `CsvExportService` — unchanged by this change.
 - Guard via `existsMultiTurnByDatasetId` in `TestCaseRepository`, wired into `TestSuiteRunService` run-creation guards — unchanged; MCP + multi-turn rejection is independent of turn-loop mechanics.
 - The assistant-reply-path requirement previously hardcoded to `choices[0].message` is retired: reply content only matters insofar as the suite's own response columns extract it, and history is whatever the author's request-template JSONata expression constructs from `$<responseColumnName>`.

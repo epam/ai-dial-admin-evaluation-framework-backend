@@ -28,6 +28,8 @@ public class TestSuiteRecordMapper {
                 .mcpDeploymentRef(toJsonString(r.getMcpDeploymentRef()))
                 .toolRef(toJsonString(r.getToolRef()))
                 .argumentTemplate(toJsonString(r.getArgumentTemplate()))
+                .additionalRequests(toJsonString(r.getAdditionalRequests()))
+                .requestName(r.getRequestName())
                 .overallScore(toJsonString(r.getOverallScore()))
                 .overallScoreThreshold(r.getOverallScoreThreshold())
                 .testCaseFilter(toJsonString(r.getTestCaseFilter()))

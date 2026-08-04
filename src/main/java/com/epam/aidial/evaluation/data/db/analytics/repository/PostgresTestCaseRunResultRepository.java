@@ -56,6 +56,8 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
                                 r.getTestCaseId().toString())
                         .set(TEST_CASE_RUN_RESULTS.TEST_CASE_NAME, r.getTestCaseName())
                         .set(TEST_CASE_RUN_RESULTS.RUN_INDEX, r.getRunIndex())
+                        .set(TEST_CASE_RUN_RESULTS.REQUEST_INDEX, r.getRequestIndex())
+                        .set(TEST_CASE_RUN_RESULTS.TOTAL_REQUESTS, r.getTotalRequests())
                         .set(TEST_CASE_RUN_RESULTS.TURN_INDEX, r.getTurnIndex())
                         .set(TEST_CASE_RUN_RESULTS.TOTAL_TURNS, r.getTotalTurns())
                         .set(TEST_CASE_RUN_RESULTS.TEST_CASE_DATA, toJsonb(r.getTestCaseData()))
@@ -78,6 +80,7 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
                                 TEST_CASE_RUN_RESULTS.TEST_SUITE_RUN_ID,
                                 TEST_CASE_RUN_RESULTS.TEST_CASE_ID,
                                 TEST_CASE_RUN_RESULTS.RUN_INDEX,
+                                TEST_CASE_RUN_RESULTS.REQUEST_INDEX,
                                 TEST_CASE_RUN_RESULTS.TURN_INDEX,
                                 TEST_CASE_RUN_RESULTS.CREATED_AT_MS)
                         .doNothing())

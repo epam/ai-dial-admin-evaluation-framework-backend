@@ -12,6 +12,7 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
@@ -353,7 +354,26 @@ public class TestSuiteEvaluationJob {
                 .defaultConcurrencyPerProvider(metricEvaluationProperties.getDefaultConcurrencyPerProvider())
                 .batchSize(metricEvaluationProperties.getBatchSize())
                 .perResultTimeoutMs(metricEvaluationProperties.getPerResultTimeoutMs())
+                .requestLabels(buildRequestLabels(resolveSnapshot(run)))
                 .build();
+    }
+
+    /**
+     * Builds the chain's ordered request-label list: {@code snapshot.requestName} at index 0, then
+     * each {@code additionalRequests[i].name} in chain order. Consumed by
+     * {@link MetricEvaluationContext#requestLabelAt(int)} so Phase 2 can resolve a result row's
+     * {@code request.name} by {@code requestIndex} without a new analytics column.
+     */
+    private List<String> buildRequestLabels(SuiteSnapshotDto snapshot) {
+        List<String> labels = new ArrayList<>();
+        labels.add(snapshot.getRequestName());
+        List<RequestDefinitionDto> additionalRequests = snapshot.getAdditionalRequests();
+        if (additionalRequests != null) {
+            for (RequestDefinitionDto request : additionalRequests) {
+                labels.add(request != null ? request.getName() : null);
+            }
+        }
+        return labels;
     }
 
     /**
@@ -430,6 +450,8 @@ public class TestSuiteEvaluationJob {
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
+                .snapshotAdditionalRequests(snapshot.getAdditionalRequests())
+                .snapshotRequestName(snapshot.getRequestName())
                 .snapshotTestCaseSchema(snapshot.getTestCaseSchema())
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())

@@ -12,6 +12,7 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRe
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -64,6 +65,8 @@ public class TestSuiteCloneService {
     private final Clock clock;
     private final EndpointSchemaRefResolver endpointSchemaRefResolver;
     private final ValidationWarningsSerializer warningsSerializer;
+    private final ResponseColumnUnionResolver responseColumnUnionResolver;
+    private final TestSuiteRequestValidator testSuiteRequestValidator;
     private final TransactionTemplate transactionTemplate;
 
     public TestSuiteCloneService(
@@ -81,7 +84,9 @@ public class TestSuiteCloneService {
             @Qualifier("metaTransactionManager") PlatformTransactionManager transactionManager,
             Clock clock,
             EndpointSchemaRefResolver endpointSchemaRefResolver,
-            ValidationWarningsSerializer warningsSerializer) {
+            ValidationWarningsSerializer warningsSerializer,
+            ResponseColumnUnionResolver responseColumnUnionResolver,
+            TestSuiteRequestValidator testSuiteRequestValidator) {
         this.testSuiteRepository = testSuiteRepository;
         this.testSuiteMetricDefinitionRepository = testSuiteMetricDefinitionRepository;
         this.testSuiteMetricDefinitionService = testSuiteMetricDefinitionService;
@@ -96,6 +101,8 @@ public class TestSuiteCloneService {
         this.clock = clock;
         this.endpointSchemaRefResolver = endpointSchemaRefResolver;
         this.warningsSerializer = warningsSerializer;
+        this.responseColumnUnionResolver = responseColumnUnionResolver;
+        this.testSuiteRequestValidator = testSuiteRequestValidator;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -221,9 +228,21 @@ public class TestSuiteCloneService {
      * {@code schemaDatasetId}. When auto-cloning a PRIVATE dataset the cloned row does not exist yet,
      * so the caller passes the source dataset id (the clone's schema is identical); otherwise this is
      * the resolved/override dataset id bound to the suite.
+     *
+     * <p>Runs the same hard-validation set {@code TestSuiteService.create}/{@code update} run
+     * ({@code validateSuiteTypeFields}, {@code validateTestSuiteSchemas}, {@code validateTemplateLimits})
+     * against the effective post-override dto — {@code toRequestDto(entity)} already reflects
+     * request #0's overrides plus the inherited (file-ref-rewritten) {@code additionalRequests} — so a
+     * clone that would 400 on create/update (cross-request duplicate columns, union cap, reserved
+     * names, oversized templates/bindings) also 400s here instead of silently persisting an invalid
+     * suite. Soft validation ({@code SuiteValidationService}) runs afterwards, unchanged.
      */
     private void applySuiteValidation(TestSuite entity, UUID schemaDatasetId) {
         TestSuiteRequestDto dto = testSuiteMapper.toRequestDto(entity);
+
+        testSuiteRequestValidator.validateSuiteTypeFields(dto);
+        testSuiteRequestValidator.validateTestSuiteSchemas(dto);
+        testSuiteRequestValidator.validateTemplateLimits(dto);
 
         // Normalize nulls to empty lists (mirrors normalizeRequest() in TestSuiteService)
         if (dto.getInputBindings() == null) {
@@ -233,6 +252,13 @@ public class TestSuiteCloneService {
             dto.setResponseColumns(List.of());
         }
         dto.setEndpointRef(endpointSchemaRefResolver.resolve(dto.getEndpointRef()));
+        if (dto.getAdditionalRequests() != null) {
+            for (RequestDefinitionDto request : dto.getAdditionalRequests()) {
+                if (request != null) {
+                    request.setEndpointRef(endpointSchemaRefResolver.resolve(request.getEndpointRef()));
+                }
+            }
+        }
 
         List<FieldDefinitionDto> datasetSchema =
                 schemaDatasetId != null ? datasetSchemaProvider.getSchema(schemaDatasetId) : List.of();
@@ -316,7 +342,7 @@ public class TestSuiteCloneService {
 
                 if (tsmdRevalidation.required()) {
                     testSuiteMetricDefinitionService.revalidateAllForSuite(
-                            newId, tsmdRevalidation.schema(), newSuiteEntity.getResponseColumns());
+                            newId, tsmdRevalidation.schema(), responseColumnUnionResolver.unionJson(newSuiteEntity));
                 }
 
                 return null;

@@ -120,7 +120,12 @@ context: |
   Eval Summaries (metric-enriched results), Run Metric Snapshots,
   Metric Score Statistics (code-defined per-metric aggregates via Query DSL, Phase-3 computation, `metric_score_results` query entity),
   Multi-turn Test Cases (single test case carrying a `multiTurnData` turn array coexisting with shared `data`, per-field scope via `FieldDefinitionDto.perTurn`; merged per-turn effective view; JSONata-frame-driven turn-loop execution via `TurnLoopExecutor` — turn count gated by per-turn bindings, history via the author's JSONata expression over prior response columns, no hardcoded chat-completions path; per-turn analytics rows; flat CSV multiplication),
-  Conditional Metric Execution (optional per-TSMD JSONata `condition` gating whether a metric runs per turn).
+  Conditional Metric Execution (optional per-TSMD JSONata `condition` gating whether a metric runs per turn),
+  Multi-request Suites (an ordered request chain per test-case repetition against the suite's single `deploymentRef`: the suite's own
+  `endpointRef`/`requestTemplate`/`responseColumns`/`inputBindings` are request #0, `additionalRequests` supplies requests 1..N;
+  one flat suite-wide response-column namespace resolved by `ResponseColumnUnionResolver`; JSONata frame accumulating across the chain;
+  multi-turn detected per request; `request_index`/`total_requests` analytics dimension orthogonal to the turn dimension;
+  `request:{index,total,last,name}` namespace in a TSMD `condition`; fail-fast chain abort; orchestrated by `runner.job.RequestChainExecutor`).
   Infrastructure: Analytics Datasource (dual datasource — meta + analytics),
   Typed SQL DSL (jOOQ 3.20 — all repositories use DSLContext; generated sources in data.db.jooq.{meta,analytics}; drift guard via JooqSchemaDriftTest),
   DIAL File Storage (file upload/download proxy via DialFileClient, EF service key bucket management, alias-based file references).
@@ -141,6 +146,8 @@ context: |
   - multi-turn case: A single test case carrying an ordered `multiTurnData` array of per-turn data maps; discriminator is `multi_turn_data != null`. Coexists with `data`, which holds the case's shared (test-case-level) fields; field scope is declared per field via `FieldDefinitionDto.perTurn` (absent ⇒ shared). Turns are contiguous 0..N-1 with no separate id/flag
   - field scope (perTurn): A dataset schema field's `perTurn` flag — true = per-turn (lives in each `multiTurnData[i]`), false/absent = shared (lives in the case's `data`, constant across turns). A turn's effective view merges shared `data` with the turn map.
   - turn: One message exchange within a multi-turn test case; `turn.last` = index == total - 1
+  - request chain: The ordered sequence of requests a suite executes per test-case repetition — request #0 is the suite's own request fields, requests 1..N come from `additionalRequests`; executed strictly sequentially, fail-fast
+  - request index: 0-based position of a request within the chain; persisted as `request_index` on analytics rows and exposed as `request.index` to a TSMD `condition` (`request.last` = index == total - 1). Orthogonal to `turn_index` — a row's identity within one repetition is the pair `(request_index, turn_index)`
   - bucket alias: Constant client-facing identifier (e.g., @ef) that maps to a real DIAL Core bucket at runtime for cross-environment portability
   - file reference: Short DIAL path format (e.g., @ef/suites/{suiteId}/filename, no files/ prefix) identifying a file location with prefix-based access control; DialFileRefResolver.resolveToRealPath() strips the alias for DialFileClient calls, resolveToDialRef() prepends files/ for embedding in DIAL request payloads
 

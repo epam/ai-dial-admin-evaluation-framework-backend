@@ -28,4 +28,24 @@ public class MetricEvaluationContext {
     private final int defaultConcurrencyPerProvider;
     private final int batchSize;
     private final long perResultTimeoutMs;
+
+    /**
+     * The chain's request labels in index order: element 0 is request #0's {@code requestName},
+     * element {@code i > 0} is {@code additionalRequests[i - 1].name}. Lets Phase 2 resolve a
+     * result row's {@code request.name} by {@code requestIndex} without a new analytics column. See
+     * {@link #requestLabelAt(int)}.
+     */
+    private final List<String> requestLabels;
+
+    /**
+     * Resolves the request label at the given chain position. Returns {@code null} when the list is
+     * absent/empty, the index is out of range, or the request at that position is unlabelled — the
+     * same "no label" outcome in every case.
+     */
+    public String requestLabelAt(int requestIndex) {
+        if (requestLabels == null || requestIndex < 0 || requestIndex >= requestLabels.size()) {
+            return null;
+        }
+        return requestLabels.get(requestIndex);
+    }
 }

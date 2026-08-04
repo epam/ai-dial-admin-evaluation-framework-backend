@@ -13,11 +13,13 @@ import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.List;
 import java.util.Map;
@@ -116,6 +118,87 @@ class ResolvedRequestServiceTest {
         assertThatThrownBy(() -> service.resolveRequest(SUITE_ID, TEST_CASE_ID))
                 .isInstanceOf(EntityNotFoundException.class)
                 .hasMessageContaining("TestCase not found");
+
+        verify(requestResolver, never()).resolve(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("requestIndex 1 resolves additionalRequests[0]'s template and bindings")
+    void resolveRequest_selectsAdditionalRequestByIndex() {
+        TestSuite suite = TestSuite.builder()
+                .id(SUITE_ID)
+                .datasetId(DATASET_ID)
+                .requestTemplate("{}")
+                .inputBindings("[]")
+                .additionalRequests("[{\"name\":\"second\"}]")
+                .build();
+        when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+        TestCase testCase = TestCase.builder().id(TEST_CASE_ID).data("{}").build();
+        when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
+
+        RequestTemplateDto additionalTemplate =
+                RequestTemplateDto.builder().urlTemplate("/second").build();
+        List<InputBindingDto> additionalBindings = List.of();
+        RequestDefinitionDto additionalRequest = RequestDefinitionDto.builder()
+                .name("second")
+                .requestTemplate(additionalTemplate)
+                .inputBindings(additionalBindings)
+                .build();
+        when(jsonbMapper.mapAdditionalRequests("[{\"name\":\"second\"}]")).thenReturn(List.of(additionalRequest));
+        Map<String, Object> data = Map.of();
+        when(warningsSerializer.deserializeMap("{}")).thenReturn(data);
+
+        ResolvedRequestDto expected =
+                ResolvedRequestDto.builder().url("/second").build();
+        when(requestResolver.resolve(additionalTemplate, additionalBindings, data))
+                .thenReturn(expected);
+
+        ResolvedRequestDto result = service.resolveRequest(SUITE_ID, TEST_CASE_ID, 1);
+
+        assertThat(result).isSameAs(expected);
+        verify(requestResolver).resolve(additionalTemplate, additionalBindings, data);
+    }
+
+    @Test
+    @DisplayName("out-of-range requestIndex is rejected with a ValidationException")
+    void resolveRequest_rejectsOutOfRangeIndex() {
+        TestSuite suite = TestSuite.builder()
+                .id(SUITE_ID)
+                .datasetId(DATASET_ID)
+                .requestTemplate("{}")
+                .inputBindings("[]")
+                .additionalRequests("[]")
+                .build();
+        when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+        TestCase testCase = TestCase.builder().id(TEST_CASE_ID).data("{}").build();
+        when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
+        when(jsonbMapper.mapAdditionalRequests("[]")).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.resolveRequest(SUITE_ID, TEST_CASE_ID, 5))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("requestIndex");
+
+        verify(requestResolver, never()).resolve(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("negative requestIndex is rejected with a ValidationException")
+    void resolveRequest_rejectsNegativeIndex() {
+        TestSuite suite = TestSuite.builder()
+                .id(SUITE_ID)
+                .datasetId(DATASET_ID)
+                .requestTemplate("{}")
+                .inputBindings("[]")
+                .additionalRequests("[]")
+                .build();
+        when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+        TestCase testCase = TestCase.builder().id(TEST_CASE_ID).data("{}").build();
+        when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
+        when(jsonbMapper.mapAdditionalRequests("[]")).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.resolveRequest(SUITE_ID, TEST_CASE_ID, -1))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("requestIndex");
 
         verify(requestResolver, never()).resolve(any(), any(), any());
     }

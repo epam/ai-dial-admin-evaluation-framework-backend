@@ -1,0 +1,121 @@
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Chained Config + Chat Suite",
+  "description": "Two-request chain: request #0 configures the deployment and extracts a sessionId; additionalRequests[0] runs the actual chat completion test, referencing $sessionId via jsonataContent — the accumulated frame carries request #0's extracted columns into request #1",
+  "suiteType": "DEPLOYMENT",
+  "deploymentRef": {
+    "id": "deploy-001",
+    "name": "Production Deployment",
+    "version": "1.0",
+    "type": "dial-application"
+  },
+  "requestName": "configure",
+  "endpointRef": {
+    "method": "PUT",
+    "relativeUrlPattern": "/configurations",
+    "operationId": "updateConfiguration",
+    "requestBodySchema": {
+      "contentType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "temperature": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "responseBodySchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "responseColumns": [
+    {
+      "name": "sessionId",
+      "displayName": "Session Id",
+      "expression": "id",
+      "type": "STRING"
+    }
+  ],
+  "requestTemplate": {
+    "urlTemplate": "/configurations",
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "temperature": "${{temperature:0.7}}"
+      }
+    }
+  },
+  "inputBindings": [
+    {
+      "templateVariable": "temperature",
+      "constantValue": 0.5
+    }
+  ],
+  "additionalRequests": [
+    {
+      "name": "runTest",
+      "endpointRef": {
+        "method": "POST",
+        "relativeUrlPattern": "/chat/completions",
+        "operationId": "createCompletion",
+        "requestBodySchema": {
+          "contentType": "application/json",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "messages": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "responseBodySchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "requestTemplate": {
+        "urlTemplate": "/chat/completions",
+        "body": {
+          "contentType": "application/json",
+          "jsonataContent": "{\"model\": \"gpt-4\", \"sessionId\": $sessionId, \"messages\": [{\"role\": \"user\", \"content\": \"${{question}}\"}]}"
+        }
+      },
+      "responseColumns": [
+        {
+          "name": "answer",
+          "displayName": "Model Answer",
+          "expression": "choices[0].message.content",
+          "type": "STRING"
+        }
+      ],
+      "inputBindings": [
+        {
+          "templateVariable": "question",
+          "dataField": "question"
+        }
+      ]
+    }
+  ],
+  "valid": true,
+  "validationWarnings": [],
+  "version": 1,
+  "createdBy": "user@example.com",
+  "createdAt": 1704067200000,
+  "updatedAt": 1704067200000,
+  "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+  "disabledTestCaseIds": []
+}

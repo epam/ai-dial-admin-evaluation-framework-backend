@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
@@ -23,10 +24,10 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Maps every JSONB-backed field on {@code TestSuite}/{@code Dataset}/{@code TestSuiteMetricDefinition} and
- * their DTOs, except the two execution-path fields ({@code requestTemplate}, {@code inputBindings}) whose
- * read direction is owned by the shared module's {@link RunnerJsonbMapper} and delegated to here, so
- * there is a single source of truth for parsing those two fields (see Decision 10 in the
- * {@code evaluation-runner-core-module} change's {@code design.md}).
+ * their DTOs, except the execution-path fields ({@code requestTemplate}, {@code inputBindings},
+ * {@code additionalRequests}) whose read direction is owned by the shared module's
+ * {@link RunnerJsonbMapper} and delegated to here, so there is a single source of truth for parsing those
+ * fields (see Decision 10 in the {@code evaluation-runner-core-module} change's {@code design.md}).
  */
 @Component
 @LogExecution
@@ -52,6 +53,14 @@ public class JsonbMapper {
 
     public String mapInputBindings(List<InputBindingDto> value) {
         return writeList(value, "inputBindings");
+    }
+
+    public List<RequestDefinitionDto> mapAdditionalRequests(String json) {
+        return runnerJsonbMapper.mapAdditionalRequests(json);
+    }
+
+    public String mapAdditionalRequests(List<RequestDefinitionDto> value) {
+        return writeList(value, "additionalRequests");
     }
 
     public String map(DeploymentReferenceDto value) {

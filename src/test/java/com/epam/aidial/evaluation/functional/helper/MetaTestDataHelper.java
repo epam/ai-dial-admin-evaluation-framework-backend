@@ -140,6 +140,7 @@ public class MetaTestDataHelper {
                 .disabledTestCaseIds("[]")
                 .responseColumns("[]")
                 .inputBindings("[]")
+                .additionalRequests("[]")
                 .validationWarnings("[]")
                 .valid(true)
                 .build();
@@ -162,6 +163,7 @@ public class MetaTestDataHelper {
                 .disabledTestCaseIds("[]")
                 .responseColumns("[]")
                 .inputBindings("[]")
+                .additionalRequests("[]")
                 .validationWarnings("[]")
                 .valid(true)
                 .build();
@@ -272,6 +274,29 @@ public class MetaTestDataHelper {
             String name,
             String configBindings,
             String inputBindings) {
+        return createTestSuiteMetricDefinition(
+                testSuiteId,
+                metricDeclarationId,
+                metricDeclarationVersionId,
+                name,
+                configBindings,
+                inputBindings,
+                null);
+    }
+
+    /**
+     * Same as the five-arg overload, plus an optional {@code condition} (JSONata gating whether the
+     * metric runs per result row — e.g. {@code "request.last"}). Null/blank means the metric always runs.
+     */
+    @Transactional("metaTransactionManager")
+    public TestSuiteMetricDefinition createTestSuiteMetricDefinition(
+            UUID testSuiteId,
+            UUID metricDeclarationId,
+            UUID metricDeclarationVersionId,
+            String name,
+            String configBindings,
+            String inputBindings,
+            String condition) {
         TestSuiteMetricDefinition tsmd = TestSuiteMetricDefinition.builder()
                 .testSuiteId(testSuiteId)
                 .metricDeclarationId(metricDeclarationId)
@@ -282,6 +307,7 @@ public class MetaTestDataHelper {
                 .validationWarnings("[]")
                 .configBindings(configBindings)
                 .inputBindings(inputBindings)
+                .condition(condition)
                 .build();
         return tsmdRepository.save(tsmd);
     }
@@ -364,6 +390,20 @@ public class MetaTestDataHelper {
     public void setSuiteTestCaseFilter(UUID suiteId, String filterJson) {
         metaDsl.update(TEST_SUITES)
                 .set(TEST_SUITES.TEST_CASE_FILTER, filterJson != null ? toJsonb(filterJson) : null)
+                .where(TEST_SUITES.ID.eq(suiteId.toString()))
+                .execute();
+    }
+
+    /**
+     * Sets the suite's {@code deployment_ref} JSONB directly, bypassing the write-time validation on
+     * the suite API. {@link #createTestSuite(String)} / {@link #createTestSuite(String, UUID)} never
+     * set one (they exist to seed TSMD/dataset fixtures, not to exercise create-suite validation), so a
+     * caller that runs full DEPLOYMENT-suite hard validation against a fixture built that way (e.g.
+     * {@code TestSuiteCloneService}) needs this to backfill a minimal non-null value first.
+     */
+    public void forceDeploymentRef(UUID suiteId, String deploymentRefJson) {
+        metaDsl.update(TEST_SUITES)
+                .set(TEST_SUITES.DEPLOYMENT_REF, toJsonb(deploymentRefJson))
                 .where(TEST_SUITES.ID.eq(suiteId.toString()))
                 .execute();
     }

@@ -10,14 +10,18 @@ import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
+import com.epam.aidial.evaluation.service.domain.ResponseColumnUnionResolver;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,6 +52,9 @@ class EvalSummariesSchemaProviderTest {
 
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor =
             new OutputSchemaFieldExtractor(new ObjectMapper());
+
+    private final ResponseColumnUnionResolver responseColumnUnionResolver = new ResponseColumnUnionResolver(
+            new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper())));
 
     private EvalSummariesSchemaProvider provider;
 
@@ -103,6 +110,30 @@ class EvalSummariesSchemaProviderTest {
                 .noneMatch(field -> field.name().equals("extracted_columns"))
                 .noneMatch(field -> field.name().equals("metric_values"))
                 .noneMatch(field -> field.name().equals("metric_infos"));
+    }
+
+    @Test
+    @DisplayName("detailed schema lists an additional request's response column via the suite-wide union")
+    void shouldFlattenDetailedSchemaWithAdditionalRequestColumns() {
+        createProvider();
+        SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                .responseColumns(List.of(responseColumn("configId", SchemaFieldType.STRING)))
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name("second")
+                        .responseColumns(List.of(responseColumn("answer", SchemaFieldType.STRING)))
+                        .build()))
+                .build();
+        when(testSuiteRunService.getRun(RUN_ID)).thenReturn(runWithSnapshot(snapshot));
+        when(runMetricSnapshotRepository.findLatestComputationId(RUN_ID)).thenReturn(Optional.empty());
+
+        List<QuerySchemaFieldDto> fields =
+                provider.detailedSchema(Map.of(EvalSummariesSchemaProvider.RUN_ID_FIELD, RUN_ID.toString()));
+
+        assertThat(fields)
+                .contains(
+                        new QuerySchemaFieldDto("response::configId", QueryFieldType.STRING, "extracted_columns"),
+                        new QuerySchemaFieldDto("response::answer", QueryFieldType.STRING, "extracted_columns"));
     }
 
     @Test
@@ -191,6 +222,7 @@ class EvalSummariesSchemaProviderTest {
                 runMetricSnapshotRepository,
                 outputSchemaFieldExtractor,
                 new SchemaFieldTypeMapper(),
+                responseColumnUnionResolver,
                 new JooqTableSchemaResolver());
     }
 

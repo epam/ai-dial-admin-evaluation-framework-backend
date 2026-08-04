@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
@@ -66,7 +67,7 @@ public class TestSuiteRequestDto {
     private EndpointContractDto endpointRef;
 
     @Valid
-    @Size(max = 50)
+    @Size(max = ValidationConstants.MAX_RESPONSE_COLUMNS)
     private List<ResponseColumnDefinitionDto> responseColumns;
 
     @Valid
@@ -74,6 +75,27 @@ public class TestSuiteRequestDto {
 
     @Valid
     private List<InputBindingDto> inputBindings;
+
+    @Size(max = 255)
+    @Schema(
+            example = "configure",
+            description = "Optional user-facing label for request #0, so it can be targeted by name from a "
+                    + "metric condition's `request.name` (mirrors `RequestDefinitionDto.name` on each additional "
+                    + "request). Null when request #0 is unlabelled.")
+    private String requestName;
+
+    @Valid
+    @Size(
+            max = ValidationConstants.MAX_ADDITIONAL_REQUESTS,
+            message = "additionalRequests must not exceed " + ValidationConstants.MAX_ADDITIONAL_REQUESTS + " entries")
+    @Schema(
+            description = "Ordered chain of requests 1..N executed after request #0 against the same "
+                    + "`deploymentRef`. Response columns across request #0 and every additional request share one "
+                    + "flat, globally-unique namespace, capped at " + ValidationConstants.MAX_RESPONSE_COLUMNS
+                    + " columns in total. Rejected (400) when non-empty on an `MCP_TOOL` suite. Capped at "
+                    + ValidationConstants.MAX_ADDITIONAL_REQUESTS + " entries.",
+            example = "[]")
+    private List<RequestDefinitionDto> additionalRequests;
 
     @Valid
     @Schema(description = "MCP deployment reference (required for MCP_TOOL suites)")

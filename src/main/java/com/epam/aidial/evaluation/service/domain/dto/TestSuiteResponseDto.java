@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
@@ -51,6 +52,17 @@ public class TestSuiteResponseDto {
     private List<ResponseColumnDefinitionDto> responseColumns;
     private RequestTemplateDto requestTemplate;
     private List<InputBindingDto> inputBindings;
+
+    @Schema(
+            example = "configure",
+            description = "User-facing label for request #0. Null when request #0 is unlabelled.")
+    private String requestName;
+
+    @Schema(
+            description = "Ordered chain of requests 1..N executed after request #0 against the same "
+                    + "`deploymentRef`. Empty when the suite is a single-request suite.",
+            example = "[]")
+    private List<RequestDefinitionDto> additionalRequests;
 
     @Schema(description = "MCP deployment reference (MCP_TOOL suites only)")
     private McpDeploymentReferenceDto mcpDeploymentRef;

@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
@@ -63,6 +64,18 @@ public class SuiteSnapshotDto {
 
     @Schema(description = "Response column definitions")
     private List<ResponseColumnDefinitionDto> responseColumns;
+
+    @Builder.Default
+    @Schema(
+            description = "Additional requests in the chain (index 1..N), in execution order. Empty for a "
+                    + "single-request suite. Additive-optional: a snapshot JSON written before this field "
+                    + "existed deserializes with an empty list.")
+    private List<RequestDefinitionDto> additionalRequests = List.of();
+
+    @Schema(
+            description = "User-facing label for request #0 (the suite's own request); null when unlabelled. "
+                    + "Additive-optional: absent in a snapshot JSON written before this field existed.")
+    private String requestName;
 
     @Schema(description = "Test case schema field definitions")
     private List<FieldDefinitionDto> testCaseSchema;

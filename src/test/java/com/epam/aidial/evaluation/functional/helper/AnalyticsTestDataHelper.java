@@ -92,6 +92,8 @@ public class AnalyticsTestDataHelper {
                         TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES.TOTAL_REQUESTS,
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
                         TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
@@ -112,6 +114,8 @@ public class AnalyticsTestDataHelper {
                         TEST_CASE_RUN_RESULTS.TEST_CASE_ID,
                         TEST_CASE_RUN_RESULTS.TEST_CASE_NAME,
                         TEST_CASE_RUN_RESULTS.RUN_INDEX,
+                        TEST_CASE_RUN_RESULTS.REQUEST_INDEX,
+                        TEST_CASE_RUN_RESULTS.TOTAL_REQUESTS,
                         TEST_CASE_RUN_RESULTS.TURN_INDEX,
                         TEST_CASE_RUN_RESULTS.TOTAL_TURNS,
                         TEST_CASE_RUN_RESULTS.EXECUTION_STATUS,
@@ -244,6 +248,7 @@ public class AnalyticsTestDataHelper {
                 .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, UUID.randomUUID().toString())
                 .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, fixture.getTestCaseName())
                 .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, fixture.getRunIndex())
+                .set(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX, fixture.getRequestIndex())
                 .set(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX, fixture.getTurnIndex())
                 .set(TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS, fixture.getTotalTurns())
                 .set(

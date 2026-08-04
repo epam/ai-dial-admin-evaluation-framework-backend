@@ -21,6 +21,8 @@ import com.epam.aidial.evaluation.runner.client.dialcore.dto.DialFileMetadataDto
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
@@ -36,6 +38,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteUpdateResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -247,6 +250,55 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("8.1 (hard validation) returns 400 when the clone's responseColumns override collides with an "
+            + "inherited additional request's column")
+    void shouldReturn400WhenCloneResponseColumnsOverrideCollidesWithInheritedAdditionalRequest() {
+        TestSuiteResponseDto source = createChainSuite(
+                "Chain Collide Source " + UUID.randomUUID(),
+                List.of(column("configId", "usage.total_tokens")),
+                "second",
+                "/v1/second",
+                List.of(column("answer", "choices[0].message.content")));
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Chain Collide Clone " + UUID.randomUUID())
+                // Overrides request #0's responseColumns with a name ("answer") already used by the
+                // suite's inherited additional request — the union-wide duplicate-name check must
+                // still fire against the EFFECTIVE (post-override) chain, not just the override in
+                // isolation.
+                .responseColumns(List.of(column("answer", "usage.total_tokens")))
+                .build();
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("VALIDATION_ERROR");
+        assertThat(response.getBody()).contains("duplicate column name").contains("answer");
+    }
+
+    @Test
+    @DisplayName("8.1 (hard validation) returns 400 when the clone's responseColumns override pushes the "
+            + "chain-wide response-column union past MAX_RESPONSE_COLUMNS")
+    void shouldReturn400WhenCloneResponseColumnsOverrideExceedsUnionCap() {
+        TestSuiteResponseDto source = createChainSuite(
+                "Chain Cap Source " + UUID.randomUUID(), List.of(), "second", "/v1/second", namedColumns("a", 30));
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("Chain Cap Clone " + UUID.randomUUID())
+                // 21 (override) + 30 (inherited additional request) = 51 > MAX_RESPONSE_COLUMNS (50).
+                .responseColumns(namedColumns("s", 21))
+                .build();
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("VALIDATION_ERROR");
+        assertThat(response.getBody()).contains("51").contains("exceeds maximum of 50");
+    }
+
+    @Test
     @DisplayName("8.0 / S3: missing file in source folder is skipped gracefully; clone still returns 201")
     void shouldSkipMissingFileAndContinueClone() {
         TestSuiteResponseDto source = createDeploymentSuite("Missing File Source " + UUID.randomUUID());
@@ -284,7 +336,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("8.2 cloned TSMDs have new UUIDs and correct metric declaration references")
     void shouldDeepCopyTsmdsWithNewUuids() {
-        TestSuite source = metaTestDataHelper.createTestSuite("TSMD Deep Copy Source " + UUID.randomUUID());
+        TestSuite source =
+                deploymentReady(metaTestDataHelper.createTestSuite("TSMD Deep Copy Source " + UUID.randomUUID()));
         TestSuiteMetricDefinition tsmd1 = metaTestDataHelper.createTestSuiteMetricDefinition(
                 source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "M1");
         TestSuiteMetricDefinition tsmd2 = metaTestDataHelper.createTestSuiteMetricDefinition(
@@ -453,7 +506,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("8.2 copies all TSMDs across pagination boundaries (batch size 2, 3 TSMDs)")
     void shouldCopyAllTsmdsAcrossPaginationBoundaries() {
-        TestSuite source = metaTestDataHelper.createTestSuite("Paginated TSMD Source " + UUID.randomUUID());
+        TestSuite source =
+                deploymentReady(metaTestDataHelper.createTestSuite("Paginated TSMD Source " + UUID.randomUUID()));
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "Metric A");
         metaTestDataHelper.createTestSuiteMetricDefinition(
@@ -492,7 +546,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("8.3 file refs in TSMD configBindings are rewritten to new suite ID after clone")
     void shouldRewriteFileRefsInTsmdConfigBindings() {
-        TestSuite source = metaTestDataHelper.createTestSuite("File Ref TSMD Source " + UUID.randomUUID());
+        TestSuite source =
+                deploymentReady(metaTestDataHelper.createTestSuite("File Ref TSMD Source " + UUID.randomUUID()));
         String configBindingsJson = "[{\"property\":\"input\",\"source\":"
                 + "{\"$type\":\"Constant\",\"value\":\"@ef/suites/" + source.getId() + "/config.json\"}}]";
         metaTestDataHelper.createTestSuiteMetricDefinition(
@@ -528,7 +583,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("8.3 TSMD with null inputBindings does not cause NPE and is cloned as null")
     void shouldHandleNullTsmdInputBindingsWithoutNpe() {
-        TestSuite source = metaTestDataHelper.createTestSuite("Null Bindings Source " + UUID.randomUUID());
+        TestSuite source =
+                deploymentReady(metaTestDataHelper.createTestSuite("Null Bindings Source " + UUID.randomUUID()));
         // configBindings = "[]", inputBindings = "[]" (default from MetaTestDataHelper)
         metaTestDataHelper.createTestSuiteMetricDefinition(
                 source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "Metric Null Bindings");
@@ -580,6 +636,83 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return r.getBody();
+    }
+
+    /**
+     * Creates a DEPLOYMENT suite with a 2-request chain: request #0's own {@code responseColumns} plus
+     * one additional request (name/urlTemplate/responseColumns as given). Used by the clone
+     * hard-validation tests, which need a source suite whose {@code additionalRequests} the clone
+     * inherits verbatim so an override at request #0 can be checked against it.
+     */
+    private TestSuiteResponseDto createChainSuite(
+            String name,
+            List<ResponseColumnDefinitionDto> request0Columns,
+            String additionalName,
+            String additionalUrlTemplate,
+            List<ResponseColumnDefinitionDto> additionalColumns) {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name)
+                .description("Functional test suite (chain)")
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deploy-1")
+                        .name("Deployment One")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .build())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .responseColumns(request0Columns)
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(false)
+                        .build())))
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name(additionalName)
+                        .requestTemplate(RequestTemplateDto.builder()
+                                .urlTemplate(additionalUrlTemplate)
+                                .build())
+                        .responseColumns(additionalColumns)
+                        .build()))
+                .build();
+        ResponseEntity<TestSuiteResponseDto> r =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return r.getBody();
+    }
+
+    /**
+     * Patches in a minimal {@code deploymentRef} on a suite created via the raw-DB {@code
+     * MetaTestDataHelper.createTestSuite} backdoor. That backdoor never sets one — it exists to seed
+     * TSMD/dataset fixtures without exercising the create-suite validation path — which is harmless
+     * against clone's pre-existing soft-only validation but now trips clone's hard validation (this
+     * change's fix #1: {@code TestSuiteRequestValidator.validateSuiteTypeFields} requires a non-null
+     * {@code deploymentRef} for a DEPLOYMENT suite). A real suite can never reach this state (create()
+     * always enforces it), so patching the fixture — not relaxing clone's validation — is the correct fix.
+     */
+    private TestSuite deploymentReady(TestSuite suite) {
+        String deploymentRefJson = "{\"id\":\"deploy-1\"}";
+        metaTestDataHelper.forceDeploymentRef(suite.getId(), deploymentRefJson);
+        suite.setDeploymentRef(deploymentRefJson);
+        return suite;
+    }
+
+    private ResponseColumnDefinitionDto column(String name, String expression) {
+        return ResponseColumnDefinitionDto.builder()
+                .name(name)
+                .expression(expression)
+                .type(SchemaFieldType.STRING)
+                .build();
+    }
+
+    private List<ResponseColumnDefinitionDto> namedColumns(String prefix, int count) {
+        List<ResponseColumnDefinitionDto> columns = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            columns.add(column(prefix + i, "usage.total_tokens"));
+        }
+        return columns;
     }
 
     // -----------------------------------------------------------------------
@@ -681,7 +814,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     void cloningPrivateDatasetSuiteClonesDataset() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Private Src " + UUID.randomUUID(), promptSchemaJson(), DatasetVisibility.PRIVATE);
-        TestSuite source = metaTestDataHelper.createTestSuite("Private Suite " + UUID.randomUUID(), privateDs.getId());
+        TestSuite source = deploymentReady(
+                metaTestDataHelper.createTestSuite("Private Suite " + UUID.randomUUID(), privateDs.getId()));
 
         // Seed 3 test cases (batch-size is 2 in tests → crosses a pagination boundary). One carries a
         // dataset-scoped file reference in its data.
@@ -778,7 +912,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     void cloningPrivateDatasetDedupesCloneName() {
         String baseName = "Dedup Ds " + UUID.randomUUID();
         Dataset privateDs = metaTestDataHelper.createDataset(baseName, promptSchemaJson(), DatasetVisibility.PRIVATE);
-        TestSuite source = metaTestDataHelper.createTestSuite("Dedup Suite " + UUID.randomUUID(), privateDs.getId());
+        TestSuite source = deploymentReady(
+                metaTestDataHelper.createTestSuite("Dedup Suite " + UUID.randomUUID(), privateDs.getId()));
         // Pre-create a PUBLIC dataset already named "<base> (clone)" to force the dedup suffix
         metaTestDataHelper.createDataset(baseName + " (clone)", "[]");
 
@@ -833,8 +968,8 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     void cloningPrivateDatasetSuiteWithSameDatasetIdClonesIt() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Private Same Src " + UUID.randomUUID(), promptSchemaJson(), DatasetVisibility.PRIVATE);
-        TestSuite source =
-                metaTestDataHelper.createTestSuite("Private Same Suite " + UUID.randomUUID(), privateDs.getId());
+        TestSuite source = deploymentReady(
+                metaTestDataHelper.createTestSuite("Private Same Suite " + UUID.randomUUID(), privateDs.getId()));
         metaTestDataHelper.seedManyTestCasesInDataset(privateDs.getId(), 2, true);
 
         TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()

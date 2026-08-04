@@ -11,14 +11,19 @@ import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.time.Clock;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +34,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.http.HttpMethod;
 import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
 
@@ -97,6 +103,9 @@ class TestSuiteServiceTest {
     @Mock
     private TestSuiteRequestValidator testSuiteRequestValidator;
 
+    @Mock
+    private ResponseColumnUnionResolver responseColumnUnionResolver;
+
     private TestSuiteService service;
 
     @BeforeEach
@@ -121,7 +130,8 @@ class TestSuiteServiceTest {
                 filterParser,
                 warningsSerializer,
                 objectMapper,
-                testSuiteRequestValidator);
+                testSuiteRequestValidator,
+                responseColumnUnionResolver);
     }
 
     @Test
@@ -156,5 +166,44 @@ class TestSuiteServiceTest {
 
         // The pre-transaction copy targeted a freshly generated dataset id; cleanup must remove it.
         verify(fileService, times(1)).deleteAllByDatasetId(any(UUID.class));
+    }
+
+    @Test
+    @DisplayName("create() resolves $ref for request #0's endpointRef and every additional request's endpointRef")
+    void shouldResolveEndpointRefForRequest0AndEveryAdditionalRequest() {
+        EndpointContractDto request0Endpoint = EndpointContractDto.builder()
+                .method(HttpMethod.POST)
+                .relativeUrlPattern("/v1/chat")
+                .build();
+        EndpointContractDto additionalEndpoint = EndpointContractDto.builder()
+                .method(HttpMethod.POST)
+                .relativeUrlPattern("/v1/second")
+                .build();
+        RequestDefinitionDto additionalRequest = RequestDefinitionDto.builder()
+                .name("second")
+                .endpointRef(additionalEndpoint)
+                .build();
+        TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                .name("Suite")
+                .endpointRef(request0Endpoint)
+                .additionalRequests(List.of(additionalRequest))
+                .build();
+
+        // Identity resolver — this test only asserts WHICH endpointRefs are passed to the resolver,
+        // not its own $ref-inlining logic (covered separately for the resolver itself).
+        when(endpointSchemaRefResolver.resolve(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(testSuiteMapper.toEntity(any(), any()))
+                .thenReturn(TestSuite.builder().build());
+        when(suiteValidationService.validateSuite(any(), any(), any()))
+                .thenReturn(ValidationResult.builder()
+                        .valid(true)
+                        .warnings(List.of())
+                        .build());
+
+        service.create(dto, null);
+
+        // Request #0's endpointRef and the additional request's endpointRef are each resolved once.
+        verify(endpointSchemaRefResolver).resolve(request0Endpoint);
+        verify(endpointSchemaRefResolver).resolve(additionalEndpoint);
     }
 }

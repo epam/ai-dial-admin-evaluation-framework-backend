@@ -185,6 +185,24 @@ class TurnLoopExecutorTest {
         return TestCaseRunInput.builder().runId(UUID.randomUUID()).position(0).testCaseId(UUID.randomUUID());
     }
 
+    /**
+     * Builds a single-request ({@code totalRequests = 1}, empty {@code initialFrame}) spec from the given
+     * context's request-#0 fields — the shape every pre-generalization test call used implicitly. {@code
+     * totalRequests = 1} keeps requestIndex/totalRequests unstamped, matching the pre-change baseline.
+     */
+    private RequestExecutionSpec singleRequestSpec(
+            EvaluationContext context, List<ResponseColumnDefinitionDto> responseColumns) {
+        return new RequestExecutionSpec(
+                0,
+                1,
+                context.getSnapshotRequestName(),
+                context.getSnapshotEndpointRef(),
+                context.getSnapshotRequestTemplate(),
+                context.getSnapshotInputBindings(),
+                responseColumns,
+                Map.of());
+    }
+
     @Test
     @DisplayName("Single-turn case: N=1, testCaseData persisted verbatim, turnIndex/totalTurns stay at defaults")
     void singleTurnCase_runsOnceWithDefaultTurnIndices() {
@@ -206,8 +224,9 @@ class TurnLoopExecutorTest {
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-1", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, List.of()), "trace-1", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -250,8 +269,9 @@ class TurnLoopExecutorTest {
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-2", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, List.of()), "trace-2", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -304,8 +324,9 @@ class TurnLoopExecutorTest {
                         0,
                         null));
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, responseColumns, "trace-3", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, responseColumns), "trace-3", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).hasSize(2);
         TestCaseRunResult turn0 = results.get(0);
@@ -337,8 +358,9 @@ class TurnLoopExecutorTest {
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-4", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, List.of()), "trace-4", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -368,8 +390,9 @@ class TurnLoopExecutorTest {
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-8", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, List.of()), "trace-8", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -405,8 +428,9 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null))
                 .thenReturn(new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":\"boom\"}", 0, null));
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-5", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, List.of()), "trace-5", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).hasSize(2);
         assertThat(results.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
@@ -436,8 +460,9 @@ class TurnLoopExecutorTest {
                 .thenReturn(
                         new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":{\"message\":\"boom\"}}", 0, null));
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, responseColumns, "trace-7", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, responseColumns), "trace-7", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -458,8 +483,9 @@ class TurnLoopExecutorTest {
                 .cancellationSignal(new AtomicBoolean(true))
                 .build();
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-6", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, List.of()), "trace-6", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).isEmpty();
     }
@@ -478,8 +504,9 @@ class TurnLoopExecutorTest {
                 .snapshotTestCaseSchema(List.of())
                 .build();
 
-        List<TestCaseRunResult> results =
-                executor.execute(input, context, 0, List.of(), "trace-7", FIXED_CLOCK.millis());
+        List<TestCaseRunResult> results = executor.execute(
+                        input, context, 0, singleRequestSpec(context, List.of()), "trace-7", FIXED_CLOCK.millis())
+                .rows();
 
         assertThat(results).hasSize(1);
         TestCaseRunResult row = results.getFirst();
@@ -487,5 +514,119 @@ class TurnLoopExecutorTest {
         assertThat(row.getTurnIndex()).isZero();
         assertThat(row.getTotalTurns()).isEqualTo(1);
         assertThat(row.getLogDetails()).contains("no readable turns");
+    }
+
+    // ------------------------------------------------------------------
+    // RequestExecutionSpec/RequestExecutionResult generalization (add-multi-request-suite, section 5)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Single-request chain (totalRequests=1) leaves requestIndex/totalRequests at builder defaults")
+    void singleRequestChain_neverStampsRequestIndices() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("single-req")
+                .testCaseData("{\"prompt\":\"hi\"}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "${{prompt}}")))
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of())
+                .build();
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        RequestExecutionResult result = executor.execute(
+                input, context, 0, singleRequestSpec(context, List.of()), "trace-9", FIXED_CLOCK.millis());
+
+        assertThat(result.aborted()).isFalse();
+        TestCaseRunResult row = result.rows().getFirst();
+        assertThat(row.getRequestIndex()).isZero();
+        assertThat(row.getTotalRequests()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A non-first request (totalRequests>1) stamps requestIndex/totalRequests and its turn-0 frame is"
+            + " seeded from initialFrame")
+    void nonFirstRequest_seedsFrameFromInitialFrameAndStampsRequestIndices() {
+        stubCommonInfra();
+        TestCaseRunInput input =
+                baseInputBuilder().testCaseName("second-req").testCaseData("{}").build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+        RequestExecutionSpec spec = new RequestExecutionSpec(
+                1,
+                2,
+                "second",
+                context.getSnapshotEndpointRef(),
+                jsonataBodyTemplate("{\"cfg\": $configId, \"messages\": \"hi\"}"),
+                List.of(),
+                List.of(ResponseColumnDefinitionDto.builder()
+                        .name("answer")
+                        .expression("choices[0].message.content")
+                        .type(SchemaFieldType.STRING)
+                        .build()),
+                Map.of("configId", "cfg-1"));
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(
+                        ExecutionStatus.SUCCESS,
+                        200,
+                        "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"reply\"}}]}",
+                        0,
+                        null));
+
+        RequestExecutionResult result = executor.execute(input, context, 0, spec, "trace-10", FIXED_CLOCK.millis());
+
+        assertThat(result.aborted()).isFalse();
+        TestCaseRunResult row = result.rows().getFirst();
+        // Turn-0 resolution frame was seeded from initialFrame: the body references $configId.
+        assertThat(row.getRequestBody()).contains("cfg-1");
+        // Stamped because totalRequests=2 (Decision 9).
+        assertThat(row.getRequestIndex()).isEqualTo(1);
+        assertThat(row.getTotalRequests()).isEqualTo(2);
+        // Persisted extracted_columns is the accumulated union: the prior request's configId plus this
+        // request's own answer column (Decision 4).
+        assertThat(row.getExtractedColumns()).contains("\"configId\":\"cfg-1\"").contains("\"answer\":\"reply\"");
+        // The returned accumulated frame carries both keys forward to the next request in the chain.
+        assertThat(result.accumulatedFrame()).containsEntry("configId", "cfg-1").containsEntry("answer", "reply");
+    }
+
+    @Test
+    @DisplayName("RequestExecutionResult.aborted is true when a turn fails, with rows produced so far returned")
+    void requestExecutionResult_abortedTrueOnTurnFailure() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("mt-fail-result")
+                .testCaseData(null)
+                .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"}]")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(
+                        jsonBodyTemplate(Map.of("messages", List.of(Map.of("content", "${{prompt}}")))))
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .perTurn(true)
+                        .build()))
+                .build();
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null))
+                .thenReturn(new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":\"boom\"}", 0, null));
+
+        RequestExecutionResult result = executor.execute(
+                input, context, 0, singleRequestSpec(context, List.of()), "trace-11", FIXED_CLOCK.millis());
+
+        assertThat(result.aborted()).isTrue();
+        assertThat(result.rows()).hasSize(2);
     }
 }

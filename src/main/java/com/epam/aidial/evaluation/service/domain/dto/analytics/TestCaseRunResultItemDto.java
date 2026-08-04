@@ -35,6 +35,17 @@ public class TestCaseRunResultItemDto {
     private Integer runIndex;
 
     @Schema(
+            description = "0-based position within a suite's request chain; defaults to 0 (single-request) "
+                    + "when omitted.",
+            example = "0")
+    @Min(value = 0, message = "requestIndex must be >= 0")
+    private Integer requestIndex;
+
+    @Schema(description = "Chain length (request count); defaults to 1 (single-request) when omitted.", example = "1")
+    @Min(value = 1, message = "totalRequests must be >= 1")
+    private Integer totalRequests;
+
+    @Schema(
             description = "0-based turn position within a multi-turn test case; defaults to 0 (single-turn) "
                     + "when omitted.",
             example = "0")

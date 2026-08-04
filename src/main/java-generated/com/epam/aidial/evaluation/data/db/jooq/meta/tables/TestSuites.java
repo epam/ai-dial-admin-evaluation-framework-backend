@@ -177,6 +177,16 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
      */
     public final TableField<TestSuitesRecord, Double> OVERALL_SCORE_THRESHOLD = createField(DSL.name("overall_score_threshold"), SQLDataType.DOUBLE, this, "");
 
+    /**
+     * The column <code>meta.test_suites.additional_requests</code>.
+     */
+    public final TableField<TestSuitesRecord, JSONB> ADDITIONAL_REQUESTS = createField(DSL.name("additional_requests"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'::jsonb"), SQLDataType.JSONB)), this, "");
+
+    /**
+     * The column <code>meta.test_suites.request_name</code>.
+     */
+    public final TableField<TestSuitesRecord, String> REQUEST_NAME = createField(DSL.name("request_name"), SQLDataType.VARCHAR(255), this, "");
+
     private TestSuites(Name alias, Table<TestSuitesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

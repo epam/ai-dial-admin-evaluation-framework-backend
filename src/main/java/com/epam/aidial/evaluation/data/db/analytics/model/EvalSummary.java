@@ -20,6 +20,14 @@ public class EvalSummary {
     private String testCaseName;
     private int runIndex;
 
+    /** 0-based position within a suite's request chain; 0 for single-request summaries. */
+    @Builder.Default
+    private int requestIndex = 0;
+
+    /** Chain length (request count); 1 for single-request summaries. */
+    @Builder.Default
+    private int totalRequests = 1;
+
     /** 0-based turn position within a multi-turn test case; 0 for single-turn summaries. */
     @Builder.Default
     private int turnIndex = 0;

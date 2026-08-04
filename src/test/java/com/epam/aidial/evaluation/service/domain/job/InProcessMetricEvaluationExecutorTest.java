@@ -20,6 +20,7 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResult
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.service.domain.ConditionContext;
 import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
@@ -301,6 +302,72 @@ class InProcessMetricEvaluationExecutorTest {
     }
 
     @Test
+    @DisplayName("ConditionContext carries requestIndex/totalRequests/requestName resolved from the result row"
+            + " and the run's request-label snapshot")
+    void conditionContext_carriesRequestPositionAndLabel() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .condition("request.last")
+                .build();
+        MetricEvaluationContext context =
+                buildContext(runId, suiteId, List.of(tsmd), 10000L, List.of("configure", "ask"));
+
+        TestCaseRunResult request0 = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .requestIndex(0)
+                .totalRequests(2)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        TestCaseRunResult request1 = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .requestIndex(1)
+                .totalRequests(2)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(request0, request1), null, false));
+
+        ArgumentCaptor<ConditionContext> conditionCaptor = ArgumentCaptor.forClass(ConditionContext.class);
+        when(conditionExpressionEvaluator.evaluate(any(), conditionCaptor.capture()))
+                .thenReturn(ConditionDecision.skip());
+        doReturn(objectMapper.createObjectNode()).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
+
+        executor.execute(context);
+
+        List<ConditionContext> captured = conditionCaptor.getAllValues();
+        assertThat(captured).hasSize(2);
+        ConditionContext ctx0 =
+                captured.stream().filter(c -> c.requestIndex() == 0).findFirst().orElseThrow();
+        ConditionContext ctx1 =
+                captured.stream().filter(c -> c.requestIndex() == 1).findFirst().orElseThrow();
+        assertThat(ctx0.totalRequests()).isEqualTo(2);
+        assertThat(ctx0.requestName()).isEqualTo("configure");
+        assertThat(ctx1.totalRequests()).isEqualTo(2);
+        assertThat(ctx1.requestName()).isEqualTo("ask");
+    }
+
+    @Test
     @DisplayName("Empty TSMD list — one metric-less EvalSummary per result row and no metric work at all")
     void emptyTsmds_writeOneMetricLessSummaryPerResult() {
         UUID runId = UUID.randomUUID();
@@ -415,6 +482,15 @@ class InProcessMetricEvaluationExecutorTest {
 
     private MetricEvaluationContext buildContext(
             UUID runId, UUID suiteId, List<AggregatedMetricDefinition> tsmds, long perResultTimeoutMs) {
+        return buildContext(runId, suiteId, tsmds, perResultTimeoutMs, null);
+    }
+
+    private MetricEvaluationContext buildContext(
+            UUID runId,
+            UUID suiteId,
+            List<AggregatedMetricDefinition> tsmds,
+            long perResultTimeoutMs,
+            List<String> requestLabels) {
         MetricEvaluationProperties.Retry retryConfig = new MetricEvaluationProperties.Retry();
         retryConfig.setMaxRetries(0);
         retryConfig.setRetryDelayMs(100L);
@@ -433,6 +509,7 @@ class InProcessMetricEvaluationExecutorTest {
                 .defaultConcurrencyPerProvider(5)
                 .batchSize(100)
                 .perResultTimeoutMs(perResultTimeoutMs)
+                .requestLabels(requestLabels)
                 .build();
     }
 }

@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.runner.dto.FormPartDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartType;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
@@ -375,6 +376,173 @@ class SuiteValidationServiceTest {
 
         private FieldDefinitionDto field(String name, SchemaFieldType type) {
             return FieldDefinitionDto.builder().name(name).type(type).build();
+        }
+    }
+
+    @Nested
+    @DisplayName("Request chain warning-path prefixing (design.md D13)")
+    class RequestChainPathPrefixing {
+
+        private static final UUID SUITE_ID = UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+        @Test
+        @DisplayName("Request #0's missing urlTemplate warning path is byte-identical to before request chains")
+        void requestZeroMissingUrlTemplate_pathIsUnprefixed() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/v1/chat")
+                            .build())
+                    .requestTemplate(RequestTemplateDto.builder().build())
+                    .build();
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> "$.urlTemplate".equals(w.getPath())
+                            && w.getMessage().contains("urlTemplate is required"));
+        }
+
+        @Test
+        @DisplayName("Missing urlTemplate on an additional request produces the indexed path")
+        void additionalRequestMissingUrlTemplate_pathIsIndexed() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/v1/chat")
+                            .build())
+                    .requestTemplate(
+                            RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                    .additionalRequests(List.of(RequestDefinitionDto.builder()
+                            .name("second")
+                            .requestTemplate(RequestTemplateDto.builder().build())
+                            .build()))
+                    .build();
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> "$.additionalRequests[0].requestTemplate.urlTemplate".equals(w.getPath())
+                            && w.getMessage().contains("urlTemplate is required"));
+        }
+
+        @Test
+        @DisplayName("Missing endpointRef on an additional request produces the indexed path")
+        void additionalRequestMissingEndpointRef_pathIsIndexed() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/v1/chat")
+                            .build())
+                    .requestTemplate(
+                            RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                    .additionalRequests(List.of(RequestDefinitionDto.builder()
+                            .name("second")
+                            .requestTemplate(RequestTemplateDto.builder()
+                                    .urlTemplate("/v1/second")
+                                    .build())
+                            .build()))
+                    .build();
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> "$.additionalRequests[0].endpointRef".equals(w.getPath())
+                            && w.getMessage().contains("endpointRef is required"));
+        }
+
+        @Test
+        @DisplayName("Unresolvable binding on an additional request produces the indexed inputBindings path")
+        void additionalRequestUnresolvableBinding_pathIsIndexed() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/v1/chat")
+                            .build())
+                    .requestTemplate(
+                            RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                    .additionalRequests(List.of(RequestDefinitionDto.builder()
+                            .name("second")
+                            .endpointRef(EndpointContractDto.builder()
+                                    .method(HttpMethod.POST)
+                                    .relativeUrlPattern("/v1/second")
+                                    .build())
+                            .requestTemplate(RequestTemplateDto.builder()
+                                    .urlTemplate("/v1/second/${{missingField}}")
+                                    .build())
+                            .build()))
+                    .build();
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> "$.additionalRequests[0].inputBindings".equals(w.getPath())
+                            && w.getCode() == ValidationWarningCode.REQUIRED);
+        }
+
+        @Test
+        @DisplayName("Warnings from request #0 and an additional request aggregate, distinguishable by path")
+        void warningsFromBothRequestsAggregate() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/v1/chat")
+                            .build())
+                    .requestTemplate(RequestTemplateDto.builder().build())
+                    .additionalRequests(List.of(RequestDefinitionDto.builder()
+                            .name("second")
+                            .requestTemplate(RequestTemplateDto.builder().build())
+                            .build()))
+                    .build();
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings()).anyMatch(w -> "$.urlTemplate".equals(w.getPath()));
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> "$.additionalRequests[0].requestTemplate.urlTemplate".equals(w.getPath()));
+        }
+
+        @Test
+        @DisplayName("A valid two-request chain produces no chain-related warnings")
+        void validTwoRequestChain_producesNoWarnings() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/v1/chat")
+                            .build())
+                    .requestTemplate(
+                            RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                    .additionalRequests(List.of(RequestDefinitionDto.builder()
+                            .name("second")
+                            .endpointRef(EndpointContractDto.builder()
+                                    .method(HttpMethod.POST)
+                                    .relativeUrlPattern("/v1/second")
+                                    .build())
+                            .requestTemplate(RequestTemplateDto.builder()
+                                    .urlTemplate("/v1/second")
+                                    .build())
+                            .build()))
+                    .build();
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isTrue();
+            assertThat(result.getWarnings()).isEmpty();
         }
     }
 }

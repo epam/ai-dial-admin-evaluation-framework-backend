@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
@@ -51,7 +52,7 @@ public class TestSuiteCloneRequestDto {
     private UUID datasetId;
 
     @Valid
-    @Size(max = 50)
+    @Size(max = ValidationConstants.MAX_RESPONSE_COLUMNS)
     private List<ResponseColumnDefinitionDto> responseColumns;
 
     @Valid

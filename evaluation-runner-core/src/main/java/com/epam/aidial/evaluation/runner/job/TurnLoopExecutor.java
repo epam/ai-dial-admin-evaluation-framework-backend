@@ -38,10 +38,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Unified turn-loop executor for <b>every</b> DEPLOYMENT HTTP test case — single-turn and multi-turn alike.
- * Turn count {@code N} is derived, not fixed:
+ * Unified turn-loop executor for <b>one request</b> of a suite's request chain (single request or one
+ * request within a multi-request chain — see {@link RequestChainExecutor}), covering every DEPLOYMENT HTTP
+ * test case, single-turn and multi-turn alike. Turn count {@code N} is derived, not fixed:
  *
  * <ul>
  *   <li>a single-turn case ({@code multiTurnData} absent) always runs {@code N = 1};</li>
@@ -58,9 +60,11 @@ import tools.jackson.databind.ObjectMapper;
  * explicit {@code turnIndex}/{@code totalTurns}.
  *
  * <p>Each turn's request body is evaluated as JSONata ({@link RequestResolver#resolveForRun}) with a
- * {@code Frame} carrying the <em>previous</em> turn's reconciled extracted response columns bound by name
- * (turn 0 and the {@code N = 1} case evaluate with an empty frame — those names are simply unbound). There
- * is no hardcoded {@code messages} array or {@code choices[0].message} reply path: history accumulation
+ * {@code Frame} carrying the accumulated response columns extracted so far — this request's own prior
+ * turns, seeded from {@link RequestExecutionSpec#initialFrame()} (every column extracted by earlier
+ * requests in the chain; empty for request #0). Turn 0 of request #0 in a single-request chain therefore
+ * evaluates with an empty frame exactly as before this class was generalized for chains. There is no
+ * hardcoded {@code messages} array or {@code choices[0].message} reply path: history accumulation
  * across turns is entirely the author's JSONata expression (typically {@code $append($history, [...])})
  * over whatever the suite's own response columns extract. Turns stream like single-turn requests; the
  * assembled response body (including DIAL {@code custom_content}) is what response columns are extracted
@@ -91,41 +95,66 @@ public class TurnLoopExecutor {
     private final Clock clock;
 
     /**
-     * Runs the test case's turn loop, returning one {@link TestCaseRunResult} per executed turn (fewer than
-     * planned {@code N} on early abort; exactly one for the {@code N = 1} case). {@code traceId} is the
-     * test-case-run span's id (shared by every turn row).
+     * Runs this request's turn loop, returning one {@link TestCaseRunResult} per executed turn (fewer than
+     * planned {@code N} on early abort; exactly one for the {@code N = 1} case), the accumulated frame this
+     * request ended with, and whether this request aborted (Decision 8/9/11 of the {@code
+     * add-multi-request-suite} change's {@code design.md}). {@code spec} carries this request's own
+     * template/bindings/columns/endpoint plus the frame accumulated by earlier requests in the chain
+     * ({@link RequestExecutionSpec#initialFrame()}); {@code traceId} is the test-case-run span's id (shared
+     * by every row of every request).
      */
-    public List<TestCaseRunResult> execute(
+    public RequestExecutionResult execute(
             TestCaseRunInput input,
             EvaluationContext context,
             int runIndex,
-            List<ResponseColumnDefinitionDto> responseColumns,
+            RequestExecutionSpec spec,
             String traceId,
             long execStartedAtMs) {
 
         final List<InputBindingDto> bindings = input.getInputBindingsOverride() != null
                 ? jsonbMapper.mapInputBindings(input.getInputBindingsOverride())
-                : context.getSnapshotInputBindings();
+                : spec.inputBindings();
         final RequestTemplateDto template = input.getRequestTemplateOverride() != null
                 ? jsonbMapper.mapRequestTemplate(input.getRequestTemplateOverride())
-                : context.getSnapshotRequestTemplate();
+                : spec.requestTemplate();
         final String deploymentId = context.getSnapshotDeploymentRef() != null
                 ? context.getSnapshotDeploymentRef().getId()
                 : null;
-        final HttpMethod method = context.getSnapshotEndpointRef() != null
-                ? context.getSnapshotEndpointRef().getMethod()
-                : null;
+        final HttpMethod method =
+                spec.endpointRef() != null ? spec.endpointRef().getMethod() : null;
+        final List<ResponseColumnDefinitionDto> responseColumns = spec.responseColumns();
+        // Requests are stamped only when the chain has more than one request (Decision 9) — a
+        // single-request chain leaves requestIndex/totalRequests at their builder defaults (0/1), so its
+        // rows are byte-identical to rows written before this capability existed.
+        final boolean stampRequestIndices = spec.totalRequests() > 1;
+        final Integer persistedRequestIndex = stampRequestIndices ? spec.requestIndex() : null;
+        final Integer persistedTotalRequests = stampRequestIndices ? spec.totalRequests() : null;
 
         final TurnPlan plan = buildTurnPlan(input, context, bindings);
         if (plan == null) {
             log.warn("Multi-turn test case {} has no readable turns", input.getTestCaseId());
-            return List.of(buildEmptyTurnsErrorRow(input, context, runIndex, traceId, execStartedAtMs));
+            final Map<String, Object> accumulated = new LinkedHashMap<>(spec.initialFrame());
+            final TestCaseRunResult row = buildEmptyTurnsErrorRow(
+                    input,
+                    context,
+                    runIndex,
+                    traceId,
+                    execStartedAtMs,
+                    persistedRequestIndex,
+                    persistedTotalRequests,
+                    accumulated);
+            return new RequestExecutionResult(List.of(row), accumulated, true);
         }
 
         final List<Map<String, Object>> turnDataList = plan.turnDataList();
         final int totalTurns = turnDataList.size();
         final List<TestCaseRunResult> results = new ArrayList<>();
-        Map<String, Object> frameBindings = Map.of();
+        // Seeded from the chain's accumulated frame (empty for request #0): turn 0's resolution frame is
+        // exactly this map, and each successful turn folds its own extraction in (Decision 4). Within one
+        // request this reduces to the pre-existing "previous turn's extraction" behavior, because every
+        // turn re-extracts the full column set defined for this request.
+        Map<String, Object> accumulated = new LinkedHashMap<>(spec.initialFrame());
+        boolean aborted = false;
         int turnIndex = 0;
         try {
             for (turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
@@ -143,14 +172,14 @@ public class TurnLoopExecutor {
                         deploymentId,
                         method,
                         responseColumns,
-                        frameBindings,
+                        accumulated,
                         input.getTestCaseId(),
                         turnIndex,
                         context);
                 final long turnEnd = clock.millis();
 
                 if (step.control() == TurnControl.CONTINUE) {
-                    frameBindings = step.extractedValues();
+                    accumulated = mergeAccumulated(accumulated, step.extractedValues());
                     results.add(buildTurnRow(
                             input,
                             context,
@@ -160,10 +189,12 @@ public class TurnLoopExecutor {
                             turnEnd,
                             persistedTurnIndex,
                             persistedTotalTurns,
+                            persistedRequestIndex,
+                            persistedTotalRequests,
                             ExecutionStatus.SUCCESS,
                             step.outcome(),
                             step.requestBodyJson(),
-                            step.extractedColumnsJson(),
+                            serializeAccumulated(accumulated),
                             step.extractionWarningsJson(),
                             persistedDataJson));
                 } else {
@@ -173,6 +204,8 @@ public class TurnLoopExecutor {
                                 ? responseColumnExtractor.extract(
                                         responseColumns, step.outcome().responseBody(), step.requestBodyJson())
                                 : new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of());
+                        final Map<String, Object> rowAccumulated =
+                                mergeAccumulated(accumulated, abortExtraction.values());
                         results.add(buildTurnRow(
                                 input,
                                 context,
@@ -182,13 +215,16 @@ public class TurnLoopExecutor {
                                 turnEnd,
                                 persistedTurnIndex,
                                 persistedTotalTurns,
+                                persistedRequestIndex,
+                                persistedTotalRequests,
                                 step.status(),
                                 step.outcome(),
                                 step.requestBodyJson(),
-                                abortExtraction.extractedColumns(),
+                                serializeAccumulated(rowAccumulated),
                                 abortExtraction.extractionWarnings(),
                                 persistedDataJson));
                     }
+                    aborted = true;
                     break;
                 }
             }
@@ -205,6 +241,7 @@ public class TurnLoopExecutor {
             final TurnOutcome outcome = buildResolutionErrorOutcome(e);
             final ResponseColumnExtractor.ExtractionResult extraction =
                     responseColumnExtractor.extract(responseColumns, outcome.responseBody());
+            final Map<String, Object> rowAccumulated = mergeAccumulated(accumulated, extraction.values());
             results.add(buildTurnRow(
                     input,
                     context,
@@ -214,16 +251,56 @@ public class TurnLoopExecutor {
                     now,
                     plan.stampTurnIndices() ? safeIndex : null,
                     plan.stampTurnIndices() ? totalTurns : null,
+                    persistedRequestIndex,
+                    persistedTotalRequests,
                     ExecutionStatus.ERROR,
                     outcome,
                     null,
-                    extraction.extractedColumns(),
+                    serializeAccumulated(rowAccumulated),
                     extraction.extractionWarnings(),
                     plan.stampTurnIndices()
                             ? jsonService.writeOrToString(turnDataList.get(safeIndex))
                             : plan.verbatimDataJson()));
+            aborted = true;
         }
-        return results;
+        return new RequestExecutionResult(results, accumulated, aborted);
+    }
+
+    /**
+     * Folds {@code turnValues} into {@code base}, later keys overwriting earlier ones. Returns {@code base}
+     * unchanged (no copy) when {@code turnValues} is empty — the common case for an abort that never issued
+     * a request. Names never collide across requests (suite-wide response-column uniqueness is enforced at
+     * write time), so this is purely the within-request "later turn wins" rule (Decision 4).
+     */
+    private Map<String, Object> mergeAccumulated(Map<String, Object> base, Map<String, Object> turnValues) {
+        if (turnValues.isEmpty()) {
+            return base;
+        }
+        final Map<String, Object> merged = new LinkedHashMap<>(base);
+        merged.putAll(turnValues);
+        return merged;
+    }
+
+    /**
+     * Serializes the accumulated column map for persistence as {@code extracted_columns}, preserving
+     * explicit JSON nulls via {@code ObjectNode.putNull} — the shared {@code ObjectMapper}'s
+     * NON_NULL-inclusion default silently drops null-valued {@code Map} entries, so a plain {@code
+     * objectMapper.writeValueAsString(map)} would corrupt a failed-extraction column into a missing key
+     * instead of an explicit {@code null} (see {@link ResponseColumnExtractor}, which follows the same
+     * tree-based pattern for the identical reason). For a single-request chain {@code base} is always
+     * empty, so this reduces to serializing exactly this turn's own extraction — byte-identical to the
+     * pre-generalization output.
+     */
+    private String serializeAccumulated(Map<String, Object> accumulated) {
+        final ObjectNode node = jsonService.createObjectNode();
+        for (Map.Entry<String, Object> entry : accumulated.entrySet()) {
+            if (entry.getValue() == null) {
+                node.putNull(entry.getKey());
+            } else {
+                node.set(entry.getKey(), objectMapper.convertValue(entry.getValue(), JsonNode.class));
+            }
+        }
+        return jsonService.writeOrToString(node);
     }
 
     /**
@@ -330,6 +407,8 @@ public class TurnLoopExecutor {
             long turnEnd,
             Integer turnIndex,
             Integer totalTurns,
+            Integer requestIndex,
+            Integer totalRequests,
             ExecutionStatus status,
             TurnOutcome outcome,
             String requestBodyJson,
@@ -357,14 +436,22 @@ public class TurnLoopExecutor {
                 .retryCount(outcome != null ? outcome.retryCount() : 0)
                 .logDetails(outcome != null ? outcome.logDetails() : null)
                 .createdAtMs(context.getCreatedAtMs());
-        // Leaving turnIndex/totalTurns unset keeps the TestCaseRunResult builder defaults (0/1) — the
-        // N = 1 case (single-turn or the no-per-turn-binding collapse) is byte-identical to today's
-        // single-turn row. Only the N > 1 per-turn-binding path stamps explicit values.
+        // Leaving turnIndex/totalTurns/requestIndex/totalRequests unset keeps the TestCaseRunResult
+        // builder defaults (0/1) — the N = 1 case (single-turn or the no-per-turn-binding collapse) of a
+        // single-request chain is byte-identical to today's single-turn row. Only the N > 1 per-turn-
+        // binding path stamps explicit turn values, and only a > 1-request chain stamps explicit request
+        // values (Decision 9).
         if (turnIndex != null) {
             builder.turnIndex(turnIndex);
         }
         if (totalTurns != null) {
             builder.totalTurns(totalTurns);
+        }
+        if (requestIndex != null) {
+            builder.requestIndex(requestIndex);
+        }
+        if (totalRequests != null) {
+            builder.totalRequests(totalRequests);
         }
         return builder.build();
     }
@@ -458,9 +545,16 @@ public class TurnLoopExecutor {
      * {@code total_turns=1} and the failure captured in {@code logDetails}.
      */
     private TestCaseRunResult buildEmptyTurnsErrorRow(
-            TestCaseRunInput input, EvaluationContext context, int runIndex, String traceId, long execStartedAtMs) {
+            TestCaseRunInput input,
+            EvaluationContext context,
+            int runIndex,
+            String traceId,
+            long execStartedAtMs,
+            Integer requestIndex,
+            Integer totalRequests,
+            Map<String, Object> accumulated) {
         final long now = clock.millis();
-        return TestCaseRunResult.builder()
+        TestCaseRunResult.TestCaseRunResultBuilder builder = TestCaseRunResult.builder()
                 .id(UUID.randomUUID())
                 .testSuiteRunId(context.getRunId())
                 .testSuiteId(context.getSuiteId())
@@ -476,12 +570,20 @@ public class TurnLoopExecutor {
                 .execCompletedAtMs(now)
                 .execDurationMs(now - execStartedAtMs)
                 .traceId(traceId)
-                .extractedColumns("{}")
+                // Serializing the (empty, for request #0) accumulated frame reduces to "{}", byte-identical
+                // to the pre-generalization hardcoded value.
+                .extractedColumns(serializeAccumulated(accumulated))
                 .extractionWarnings("[]")
                 .retryCount(0)
                 .logDetails(buildErrorLogDetails("Multi-turn case has no readable turns"))
-                .createdAtMs(context.getCreatedAtMs())
-                .build();
+                .createdAtMs(context.getCreatedAtMs());
+        if (requestIndex != null) {
+            builder.requestIndex(requestIndex);
+        }
+        if (totalRequests != null) {
+            builder.totalRequests(totalRequests);
+        }
+        return builder.build();
     }
 
     private String buildErrorLogDetails(String message) {

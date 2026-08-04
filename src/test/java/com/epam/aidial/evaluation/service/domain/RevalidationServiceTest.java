@@ -91,6 +91,7 @@ class RevalidationServiceTest {
         ObjectMapper objectMapper = new ObjectMapper();
         JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
+        ResponseColumnUnionResolver responseColumnUnionResolver = new ResponseColumnUnionResolver(jsonbMapper);
         service = new RevalidationService(
                 revalidationTaskRepository,
                 testCaseRepository,
@@ -103,7 +104,8 @@ class RevalidationServiceTest {
                 revalidationProperties,
                 warningsSerializer,
                 schemaChangeCoercer,
-                clock);
+                clock,
+                responseColumnUnionResolver);
 
         lenient().when(revalidationProperties.getBatchSize()).thenReturn(50);
         lenient().when(revalidationProperties.getTimeoutMinutes()).thenReturn(5);

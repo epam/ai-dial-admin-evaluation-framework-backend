@@ -81,6 +81,8 @@
       "constantValue": "gpt-4"
     }
   ],
+  "requestName": null,
+  "additionalRequests": [],
   "valid": true,
   "validationWarnings": [],
   "version": 2,

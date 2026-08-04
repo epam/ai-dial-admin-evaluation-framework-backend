@@ -24,6 +24,7 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -98,6 +99,12 @@ class TestSuiteCloneServiceTest {
     @Mock
     private ValidationWarningsSerializer warningsSerializer;
 
+    @Mock
+    private ResponseColumnUnionResolver responseColumnUnionResolver;
+
+    @Mock
+    private TestSuiteRequestValidator testSuiteRequestValidator;
+
     private TestSuiteCloneService service;
     private final Clock clock = Clock.fixed(Instant.ofEpochMilli(1_000_000L), ZoneOffset.UTC);
 
@@ -126,7 +133,9 @@ class TestSuiteCloneServiceTest {
                 metaTransactionManager,
                 clock,
                 endpointSchemaRefResolver,
-                warningsSerializer);
+                warningsSerializer,
+                responseColumnUnionResolver,
+                testSuiteRequestValidator);
     }
 
     // -----------------------------------------------------------------------
@@ -209,6 +218,41 @@ class TestSuiteCloneServiceTest {
         assertThatThrownBy(() -> service.clone(sourceId, cloneRequestWithNameOnly(), null))
                 .isSameAs(unexpected);
 
+        verify(fileService).deleteAllBySuiteId(newEntity.getId());
+    }
+
+    // -----------------------------------------------------------------------
+    // (c2) Hard validation failure (clone enforces the same hard-validation set as create/update)
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("(c2) hard validation failure (e.g. cross-request duplicate column) propagates as "
+            + "ValidationException, before any DB write, with file cleanup")
+    void clone_hardValidationFailure_propagatesBeforeAnyDbWrite() {
+        TestSuite source = buildSource();
+        TestSuite newEntity = buildNewEntity(source);
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+        when(fileService.copyFilesBetweenSuites(any(), any())).thenReturn(List.of());
+
+        TestSuiteRequestDto requestDto = TestSuiteRequestDto.builder()
+                .name(newEntity.getName())
+                .suiteType(newEntity.getSuiteType())
+                .datasetId(newEntity.getDatasetId())
+                .build();
+        when(testSuiteMapper.toRequestDto(newEntity)).thenReturn(requestDto);
+        doThrow(new ValidationException("responseColumns: duplicate column name 'answer' (additionalRequests[0]"
+                        + ".responseColumns[0])"))
+                .when(testSuiteRequestValidator)
+                .validateTestSuiteSchemas(requestDto);
+
+        assertThatThrownBy(() -> service.clone(sourceId, cloneRequestWithNameOnly(), null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("duplicate column name");
+
+        verify(testSuiteRepository, never()).createWithId(any(), anyLong());
         verify(fileService).deleteAllBySuiteId(newEntity.getId());
     }
 
@@ -451,6 +495,7 @@ class TestSuiteCloneServiceTest {
                 .thenReturn(List.of());
         when(testSuiteMapper.toDto(newEntity))
                 .thenReturn(TestSuiteResponseDto.builder().build());
+        when(responseColumnUnionResolver.unionJson(newEntity)).thenReturn(newEntity.getResponseColumns());
 
         TestSuiteCloneRequestDto dto = TestSuiteCloneRequestDto.builder()
                 .name(cloneName)
@@ -495,6 +540,7 @@ class TestSuiteCloneServiceTest {
         when(tsmdRepository.findBatchByTestSuiteId(any(), anyInt(), anyInt())).thenReturn(List.of());
         when(testSuiteMapper.toDto(newEntity))
                 .thenReturn(TestSuiteResponseDto.builder().build());
+        when(responseColumnUnionResolver.unionJson(newEntity)).thenReturn(newEntity.getResponseColumns());
 
         // Non-null responseColumns override triggers TSMD revalidation
         TestSuiteCloneRequestDto dto = TestSuiteCloneRequestDto.builder()

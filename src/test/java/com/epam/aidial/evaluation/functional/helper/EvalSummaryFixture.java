@@ -9,10 +9,10 @@ import lombok.Getter;
  * A {@code test_case_eval_summaries} row to insert.
  *
  * <p>Exists because the comparison feature's match key is {@code lower(test_case_name)} + {@code run_index} +
- * {@code turn_index}, so a fixture must be able to vary all three independently — as a positional parameter
- * list that would be a dozen arguments long, most of them irrelevant to any given test. The defaults
- * reproduce the pre-existing single-turn, single-repetition helper exactly, so a test names only the columns
- * it is actually about.
+ * {@code request_index} + {@code turn_index}, so a fixture must be able to vary all four independently — as a
+ * positional parameter list that would be a dozen arguments long, most of them irrelevant to any given test. The
+ * defaults reproduce the pre-existing single-turn, single-repetition, single-request helper exactly, so a test
+ * names only the columns it is actually about.
  *
  * <p>A class rather than a record: Java records take no field initializers, so {@code @Builder.Default}
  * cannot be expressed on a record component.
@@ -49,6 +49,9 @@ public class EvalSummaryFixture {
 
     @Builder.Default
     private final int runIndex = 0;
+
+    @Builder.Default
+    private final int requestIndex = 0;
 
     @Builder.Default
     private final int turnIndex = 0;

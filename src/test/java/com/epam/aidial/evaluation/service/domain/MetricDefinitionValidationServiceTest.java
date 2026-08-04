@@ -46,6 +46,16 @@ class MetricDefinitionValidationServiceTest {
             [{"name": "model_answer"}, {"name": "score"}]
             """;
 
+    /**
+     * Simulates {@link ResponseColumnUnionResolver}'s output for a 2-request chain: request #0's
+     * {@code model_answer}/{@code score} plus an additional request's {@code follow_up_answer}. The
+     * validation method itself is agnostic to where the array came from — it just extracts names — so
+     * this fixture exercises the "caller passes the suite-wide union" contract end to end.
+     */
+    private static final String CHAIN_UNION_RESPONSE_COLUMNS = """
+            [{"name": "model_answer"}, {"name": "score"}, {"name": "follow_up_answer"}]
+            """;
+
     @BeforeEach
     void setUp() {
         ValidationWarningsSerializer serializer = new ValidationWarningsSerializer(OBJECT_MAPPER);
@@ -343,6 +353,65 @@ class MetricDefinitionValidationServiceTest {
         assertThat(result.isValid()).isFalse();
         assertThat(result.getWarnings()).anyMatch(w -> w.getCode() == INVALID_OUTPUT_SCHEMA);
         assertThat(result.getWarnings()).anyMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE);
+    }
+
+    @Test
+    @DisplayName("Response binding to a column only present in an additional request resolves against the union")
+    void responseColumnRef_toAdditionalRequestColumn_resolvesAgainstUnion() {
+        List<MetricParameterBindingDto> inputBindings = List.of(
+                binding(
+                        "reference",
+                        TestCaseBindingSourceDto.builder()
+                                .columnName("expected_output")
+                                .build()),
+                binding(
+                        "actual",
+                        ResponseBindingSourceDto.builder()
+                                .columnName("follow_up_answer")
+                                .build()));
+
+        ValidationResult result = service.validate(
+                List.of(),
+                inputBindings,
+                "{}",
+                SCHEMA_WITH_REQUIRED,
+                TEST_CASE_SCHEMA,
+                CHAIN_UNION_RESPONSE_COLUMNS,
+                VALID_OUTPUT_SCHEMA);
+
+        assertThat(result.isValid()).isTrue();
+        assertThat(result.getWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Response binding to a column absent from the union is still UNRESOLVED_REFERENCE")
+    void responseColumnRef_absentFromUnion_stillUnresolved() {
+        List<MetricParameterBindingDto> inputBindings = List.of(
+                binding(
+                        "reference",
+                        TestCaseBindingSourceDto.builder()
+                                .columnName("expected_output")
+                                .build()),
+                binding(
+                        "actual",
+                        ResponseBindingSourceDto.builder()
+                                .columnName("never_produced")
+                                .build()));
+
+        ValidationResult result = service.validate(
+                List.of(),
+                inputBindings,
+                "{}",
+                SCHEMA_WITH_REQUIRED,
+                TEST_CASE_SCHEMA,
+                CHAIN_UNION_RESPONSE_COLUMNS,
+                VALID_OUTPUT_SCHEMA);
+
+        assertThat(result.isValid()).isFalse();
+        assertThat(result.getWarnings())
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.UNRESOLVED_REFERENCE
+                        && "actual".equals(w.getFieldName())
+                        && "$.inputBindings".equals(w.getPath()));
     }
 
     private static MetricParameterBindingDto binding(String property, MetricBindingSourceDto source) {

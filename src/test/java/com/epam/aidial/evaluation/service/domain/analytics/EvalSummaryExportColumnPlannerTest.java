@@ -6,10 +6,14 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
+import com.epam.aidial.evaluation.service.domain.ResponseColumnUnionResolver;
 import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -19,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("EvalSummaryExportColumnPlanner")
@@ -30,11 +35,14 @@ class EvalSummaryExportColumnPlannerTest {
     @Mock
     private OutputSchemaFieldExtractor outputSchemaFieldExtractor;
 
+    private final ResponseColumnUnionResolver responseColumnUnionResolver = new ResponseColumnUnionResolver(
+            new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper())));
+
     private EvalSummaryExportColumnPlanner planner;
 
     @BeforeEach
     void setUp() {
-        planner = new EvalSummaryExportColumnPlanner(outputSchemaFieldExtractor);
+        planner = new EvalSummaryExportColumnPlanner(outputSchemaFieldExtractor, responseColumnUnionResolver);
     }
 
     @Test
@@ -54,12 +62,27 @@ class EvalSummaryExportColumnPlannerTest {
                         "testCaseId",
                         "testCaseName",
                         "runIndex",
+                        "requestIndex",
+                        "turnIndex",
                         "computationId",
                         "createdAt",
                         "computedAt",
                         "executionStatus",
                         "execDurationMs",
                         "responseStatusCode");
+    }
+
+    @Test
+    @DisplayName("runIndex, requestIndex, turnIndex are three consecutive columns in exactly that order")
+    void identityIndicesAreConsecutiveAndOrdered() {
+        SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder().build();
+
+        List<ColumnDescriptor> result = planner.plan(snapshot, List.of());
+
+        List<String> names = result.stream().map(ColumnDescriptor::name).toList();
+        int runIndexPos = names.indexOf("runIndex");
+        assertThat(names.get(runIndexPos + 1)).isEqualTo("requestIndex");
+        assertThat(names.get(runIndexPos + 2)).isEqualTo("turnIndex");
     }
 
     @Test
@@ -117,6 +140,29 @@ class EvalSummaryExportColumnPlannerTest {
 
         assertThat(result).extracting(ColumnDescriptor::name).contains("response::answer", "response::file");
         assertThat(indexOf(result, "response::answer")).isLessThan(indexOf(result, "response::file"));
+    }
+
+    @Test
+    @DisplayName("response::<column> block is derived from the suite-wide union across additionalRequests")
+    void responseColumnsDerivedFromChainWideUnion() {
+        SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("configId")
+                        .expression("$.configId")
+                        .build()))
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name("second")
+                        .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                                .name("answer")
+                                .expression("$.answer")
+                                .build()))
+                        .build()))
+                .build();
+
+        List<ColumnDescriptor> result = planner.plan(snapshot, List.of());
+
+        assertThat(result).extracting(ColumnDescriptor::name).contains("response::configId", "response::answer");
+        assertThat(indexOf(result, "response::configId")).isLessThan(indexOf(result, "response::answer"));
     }
 
     @Test

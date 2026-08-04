@@ -31,7 +31,12 @@ public class SuiteSnapshotBuilder {
                 .responseColumns(jsonbMapper.mapResponseColumns(suite.getResponseColumns()))
                 .testCaseSchema(jsonbMapper.mapFieldDefinitions(dataset.getTestCaseSchema()))
                 // Stored verbatim (null = system default); the single-metric default is resolved at Phase 3.
-                .overallScore(jsonbMapper.mapOverallScore(suite.getOverallScore()));
+                .overallScore(jsonbMapper.mapOverallScore(suite.getOverallScore()))
+                // Request chain: additionalRequests is always '[]' for MCP_TOOL (enforced at write time by
+                // TestSuiteRequestValidator), so mapping it unconditionally is equivalent to gating it on
+                // suiteType and keeps this builder's common section the single place chain fields are set.
+                .additionalRequests(jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests()))
+                .requestName(suite.getRequestName());
 
         if (suite.getSuiteType() == SuiteType.MCP_TOOL) {
             builder.mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))

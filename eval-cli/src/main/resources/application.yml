@@ -1,0 +1,107 @@
+spring:
+  application:
+    name: eval-cli
+  threads:
+    virtual:
+      enabled: true
+  main:
+    # Disable web server — this is a CLI application
+    web-application-type: none
+    # Allow bean definition overriding (needed for dialCoreTryOutRestClient)
+    allow-bean-definition-overriding: true
+
+# Source EF instance connection
+eval:
+  source:
+    base-url: ${EVAL_SOURCE_BASE_URL:http://localhost:8080}
+    token: ${EVAL_TOKEN:}
+    connect-timeout-ms: ${EVAL_SOURCE_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${EVAL_SOURCE_READ_TIMEOUT_MS:120000}
+
+cli:
+  work-dir: ${CLI_WORK_DIR:./eval-cli-work}
+  test-run-name: ${CLI_TEST_RUN_NAME:}
+
+  run:
+    concurrency-level: ${CLI_RUN_CONCURRENCY_LEVEL:4}
+    rate-limit-rps: ${CLI_RUN_RATE_LIMIT_RPS:}
+    request-timeout-ms: ${CLI_RUN_REQUEST_TIMEOUT_MS:3600000}
+    max-retries: ${CLI_RUN_MAX_RETRIES:3}
+    retry-delay-ms: ${CLI_RUN_RETRY_DELAY_MS:1000}
+    retry-backoff-multiplier: ${CLI_RUN_RETRY_BACKOFF_MULTIPLIER:2.0}
+    max-retry-delay-ms: ${CLI_RUN_MAX_RETRY_DELAY_MS:30000}
+    result-batch-size: ${CLI_RUN_RESULT_BATCH_SIZE:50}
+    max-response-size-bytes: ${CLI_RUN_MAX_RESPONSE_SIZE_BYTES:10485760}
+    cancellation-grace-period-ms: ${CLI_RUN_CANCELLATION_GRACE_PERIOD_MS:30000}
+
+# Target DIAL Core host (reuses evaluation-runner-core's DialCoreProperties binding) and API key
+dial:
+  components:
+    core:
+      base-url: ${DIAL_CORE_URL:http://localhost:8085}
+      api-key: ${DIAL_CORE_API_KEY:}
+      connect-timeout-ms: ${DIAL_CORE_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${DIAL_CORE_READ_TIMEOUT_MS:30000}
+      retry:
+        max-attempts: ${DIAL_CORE_RETRY_MAX_ATTEMPTS:3}
+        delay-ms: ${DIAL_CORE_RETRY_DELAY_MS:1000}
+        multiplier: ${DIAL_CORE_RETRY_MULTIPLIER:2.0}
+      try-out:
+        read-timeout-ms: ${DIAL_CORE_TRY_OUT_READ_TIMEOUT_MS:3600000}
+  mcp:
+    connect-timeout-ms: ${DIAL_MCP_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${DIAL_MCP_READ_TIMEOUT_MS:120000}
+  file-storage:
+    bucket-alias: ${DIAL_FILE_STORAGE_BUCKET_ALIAS:@ef}
+    max-file-size-bytes: ${DIAL_FILE_STORAGE_MAX_FILE_SIZE_BYTES:52428800}
+    max-files-per-suite: ${DIAL_FILE_STORAGE_MAX_FILES_PER_SUITE:100}
+    max-files-per-dataset: ${DIAL_FILE_STORAGE_MAX_FILES_PER_DATASET:100}
+    connect-timeout-ms: ${DIAL_FILE_STORAGE_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${DIAL_FILE_STORAGE_READ_TIMEOUT_MS:30000}
+
+# Required by evaluation-runner-core's EvaluationWorker (header-blacklist enforcement); the actual
+# per-run concurrency/timeout/retry values used come from cli.run.* via EvaluationContextFactory, not
+# from this block — these are just permissive bounds so binding succeeds.
+test-suite-run:
+  execution:
+    default-concurrency-level: ${TEST_SUITE_RUN_DEFAULT_CONCURRENCY_LEVEL:4}
+    max-concurrency-level: ${TEST_SUITE_RUN_MAX_CONCURRENCY_LEVEL:50}
+    default-request-timeout-ms: ${TEST_SUITE_RUN_DEFAULT_REQUEST_TIMEOUT_MS:3600000}
+    max-request-timeout-ms: ${TEST_SUITE_RUN_MAX_REQUEST_TIMEOUT_MS:3600000}
+    result-batch-size: ${TEST_SUITE_RUN_RESULT_BATCH_SIZE:50}
+    max-response-size-bytes: ${TEST_SUITE_RUN_MAX_RESPONSE_SIZE_BYTES:10485760}
+    cancellation-grace-period-ms: ${TEST_SUITE_RUN_CANCELLATION_GRACE_PERIOD_MS:30000}
+    header-blacklist:
+      - Authorization
+      - Api-Key
+      - Host
+      - Content-Length
+      - Transfer-Encoding
+      - Connection
+      - traceparent
+      - tracestate
+  retry:
+    default-max-retries: ${TEST_SUITE_RUN_DEFAULT_MAX_RETRIES:0}
+    max-max-retries: ${TEST_SUITE_RUN_MAX_MAX_RETRIES:10}
+    default-retry-delay-ms: ${TEST_SUITE_RUN_DEFAULT_RETRY_DELAY_MS:1000}
+    max-retry-delay-ms: ${TEST_SUITE_RUN_MAX_RETRY_DELAY_MS:30000}
+    default-retry-backoff-multiplier: ${TEST_SUITE_RUN_DEFAULT_RETRY_BACKOFF_MULTIPLIER:2.0}
+    max-retry-backoff-multiplier: ${TEST_SUITE_RUN_MAX_RETRY_BACKOFF_MULTIPLIER:10.0}
+  run-inputs:
+    retention-days: ${TEST_SUITE_RUN_RUN_INPUTS_RETENTION_DAYS:7}
+
+# SSE event processing (required by evaluation-runner-core)
+sse-event-processing:
+  max-total-duration-ms: ${SSE_MAX_TOTAL_DURATION_MS:3600000}
+
+# Disable actuator endpoints (not needed for a CLI)
+management:
+  health:
+    defaults:
+      enabled: false
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.epam.aidial.evaluation.cli: INFO

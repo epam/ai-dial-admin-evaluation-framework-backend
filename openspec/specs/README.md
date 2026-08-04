@@ -162,6 +162,13 @@ Formal versioned requirements for project-wide architectural rules. Quick-refere
 - **[best-practices](best-practices/spec.md)** — Implemented (phase 1)
   Cross-domain access through services, not foreign repositories. A domain service injects only its own domain's repository; cross-domain reads and writes go through the owning domain's service. Phase 1 covers `DatasetService`; phases 2/3 extend the rule to ~13 other services flagged in the audit.
 
+### CLI Tools
+
+Specs for standalone command-line tools that consume the EF backend's public REST API.
+
+- **[eval-cli](eval-cli/spec.md)** — Implemented
+  Standalone Spring Boot CLI (`eval-cli` Gradle subproject, root package `com.epam.aidial.evaluation.cli`) that clones "standard" test suites from a source EF instance, fetches their configuration and test cases, executes them against a CLI-configured target deployment using `evaluation-runner-core`'s existing batch execution path, and imports the results via the source EF's `runs/import` endpoint — enabling cross-environment evaluation without a second EF deployment. Exposes `clone`, `fetch`, `run`, `import`, and `pipeline` picocli subcommands; DB-free; static bearer-token auth (OIDC planned). Related: eval-results-import, test-suite-clone, evaluation-runner-core-module.
+
 ### Vision / Planned
 
 Specs documented but not yet fully implemented.

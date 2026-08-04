@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.configuration.jackson;
+package com.epam.aidial.evaluation.runner.util.jackson;
 
 import org.springframework.http.HttpMethod;
 import tools.jackson.core.JsonParser;

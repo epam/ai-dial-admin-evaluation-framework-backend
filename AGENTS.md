@@ -11,7 +11,7 @@
 | Security | OIDC/JWT multi-issuer |
 | Testing | JUnit 5 + Testcontainers |
 | Formatting | Spotless + palantir-java-format (`./gradlew spotlessApply`) |
-| Build layout | Multi-module: root app + `evaluation-runner-core` subproject (DB-free Phase 1 execution engine library, `com.epam.aidial.evaluation.runner`, contributed via Spring Boot autoconfiguration; test with `./gradlew :evaluation-runner-core:test`) |
+| Build layout | Multi-module: root app + `evaluation-runner-core` subproject (DB-free Phase 1 execution engine library, `com.epam.aidial.evaluation.runner`, contributed via Spring Boot autoconfiguration; test with `./gradlew :evaluation-runner-core:test`) + `eval-cli` subproject (standalone Spring Boot picocli CLI, `com.epam.aidial.evaluation.cli`, DB-free consumer of `evaluation-runner-core`; produces executable `bootJar`; test with `./gradlew :eval-cli:test`) |
 
 ## Architecture Overview
 
@@ -229,6 +229,25 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | `.model`                                    | Pure execution-path models: `TestCaseRunInput`, `TestCaseRunResult`, `TestSuiteRun`, `ExecutionStatus`, `SuiteType`                |
 | `.service`                                  | `RequestResolver` (JSONata-powered URL/query/header/body template resolution), `RequestBodyEvaluator`, `JsonataSourcePreprocessor`, `TemplateContentResolver`, `JsonataEvaluationService`/`DashjoinJsonataEvaluationService`, request body serializers (`RequestBodySerializerRegistry` + JSON/multipart/urlencoded strategies), `ResponseColumnExtractor`, `DialCoreUrlBuilder`                                       |
 | `.util`                                      | `RunnerJsonbMapper` (read-only subset — `mapRequestTemplate`/`mapInputBindings`), `TokenPropagationHelper`, `AuthorizationTokenHolder`, `ValidationWarningsSerializer`                                                                  |
+| `.util.jackson`                              | `HttpMethodSerializer`/`HttpMethodDeserializer` — shared Jackson (de)serializers for Spring's `HttpMethod` (used by `EndpointContractDto`); both the EF backend's and `eval-cli`'s own `JsonMapperConfiguration` register these                                                                  |
+
+### `eval-cli` subproject (root package `com.epam.aidial.evaluation.cli`)
+
+Standalone Spring Boot picocli CLI that consumes `evaluation-runner-core` and the EF backend's public REST API to enable cross-environment evaluation (clone → fetch → run → import). DB-free. Configuration documented in [`eval-cli/README.md`](eval-cli/README.md).
+
+| Package                                              | Purpose                                                                                                                                                               |
+|------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `com.epam.aidial.evaluation.cli`                     | Root package; `EvalCliApplication` (`@SpringBootApplication`, picocli bootstrap, exit-code propagation)                                                               |
+| `.client.source`                                     | HTTP clients for the source EF: `TestSuiteApiClient`, `TestCaseApiClient`, `TestSuiteRunImportApiClient`, `SourceClientConfiguration`                                  |
+| `.client.source.dto`                                 | Locally-declared DTOs mirroring the source EF's REST contract (manually kept in sync with `service.domain.dto`)                                                       |
+| `.client.target`                                     | Target DIAL Core wiring: `TargetDialCoreClientConfiguration` (supplies `"dialCoreTryOutRestClient"`/`"dialFileRestClient"`, authenticates via `Api-Key` header read from `TargetProperties`, env var `DIAL_CORE_API_KEY`)          |
+| `.command`                                           | Picocli subcommands: `RootCommand`, `CloneCommand`, `FetchCommand`, `RunCommand`, `ImportCommand`, `EvaluateCommand` (the full clone→fetch→run→import chain; named `evaluate` — the domain action — not `pipeline`); shared `--suites`/`--clone-suffix` required-option mixins (`SuitesOption`, `CloneSuffixOption`), composed per command via `@Mixin` — both CLI-only, no configuration/env-var fallback, consistent with `--deployment-id`. `run`/`evaluate` accept only `--deployment-id` (no `--deployment-name`); target host/auth (`DIAL_CORE_URL`, `DIAL_CORE_API_KEY`) have no CLI-flag override, env-var-only |
+| `.config`                                            | `ClockConfiguration` (`Clock.systemUTC()` bean); `JsonMapperConfiguration` (this module's own `ObjectMapper`/`JsonMapper` bean — required because `spring.main.web-application-type=none` disables Spring Boot's Jackson autoconfiguration)                                                                                                                       |
+| `.config.properties`                                 | `@ConfigurationProperties` classes: `SourceProperties` (`eval.source.*`), `EvalCliProperties` (`cli.*`: `work-dir`/`test-run-name`/nested `run.*` only — suite selection and clone suffix are `--suites`/`--clone-suffix` CLI-only, not config-bound), `TargetProperties` (`dial.components.core.api-key`, env-var-only, shares the `dial.components.core` prefix with `evaluation-runner-core`'s `DialCoreProperties`) |
+| `.csv`                                               | `CsvResultBatchWriter` — thread-safe `ResultBatchWriter` implementation writing CSV rows via Apache Commons CSV in the EF import contract column order                 |
+| `.exception`                                         | CLI-specific exception types                                                                                                                                          |
+| `.model`                                             | `SuiteFetchBundle` — persisted JSON bundle from the `fetch` step (suite config + test cases + destination clone ID)                                                   |
+| `.service`                                           | Orchestration services: `CloneService`, `FetchService`, `RunOrchestrationService`, `ImportService`, `EvaluationContextFactory`, `TestCaseRunInputMapper` (MapStruct), `SuiteContractValidator` (pre-flight `endpointRef`/`requestTemplate` check, called from `RunOrchestrationService.run`)  |
 
 ## Debugging Tips
 

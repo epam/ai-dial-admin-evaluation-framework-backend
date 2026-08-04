@@ -27,15 +27,13 @@ public class ConditionExpressionEvaluator {
 
     private static final String DATA_NAMESPACE = "data";
     private static final String RESPONSE_NAMESPACE = "response";
-    private static final String TURN_NAMESPACE = "turn";
-    private static final String TURN_INDEX = "index";
-    private static final String TURN_TOTAL = "total";
-    private static final String TURN_LAST = "last";
     private static final String REQUEST_NAMESPACE = "request";
-    private static final String REQUEST_INDEX = "index";
-    private static final String REQUEST_TOTAL = "total";
-    private static final String REQUEST_LAST = "last";
-    private static final String REQUEST_NAME = "name";
+    private static final String TURN_NAMESPACE = "turn";
+
+    private static final String TOTAL = "total";
+    private static final String INDEX = "index";
+    private static final String LAST = "last";
+    private static final String NAME = "name";
 
     private final JsonataEvaluationService jsonataEvaluationService;
     private final ObjectMapper objectMapper;
@@ -96,19 +94,19 @@ public class ConditionExpressionEvaluator {
         root.set(RESPONSE_NAMESPACE, readTreeOrEmpty(context.responseJson()));
 
         final ObjectNode turn = objectMapper.createObjectNode();
-        turn.put(TURN_INDEX, context.turnIndex());
-        turn.put(TURN_TOTAL, context.totalTurns());
-        turn.put(TURN_LAST, context.turnIndex() == context.totalTurns() - 1);
+        turn.put(INDEX, context.turnIndex());
+        turn.put(TOTAL, context.totalTurns());
+        turn.put(LAST, context.turnIndex() == context.totalTurns() - 1);
         root.set(TURN_NAMESPACE, turn);
 
         final ObjectNode request = objectMapper.createObjectNode();
-        request.put(REQUEST_INDEX, context.requestIndex());
-        request.put(REQUEST_TOTAL, context.totalRequests());
-        request.put(REQUEST_LAST, context.requestIndex() == context.totalRequests() - 1);
+        request.put(INDEX, context.requestIndex());
+        request.put(TOTAL, context.totalRequests());
+        request.put(LAST, context.requestIndex() == context.totalRequests() - 1);
         if (context.requestName() == null) {
-            request.putNull(REQUEST_NAME);
+            request.putNull(NAME);
         } else {
-            request.put(REQUEST_NAME, context.requestName());
+            request.put(NAME, context.requestName());
         }
         root.set(REQUEST_NAMESPACE, request);
 

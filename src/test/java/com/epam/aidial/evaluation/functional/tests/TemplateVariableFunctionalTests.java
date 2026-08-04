@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
@@ -19,7 +20,8 @@ import com.epam.aidial.evaluation.runner.dto.ParameterLocation;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
-import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
 import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableSource;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -83,6 +85,34 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
                         && v.getSources().contains(TemplateVariableSource.BODY)
                         && v.isHasDefault()
                         && "0.7".equals(v.getDefaultValue()));
+    }
+
+    @Test
+    @DisplayName("jsonataContent-authored placeholder bound in inputBindings is valid, warning-free, and reported "
+            + "as a BODY-sourced template variable")
+    void jsonataContentBoundVariableIsValidWithNoWarningsAndReportedAsBodySourced() {
+        TestSuiteResponseDto suite = createSuiteWithJsonataContentTemplate();
+
+        assertThat(suite.isValid()).isTrue();
+        List<ValidationWarningDto> warnings =
+                suite.getValidationWarnings() != null ? suite.getValidationWarnings() : List.of();
+        assertThat(warnings)
+                .noneMatch(w -> "prompt".equals(w.getFieldName())
+                        && (w.getCode() == ValidationWarningCode.REQUIRED
+                                || w.getCode() == ValidationWarningCode.ADDITIONAL));
+
+        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + suite.getId() + "/template-variables"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody())
+                .anyMatch(v -> "prompt".equals(v.getName())
+                        && v.getSources().contains(TemplateVariableSource.BODY)
+                        && v.getSources().size() == 1);
     }
 
     @Test
@@ -642,6 +672,37 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
                                 .type(SchemaFieldType.STRING)
                                 .required(false)
                                 .build())))
+                .requestTemplate(template)
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("promptField")
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    private TestSuiteResponseDto createSuiteWithJsonataContentTemplate() {
+        RequestTemplateDto template = RequestTemplateDto.builder()
+                .urlTemplate("/v1/chat")
+                .body(JsonRequestBodyDto.builder()
+                        .jsonataContent("{\"prompt\": \"${{prompt}}\"}")
+                        .build())
+                .build();
+
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("jsonataContent Template Suite " + UUID.randomUUID())
+                .description("Suite with a jsonataContent-authored body")
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(buildEndpoint())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("promptField")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
                 .requestTemplate(template)
                 .inputBindings(List.of(InputBindingDto.builder()
                         .templateVariable("prompt")

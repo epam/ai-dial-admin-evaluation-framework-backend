@@ -269,6 +269,64 @@ class TemplateVariableExtractorTest {
     }
 
     @Nested
+    @DisplayName("jsonataContent (JSONata source) body extraction")
+    class JsonataContentBodyExtraction {
+
+        @Test
+        @DisplayName("Should extract placeholders from a jsonataContent JSONata source body")
+        void shouldExtractPlaceholdersFromJsonataSourceStringBody() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .jsonataContent("{\"messages\": $append($history, [{\"role\": \"user\", \"content\": "
+                                    + "\"${{q}}\"}]), \"temperature\": ${{opt:0.5}}}")
+                            .build())
+                    .build();
+
+            var result = extractor.extract(template);
+
+            assertThat(result).hasSize(2);
+            assertThat(result)
+                    .extracting(TemplateVariableExtractor.ExtractedVariable::getName)
+                    .containsExactlyInAnyOrder("q", "opt");
+            assertThat(result)
+                    .extracting(TemplateVariableExtractor.ExtractedVariable::getSources)
+                    .allMatch(sources -> sources.equals(Set.of(TemplateVariableSource.BODY)));
+            var opt = result.stream()
+                    .filter(v -> v.getName().equals("opt"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(opt.isHasDefault()).isTrue();
+            assertThat(opt.getDefaultValue()).isEqualTo("0.5");
+        }
+
+        @Test
+        @DisplayName("Should extract from content (Map) and jsonataContent (String) when each is set on a "
+                + "separate template")
+        void shouldExtractFromContentAndJsonataContentOnSeparateTemplates() {
+            var mapAuthoredTemplate = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .content(Map.of("model", "${{map_var}}"))
+                            .build())
+                    .build();
+            var jsonataAuthoredTemplate = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .jsonataContent("{\"model\": \"${{jsonata_var}}\"}")
+                            .build())
+                    .build();
+
+            var mapResult = extractor.extract(mapAuthoredTemplate);
+            var jsonataResult = extractor.extract(jsonataAuthoredTemplate);
+
+            assertThat(mapResult).hasSize(1);
+            assertThat(mapResult.get(0).getName()).isEqualTo("map_var");
+            assertThat(mapResult.get(0).getSources()).containsExactly(TemplateVariableSource.BODY);
+            assertThat(jsonataResult).hasSize(1);
+            assertThat(jsonataResult.get(0).getName()).isEqualTo("jsonata_var");
+            assertThat(jsonataResult.get(0).getSources()).containsExactly(TemplateVariableSource.BODY);
+        }
+    }
+
+    @Nested
     class MultipartFormDataBodyExtraction {
 
         @Test

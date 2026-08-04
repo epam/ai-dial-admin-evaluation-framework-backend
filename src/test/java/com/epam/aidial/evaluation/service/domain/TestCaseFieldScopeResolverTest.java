@@ -2,8 +2,8 @@ package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

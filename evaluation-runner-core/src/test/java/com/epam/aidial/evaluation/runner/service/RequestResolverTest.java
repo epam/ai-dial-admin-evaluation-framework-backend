@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.dto.FormPartDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartType;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -22,16 +23,30 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedMultipartBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedUrlEncodedBodyDto;
 import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.databind.ObjectMapper;
 
+/**
+ * Covers {@link RequestResolver}'s preview ({@link RequestResolver#resolve}) resolution path: URL/query
+ * param/header/JSON-body/multipart/url-encoded-body placeholder resolution, type-hint (FILE ref)
+ * handling, and the JSON body's real JSONata evaluation (per the {@code jsonata-request-templates}
+ * change). Wired by hand (rather than {@code @InjectMocks}) with a real
+ * {@link TemplateContentResolver}/{@link JsonataSourcePreprocessor}/{@link DashjoinJsonataEvaluationService}
+ * chain so the JSON-body assertions exercise genuine JSONata evaluation rather than a canned stub — a
+ * plain JSON object is a syntactic subset of JSONata and evaluates back to itself, so the existing
+ * behavioral assertions (written against the pre-JSONata structural resolution) stay valid. The
+ * DB-backed Try-It-Out overload ({@code ResolvedRequestService.resolveRequest}) that delegates here is
+ * covered by the EF backend's own {@code ResolvedRequestServiceTest}.
+ */
 @DisplayName("RequestResolver")
 @ExtendWith(MockitoExtension.class)
 class RequestResolverTest {
@@ -42,8 +57,24 @@ class RequestResolverTest {
     @Mock
     private DialFileRefResolver dialFileRefResolver;
 
-    @InjectMocks
     private RequestResolver service;
+
+    @BeforeEach
+    void setUp() {
+        TemplateContentResolver templateContentResolver =
+                new TemplateContentResolver(templateVariableResolver, dialFileRefResolver);
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonataProperties jsonataProperties = new JsonataProperties();
+        jsonataProperties.setEvaluationTimeoutMs(5000L);
+        jsonataProperties.setMaxRecursionDepth(500);
+        JsonataEvaluationService jsonataEvaluationService =
+                new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
+        JsonataSourcePreprocessor jsonataSourcePreprocessor =
+                new JsonataSourcePreprocessor(templateVariableResolver, dialFileRefResolver, objectMapper);
+        RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
+                templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, objectMapper);
+        service = new RequestResolver(templateContentResolver, requestBodyEvaluator);
+    }
 
     @Nested
     @DisplayName("JSON body resolution")
@@ -145,6 +176,21 @@ class RequestResolverTest {
         }
 
         @Test
+        @DisplayName("a body with neither content nor jsonataContent set resolves to content = null, no warnings")
+        void shouldResolveNullContentWhenNeitherFieldSet() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder().build())
+                    .build();
+
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+
+            assertThat(result.getBody()).isInstanceOf(ResolvedJsonBodyDto.class);
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            assertThat(jsonBody.getContent()).isNull();
+            assertThat(result.getWarnings()).isEmpty();
+        }
+
+        @Test
         void shouldReturnNullBodyWhenTemplateHasNoBody() {
             var template =
                     RequestTemplateDto.builder().urlTemplate("/api/v1/test").build();
@@ -215,6 +261,23 @@ class RequestResolverTest {
             assertThat(jsonBody.getContent()).containsEntry("model", "gpt-4");
             assertThat(jsonBody.getContent()).containsEntry("temperature", 0.7);
             assertThat(jsonBody.getContent()).containsEntry("stream", true);
+        }
+
+        @Test
+        void shouldDowngradeJsonataEvaluationFailureToRequestBodyEvaluationErrorWarningWithNullContent() {
+            var template = RequestTemplateDto.builder()
+                    .body(JsonRequestBodyDto.builder()
+                            .jsonataContent("choices[0.message.content")
+                            .build())
+                    .build();
+
+            ResolvedRequestDto result = service.resolve(template, List.of(), Map.of());
+
+            var jsonBody = (ResolvedJsonBodyDto) result.getBody();
+            assertThat(jsonBody.getContent()).isNull();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_EVALUATION_ERROR
+                            && "$.requestTemplate.body".equals(w.getPath()));
         }
     }
 

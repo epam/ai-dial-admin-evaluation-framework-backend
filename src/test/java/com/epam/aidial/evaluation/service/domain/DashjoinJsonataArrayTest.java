@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,7 +17,10 @@ class DashjoinJsonataArrayTest {
 
     @BeforeEach
     void setUp() {
-        service = new DashjoinJsonataEvaluationService(new ObjectMapper());
+        JsonataProperties jsonataProperties = new JsonataProperties();
+        jsonataProperties.setEvaluationTimeoutMs(5000L);
+        jsonataProperties.setMaxRecursionDepth(500);
+        service = new DashjoinJsonataEvaluationService(new ObjectMapper(), jsonataProperties);
     }
 
     @Test

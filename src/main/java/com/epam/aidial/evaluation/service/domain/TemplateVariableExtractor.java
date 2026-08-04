@@ -146,6 +146,12 @@ public class TemplateVariableExtractor {
             if (jsonBody.getContent() != null) {
                 extractFromObject(jsonBody.getContent(), TemplateVariableSource.BODY, variables, typeHintWarnings);
             }
+            // content is now Map-typed, so it can never reach extractFromObject's String arm (design D4) —
+            // jsonataContent must be scanned explicitly or ${{}} variables in JSONata bodies go unextracted.
+            if (jsonBody.getJsonataContent() != null) {
+                extractFromString(
+                        jsonBody.getJsonataContent(), TemplateVariableSource.BODY, variables, typeHintWarnings);
+            }
         } else if (body instanceof MultipartFormDataRequestBodyDto multipartBody) {
             if (multipartBody.getContent() != null) {
                 for (FormPartDto part : multipartBody.getContent()) {

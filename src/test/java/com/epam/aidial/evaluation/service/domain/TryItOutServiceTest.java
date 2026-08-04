@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -332,6 +333,32 @@ class TryItOutServiceTest {
                     .isInstanceOf(TryItOutValidationException.class)
                     .hasMessageContaining("prompt");
         }
+
+        @Test
+        @DisplayName("should throw TryItOutValidationException and never invoke the deployment when the JSON body "
+                + "failed JSONata evaluation (REQUEST_BODY_EVALUATION_ERROR warning)")
+        void shouldAbortWithoutInvokingDeploymentForBodyEvaluationError() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+
+            ResolvedRequestDto resolved = ResolvedRequestDto.builder()
+                    .url("/chat/completions")
+                    .body(ResolvedJsonBodyDto.builder().content(null).build())
+                    .warnings(List.of(ValidationWarningDto.builder()
+                            .path("$.requestTemplate.body")
+                            .code(ValidationWarningCode.REQUEST_BODY_EVALUATION_ERROR)
+                            .message("Failed to evaluate request body template: boom")
+                            .build()))
+                    .build();
+            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(resolved);
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+                    .isInstanceOf(TryItOutValidationException.class);
+
+            verifyNoInteractions(deploymentInvoker);
+        }
     }
 
     @Nested
@@ -350,6 +377,33 @@ class TryItOutServiceTest {
                             .urlTemplate("/chat/completions")
                             .body(JsonRequestBodyDto.builder()
                                     .content(Map.of("prompt", "${{prompt}}"))
+                                    .build())
+                            .build());
+            when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());
+            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+                    .thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello"));
+
+            assertThat(result).isNotNull();
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            assertThat(result.getResponse().getStreaming()).isNull();
+        }
+
+        @Test
+        @DisplayName("should succeed with a jsonataContent-authored (instead of Map content-authored) template")
+        void shouldSucceedWithJsonataContentAuthoredTemplate() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            when(jsonbMapper.mapRequestTemplate("{}"))
+                    .thenReturn(RequestTemplateDto.builder()
+                            .urlTemplate("/chat/completions")
+                            .body(JsonRequestBodyDto.builder()
+                                    .jsonataContent("{\"prompt\": \"${{prompt}}\"}")
                                     .build())
                             .build());
             when(requestResolver.resolve(any(), anyList(), anyMap())).thenReturn(buildResolvedRequest());

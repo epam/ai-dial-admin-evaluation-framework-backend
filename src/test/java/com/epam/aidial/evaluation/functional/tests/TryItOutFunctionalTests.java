@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -12,12 +13,12 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -90,6 +91,50 @@ public abstract class TryItOutFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getBody().getResponse()).isNotNull();
         assertThat(response.getBody().getResponse().getStatusCode()).isEqualTo(200);
         assertThat(response.getBody().getDurationMs()).isNotNull();
+    }
+
+    // --- Fix: a JSON body whose JSONata evaluation fails must abort try-it-out, never invoke the
+    // deployment with a silently-dropped body ---
+
+    @Test
+    @DisplayName("Should return 400 and never invoke the deployment when the request body's JSONata "
+            + "evaluation fails at run time")
+    void shouldReturn400AndNeverInvokeDeploymentWhenBodyEvaluationFails() {
+        RequestTemplateDto template = RequestTemplateDto.builder()
+                .urlTemplate("/chat/completions")
+                // Valid JSONata syntax (parses fine at write time) that fails only when evaluated,
+                // since the referenced function does not exist.
+                .body(JsonRequestBodyDto.builder()
+                        .jsonataContent("{\"prompt\": $doesNotExistFunction()}")
+                        .build())
+                .build();
+        TestSuiteRequestDto req = TestSuiteRequestDto.builder()
+                .name("Body Evaluation Failure Suite " + UUID.randomUUID())
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(buildEndpoint())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("promptField")
+                        .type(SchemaFieldType.STRING)
+                        .build())))
+                .requestTemplate(template)
+                .build();
+        ResponseEntity<TestSuiteResponseDto> suiteResponse =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
+        assertThat(suiteResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto suite = suiteResponse.getBody();
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("promptField", "irrelevant"));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        // The evaluation failure was downgraded to a REQUEST_BODY_EVALUATION_ERROR validation warning by
+        // RequestResolver's preview path (never a silently-dropped body); TryItOutService then turns that
+        // warning into this 400.
+        assertThat(response.getBody()).contains("REQUEST_BODY_EVALUATION_ERROR");
+        verifyNoInteractions(deploymentInvoker);
     }
 
     // --- 6.5 Suite-level try-it-out with variables ---

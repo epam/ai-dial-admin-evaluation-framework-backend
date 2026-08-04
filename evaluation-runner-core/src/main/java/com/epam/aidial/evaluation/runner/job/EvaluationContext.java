@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.runner.job;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
@@ -66,6 +67,13 @@ public class EvaluationContext {
     private final RequestTemplateDto snapshotRequestTemplate;
     private final List<InputBindingDto> snapshotInputBindings;
     private final List<ResponseColumnDefinitionDto> snapshotResponseColumns;
+
+    /**
+     * Dataset test-case schema field definitions at snapshot time, sourced from {@code
+     * SuiteSnapshotDto.testCaseSchema}. Used by {@link PerTurnBindingDetector} to resolve whether a bound
+     * {@code dataField} is a {@code perTurn = true} field, without a live dataset lookup mid-run.
+     */
+    private final List<FieldDefinitionDto> snapshotTestCaseSchema;
 
     // Pre-deserialized typed DTOs (deserialized once at run init, immutable for run duration)
     private final McpDeploymentReferenceDto mcpDeploymentRefDto;

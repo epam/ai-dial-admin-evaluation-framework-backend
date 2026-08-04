@@ -183,17 +183,23 @@ public class TryItOutService {
         if (resolved.getUrl() == null) {
             throw new ValidationException("Resolved URL is required for invocation");
         }
-        List<ValidationWarningDto> requiredWarnings = resolved.getWarnings() != null
-                ? resolved.getWarnings().stream()
-                        .filter(w -> w.getCode() == ValidationWarningCode.REQUIRED)
-                        .toList()
-                : List.of();
+        final List<ValidationWarningDto> warnings = resolved.getWarnings() != null ? resolved.getWarnings() : List.of();
+
+        final List<ValidationWarningDto> requiredWarnings = warnings.stream()
+                .filter(w -> w.getCode() == ValidationWarningCode.REQUIRED)
+                .toList();
         if (!requiredWarnings.isEmpty()) {
-            String unresolvedVars = requiredWarnings.stream()
+            final String unresolvedVars = requiredWarnings.stream()
                     .map(ValidationWarningDto::getFieldName)
                     .collect(Collectors.joining(", "));
             throw new TryItOutValidationException(
                     "Unresolved required template variables: [" + unresolvedVars + "]", resolved);
+        }
+
+        final boolean hasBodyEvaluationError =
+                warnings.stream().anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_EVALUATION_ERROR);
+        if (hasBodyEvaluationError) {
+            throw new TryItOutValidationException("Request body template failed to evaluate", resolved);
         }
     }
 

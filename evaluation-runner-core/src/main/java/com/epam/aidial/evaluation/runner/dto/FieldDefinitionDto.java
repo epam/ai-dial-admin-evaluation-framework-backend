@@ -1,7 +1,5 @@
-package com.epam.aidial.evaluation.service.domain.dto;
+package com.epam.aidial.evaluation.runner.dto;
 
-import com.epam.aidial.evaluation.constants.ValidationConstants;
-import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -13,6 +11,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * Runner-module twin of the EF backend's {@code service.domain.dto.FieldDefinitionDto} (dataset test-case
+ * schema field definition), duplicated here — like {@link SuiteType} / {@code ValidationConstants} /
+ * {@code ValidationException} — so the module can read {@link #getPerTurn()} / {@link #getName()} off
+ * {@code EvaluationContext.snapshotTestCaseSchema} without a module-to-main-app dependency. The EF backend
+ * remains the sole writer/validator of the schema; this module only ever reads a snapshot copy.
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -40,11 +45,7 @@ public class FieldDefinitionDto {
     /**
      * Field scope. {@code true} = per-turn: the value may vary between turns of a multi-turn case and
      * lives in each {@code multiTurnData[i]} map. {@code false}/absent = shared (test-case-level): the
-     * value is constant across turns and lives in the {@code data} map. Scope is uniform across the
-     * dataset; a missing value is treated as shared, so schemas authored before this field are unchanged.
-     * For single-turn cases every field lives in {@code data} regardless of scope. Kept as a nullable
-     * {@link Boolean} (not a primitive) so pre-existing persisted schemas that omit the field deserialize
-     * cleanly rather than failing on a null-into-primitive coercion.
+     * value is constant across turns and lives in the {@code data} map.
      */
     @Schema(
             description = "Whether the field varies per turn (true) or is shared/test-case-level (false, default)",

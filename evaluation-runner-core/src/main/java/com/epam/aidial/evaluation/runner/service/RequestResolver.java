@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.runner.service;
 
-import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FormPartDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -15,49 +14,74 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedMultipartBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedUrlEncodedBodyDto;
-import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.UrlEncodedFormRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
  * Resolves an effective request template with effective bindings and test case data into a
- * {@link ResolvedRequestDto} (URL, query params, headers, body, warnings). Extracted from
- * {@code ResolvedRequestService} (see Decision 3 in the {@code evaluation-runner-core-module} change's
- * {@code design.md}) so the execution path (Phase 1) does not depend on the EF backend's DB-backed
- * Try-It-Out overload.
+ * {@link ResolvedRequestDto} (URL, query params, headers, body, warnings) — the single shared
+ * resolution engine for both the EF backend's Try-It-Out preview (via its {@code ResolvedRequestService}
+ * DB-lookup wrapper) and the run path ({@code TurnLoopExecutor}).
+ *
+ * <p>URL/query/header/multipart/url-encoded resolution goes through {@link TemplateContentResolver}'s
+ * {@code ${{}}} placeholder substitution, unchanged from the pre-JSONata engine. A JSON body is instead
+ * evaluated as JSONata via {@link RequestBodyEvaluator} — {@link #resolve} runs it with an empty frame
+ * and downgrades an evaluation failure to a validation warning (never throws, so preview/try-it-out
+ * never fails outright); {@link #resolveForRun} runs it with the caller-supplied {@code frameBindings}
+ * (the previous turn's reconciled extracted response columns) and lets
+ * {@link RequestBodyEvaluationException} propagate — the run-path fail-fast contract requires the
+ * caller to turn an evaluation failure into an ERROR row, not a silently-downgraded warning.
  */
+@Slf4j
 @Component
 @LogExecution
 @RequiredArgsConstructor
 public class RequestResolver {
 
-    private static final Pattern PLACEHOLDER_PATTERN =
-            Pattern.compile("\\$\\{\\{([^:|}]+)(?:\\|([^:}]+))?(?::([^}]*))?\\}\\}");
+    private final TemplateContentResolver templateContentResolver;
+    private final RequestBodyEvaluator requestBodyEvaluator;
 
     /**
-     * Matches a string that is exactly one placeholder with no surrounding text.
-     * Uses [^}]+ which already covers type-hinted placeholders like ${{var|file}}.
-     */
-    private static final Pattern FULL_VALUE_PATTERN = Pattern.compile("^\\$\\{\\{[^}]+\\}\\}$");
-
-    private final TemplateVariableResolver templateVariableResolver;
-    private final DialFileRefResolver dialFileRefResolver;
-
-    /**
-     * Resolves template with bindings and data per the resolution flow in design.md.
+     * Resolves template with bindings and data per the resolution flow in design.md. This is the
+     * <b>preview</b> variant: a JSON body's JSONata evaluation runs with an empty request-template frame
+     * (no turn history available in a suite/test-case preview), and a JSONata evaluation failure is
+     * downgraded to a validation warning (never thrown) so preview/try-it-out never fails outright.
      */
     public ResolvedRequestDto resolve(
             RequestTemplateDto template, List<InputBindingDto> bindings, Map<String, Object> data) {
+        return resolveInternal(template, bindings, data, Map.of(), true);
+    }
+
+    /**
+     * Resolves template with bindings and data for the <b>run</b> path: identical url/query/headers/body
+     * handling to {@link #resolve}, except a JSON body's JSONata evaluation runs with {@code frameBindings}
+     * (the previous turn's reconciled extracted response columns, or empty for turn 0 / a single-turn case)
+     * and lets {@link RequestBodyEvaluationException} propagate — the run-path fail-fast contract requires
+     * the caller to turn an evaluation failure into an ERROR row, not a silently-downgraded warning.
+     */
+    public ResolvedRequestDto resolveForRun(
+            RequestTemplateDto template,
+            List<InputBindingDto> bindings,
+            Map<String, Object> data,
+            Map<String, Object> frameBindings) {
+        return resolveInternal(template, bindings, data, frameBindings != null ? frameBindings : Map.of(), false);
+    }
+
+    private ResolvedRequestDto resolveInternal(
+            RequestTemplateDto template,
+            List<InputBindingDto> bindings,
+            Map<String, Object> data,
+            Map<String, Object> frameBindings,
+            boolean preview) {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
         if (template == null) {
@@ -78,7 +102,7 @@ public class RequestResolver {
 
         // Resolve URL
         String resolvedUrl = template.getUrlTemplate() != null
-                ? resolveString(template.getUrlTemplate(), bindingByVar, safeData, warnings)
+                ? templateContentResolver.resolveString(template.getUrlTemplate(), bindingByVar, safeData, warnings)
                 : null;
 
         // Resolve query params
@@ -88,7 +112,7 @@ public class RequestResolver {
             for (KeyValueTemplateDto kv : template.getQueryParams()) {
                 if (kv != null) {
                     String val = kv.getValue() != null
-                            ? resolveString(kv.getValue(), bindingByVar, safeData, warnings)
+                            ? templateContentResolver.resolveString(kv.getValue(), bindingByVar, safeData, warnings)
                             : null;
                     resolvedQueryParams.add(KeyValueTemplateDto.builder()
                             .key(kv.getKey())
@@ -105,7 +129,7 @@ public class RequestResolver {
             for (KeyValueTemplateDto kv : template.getHeaders()) {
                 if (kv != null) {
                     String val = kv.getValue() != null
-                            ? resolveString(kv.getValue(), bindingByVar, safeData, warnings)
+                            ? templateContentResolver.resolveString(kv.getValue(), bindingByVar, safeData, warnings)
                             : null;
                     resolvedHeaders.add(KeyValueTemplateDto.builder()
                             .key(kv.getKey())
@@ -116,7 +140,8 @@ public class RequestResolver {
         }
 
         // Resolve body (content-type aware)
-        ResolvedBodyDto resolvedBody = resolveBody(template.getBody(), bindingByVar, safeData, warnings);
+        ResolvedBodyDto resolvedBody =
+                resolveBody(template.getBody(), bindingByVar, safeData, warnings, frameBindings, preview);
 
         return ResolvedRequestDto.builder()
                 .url(resolvedUrl)
@@ -131,12 +156,14 @@ public class RequestResolver {
             RequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
+            List<ValidationWarningDto> warnings,
+            Map<String, Object> frameBindings,
+            boolean preview) {
         if (body == null) {
             return null;
         }
         if (body instanceof JsonRequestBodyDto jsonBody) {
-            return resolveJsonBody(jsonBody, bindingByVar, data, warnings);
+            return resolveJsonBody(jsonBody, bindingByVar, data, warnings, frameBindings, preview);
         } else if (body instanceof MultipartFormDataRequestBodyDto multipartBody) {
             return resolveMultipartBody(multipartBody, bindingByVar, data, warnings);
         } else if (body instanceof UrlEncodedFormRequestBodyDto urlEncodedBody) {
@@ -145,17 +172,41 @@ public class RequestResolver {
         return null;
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * Resolves the JSON body template by evaluating it as JSONata against {@code frameBindings}. For a
+     * preview resolution, a JSONata evaluation failure must never fail preview/try-it-out: it is downgraded
+     * to a validation warning and the resolved body content is {@code null}. For a run resolution, the
+     * failure propagates as {@link RequestBodyEvaluationException} — the caller (the turn loop) is
+     * responsible for turning it into a fail-fast ERROR row.
+     */
     private ResolvedJsonBodyDto resolveJsonBody(
             JsonRequestBodyDto body,
             Map<String, InputBindingDto> bindingByVar,
             Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
-        if (body.getContent() == null) {
+            List<ValidationWarningDto> warnings,
+            Map<String, Object> frameBindings,
+            boolean preview) {
+        if (body.getContent() == null && body.getJsonataContent() == null) {
             return ResolvedJsonBodyDto.builder().content(null).build();
         }
-        Object resolved = resolveObject(body.getContent(), bindingByVar, data, warnings);
-        Map<String, Object> resolvedMap = resolved instanceof Map ? (Map<String, Object>) resolved : null;
+        if (!preview) {
+            Map<String, Object> resolvedMap = requestBodyEvaluator.evaluate(
+                    body.getContent(), body.getJsonataContent(), bindingByVar, data, frameBindings, warnings);
+            return ResolvedJsonBodyDto.builder().content(resolvedMap).build();
+        }
+        Map<String, Object> resolvedMap;
+        try {
+            resolvedMap = requestBodyEvaluator.evaluate(
+                    body.getContent(), body.getJsonataContent(), bindingByVar, data, frameBindings, warnings);
+        } catch (RequestBodyEvaluationException e) {
+            log.warn("Failed to evaluate JSON request body template for preview: {}", e.getMessage(), e);
+            warnings.add(ValidationWarningDto.builder()
+                    .path("$.requestTemplate.body")
+                    .message("Failed to evaluate request body template: " + e.getMessage())
+                    .code(ValidationWarningCode.REQUEST_BODY_EVALUATION_ERROR)
+                    .build());
+            resolvedMap = null;
+        }
         return ResolvedJsonBodyDto.builder().content(resolvedMap).build();
     }
 
@@ -172,10 +223,12 @@ public class RequestResolver {
             if (part == null) {
                 continue;
             }
-            Object resolvedValue =
-                    part.getValue() != null ? resolveObject(part.getValue(), bindingByVar, data, warnings) : null;
-            String resolvedFilename =
-                    part.getFilename() != null ? resolveString(part.getFilename(), bindingByVar, data, warnings) : null;
+            Object resolvedValue = part.getValue() != null
+                    ? templateContentResolver.resolveObject(part.getValue(), bindingByVar, data, warnings)
+                    : null;
+            String resolvedFilename = part.getFilename() != null
+                    ? templateContentResolver.resolveString(part.getFilename(), bindingByVar, data, warnings)
+                    : null;
             resolvedParts.add(ResolvedFormPartDto.builder()
                     .name(part.getName())
                     .type(part.getType())
@@ -199,75 +252,14 @@ public class RequestResolver {
             if (kv == null) {
                 continue;
             }
-            String resolvedValue =
-                    kv.getValue() != null ? resolveString(kv.getValue(), bindingByVar, data, warnings) : null;
+            String resolvedValue = kv.getValue() != null
+                    ? templateContentResolver.resolveString(kv.getValue(), bindingByVar, data, warnings)
+                    : null;
             resolvedEntries.add(KeyValueTemplateDto.builder()
                     .key(kv.getKey())
                     .value(resolvedValue)
                     .build());
         }
         return ResolvedUrlEncodedBodyDto.builder().entries(resolvedEntries).build();
-    }
-
-    private String resolveString(
-            String value,
-            Map<String, InputBindingDto> bindingByVar,
-            Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
-        StringBuffer sb = new StringBuffer();
-        Matcher matcher = PLACEHOLDER_PATTERN.matcher(value);
-        while (matcher.find()) {
-            String varName = matcher.group(1).trim();
-            String defaultValue = matcher.group(3); // group 3: default value (group 2 is now type hint)
-            InputBindingDto binding = bindingByVar.get(varName);
-            Object resolved = templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
-            matcher.appendReplacement(sb, Matcher.quoteReplacement(resolved != null ? resolved.toString() : ""));
-        }
-        matcher.appendTail(sb);
-        return sb.toString();
-    }
-
-    @SuppressWarnings("unchecked")
-    private Object resolveObject(
-            Object value,
-            Map<String, InputBindingDto> bindingByVar,
-            Map<String, Object> data,
-            List<ValidationWarningDto> warnings) {
-        if (value instanceof String str) {
-            // Full-value replacement: if string is exactly one placeholder, return typed value
-            if (FULL_VALUE_PATTERN.matcher(str).matches()) {
-                Matcher m = PLACEHOLDER_PATTERN.matcher(str);
-                if (m.find()) {
-                    String varName = m.group(1).trim();
-                    String typeHint = m.group(2); // group 2: type hint
-                    String defaultValue = m.group(3); // group 3: default value
-                    InputBindingDto binding = bindingByVar.get(varName);
-                    Object resolved =
-                            templateVariableResolver.resolveVariable(varName, defaultValue, binding, data, warnings);
-                    // Resolve FILE-typed placeholder to DIAL ref format for JSON/URL-encoded bodies
-                    if (SchemaFieldType.FILE.name().equalsIgnoreCase(typeHint)
-                            && resolved instanceof String resolvedRef) {
-                        return dialFileRefResolver.resolveToDialRef(resolvedRef);
-                    }
-                    return resolved;
-                }
-            }
-            // String interpolation
-            return resolveString(str, bindingByVar, data, warnings);
-        } else if (value instanceof Map<?, ?> map) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                result.put(
-                        String.valueOf(entry.getKey()), resolveObject(entry.getValue(), bindingByVar, data, warnings));
-            }
-            return result;
-        } else if (value instanceof List<?> list) {
-            List<Object> result = new ArrayList<>();
-            for (Object item : list) {
-                result.add(resolveObject(item, bindingByVar, data, warnings));
-            }
-            return result;
-        }
-        return value;
     }
 }

@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;

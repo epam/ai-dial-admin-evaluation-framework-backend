@@ -76,6 +76,20 @@ class StreamingResponseAccumulatorTest {
         }
 
         @Test
+        @DisplayName("Should produce byte-identical responseBody when no custom_content is present in any chunk")
+        void accumulate_noCustomContent_responseBodyByteIdentical() {
+            InputStream stream =
+                    buildSseStream("data: {\"choices\":[{\"delta\":{\"content\":\"Test response\"}}]}", "data: [DONE]");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            assertThat(accumulator.getResponseBody())
+                    .isEqualTo("{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Test response\"},"
+                            + "\"finish_reason\":\"stop\",\"index\":0}]}");
+        }
+
+        @Test
         @DisplayName("Should stop accumulation when [DONE] event is received")
         void accumulate_doneEvent_stopsAccumulation() throws Exception {
             InputStream stream = buildSseStream(
@@ -158,6 +172,170 @@ class StreamingResponseAccumulatorTest {
             // Must be the {"events": [...]} envelope, not an OpenAI response
             assertThat(response.has("events")).isTrue();
             assertThat(response.get("events").isArray()).isTrue();
+        }
+    }
+
+    // =====================================================================
+    // OpenAI mode — DIAL custom_content extension field
+    // =====================================================================
+
+    @Nested
+    @DisplayName("OpenAI mode — custom_content")
+    class CustomContent {
+
+        @Test
+        @DisplayName("Should merge a stage delivered as name/content/status partials across chunks by index")
+        void accumulate_stagePartialsAcrossChunks_mergedOntoAssembledMessage() throws Exception {
+            InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\",\"custom_content\":"
+                            + "{\"stages\":[{\"index\":0,\"name\":\"Searching\"}]}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":"
+                            + "{\"stages\":[{\"index\":0,\"content\":\"Looking up docs\"}]}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":"
+                            + "{\"stages\":[{\"index\":0,\"status\":\"completed\"}]}}}]}",
+                    "data: [DONE]");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(message.get("content").asString()).isEqualTo("Hi");
+            JsonNode stage = message.get("custom_content").get("stages").get(0);
+            assertThat(stage.get("name").asString()).isEqualTo("Searching");
+            assertThat(stage.get("content").asString()).isEqualTo("Looking up docs");
+            assertThat(stage.get("status").asString()).isEqualTo("completed");
+        }
+
+        @Test
+        @DisplayName("Should merge an attachment split across multiple chunks")
+        void accumulate_attachmentSplitAcrossChunks_mergedOntoAssembledMessage() throws Exception {
+            InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":"
+                            + "{\"attachments\":[{\"index\":0,\"type\":\"image/png\"}]}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":"
+                            + "{\"attachments\":[{\"index\":0,\"title\":\"chart.png\"}]}}}]}",
+                    "data: [DONE]");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode attachment = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message")
+                    .get("custom_content")
+                    .get("attachments")
+                    .get(0);
+            assertThat(attachment.get("type").asString()).isEqualTo("image/png");
+            assertThat(attachment.get("title").asString()).isEqualTo("chart.png");
+        }
+
+        @Test
+        @DisplayName("Should merge two attachments whose partial updates arrive interleaved")
+        void accumulate_twoAttachmentsInterleaved_mergedIndependentlyByIndex() throws Exception {
+            InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":"
+                            + "{\"attachments\":[{\"index\":0,\"title\":\"first.png\"}]}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":"
+                            + "{\"attachments\":[{\"index\":1,\"title\":\"second.png\"}]}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":"
+                            + "{\"attachments\":[{\"index\":0,\"url\":\"files/first.png\"}]}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":"
+                            + "{\"attachments\":[{\"index\":1,\"url\":\"files/second.png\"}]}}}]}",
+                    "data: [DONE]");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode attachments = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message")
+                    .get("custom_content")
+                    .get("attachments");
+            assertThat(attachments).hasSize(2);
+            assertThat(attachments.get(0).get("title").asString()).isEqualTo("first.png");
+            assertThat(attachments.get(0).get("url").asString()).isEqualTo("files/first.png");
+            assertThat(attachments.get(1).get("title").asString()).isEqualTo("second.png");
+            assertThat(attachments.get(1).get("url").asString()).isEqualTo("files/second.png");
+        }
+
+        @Test
+        @DisplayName("Should overwrite a scalar custom_content field with the last non-null value across chunks")
+        void accumulate_scalarField_lastNonNullWins() throws Exception {
+            InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":{\"state\":\"pending\"}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":{\"state\":\"running\"}}}]}",
+                    "data: [DONE]");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(message.get("custom_content").get("state").asString()).isEqualTo("running");
+        }
+
+        @Test
+        @DisplayName("Should accumulate custom_content from a chunk that carries no text delta at all")
+        void accumulate_customContentOnChunkWithNoTextDelta_stillAccumulated() throws Exception {
+            InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"custom_content\":{\"state\":\"running\"}}}]}",
+                    "data: [DONE]");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode message = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("choices")
+                    .get(0)
+                    .get("message");
+            assertThat(message.get("content").asString()).isEqualTo("Hello");
+            assertThat(message.get("custom_content").get("state").asString()).isEqualTo("running");
+        }
+
+        @Test
+        @DisplayName("Should leave the truncated-stream string path unchanged when custom_content is present")
+        void accumulate_truncatedStreamWithCustomContent_bodyStaysPlainString() {
+            // First chunk's data payload is 77 bytes (fits under 100 and gets dispatched, carrying
+            // custom_content); the second chunk's 43 bytes pushes accumulated bytes to 120 > 100,
+            // truncating the stream on the second chunk (matches SseEventParser's accounting, which
+            // measures only the "data:" payload, not the "data: " line prefix).
+            long sizeLimitThatAdmitsOnlyFirstChunk = 100L;
+            StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
+                    sseEventParser,
+                    OBJECT_MAPPER,
+                    LARGE_IDLE_TIMEOUT_MS,
+                    LARGE_MAX_TOTAL_MS,
+                    sizeLimitThatAdmitsOnlyFirstChunk);
+
+            InputStream stream = buildSseStream(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\",\"custom_content\":"
+                            + "{\"state\":\"running\"}}}]}",
+                    "data: {\"choices\":[{\"delta\":{\"content\":\" more\"}}]}",
+                    "data: [DONE]");
+
+            accumulator.accumulate(stream);
+
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+            assertThat(accumulator.getTruncationWarning()).isNotNull();
+            // Truncated path stores a plain JSON string of the accumulated content — no object
+            // structure, no custom_content attached, even though custom_content had been accumulated
+            // from the surviving first chunk.
+            JsonNode body = OBJECT_MAPPER.readTree(accumulator.getResponseBody());
+            assertThat(body.isString()).isTrue();
+            assertThat(body.asString()).isEqualTo("Hi");
         }
     }
 

@@ -58,8 +58,6 @@ public class TestSuiteEvaluationJob {
     private static final String SQLSTATE_SERIALIZATION_FAILURE = "40001";
     private static final int SNAPSHOT_PAGE_SIZE = 100;
 
-    private static final TypeReference<List<UUID>> UUID_LIST = new TypeReference<>() {};
-
     private final TestSuiteRunRepository repository;
     private final TestSuiteRepository testSuiteRepository;
     private final DatasetRepository datasetRepository;
@@ -432,6 +430,7 @@ public class TestSuiteEvaluationJob {
                 .snapshotRequestTemplate(snapshot.getRequestTemplate())
                 .snapshotInputBindings(snapshot.getInputBindings())
                 .snapshotResponseColumns(snapshot.getResponseColumns())
+                .snapshotTestCaseSchema(snapshot.getTestCaseSchema())
                 .mcpDeploymentRefDto(snapshot.getMcpDeploymentRef())
                 .toolRefDto(snapshot.getToolRef())
                 .argumentTemplateDto(snapshot.getArgumentTemplate())

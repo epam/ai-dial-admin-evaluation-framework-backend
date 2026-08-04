@@ -4,15 +4,21 @@ import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Stateless helpers shared by the deployment-invocation paths ({@code EvaluationWorker},
  * {@code DeploymentTurnInvoker}): HTTP-status → {@link ExecutionStatus} mapping, timeout detection,
- * exponential backoff, the retry predicate, and query-param assembly. Pure functions with no dependencies,
- * so they live here rather than being duplicated per caller.
+ * exponential backoff, the retry predicate, query-param assembly, and the retry-attempt-log /
+ * invocation-error-envelope JSON builders. Pure functions with no injected dependencies (an
+ * {@link ObjectMapper} is accepted as a parameter where JSON construction is needed), so they live here
+ * rather than being duplicated per caller.
  */
+@Slf4j
 public final class DeploymentInvocationSupport {
 
     private DeploymentInvocationSupport() {}
@@ -95,5 +101,73 @@ public final class DeploymentInvocationSupport {
             }
         }
         return queryParams;
+    }
+
+    /**
+     * Resolves the {@code logDetails} error-type label for a failed/retried attempt: TIMEOUT for a timeout,
+     * NETWORK_ERROR for a status-code-less ERROR (transport/network failure), HTTP_ERROR otherwise (4xx/5xx).
+     */
+    public static String resolveErrorType(ExecutionStatus status) {
+        return switch (status) {
+            case TIMEOUT -> "TIMEOUT";
+            case ERROR -> "NETWORK_ERROR";
+            default -> "HTTP_ERROR";
+        };
+    }
+
+    /**
+     * One retry attempt recorded for {@code logDetails}: the 1-based attempt index, the HTTP status code
+     * (null for a network-level failure), the resolved {@link #resolveErrorType(ExecutionStatus)} label, and
+     * how long the attempt took.
+     */
+    public record RetryAttemptLog(int attemptIndex, Integer statusCode, String errorType, long durationMs) {}
+
+    /**
+     * Builds the {@code {"retryAttempts":[...]}} logDetails JSON for a list of retry attempts. Returns null
+     * when {@code attempts} is empty (nothing was retried), and null plus a logged warning when serialization
+     * fails.
+     */
+    public static String buildRetryLogDetailsJson(List<RetryAttemptLog> attempts, ObjectMapper objectMapper) {
+        if (attempts == null || attempts.isEmpty()) {
+            return null;
+        }
+        try {
+            final var root = objectMapper.createObjectNode();
+            final var array = objectMapper.createArrayNode();
+            for (RetryAttemptLog attempt : attempts) {
+                final var node = objectMapper.createObjectNode();
+                node.put("attemptIndex", attempt.attemptIndex());
+                if (attempt.statusCode() != null) {
+                    node.put("statusCode", attempt.statusCode());
+                } else {
+                    node.putNull("statusCode");
+                }
+                node.put("errorType", attempt.errorType());
+                node.put("durationMs", attempt.durationMs());
+                array.add(node);
+            }
+            root.set("retryAttempts", array);
+            return objectMapper.writeValueAsString(root);
+        } catch (JacksonException e) {
+            log.warn("Failed to serialize retry logDetails: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Builds the {@code {"error":{"code":...,"message":...}}} envelope used for the error response bodies of
+     * both the DEPLOYMENT and MCP paths; {@code code} comes from {@link ExecutionErrorCodes}.
+     */
+    public static String buildErrorEnvelope(String code, String message, ObjectMapper objectMapper) {
+        try {
+            final var error = objectMapper.createObjectNode();
+            error.put("code", code);
+            error.put("message", message != null ? message : "Unknown error");
+            final var root = objectMapper.createObjectNode();
+            root.set("error", error);
+            return objectMapper.writeValueAsString(root);
+        } catch (JacksonException e) {
+            return "{\"error\":{\"code\":\"" + code + "\",\"message\":\"serialization failed\"}}";
+        }
     }
 }

@@ -41,6 +41,7 @@ import com.epam.aidial.evaluation.functional.tests.FileFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.GrafanaDisabledFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.GrafanaEnabledFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.HeaderBlacklistFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.JsonataRequestTemplateFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.LargeDatasetSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MaxLimitsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpDeploymentFunctionalTests;
@@ -392,6 +393,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class MultiTurnSharedDataTests extends MultiTurnSharedDataFunctionalTests {}
+
+    @Nested
+    class JsonataRequestTemplateTests extends JsonataRequestTemplateFunctionalTests {}
 
     @Nested
     class AnalyticsRetryFieldsTests extends AnalyticsRetryFieldsFunctionalTests {}

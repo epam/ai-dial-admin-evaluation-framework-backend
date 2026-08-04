@@ -1,14 +1,19 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
+import com.epam.aidial.evaluation.constants.JsonataReservedNames;
 import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ParameterDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
+import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import java.util.HashSet;
 import java.util.List;
@@ -26,6 +31,7 @@ import tools.jackson.databind.ObjectMapper;
 public class TestSuiteRequestValidator {
 
     private final JsonataEvaluationService jsonataEvaluationService;
+    private final JsonataSourcePreprocessor jsonataSourcePreprocessor;
     private final SchemaValidationService schemaValidationService;
     private final ObjectMapper objectMapper;
     private final ValidationProperties validationProperties;
@@ -80,6 +86,8 @@ public class TestSuiteRequestValidator {
                 }
             }
         }
+        validateRequestTemplateBody(dto.getRequestTemplate());
+
         List<ResponseColumnDefinitionDto> responseColumns = dto.getResponseColumns();
         if (responseColumns != null && !responseColumns.isEmpty()) {
             Set<String> seenNames = new HashSet<>();
@@ -94,6 +102,10 @@ public class TestSuiteRequestValidator {
                 if (!seenNames.add(col.getName())) {
                     throw new ValidationException("responseColumns: duplicate column name '" + col.getName() + "'");
                 }
+                if (JsonataReservedNames.RESERVED_COLUMN_NAMES.contains(col.getName())) {
+                    throw new ValidationException("responseColumns[" + i + "] ('" + col.getName()
+                            + "'): name is reserved (JSONata built-in function or frame variable)");
+                }
                 if (col.getExpression() == null || col.getExpression().isBlank()) {
                     throw new ValidationException("responseColumns[" + i + "]: expression must not be blank");
                 }
@@ -103,6 +115,45 @@ public class TestSuiteRequestValidator {
                     throw new ValidationException(
                             "responseColumns[" + i + "] ('" + col.getName() + "').expression: " + ex.getMessage());
                 }
+            }
+        }
+    }
+
+    /**
+     * Validates an {@code application/json} request body's two mutually exclusive carriers:
+     * {@code content} ({@code Map<String, Object>}, legacy structural template — no JSONata
+     * validation needed since a Map is validated at resolution time) and {@code jsonataContent}
+     * ({@code String}, JSONata source — validated here as valid JSONata). Both non-null is
+     * rejected; both null (or the body/template itself being null) means no request body and is
+     * accepted without further checks.
+     *
+     * <p>A bare {@code ${{var}}} placeholder (e.g. {@code {"q": ${{question}}}}) is not, by itself,
+     * valid JSONata — it only becomes valid once {@link JsonataSourcePreprocessor} substitutes it at
+     * run time. Validating the raw source would therefore reject a well-formed bare-mode template.
+     * {@link JsonataSourcePreprocessor#neutralize(String)} replaces every placeholder with a fixed
+     * neutral token first (JSON {@code null} for quoted-full-value/bare, empty string for embedded),
+     * so validation sees the same syntactic shape the runtime preprocessor produces, without needing
+     * bindings or test-case data to be available yet.
+     */
+    private void validateRequestTemplateBody(RequestTemplateDto requestTemplate) {
+        if (requestTemplate == null) {
+            return;
+        }
+        RequestBodyDto body = requestTemplate.getBody();
+        if (!(body instanceof JsonRequestBodyDto jsonBody)) {
+            return;
+        }
+        Map<String, Object> content = jsonBody.getContent();
+        String jsonataContent = jsonBody.getJsonataContent();
+        if (content != null && jsonataContent != null) {
+            throw new ValidationException("requestTemplate.body: content and jsonataContent are mutually exclusive");
+        }
+        if (jsonataContent != null) {
+            String neutralized = jsonataSourcePreprocessor.neutralize(jsonataContent);
+            try {
+                jsonataEvaluationService.validateExpression(neutralized);
+            } catch (ValidationException ex) {
+                throw new ValidationException("requestTemplate.body.jsonataContent: " + ex.getMessage());
             }
         }
     }

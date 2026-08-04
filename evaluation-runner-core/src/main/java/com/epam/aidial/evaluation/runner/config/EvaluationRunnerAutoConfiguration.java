@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.config.properties.McpClientProperties;
 import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -25,6 +26,7 @@ import org.springframework.context.annotation.ComponentScan;
     SseEventProcessingProperties.class,
     DialCoreProperties.class,
     McpClientProperties.class,
-    DialFileStorageProperties.class
+    DialFileStorageProperties.class,
+    JsonataProperties.class
 })
 public class EvaluationRunnerAutoConfiguration {}

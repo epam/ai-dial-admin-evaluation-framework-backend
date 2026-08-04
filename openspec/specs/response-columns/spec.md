@@ -264,49 +264,6 @@ Status: **Implemented**
 - **WHEN** testCaseSchema includes `{"name": "q", "type": "STRING"}` (no displayName)
 - **THEN** system SHALL persist it as-is; FE uses `name` as display label
 
-## Validation Rules
-
-**Response columns array:**
-
-| Constraint          | Rules |
-|---------------------|-------|
-| `responseColumns`   | Max 50 elements per suite |
-
-**Response column definition (each element):**
-
-| Field        | Rules |
-|--------------|-------|
-| `name`       | Required, not blank, max 255 characters, unique within the array |
-| `displayName`| Optional, max 255 characters |
-| `expression` | Required, not blank, max 2000 characters, must be valid JSONata |
-| `type`       | Optional; one of `SchemaFieldType` values; null in DTO is normalized to `STRING` by `TestSuiteService.normalizeRequest()` |
-
-**testCaseSchema field (modified):**
-
-| Field        | Rules |
-|--------------|-------|
-| `displayName`| Optional (new), max 255 characters |
-| _(other fields unchanged)_ | |
-
-## Implementation Notes
-
-- **Meta DB migration** `V1.8__AddResponseColumnsToTestSuites.sql`:
-  - `ALTER TABLE test_suites ADD COLUMN response_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
-- **Analytics DB migration** `V1.2__AddExtractedColumnsToTestCaseRunResults.sql`:
-  - `ALTER TABLE test_case_run_results ADD COLUMN extracted_columns JSONB NOT NULL DEFAULT '{}'::jsonb;`
-  - `ALTER TABLE test_case_run_results ADD COLUMN extraction_warnings JSONB NOT NULL DEFAULT '[]'::jsonb;`
-- **New DTO**: `ResponseColumnDefinitionDto` in `service.domain.dto` — `name`, `displayName`, `expression`, `type` (SchemaFieldType).
-- **Modified DTO**: `FieldDefinitionDto` — add `displayName` (String, optional, `@Size(max=255)`).
-- **Modified DTOs**: `TestSuiteRequestDto`, `TestSuiteResponseDto` — add `List<ResponseColumnDefinitionDto> responseColumns`.
-- **Modified model**: `TestSuite` — add `String responseColumns` (JSONB string).
-- **Modified model**: `TestCaseRunResult` — add `String extractedColumns`, `String extractionWarnings`.
-- **New component**: `JsonataEvaluationService` in `service.domain` — validates expressions (parse-only), evaluates expressions against JSON data.
-- **Modified service**: `TestSuiteService.validateTestSuiteSchemas()` — add JSONata validation for response columns.
-- **Modified service**: Result write path — evaluate response columns after building result. Extraction is a **job-layer concern**: `MockResultsGenerator` (and future real runners) load the suite's `responseColumns` from meta DB and evaluate expressions before calling the analytics batch writer. The analytics batch write API (`POST /api/v1/analytics/results`) is a pure persistence endpoint and does NOT trigger extraction — external callers must pre-populate `extractedColumns`/`extractionWarnings` or accept empty defaults.
-- **JSONB serialization**: Uses existing `JsonbMapper` pattern for responseColumns. Uses `ValidationWarningsSerializer` pattern for extraction warnings.
-- **JSONata library**: `com.dashjoin:jsonata:0.9.9` — 100% reference test coverage, zero extra transitive dependencies. `DashjoinJsonataEvaluationService` is the only class that imports from `com.dashjoin.jsonata`.
-- **Transaction**: Response columns are part of `test_suites` — uses `@Transactional("metaTransactionManager")`. Extraction happens in the analytics write path — uses `@Transactional("analyticsTransactionManager")`.
-
 ### Requirement: FILE type in response column definitions
 
 The `FILE` value of `SchemaFieldType` SHALL be an officially supported type for `ResponseColumnDefinitionDto.type`. A response column with `type: FILE` indicates that the JSONata expression extracts a DIAL file reference path (e.g., `"files/@myapp/results/output.pdf"`) from the response body.
@@ -418,6 +375,104 @@ Status: **Implemented**
 #### Scenario: Complex MCP expression accepted
 - **WHEN** suite is saved with `expression: "$count(content[type='text'])"` or `expression: "structuredContent.results[score > 0.8]"`
 - **THEN** system SHALL accept (valid JSONata syntax)
+
+### Requirement: Request/response frame for response column extraction
+
+When evaluating a response column's JSONata expression, the service SHALL provide a `Frame` binding `$request` (the parsed JSON of the request body actually sent) and `$response` (the parsed JSON of the response body) in addition to the existing evaluation. The root evaluation document remains the raw response body, unchanged — `$request`/`$response` are additive frame variables; no existing response column expression's meaning changes. This applies uniformly to single-turn suites, multi-turn suites (each turn's own request/response), and MCP suites.
+
+Status: **Implemented**
+
+#### Scenario: Existing expression unaffected
+- **WHEN** a response column has `expression: "choices[0].message.content"` (no reference to `$request`/`$response`)
+- **THEN** extraction behaves exactly as before this change — evaluated against the response body as the root document
+
+#### Scenario: Expression references $response explicitly
+- **WHEN** a response column has `expression: "$response.choices[0].message.content"`
+- **THEN** extraction SHALL produce the identical result as the equivalent root-document expression `"choices[0].message.content"`, since `$response` is bound to the same parsed response body
+
+#### Scenario: Expression correlates request and response
+- **WHEN** a response column has `expression: "$response.result = $request.expected"`
+- **THEN** extraction SHALL evaluate the expression with both `$request` and `$response` populated from the turn's actual sent request body and received response body
+
+#### Scenario: Multi-turn extraction uses that turn's own request/response
+- **WHEN** a multi-turn case's turn k is extracted
+- **THEN** `$request` and `$response` are bound to turn k's own resolved request body and received response body, not an earlier or later turn's
+
+### Requirement: Reserved response column names
+
+A response column's `name` SHALL NOT collide with a JSONata built-in function name (a hand-maintained `JsonataReservedNames` constants list, distinct from the query-DSL function registry used by the query DSL subsystem) or with the reserved frame variable names `request` or `response`. Suite create/update SHALL reject a colliding name with HTTP 400. This is independent of, and in addition to, the existing `::`-sequence name restriction and the existing per-suite name-uniqueness check.
+
+Status: **Implemented**
+
+#### Scenario: Response column name collides with a JSONata built-in function name
+- **WHEN** client saves a suite with a response column named `"count"` (a JSONata built-in function name)
+- **THEN** system SHALL respond with HTTP 400, error code `VALIDATION_ERROR`, identifying the offending column
+
+#### Scenario: Response column name collides with the reserved request/response frame names
+- **WHEN** client saves a suite with a response column named `"request"` or `"response"`
+- **THEN** system SHALL respond with HTTP 400, error code `VALIDATION_ERROR`, identifying the offending column
+
+#### Scenario: Non-colliding name accepted
+- **WHEN** client saves a suite with a response column named `"answer"` (not a JSONata function name, not `request`/`response`)
+- **THEN** system SHALL accept and persist the column, unaffected by this requirement
+
+### Requirement: Failed-extraction frame binding uses explicit null, not undefined (F2)
+
+When a response column's extraction genuinely fails (JSONata evaluation error or type-mismatch reconciliation failure) and that column's value is subsequently bound as a request-template frame variable for the next turn (per the `multi-turn-test-case` frame-driven turn-loop requirement), the service SHALL bind the JSONata explicit-null sentinel for that variable — not a plain Java `null` — so that a downstream expression such as `$append($historyColumn, [...])` observes null-append semantics (the prior value is treated as a present-but-null entry) rather than undefined-append semantics (as if the column had never been extracted). Binding a plain Java `null` is observably indistinguishable, at the JSONata level, from leaving the variable unbound entirely — both cause `$append`'s undefined-argument short-circuit — so a plain Java `null` binding MUST NOT be used to represent "this column's value is JSON null."
+
+Status: **Implemented**
+
+#### Scenario: Failed extraction feeds a real null into the next turn's frame
+- **WHEN** turn k's extraction of a response column named `answer` fails (evaluation error or type mismatch), and turn k+1's request template references `$answer` inside `$append($answer, [...])`
+- **THEN** turn k+1's evaluation observes null-append semantics — the result includes an explicit `null` entry for turn k's contribution, not merely the new array
+
+#### Scenario: Unextracted (never-configured) column is genuinely unbound
+- **WHEN** a response column named `context` is not configured for the suite at all
+- **THEN** turn 1's reference to `$context` is unbound (undefined), producing undefined-append semantics — distinct from the "configured but failed" case above
+
+## Validation Rules
+
+**Response columns array:**
+
+| Constraint          | Rules |
+|---------------------|-------|
+| `responseColumns`   | Max 50 elements per suite |
+
+**Response column definition (each element):**
+
+| Field        | Rules |
+|--------------|-------|
+| `name`       | Required, not blank, max 255 characters, unique within the array |
+| `displayName`| Optional, max 255 characters |
+| `expression` | Required, not blank, max 2000 characters, must be valid JSONata |
+| `type`       | Optional; one of `SchemaFieldType` values; null in DTO is normalized to `STRING` by `TestSuiteService.normalizeRequest()` |
+
+**testCaseSchema field (modified):**
+
+| Field        | Rules |
+|--------------|-------|
+| `displayName`| Optional (new), max 255 characters |
+| _(other fields unchanged)_ | |
+
+## Implementation Notes
+
+- **Meta DB migration** `V1.8__AddResponseColumnsToTestSuites.sql`:
+  - `ALTER TABLE test_suites ADD COLUMN response_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
+- **Analytics DB migration** `V1.2__AddExtractedColumnsToTestCaseRunResults.sql`:
+  - `ALTER TABLE test_case_run_results ADD COLUMN extracted_columns JSONB NOT NULL DEFAULT '{}'::jsonb;`
+  - `ALTER TABLE test_case_run_results ADD COLUMN extraction_warnings JSONB NOT NULL DEFAULT '[]'::jsonb;`
+- **New DTO**: `ResponseColumnDefinitionDto` in `service.domain.dto` — `name`, `displayName`, `expression`, `type` (SchemaFieldType).
+- **Modified DTO**: `FieldDefinitionDto` — add `displayName` (String, optional, `@Size(max=255)`).
+- **Modified DTOs**: `TestSuiteRequestDto`, `TestSuiteResponseDto` — add `List<ResponseColumnDefinitionDto> responseColumns`.
+- **Modified model**: `TestSuite` — add `String responseColumns` (JSONB string).
+- **Modified model**: `TestCaseRunResult` — add `String extractedColumns`, `String extractionWarnings`.
+- **New component**: `JsonataEvaluationService` in `service.domain` — validates expressions (parse-only), evaluates expressions against JSON data.
+- **Modified service**: `TestSuiteService.validateTestSuiteSchemas()` — add JSONata validation for response columns.
+- **Modified service**: Result write path — evaluate response columns after building result. Extraction is a **job-layer concern**: `MockResultsGenerator` (and future real runners) load the suite's `responseColumns` from meta DB and evaluate expressions before calling the analytics batch writer. The analytics batch write API (`POST /api/v1/analytics/results`) is a pure persistence endpoint and does NOT trigger extraction — external callers must pre-populate `extractedColumns`/`extractionWarnings` or accept empty defaults.
+- **JSONB serialization**: Uses existing `JsonbMapper` pattern for responseColumns. Uses `ValidationWarningsSerializer` pattern for extraction warnings.
+- **JSONata library**: `com.dashjoin:jsonata:0.9.9` — 100% reference test coverage, zero extra transitive dependencies. `DashjoinJsonataEvaluationService` is the only class that imports from `com.dashjoin.jsonata`; it also owns the `$request`/`$response` 3-arg frame-evaluate overload and the `Jsonata.NULL_VALUE` frame-binding logic for the request-template frame (F2) — a narrow, explicit exception to (not a repeal of) the "only importer" invariant, since both live in the same class.
+- `constants.JsonataReservedNames` (new constants class) is the single source for both the built-in-function-name set (a hand-maintained list of JSONata built-in function names, unrelated to the query-DSL function registry — which enumerates SQL/jOOQ functions for a different subsystem) and the `request`/`response` reserved names; `TestSuiteRequestValidator` consumes it for the reserved-name 400 check.
+- **Transaction**: Response columns are part of `test_suites` — uses `@Transactional("metaTransactionManager")`. Extraction happens in the analytics write path — uses `@Transactional("analyticsTransactionManager")`.
 
 ## Deferred
 

@@ -39,6 +39,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class ResolvedRequestServiceTest {
 
+    private static final UUID SUITE_ID = UUID.randomUUID();
+    private static final UUID TEST_CASE_ID = UUID.randomUUID();
+    private static final UUID DATASET_ID = UUID.randomUUID();
+
     @Mock
     private TestSuiteRepository testSuiteRepository;
 
@@ -56,10 +60,6 @@ class ResolvedRequestServiceTest {
 
     @InjectMocks
     private ResolvedRequestService service;
-
-    private static final UUID SUITE_ID = UUID.randomUUID();
-    private static final UUID TEST_CASE_ID = UUID.randomUUID();
-    private static final UUID DATASET_ID = UUID.randomUUID();
 
     @Test
     @DisplayName("loads suite and test case, then delegates resolution to RequestResolver")

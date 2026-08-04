@@ -1,11 +1,11 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
-import com.epam.aidial.evaluation.service.domain.dto.FieldDefinitionDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

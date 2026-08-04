@@ -1,0 +1,50 @@
+{
+  "name": "Multi-turn Chat Suite (JSONata Body)",
+  "description": "requestTemplate.body.jsonataContent authored as a JSONata source string instead of the legacy JSON object in body.content; history is accumulated purely via the $history frame variable, bound from the previous turn's 'history' response column — there is no hardcoded messages/choices path",
+  "deploymentRef": {
+    "id": "deploy-001",
+    "name": "Production Deployment",
+    "version": "1.0",
+    "type": "dial-application"
+  },
+  "endpointRef": {
+    "method": "POST",
+    "relativeUrlPattern": "/chat/completions",
+    "requestBodySchema": {
+      "contentType": "application/json",
+      "schema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  "responseColumns": [
+    {
+      "name": "history",
+      "displayName": "Accumulated History",
+      "expression": "$append($request.messages, [$response.choices[0].message])",
+      "type": "ARRAY"
+    },
+    {
+      "name": "answer",
+      "displayName": "Model Answer",
+      "expression": "choices[0].message.content",
+      "type": "STRING"
+    }
+  ],
+  "requestTemplate": {
+    "urlTemplate": "/chat/completions",
+    "body": {
+      "contentType": "application/json",
+      "jsonataContent": "{\"model\": \"gpt-4\", \"messages\": $append($history, [{\"role\": \"user\", \"content\": \"${{question}}\"}]), \"stream\": false}"
+    }
+  },
+  "inputBindings": [
+    {
+      "templateVariable": "question",
+      "dataField": "question"
+    }
+  ],
+  "datasetId": "660e8400-e29b-41d4-a716-446655440000",
+  "disabledTestCaseIds": []
+}

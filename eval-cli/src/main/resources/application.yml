@@ -94,6 +94,11 @@ test-suite-run:
 sse-event-processing:
   max-total-duration-ms: ${SSE_MAX_TOTAL_DURATION_MS:3600000}
 
+# JSONata evaluation bounds (required by evaluation-runner-core)
+jsonata:
+  evaluation-timeout-ms: ${JSONATA_EVALUATION_TIMEOUT_MS:10000}
+  max-recursion-depth: ${JSONATA_MAX_RECURSION_DEPTH:1000}
+
 # Disable actuator endpoints (not needed for a CLI)
 management:
   health:

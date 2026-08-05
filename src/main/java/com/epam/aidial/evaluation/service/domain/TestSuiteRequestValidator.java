@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
 import com.epam.aidial.evaluation.constants.JsonataReservedNames;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
@@ -12,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;

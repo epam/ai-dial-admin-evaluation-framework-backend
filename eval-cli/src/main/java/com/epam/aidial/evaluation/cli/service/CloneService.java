@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.cli.service;
 
 import com.epam.aidial.evaluation.cli.client.source.TestSuiteApiClient;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteCloneRequestDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

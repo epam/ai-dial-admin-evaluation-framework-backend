@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.cli.service;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;

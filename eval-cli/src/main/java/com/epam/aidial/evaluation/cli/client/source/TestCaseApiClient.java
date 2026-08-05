@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.cli.client.source;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.PageResponseDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;

@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.service.domain.dto;
+package com.epam.aidial.evaluation.runner.dto;
 
 /**
  * Status of an async re-validation task.

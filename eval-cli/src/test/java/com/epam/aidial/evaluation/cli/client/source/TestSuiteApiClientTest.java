@@ -7,10 +7,10 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.PageResponseDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteCloneRequestDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteUpdateResultDto;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

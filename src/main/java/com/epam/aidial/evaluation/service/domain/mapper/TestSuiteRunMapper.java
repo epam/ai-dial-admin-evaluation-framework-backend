@@ -2,11 +2,11 @@ package com.epam.aidial.evaluation.service.domain.mapper;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
+import com.epam.aidial.evaluation.runner.dto.RunErrorDetailsDto;
+import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.GrafanaLinkBuilder;
-import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
-import com.epam.aidial.evaluation.service.domain.dto.RunErrorDetailsDto;
-import com.epam.aidial.evaluation.service.domain.dto.SuiteSnapshotDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;

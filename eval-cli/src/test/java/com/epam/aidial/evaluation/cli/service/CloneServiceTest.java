@@ -9,8 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.cli.client.source.TestSuiteApiClient;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteCloneRequestDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;

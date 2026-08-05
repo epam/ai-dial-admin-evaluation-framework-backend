@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.service.domain.dto;
+package com.epam.aidial.evaluation.runner.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

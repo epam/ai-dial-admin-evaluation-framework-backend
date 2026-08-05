@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;

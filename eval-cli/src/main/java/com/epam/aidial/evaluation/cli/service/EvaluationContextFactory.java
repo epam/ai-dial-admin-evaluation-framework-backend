@@ -1,10 +1,10 @@
 package com.epam.aidial.evaluation.cli.service;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.cli.config.properties.EvalCliProperties;
 import com.epam.aidial.evaluation.cli.config.properties.TargetProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import java.time.Clock;
 import java.util.List;

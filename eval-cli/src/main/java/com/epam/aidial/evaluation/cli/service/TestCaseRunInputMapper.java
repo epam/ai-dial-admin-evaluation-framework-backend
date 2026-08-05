@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.cli.service;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;

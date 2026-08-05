@@ -1,19 +1,13 @@
-package com.epam.aidial.evaluation.cli.client.source.dto;
+package com.epam.aidial.evaluation.runner.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * Local mirror of the EF backend's {@code PageResponseDto}.
- *
- * <p>Manually kept in sync with
- * {@code com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto}.
- *
- * @param <T> the element type
- */
 @Data
 @Builder
 @NoArgsConstructor
@@ -21,8 +15,18 @@ import lombok.NoArgsConstructor;
 public class PageResponseDto<T> {
 
     private List<T> content;
+
+    @Schema(example = "0")
     private int page;
+
+    @Schema(example = "20")
     private int size;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(example = "42")
     private Long totalElements;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(example = "3")
     private Integer totalPages;
 }

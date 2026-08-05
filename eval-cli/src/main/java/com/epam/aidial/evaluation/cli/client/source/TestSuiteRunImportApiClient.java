@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.cli.client.source;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import java.io.File;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

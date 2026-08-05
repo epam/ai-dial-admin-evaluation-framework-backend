@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.cli.model;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.TestCaseResponseDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.util.List;
 import java.util.UUID;
 import lombok.AllArgsConstructor;

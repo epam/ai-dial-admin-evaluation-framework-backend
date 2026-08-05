@@ -2,11 +2,11 @@ package com.epam.aidial.evaluation.cli.service;
 
 import com.epam.aidial.evaluation.cli.client.source.TestCaseApiClient;
 import com.epam.aidial.evaluation.cli.client.source.TestSuiteApiClient;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestCaseResponseDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.cli.config.properties.EvalCliProperties;
 import com.epam.aidial.evaluation.cli.model.SuiteFetchBundle;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

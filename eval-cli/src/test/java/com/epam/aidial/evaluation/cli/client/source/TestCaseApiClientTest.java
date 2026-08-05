@@ -7,8 +7,8 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.PageResponseDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;

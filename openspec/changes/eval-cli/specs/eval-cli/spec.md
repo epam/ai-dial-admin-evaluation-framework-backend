@@ -86,4 +86,4 @@ The CLI SHALL authenticate its calls to the source EF using a bearer token suppl
 
 ## Implementation notes
 
-Status: Planned (no implementation exists yet as of this change's creation). See `design.md` for the technical approach: new `eval-cli` Gradle subproject consuming `evaluation-runner-core`'s `TestCaseRunnerFactory`/`TestCaseRunner` batch execution path, a new `CsvResultBatchWriter` implementing `evaluation-runner-core`'s `ResultBatchWriter`, and thin locally-declared client DTOs for the source EF's existing `test-suite-clone`, `test-cases`, and `test-suite-runs` (`runs/import`) REST endpoints.
+Status: Planned (no implementation exists yet as of this change's creation). See `design.md` for the technical approach: new `eval-cli` Gradle subproject consuming `evaluation-runner-core`'s `TestCaseRunnerFactory`/`TestCaseRunner` batch execution path, a new `CsvResultBatchWriter` implementing `evaluation-runner-core`'s `ResultBatchWriter`, and shared `evaluation-runner-core` DTOs (plus one deliberate local subset, `TestSuiteUpdateResultDto`) for the source EF's existing `test-suite-clone`, `test-cases`, and `test-suite-runs` (`runs/import`) REST endpoints.

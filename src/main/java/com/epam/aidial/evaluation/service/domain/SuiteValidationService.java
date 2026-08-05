@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
@@ -15,6 +14,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;

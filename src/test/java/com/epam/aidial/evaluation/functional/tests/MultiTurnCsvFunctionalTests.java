@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.UncheckedIOException;

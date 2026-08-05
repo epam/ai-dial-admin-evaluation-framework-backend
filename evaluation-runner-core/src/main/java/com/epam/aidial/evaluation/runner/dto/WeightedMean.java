@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.service.domain.dto.overallscore;
+package com.epam.aidial.evaluation.runner.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;

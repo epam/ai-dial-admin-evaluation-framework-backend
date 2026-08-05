@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
-import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.dto.OverallScoreDefinition;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Builder;

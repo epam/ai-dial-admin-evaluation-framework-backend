@@ -4,10 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.cli.config.properties.EvalCliProperties;
 import com.epam.aidial.evaluation.cli.config.properties.TargetProperties;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import java.time.Clock;
 import java.time.Instant;

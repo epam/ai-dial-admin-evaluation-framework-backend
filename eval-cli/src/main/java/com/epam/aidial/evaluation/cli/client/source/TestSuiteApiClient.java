@@ -1,10 +1,10 @@
 package com.epam.aidial.evaluation.cli.client.source;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.PageResponseDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteCloneRequestDto;
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteUpdateResultDto;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

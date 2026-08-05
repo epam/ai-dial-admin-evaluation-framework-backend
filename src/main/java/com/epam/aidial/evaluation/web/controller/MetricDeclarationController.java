@@ -2,10 +2,10 @@ package com.epam.aidial.evaluation.web.controller;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.MetricDeclarationService;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import com.epam.aidial.evaluation.web.pagination.FilterParam;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
 import io.swagger.v3.oas.annotations.Operation;

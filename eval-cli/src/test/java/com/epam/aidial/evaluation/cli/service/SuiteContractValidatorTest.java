@@ -3,12 +3,12 @@ package com.epam.aidial.evaluation.cli.service;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

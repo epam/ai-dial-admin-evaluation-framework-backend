@@ -1,10 +1,10 @@
 package com.epam.aidial.evaluation.cli.service;
 
-import com.epam.aidial.evaluation.cli.client.source.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.cli.csv.CsvResultBatchWriter;
 import com.epam.aidial.evaluation.cli.model.SuiteFetchBundle;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;

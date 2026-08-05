@@ -17,7 +17,7 @@
 
 ## 3. Source EF HTTP Client
 
-- [x] 3.1 Implement local DTOs under `client/source/dto` (`TestSuiteResponseDto`, `TestSuiteCloneRequestDto`, `TestCaseResponseDto`, `TestSuiteUpdateResultDto`, `PageResponseDto<T>`, `TestSuiteRunResponseDto`), reusing `evaluation-runner-core`'s `runner.dto`/`runner.model` types for nested fields (deploymentRef, requestTemplate, inputBindings, responseColumns, suiteType); add a class-level comment on each noting it is manually kept in sync with the EF backend's `service.domain.dto` contract
+- [x] 3.1 Implement `TestSuiteUpdateResultDto` as the only local DTO under `client/source/dto` — a deliberate `{suite}`-only subset of the canonical `runner.dto.TestSuiteUpdateResultDto` (omits `revalidationTask`, which the clone endpoint's contract guarantees is always null); consume every other source-EF response DTO (`TestSuiteResponseDto`, `TestSuiteCloneRequestDto`, `TestCaseResponseDto`, `PageResponseDto<T>`, `TestSuiteRunResponseDto`) directly from `evaluation-runner-core`'s `runner.dto`, where they were consolidated to avoid duplication between the main app and `eval-cli`
 - [x] 3.2 Implement `SourceClientConfiguration` (`@Bean("sourceRestClient") RestClient`) with a static-bearer-token request interceptor reading `SourceProperties.token`
 - [x] 3.3 Implement `TestSuiteApiClient`: get-by-id, find-by-exact-name (used only by the clone-existence check), clone
 - [x] 3.4 Implement `TestCaseApiClient`: paginated fetch that materializes the full test-case list for a dataset
@@ -32,7 +32,7 @@
 
 ## 5. CSV Result Writer
 
-- [x] 5.1 Implement `CsvResultBatchWriter` (implements `evaluation-runner-core`'s `ResultBatchWriter`), writing the exact reserved import columns (`testCaseId, testCaseName, runIndex, requestBody, responseBody, responseStatusCode, executionStatus, startedAt, completedAt, traceId, retryCount, logDetails`) via Apache Commons CSV `CSVPrinter`, with `addResults` synchronized for thread-safe concurrent writes
+- [x] 5.1 Implement `CsvResultBatchWriter` (implements `evaluation-runner-core`'s `ResultBatchWriter`), writing the exact reserved import columns (`testCaseName, runIndex, testCaseData, requestBody, responseBody, responseStatusCode, executionStatus, startedAt, completedAt, traceId, retryCount, logDetails, extractedColumns, extractionWarnings`) via Apache Commons CSV `CSVPrinter`, with `addResults` synchronized for thread-safe concurrent writes
 - [x] 5.2 Unit test asserting exact header/column order and per-field value formatting (timestamp fields, enum name, JSON-serialized bodies) against `TestCaseRunResult` fixtures
 - [x] 5.3 Concurrency test: invoke `addResults` from multiple threads simultaneously and assert the resulting CSV has no interleaved/corrupted rows
 
@@ -48,9 +48,9 @@
 
 ## 7. CLI Commands
 
-- [x] 7.1 Implement `RootCommand` (picocli root `@Command`, `subcommands = {Clone, Fetch, Run, Import, Pipeline}`)
+- [x] 7.1 Implement `RootCommand` (picocli root `@Command`, `subcommands = {Clone, Fetch, Run, Import, Evaluate}`)
 - [x] 7.2 Implement `CloneCommand`, `FetchCommand`, `RunCommand`, `ImportCommand` — each a thin picocli wrapper delegating to its corresponding service
-- [x] 7.3 Implement `PipelineCommand`: for each configured suite, run clone → fetch → run → import in sequence, tracking `cloneId` explicitly as the import target regardless of whether it was newly created or reused
+- [x] 7.3 Implement `EvaluateCommand`: for each configured suite, run clone → fetch → run → import in sequence, tracking `cloneId` explicitly as the import target regardless of whether it was newly created or reused; named `evaluate` (the domain action) rather than `pipeline`
 - [x] 7.4 Implement `EvalCliApplication` (`@SpringBootApplication`), bootstrapping via `picocli-spring-boot-starter`'s documented `CommandLine`/`IFactory` idiom, exiting with the command's return code
 - [x] 7.5 Manual smoke test: `java -jar eval-cli.jar --help` lists all five commands with usage text
 
@@ -64,5 +64,5 @@
 
 - [x] 9.1 Run `./gradlew :eval-cli:test` and confirm `CliModuleConstraintsTest` passes
 - [x] 9.2 Run `./gradlew :eval-cli:checkstyleMain :eval-cli:checkstyleTest` and `./gradlew spotlessApply`
-- [ ] 9.3 End-to-end manual check: run `pipeline` against a local EF instance (`config.rest.security.mode=none`) acting as source and a stub/local deployment acting as target; confirm the imported run shows `SUCCESS` rows and that metric computation is triggered automatically after import (poll `GET /api/v1/test-suite-runs/{id}`)
-- [ ] 9.4 Re-run `pipeline` a second time against the same configured suite and confirm the existing `<prefix>_<name>` clone is reused (no duplicate suite created) while a new import/run still occurs
+- [x] 9.3 End-to-end manual check: run `evaluate` against a local EF instance (`config.rest.security.mode=none`) acting as source and a stub/local deployment acting as target; confirm the imported run shows `SUCCESS` rows and that metric computation is triggered automatically after import (poll `GET /api/v1/test-suite-runs/{id}`)
+- [x] 9.4 Re-run `evaluate` a second time against the same configured suite and confirm the existing `<prefix>_<name>` clone is reused (no duplicate suite created) while a new import/run still occurs

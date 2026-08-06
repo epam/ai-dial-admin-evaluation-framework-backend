@@ -8,9 +8,10 @@ import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationRepository;
 import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationVersionRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.FilterValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
@@ -60,7 +61,7 @@ public class MetricDeclarationService {
         try {
             Page<MetricDeclaration> pageResult =
                     metricDeclarationRepository.findAll(pageRequest, safeFilters, includeTotalCount);
-            return PageResponseDto.from(pageResult, metricDeclarationMapper::toDto, includeTotalCount);
+            return PageResponseMapper.from(pageResult, metricDeclarationMapper::toDto, includeTotalCount);
         } catch (InvalidFilterException ex) {
             throw new FilterValidationException(ex.getMessage(), ex.getDetails());
         }

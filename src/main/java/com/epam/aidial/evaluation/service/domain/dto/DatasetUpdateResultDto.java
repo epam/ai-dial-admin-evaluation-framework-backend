@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
+import com.epam.aidial.evaluation.runner.dto.RevalidationTaskDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteUpdateResultDto;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

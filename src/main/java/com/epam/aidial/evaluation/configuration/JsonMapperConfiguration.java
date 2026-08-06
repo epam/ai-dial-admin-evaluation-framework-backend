@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.configuration;
 
-import com.epam.aidial.evaluation.configuration.jackson.HttpMethodDeserializer;
-import com.epam.aidial.evaluation.configuration.jackson.HttpMethodSerializer;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.util.jackson.HttpMethodDeserializer;
+import com.epam.aidial.evaluation.runner.util.jackson.HttpMethodSerializer;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

@@ -2,12 +2,12 @@ package com.epam.aidial.evaluation.web.controller;
 
 import com.epam.aidial.evaluation.constants.TestSuiteRunConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.pagination.FilterParam;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;

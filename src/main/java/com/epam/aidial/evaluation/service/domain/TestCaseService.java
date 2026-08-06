@@ -9,12 +9,13 @@ import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseBatchPutItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkDeleteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.testcase.bulk.TestCaseBulkOperationDto;
@@ -114,7 +115,7 @@ public class TestCaseService {
         List<FilterCondition> filters = filterParser.parse(filter != null ? filter : List.of());
         Page<TestCase> domainPage =
                 testCaseRepository.findAllByDatasetId(datasetId, pageRequest, filters, includeTotalCount);
-        return PageResponseDto.from(domainPage, tc -> testCaseMapper.toDto(tc, includeWarnings), includeTotalCount);
+        return PageResponseMapper.from(domainPage, tc -> testCaseMapper.toDto(tc, includeWarnings), includeTotalCount);
     }
 
     @Transactional("metaTransactionManager")

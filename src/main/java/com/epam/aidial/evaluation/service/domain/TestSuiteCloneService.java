@@ -12,10 +12,10 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRe
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteUpdateResultDto;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteUpdateResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;

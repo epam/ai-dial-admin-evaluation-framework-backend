@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;

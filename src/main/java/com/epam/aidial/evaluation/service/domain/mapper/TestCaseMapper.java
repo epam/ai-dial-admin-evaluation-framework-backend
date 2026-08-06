@@ -2,10 +2,10 @@ package com.epam.aidial.evaluation.service.domain.mapper;
 
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseBatchPutItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

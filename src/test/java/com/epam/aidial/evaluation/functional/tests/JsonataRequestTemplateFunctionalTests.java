@@ -277,8 +277,8 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
                         .build()))
                 .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
                         .name("history")
-                        .expression("$append($request.input, [{\"role\": \"assistant\", "
-                                + "\"content\": $response.output[0].content[0].text}])")
+                        .expression("$append($_request.input, [{\"role\": \"assistant\", "
+                                + "\"content\": $_response.output[0].content[0].text}])")
                         .type(SchemaFieldType.ARRAY)
                         .build()))
                 .build();

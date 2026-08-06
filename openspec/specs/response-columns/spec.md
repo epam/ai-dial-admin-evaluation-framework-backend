@@ -378,29 +378,35 @@ Status: **Implemented**
 
 ### Requirement: Request/response frame for response column extraction
 
-When evaluating a response column's JSONata expression, the service SHALL provide a `Frame` binding `$request` (the parsed JSON of the request body actually sent) and `$response` (the parsed JSON of the response body) in addition to the existing evaluation. The root evaluation document remains the raw response body, unchanged — `$request`/`$response` are additive frame variables; no existing response column expression's meaning changes. This applies uniformly to single-turn suites, multi-turn suites (each turn's own request/response), and MCP suites.
+When evaluating a response column's JSONata expression, the service SHALL provide a `Frame` binding `$_request` (the parsed JSON of the request body actually sent) and `$_response` (the parsed JSON of the response body) in addition to the existing evaluation. The root evaluation document remains the raw response body, unchanged — `$_request`/`$_response` are additive frame variables; no existing response column expression's meaning changes. This applies uniformly to single-turn suites, multi-turn suites (each turn's own request/response), and MCP suites.
+
+The binding names carry a leading underscore deliberately, so that the far more natural column names `request` and `response` stay available to suite authors. The underscore is a valid JSONata identifier character (the tokenizer terminates a `$`-prefixed variable name only at whitespace or a registered operator), so `$_request.messages[0].content` parses as a single variable reference. A name containing `.` MUST NOT be used: `.` is a registered operator, so a binding such as `frame.request` is accepted by `Frame.bind` but is unreachable from every expression syntax (`$frame.request` lexes as variable `frame` followed by a field access) and silently yields `undefined`.
 
 Status: **Implemented**
 
 #### Scenario: Existing expression unaffected
-- **WHEN** a response column has `expression: "choices[0].message.content"` (no reference to `$request`/`$response`)
+- **WHEN** a response column has `expression: "choices[0].message.content"` (no reference to `$_request`/`$_response`)
 - **THEN** extraction behaves exactly as before this change — evaluated against the response body as the root document
 
-#### Scenario: Expression references $response explicitly
-- **WHEN** a response column has `expression: "$response.choices[0].message.content"`
-- **THEN** extraction SHALL produce the identical result as the equivalent root-document expression `"choices[0].message.content"`, since `$response` is bound to the same parsed response body
+#### Scenario: Expression references $_response explicitly
+- **WHEN** a response column has `expression: "$_response.choices[0].message.content"`
+- **THEN** extraction SHALL produce the identical result as the equivalent root-document expression `"choices[0].message.content"`, since `$_response` is bound to the same parsed response body
 
 #### Scenario: Expression correlates request and response
-- **WHEN** a response column has `expression: "$response.result = $request.expected"`
-- **THEN** extraction SHALL evaluate the expression with both `$request` and `$response` populated from the turn's actual sent request body and received response body
+- **WHEN** a response column has `expression: "$_response.result = $_request.expected"`
+- **THEN** extraction SHALL evaluate the expression with both `$_request` and `$_response` populated from the turn's actual sent request body and received response body
 
 #### Scenario: Multi-turn extraction uses that turn's own request/response
 - **WHEN** a multi-turn case's turn k is extracted
-- **THEN** `$request` and `$response` are bound to turn k's own resolved request body and received response body, not an earlier or later turn's
+- **THEN** `$_request` and `$_response` are bound to turn k's own resolved request body and received response body, not an earlier or later turn's
 
 ### Requirement: Reserved response column names
 
-A response column's `name` SHALL NOT collide with a JSONata built-in function name (a hand-maintained `JsonataReservedNames` constants list, distinct from the query-DSL function registry used by the query DSL subsystem) or with the reserved frame variable names `request` or `response`. Suite create/update SHALL reject a colliding name with HTTP 400. This is independent of, and in addition to, the existing `::`-sequence name restriction and the existing per-suite name-uniqueness check.
+A response column's `name` SHALL NOT collide with a JSONata built-in function name (a hand-maintained `JsonataReservedNames` constants list, distinct from the query-DSL function registry used by the query DSL subsystem) or with the reserved frame variable names `_request` or `_response`. Suite create/update SHALL reject a colliding name with HTTP 400. This is independent of, and in addition to, the existing `::`-sequence name restriction and the existing per-suite name-uniqueness check.
+
+The plain names `request` and `response` are **not** reserved and SHALL be accepted as ordinary response column names.
+
+The reservation exists for authoring clarity, not to prevent a runtime collision: the response-column extraction frame and the request-template frame bind disjoint name sets (the former binds only `_request`/`_response`; the latter binds only the previous turn's extracted column names), so a column name can never actually shadow a frame variable during evaluation. What the reservation prevents is a `$name` token whose meaning would differ between the two authoring surfaces.
 
 Status: **Implemented**
 
@@ -408,12 +414,16 @@ Status: **Implemented**
 - **WHEN** client saves a suite with a response column named `"count"` (a JSONata built-in function name)
 - **THEN** system SHALL respond with HTTP 400, error code `VALIDATION_ERROR`, identifying the offending column
 
-#### Scenario: Response column name collides with the reserved request/response frame names
-- **WHEN** client saves a suite with a response column named `"request"` or `"response"`
+#### Scenario: Response column name collides with the reserved frame variable names
+- **WHEN** client saves a suite with a response column named `"_request"` or `"_response"`
 - **THEN** system SHALL respond with HTTP 400, error code `VALIDATION_ERROR`, identifying the offending column
 
+#### Scenario: Response column named request or response accepted
+- **WHEN** client saves a suite with a response column named `"request"` or `"response"`
+- **THEN** system SHALL accept and persist the column — these names are no longer reserved, since the frame variables are `_request`/`_response`
+
 #### Scenario: Non-colliding name accepted
-- **WHEN** client saves a suite with a response column named `"answer"` (not a JSONata function name, not `request`/`response`)
+- **WHEN** client saves a suite with a response column named `"answer"` (not a JSONata function name, not `_request`/`_response`)
 - **THEN** system SHALL accept and persist the column, unaffected by this requirement
 
 ### Requirement: Failed-extraction frame binding uses explicit null, not undefined (F2)
@@ -470,8 +480,8 @@ Status: **Implemented**
 - **Modified service**: `TestSuiteService.validateTestSuiteSchemas()` — add JSONata validation for response columns.
 - **Modified service**: Result write path — evaluate response columns after building result. Extraction is a **job-layer concern**: `MockResultsGenerator` (and future real runners) load the suite's `responseColumns` from meta DB and evaluate expressions before calling the analytics batch writer. The analytics batch write API (`POST /api/v1/analytics/results`) is a pure persistence endpoint and does NOT trigger extraction — external callers must pre-populate `extractedColumns`/`extractionWarnings` or accept empty defaults.
 - **JSONB serialization**: Uses existing `JsonbMapper` pattern for responseColumns. Uses `ValidationWarningsSerializer` pattern for extraction warnings.
-- **JSONata library**: `com.dashjoin:jsonata:0.9.9` — 100% reference test coverage, zero extra transitive dependencies. `DashjoinJsonataEvaluationService` is the only class that imports from `com.dashjoin.jsonata`; it also owns the `$request`/`$response` 3-arg frame-evaluate overload and the `Jsonata.NULL_VALUE` frame-binding logic for the request-template frame (F2) — a narrow, explicit exception to (not a repeal of) the "only importer" invariant, since both live in the same class.
-- `constants.JsonataReservedNames` (new constants class) is the single source for both the built-in-function-name set (a hand-maintained list of JSONata built-in function names, unrelated to the query-DSL function registry — which enumerates SQL/jOOQ functions for a different subsystem) and the `request`/`response` reserved names; `TestSuiteRequestValidator` consumes it for the reserved-name 400 check.
+- **JSONata library**: `com.dashjoin:jsonata:0.9.9` — 100% reference test coverage, zero extra transitive dependencies. `DashjoinJsonataEvaluationService` is the only class that imports from `com.dashjoin.jsonata`; it also owns the `$_request`/`$_response` 3-arg frame-evaluate overload and the `Jsonata.NULL_VALUE` frame-binding logic for the request-template frame (F2) — a narrow, explicit exception to (not a repeal of) the "only importer" invariant, since both live in the same class.
+- `runner.constants.JsonataReservedNames` (in the `evaluation-runner-core` module, so the standalone runner and the EF backend share one definition) is the single source for the built-in-function-name set (a hand-maintained list of JSONata built-in function names, unrelated to the query-DSL function registry — which enumerates SQL/jOOQ functions for a different subsystem) and for the frame binding names themselves: `REQUEST_FRAME_BINDING = "_request"` / `RESPONSE_FRAME_BINDING = "_response"`, from which `FRAME_RESERVED_NAMES` is derived. `ResponseColumnExtractor` binds the frame from those same constants and `TestSuiteRequestValidator` consumes `RESERVED_COLUMN_NAMES` for the reserved-name 400 check, so the bound name and the reserved name cannot drift apart.
 - **Transaction**: Response columns are part of `test_suites` — uses `@Transactional("metaTransactionManager")`. Extraction happens in the analytics write path — uses `@Transactional("analyticsTransactionManager")`.
 
 ## Deferred

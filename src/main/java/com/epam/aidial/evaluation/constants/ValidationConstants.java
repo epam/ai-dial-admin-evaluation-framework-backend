@@ -57,18 +57,5 @@ public final class ValidationConstants {
     public static final String OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE =
             "overallScoreThreshold must be between 0.0 and 1.0";
 
-    /**
-     * Maximum number of entries in {@code TestSuiteRequestDto.additionalRequests}. Bounds the request
-     * chain's length (request #0 plus up to this many additional requests).
-     */
-    public static final int MAX_ADDITIONAL_REQUESTS = 10;
-
-    /**
-     * Maximum number of response columns across the whole request chain — the union of request #0's
-     * {@code responseColumns} and every {@code additionalRequests[i].responseColumns}. Extracted from the
-     * literal previously hardcoded on {@code TestSuiteRequestDto.responseColumns}.
-     */
-    public static final int MAX_RESPONSE_COLUMNS = 50;
-
     private ValidationConstants() {}
 }

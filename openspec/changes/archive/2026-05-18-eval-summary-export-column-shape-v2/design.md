@@ -152,7 +152,7 @@ extractionWarnings                       ← unchanged
 **Alternatives considered:**
 
 - Inline `":"` literals at the three concatenation sites (the today-pattern with `"."`). Rejected — already considered noise; centralizing now avoids a follow-up refactor when the separator inevitably needs to change again.
-- Put the constants on `ValidationConstants`. Rejected — those govern validation caps; export column naming is a different bounded context.
+- Put the constants on `RunnerValidationConstants`. Rejected — those govern validation caps; export column naming is a different bounded context.
 
 ### 8. Row-side accessors on `EvalSummaryExportRow`
 

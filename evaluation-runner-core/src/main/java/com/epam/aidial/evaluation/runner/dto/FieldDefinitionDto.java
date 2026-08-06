@@ -27,8 +27,8 @@ public class FieldDefinitionDto {
     @NotBlank
     @Size(max = 255)
     @Pattern(
-            regexp = ValidationConstants.IDENTIFIER_NAME_NO_COLON_PATTERN,
-            message = ValidationConstants.IDENTIFIER_NAME_NO_COLON_MESSAGE)
+            regexp = RunnerValidationConstants.IDENTIFIER_NAME_NO_COLON_PATTERN,
+            message = RunnerValidationConstants.IDENTIFIER_NAME_NO_COLON_MESSAGE)
     private String name;
 
     @Size(max = 255)

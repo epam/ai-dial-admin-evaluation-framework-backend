@@ -34,7 +34,7 @@ The codebase has no single written set of code-quality practices. Inconsistencie
    **Validation:** Allowed in Java (e.g. `@Valid`, `@Min`, custom validators on properties classes). No default values in Java.
 
 3. **Constants: one class per bounded context**  
-   **Choice:** For each bounded context (e.g. pagination, validation, CSV, security), introduce one constants class (or a small set if one file would be too large). Name consistently (e.g. `PaginationConstants`, `ValidationConstants`). Non-configurable literals and limits live only there.  
+   **Choice:** For each bounded context (e.g. pagination, validation, CSV, security), introduce one constants class (or a small set if one file would be too large). Name consistently (e.g. `PaginationConstants`, `RunnerValidationConstants`). Non-configurable literals and limits live only there.  
    **Rationale:** Avoids duplication and scattered magic values; keeps constants discoverable. Alternative (one project-wide constants class) was rejected to avoid a single large file and to keep context boundaries clear.
 
 4. **Detection approach**  

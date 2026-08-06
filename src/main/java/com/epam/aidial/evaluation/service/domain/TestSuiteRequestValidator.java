@@ -1,9 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
-import com.epam.aidial.evaluation.constants.JsonataReservedNames;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
-import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.constants.JsonataReservedNames;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
@@ -14,6 +12,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RunnerValidationConstants;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
@@ -102,9 +101,9 @@ public class TestSuiteRequestValidator {
         }
 
         int unionCount = responseColumnUnionResolver.unionFrom(dto).size();
-        if (unionCount > ValidationConstants.MAX_RESPONSE_COLUMNS) {
+        if (unionCount > RunnerValidationConstants.MAX_RESPONSE_COLUMNS) {
             throw new ValidationException("Response column union across the request chain (" + unionCount
-                    + ") exceeds maximum of " + ValidationConstants.MAX_RESPONSE_COLUMNS);
+                    + ") exceeds maximum of " + RunnerValidationConstants.MAX_RESPONSE_COLUMNS);
         }
     }
 

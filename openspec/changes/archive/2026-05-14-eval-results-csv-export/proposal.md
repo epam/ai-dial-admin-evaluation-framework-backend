@@ -39,7 +39,7 @@ This change adds a first-class CSV export so users can pull one run × one metri
   - New repository read path on `PostgresEvalSummaryRepository` (JOIN-on-`test_case_run_results` cursor query).
 - **API**: two additive endpoints; no breaking changes to existing routes.
 - **Database**: no schema changes, no migrations.
-- **Configuration**: no new properties expected. (If a constant such as preview row count or max columns is exposed, it goes in `ValidationConstants`, not `application.yml`.)
+- **Configuration**: no new properties expected. (If a constant such as preview row count or max columns is exposed, it goes in `RunnerValidationConstants`, not `application.yml`.)
 - **Security**: same auth/authz as the existing list endpoint — no new roles or scopes.
 - **Dependencies**: reuses Apache Commons CSV (`org.apache.commons.csv.CSVPrinter`) already present in the project.
 - **Docs**: `openspec/specs/README.md` gets a new entry for `eval-summary-export`. No change to `docs/database-schema.md` or `docs/configuration.md`.

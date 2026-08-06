@@ -51,7 +51,7 @@ DatasetController.publish(id, DatasetPublishRequestDto)
 ```
 
 New classes introduced:
-- `DatasetPublishRequestDto` — `service.domain.dto`, Lombok `@Data @Builder`, optional `name` + `description` with `@Size` constraints referencing `ValidationConstants`.
+- `DatasetPublishRequestDto` — `service.domain.dto`, Lombok `@Data @Builder`, optional `name` + `description` with `@Size` constraints referencing `RunnerValidationConstants`.
 
 ## Risks / Trade-offs
 

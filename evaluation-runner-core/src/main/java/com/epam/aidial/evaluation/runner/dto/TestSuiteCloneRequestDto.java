@@ -1,14 +1,5 @@
 package com.epam.aidial.evaluation.runner.dto;
 
-import com.epam.aidial.evaluation.constants.ValidationConstants;
-import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
-import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
-import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
-import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
-import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
-import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
-import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
-import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -52,7 +43,7 @@ public class TestSuiteCloneRequestDto {
     private UUID datasetId;
 
     @Valid
-    @Size(max = ValidationConstants.MAX_RESPONSE_COLUMNS)
+    @Size(max = RunnerValidationConstants.MAX_RESPONSE_COLUMNS)
     private List<ResponseColumnDefinitionDto> responseColumns;
 
     @Valid

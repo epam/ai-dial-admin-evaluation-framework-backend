@@ -9,7 +9,7 @@ The CSV export of evaluation summaries uses `:` (colon) as the family separator 
   - Response column names (`ResponseColumnDefinitionDto.name`, nested inside `TestSuiteRequestDto.responseColumns`)
   - Test suite metric definition names (`TestSuiteMetricDefinitionRequestDto.name`)
 - Validation applies uniformly to POST (create) and PUT (update) endpoints — a `@Pattern` constraint on each DTO name field. Pre-existing rows are NOT migrated; their owners must rename colon-bearing identifiers next time they update the suite.
-- Add a shared `IDENTIFIER_NAME_NO_COLON_PATTERN` constant + message to `ValidationConstants` so the rule is defined once.
+- Add a shared `IDENTIFIER_NAME_NO_COLON_PATTERN` constant + message to `RunnerValidationConstants` so the rule is defined once.
 
 ## Capabilities
 

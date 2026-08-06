@@ -3,7 +3,7 @@ package com.epam.aidial.evaluation.runner.dto;
 /**
  * Non-configurable validation limits.
  */
-public final class ValidationConstants {
+public final class RunnerValidationConstants {
 
     /**
      * Regex enforced on test-case schema field names.
@@ -28,5 +28,18 @@ public final class ValidationConstants {
     /** Max length enforced on a test suite run's user-provided {@code testRunName}. */
     public static final int MAX_TEST_RUN_NAME_LENGTH = 255;
 
-    private ValidationConstants() {}
+    /**
+     * Maximum number of entries in {@code TestSuiteRequestDto.additionalRequests}. Bounds the request
+     * chain's length (request #0 plus up to this many additional requests).
+     */
+    public static final int MAX_ADDITIONAL_REQUESTS = 10;
+
+    /**
+     * Maximum number of response columns across the whole request chain — the union of request #0's
+     * {@code responseColumns} and every {@code additionalRequests[i].responseColumns}. Extracted from the
+     * literal previously hardcoded on {@code TestSuiteRequestDto.responseColumns}.
+     */
+    public static final int MAX_RESPONSE_COLUMNS = 50;
+
+    private RunnerValidationConstants() {}
 }

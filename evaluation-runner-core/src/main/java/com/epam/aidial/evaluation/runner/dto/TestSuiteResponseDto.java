@@ -1,17 +1,5 @@
 package com.epam.aidial.evaluation.runner.dto;
 
-import com.epam.aidial.evaluation.data.db.model.SuiteType;
-import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
-import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
-import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
-import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
-import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
-import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
-import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
-import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
-import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
-import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
-import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import io.swagger.v3.oas.annotations.media.Schema;

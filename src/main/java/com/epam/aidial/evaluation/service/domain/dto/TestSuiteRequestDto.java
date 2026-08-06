@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RunnerValidationConstants;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
@@ -67,7 +68,7 @@ public class TestSuiteRequestDto {
     private EndpointContractDto endpointRef;
 
     @Valid
-    @Size(max = ValidationConstants.MAX_RESPONSE_COLUMNS)
+    @Size(max = RunnerValidationConstants.MAX_RESPONSE_COLUMNS)
     private List<ResponseColumnDefinitionDto> responseColumns;
 
     @Valid
@@ -86,14 +87,15 @@ public class TestSuiteRequestDto {
 
     @Valid
     @Size(
-            max = ValidationConstants.MAX_ADDITIONAL_REQUESTS,
-            message = "additionalRequests must not exceed " + ValidationConstants.MAX_ADDITIONAL_REQUESTS + " entries")
+            max = RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS,
+            message = "additionalRequests must not exceed " + RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS
+                    + " entries")
     @Schema(
             description = "Ordered chain of requests 1..N executed after request #0 against the same "
                     + "`deploymentRef`. Response columns across request #0 and every additional request share one "
-                    + "flat, globally-unique namespace, capped at " + ValidationConstants.MAX_RESPONSE_COLUMNS
+                    + "flat, globally-unique namespace, capped at " + RunnerValidationConstants.MAX_RESPONSE_COLUMNS
                     + " columns in total. Rejected (400) when non-empty on an `MCP_TOOL` suite. Capped at "
-                    + ValidationConstants.MAX_ADDITIONAL_REQUESTS + " entries.",
+                    + RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS + " entries.",
             example = "[]")
     private List<RequestDefinitionDto> additionalRequests;
 

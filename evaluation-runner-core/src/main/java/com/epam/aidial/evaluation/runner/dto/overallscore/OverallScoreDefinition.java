@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.runner.dto;
+package com.epam.aidial.evaluation.runner.dto.overallscore;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;

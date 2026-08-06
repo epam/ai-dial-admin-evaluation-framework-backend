@@ -12,7 +12,7 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
-import com.epam.aidial.evaluation.runner.dto.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;

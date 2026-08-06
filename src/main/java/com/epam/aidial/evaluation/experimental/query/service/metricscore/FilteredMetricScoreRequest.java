@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.experimental.query.service.metricscore;
 
-import com.epam.aidial.evaluation.runner.dto.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import java.util.List;
 import java.util.UUID;
 

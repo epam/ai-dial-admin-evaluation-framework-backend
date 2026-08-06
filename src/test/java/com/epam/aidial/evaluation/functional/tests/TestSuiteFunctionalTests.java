@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
-import com.epam.aidial.evaluation.runner.dto.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -16,6 +15,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;

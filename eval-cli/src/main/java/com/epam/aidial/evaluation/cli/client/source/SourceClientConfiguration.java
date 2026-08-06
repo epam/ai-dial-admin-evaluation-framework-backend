@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.ClientHttpRequestExecution;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -40,8 +41,7 @@ public class SourceClientConfiguration {
      *
      * <p>This is the source-EF bearer token, distinct from the target DIAL Core token.
      */
-    private static org.springframework.http.client.ClientHttpRequestInterceptor staticBearerTokenInterceptor(
-            String token) {
+    private static ClientHttpRequestInterceptor staticBearerTokenInterceptor(String token) {
         return (HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {
             request.getHeaders().setBearerAuth(token);
             return execution.execute(request, body);

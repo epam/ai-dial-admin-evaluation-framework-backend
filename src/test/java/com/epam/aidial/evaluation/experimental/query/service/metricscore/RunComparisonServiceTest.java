@@ -13,10 +13,10 @@ import com.epam.aidial.evaluation.configuration.properties.analytics.RunComparis
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
-import com.epam.aidial.evaluation.runner.dto.Mean;
-import com.epam.aidial.evaluation.runner.dto.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.analytics.ComputationResolver;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricScoreValueDto;

@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.runner.dto;
 
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;

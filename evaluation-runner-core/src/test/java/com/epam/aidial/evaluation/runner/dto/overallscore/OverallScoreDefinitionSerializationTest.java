@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.runner.dto;
+package com.epam.aidial.evaluation.runner.dto.overallscore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

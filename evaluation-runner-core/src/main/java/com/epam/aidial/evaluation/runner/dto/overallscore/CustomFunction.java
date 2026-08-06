@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.runner.dto;
+package com.epam.aidial.evaluation.runner.dto.overallscore;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;

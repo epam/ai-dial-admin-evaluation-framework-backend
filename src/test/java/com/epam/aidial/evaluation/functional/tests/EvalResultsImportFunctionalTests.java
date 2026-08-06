@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDt
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
@@ -76,6 +77,9 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private TestCaseRunInputRepository testCaseRunInputRepository;
 
     // -------------------------------------------------------------------------
     // Happy-path and Phase 2+3 smoke tests
@@ -159,6 +163,80 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(runId);
         assertThat(snapshots).hasSize(1);
         assertThat(snapshots.get(0).get("tsmd_name")).isEqualTo("Accuracy");
+    }
+
+    @Test
+    @DisplayName("Should capture a suite snapshot for an imported run, without capturing test case inputs or "
+            + "overwriting the imported test-case count")
+    void shouldCaptureSuiteSnapshotWithoutTestCaseInputs() {
+        // The dataset backing this suite has zero persisted TestCase rows, so the live runnable count (0)
+        // deliberately diverges from the CSV's imported row count (2) — proving numberOfTestCases is not
+        // overwritten by the snapshot phase for an imported run.
+        TestSuiteResponseDto suite = createSuiteWithResponseColumnAndMetric("Suite For Snapshot Capture");
+
+        when(metricProviderClient.evaluate(anyString(), any(EvaluationRequestDto.class)))
+                .thenReturn(EvaluationResponseDto.builder()
+                        .metricName("Accuracy")
+                        .output(Map.of(
+                                "Accuracy",
+                                MetricOutputFieldDto.builder()
+                                        .type("value")
+                                        .value(BigDecimal.ONE)
+                                        .build()))
+                        .build());
+
+        String csv = buildCsv(
+                List.of(
+                        "testCaseName",
+                        "runIndex",
+                        "responseBody",
+                        "responseStatusCode",
+                        "executionStatus",
+                        "startedAt",
+                        "completedAt",
+                        "testCaseData",
+                        "extractedColumns"),
+                List.of(
+                        List.of(
+                                "tc-1",
+                                "0",
+                                "{\"choices\":[{\"message\":{\"content\":\"Mocked answer 1.\"}}]}",
+                                "200",
+                                "SUCCESS",
+                                "1000",
+                                "1500",
+                                "{\"expected\":\"answer1\"}",
+                                "{\"answer\":\"Mocked answer 1.\"}"),
+                        List.of(
+                                "tc-2",
+                                "0",
+                                "{\"choices\":[{\"message\":{\"content\":\"Mocked answer 2.\"}}]}",
+                                "200",
+                                "SUCCESS",
+                                "1000",
+                                "1500",
+                                "{\"expected\":\"answer2\"}",
+                                "{\"answer\":\"Mocked answer 2.\"}")));
+
+        ResponseEntity<TestSuiteRunResponseDto> importResponse =
+                postImportCsv(suite.getId(), csv, TestSuiteRunResponseDto.class);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(importResponse.getBody().getNumberOfTestCases()).isEqualTo(2);
+
+        UUID runId = importResponse.getBody().getId();
+        TestSuiteRunResponseDto completed = awaitRunTerminal(runId, 15);
+        assertThat(completed.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        // numberOfTestCases stays at the imported row count, not the live dataset's runnable count (0).
+        assertThat(completed.getNumberOfTestCases()).isEqualTo(2);
+
+        assertThat(completed.getSuiteSnapshot()).isNotNull();
+        assertThat(completed.getSuiteSnapshot().getDeploymentRef()).isNotNull();
+        assertThat(completed.getSuiteSnapshot().getDeploymentRef().getId())
+                .isEqualTo(suite.getDeploymentRef().getId());
+        assertThat(completed.getSuiteSnapshot().getEndpointRef()).isNotNull();
+
+        assertThat(testCaseRunInputRepository.existsByRunId(runId)).isFalse();
     }
 
     @Test

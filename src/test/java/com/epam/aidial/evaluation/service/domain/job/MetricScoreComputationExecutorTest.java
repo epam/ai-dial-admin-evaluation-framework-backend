@@ -20,10 +20,10 @@ import com.epam.aidial.evaluation.experimental.query.service.metricscore.MetricF
 import com.epam.aidial.evaluation.experimental.query.service.metricscore.MetricScoreComputationExecutor;
 import com.epam.aidial.evaluation.experimental.query.service.metricscore.OverallScoreDefinitionResolver;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
-import com.epam.aidial.evaluation.service.domain.dto.overallscore.CustomFunction;
-import com.epam.aidial.evaluation.service.domain.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Map;

@@ -1,0 +1,127 @@
+import org.springframework.boot.gradle.plugin.SpringBootPlugin
+
+plugins {
+    id 'java'
+    id 'checkstyle'
+    id 'io.freefair.lombok' version '9.5.0'
+    id 'org.springframework.boot' version '4.1.0'
+    id 'com.diffplug.spotless' version '8.8.0'
+}
+
+group = 'com.epam.aidial'
+version = "0.1.0-rc"
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+compileJava {
+    options.warnings = true
+    options.deprecation = true
+    options.compilerArgs += ['-Xlint:unchecked']
+}
+
+compileTestJava {
+    options.warnings = true
+    options.deprecation = true
+    options.compilerArgs += ['-Xlint:unchecked']
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+    configureEach {
+        exclude group: 'commons-logging', module: 'commons-logging'
+        exclude group: "org.springframework.boot", module: "spring-boot-starter-logging"
+    }
+}
+
+checkstyle {
+    toolVersion = "13.7.0"
+    configDirectory = file("$rootProject.projectDir/checkstyle")
+
+    configProperties['org.checkstyle.google.suppressionfilter.config'] =
+            file("$rootDir/checkstyle/checkstyle-suppressions.xml")
+}
+
+spotless {
+    java {
+        target 'src/*/java/**/*.java'
+
+        palantirJavaFormat('2.94.0')
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform(SpringBootPlugin.BOM_COORDINATES)
+
+    // Spring Boot core (auto-configuration, bean lifecycle, logging, validation)
+    implementation 'org.springframework.boot:spring-boot-starter'
+    // RestClient + spring-web (HTTP client, MediaType, interceptors, etc.)
+    implementation 'org.springframework.boot:spring-boot-restclient'
+
+    // Logging (mirrors evaluation-runner-core's log4j2 + slf4j wiring)
+    implementation('org.springframework.boot:spring-boot-starter-log4j2') {
+        exclude group: 'org.apache.logging.log4j'
+    }
+    implementation "org.apache.logging.log4j:log4j-slf4j2-impl:${log4j_version}"
+    implementation "org.apache.logging.log4j:log4j-core:${log4j_version}"
+    implementation "org.apache.logging.log4j:log4j-jul:${log4j_version}"
+    implementation 'org.slf4j:jcl-over-slf4j'
+
+    // Bean Validation (jakarta.validation-api + Hibernate Validator)
+    implementation 'jakarta.validation:jakarta.validation-api'
+    implementation 'org.hibernate.validator:hibernate-validator'
+
+    // Jackson (JSON serialization) — Spring Boot BOM manages the version
+    implementation 'tools.jackson.core:jackson-databind'
+
+    // Shared Phase 1 execution engine: EvaluationWorker/TestCaseRunner, DIAL Core & MCP clients, request
+    // resolution, SSE parsing — brings Spring Boot core/RestClient/OTel/MCP SDK transitively via its own
+    // autoconfiguration
+    implementation project(':evaluation-runner-core')
+
+    // CLI framework
+    implementation 'info.picocli:picocli:4.7.7'
+    implementation 'info.picocli:picocli-spring-boot-starter:4.7.7'
+
+    // CSV read/write for the results ResultBatchWriter implementation and the source EF import contract
+    implementation 'org.apache.commons:commons-csv:1.12.0'
+
+    // MapStruct
+    implementation 'org.mapstruct:mapstruct:1.6.3'
+    annotationProcessor "org.mapstruct:mapstruct-processor:1.6.3"
+    annotationProcessor "org.projectlombok:lombok:1.18.46"
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Hibernate Validator's default message interpolator needs a jakarta.el impl on the classpath;
+    // the EF backend gets one transitively via its web starter, this module does not.
+    testRuntimeOnly 'org.apache.tomcat.embed:tomcat-embed-el:11.0.22'
+}
+
+bootJar {
+    mainClass.set('com.epam.aidial.evaluation.cli.EvalCliApplication')
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    maxHeapSize = '1g'
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += "-Werror"
+}

@@ -1,5 +1,8 @@
 package com.epam.aidial.evaluation.runner.service;
 
+import static com.epam.aidial.evaluation.runner.constants.JsonataReservedNames.REQUEST_FRAME_BINDING;
+import static com.epam.aidial.evaluation.runner.constants.JsonataReservedNames.RESPONSE_FRAME_BINDING;
+
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.analytics.ExtractionWarningDto;
@@ -20,13 +23,13 @@ import tools.jackson.databind.node.ObjectNode;
  * Evaluates response column JSONata expressions against a JSON response body string
  * and produces serialized extracted-columns and extraction-warnings strings ready for persistence.
  *
- * <p>Every expression additionally evaluates with a JSONata frame carrying {@code $response} (the
- * parsed response body) and {@code $request} (the parsed request body actually sent, when available) as
+ * <p>Every expression additionally evaluates with a JSONata frame carrying {@code $_response} (the
+ * parsed response body) and {@code $_request} (the parsed request body actually sent, when available) as
  * named variable bindings. The root document (positional {@code $}) stays the raw response body
  * unchanged, so every pre-existing response-column expression keeps its exact prior behavior;
- * {@code $request}/{@code $response} are purely additive access points. A binding is omitted entirely
+ * {@code $_request}/{@code $_response} are purely additive access points. A binding is omitted entirely
  * (left unbound, not bound to JSON null) when its source JSON is null, blank, or fails to parse — an
- * expression referencing an omitted binding (e.g. {@code $request.messages} with no request body) sees
+ * expression referencing an omitted binding (e.g. {@code $_request.messages} with no request body) sees
  * the same {@code undefined} result as referencing any other unbound variable, and any resulting
  * extraction failure is covered by the existing per-column try/catch below.
  */
@@ -35,9 +38,6 @@ import tools.jackson.databind.node.ObjectNode;
 @LogExecution
 @RequiredArgsConstructor
 public class ResponseColumnExtractor {
-
-    private static final String RESPONSE_BINDING = "response";
-    private static final String REQUEST_BINDING = "request";
 
     private final JsonataEvaluationService jsonataEvaluationService;
     private final ResponseColumnTypeReconciler typeReconciler;
@@ -55,7 +55,7 @@ public class ResponseColumnExtractor {
     /**
      * Evaluates all response column expressions against the given response body JSON. Equivalent to
      * calling {@link #extract(List, String, String)} with a null {@code requestBodyJson} (no
-     * {@code $request} frame binding).
+     * {@code $_request} frame binding).
      *
      * @param responseColumns list of column definitions (may be null or empty)
      * @param responseBody    JSON response body string (may be null or blank)
@@ -67,14 +67,14 @@ public class ResponseColumnExtractor {
 
     /**
      * Evaluates all response column expressions against the given response body JSON, with
-     * {@code $request}/{@code $response} frame bindings available to every expression.
+     * {@code $_request}/{@code $_response} frame bindings available to every expression.
      *
      * @param responseColumns list of column definitions (may be null or empty)
      * @param responseBody    JSON response body string (may be null or blank); also the root document
      *                        every expression evaluates against, unchanged from before this frame was
      *                        introduced
      * @param requestBodyJson JSON of the request body actually sent (may be null, blank, or
-     *                        unparseable, in which case the {@code $request} binding is left unbound)
+     *                        unparseable, in which case the {@code $_request} binding is left unbound)
      * @return extraction result with serialized JSON strings and reconciled per-column values
      */
     public ExtractionResult extract(
@@ -128,15 +128,15 @@ public class ResponseColumnExtractor {
     }
 
     /**
-     * Builds the {@code $response}/{@code $request} frame bindings shared by every column's evaluation
+     * Builds the {@code $_response}/{@code $_request} frame bindings shared by every column's evaluation
      * in one extraction call. A name is omitted from the map (left unbound) rather than bound to a Java
      * {@code null} when its source JSON is null, blank, or fails to parse, so referencing it evaluates
      * to {@code undefined} instead of an explicit JSON null.
      */
     private Map<String, Object> buildFrameBindings(String responseBody, String requestBodyJson) {
         Map<String, Object> bindings = new LinkedHashMap<>();
-        putParsedIfPresent(bindings, RESPONSE_BINDING, responseBody);
-        putParsedIfPresent(bindings, REQUEST_BINDING, requestBodyJson);
+        putParsedIfPresent(bindings, RESPONSE_FRAME_BINDING, responseBody);
+        putParsedIfPresent(bindings, REQUEST_FRAME_BINDING, requestBodyJson);
         return bindings;
     }
 

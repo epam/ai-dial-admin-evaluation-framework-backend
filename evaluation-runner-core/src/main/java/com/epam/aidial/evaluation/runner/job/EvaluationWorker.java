@@ -430,7 +430,7 @@ public class EvaluationWorker {
     /**
      * Builds the persisted result row, extracting response columns with the {@code requestBodyJson}
      * already computed by the caller for {@code TestCaseRunResult.requestBody} fed uniformly into the
-     * extractor's {@code $request} frame binding (see {@link ResponseColumnExtractor}). Only used by the
+     * extractor's {@code $_request} frame binding (see {@link ResponseColumnExtractor}). Only used by the
      * MCP execution path here — DEPLOYMENT HTTP cases are built by {@link TurnLoopExecutor}. For an MCP
      * tool call, {@code requestBodyJson} is the serialized resolved tool arguments ({@link #serializeBody})
      * — a coherent "what was sent" value even though an MCP row has no HTTP request body in the

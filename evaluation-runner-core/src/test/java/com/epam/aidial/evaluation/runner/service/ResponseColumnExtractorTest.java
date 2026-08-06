@@ -122,7 +122,7 @@ class ResponseColumnExtractorTest {
         assertThat(warnings.get(0).getError()).isEqualTo("Type mismatch: expected OBJECT, got STRING");
     }
 
-    // --- WP4: $request/$response extraction frame tests ---
+    // --- WP4: $_request/$_response extraction frame tests ---
 
     private DashjoinJsonataEvaluationService realJsonata() {
         JsonataProperties properties = new JsonataProperties();
@@ -132,14 +132,14 @@ class ResponseColumnExtractorTest {
     }
 
     @Test
-    @DisplayName("$request.<path> is reachable when requestBodyJson is provided")
+    @DisplayName("$_request.<path> is reachable when requestBodyJson is provided")
     void requestFrameBindingReachableWhenRequestBodyProvided() throws Exception {
         ResponseColumnExtractor extractor =
                 new ResponseColumnExtractor(realJsonata(), realReconciler, warningsSerializer, objectMapper);
 
         String requestBodyJson = "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
         ResponseColumnExtractor.ExtractionResult result = extractor.extract(
-                List.of(column("firstUserMessage", "$request.messages[0].content", SchemaFieldType.STRING)),
+                List.of(column("firstUserMessage", "$_request.messages[0].content", SchemaFieldType.STRING)),
                 "{\"choices\":[]}",
                 requestBodyJson);
 
@@ -153,7 +153,7 @@ class ResponseColumnExtractorTest {
     }
 
     @Test
-    @DisplayName("$response.<path> evaluates to the same value as the equivalent root-document path")
+    @DisplayName("$_response.<path> evaluates to the same value as the equivalent root-document path")
     void responseFrameBindingEqualsRootDocumentResult() throws Exception {
         ResponseColumnExtractor extractor =
                 new ResponseColumnExtractor(realJsonata(), realReconciler, warningsSerializer, objectMapper);
@@ -162,7 +162,7 @@ class ResponseColumnExtractorTest {
         ResponseColumnExtractor.ExtractionResult result = extractor.extract(
                 List.of(
                         column("rootPath", "choices[0].message.content", SchemaFieldType.STRING),
-                        column("viaResponseFrame", "$response.choices[0].message.content", SchemaFieldType.STRING)),
+                        column("viaResponseFrame", "$_response.choices[0].message.content", SchemaFieldType.STRING)),
                 responseBody,
                 null);
 
@@ -192,7 +192,7 @@ class ResponseColumnExtractorTest {
     }
 
     @Test
-    @DisplayName("null/blank/unparseable requestBodyJson leaves $request unbound: referencing expression yields null,"
+    @DisplayName("null/blank/unparseable requestBodyJson leaves $_request unbound: referencing expression yields null,"
             + " no warning")
     void unboundRequestBindingYieldsNullWithNoWarning() throws Exception {
         ResponseColumnExtractor extractor =
@@ -200,7 +200,7 @@ class ResponseColumnExtractorTest {
 
         for (String requestBodyJson : new String[] {null, "", "   ", "{not valid json"}) {
             ResponseColumnExtractor.ExtractionResult result = extractor.extract(
-                    List.of(column("firstMessage", "$request.messages[0]", SchemaFieldType.OBJECT)),
+                    List.of(column("firstMessage", "$_request.messages[0]", SchemaFieldType.OBJECT)),
                     "{\"choices\":[]}",
                     requestBodyJson);
 

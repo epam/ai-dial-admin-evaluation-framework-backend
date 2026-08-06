@@ -87,6 +87,7 @@ secrets/
 credentials*
 *-credentials.json
 opencode.json
+.mcp.json
 
 tmp/
 

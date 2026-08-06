@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
@@ -30,6 +29,7 @@ import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.job.SseEvent;
 import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;

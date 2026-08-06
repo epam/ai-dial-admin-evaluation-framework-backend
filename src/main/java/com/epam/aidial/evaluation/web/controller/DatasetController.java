@@ -2,6 +2,8 @@ package com.epam.aidial.evaluation.web.controller;
 
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.RevalidationTaskDto;
 import com.epam.aidial.evaluation.service.domain.DatasetService;
 import com.epam.aidial.evaluation.service.domain.RevalidationService;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetCloneRequestDto;
@@ -11,8 +13,7 @@ import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetUpdateResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetVisibilityTransitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.RevalidationTaskDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.pagination.FilterParam;
@@ -283,7 +284,7 @@ public class DatasetController {
 
         int resolvedPage = paginationParamResolver.resolvePage(page);
         int resolvedSize = paginationParamResolver.resolveSize(size);
-        return PageResponseDto.from(revalidationService.listTasks(id, resolvedPage, resolvedSize), dto -> dto, true);
+        return PageResponseMapper.from(revalidationService.listTasks(id, resolvedPage, resolvedSize), dto -> dto, true);
     }
 
     @GetMapping("/{id}/revalidation-tasks/{taskId}")

@@ -5,10 +5,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
-import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

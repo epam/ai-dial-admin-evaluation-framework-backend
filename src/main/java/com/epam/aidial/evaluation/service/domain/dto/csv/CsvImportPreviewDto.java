@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.dto.csv;
 
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 import lombok.AllArgsConstructor;

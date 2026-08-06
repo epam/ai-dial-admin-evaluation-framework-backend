@@ -11,15 +11,16 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.RevalidationTaskDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetCloneRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetUpdateResultDto;
-import com.epam.aidial.evaluation.service.domain.dto.RevalidationTaskDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
@@ -100,7 +101,7 @@ public class DatasetService {
         List<FilterCondition> safeFilters = filters != null ? filters : List.of();
         try {
             Page<Dataset> datasetPage = datasetRepository.findAll(pageRequest, safeFilters, includeTotalCount);
-            return PageResponseDto.from(datasetPage, datasetMapper::toDto, includeTotalCount);
+            return PageResponseMapper.from(datasetPage, datasetMapper::toDto, includeTotalCount);
         } catch (InvalidFilterException ex) {
             throw new FilterValidationException(ex.getMessage(), ex.getDetails());
         }

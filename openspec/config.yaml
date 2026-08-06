@@ -15,8 +15,10 @@ context: |
   - Testing: JUnit 5 + Testcontainers (Postgres); run with `./gradlew test`
   - Build layout: multi-module Gradle build — root project (this app) + `evaluation-runner-core` subproject
     (DB-free, reusable Phase 1 execution engine library under root package `com.epam.aidial.evaluation.runner`,
-    contributed to the root app via Spring Boot autoconfiguration). Run its tests with
-    `./gradlew :evaluation-runner-core:test`.
+    contributed to the root app via Spring Boot autoconfiguration) + `eval-cli` subproject (standalone,
+    DB-free Spring Boot picocli CLI under root package `com.epam.aidial.evaluation.cli` that consumes
+    `evaluation-runner-core` and the EF backend's public REST API for cross-environment evaluation).
+    Run their tests with `./gradlew :evaluation-runner-core:test` / `./gradlew :eval-cli:test`.
 
   # Architecture — Layered
 
@@ -124,6 +126,8 @@ context: |
   Infrastructure: Analytics Datasource (dual datasource — meta + analytics),
   Typed SQL DSL (jOOQ 3.20 — all repositories use DSLContext; generated sources in data.db.jooq.{meta,analytics}; drift guard via JooqSchemaDriftTest),
   DIAL File Storage (file upload/download proxy via DialFileClient, EF service key bucket management, alias-based file references).
+  CLI Tools: `eval-cli` (standalone Spring Boot picocli CLI, DB-free, `clone`/`fetch`/`run`/`import`/`evaluate` commands,
+  consumes `evaluation-runner-core`'s batch execution path and the EF backend's public REST API for cross-environment evaluation).
   Vision/planned: Evaluation Runs, Runner & Jobs.
 
   # Design Documentation

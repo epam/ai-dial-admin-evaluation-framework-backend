@@ -90,3 +90,6 @@ opencode.json
 .mcp.json
 
 tmp/
+
+# eval-cli local run artifacts (fetched bundles, result CSVs)
+eval-cli-work/

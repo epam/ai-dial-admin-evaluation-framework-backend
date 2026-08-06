@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
-import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.constants.JsonataReservedNames;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
@@ -69,7 +68,7 @@ public class TestSuiteRequestValidator {
      * Validates embedded schemas on TestSuite create/update, for request #0 and, in chain order, for
      * every entry of {@code additionalRequests}. Throws ValidationException (400) if any schema is
      * malformed, if a response-column name repeats anywhere in the chain, or if the chain-wide
-     * response-column union exceeds {@link ValidationConstants#MAX_RESPONSE_COLUMNS}.
+     * response-column union exceeds {@link RunnerValidationConstants#MAX_RESPONSE_COLUMNS}.
      *
      * <p>Request #0's messages are unprefixed (unchanged from before request chains existed); an
      * additional request's messages carry an {@code additionalRequests[i].} prefix, mirroring the

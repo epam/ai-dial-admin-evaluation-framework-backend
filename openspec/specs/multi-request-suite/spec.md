@@ -83,7 +83,7 @@ Status: **Implemented**
 
 ### Requirement: Chain length is bounded
 
-The number of entries in `additionalRequests` SHALL be capped by `ValidationConstants.MAX_ADDITIONAL_REQUESTS` (value `10`), enforced as a `@Size` bound on the field. Exceeding it SHALL be rejected with HTTP 400 (`VALIDATION_ERROR`) and the suite SHALL NOT be persisted.
+The number of entries in `additionalRequests` SHALL be capped by `RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS` (value `10`), enforced as a `@Size` bound on the field. Exceeding it SHALL be rejected with HTTP 400 (`VALIDATION_ERROR`) and the suite SHALL NOT be persisted.
 
 Status: **Implemented**
 
@@ -115,7 +115,7 @@ Status: **Implemented**
 
 ### Requirement: Response-column count cap is a suite-wide union cap
 
-The maximum-50 response-column limit SHALL apply to the **union** of all response columns in the chain, not per request. The count `size(suite.responseColumns) + Σ size(additionalRequests[i].responseColumns)` SHALL NOT exceed `ValidationConstants.MAX_RESPONSE_COLUMNS` (value `50`); exceeding it SHALL be rejected with HTTP 400 (`VALIDATION_ERROR`).
+The maximum-50 response-column limit SHALL apply to the **union** of all response columns in the chain, not per request. The count `size(suite.responseColumns) + Σ size(additionalRequests[i].responseColumns)` SHALL NOT exceed `RunnerValidationConstants.MAX_RESPONSE_COLUMNS` (value `50`); exceeding it SHALL be rejected with HTTP 400 (`VALIDATION_ERROR`).
 
 Status: **Implemented**
 
@@ -303,7 +303,7 @@ Status: **Implemented**
 
 - New DTO: `com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto` (single copy in the shared module — `TestSuiteRequestDto` already references `RequestTemplateDto`, `InputBindingDto`, `ResponseColumnDefinitionDto` and `EndpointContractDto` from `runner.dto`).
 - New runner classes: `runner.job.RequestChainExecutor`, plus the `RequestExecutionSpec` / `RequestExecutionResult` carriers used to generalize `runner.job.TurnLoopExecutor`.
-- New constants: `ValidationConstants.MAX_ADDITIONAL_REQUESTS = 10`, `ValidationConstants.MAX_RESPONSE_COLUMNS = 50` (extracted from the current hardcoded `@Size(max = 50)` literal on `TestSuiteRequestDto.responseColumns`).
+- New constants: `RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS = 10`, `RunnerValidationConstants.MAX_RESPONSE_COLUMNS = 50` (extracted from the current hardcoded `@Size(max = 50)` literal on `TestSuiteRequestDto.responseColumns`).
 - New shared component: a `ResponseColumnUnionResolver` `@Component` in `service.domain` producing the suite-wide union from a `TestSuiteRequestDto`, a `TestSuite` entity and a `SuiteSnapshotDto` — consumed by `TestSuiteRequestValidator`, `TestSuiteService.isResponseColumnsChanged`, `MetricDefinitionValidationService`, `EvalSummariesSchemaProvider` and `EvalSummaryExportColumnPlanner`.
 - Meta migration `V1.29__AddAdditionalRequestsToTestSuites.sql`; analytics migrations `V1.16__AddRequestColumnsToTestCaseRunResults.sql` and `V1.17__AddRequestColumnsToEvalSummaries.sql`, followed by `./gradlew generateJooq`.
 - Related specs: `test-suites`, `request-template`, `response-columns`, `multi-turn-test-case`, `suite-run-snapshot`, `conditional-metric-execution`, `analytics-eval-results`, `metrics-storage`, `eval-summary-export`, `run-comparison-metric-scores`, `query-schema-discovery`, `tsmd-validation`.

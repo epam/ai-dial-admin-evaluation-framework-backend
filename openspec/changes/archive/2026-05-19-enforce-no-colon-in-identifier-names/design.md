@@ -19,7 +19,7 @@ The three name fields share a single shared `TestSuiteRequestDto` between POST a
 **Goals:**
 - Reject any name containing `:` at the create/update API boundary with HTTP 400 (`VALIDATION_ERROR`).
 - Apply uniformly to POST and PUT — no validation groups, no DTO splitting.
-- Keep the rule defined exactly once (one regex + one message in `RunnerValidationConstants`).
+- Keep the rule defined exactly once (one regex + one message in `ValidationConstants`).
 - Produce a clear, field-bound error message naming the offending field so client tooling can surface it.
 
 **Non-Goals:**
@@ -52,7 +52,7 @@ Layering with the existing `@NotBlank` and `@Size(max=255)`:
 
 Using `^[^:]+$` would emit two violations for an empty string (NotBlank + Pattern), making the API response noisier. `^[^:]*$` keeps each error case shaped by exactly one annotation.
 
-### One shared constant in `RunnerValidationConstants`
+### One shared constant in `ValidationConstants`
 
 Two new public constants:
 - `IDENTIFIER_NAME_NO_COLON_PATTERN = "^[^:]*$"`

@@ -12,7 +12,7 @@
 
 ## 3. Constants and mappers partition
 
-- [x] 3.1 Introduce constants classes per bounded context where non-configurable constants are duplicated (e.g. pagination, validation, CSV, security); use naming like `PaginationConstants`, `RunnerValidationConstants`
+- [x] 3.1 Introduce constants classes per bounded context where non-configurable constants are duplicated (e.g. pagination, validation, CSV, security); use naming like `PaginationConstants`, `ValidationConstants`
 - [x] 3.2 Replace fully qualified names with imports in mapper interfaces and implementations (e.g. MapStruct method signatures and annotation attributes such as `NullValuePropertyMappingStrategy.IGNORE`)
 
 ## 4. Service layer partition

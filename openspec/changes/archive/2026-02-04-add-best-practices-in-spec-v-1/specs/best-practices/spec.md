@@ -56,7 +56,7 @@ All default values for configuration properties MUST be defined in `application.
 
 **Status: Planned**
 
-Non-configurable constants (magic numbers, string literals, technical limits) MUST be defined in exactly one place. Duplication across classes is forbidden. Each bounded context (e.g. pagination, validation, CSV, security) SHALL have one constants class or a small set of constants classes; naming SHALL be consistent (e.g. `PaginationConstants`, `RunnerValidationConstants`).
+Non-configurable constants (magic numbers, string literals, technical limits) MUST be defined in exactly one place. Duplication across classes is forbidden. Each bounded context (e.g. pagination, validation, CSV, security) SHALL have one constants class or a small set of constants classes; naming SHALL be consistent (e.g. `PaginationConstants`, `ValidationConstants`).
 
 #### Scenario: Constant defined in one place
 
@@ -129,7 +129,7 @@ The best-practices spec and these requirements SHALL be referenced so that agent
 ### Constants Classes (to be created / maintained)
 
 - Pagination default and max size are **configurable** via `PaginationProperties` / `application.yml`; do not duplicate them in a constants class.
-- `RunnerValidationConstants` — field length limits for list params and fact fields.
+- `ValidationConstants` — field length limits for list params and fact fields.
 - `CsvConstants` — CSV format settings (if non-configurable).
 - `SecurityConstants` — security-related constants (e.g. correlation ID length bounds).
 

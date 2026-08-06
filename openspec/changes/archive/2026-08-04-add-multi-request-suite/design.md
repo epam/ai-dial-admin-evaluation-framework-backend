@@ -52,7 +52,7 @@ New `com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto`:
 | `responseColumns` | `List<ResponseColumnDefinitionDto>` | `@Valid` (no per-list `@Size` — the cap is a suite-wide union, see D6) |
 | `inputBindings` | `List<InputBindingDto>` | `@Valid` |
 
-It goes in `runner.dto` (not duplicated) because `TestSuiteRequestDto` already references `RequestTemplateDto`, `InputBindingDto`, `ResponseColumnDefinitionDto` and `EndpointContractDto` from that package — there is no cross-boundary duplication to add. `name` uses a literal `255` like the sibling `ResponseColumnDefinitionDto.name`, keeping the runner's `RunnerValidationConstants` copy untouched (it holds only the four regex/message constants).
+It goes in `runner.dto` (not duplicated) because `TestSuiteRequestDto` already references `RequestTemplateDto`, `InputBindingDto`, `ResponseColumnDefinitionDto` and `EndpointContractDto` from that package — there is no cross-boundary duplication to add. `name` uses a literal `255` like the sibling `ResponseColumnDefinitionDto.name`, keeping the runner's `ValidationConstants` copy untouched (it holds only the four regex/message constants).
 
 ### D3. `requestName` labels request #0
 

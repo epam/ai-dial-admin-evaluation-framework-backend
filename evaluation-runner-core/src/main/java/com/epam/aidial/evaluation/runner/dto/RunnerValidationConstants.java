@@ -6,8 +6,10 @@ package com.epam.aidial.evaluation.runner.dto;
 public final class RunnerValidationConstants {
 
     /**
-     * Regex enforced on test-case schema field names.
-     * Forbids ':' — reserved as the filter operator separator.
+     * Regex enforced on test-case schema field names ({@code FieldDefinitionDto}).
+     * Forbids ':' — reserved as the filter operator separator ({@code field:op:value}); a colon in a
+     * field name would make filter expressions on {@code testCaseData.<field>} ambiguous when tokenized.
+     * Layered with {@code @NotBlank}: blank values trigger NotBlank, non-blank colon-bearing values trigger this pattern.
      */
     public static final String IDENTIFIER_NAME_NO_COLON_PATTERN = "^[^:]*$";
 
@@ -16,8 +18,11 @@ public final class RunnerValidationConstants {
             "Name must not contain ':' (reserved as the filter operator separator)";
 
     /**
-     * Regex enforced on response-column names and metric-definition names.
-     * Forbids the '::' sequence — reserved as the column-family separator in CSV export.
+     * Regex enforced on response-column names ({@code ResponseColumnDefinitionDto}) and metric-definition
+     * names ({@code TestSuiteMetricDefinitionRequestDto}). Forbids the '::' sequence — reserved as the
+     * column-family separator in CSV export (see {@code EvalSummaryExportColumnConstants.COLUMN_SEPARATOR}).
+     * A single ':' is permitted; these names are not used in filter expressions.
+     * Layered with {@code @NotBlank}: blank values trigger NotBlank, non-blank '::'-bearing values trigger this pattern.
      */
     public static final String NAME_NO_TWO_COLON_PATTERN = "(?!.*::).*";
 

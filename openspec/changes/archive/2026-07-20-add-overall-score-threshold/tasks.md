@@ -21,7 +21,7 @@
 
 - [x] 4.1 Add `overallScoreThreshold : Double` field with `@Schema` (description + example `0.8`) to `TestSuiteRequestDto`, after `overallScore`
 - [x] 4.2 Add `overallScoreThreshold : Double` field with `@Schema` description to `TestSuiteResponseDto`, after `overallScore`
-- [x] 4.3 Add `MIN_OVERALL_SCORE_THRESHOLD` (`"0.0"`), `MAX_OVERALL_SCORE_THRESHOLD` (`"1.0"`), and `OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE` constants to `RunnerValidationConstants`
+- [x] 4.3 Add `MIN_OVERALL_SCORE_THRESHOLD` (`"0.0"`), `MAX_OVERALL_SCORE_THRESHOLD` (`"1.0"`), and `OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE` constants to `ValidationConstants`
 - [x] 4.4 Add `@DecimalMin(ValidationConstants.MIN_OVERALL_SCORE_THRESHOLD)` / `@DecimalMax(ValidationConstants.MAX_OVERALL_SCORE_THRESHOLD)` to `TestSuiteRequestDto.overallScoreThreshold` (inclusive 0.0–1.0 range; out-of-range → HTTP 400 `VALIDATION_ERROR`)
 
 ## 5. Tests

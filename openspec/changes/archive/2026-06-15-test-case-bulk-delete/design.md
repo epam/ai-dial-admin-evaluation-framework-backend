@@ -73,7 +73,7 @@ Validation responsibilities:
 
 **Chosen**: New field `maxDeleteIds` on the existing `TestCaseProperties.Bulk` inner class, default 10 000 in `application.yml`.
 
-**Rationale**: Consistent with existing per-cap fields (`maxIdsPerSelector`, `maxOperations`, `maxItemOperations`) already in `Bulk`. Placing a hardcoded constant in `RunnerValidationConstants` would be wrong per AGENTS.md — non-configurable constants go there; this cap is operator-tunable.
+**Rationale**: Consistent with existing per-cap fields (`maxIdsPerSelector`, `maxOperations`, `maxItemOperations`) already in `Bulk`. Placing a hardcoded constant in `ValidationConstants` would be wrong per AGENTS.md — non-configurable constants go there; this cap is operator-tunable.
 
 ### 7. Repository method returns `List<UUID>` (RETURNING clause)
 

@@ -22,31 +22,6 @@ public final class ValidationConstants {
      */
     public static final int MAX_DISABLED_TC_IDS = 10000;
 
-    /**
-     * Regex enforced on test-case schema field names ({@code FieldDefinitionDto}).
-     * Forbids ':' — reserved as the filter operator separator ({@code field:op:value}); a colon in a
-     * field name would make filter expressions on {@code testCaseData.<field>} ambiguous when tokenized.
-     * Layered with {@code @NotBlank}: blank values trigger NotBlank, non-blank colon-bearing values trigger this pattern.
-     */
-    public static final String IDENTIFIER_NAME_NO_COLON_PATTERN = "^[^:]*$";
-
-    /** Message paired with {@link #IDENTIFIER_NAME_NO_COLON_PATTERN}. */
-    public static final String IDENTIFIER_NAME_NO_COLON_MESSAGE =
-            "Name must not contain ':' (reserved as the filter operator separator)";
-
-    /**
-     * Regex enforced on response-column names ({@code ResponseColumnDefinitionDto}) and metric-definition
-     * names ({@code TestSuiteMetricDefinitionRequestDto}). Forbids the '::' sequence — reserved as the
-     * column-family separator in CSV export (see {@code EvalSummaryExportColumnConstants.COLUMN_SEPARATOR}).
-     * A single ':' is permitted; these names are not used in filter expressions.
-     * Layered with {@code @NotBlank}: blank values trigger NotBlank, non-blank '::'-bearing values trigger this pattern.
-     */
-    public static final String NAME_NO_TWO_COLON_PATTERN = "(?!.*::).*";
-
-    /** Message paired with {@link #NAME_NO_TWO_COLON_PATTERN}. */
-    public static final String NAME_NO_TWO_COLON_MESSAGE =
-            "Name must not contain '::' (reserved as CSV export column separator)";
-
     /** Minimum allowed value for {@code TestSuiteRequestDto.overallScoreThreshold} (inclusive). */
     public static final String MIN_OVERALL_SCORE_THRESHOLD = "0.0";
 

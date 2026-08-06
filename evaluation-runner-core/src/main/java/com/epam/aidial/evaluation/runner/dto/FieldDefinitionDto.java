@@ -12,9 +12,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Runner-module twin of the EF backend's {@code service.domain.dto.FieldDefinitionDto} (dataset test-case
- * schema field definition), duplicated here — like {@link SuiteType} / {@code ValidationConstants} /
- * {@code ValidationException} — so the module can read {@link #getPerTurn()} / {@link #getName()} off
+ * Dataset test-case schema field definition. Lives in this module — like {@code runner.model.SuiteType} and
+ * {@code runner.exception.ValidationException}, whose EF-backend counterpart is a subclass — so the module
+ * can read {@link #getPerTurn()} / {@link #getName()} off
  * {@code EvaluationContext.snapshotTestCaseSchema} without a module-to-main-app dependency. The EF backend
  * remains the sole writer/validator of the schema; this module only ever reads a snapshot copy.
  */

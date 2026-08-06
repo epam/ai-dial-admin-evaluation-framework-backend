@@ -7,6 +7,9 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.cli.config.properties.EvalCliProperties;
 import com.epam.aidial.evaluation.cli.config.properties.TargetProperties;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import java.time.Clock;
@@ -20,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpMethod;
 
 @ExtendWith(MockitoExtension.class)
 class EvaluationContextFactoryTest {
@@ -101,6 +105,70 @@ class EvaluationContextFactoryTest {
         assertThat(context.getCreatedAtMs()).isEqualTo(1700000000000L);
         assertThat(context.getCancellationSignal()).isNotNull();
         assertThat(context.getCancellationSignal().get()).isFalse();
+    }
+
+    @Test
+    @DisplayName("propagates the suite's additionalRequests chain into the context")
+    void propagatesAdditionalRequestsChain() {
+        final RequestDefinitionDto second = RequestDefinitionDto.builder()
+                .name("second")
+                .endpointRef(
+                        EndpointContractDto.builder().method(HttpMethod.POST).build())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/second").build())
+                .build();
+        final RequestDefinitionDto third = RequestDefinitionDto.builder()
+                .name("third")
+                .endpointRef(
+                        EndpointContractDto.builder().method(HttpMethod.GET).build())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/third").build())
+                .build();
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .additionalRequests(List.of(second, third))
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build());
+
+        assertThat(context.getSnapshotAdditionalRequests()).containsExactly(second, third);
+    }
+
+    @Test
+    @DisplayName("carries the suite's requestName as request #0's label")
+    void carriesRequestName() {
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .requestName("primary")
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build());
+
+        assertThat(context.getSnapshotRequestName()).isEqualTo("primary");
+    }
+
+    @Test
+    @DisplayName("defaults a null additionalRequests to an empty list")
+    void defaultsNullAdditionalRequestsToEmptyList() {
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build());
+
+        assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
     }
 
     @Test

@@ -81,6 +81,9 @@ public class EvaluationContextFactory {
                 .snapshotRequestTemplate(suite.getRequestTemplate())
                 .snapshotInputBindings(suite.getInputBindings() != null ? suite.getInputBindings() : List.of())
                 .snapshotResponseColumns(suite.getResponseColumns() != null ? suite.getResponseColumns() : List.of())
+                .snapshotAdditionalRequests(
+                        suite.getAdditionalRequests() != null ? suite.getAdditionalRequests() : List.of())
+                .snapshotRequestName(suite.getRequestName())
                 // MCP fields (pass through from source suite if present)
                 .mcpDeploymentRefDto(suite.getMcpDeploymentRef() != null ? mapMcpDeploymentRef(suite) : null)
                 .toolRefDto(suite.getToolRef())

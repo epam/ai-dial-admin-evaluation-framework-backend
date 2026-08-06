@@ -5,10 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.epam.aidial.evaluation.configuration.properties.grafana.GrafanaProperties;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
+import com.epam.aidial.evaluation.runner.dto.RunErrorDetailsDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.GrafanaLinkBuilder;
-import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
-import com.epam.aidial.evaluation.service.domain.dto.RunErrorDetailsDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;

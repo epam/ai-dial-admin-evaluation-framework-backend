@@ -306,7 +306,7 @@ class TurnLoopExecutorTest {
                 .build();
         List<ResponseColumnDefinitionDto> responseColumns = List.of(ResponseColumnDefinitionDto.builder()
                 .name("history")
-                .expression("$append($request.messages, [$response.choices[0].message])")
+                .expression("$append($_request.messages, [$_response.choices[0].message])")
                 .type(SchemaFieldType.ARRAY)
                 .build());
 

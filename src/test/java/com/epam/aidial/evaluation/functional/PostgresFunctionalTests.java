@@ -97,9 +97,9 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvok
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
 import com.epam.aidial.evaluation.runner.client.dialcore.dto.DialFileMetadataDto;
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.MetricProviderSyncJob;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;

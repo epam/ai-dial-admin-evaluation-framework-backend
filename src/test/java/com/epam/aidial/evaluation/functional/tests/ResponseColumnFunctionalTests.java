@@ -17,14 +17,14 @@ import com.epam.aidial.evaluation.runner.dto.ParameterDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ParameterLocation;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
-import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultResponseDto;
 import java.util.List;
@@ -286,11 +286,11 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should return 400 when a response column name collides with the reserved frame variable 'request'")
+    @DisplayName("Should return 400 when a response column name collides with the reserved frame variable '_request'")
     void shouldReturn400ForReservedResponseColumnName() {
-        // Given: a response column named "request" collides with the $request frame variable
+        // Given: a response column named "_request" collides with the $_request frame variable
         List<ResponseColumnDefinitionDto> columns = List.of(ResponseColumnDefinitionDto.builder()
-                .name("request")
+                .name("_request")
                 .expression("choices[0].message.content")
                 .build());
 
@@ -302,7 +302,31 @@ public abstract class ResponseColumnFunctionalTests extends BaseFunctionalTest {
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).contains("request").contains("reserved");
+        assertThat(response.getBody()).contains("_request").contains("reserved");
+    }
+
+    @Test
+    @DisplayName("Should accept a response column literally named 'response' since it no longer collides with a "
+            + "frame variable")
+    void shouldAcceptResponseColumnNamedResponse() {
+        // Given: a response column named "response" — previously rejected, now legal since the frame
+        // variable was renamed to "_response"
+        List<ResponseColumnDefinitionDto> columns = List.of(ResponseColumnDefinitionDto.builder()
+                .name("response")
+                .expression("choices[0].message.content")
+                .build());
+
+        // When
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites"),
+                jsonEntity(buildRequestWithColumns("Suite Column Named Response", columns)),
+                TestSuiteResponseDto.class);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getResponseColumns()).hasSize(1);
+        assertThat(response.getBody().getResponseColumns().get(0).getName()).isEqualTo("response");
     }
 
     @Test

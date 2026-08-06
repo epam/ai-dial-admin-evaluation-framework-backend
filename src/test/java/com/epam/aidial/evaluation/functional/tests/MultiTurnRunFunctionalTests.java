@@ -15,11 +15,11 @@ import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -79,7 +79,7 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
                         .build()))
                 .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
                         .name("history")
-                        .expression("$append($request.messages, [$response.choices[0].message])")
+                        .expression("$append($_request.messages, [$_response.choices[0].message])")
                         .type(SchemaFieldType.ARRAY)
                         .build()))
                 .build();

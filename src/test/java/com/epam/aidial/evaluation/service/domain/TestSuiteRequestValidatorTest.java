@@ -184,13 +184,40 @@ class TestSuiteRequestValidatorTest {
     }
 
     @Test
-    @DisplayName("Response column name colliding with reserved frame variable 'request' is rejected")
-    void shouldRejectResponseColumnNameCollidingWithRequestFrameVariable() {
+    @DisplayName("Response column name 'request' no longer collides with the frame variable and is accepted")
+    void shouldAcceptResponseColumnNamedRequest() {
         TestSuiteRequestDto dto = requestWithResponseColumn("request", "usage.total_tokens");
+
+        assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Response column name 'response' no longer collides with the frame variable and is accepted")
+    void shouldAcceptResponseColumnNamedResponse() {
+        TestSuiteRequestDto dto = requestWithResponseColumn("response", "usage.total_tokens");
+
+        assertThatCode(() -> validator.validateTestSuiteSchemas(dto)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Response column name colliding with reserved frame variable '_request' is rejected")
+    void shouldRejectResponseColumnNameCollidingWithRequestFrameVariable() {
+        TestSuiteRequestDto dto = requestWithResponseColumn("_request", "usage.total_tokens");
 
         assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("request")
+                .hasMessageContaining("_request")
+                .hasMessageContaining("reserved");
+    }
+
+    @Test
+    @DisplayName("Response column name colliding with reserved frame variable '_response' is rejected")
+    void shouldRejectResponseColumnNameCollidingWithResponseFrameVariable() {
+        TestSuiteRequestDto dto = requestWithResponseColumn("_response", "usage.total_tokens");
+
+        assertThatThrownBy(() -> validator.validateTestSuiteSchemas(dto))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("_response")
                 .hasMessageContaining("reserved");
     }
 

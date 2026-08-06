@@ -24,7 +24,7 @@
     {
       "name": "history",
       "displayName": "Accumulated History",
-      "expression": "$append($request.messages, [$response.choices[0].message])",
+      "expression": "$append($_request.messages, [$_response.choices[0].message])",
       "type": "ARRAY"
     },
     {

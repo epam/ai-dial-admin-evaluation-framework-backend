@@ -25,5 +25,8 @@ public final class ValidationConstants {
     public static final String NAME_NO_TWO_COLON_MESSAGE =
             "Name must not contain '::' (reserved as CSV export column separator)";
 
+    /** Max length enforced on a test suite run's user-provided {@code testRunName}. */
+    public static final int MAX_TEST_RUN_NAME_LENGTH = 255;
+
     private ValidationConstants() {}
 }

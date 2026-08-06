@@ -17,9 +17,9 @@ import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -277,8 +277,8 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
                         .build()))
                 .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
                         .name("history")
-                        .expression("$append($request.input, [{\"role\": \"assistant\", "
-                                + "\"content\": $response.output[0].content[0].text}])")
+                        .expression("$append($_request.input, [{\"role\": \"assistant\", "
+                                + "\"content\": $_response.output[0].content[0].text}])")
                         .type(SchemaFieldType.ARRAY)
                         .build()))
                 .build();

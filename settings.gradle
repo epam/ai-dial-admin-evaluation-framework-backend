@@ -1,3 +1,4 @@
 rootProject.name = 'ai-dial-admin-evaluation-framework-backend'
 
 include 'evaluation-runner-core'
+include 'eval-cli'

@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
-import com.epam.aidial.evaluation.data.db.model.SuiteType;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
@@ -11,14 +10,16 @@ import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
-import com.epam.aidial.evaluation.service.domain.dto.RunConfigDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorCategory;
-import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
@@ -333,7 +334,7 @@ public class TestSuiteRunService {
         boolean includeTotal = Boolean.TRUE.equals(includeTotalCount);
 
         Page<TestSuiteRun> runPage = testSuiteRunRepository.findAll(pageRequest, filters, includeTotal);
-        return PageResponseDto.from(runPage, mapper::toDto, includeTotal);
+        return PageResponseMapper.from(runPage, mapper::toDto, includeTotal);
     }
 
     @Transactional("metaTransactionManager")

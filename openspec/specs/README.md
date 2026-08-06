@@ -164,6 +164,13 @@ Formal versioned requirements for project-wide architectural rules. Quick-refere
 - **[best-practices](best-practices/spec.md)** — Implemented (phase 1)
   Cross-domain access through services, not foreign repositories. A domain service injects only its own domain's repository; cross-domain reads and writes go through the owning domain's service. Phase 1 covers `DatasetService`; phases 2/3 extend the rule to ~13 other services flagged in the audit.
 
+### CLI Tools
+
+Specs for standalone command-line tools that consume the EF backend's public REST API.
+
+- **[eval-cli](eval-cli/spec.md)** — Implemented
+  Standalone Spring Boot CLI (`eval-cli` Gradle subproject, root package `com.epam.aidial.evaluation.cli`) that clones "standard" test suites from a source EF instance, fetches their configuration and test cases, executes them against a CLI-configured target deployment using `evaluation-runner-core`'s existing batch execution path, and imports the results via the source EF's `runs/import` endpoint — enabling cross-environment evaluation without a second EF deployment. Exposes `clone`, `fetch`, `run`, `import`, and `evaluate` picocli subcommands; DB-free; static bearer-token auth (OIDC planned). Related: eval-results-import, test-suite-clone, evaluation-runner-core-module.
+
 ### Vision / Planned
 
 Specs documented but not yet fully implemented.
@@ -173,7 +180,7 @@ Specs documented but not yet fully implemented.
 - **[metric-provider-sync](metric-provider-sync/spec.md)** — Implemented
   Scheduled sync of metric declarations and versions from external metric provider services via GET /metrics API.
 - **[response-columns](response-columns/spec.md)** — Implemented
-  User-defined response column definitions scoped to TestSuite. JSONata expressions to extract named values from response bodies, stored as JSONB, evaluated at run time with an additive `$request`/`$response` frame; column names must not collide with a JSONata built-in function name or the reserved `request`/`response` names. `FILE` type supported as a display hint for DIAL file reference columns. Failed extractions feed forward to the next multi-turn turn's frame as an explicit JSONata null, not undefined. Related: request-template, multi-turn-test-case.
+  User-defined response column definitions scoped to TestSuite. JSONata expressions to extract named values from response bodies, stored as JSONB, evaluated at run time with an additive `$_request`/`$_response` frame; column names must not collide with a JSONata built-in function name or the reserved `_request`/`_response` names (plain `request`/`response` are allowed column names). `FILE` type supported as a display hint for DIAL file reference columns. Failed extractions feed forward to the next multi-turn turn's frame as an explicit JSONata null, not undefined. Related: request-template, multi-turn-test-case.
 - **[test-suite-runs](test-suite-runs/spec.md)** — Implemented
   Foundational infrastructure for async test suite execution: run lifecycle (PENDING→RUNNING→COMPLETED/FAILED/CANCELLED), CRUD with filtering/sorting/pagination, SSE status streaming, startup reconciliation, configurable concurrency limits. Uses in-process evaluation engine with virtual threads, streaming SSE support, retry/rate-limiting, and configurable execution settings. `numberOfTestCases` finalized at snapshot phase (not immutable at creation). `suiteSnapshot` field in API response (detail only; omitted from list).
 - **[eval-results-import](eval-results-import/spec.md)** — Implemented

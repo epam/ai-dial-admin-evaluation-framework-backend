@@ -8,8 +8,9 @@ COPY gradle.properties .
 COPY lombok.config .
 COPY src/ src/
 COPY evaluation-runner-core/ evaluation-runner-core/
+COPY eval-cli/ eval-cli/
 
-RUN gradle --no-daemon clean bootJar
+RUN gradle --no-daemon :clean :bootJar
 
 # Runtime stage
 FROM amazoncorretto:25-alpine AS runtime

@@ -14,13 +14,14 @@ import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationVersionRep
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteMetricDefinitionRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.AggregatedMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
-import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.FilterValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationDetector;
@@ -137,7 +138,7 @@ public class TestSuiteMetricDefinitionService {
         try {
             Page<TestSuiteMetricDefinition> resultPage =
                     repository.findAll(testSuiteId, pageRequest, filters, includeTotalCount);
-            return PageResponseDto.from(resultPage, mapper::toDto, includeTotalCount);
+            return PageResponseMapper.from(resultPage, mapper::toDto, includeTotalCount);
         } catch (InvalidFilterException ex) {
             throw new FilterValidationException(ex.getMessage(), ex.getDetails());
         }

@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
-import com.epam.aidial.evaluation.service.domain.dto.ExecutionSettingsDto;
-import com.epam.aidial.evaluation.service.domain.dto.RetryPolicyDto;
+import com.epam.aidial.evaluation.runner.dto.ExecutionSettingsDto;
+import com.epam.aidial.evaluation.runner.dto.RetryPolicyDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -480,6 +481,10 @@ class TestSuiteEvaluationJobTest {
             verify(metricScoreComputation).execute(any());
             verify(repository).updateToRunning(eq(runId), anyLong(), anyLong());
             verify(repository).updateToCompleted(eq(runId), anyLong(), anyLong());
+            verify(repository).updateSuiteSnapshot(eq(runId), any(), anyLong());
+            verify(testCaseRunInputRepository, never()).insertBatch(any());
+            verify(runnableTestCaseSelector, never()).loadRunnablePage(any(), any(), any(), anyInt(), anyInt());
+            verify(repository, never()).updateNumberOfTestCases(any(), anyInt(), anyLong());
         }
 
         @Test

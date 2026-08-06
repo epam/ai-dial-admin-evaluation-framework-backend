@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -343,6 +344,10 @@ class TestSuiteEvaluationJobTest {
             verify(metricScoreComputation).execute(any());
             verify(repository).updateToRunning(eq(runId), anyLong(), anyLong());
             verify(repository).updateToCompleted(eq(runId), anyLong(), anyLong());
+            verify(repository).updateSuiteSnapshot(eq(runId), any(), anyLong());
+            verify(testCaseRunInputRepository, never()).insertBatch(any());
+            verify(runnableTestCaseSelector, never()).loadRunnablePage(any(), any(), any(), anyInt(), anyInt());
+            verify(repository, never()).updateNumberOfTestCases(any(), anyInt(), anyLong());
         }
 
         @Test
@@ -361,7 +366,14 @@ class TestSuiteEvaluationJobTest {
         @Test
         @DisplayName("cancellation during Phase 2 skips Phase 3 and cancels the run")
         void cancellationDuringPhase2SkipsPhase3() {
+            SuiteSnapshotDto builtSnapshot = SuiteSnapshotDto.builder()
+                    .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                    .suiteType("DEPLOYMENT")
+                    .build();
             when(repository.findById(runId)).thenReturn(Optional.of(run));
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(liveSuite));
+            when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(liveDataset));
+            when(suiteSnapshotBuilder.build(liveSuite, liveDataset)).thenReturn(builtSnapshot);
             job.registerCancellationSignal(runId);
             doAnswer(invocation -> {
                         job.interruptRun(runId);

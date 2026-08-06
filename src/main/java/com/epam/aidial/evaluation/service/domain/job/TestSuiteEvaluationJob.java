@@ -116,7 +116,7 @@ public class TestSuiteEvaluationJob {
                 return;
             }
 
-            if (!skipDeploymentPhase && !executeSnapshotPhase(runId)) {
+            if (!executeSnapshotPhase(runId, !skipDeploymentPhase)) {
                 return;
             }
 
@@ -194,10 +194,10 @@ public class TestSuiteEvaluationJob {
      * Executes the snapshot phase with retry on serialization failures.
      * Returns true on success, false if the run was marked FAILED.
      */
-    private boolean executeSnapshotPhase(UUID runId) {
+    private boolean executeSnapshotPhase(UUID runId, boolean captureTestCaseInputs) {
         for (int attempt = 0; attempt <= SNAPSHOT_MAX_RETRIES; attempt++) {
             try {
-                attemptSnapshot(runId);
+                attemptSnapshot(runId, captureTestCaseInputs);
                 return true;
             } catch (Exception e) {
                 String sqlState = extractSqlState(e);
@@ -221,7 +221,7 @@ public class TestSuiteEvaluationJob {
         return false;
     }
 
-    private void attemptSnapshot(UUID runId) {
+    private void attemptSnapshot(UUID runId, boolean captureTestCaseInputs) {
         TransactionTemplate tx = new TransactionTemplate(metaTransactionManager);
         tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         tx.execute(status -> {
@@ -252,6 +252,14 @@ public class TestSuiteEvaluationJob {
                 throw new IllegalStateException("Failed to serialize suite snapshot", e);
             }
 
+            long now = clock.millis();
+            repository.updateSuiteSnapshot(runId, snapshotJson, now);
+
+            if (!captureTestCaseInputs) {
+                log.info("Created suite snapshot for run {} (no test case inputs captured)", runId);
+                return null;
+            }
+
             List<UUID> disabledIds = deserializeDisabledIds(suite.getDisabledTestCaseIds());
 
             List<TestCaseRunInput> batch = new ArrayList<>();
@@ -279,9 +287,7 @@ public class TestSuiteEvaluationJob {
             } while (page.size() == SNAPSHOT_PAGE_SIZE);
 
             int totalInputs = position;
-            long now = clock.millis();
-            repository.updateSuiteSnapshot(runId, snapshotJson, now);
-            repository.updateNumberOfTestCases(runId, totalInputs, now);
+            repository.updateNumberOfTestCases(runId, totalInputs, clock.millis());
             log.info("Created suite snapshot for run {}: {} test case input(s)", runId, totalInputs);
             return null;
         });

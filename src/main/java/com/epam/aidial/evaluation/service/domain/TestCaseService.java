@@ -477,8 +477,10 @@ public class TestCaseService {
     }
 
     /**
-     * Removes the given field keys from the {@code data} JSONB column of every test case in the dataset.
-     * Invoked by {@code DatasetService.update} after a schema field is dropped, to prune orphan keys.
+     * Removes the given field keys from the {@code data} JSONB column of every test case in the dataset,
+     * and from each element of {@code multi_turn_data} as well when present. Invoked by
+     * {@code DatasetService.update} after a schema field is dropped, to prune orphan keys — including
+     * per-turn ones, so a subsequent multi-turn revalidation does not report them as unknown fields.
      */
     @Transactional("metaTransactionManager")
     public void removeDataFields(UUID datasetId, Collection<String> fieldNames) {

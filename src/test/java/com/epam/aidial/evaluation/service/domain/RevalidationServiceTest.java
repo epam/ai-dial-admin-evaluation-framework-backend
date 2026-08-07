@@ -80,6 +80,9 @@ class RevalidationServiceTest {
     @Mock
     private SchemaChangeCoercer schemaChangeCoercer;
 
+    @Mock
+    private DurableWarningMerger durableWarningMerger;
+
     private RevalidationService service;
 
     private final Clock clock = Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC);
@@ -103,10 +106,14 @@ class RevalidationServiceTest {
                 revalidationProperties,
                 warningsSerializer,
                 schemaChangeCoercer,
+                durableWarningMerger,
                 clock);
 
         lenient().when(revalidationProperties.getBatchSize()).thenReturn(50);
         lenient().when(revalidationProperties.getTimeoutMinutes()).thenReturn(5);
+        // Pass-through default matching the real merger's no-op behavior when no SOURCE_CONFLICT
+        // warning is stored (every fixture test case here) — individual tests may override.
+        lenient().when(durableWarningMerger.merge(any(), any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // -----------------------------------------------------------------------

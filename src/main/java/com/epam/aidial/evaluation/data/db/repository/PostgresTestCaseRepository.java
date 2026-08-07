@@ -288,6 +288,26 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     }
 
     @Override
+    public int updateDataAndTurnsIfUnchanged(
+            UUID id,
+            UUID datasetId,
+            String dataJson,
+            String multiTurnDataJson,
+            long expectedUpdatedAt,
+            long newUpdatedAt) {
+        return dsl.update(TEST_CASES)
+                .set(TEST_CASES.DATA, toJsonb(dataJson != null ? dataJson : "{}"))
+                .set(TEST_CASES.MULTI_TURN_DATA, toJsonb(multiTurnDataJson))
+                .set(TEST_CASES.UPDATED_AT_MS, newUpdatedAt)
+                .where(TEST_CASES
+                        .ID
+                        .eq(id.toString())
+                        .and(TEST_CASES.DATASET_ID.eq(datasetId.toString()))
+                        .and(TEST_CASES.UPDATED_AT_MS.eq(expectedUpdatedAt)))
+                .execute();
+    }
+
+    @Override
     public int updateValidationIfUnchanged(
             UUID id, UUID datasetId, boolean isValid, String warningsJson, long expectedUpdatedAt, long newUpdatedAt) {
         return dsl.update(TEST_CASES)
@@ -425,9 +445,29 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         }
         // jOOQ has no typed DSL for the JSONB - text[] operator. Bind the field names as
         // an ARRAY[?, ?, ...] expression where every element is a parameter, not an inlined literal.
+        // multi_turn_data is pruned element-wise, but only when it is genuinely a JSONB array of
+        // objects — the sole shape the operation is defined for. Every other shape (SQL NULL, the
+        // JSONB scalar `null`, a scalar/non-array value, or an array containing a non-object element)
+        // is passed through byte-identical rather than touched:
+        //   - `IS NOT NULL` alone is not sufficient — the JSONB scalar `null` also satisfies it, and
+        //     jsonb_array_elements() on a scalar raises "cannot extract elements from a scalar",
+        //     failing the whole UPDATE. jsonb_typeof(...) = 'array' is the real guard.
+        //   - An empty array must stay `[]`, not collapse to SQL NULL: jsonb_agg() over zero rows
+        //     returns NULL, which would silently convert a multi-turn case to single-turn (the exact
+        //     data loss design D6 exists to prevent) — COALESCE back to '[]'::jsonb.
+        //   - A non-object element (e.g. a corrupted turn array holding scalars) is passed through
+        //     unchanged rather than having keys "subtracted" from it — `elem - text[]` on a scalar
+        //     raises "cannot delete from scalar", so the per-element CASE only applies `-` to objects.
         Field<String[]> fieldsArray = DSL.array(fieldNames.toArray(String[]::new));
         dsl.execute(
-                "UPDATE test_cases SET data = data - {0}::text[] WHERE dataset_id = {1}",
+                "UPDATE test_cases SET "
+                        + "data = data - {0}::text[], "
+                        + "multi_turn_data = CASE WHEN jsonb_typeof(multi_turn_data) = 'array' THEN "
+                        + "(SELECT COALESCE(jsonb_agg(CASE WHEN jsonb_typeof(elem) = 'object' "
+                        + "THEN elem - {0}::text[] ELSE elem END ORDER BY ord), '[]'::jsonb) "
+                        + "FROM jsonb_array_elements(multi_turn_data) WITH ORDINALITY AS t(elem, ord)) "
+                        + "ELSE multi_turn_data END "
+                        + "WHERE dataset_id = {1}",
                 fieldsArray, DSL.val(datasetId.toString()));
     }
 

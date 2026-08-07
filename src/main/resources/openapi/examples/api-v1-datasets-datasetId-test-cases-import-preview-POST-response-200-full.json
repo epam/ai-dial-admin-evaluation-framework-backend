@@ -7,6 +7,12 @@
       "inferredType": "STRING"
     },
     {
+      "headerName": "turnIndex",
+      "mappedTo": "turnIndex",
+      "fieldName": "turnIndex",
+      "inferredType": "STRING"
+    },
+    {
       "headerName": "prompt",
       "mappedTo": "data",
       "fieldName": "prompt",
@@ -19,7 +25,8 @@
       "inferredType": "INTEGER"
     }
   ],
-  "totalRows": 3,
+  "totalRows": 4,
+  "totalTestCases": 3,
   "sampleRows": [
     {
       "testCaseName": "TC 1",
@@ -32,24 +39,40 @@
     {
       "testCaseName": "TC 2",
       "data": {
-        "prompt": "World",
         "score": 3
+      },
+      "multiTurnData": [
+        {
+          "prompt": "World"
+        },
+        {
+          "prompt": "Foo"
+        }
+      ],
+      "valid": true
+    },
+    {
+      "testCaseName": "TC 1",
+      "data": {
+        "prompt": "Hello",
+        "score": 5
       },
       "valid": true
     }
   ],
   "warnings": [
     {
-      "rowNumber": 3,
+      "rowNumber": 5,
       "columnName": "testCaseName",
-      "message": "would be skipped \u2014 collides with existing test case 'TC 1'"
+      "message": "would be skipped — duplicate of earlier row with same name"
     }
   ],
   "autoDetectedSchema": [
     {
       "name": "prompt",
       "type": "STRING",
-      "required": false
+      "required": false,
+      "perTurn": true
     },
     {
       "name": "score",

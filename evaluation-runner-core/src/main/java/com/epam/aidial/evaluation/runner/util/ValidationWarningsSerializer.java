@@ -202,4 +202,28 @@ public class ValidationWarningsSerializer {
             return null;
         }
     }
+
+    /**
+     * Deserializes a multi-turn data array from a JSON array string, propagating a parse failure instead
+     * of swallowing it. Returns {@code null} for null/blank input (absent {@code multiTurnData}), same as
+     * {@link #deserializeTurns}. Unlike that lenient method, a non-blank value that fails to parse is
+     * NOT caught here — the {@link JacksonException} propagates.
+     *
+     * <p>Write paths that persist a re-serialized turn array (the CSV import fixup pass, dataset
+     * revalidation Phase 1) need to distinguish "no stored turns" (safe to treat as single-turn) from
+     * "turns present but unreadable" (must be skipped, never overwritten — writing back {@code null}
+     * would silently convert a multi-turn case to single-turn and destroy every turn). {@link
+     * #deserializeTurns} collapses both cases to {@code null}, which is correct for read paths but
+     * destructive here; this method exists so a write path has a real exception to catch and log.
+     *
+     * @param json JSON array string (may be null or blank)
+     * @return ordered list of turn-data maps, or {@code null} when absent
+     * @throws JacksonException if {@code json} is non-blank and cannot be parsed
+     */
+    public List<Map<String, Object>> deserializeTurnsStrict(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        return objectMapper.readValue(json, TURNS_TYPE);
+    }
 }

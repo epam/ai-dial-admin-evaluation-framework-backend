@@ -169,6 +169,9 @@ Specs for standalone command-line tools that consume the EF backend's public RES
 - **[eval-cli](eval-cli/spec.md)** — Implemented
   Standalone Spring Boot CLI (`eval-cli` Gradle subproject, root package `com.epam.aidial.evaluation.cli`) that clones "standard" test suites from a source EF instance, fetches their configuration and test cases, executes them against a CLI-configured target deployment using `evaluation-runner-core`'s existing batch execution path, and imports the results via the source EF's `runs/import` endpoint — enabling cross-environment evaluation without a second EF deployment. Exposes `clone`, `fetch`, `run`, `import`, and `evaluate` picocli subcommands; DB-free; static bearer-token auth (OIDC planned). Related: eval-results-import, test-suite-clone, evaluation-runner-core-module.
 
+- **[eval-cli-distribution](eval-cli-distribution/spec.md)** — Implemented
+  Packaging and CI publishing of `eval-cli` as a Docker image: `eval-cli/Dockerfile` (multi-stage build targeting `:eval-cli:bootJar`, no JDK required at runtime), a dedicated entrypoint forwarding CLI arguments, and a standalone `.github/workflows/eval-cli-release.yml` publishing to `ghcr.io/epam/eval-cli` with plain, main-app-consistent tags (`<branch>`, `sha-<short>`). Isolation from the main app's deploy pipeline is enforced by a `package.name == 'ai-dial-admin-evaluation-framework-backend'` filter added to `deploy-development.yml`'s `registry_package` trigger condition — not by any tag-naming convention on the eval-cli side. Related: eval-cli.
+
 ### Vision / Planned
 
 Specs documented but not yet fully implemented.

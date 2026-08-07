@@ -169,7 +169,7 @@ Formal versioned requirements for project-wide architectural rules. Quick-refere
 Specs for standalone command-line tools that consume the EF backend's public REST API.
 
 - **[eval-cli](eval-cli/spec.md)** — Implemented
-  Standalone Spring Boot CLI (`eval-cli` Gradle subproject, root package `com.epam.aidial.evaluation.cli`) that clones "standard" test suites from a source EF instance, fetches their configuration and test cases, executes them against a CLI-configured target deployment using `evaluation-runner-core`'s existing batch execution path, and imports the results via the source EF's `runs/import` endpoint — enabling cross-environment evaluation without a second EF deployment. Exposes `clone`, `fetch`, `run`, `import`, and `evaluate` picocli subcommands; DB-free; static bearer-token auth (OIDC planned). Related: eval-results-import, test-suite-clone, evaluation-runner-core-module.
+  Standalone Spring Boot CLI (`eval-cli` Gradle subproject, root package `com.epam.aidial.evaluation.cli`) that clones "standard" test suites from a source EF instance, fetches their configuration, bound dataset schema, and test cases, executes them (including multi-turn and multi-request suites) against a CLI-configured target deployment using `evaluation-runner-core`'s existing batch execution path, and imports the results via the source EF's `runs/import` endpoint — enabling cross-environment evaluation without a second EF deployment. Exposes `clone`, `fetch`, `run`, `import`, and `evaluate` picocli subcommands; DB-free; static bearer-token auth (OIDC planned). Related: eval-results-import, test-suite-clone, evaluation-runner-core-module.
 
 ### Vision / Planned
 
@@ -184,7 +184,7 @@ Specs documented but not yet fully implemented.
 - **[test-suite-runs](test-suite-runs/spec.md)** — Implemented
   Foundational infrastructure for async test suite execution: run lifecycle (PENDING→RUNNING→COMPLETED/FAILED/CANCELLED), CRUD with filtering/sorting/pagination, SSE status streaming, startup reconciliation, configurable concurrency limits. Uses in-process evaluation engine with virtual threads, streaming SSE support, retry/rate-limiting, and configurable execution settings. `numberOfTestCases` finalized at snapshot phase (not immutable at creation). `suiteSnapshot` field in API response (detail only; omitted from list).
 - **[eval-results-import](eval-results-import/spec.md)** — Implemented
-  `POST /api/v1/test-suites/{testSuiteId}/runs/import` — imports a batch of already-produced eval results for an existing, dataset-bound suite in one request (creates the run, persists results, extracts response columns) and asynchronously runs Phase 2 (metric evaluation) + Phase 3 (score computation) against them, skipping deployment invocation entirely. Related: test-suite-runs, response-columns, analytics-results.
+  `POST /api/v1/test-suites/{testSuiteId}/runs/import` — imports a batch of already-produced eval results for an existing, dataset-bound suite in one request (creates the run, persists results with per-row `(request, turn)` identity and caller-supplied extracted columns verbatim) and asynchronously runs Phase 2 (metric evaluation) + Phase 3 (score computation) against them, skipping deployment invocation entirely. Related: test-suite-runs, response-columns, analytics-results.
 - **[evaluation-runs](evaluation-runs/spec.md)** — Planned
   Running suites, storing run history and per-case results.
 - **[runner-and-jobs](runner-and-jobs/spec.md)** — Partial

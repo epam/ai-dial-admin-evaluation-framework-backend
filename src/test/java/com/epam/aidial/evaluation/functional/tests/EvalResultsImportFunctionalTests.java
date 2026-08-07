@@ -21,9 +21,12 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvok
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.ParameterDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ParameterLocation;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
@@ -306,6 +309,323 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
             assertThat(row.get("metricValues")).isEqualTo(Map.of());
             assertThat((String) row.get("testCaseName")).startsWith("tc-");
         });
+    }
+
+    // -------------------------------------------------------------------------
+    // Row identity columns (requestIndex/totalRequests/turnIndex/totalTurns) and stable per-name id
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Should persist per-row identity columns and share one test_case_id per testCaseName for an "
+            + "id-less 19-column import")
+    void shouldPersistPerRowIdentityAndShareTestCaseIdPerName() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("expected")
+                .type(SchemaFieldType.STRING)
+                .required(true)
+                .build()));
+        TestSuiteResponseDto suite = createSuiteWithResponseColumn("Suite For Identity Columns", datasetId);
+
+        String csv = buildCsv(
+                List.of(
+                        "testCaseName",
+                        "runIndex",
+                        "executionStatus",
+                        "startedAt",
+                        "completedAt",
+                        "testCaseData",
+                        "requestIndex",
+                        "totalRequests",
+                        "turnIndex",
+                        "totalTurns"),
+                List.of(
+                        List.of("tc-multi", "0", "SUCCESS", "1000", "1500", "{\"expected\":\"a\"}", "0", "2", "0", "1"),
+                        List.of("tc-multi", "0", "SUCCESS", "1000", "1500", "{\"expected\":\"a\"}", "1", "2", "0", "2"),
+                        List.of(
+                                "tc-multi",
+                                "0",
+                                "SUCCESS",
+                                "1000",
+                                "1500",
+                                "{\"expected\":\"a\"}",
+                                "1",
+                                "2",
+                                "1",
+                                "2")));
+
+        ResponseEntity<TestSuiteRunResponseDto> importResponse =
+                postImportCsv(suite.getId(), csv, TestSuiteRunResponseDto.class);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        UUID runId = importResponse.getBody().getId();
+        assertThat(awaitRunTerminal(runId, 15).getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(runId);
+        assertThat(results).hasSize(3);
+
+        // All rows of one test case share a single generated test_case_id (design.md Decision 4).
+        assertThat(results.stream().map(r -> r.get("test_case_id")).distinct()).hasSize(1);
+
+        Map<String, Object> request0Row = results.stream()
+                .filter(r -> ((Number) r.get("request_index")).intValue() == 0)
+                .findFirst()
+                .orElseThrow();
+        assertThat(((Number) request0Row.get("total_requests")).intValue()).isEqualTo(2);
+        assertThat(((Number) request0Row.get("turn_index")).intValue()).isZero();
+        assertThat(((Number) request0Row.get("total_turns")).intValue()).isEqualTo(1);
+
+        List<Map<String, Object>> request1Rows = results.stream()
+                .filter(r -> ((Number) r.get("request_index")).intValue() == 1)
+                .toList();
+        assertThat(request1Rows).hasSize(2);
+        assertThat(request1Rows.stream().map(r -> ((Number) r.get("turn_index")).intValue()))
+                .containsExactlyInAnyOrder(0, 1);
+        assertThat(request1Rows)
+                .allSatisfy(r ->
+                        assertThat(((Number) r.get("total_turns")).intValue()).isEqualTo(2));
+    }
+
+    @Test
+    @DisplayName(
+            "Should default requestIndex/totalRequests/turnIndex/totalTurns to 0/1/0/1 for a legacy " + "15-column CSV")
+    void shouldDefaultIdentityColumnsForLegacyCsv() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("expected")
+                .type(SchemaFieldType.STRING)
+                .required(true)
+                .build()));
+        TestSuiteResponseDto suite = createSuiteWithResponseColumn("Suite For Legacy Identity Defaults", datasetId);
+
+        String csv = buildCsv(
+                List.of("testCaseName", "runIndex", "executionStatus", "startedAt", "completedAt", "testCaseData"),
+                List.of(List.of("tc-legacy", "0", "SUCCESS", "1000", "1500", "{\"expected\":\"a\"}")));
+
+        ResponseEntity<TestSuiteRunResponseDto> importResponse =
+                postImportCsv(suite.getId(), csv, TestSuiteRunResponseDto.class);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        UUID runId = importResponse.getBody().getId();
+        assertThat(awaitRunTerminal(runId, 15).getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(runId);
+        assertThat(results).hasSize(1);
+        Map<String, Object> row = results.get(0);
+        assertThat(((Number) row.get("request_index")).intValue()).isZero();
+        assertThat(((Number) row.get("total_requests")).intValue()).isEqualTo(1);
+        assertThat(((Number) row.get("turn_index")).intValue()).isZero();
+        assertThat(((Number) row.get("total_turns")).intValue()).isEqualTo(1);
+    }
+
+    // -------------------------------------------------------------------------
+    // Scope-aware testCaseData validation (design.md Decision 6)
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Should accept a shared-only import row against a dataset with a required per-turn field")
+    void shouldAcceptSharedOnlyRowWithRequiredPerTurnField() {
+        UUID datasetId = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder()
+                        .name("expected")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .perTurn(true)
+                        .build()));
+        TestSuiteResponseDto suite = createSuiteWithResponseColumn("Suite For Scope-Aware Accept", datasetId);
+
+        String csv = buildCsv(
+                List.of("testCaseName", "runIndex", "executionStatus", "startedAt", "completedAt", "testCaseData"),
+                List.of(List.of("tc-shared-only", "0", "SUCCESS", "1000", "1500", "{\"expected\":\"a\"}")));
+
+        ResponseEntity<TestSuiteRunResponseDto> importResponse =
+                postImportCsv(suite.getId(), csv, TestSuiteRunResponseDto.class);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(awaitRunTerminal(importResponse.getBody().getId(), 15).getStatus())
+                .isEqualTo(RunStatus.COMPLETED.name());
+    }
+
+    @Test
+    @DisplayName("Should still reject an import row missing a required shared field even when the dataset "
+            + "also declares a per-turn field")
+    void shouldRejectMissingRequiredSharedFieldWithPerTurnFieldDeclared() {
+        UUID datasetId = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder()
+                        .name("expected")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .perTurn(true)
+                        .build()));
+        TestSuiteResponseDto suite = createSuiteWithResponseColumn("Suite For Scope-Aware Reject", datasetId);
+
+        String csv = buildCsv(
+                List.of("testCaseName", "runIndex", "executionStatus", "startedAt", "completedAt", "testCaseData"),
+                List.of(List.of("tc-missing-shared", "0", "SUCCESS", "1000", "1500", "{}")));
+
+        ResponseEntity<String> response = postImportCsv(suite.getId(), csv, String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("testCaseData validation failed");
+    }
+
+    // -------------------------------------------------------------------------
+    // Imported-run request-chain labels (design.md Decision 5)
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Should run a request.name-pinned conditional metric only for the imported rows at that chain "
+            + "position, with no production code change required (design.md Decision 5)")
+    void shouldRunRequestNamePinnedMetricOnlyAtPinnedChainPosition() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("prompt")
+                .type(SchemaFieldType.STRING)
+                .required(true)
+                .build()));
+
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Suite For Chain Condition " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/configure")
+                        .build())
+                .datasetId(datasetId)
+                .requestName("configure")
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/configure")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("op", "configure"))
+                                .build())
+                        .build())
+                .inputBindings(List.of())
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("configId")
+                        .expression("usage.total_tokens")
+                        .type(SchemaFieldType.INTEGER)
+                        .build()))
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name("ask")
+                        .endpointRef(EndpointContractDto.builder()
+                                .method(HttpMethod.POST)
+                                .relativeUrlPattern("/v1/ask")
+                                .build())
+                        .requestTemplate(RequestTemplateDto.builder()
+                                .urlTemplate("/v1/ask")
+                                .body(JsonRequestBodyDto.builder()
+                                        .content(Map.of("op", "ask", "prompt", "${{prompt}}"))
+                                        .build())
+                                .build())
+                        .inputBindings(List.of(InputBindingDto.builder()
+                                .templateVariable("prompt")
+                                .dataField("prompt")
+                                .build()))
+                        .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                                .name("answer")
+                                .expression("choices[0].message.content")
+                                .type(SchemaFieldType.STRING)
+                                .build()))
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> suiteResponse =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(suiteResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto suite = suiteResponse.getBody();
+
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        metricDeclarationTestDataProvider.insertSeedVersionForAccuracy();
+        UUID declarationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID versionId = UUID.fromString("770e8400-e29b-41d4-a716-446655440001");
+        String inputBindings = """
+                [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
+                """;
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                suite.getId(),
+                declarationId,
+                versionId,
+                "Accuracy",
+                "[]",
+                inputBindings.trim(),
+                "request.name = 'ask'");
+
+        when(metricProviderClient.evaluate(anyString(), any(EvaluationRequestDto.class)))
+                .thenReturn(EvaluationResponseDto.builder()
+                        .metricName("Accuracy")
+                        .output(Map.of(
+                                "Accuracy",
+                                MetricOutputFieldDto.builder()
+                                        .type("value")
+                                        .value(BigDecimal.ONE)
+                                        .build()))
+                        .build());
+
+        // requestIndex=0 ("configure") and requestIndex=1 ("ask") of the same repetition, id-less and sharing
+        // testCaseName so they persist under one test_case_id (design.md Decision 4).
+        String csv = buildCsv(
+                List.of(
+                        "testCaseName",
+                        "runIndex",
+                        "executionStatus",
+                        "startedAt",
+                        "completedAt",
+                        "testCaseData",
+                        "extractedColumns",
+                        "requestIndex",
+                        "totalRequests"),
+                List.of(
+                        List.of(
+                                "tc-chain-import",
+                                "0",
+                                "SUCCESS",
+                                "1000",
+                                "1500",
+                                "{\"prompt\":\"hi\"}",
+                                "{\"configId\":7}",
+                                "0",
+                                "2"),
+                        List.of(
+                                "tc-chain-import",
+                                "0",
+                                "SUCCESS",
+                                "1000",
+                                "1500",
+                                "{\"prompt\":\"hi\"}",
+                                "{\"answer\":\"Mocked answer.\"}",
+                                "1",
+                                "2")));
+
+        ResponseEntity<TestSuiteRunResponseDto> importResponse =
+                postImportCsv(suite.getId(), csv, TestSuiteRunResponseDto.class);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        UUID runId = importResponse.getBody().getId();
+        assertThat(awaitRunTerminal(runId, 15).getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> summaries = analyticsTestDataHelper.findEvalSummariesByRunId(runId);
+        assertThat(summaries).hasSize(2);
+
+        Map<String, Object> configureSummary = summaries.stream()
+                .filter(s -> ((Number) s.get("request_index")).intValue() == 0)
+                .findFirst()
+                .orElseThrow();
+        assertThat((String) configureSummary.get("metric_values")).isEqualTo("{}");
+
+        Map<String, Object> askSummary = summaries.stream()
+                .filter(s -> ((Number) s.get("request_index")).intValue() == 1)
+                .findFirst()
+                .orElseThrow();
+        assertThat((String) askSummary.get("metric_values")).contains("Accuracy");
     }
 
     // -------------------------------------------------------------------------

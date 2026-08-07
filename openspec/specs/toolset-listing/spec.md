@@ -141,7 +141,7 @@ The system SHALL define an `InterfaceType` enum for valid interface types used i
 - New DTO: `ToolsetInfoDto extends DeploymentInfoDto` in `service.domain.dto.deployment`
 - New DTO: `ToolDefinitionDto` in `service.domain.dto.deployment` — `name`, `description`, `inputSchema` (Map), `outputSchema` (Map, nullable)
 - New enum: `InterfaceType` in `service.domain.dto.deployment` — `CHAT`, `EMBEDDING`, `MCP`, `CUSTOM_UI`
-- New DIAL Core DTO: `DialCoreDeploymentDto` in `client.dialcore.dto` — unified response from `/v1/deployments` (replaces separate model/app/toolset list DTOs for listing)
+- New DIAL Core DTO: `DialCoreDeploymentDto` in `client.dialcore.dto` — abstract polymorphic base (discriminator `object`) of the `DialCoreModelDto`/`DialCoreApplicationDto`/`DialCoreToolsetDto` hierarchy; unified response entries from `/v1/deployments` deserialize directly to the matching concrete subtype (replaces separate model/app/toolset list DTOs for listing)
 - Modified: `DeploymentType` enum — add `DIAL_TOOLSET("dial-toolset")`
 - Modified: `DialCoreClient` — add `getDeployments(interfaceType)` method calling `/v1/deployments`; keep `getToolset(id)` for single-item detail
 - Modified: `DeploymentService` — replace 3 parallel calls with single `/v1/deployments` call; add type/interface filtering

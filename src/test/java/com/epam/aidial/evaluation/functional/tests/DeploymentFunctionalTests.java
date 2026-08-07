@@ -7,7 +7,6 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationDto;
-import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreDeploymentDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteUpstreamDto;
@@ -45,13 +44,11 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
     void getAllDeploymentsReturnsMergedList() {
         when(dialCoreClient.getDeployments(eq(null)))
                 .thenReturn(List.of(
-                        DialCoreDeploymentDto.builder()
-                                .object("model")
+                        DialCoreModelDto.builder()
                                 .id("m1")
                                 .displayName("Model 1")
                                 .build(),
-                        DialCoreDeploymentDto.builder()
-                                .object("application")
+                        DialCoreApplicationDto.builder()
                                 .id("a1")
                                 .displayName("App 1")
                                 .build()));
@@ -173,13 +170,23 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("GET /deployments always returns routes=null for applications")
-    void getAllDeploymentsReturnsNullRoutesForApps() {
+    @DisplayName("GET /deployments maps application routes from the unified endpoint")
+    void getAllDeploymentsMapsApplicationRoutes() {
         when(dialCoreClient.getDeployments(eq(null)))
-                .thenReturn(List.of(DialCoreDeploymentDto.builder()
-                        .object("application")
+                .thenReturn(List.of(DialCoreApplicationDto.builder()
                         .id("app-with-routes")
                         .displayName("App With Routes")
+                        .routes(Map.of(
+                                "route1",
+                                DialCoreRouteDto.builder()
+                                        .name("route1")
+                                        .paths(List.of("/route1/.*"))
+                                        .methods(List.of("GET"))
+                                        .upstreams(List.of(DialCoreRouteUpstreamDto.builder()
+                                                .endpoint("http://route1-upstream")
+                                                .weight(1)
+                                                .build()))
+                                        .build()))
                         .build()));
 
         ResponseEntity<List<DeploymentInfoDto>> response = restTemplate.exchange(
@@ -188,7 +195,10 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).hasSize(1);
         DialApplicationInfoDto app = (DialApplicationInfoDto) response.getBody().get(0);
-        assertThat(app.getRoutes()).isNull();
+        assertThat(app.getRoutes()).containsOnlyKeys("route1");
+        assertThat(app.getRoutes().get("route1").getPaths()).containsExactly("/route1/.*");
+        assertThat(app.getRoutes().get("route1").getUpstreams().get(0).getEndpoint())
+                .isEqualTo("http://route1-upstream");
     }
 
     @Test

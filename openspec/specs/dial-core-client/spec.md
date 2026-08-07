@@ -8,13 +8,13 @@ The DIAL Core Client provides integration with the DIAL Core API, allowing the s
 
 ### Requirement: List all deployments
 
-The system SHALL provide an endpoint to list all available deployments (models, applications, and toolsets) from DIAL Core. The system SHALL call DIAL Core's unified `GET /v1/deployments` endpoint (with optional `interface_type` parameter), transform responses to `DeploymentInfoDto` hierarchy, and return. When `type` query parameter is provided on EF's endpoint, the system SHALL filter the response client-side by deployment type. The `routes` field on every `DialApplicationInfoDto` in the list response SHALL always be `null`.
+The system SHALL provide an endpoint to list all available deployments (models, applications, and toolsets) from DIAL Core. The system SHALL call DIAL Core's unified `GET /v1/deployments` endpoint (with optional `interface_type` parameter), transform responses to `DeploymentInfoDto` hierarchy, and return. When `type` query parameter is provided on EF's endpoint, the system SHALL filter the response client-side by deployment type. List entries SHALL be fully mapped to the `DeploymentInfoDto` hierarchy via the same per-type mappers used by the single-entity endpoints (all common fields — `version` from `display_version`, `owner`, timestamps, `descriptionKeywords`, `inputAttachmentTypes` — plus subtype-specific fields: model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, toolset `transport`/`allowedTools`). Application `routes` present in the unified payload pass through as-is; schema-route resolution via `SchemaRouteExtractor` remains exclusive to the single-application GET.
 
 #### Scenario: Successful deployment listing
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments`
 - **THEN** system calls DIAL Core `GET /v1/deployments` with user's JWT token
 - **AND** transforms responses to `DialModelInfoDto`, `DialApplicationInfoDto`, and `ToolsetInfoDto` based on entry type
-- **AND** sets `routes = null` on every `DialApplicationInfoDto`
+- **AND** fully maps each entry's common and subtype-specific fields via the same mappers used by the single-entity endpoints
 - **AND** returns merged list with HTTP 200
 
 #### Scenario: Deployment listing with interface filter
@@ -47,8 +47,8 @@ The system SHALL provide an endpoint to list all available deployments (models, 
 - **AND** the remaining valid entries SHALL be returned normally
 
 #### Scenario: Application with app-level routes in list
-- **WHEN** DIAL Core returns an application with non-null `routes`
-- **THEN** the list endpoint SHALL still return `routes: null` for that application
+- **WHEN** DIAL Core returns an application with non-null `routes` in the unified list
+- **THEN** the list endpoint SHALL return those routes mapped to `Map<String, ApplicationRouteDto>` as-is (no schema-route resolution in the list path)
 
 ---
 
@@ -568,26 +568,35 @@ Implementation notes:
 
 ### Requirement: Deployment type discriminator field
 
-`DialCoreDeploymentDto` SHALL use the field `object` (not `type`) as the deployment type discriminator, reflecting the actual DIAL API response. The JSON field name is `"object"` and the Java field name SHALL be `object`. Valid values are `"model"`, `"application"`, `"toolset"`. `DeploymentMapper.toDeploymentInfoDto()` SHALL branch on `source.getObject()`.
+`DialCoreDeploymentDto` SHALL be an abstract polymorphic base using Jackson `@JsonTypeInfo(use = Id.NAME, include = As.EXISTING_PROPERTY, property = "object", visible = true, defaultImpl = DialCoreUnknownDeploymentDto.class)` with `@JsonSubTypes` mapping `"model"` → `DialCoreModelDto`, `"application"` → `DialCoreApplicationDto`, `"toolset"` → `DialCoreToolsetDto`. The `object` field remains a visible `String` on the base (reflecting the actual DIAL API response field name). `DeploymentMapper.toDeploymentInfoDto()` SHALL dispatch via a pattern-matching switch on the concrete subtype (no string comparison on `getObject()`). Unknown or missing `object` values deserialize to `DialCoreUnknownDeploymentDto`; the mapper returns `null` for it so `DeploymentService` logs a warning (with the raw `object` value) and skips the entry.
 Status: **Implemented**
 
 #### Scenario: Model entry mapped correctly
 - **WHEN** the unified list entry has `"object": "model"`
-- **THEN** `toDeploymentInfoDto()` returns a `DialModelInfoDto`
+- **THEN** it deserializes to `DialCoreModelDto`
+- **AND** `toDeploymentInfoDto()` returns a `DialModelInfoDto`
 
 #### Scenario: Toolset entry mapped correctly
 - **WHEN** the unified list entry has `"object": "toolset"`
-- **THEN** `toDeploymentInfoDto()` returns a `ToolsetInfoDto`
+- **THEN** it deserializes to `DialCoreToolsetDto`
+- **AND** `toDeploymentInfoDto()` returns a `ToolsetInfoDto`
 
 #### Scenario: Application entry mapped correctly
 - **WHEN** the unified list entry has `"object": "application"`
-- **THEN** `toDeploymentInfoDto()` returns a `DialApplicationInfoDto`
+- **THEN** it deserializes to `DialCoreApplicationDto`
+- **AND** `toDeploymentInfoDto()` returns a `DialApplicationInfoDto`
+
+#### Scenario: Unknown object value falls back and is skipped
+- **WHEN** the unified list entry has an `object` value that is missing or not among `"model"`, `"application"`, `"toolset"`
+- **THEN** it deserializes to `DialCoreUnknownDeploymentDto`
+- **AND** `toDeploymentInfoDto()` returns `null`
+- **AND** `DeploymentService` logs a warning with the raw `object` value and the entry's `id`, then skips it
 
 ---
 
 ### Requirement: DialTransport enum
 
-A `DialTransport` enum SHALL exist in `client.dialcore.dto` with values `HTTP("HTTP")` and `SSE("SSE")`. `DialCoreToolsetDto.transport` and `DialCoreDeploymentDto.transport` SHALL use this enum type. Jackson SHALL use `@JsonCreator` on `DialTransport.fromValue()` and fail fast (throw `IllegalArgumentException`) on unrecognized values.
+A `DialTransport` enum SHALL exist in `client.dialcore.dto` with values `HTTP("HTTP")` and `SSE("SSE")`. `DialCoreToolsetDto.transport` SHALL use this enum type. Jackson SHALL use `@JsonCreator` on `DialTransport.fromValue()` and fail fast (throw `IllegalArgumentException`) on unrecognized values.
 Status: **Implemented**
 
 #### Scenario: Known HTTP transport value deserialized
@@ -619,31 +628,34 @@ Status: **Implemented**
 
 ---
 
-### Requirement: Transport field in unified deployment DTO
+### Requirement: Transport field on toolset entries
 
-`DialCoreDeploymentDto` SHALL include a `transport` field of type `DialTransport` to capture the transport value present on toolset entries in the unified `/v1/deployments` response. The field SHALL be `null` for non-toolset entries (`@JsonIgnoreProperties(ignoreUnknown = true)` handles absent fields).
+`transport` (type `DialTransport`) SHALL live on the `DialCoreToolsetDto` subtype, not on the `DialCoreDeploymentDto` base — unified list toolset entries deserialize to `DialCoreToolsetDto` (via the `object` discriminator), so `transport` is captured there. Non-toolset subtypes (`DialCoreModelDto`, `DialCoreApplicationDto`) SHALL have no `transport` field at all, which is stronger than the field merely being `null`.
 Status: **Implemented**
 
 #### Scenario: Toolset HTTP transport captured from unified list
 - **WHEN** the unified list entry has `"object": "toolset"` and `"transport": "HTTP"`
-- **THEN** `DialCoreDeploymentDto.transport` is `DialTransport.HTTP`
+- **THEN** it deserializes to `DialCoreToolsetDto` with `transport = DialTransport.HTTP`
 
 #### Scenario: Toolset SSE transport captured from unified list
 - **WHEN** the unified list entry has `"object": "toolset"` and `"transport": "SSE"`
-- **THEN** `DialCoreDeploymentDto.transport` is `DialTransport.SSE`
+- **THEN** it deserializes to `DialCoreToolsetDto` with `transport = DialTransport.SSE`
 
-#### Scenario: Model entry has null transport
+#### Scenario: Model entry has no transport field
 - **WHEN** the unified list entry has `"object": "model"` (no transport field)
-- **THEN** `DialCoreDeploymentDto.transport` is `null`
+- **THEN** it deserializes to `DialCoreModelDto`, which has no `transport` field
 
 ---
 
 ## Implementation Notes (MCP Extension)
 - Modified: `DialCoreClient` — add `getDeployments(interfaceType)` method calling `/v1/deployments`; keep `getToolset(id)` for single-item detail; deserializes response as bare `List<DialCoreDeploymentDto>` (not a wrapped object)
 - Modified: `DeploymentService` — replace 3 parallel calls with single `/v1/deployments` call; add type/interface filtering; consumes `List<DialCoreDeploymentDto>` directly
-- Modified: `DeploymentMapper` — add unified response mapping via `toDeploymentInfoDto()` branching on `source.getObject()`; add `dialTransportToMcp()` converter (`HTTP` → `STREAMABLE_HTTP`, `SSE` → `SSE`)
+- Modified: `DeploymentMapper` — `toDeploymentInfoDto()` dispatches via a pattern-matching switch on the concrete subtype (`DialCoreModelDto`/`DialCoreApplicationDto`/`DialCoreToolsetDto`), not `source.getObject()` string branching; add `dialTransportToMcp()` converter (`HTTP` → `STREAMABLE_HTTP`, `SSE` → `SSE`)
 - Modified: `DeploymentController` — add `type` and `interface` query params; tools endpoint at `GET /deployments/tools?deploymentId=&transport=` (query params, not path variables)
-- New DTO: `DialCoreDeploymentDto` in `client.dialcore.dto` — unified response entry from `/v1/deployments`; has `object`, `transport` (DialTransport), `interfaces` (List<InterfaceType>)
+- New: `DialCoreDeploymentDto` in `client.dialcore.dto` is now the abstract polymorphic base of the deployment DTO hierarchy — carries common fields (`object`, `id`, `displayName`, `displayVersion`, `description`, `descriptionKeywords`, `iconUrl`, `reference`, `owner`, `status`, `createdAt`, `updatedAt`, `defaults`, `maxRetryAttempts`, `inputAttachmentTypes`, `interfaces` (List<InterfaceType>), `features`); `transport` moved to the `DialCoreToolsetDto` subtype
 - New enum: `DialTransport` in `client.dialcore.dto` — `HTTP("HTTP")`, `SSE("SSE")`, fail-fast on unknown values via `@JsonCreator`
-- New DTO: `DialCoreToolsetDto` in `client.dialcore.dto` — for single toolset detail; `transport` field uses `DialTransport`
+- New DTO: `DialCoreToolsetDto` in `client.dialcore.dto` — extends the base; used for both single toolset detail and the toolset variant of unified list entries; adds `transport` (DialTransport) and `allowedTools`
+- New DTO: `DialCoreUnknownDeploymentDto` in `client.dialcore.dto` — empty fallback subtype registered as `@JsonTypeInfo` `defaultImpl`; deserialization target when `object` is missing or unrecognized, so the entry is skipped (logged) instead of failing the whole list fetch
+- Deleted: `DialCoreFeaturesDto` — dead any-setter container with no consumers; the base's `Map<String, Object> features` replaces it
 - Deleted: `DialCoreDeploymentListResponseDto` — removed; DIAL returns a bare array
+- Single-entity `/openai/{models|applications}/{id}` payloads rely on the `object` discriminator being present on the wire — DIAL Core always sends it, so polymorphic deserialization to the concrete subtype succeeds even when the static Java type at the call site is already the subtype

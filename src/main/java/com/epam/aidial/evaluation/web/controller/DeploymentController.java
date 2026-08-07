@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -65,6 +66,36 @@ public class DeploymentController {
         return deploymentService.getAllDeployments(deploymentType, ifType);
     }
 
+    @GetMapping(value = "/{deploymentType}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+        summary = "Get deployment by type passed in url and id passed as query param",
+        description = "Returns a single deployment. Use deploymentType 'dial-model', 'dial-application', "
+                      + "or 'dial-toolset' (kebab-case).")
+    @ApiResponse(
+        responseCode = "200",
+        description = "Deployment found",
+        content =
+        @Content(
+            mediaType = MediaType.APPLICATION_JSON_VALUE,
+            schema = @Schema(implementation = DeploymentInfoDto.class)))
+    @ApiResponse(
+        responseCode = "400",
+        description = "Invalid deployment type " + "(valid values: dial-model, dial-application, dial-toolset)")
+    @ApiResponse(responseCode = "401", description = "Unauthorized (missing or invalid token to this service)")
+    @ApiResponse(responseCode = "403", description = "Forbidden (no access to this deployment in DIAL Core)")
+    @ApiResponse(
+        responseCode = "502",
+        description =
+            "Upstream (DIAL Core) error; check errorCode for UPSTREAM_AUTH_ERROR, UPSTREAM_NOT_FOUND, or UPSTREAM_ERROR")
+    public DeploymentInfoDto getDeploymentViaParamId(
+        @Parameter(description = "Deployment type: dial-model, dial-application, or dial-toolset", required = true)
+        @PathVariable
+        String deploymentType,
+        @RequestParam(name = "deploymentId", required = false) String deploymentId) {
+        final DeploymentType type = DeploymentType.fromValue(deploymentType);
+        return deploymentService.getDeployment(type, deploymentId);
+    }
+
     @GetMapping(value = "/{deploymentType}/{deploymentId}", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Get deployment by type and ID",
@@ -91,7 +122,7 @@ public class DeploymentController {
                     @PathVariable
                     String deploymentType,
             @Parameter(description = "Deployment ID", required = true) @PathVariable String deploymentId) {
-        DeploymentType type = DeploymentType.fromValue(deploymentType);
+        final DeploymentType type = DeploymentType.fromValue(deploymentType);
         return deploymentService.getDeployment(type, deploymentId);
     }
 

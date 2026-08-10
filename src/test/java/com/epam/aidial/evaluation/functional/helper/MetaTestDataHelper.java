@@ -122,6 +122,25 @@ public class MetaTestDataHelper {
     }
 
     /**
+     * Seeds a single multi-turn test case with caller-supplied {@code name} and {@code multiTurnDataJson}
+     * (a JSON array of per-turn data maps) into the dataset, and returns its generated id. Mirrors
+     * {@link #seedTestCaseInDataset}, but populates {@code multi_turn_data} instead of {@code data}.
+     */
+    @Transactional("metaTransactionManager")
+    public UUID seedMultiTurnTestCaseInDataset(UUID datasetId, String name, String multiTurnDataJson) {
+        TestCase tc = TestCase.builder()
+                .datasetId(datasetId)
+                .testCaseName(name)
+                .data("{}")
+                .multiTurnData(multiTurnDataJson)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        testCaseRepository.save(tc);
+        return tc.getId();
+    }
+
+    /**
      * Creates a test suite bound to a freshly minted dataset. Convenience overload for tests that
      * don't care which dataset the suite uses.
      */
@@ -272,6 +291,25 @@ public class MetaTestDataHelper {
             String name,
             String configBindings,
             String inputBindings) {
+        return createTestSuiteMetricDefinition(
+                testSuiteId,
+                metricDeclarationId,
+                metricDeclarationVersionId,
+                name,
+                configBindings,
+                inputBindings,
+                null);
+    }
+
+    @Transactional("metaTransactionManager")
+    public TestSuiteMetricDefinition createTestSuiteMetricDefinition(
+            UUID testSuiteId,
+            UUID metricDeclarationId,
+            UUID metricDeclarationVersionId,
+            String name,
+            String configBindings,
+            String inputBindings,
+            String condition) {
         TestSuiteMetricDefinition tsmd = TestSuiteMetricDefinition.builder()
                 .testSuiteId(testSuiteId)
                 .metricDeclarationId(metricDeclarationId)
@@ -282,6 +320,7 @@ public class MetaTestDataHelper {
                 .validationWarnings("[]")
                 .configBindings(configBindings)
                 .inputBindings(inputBindings)
+                .condition(condition)
                 .build();
         return tsmdRepository.save(tsmd);
     }

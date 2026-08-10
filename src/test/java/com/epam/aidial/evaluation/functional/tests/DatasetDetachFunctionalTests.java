@@ -186,6 +186,70 @@ public abstract class DatasetDetachFunctionalTests extends BaseFunctionalTest {
                 .containsAll(remappedDisabledIds);
     }
 
+    @Test
+    @DisplayName(
+            "POST /test-suites/{id}/detach-dataset preserves multi-turn test cases (2-turn and 3-turn) with their content and schema")
+    void shouldPreserveMultiTurnTestCasesOnDetach() {
+        String schemaJson = "[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true,\"perTurn\":true}]";
+        Dataset publicDs = metaTestDataHelper.createDataset(
+                "Detach-MultiTurn-Source-" + UUID.randomUUID(), schemaJson, DatasetVisibility.PUBLIC);
+        TestSuite suite =
+                metaTestDataHelper.createTestSuite("Detach-MultiTurn-Suite-" + UUID.randomUUID(), publicDs.getId());
+
+        String twoTurnData = "[{\"prompt\":\"Turn A1\"},{\"prompt\":\"Turn A2\"}]";
+        String threeTurnData = "[{\"prompt\":\"Turn B1\"},{\"prompt\":\"Turn B2\"},{\"prompt\":\"Turn B3\"}]";
+        metaTestDataHelper.seedMultiTurnTestCaseInDataset(publicDs.getId(), "Two-Turn-Case", twoTurnData);
+        metaTestDataHelper.seedMultiTurnTestCaseInDataset(publicDs.getId(), "Three-Turn-Case", threeTurnData);
+
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/detach-dataset"),
+                jsonEntity(DatasetDetachRequestDto.builder().build()),
+                TestSuiteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        UUID newDatasetId = response.getBody().getDatasetId();
+        assertThat(newDatasetId).isNotNull().isNotEqualTo(publicDs.getId());
+
+        Dataset newDataset = datasetRepository.findById(newDatasetId).orElseThrow();
+        assertThat(objectMapper.readTree(newDataset.getTestCaseSchema()))
+                .as("cloned dataset must preserve the source schema, including perTurn fields")
+                .isEqualTo(objectMapper.readTree(publicDs.getTestCaseSchema()));
+
+        List<TestCase> clonedCases = testCaseRepository.findBatchByDatasetId(newDatasetId, 0, 100);
+        assertThat(clonedCases)
+                .as("both multi-turn test cases must survive detachment")
+                .hasSize(2);
+
+        TestCase clonedTwoTurn = findByName(clonedCases, "Two-Turn-Case");
+        TestCase clonedThreeTurn = findByName(clonedCases, "Three-Turn-Case");
+
+        assertThat(clonedTwoTurn.isValid())
+                .as("2-row multi-turn test case must remain valid after detachment")
+                .isTrue();
+        assertThat(clonedTwoTurn.getMultiTurnData())
+                .as("2-row multi-turn data must survive detachment")
+                .isNotNull();
+        assertThat(objectMapper.readTree(clonedTwoTurn.getMultiTurnData()))
+                .isEqualTo(objectMapper.readTree(twoTurnData));
+
+        assertThat(clonedThreeTurn.isValid())
+                .as("3-row multi-turn test case must remain valid after detachment")
+                .isTrue();
+        assertThat(clonedThreeTurn.getMultiTurnData())
+                .as("3-row multi-turn data must survive detachment")
+                .isNotNull();
+        assertThat(objectMapper.readTree(clonedThreeTurn.getMultiTurnData()))
+                .isEqualTo(objectMapper.readTree(threeTurnData));
+    }
+
+    private static TestCase findByName(List<TestCase> cases, String name) {
+        return cases.stream()
+                .filter(tc -> tc.getTestCaseName().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Test case not found: " + name));
+    }
+
     private List<UUID> parseUuidArray(String json) {
         String[] values = objectMapper.readValue(json, String[].class);
         return Arrays.stream(values).map(UUID::fromString).collect(Collectors.toList());

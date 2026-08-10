@@ -13,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * Assembles a multi-turn {@link CsvRun} into its shared/per-turn shape and detects the conflicts that
+ * Assembles a multi-turn {@link CsvTestCase} into its shared/per-turn shape and detects the conflicts that
  * describe the submitted rows rather than the resulting case: a shared-column mismatch across the run's
  * rows, and a duplicate {@code turnIndex} within the run. A pure function — no repository or validation
  * service dependency — so it is usable by both CSV preview and import without either persisting or
@@ -32,7 +32,7 @@ public class MultiTurnRunAssembler {
      * order), splits each row's data into shared/per-turn maps by {@code schema}'s scope, and reports a
      * shared-column mismatch and/or a duplicate {@code turnIndex} as data rather than throwing or logging.
      */
-    public MultiTurnAssembly assemble(CsvRun run, List<FieldDefinitionDto> schema) {
+    public MultiTurnAssembly assemble(CsvTestCase run, List<FieldDefinitionDto> schema) {
         List<ParsedCsvRow> ordered = orderTurns(run.rows());
 
         Map<String, Object> shared = null;

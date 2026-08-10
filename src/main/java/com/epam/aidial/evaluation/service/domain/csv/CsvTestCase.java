@@ -9,5 +9,5 @@ import java.util.List;
  * for a multi-turn run whose name was already seen in an earlier, already-completed multi-turn run —
  * non-contiguity is tracked for multi-turn runs only, never for single-turn runs of the same name.
  */
-public record CsvRun(
+public record CsvTestCase(
         List<ParsedCsvRow> rows, String testCaseName, int firstRowNumber, boolean multiTurn, boolean nonContiguous) {}

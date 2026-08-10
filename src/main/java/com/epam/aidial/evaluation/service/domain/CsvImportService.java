@@ -11,12 +11,13 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.ColumnBinding;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
-import com.epam.aidial.evaluation.service.domain.csv.CsvRun;
-import com.epam.aidial.evaluation.service.domain.csv.CsvRunGrouper;
 import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTestCase;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
 import com.epam.aidial.evaluation.service.domain.csv.MultiTurnAssembly;
 import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
 import com.epam.aidial.evaluation.service.domain.csv.ParsedCsvRow;
@@ -77,8 +78,9 @@ public class CsvImportService {
     private final SchemaTypeCoercer schemaTypeCoercer;
     private final ObjectMapper objectMapper;
     private final ValidationWarningsSerializer warningsSerializer;
+    private final TestCaseTurnsCsvSerializer turnsCsvSerializer;
     private final CsvSchemaFieldBuilder schemaFieldBuilder;
-    private final CsvRunGrouper csvRunGrouper;
+    private final CsvTestCaseGrouper csvTestCaseGrouper;
     private final MultiTurnRunAssembler multiTurnRunAssembler;
     private final DurableWarningMerger durableWarningMerger;
 
@@ -121,16 +123,23 @@ public class CsvImportService {
 
             // Incremental type inference for preview schema detection
             Map<String, SchemaFieldType> inferredTypes = new LinkedHashMap<>();
-            // Within-CSV duplicate tracking, keyed on the assembled test case (one entry per multi-turn
-            // run, one per row of a single-turn run) — never per raw CSV row.
+            /*
+             Within-CSV duplicate tracking, keyed on the assembled test case (one entry per multi-turn
+             test case, one per single-turn row) — never per raw CSV row.
+            */
             LinkedHashSet<String> seenNames = new LinkedHashSet<>();
-            // Assembled-case name occurrences for collision detection (APPEND/MERGE) and within-CSV dup
-            // warnings, one pair per registered name occurrence — no larger than allCsvNames was before.
+            /*
+             Assembled-case name occurrences for collision detection (APPEND/MERGE) and within-CSV dup
+             warnings, one pair per registered name occurrence — no larger than allCsvNames was before.
+            */
             List<NameOccurrence> occurrences = new ArrayList<>();
 
-            // Same accumulator-driven grouping as importCsv: a run closes as soon as testCaseName changes,
-            // so preview never buffers more than the current run's rows plus the per-name bookkeeping above.
-            CsvRunGrouper.Accumulator runAccumulator = csvRunGrouper.newAccumulator();
+            /*
+             Same accumulator-driven grouping as importCsv: a test case closes as soon as testCaseName
+             changes, so preview never buffers more than the current test case's rows plus the per-name
+             bookkeeping above.
+            */
+            CsvTestCaseGrouper.Accumulator testCaseAccumulator = csvTestCaseGrouper.newAccumulator();
             for (CSVRecord record : parser) {
                 if (totalRows >= csvImportProperties.getMaxRows()) {
                     throw new ValidationException("Row count exceeds limit " + csvImportProperties.getMaxRows());
@@ -147,10 +156,10 @@ public class CsvImportService {
                     updateInferredTypesForNewFields(record, bindings, fieldTypes, inferredTypes);
                 }
 
-                CsvRun completedRun = runAccumulator.add(row);
-                if (completedRun != null) {
-                    totalTestCases += handlePreviewRun(
-                            completedRun,
+                CsvTestCase accumulatedTestCase = testCaseAccumulator.add(row);
+                if (accumulatedTestCase != null) {
+                    totalTestCases += handlePreviewCase(
+                            accumulatedTestCase,
                             datasetId,
                             validationSchema,
                             conflictStrategy,
@@ -165,11 +174,11 @@ public class CsvImportService {
                 throw new ValidationException("Empty CSV (header only, no data rows)");
             }
 
-            // Process the final run
-            CsvRun finalRun = runAccumulator.flush();
-            if (finalRun != null) {
-                totalTestCases += handlePreviewRun(
-                        finalRun,
+            // Process the final test case
+            CsvTestCase finalCase = testCaseAccumulator.flush();
+            if (finalCase != null) {
+                totalTestCases += handlePreviewCase(
+                        finalCase,
                         datasetId,
                         validationSchema,
                         conflictStrategy,
@@ -267,11 +276,7 @@ public class CsvImportService {
                 testCaseRepository.deleteAllByDatasetId(datasetId, List.of());
             }
 
-            // Flat multiplication: consecutive rows sharing a testCaseName form one "run" — a single-turn
-            // case (one row, blank turnIndex) or a multi-turn case (assembled into multiTurnData). The
-            // grouper's accumulator flushes a run as soon as the name changes, keeping import
-            // streaming/bounded-memory: only the current run is ever held in memory.
-            CsvRunGrouper.Accumulator runAccumulator = csvRunGrouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator testCaseAccumulator = csvTestCaseGrouper.newAccumulator();
             for (CSVRecord record : parser) {
                 if (totalRows >= maxRows) {
                     throw new ValidationException("Row count exceeds limit " + maxRows);
@@ -288,10 +293,10 @@ public class CsvImportService {
                     updateInferredTypesForNewFields(record, bindings, fieldTypes, inferredTypes);
                 }
 
-                CsvRun completedRun = runAccumulator.add(row);
-                if (completedRun != null) {
-                    InsertResult result =
-                            processRun(completedRun, datasetId, validationSchema, conflictStrategy, warnings);
+                CsvTestCase accumulatedTestCase = testCaseAccumulator.add(row);
+                if (accumulatedTestCase != null) {
+                    InsertResult result = processTestCase(
+                            accumulatedTestCase, datasetId, validationSchema, conflictStrategy, warnings);
                     validCount += result.validCount();
                     invalidCount += result.invalidCount();
                     skippedCount += result.skippedCount();
@@ -303,10 +308,11 @@ public class CsvImportService {
                 throw new ValidationException("Empty CSV (header only, no data rows)");
             }
 
-            // Process the final run
-            CsvRun finalRun = runAccumulator.flush();
-            if (finalRun != null) {
-                InsertResult result = processRun(finalRun, datasetId, validationSchema, conflictStrategy, warnings);
+            // Process the final test case
+            CsvTestCase finalCase = testCaseAccumulator.flush();
+            if (finalCase != null) {
+                InsertResult result =
+                        processTestCase(finalCase, datasetId, validationSchema, conflictStrategy, warnings);
                 validCount += result.validCount();
                 invalidCount += result.invalidCount();
                 skippedCount += result.skippedCount();
@@ -360,23 +366,23 @@ public class CsvImportService {
     // -------------------------------------------------------------------------
 
     /**
-     * Processes one completed contiguous run of rows sharing a testCaseName: a single-turn case (one row,
+     * Processes one completed contiguous group of rows sharing a testCaseName: a single-turn case (one row,
      * blank turnIndex) or a multi-turn case (assembled into {@code multiTurnData}). A non-contiguous
      * reappearance of a multi-turn name — already detected by the grouper's accumulator — is reported as a
      * conflict warning.
      */
-    private InsertResult processRun(
-            CsvRun run,
+    private InsertResult processTestCase(
+            CsvTestCase testCase,
             UUID datasetId,
             List<FieldDefinitionDto> testCaseSchema,
             CsvConflictStrategy conflictStrategy,
             List<CsvImportWarningDto> warnings) {
-        if (!run.multiTurn()) {
+        if (!testCase.multiTurn()) {
             int validCount = 0;
             int invalidCount = 0;
             int skippedCount = 0;
             int overriddenCount = 0;
-            for (ParsedCsvRow row : run.rows()) {
+            for (ParsedCsvRow row : testCase.rows()) {
                 ValidationResult vr = testCaseValidationService.validateTestCase(
                         row.data(), testCaseSchema, null, List.of(), false, datasetId);
                 ValidationResult combined = combineWithJsonParseErrors(vr, row);
@@ -391,28 +397,29 @@ public class CsvImportService {
             return new InsertResult(validCount, invalidCount, skippedCount, overriddenCount);
         }
 
-        addNonContiguousWarningIfNeeded(run, warnings);
-        MultiTurnAssembly assembly = multiTurnRunAssembler.assemble(run, testCaseSchema);
-        ValidationResult combined = validateRunAsMultiTurn(run, assembly, datasetId, testCaseSchema, warnings);
+        addNonContiguousWarningIfNeeded(testCase, warnings);
+        MultiTurnAssembly assembly = multiTurnRunAssembler.assemble(testCase, testCaseSchema);
+        ValidationResult combined =
+                validateTestCaseAsMultiTurn(testCase, assembly, datasetId, testCaseSchema, warnings);
         return persist(
-                toMultiTurnEntity(run.testCaseName(), datasetId, assembly, combined),
+                toMultiTurnEntity(testCase.testCaseName(), datasetId, assembly, combined),
                 combined,
                 conflictStrategy,
-                run.testCaseName());
+                testCase.testCaseName());
     }
 
     /**
-     * Emits the non-contiguity conflict warning when {@code run} is a multi-turn name reappearing after an
-     * earlier, already-completed multi-turn run of the same name — the accumulator's {@code nonContiguous}
-     * signal. Shared by import ({@link #processRun}) and preview ({@link #handlePreviewRun}) so both report
-     * the identical warning for the identical condition.
+     * Emits the non-contiguity conflict warning when {@code testCase} is a multi-turn name reappearing
+     * after an earlier, already-completed multi-turn test case of the same name — the accumulator's
+     * {@code nonContiguous} signal. Shared by import ({@link #processTestCase}) and preview ({@link
+     * #handlePreviewCase}) so both report the identical warning for the identical condition.
      */
-    private void addNonContiguousWarningIfNeeded(CsvRun run, List<CsvImportWarningDto> warnings) {
-        if (run.nonContiguous()) {
+    private void addNonContiguousWarningIfNeeded(CsvTestCase testCase, List<CsvImportWarningDto> warnings) {
+        if (testCase.nonContiguous()) {
             warnings.add(CsvImportWarningDto.builder()
-                    .rowNumber(run.firstRowNumber())
+                    .rowNumber(testCase.firstRowNumber())
                     .columnName(TEST_CASE_NAME_HEADER)
-                    .message("Test case name '" + run.testCaseName()
+                    .message("Test case name '" + testCase.testCaseName()
                             + "' appears non-contiguously; multi-turn rows of a case must be contiguous")
                     .build());
         }
@@ -450,8 +457,8 @@ public class CsvImportService {
         return new InsertResult(validCount, invalidCount, skippedCount, overriddenCount);
     }
 
-    private ValidationResult validateRunAsMultiTurn(
-            CsvRun run,
+    private ValidationResult validateTestCaseAsMultiTurn(
+            CsvTestCase testCase,
             MultiTurnAssembly assembly,
             UUID datasetId,
             List<FieldDefinitionDto> schema,
@@ -464,9 +471,9 @@ public class CsvImportService {
         if (assembly.sharedConflict()) {
             valid = false;
             merged.add(ValidationWarningDto.builder()
-                    .message("Shared (test-case-level) column values differ across turns of case '" + run.testCaseName()
-                            + "'; they must be identical")
-                    .code(ValidationWarningCode.SOURCE_CONFLICT)
+                    .message("Shared (test-case-level) column values differ across turns of case '"
+                            + testCase.testCaseName() + "'; they must be identical")
+                    .code(ValidationWarningCode.INVALID_INPUT)
                     .build());
         }
         if (assembly.hasJsonParseErrors()) {
@@ -480,13 +487,13 @@ public class CsvImportService {
             valid = false;
             merged.add(ValidationWarningDto.builder()
                     .fieldName(TURN_INDEX_HEADER)
-                    .message("Duplicate turnIndex within multi-turn case '" + run.testCaseName() + "'")
-                    .code(ValidationWarningCode.SOURCE_CONFLICT)
+                    .message("Duplicate turnIndex within multi-turn case '" + testCase.testCaseName() + "'")
+                    .code(ValidationWarningCode.INVALID_INPUT)
                     .build());
         }
         ValidationResult combined =
                 ValidationResult.builder().valid(valid).warnings(merged).build();
-        collectWarnings(combined, run.firstRowNumber(), warnings);
+        collectWarnings(combined, testCase.firstRowNumber(), warnings);
         return combined;
     }
 
@@ -509,27 +516,27 @@ public class CsvImportService {
                 .datasetId(datasetId)
                 .testCaseName(testCaseName)
                 .data(warningsSerializer.serializeMap(assembly.sharedData()))
-                .multiTurnData(warningsSerializer.serializeTurns(assembly.perTurnMaps()))
+                .multiTurnData(turnsCsvSerializer.serializeTurns(assembly.perTurnMaps()))
                 .valid(vr.isValid())
                 .validationWarnings(warningsSerializer.serializeWarnings(vr.getWarnings()))
                 .build();
     }
 
     // -------------------------------------------------------------------------
-    // Preview run processing — mirrors processRun's assembly/validation, minus persistence
+    // Preview test case processing — mirrors processTestCase's assembly/validation, minus persistence
     // -------------------------------------------------------------------------
 
     /**
-     * Previews one completed contiguous run exactly as {@link #processRun} would import it: a single-turn
-     * run of K rows assembles into K sample test cases (one name occurrence each); a multi-turn run
-     * assembles into one sample test case (one name occurrence for the whole run) carrying its
-     * {@code multiTurnData}. Returns the number of test cases this run assembles into, for the response's
-     * {@code totalTestCases}. Registers one occurrence per assembled case for both within-CSV duplicate
-     * detection and cross-import collision detection ({@link #addCollisionWarnings}) — the same "run ≠ test
-     * case" rule import's counters use.
+     * Previews one completed contiguous group of rows exactly as {@link #processTestCase} would import it:
+     * a single-turn group of K rows assembles into K sample test cases (one name occurrence each); a
+     * multi-turn group assembles into one sample test case (one name occurrence for the whole group)
+     * carrying its {@code multiTurnData}. Returns the number of test cases this group assembles into, for
+     * the response's {@code totalTestCases}. Registers one occurrence per assembled case for both
+     * within-CSV duplicate detection and cross-import collision detection ({@link #addCollisionWarnings})
+     * — the same "one group can assemble into several test cases" rule import's counters use.
      */
-    private int handlePreviewRun(
-            CsvRun run,
+    private int handlePreviewCase(
+            CsvTestCase testCase,
             UUID datasetId,
             List<FieldDefinitionDto> validationSchema,
             CsvConflictStrategy conflictStrategy,
@@ -537,8 +544,8 @@ public class CsvImportService {
             List<NameOccurrence> occurrences,
             List<CsvImportWarningDto> warnings,
             List<TestCaseResponseDto> sampleRows) {
-        if (!run.multiTurn()) {
-            for (ParsedCsvRow row : run.rows()) {
+        if (!testCase.multiTurn()) {
+            for (ParsedCsvRow row : testCase.rows()) {
                 registerOccurrence(
                         row.testCaseName(), row.rowNumber(), seenNames, occurrences, warnings, conflictStrategy);
                 ValidationResult vr = testCaseValidationService.validateTestCase(
@@ -549,16 +556,17 @@ public class CsvImportService {
                     sampleRows.add(toResponseDto(row, combined));
                 }
             }
-            return run.rows().size();
+            return testCase.rows().size();
         }
 
         registerOccurrence(
-                run.testCaseName(), run.firstRowNumber(), seenNames, occurrences, warnings, conflictStrategy);
-        addNonContiguousWarningIfNeeded(run, warnings);
-        MultiTurnAssembly assembly = multiTurnRunAssembler.assemble(run, validationSchema);
-        ValidationResult combined = validateRunAsMultiTurn(run, assembly, datasetId, validationSchema, warnings);
+                testCase.testCaseName(), testCase.firstRowNumber(), seenNames, occurrences, warnings, conflictStrategy);
+        addNonContiguousWarningIfNeeded(testCase, warnings);
+        MultiTurnAssembly assembly = multiTurnRunAssembler.assemble(testCase, validationSchema);
+        ValidationResult combined =
+                validateTestCaseAsMultiTurn(testCase, assembly, datasetId, validationSchema, warnings);
         if (sampleRows.size() < SAMPLE_ROWS_LIMIT) {
-            sampleRows.add(toMultiTurnResponseDto(run.testCaseName(), assembly, combined));
+            sampleRows.add(toMultiTurnResponseDto(testCase.testCaseName(), assembly, combined));
         }
         return 1;
     }
@@ -566,7 +574,7 @@ public class CsvImportService {
     /**
      * Registers one assembled-case name occurrence and, on a repeat (case-insensitive), emits the
      * within-CSV duplicate warning — the same check whether the occurrence came from a single-turn row or a
-     * whole multi-turn run.
+     * whole multi-turn test case.
      */
     private void registerOccurrence(
             String name,
@@ -756,7 +764,7 @@ public class CsvImportService {
     /**
      * Single-turn fixup: coercion/re-validation logic unchanged from before the multi-turn branch was
      * added. Per design D8, the durable-warning merger is applied to every recomputation pass, not only
-     * the multi-turn one — a single-turn case never carries a stored {@code SOURCE_CONFLICT} warning
+     * the multi-turn one — a single-turn case never carries a stored {@code INVALID_INPUT} warning
      * today, so this is a no-op ({@code warningsSerializer.serializeWarnings} returns {@code "[]"} for
      * both {@code null} and an empty list, matching what was written before), but stating the rule once
      * and applying it everywhere is the point: a future path must not be able to quietly skip it the way
@@ -794,11 +802,11 @@ public class CsvImportService {
      * Multi-turn fixup (design D6): coerces changed columns inside shared {@code data} as well as inside
      * every turn map, re-validates via {@link TestCaseValidationService#validateMultiTurn} against the
      * <b>full</b> schema (it splits by scope internally), and carries forward any stored durable
-     * ({@code SOURCE_CONFLICT}) warning via {@link DurableWarningMerger} before writing (design D8) — a
+     * ({@code INVALID_INPUT}) warning via {@link DurableWarningMerger} before writing (design D8) — a
      * plain recomputation would otherwise erase the import's own conflict verdict.
      *
      * <p>The row's raw {@code multi_turn_data} is read with {@link
-     * ValidationWarningsSerializer#deserializeTurnsStrict}, which throws on unreadable JSON instead of
+     * TestCaseTurnsCsvSerializer#deserializeTurnsStrict}, which throws on unreadable JSON instead of
      * collapsing it to {@code null} the way the lenient {@code deserializeTurns} does. A row whose turns
      * cannot be read is skipped entirely — never added to {@code toUpdate} — because writing {@code null}
      * back would convert the case to single-turn and destroy every turn: a worse version of the bug this
@@ -814,7 +822,7 @@ public class CsvImportService {
             List<TestCase> toUpdate) {
         List<Map<String, Object>> turns;
         try {
-            turns = warningsSerializer.deserializeTurnsStrict(rawTurns);
+            turns = turnsCsvSerializer.deserializeTurnsStrict(rawTurns);
         } catch (JacksonException e) {
             log.warn(
                     "Skipping test case {} during CSV import fixup: stored multi_turn_data is unreadable, "
@@ -850,7 +858,7 @@ public class CsvImportService {
         }
 
         String newDataJson = warningsSerializer.serializeMap(sharedData);
-        String newTurnsJson = warningsSerializer.serializeTurns(turns);
+        String newTurnsJson = turnsCsvSerializer.serializeTurns(turns);
         if (newDataJson.equals(originalDataJson) && rawTurns.equals(newTurnsJson)) {
             return;
         }
@@ -971,9 +979,9 @@ public class CsvImportService {
     /**
      * Annotates the first CSV occurrence of each assembled-case name that collides with an existing test
      * case in the dataset (APPEND/MERGE cross-import collision). Consumes {@code (caseName, rowNumber)}
-     * pairs keyed on the assembled test case — one per multi-turn run, one per row of a single-turn run —
+     * pairs keyed on the assembled test case — one per multi-turn test case, one per single-turn row —
      * rather than a parallel per-row name list, so a colliding multi-turn case is annotated once, at its
-     * run's first row number.
+     * test case's first row number.
      */
     private void addCollisionWarnings(
             UUID datasetId,

@@ -8,9 +8,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 @DisplayName("CsvRunGrouper")
-class CsvRunGrouperTest {
+class CsvTestCaseGrouperTest {
 
-    private final CsvRunGrouper grouper = new CsvRunGrouper();
+    private final CsvTestCaseGrouper grouper = new CsvTestCaseGrouper();
 
     private static ParsedCsvRow row(int rowNumber, String name, Integer turnIndex) {
         return new ParsedCsvRow(rowNumber, name, turnIndex, Map.of(), false);
@@ -23,10 +23,10 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("a name change closes the current run and starts a new one")
         void nameChangeClosesRun() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
 
             assertThat(acc.add(row(2, "a", null))).isNull();
-            CsvRun completed = acc.add(row(3, "b", null));
+            CsvTestCase completed = acc.add(row(3, "b", null));
 
             assertThat(completed).isNotNull();
             assertThat(completed.testCaseName()).isEqualTo("a");
@@ -37,10 +37,10 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("single-turn passthrough: no row carries a turnIndex, run is not multi-turn")
         void singleTurnPassthrough() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "a", null));
 
-            CsvRun completed = acc.add(row(3, "b", null));
+            CsvTestCase completed = acc.add(row(3, "b", null));
 
             assertThat(completed.multiTurn()).isFalse();
             assertThat(completed.nonContiguous()).isFalse();
@@ -49,10 +49,10 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("run boundaries compare names case-sensitively — differently-cased names split into two runs")
         void caseSensitiveBoundary() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "DupRow", null));
 
-            CsvRun completed = acc.add(row(3, "duprow", null));
+            CsvTestCase completed = acc.add(row(3, "duprow", null));
 
             assertThat(completed).isNotNull();
             assertThat(completed.testCaseName()).isEqualTo("DupRow");
@@ -61,11 +61,11 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("flush() returns the trailing run")
         void flushReturnsTrailingRun() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "a", null));
             acc.add(row(3, "a", null));
 
-            CsvRun flushed = acc.flush();
+            CsvTestCase flushed = acc.flush();
 
             assertThat(flushed).isNotNull();
             assertThat(flushed.rows()).hasSize(2);
@@ -75,7 +75,7 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("flush() returns null when nothing was added since the last flush")
         void flushReturnsNullWhenEmpty() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
 
             assertThat(acc.flush()).isNull();
         }
@@ -88,11 +88,11 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("a row whose turnIndex parses to a non-null Integer makes the run multi-turn")
         void nonNullTurnIndexMakesRunMultiTurn() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "conv", 0));
             acc.add(row(3, "conv", 1));
 
-            CsvRun completed = acc.flush();
+            CsvTestCase completed = acc.flush();
 
             assertThat(completed.multiTurn()).isTrue();
         }
@@ -103,10 +103,10 @@ class CsvRunGrouperTest {
             // parseTurnIndex already turns an unparseable cell like "abc" into null before the row reaches
             // the grouper, so a row with turnIndex()==null is indistinguishable from a blank cell here —
             // exactly the behavior being pinned.
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "conv", null));
 
-            CsvRun completed = acc.flush();
+            CsvTestCase completed = acc.flush();
 
             assertThat(completed.multiTurn()).isFalse();
         }
@@ -119,11 +119,11 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("a multi-turn name reappearing after another run is flagged non-contiguous")
         void multiTurnNameReappearingIsFlagged() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "conv", 0));
-            CsvRun firstConvRun = acc.add(row(3, "other", null));
-            CsvRun otherRun = acc.add(row(4, "conv", 1));
-            CsvRun secondConvRun = acc.flush();
+            CsvTestCase firstConvRun = acc.add(row(3, "other", null));
+            CsvTestCase otherRun = acc.add(row(4, "conv", 1));
+            CsvTestCase secondConvRun = acc.flush();
 
             assertThat(firstConvRun.multiTurn()).isTrue();
             assertThat(firstConvRun.nonContiguous()).isFalse();
@@ -135,11 +135,11 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("non-contiguity is never flagged for a repeated blank-turnIndex (single-turn) name")
         void neverFlaggedForSingleTurnRepeats() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "dup", null));
-            CsvRun firstDupRun = acc.add(row(3, "other", null));
-            CsvRun otherRun = acc.add(row(4, "dup", null));
-            CsvRun secondDupRun = acc.flush();
+            CsvTestCase firstDupRun = acc.add(row(3, "other", null));
+            CsvTestCase otherRun = acc.add(row(4, "dup", null));
+            CsvTestCase secondDupRun = acc.flush();
 
             assertThat(firstDupRun.nonContiguous()).isFalse();
             assertThat(otherRun.nonContiguous()).isFalse();
@@ -149,11 +149,11 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("non-contiguity tracking is case-insensitive on the multi-turn name")
         void nonContiguityTrackingIsCaseInsensitive() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "Conv", 0));
             acc.add(row(3, "other", 0));
             acc.add(row(4, "CONV", 1));
-            CsvRun secondRun = acc.flush();
+            CsvTestCase secondRun = acc.flush();
 
             assertThat(secondRun.nonContiguous()).isTrue();
         }
@@ -166,10 +166,10 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("a multi-turn run carries all of its rows in CSV order")
         void multiTurnRunCarriesAllRows() {
-            CsvRunGrouper.Accumulator acc = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator acc = grouper.newAccumulator();
             acc.add(row(2, "conv", 0));
             acc.add(row(3, "conv", 1));
-            CsvRun completed = acc.flush();
+            CsvTestCase completed = acc.flush();
 
             assertThat(completed.rows()).extracting(ParsedCsvRow::rowNumber).containsExactly(2, 3);
         }
@@ -177,13 +177,13 @@ class CsvRunGrouperTest {
         @Test
         @DisplayName("consecutive accumulator instances from newAccumulator() do not share state")
         void accumulatorsAreIndependent() {
-            CsvRunGrouper.Accumulator first = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator first = grouper.newAccumulator();
             first.add(row(2, "conv", 0));
             first.flush();
 
-            CsvRunGrouper.Accumulator second = grouper.newAccumulator();
+            CsvTestCaseGrouper.Accumulator second = grouper.newAccumulator();
             second.add(row(2, "conv", 0));
-            CsvRun secondFlush = second.flush();
+            CsvTestCase secondFlush = second.flush();
 
             // If state leaked across accumulators, "conv" would be seen as already-completed and flagged.
             assertThat(secondFlush.nonContiguous()).isFalse();
@@ -193,8 +193,8 @@ class CsvRunGrouperTest {
     @Test
     @DisplayName("newAccumulator() is a stateless factory: the grouper bean itself holds no per-request state")
     void newAccumulatorIsStatelessFactory() {
-        CsvRunGrouper.Accumulator a1 = grouper.newAccumulator();
-        CsvRunGrouper.Accumulator a2 = grouper.newAccumulator();
+        CsvTestCaseGrouper.Accumulator a1 = grouper.newAccumulator();
+        CsvTestCaseGrouper.Accumulator a2 = grouper.newAccumulator();
 
         assertThat(a1).isNotSameAs(a2);
     }

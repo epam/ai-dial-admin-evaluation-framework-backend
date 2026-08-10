@@ -34,9 +34,10 @@ class MultiTurnRunAssemblerTest {
         return new ParsedCsvRow(rowNumber, name, turnIndex, data, hasJsonParseErrors);
     }
 
-    private static CsvRun run(ParsedCsvRow... rows) {
+    private static CsvTestCase run(ParsedCsvRow... rows) {
         List<ParsedCsvRow> list = List.of(rows);
-        return new CsvRun(list, list.getFirst().testCaseName(), list.getFirst().rowNumber(), true, false);
+        return new CsvTestCase(
+                list, list.getFirst().testCaseName(), list.getFirst().rowNumber(), true, false);
     }
 
     @Nested
@@ -46,11 +47,11 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("orders per-turn maps by turnIndex regardless of CSV row order")
         void ordersByTurnIndex() {
-            CsvRun csvRun =
+            CsvTestCase csvTestCase =
                     run(row(3, "conv", 1, Map.of("prompt", "second")), row(2, "conv", 0, Map.of("prompt", "first")));
             List<FieldDefinitionDto> schema = List.of(field("prompt", true));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.perTurnMaps()).extracting(m -> m.get("prompt")).containsExactly("first", "second");
         }
@@ -58,11 +59,11 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("a null turnIndex (unparseable cell) sorts last, stable by row order")
         void nullTurnIndexSortsLast() {
-            CsvRun csvRun =
+            CsvTestCase csvTestCase =
                     run(row(2, "conv", null, Map.of("prompt", "blank")), row(3, "conv", 0, Map.of("prompt", "zero")));
             List<FieldDefinitionDto> schema = List.of(field("prompt", true));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.perTurnMaps()).extracting(m -> m.get("prompt")).containsExactly("zero", "blank");
         }
@@ -75,12 +76,12 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("perTurn=true fields go to each turn's map, others go to the shared map")
         void splitsBySchemaScope() {
-            CsvRun csvRun = run(
+            CsvTestCase csvTestCase = run(
                     row(2, "conv", 0, Map.of("prompt", "hello", "topic", "chat")),
                     row(3, "conv", 1, Map.of("prompt", "world", "topic", "chat")));
             List<FieldDefinitionDto> schema = List.of(field("prompt", true), field("topic", false));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.sharedData()).containsEntry("topic", "chat").doesNotContainKey("prompt");
             assertThat(assembly.perTurnMaps().get(0))
@@ -92,10 +93,10 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("a column with no matching schema field is routed to the shared map")
         void unknownColumnRoutedToShared() {
-            CsvRun csvRun = run(row(2, "conv", 0, Map.of("mystery", "x")));
+            CsvTestCase csvTestCase = run(row(2, "conv", 0, Map.of("mystery", "x")));
             List<FieldDefinitionDto> schema = List.of();
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.sharedData()).containsEntry("mystery", "x");
             assertThat(assembly.perTurnMaps().getFirst()).isEmpty();
@@ -109,10 +110,11 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("differing shared-column values across turns are flagged as a shared conflict")
         void sharedColumnMismatchDetected() {
-            CsvRun csvRun = run(row(2, "conv", 0, Map.of("topic", "a")), row(3, "conv", 1, Map.of("topic", "b")));
+            CsvTestCase csvTestCase =
+                    run(row(2, "conv", 0, Map.of("topic", "a")), row(3, "conv", 1, Map.of("topic", "b")));
             List<FieldDefinitionDto> schema = List.of(field("topic", false));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.sharedConflict()).isTrue();
         }
@@ -120,10 +122,11 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("identical shared-column values across turns are not flagged")
         void identicalSharedColumnsNotFlagged() {
-            CsvRun csvRun = run(row(2, "conv", 0, Map.of("topic", "a")), row(3, "conv", 1, Map.of("topic", "a")));
+            CsvTestCase csvTestCase =
+                    run(row(2, "conv", 0, Map.of("topic", "a")), row(3, "conv", 1, Map.of("topic", "a")));
             List<FieldDefinitionDto> schema = List.of(field("topic", false));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.sharedConflict()).isFalse();
         }
@@ -131,10 +134,11 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("a duplicated turnIndex within the run is detected")
         void duplicateTurnIndexDetected() {
-            CsvRun csvRun = run(row(2, "dup", 0, Map.of("prompt", "a")), row(3, "dup", 0, Map.of("prompt", "b")));
+            CsvTestCase csvTestCase =
+                    run(row(2, "dup", 0, Map.of("prompt", "a")), row(3, "dup", 0, Map.of("prompt", "b")));
             List<FieldDefinitionDto> schema = List.of(field("prompt", true));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.duplicateTurnIndex()).isTrue();
         }
@@ -142,10 +146,11 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("distinct turnIndex values within the run are not flagged as duplicate")
         void distinctTurnIndexNotFlagged() {
-            CsvRun csvRun = run(row(2, "conv", 0, Map.of("prompt", "a")), row(3, "conv", 1, Map.of("prompt", "b")));
+            CsvTestCase csvTestCase =
+                    run(row(2, "conv", 0, Map.of("prompt", "a")), row(3, "conv", 1, Map.of("prompt", "b")));
             List<FieldDefinitionDto> schema = List.of(field("prompt", true));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.duplicateTurnIndex()).isFalse();
         }
@@ -153,12 +158,12 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("a JSON parse error on any row surfaces on the assembly")
         void jsonParseErrorSurfaced() {
-            CsvRun csvRun = run(
+            CsvTestCase csvTestCase = run(
                     row(2, "conv", 0, Map.of("payload", "not-json"), true),
                     row(3, "conv", 1, Map.of("payload", "{}"), false));
             List<FieldDefinitionDto> schema = List.of(field("payload", true));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.hasJsonParseErrors()).isTrue();
         }
@@ -166,10 +171,10 @@ class MultiTurnRunAssemblerTest {
         @Test
         @DisplayName("no JSON parse error on any row leaves the flag false")
         void noJsonParseErrorFlagFalse() {
-            CsvRun csvRun = run(row(2, "conv", 0, Map.of("prompt", "a")));
+            CsvTestCase csvTestCase = run(row(2, "conv", 0, Map.of("prompt", "a")));
             List<FieldDefinitionDto> schema = List.of(field("prompt", true));
 
-            MultiTurnAssembly assembly = assembler.assemble(csvRun, schema);
+            MultiTurnAssembly assembly = assembler.assemble(csvTestCase, schema);
 
             assertThat(assembly.hasJsonParseErrors()).isFalse();
         }

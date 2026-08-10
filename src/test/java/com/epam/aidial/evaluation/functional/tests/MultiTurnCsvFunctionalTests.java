@@ -568,7 +568,7 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
 
     @Test
     @DisplayName("A duplicate-turnIndex conflict (numeric column, exercising the fixup coercion path) leaves "
-            + "the persisted case invalid with a SOURCE_CONFLICT warning, not valid with warnings erased")
+            + "the persisted case invalid with an INVALID_INPUT warning, not valid with warnings erased")
     void persistedCaseStaysInvalidAfterDuplicateTurnIndexNumeric() {
         UUID datasetId = promptDataset();
         String csv = "testCaseName,turnIndex,prompt\ndup,0,1\ndup,0,2";
@@ -584,13 +584,13 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         TestCase persisted = soleTestCase(datasetId);
         assertThat(persisted.isValid()).isFalse();
         assertThat(parseWarnings(persisted))
-                .anyMatch(w -> w.getCode() == ValidationWarningCode.SOURCE_CONFLICT
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT
                         && w.getMessage() != null
                         && w.getMessage().contains("Duplicate turnIndex"));
         // Proves the fixup pass actually rewrote this row (the dataset's "prompt" field was declared
         // STRING; "1"/"2" are all-numeric so the CSV infers INTEGER, and fixupMultiTurnCase coerces
         // each turn's "prompt" cell to that inferred type) rather than leaving both turns as the
-        // original strings — which is the scenario where the SOURCE_CONFLICT warning is most at risk
+        // original strings — which is the scenario where the INVALID_INPUT warning is most at risk
         // of being erased by the recomputation this pass performs.
         List<Map<String, Object>> turns = parseTurns(persisted);
         assertThat(turns).hasSize(2);
@@ -602,7 +602,7 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
 
     @Test
     @DisplayName("A duplicate-turnIndex conflict (all-string column, fixup finds nothing to coerce) still "
-            + "leaves the persisted case invalid with a SOURCE_CONFLICT warning")
+            + "leaves the persisted case invalid with an INVALID_INPUT warning")
     void persistedCaseStaysInvalidAfterDuplicateTurnIndexString() {
         UUID datasetId = promptDataset();
         String csv = "testCaseName,turnIndex,prompt\ndup,0,a\ndup,0,b";
@@ -615,14 +615,14 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         TestCase persisted = soleTestCase(datasetId);
         assertThat(persisted.isValid()).isFalse();
         assertThat(parseWarnings(persisted))
-                .anyMatch(w -> w.getCode() == ValidationWarningCode.SOURCE_CONFLICT
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT
                         && w.getMessage() != null
                         && w.getMessage().contains("Duplicate turnIndex"));
     }
 
     @Test
-    @DisplayName("A shared-column mismatch across turn rows leaves the persisted case invalid with a "
-            + "SOURCE_CONFLICT warning after import")
+    @DisplayName("A shared-column mismatch across turn rows leaves the persisted case invalid with an "
+            + "INVALID_INPUT warning after import")
     void persistedCaseStaysInvalidAfterSharedColumnMismatch() {
         UUID datasetId = promptDataset();
         String csv = "testCaseName,turnIndex,prompt,category\nconv,0,a,catA\nconv,1,b,catB";
@@ -635,14 +635,14 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         TestCase persisted = soleTestCase(datasetId);
         assertThat(persisted.isValid()).isFalse();
         assertThat(parseWarnings(persisted))
-                .anyMatch(w -> w.getCode() == ValidationWarningCode.SOURCE_CONFLICT
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT
                         && w.getMessage() != null
                         && w.getMessage().contains("Shared")
                         && w.getMessage().contains("must be identical"));
     }
 
     @Test
-    @DisplayName("A SOURCE_CONFLICT warning from CSV import survives a later dataset schema PUT (revalidation "
+    @DisplayName("An INVALID_INPUT warning from CSV import survives a later dataset schema PUT (revalidation "
             + "Phase 1), and is cleared by a direct PATCH of the case")
     void sourceConflictWarningSurvivesRevalidationAndIsClearedByPatch() {
         UUID datasetId = promptDataset();
@@ -652,7 +652,7 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
 
         TestCase afterImport = soleTestCase(datasetId);
         assertThat(afterImport.isValid()).isFalse();
-        assertThat(parseWarnings(afterImport)).anyMatch(w -> w.getCode() == ValidationWarningCode.SOURCE_CONFLICT);
+        assertThat(parseWarnings(afterImport)).anyMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT);
 
         // Trigger a dataset schema PUT that adds an unrelated optional field — Phase 1 recomputes the
         // case's verdict from stored data alone and must not erase the conflict it cannot re-derive.
@@ -674,11 +674,10 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
 
         TestCase afterRevalidation = soleTestCase(datasetId);
         assertThat(afterRevalidation.isValid()).isFalse();
-        assertThat(parseWarnings(afterRevalidation))
-                .anyMatch(w -> w.getCode() == ValidationWarningCode.SOURCE_CONFLICT);
+        assertThat(parseWarnings(afterRevalidation)).anyMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT);
 
         // A direct PATCH supplies new, caller-authored content — that path does not call the durable-
-        // warning merger, so the SOURCE_CONFLICT warning is legitimately cleared, unlike a recomputation.
+        // warning merger, so the INVALID_INPUT warning is legitimately cleared, unlike a recomputation.
         ResponseEntity<TestCaseResponseDto> patchResponse = patchTestCase(
                 datasetId,
                 afterRevalidation.getId(),
@@ -692,7 +691,7 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
                 .findByIdAndDatasetId(afterRevalidation.getId(), datasetId)
                 .orElseThrow();
         assertThat(afterPatch.isValid()).isTrue();
-        assertThat(parseWarnings(afterPatch)).noneMatch(w -> w.getCode() == ValidationWarningCode.SOURCE_CONFLICT);
+        assertThat(parseWarnings(afterPatch)).noneMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT);
     }
 
     @Test

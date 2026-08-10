@@ -11,16 +11,16 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * Carries forward a test case's stored {@link ValidationWarningCode#SOURCE_CONFLICT} warnings across any
+ * Carries forward a test case's stored {@link ValidationWarningCode#INVALID_INPUT} warnings across any
  * pass that <b>recomputes</b> the case's validity from stored state alone (the CSV-import fixup pass,
  * dataset revalidation Phase 1) — rather than from newly submitted user content.
  *
- * <p>A {@code SOURCE_CONFLICT} warning describes a conflict in the CSV rows a case was assembled from
+ * <p>An {@code INVALID_INPUT} warning describes a conflict in the CSV rows a case was assembled from
  * (a duplicated {@code turnIndex}, or turn rows disagreeing on a shared column). The assembled case
  * itself is well-formed, so no later pass that only looks at stored data can re-derive the finding —
  * it can only be lost. This merger is the single place that stops that loss: called immediately before
  * a recomputation pass writes its result, it unions the recomputed warnings with whatever
- * {@code SOURCE_CONFLICT} entries are stored today, and keeps the case invalid while any remain.
+ * {@code INVALID_INPUT} entries are stored today, and keeps the case invalid while any remain.
  *
  * <p>Direct API writes ({@code PUT}/{@code PATCH} of a test case) are not recomputation — the caller
  * supplies new content — and MUST NOT call this merger; those paths clear the warnings as they do today.
@@ -33,10 +33,10 @@ public class DurableWarningMerger {
     private final ValidationWarningsSerializer warningsSerializer;
 
     /**
-     * Unions {@code recomputed}'s warnings with the {@code SOURCE_CONFLICT} entries found in
+     * Unions {@code recomputed}'s warnings with the {@code INVALID_INPUT} entries found in
      * {@code storedWarningsJson}, without duplicating a warning the recomputation already produced.
      * The merged result is invalid whenever {@code recomputed} is invalid, or whenever any
-     * {@code SOURCE_CONFLICT} warning was preserved from the stored warnings. A preserved conflict keeps
+     * {@code INVALID_INPUT} warning was preserved from the stored warnings. A preserved conflict keeps
      * the case invalid regardless of what the recomputation concluded, because no pass that reads only
      * stored data can disprove a conflict in the rows the case was assembled from.
      *
@@ -48,7 +48,7 @@ public class DurableWarningMerger {
     public ValidationResult merge(ValidationResult recomputed, String storedWarningsJson) {
         List<ValidationWarningDto> stored = warningsSerializer.deserializeWarnings(storedWarningsJson);
         List<ValidationWarningDto> preserved = stored.stream()
-                .filter(warning -> warning.getCode() == ValidationWarningCode.SOURCE_CONFLICT)
+                .filter(warning -> warning.getCode() == ValidationWarningCode.INVALID_INPUT)
                 .toList();
 
         List<ValidationWarningDto> recomputedWarnings =

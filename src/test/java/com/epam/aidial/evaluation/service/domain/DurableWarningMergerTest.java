@@ -24,11 +24,11 @@ class DurableWarningMergerTest {
 
     @Test
     @DisplayName(
-            "A stored SOURCE_CONFLICT warning is preserved and invalidates a recomputation that would otherwise be valid")
+            "A stored INVALID_INPUT warning is preserved and invalidates a recomputation that would otherwise be valid")
     void preservesStoredSourceConflict() {
         ValidationWarningDto sourceConflict = ValidationWarningDto.builder()
                 .message("Duplicate turnIndex within multi-turn case 'dup'")
-                .code(ValidationWarningCode.SOURCE_CONFLICT)
+                .code(ValidationWarningCode.INVALID_INPUT)
                 .build();
         String storedJson =
                 new ValidationWarningsSerializer(new ObjectMapper()).serializeWarnings(List.of(sourceConflict));
@@ -42,7 +42,7 @@ class DurableWarningMergerTest {
     }
 
     @Test
-    @DisplayName("No-op when no SOURCE_CONFLICT warning is stored (null storedWarningsJson)")
+    @DisplayName("No-op when no INVALID_INPUT warning is stored (null storedWarningsJson)")
     void noOpWhenStoredWarningsIsNull() {
         ValidationResult recomputed = ValidationResult.builder()
                 .valid(false)
@@ -83,7 +83,7 @@ class DurableWarningMergerTest {
     }
 
     @Test
-    @DisplayName("No-op when stored warnings contain only non-SOURCE_CONFLICT codes")
+    @DisplayName("No-op when stored warnings contain only non-INVALID_INPUT codes")
     void noOpWhenStoredWarningsHaveOtherCodes() {
         String storedJson = new ValidationWarningsSerializer(new ObjectMapper())
                 .serializeWarnings(List.of(ValidationWarningDto.builder()
@@ -100,11 +100,11 @@ class DurableWarningMergerTest {
     }
 
     @Test
-    @DisplayName("No duplication when the same SOURCE_CONFLICT warning was also recomputed")
+    @DisplayName("No duplication when the same INVALID_INPUT warning was also recomputed")
     void noDuplicationWhenSameWarningRecomputed() {
         ValidationWarningDto sourceConflict = ValidationWarningDto.builder()
                 .message("Duplicate turnIndex within multi-turn case 'dup'")
-                .code(ValidationWarningCode.SOURCE_CONFLICT)
+                .code(ValidationWarningCode.INVALID_INPUT)
                 .build();
         String storedJson =
                 new ValidationWarningsSerializer(new ObjectMapper()).serializeWarnings(List.of(sourceConflict));
@@ -120,11 +120,11 @@ class DurableWarningMergerTest {
     }
 
     @Test
-    @DisplayName("Additional recomputed warnings are kept alongside the preserved SOURCE_CONFLICT warning")
+    @DisplayName("Additional recomputed warnings are kept alongside the preserved INVALID_INPUT warning")
     void keepsRecomputedWarningsAlongsidePreserved() {
         ValidationWarningDto sourceConflict = ValidationWarningDto.builder()
                 .message("Shared column values differ across turns of case 'dup'")
-                .code(ValidationWarningCode.SOURCE_CONFLICT)
+                .code(ValidationWarningCode.INVALID_INPUT)
                 .build();
         ValidationWarningDto typeWarning = ValidationWarningDto.builder()
                 .message("bad type")

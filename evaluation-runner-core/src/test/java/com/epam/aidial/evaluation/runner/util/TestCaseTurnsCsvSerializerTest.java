@@ -11,15 +11,15 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Contract tests for the lenient {@link ValidationWarningsSerializer#deserializeTurns} and the strict
- * sibling {@link ValidationWarningsSerializer#deserializeTurnsStrict} — the two must agree on "absent"
+ * Contract tests for the lenient {@link TestCaseTurnsCsvSerializer#deserializeTurns} and the strict
+ * sibling {@link TestCaseTurnsCsvSerializer#deserializeTurnsStrict} — the two must agree on "absent"
  * (null/blank input) but diverge on "unreadable" (non-blank input that fails to parse): the lenient
  * method degrades to {@code null}, the strict method propagates the {@link JacksonException}.
  */
-class ValidationWarningsSerializerTest {
+class TestCaseTurnsCsvSerializerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ValidationWarningsSerializer serializer = new ValidationWarningsSerializer(objectMapper);
+    private final TestCaseTurnsCsvSerializer serializer = new TestCaseTurnsCsvSerializer(objectMapper);
 
     private static final String VALID_TURNS_JSON = "[{\"prompt\":\"a\"},{\"prompt\":\"b\"}]";
     private static final String UNREADABLE_JSON = "{not valid json";

@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseBatchPutItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
@@ -66,6 +67,7 @@ public class TestCaseService {
     private final FilterParser filterParser;
     private final SortParser sortParser;
     private final ValidationWarningsSerializer warningsSerializer;
+    private final TestCaseTurnsCsvSerializer testCaseTurnsSerializer;
     private final TestCaseProperties testCaseProperties;
     private final TestCaseBulkPatchValidator bulkPatchValidator;
     private final TestCaseBulkDeleteValidator bulkDeleteValidator;
@@ -444,7 +446,7 @@ public class TestCaseService {
     private void runValidation(TestCase entity, List<FieldDefinitionDto> schema) {
         Map<String, Object> dataMap = warningsSerializer.deserializeMap(entity.getData());
         List<Map<String, Object>> turns = entity.getMultiTurnData() != null
-                ? warningsSerializer.deserializeTurns(entity.getMultiTurnData())
+                ? testCaseTurnsSerializer.deserializeTurns(entity.getMultiTurnData())
                 : null;
 
         // Structural invariants first (non-empty array + scope placement) → 400; the max-turns cap is
@@ -568,7 +570,7 @@ public class TestCaseService {
             } else if (v instanceof List) {
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> turns = (List<Map<String, Object>>) v;
-                entity.setMultiTurnData(warningsSerializer.serializeTurns(turns));
+                entity.setMultiTurnData(testCaseTurnsSerializer.serializeTurns(turns));
             }
         }
     }

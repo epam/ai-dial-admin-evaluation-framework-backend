@@ -8,7 +8,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Groups a stream of {@link ParsedCsvRow}s into contiguous {@link CsvRun}s: a maximal group of consecutive
+ * Groups a stream of {@link ParsedCsvRow}s into contiguous {@link CsvTestCase}s: a maximal group of consecutive
  * rows sharing a {@code testCaseName}, compared case-sensitively (exactly as import does today — this
  * asymmetry against case-insensitive duplicate detection is intentional and load-bearing). A row whose
  * {@code turnIndex} parses to a non-null Integer makes its run multi-turn.
@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @LogExecution
-public class CsvRunGrouper {
+public class CsvTestCaseGrouper {
 
     /** Starts a new, independent grouping session — one per CSV parse. */
     public Accumulator newAccumulator() {
@@ -44,9 +44,9 @@ public class CsvRunGrouper {
          * Adds one row to the run under construction. Returns the completed run when this row's
          * {@code testCaseName} differs from the current run's name; otherwise returns {@code null}.
          */
-        public CsvRun add(ParsedCsvRow row) {
-            CsvRun completed = null;
-            if (!currentRun.isEmpty() && !currentRun.get(0).testCaseName().equals(row.testCaseName())) {
+        public CsvTestCase add(ParsedCsvRow row) {
+            CsvTestCase completed = null;
+            if (!currentRun.isEmpty() && !currentRun.getFirst().testCaseName().equals(row.testCaseName())) {
                 completed = closeRun();
             }
             currentRun.add(row);
@@ -54,19 +54,19 @@ public class CsvRunGrouper {
         }
 
         /** Closes and returns the trailing run, or {@code null} if no row was ever added since the last flush. */
-        public CsvRun flush() {
+        public CsvTestCase flush() {
             return currentRun.isEmpty() ? null : closeRun();
         }
 
-        private CsvRun closeRun() {
+        private CsvTestCase closeRun() {
             List<ParsedCsvRow> rows = List.copyOf(currentRun);
             currentRun.clear();
             boolean multiTurn = rows.stream().anyMatch(r -> r.turnIndex() != null);
-            String testCaseName = rows.get(0).testCaseName();
+            String testCaseName = rows.getFirst().testCaseName();
             // Non-contiguity is tracked for multi-turn runs only: a single-turn run's repeated name is an
             // ordinary duplicate, handled per-row by the conflict strategy, not a non-contiguity conflict.
             boolean nonContiguous = multiTurn && !completedMultiTurnNames.add(testCaseName.toLowerCase());
-            return new CsvRun(rows, testCaseName, rows.get(0).rowNumber(), multiTurn, nonContiguous);
+            return new CsvTestCase(rows, testCaseName, rows.getFirst().rowNumber(), multiTurn, nonContiguous);
         }
     }
 }

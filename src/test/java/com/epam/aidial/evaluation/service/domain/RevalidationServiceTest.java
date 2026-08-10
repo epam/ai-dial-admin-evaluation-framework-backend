@@ -25,6 +25,7 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.runner.dto.RevalidationStatus;
 import com.epam.aidial.evaluation.runner.dto.RevalidationTaskDto;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer.CoercionResult;
@@ -94,6 +95,7 @@ class RevalidationServiceTest {
         ObjectMapper objectMapper = new ObjectMapper();
         JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
+        TestCaseTurnsCsvSerializer testCaseTurnsSerializer = new TestCaseTurnsCsvSerializer(objectMapper);
         service = new RevalidationService(
                 revalidationTaskRepository,
                 testCaseRepository,
@@ -105,13 +107,14 @@ class RevalidationServiceTest {
                 jsonbMapper,
                 revalidationProperties,
                 warningsSerializer,
+                testCaseTurnsSerializer,
                 schemaChangeCoercer,
                 durableWarningMerger,
                 clock);
 
         lenient().when(revalidationProperties.getBatchSize()).thenReturn(50);
         lenient().when(revalidationProperties.getTimeoutMinutes()).thenReturn(5);
-        // Pass-through default matching the real merger's no-op behavior when no SOURCE_CONFLICT
+        // Pass-through default matching the real merger's no-op behavior when no INVALID_INPUT
         // warning is stored (every fixture test case here) — individual tests may override.
         lenient().when(durableWarningMerger.merge(any(), any())).thenAnswer(inv -> inv.getArgument(0));
     }

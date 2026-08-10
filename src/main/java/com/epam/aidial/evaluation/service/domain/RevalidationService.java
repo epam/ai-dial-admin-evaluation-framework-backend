@@ -15,6 +15,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RevalidationStatus;
 import com.epam.aidial.evaluation.runner.dto.RevalidationTaskDto;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer.CoercionResult;
@@ -49,6 +50,7 @@ public class RevalidationService {
     private final JsonbMapper jsonbMapper;
     private final RevalidationProperties revalidationProperties;
     private final ValidationWarningsSerializer warningsSerializer;
+    private final TestCaseTurnsCsvSerializer testCaseTurnsSerializer;
     private final SchemaChangeCoercer schemaChangeCoercer;
     private final DurableWarningMerger durableWarningMerger;
     private final Clock clock;
@@ -201,7 +203,7 @@ public class RevalidationService {
      * Single-turn Phase 1 processing — unchanged behavior from before the multi-turn branch existed.
      * Coerces {@code data} against the dataset schema (skip on concurrent edit via {@link
      * TestCaseRepository#updateDataIfUnchanged}), re-validates it, carries forward any stored {@code
-     * SOURCE_CONFLICT} warning via {@link DurableWarningMerger} (design D8 — a no-op here, since a
+     * INVALID_INPUT} warning via {@link DurableWarningMerger} (design D8 — a no-op here, since a
      * single-turn case never carries one today, but the rule applies to every recomputation pass
      * uniformly), and persists the verdict via {@link TestCaseRepository#updateValidationIfUnchanged}.
      */
@@ -260,13 +262,13 @@ public class RevalidationService {
      * turn map against the dataset schema, re-validates scope-aware via {@link
      * TestCaseValidationService#validateMultiTurn} against the <b>full</b> schema (it splits by
      * scope internally — passing a pre-split list would silently reclassify every per-turn field as
-     * unknown), carries forward any stored {@code SOURCE_CONFLICT} warning via {@link
+     * unknown), carries forward any stored {@code INVALID_INPUT} warning via {@link
      * DurableWarningMerger} (design D8), and persists {@code data} and {@code multi_turn_data}
      * together via {@link TestCaseRepository#updateDataAndTurnsIfUnchanged} so a concurrent edit
      * skips both writes rather than applying one and losing the other.
      *
      * <p>The row's raw {@code multi_turn_data} is read with {@link
-     * ValidationWarningsSerializer#deserializeTurnsStrict}, which throws on unreadable JSON instead
+     * TestCaseTurnsCsvSerializer#deserializeTurnsStrict}, which throws on unreadable JSON instead
      * of collapsing it to {@code null} the way the lenient {@code deserializeTurns} does (design D6):
      * a row whose turns cannot be read is skipped entirely — neither guarded write runs — because
      * writing {@code null} back would convert the case to single-turn and destroy every turn.
@@ -275,7 +277,7 @@ public class RevalidationService {
             TestCase tc, UUID datasetId, String rawTurns, List<FieldDefinitionDto> datasetSchema) {
         List<Map<String, Object>> turns;
         try {
-            turns = warningsSerializer.deserializeTurnsStrict(rawTurns);
+            turns = testCaseTurnsSerializer.deserializeTurnsStrict(rawTurns);
         } catch (JacksonException e) {
             log.warn(
                     "Skipping test case {} during dataset revalidation: stored multi_turn_data is unreadable, "
@@ -321,7 +323,7 @@ public class RevalidationService {
                     tc.getId(),
                     datasetId,
                     warningsSerializer.serializeMap(postCoercionShared),
-                    warningsSerializer.serializeTurns(postCoercionTurns),
+                    testCaseTurnsSerializer.serializeTurns(postCoercionTurns),
                     seenAt,
                     newUpdatedAt);
             if (rowsAffected == 0) {

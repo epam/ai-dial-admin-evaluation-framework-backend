@@ -18,10 +18,11 @@ import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
-import com.epam.aidial.evaluation.service.domain.csv.CsvRunGrouper;
 import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
 import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
@@ -73,6 +74,9 @@ class CsvImportServiceSchemaTest {
     @Mock
     private ValidationWarningsSerializer warningsSerializer;
 
+    @Mock
+    private TestCaseTurnsCsvSerializer turnsCsvSerializer;
+
     private CsvImportService service;
     private UUID datasetId;
     private ObjectMapper objectMapper;
@@ -93,8 +97,9 @@ class CsvImportServiceSchemaTest {
                 schemaTypeCoercer,
                 objectMapper,
                 warningsSerializer,
+                turnsCsvSerializer,
                 new CsvSchemaFieldBuilder(),
-                new CsvRunGrouper(),
+                new CsvTestCaseGrouper(),
                 new MultiTurnRunAssembler(new TestCaseFieldScopeResolver()),
                 new DurableWarningMerger(warningsSerializer));
         datasetId = UUID.randomUUID();
@@ -118,8 +123,9 @@ class CsvImportServiceSchemaTest {
         lenient().when(warningsSerializer.serializeMap(any())).thenReturn("{}");
         lenient().when(warningsSerializer.deserializeWarnings(any())).thenReturn(List.of());
         lenient()
-                .when(warningsSerializer.serializeTurns(any()))
-                .thenAnswer(inv -> objectMapper.writeValueAsString(inv.getArgument(0)));
+                .when(turnsCsvSerializer.serializeTurns(any()))
+                .thenAnswer(
+                        inv -> inv.getArgument(0) == null ? null : objectMapper.writeValueAsString(inv.getArgument(0)));
         lenient().when(testCaseRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -678,7 +684,7 @@ class CsvImportServiceSchemaTest {
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String storedTurnsJson = "[{\"col1\":42},{\"col1\":\"hello\"}]";
-        when(warningsSerializer.deserializeTurnsStrict(storedTurnsJson))
+        when(turnsCsvSerializer.deserializeTurnsStrict(storedTurnsJson))
                 .thenReturn(List.of(newTurn("col1", 42), newTurn("col1", "hello")));
 
         TestCase storedTc = TestCase.builder()
@@ -717,7 +723,7 @@ class CsvImportServiceSchemaTest {
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String storedTurnsJson = "[{\"col1\":42},{\"col1\":\"hello\"}]";
-        when(warningsSerializer.deserializeTurnsStrict(storedTurnsJson))
+        when(turnsCsvSerializer.deserializeTurnsStrict(storedTurnsJson))
                 .thenReturn(List.of(newTurn("col1", 42), newTurn("col1", "hello")));
 
         TestCase storedTc = TestCase.builder()
@@ -756,11 +762,11 @@ class CsvImportServiceSchemaTest {
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         // Valid JSON, wrong shape for List<Map<String,Object>> (elements are numbers, not objects) — a real
-        // ValidationWarningsSerializer.deserializeTurnsStrict genuinely throws JacksonException on it, so
+        // TestCaseTurnsCsvSerializer.deserializeTurnsStrict genuinely throws JacksonException on it, so
         // the fixup pass has a real exception to catch and log, not a hand-rolled mock exception.
         String corruptTurnsJson = "[1,2,3]";
-        ValidationWarningsSerializer realSerializer = new ValidationWarningsSerializer(objectMapper);
-        when(warningsSerializer.deserializeTurnsStrict(corruptTurnsJson))
+        TestCaseTurnsCsvSerializer realSerializer = new TestCaseTurnsCsvSerializer(objectMapper);
+        when(turnsCsvSerializer.deserializeTurnsStrict(corruptTurnsJson))
                 .thenAnswer(inv -> realSerializer.deserializeTurnsStrict(inv.getArgument(0)));
 
         TestCase storedTc = TestCase.builder()
@@ -798,7 +804,7 @@ class CsvImportServiceSchemaTest {
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         // deserializeTurnsStrict returns null for the JSON literal "null", same as for an absent column —
         // this must NOT be confused with the unreadable-shape case (which throws).
-        when(warningsSerializer.deserializeTurnsStrict("null")).thenReturn(null);
+        when(turnsCsvSerializer.deserializeTurnsStrict("null")).thenReturn(null);
         when(warningsSerializer.serializeMap(any())).thenAnswer(inv -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> map = (Map<String, Object>) inv.getArgument(0);

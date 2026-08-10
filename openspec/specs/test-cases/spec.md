@@ -495,6 +495,12 @@ The import endpoint SHALL accept both CSV files and ZIP archives. The file forma
 ### Requirement: Import preview (CSV or ZIP)
 The import preview endpoint SHALL support both CSV and ZIP formats with the same detection logic as the import endpoint.
 
+The preview response SHALL report both `totalRows` — the number of CSV data rows parsed — and `totalTestCases` — the number of test cases those rows assemble into. The two differ only when the CSV contains multi-turn cases, whose turn rows assemble into one case each; for a single-turn CSV they are equal. Both describe the CSV as submitted and SHALL NOT be reduced by rows a conflict strategy would skip.
+
+`sampleRows` SHALL contain assembled test cases (bounded by the sample limit), not raw CSV rows. A sample for a multi-turn case SHALL carry its `multiTurnData` turn array and its shared `data`; a sample for a single-turn case SHALL carry a flat `data` with no turn array.
+
+Status: **Implemented**
+
 #### Scenario: Preview CSV file
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import/preview` with a CSV file
 - **THEN** system SHALL return the preview (current behavior)
@@ -503,6 +509,18 @@ The import preview endpoint SHALL support both CSV and ZIP formats with the same
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import/preview` with a ZIP file
 - **THEN** system SHALL extract and preview the `test-cases.csv` within the archive
 - **AND** FILE columns SHALL show the relative paths from the CSV (not DIAL file paths, since files are not yet uploaded during preview)
+
+#### Scenario: Preview reports test case count alongside row count
+- **WHEN** client previews a CSV whose rows include a multi-turn case of N turns
+- **THEN** `totalRows` SHALL count every CSV data row and `totalTestCases` SHALL count the N turn rows as one test case
+
+#### Scenario: Multi-turn sample carries the validity import would produce
+- **WHEN** client previews a CSV containing a multi-turn case
+- **THEN** the sample's validity and warnings SHALL be those the import would compute for the assembled case — schema validation of its shared and per-turn data, merged with any multi-turn conflict — not a default or a per-row verdict
+
+#### Scenario: Single-turn CSV preview is unchanged apart from the new count
+- **WHEN** client previews a CSV containing no `turnIndex` values
+- **THEN** `totalTestCases` SHALL equal `totalRows`, each sample row SHALL carry a flat `data` with no turn array, and no other previously reported field SHALL change value
 
 ### Requirement: CSV import mode parameter
 The CSV import and import preview endpoints SHALL accept an optional `importMode` query parameter of type `CsvImportMode` enum with values `OVERRIDE`, `APPEND`, and `MERGE`. When omitted, the system SHALL default to `OVERRIDE`.
@@ -533,6 +551,10 @@ The CSV import and import preview endpoints SHALL accept an optional `importMode
 
 ### Requirement: CSV conflict strategy parameter
 The CSV import and import preview endpoints SHALL accept an optional `conflictStrategy` query parameter of type `CsvConflictStrategy` enum with values `FAIL`, `SKIP`, and `OVERRIDE`. When omitted, the system SHALL default to `FAIL`. The conflict strategy governs behavior when a `testCaseName` collision occurs — either a CSV row name matching an existing test case in the suite (case-insensitive), or a duplicate name within the CSV itself. The parameter applies to all import modes, including `OVERRIDE` (where cross-import collisions are impossible after deleteAll, but within-CSV duplicates are still subject to the strategy). Within-CSV duplicates are handled identically to cross-import collisions under the chosen strategy: `FAIL` rejects the import with HTTP 409 on the first duplicate, `SKIP` silently skips duplicate rows (first wins), `OVERRIDE` replaces the earlier row with the later one (last wins via upsert).
+
+Collision and duplicate detection SHALL key on the **assembled test case**, not the raw CSV row. Consecutive rows sharing a `testCaseName` and carrying a `turnIndex` that parses as an integer assemble into one multi-turn test case and SHALL count as a single name occurrence — turn rows of one case are never duplicates of each other. Consecutive rows sharing a `testCaseName` with a blank `turnIndex` remain separate test cases and SHALL each count as an occurrence, so same-named single-turn rows collide exactly as before.
+
+Status: **Implemented**
 
 #### Scenario: FAIL strategy rejects import on name collision
 - **WHEN** client calls import with any `importMode` and `conflictStrategy=FAIL` (or omitted) and a `testCaseName` collision occurs (a CSV row name matching an existing test case in APPEND/MERGE modes, or a within-CSV duplicate in any mode)
@@ -575,6 +597,14 @@ The CSV import and import preview endpoints SHALL accept an optional `conflictSt
 - **WHEN** client calls the preview endpoint with a CSV that contains duplicate `testCaseName` values
 - **THEN** preview response SHALL annotate duplicate rows with strategy-appropriate warnings (FAIL: "would cause import failure"; SKIP: "would be skipped"; OVERRIDE: "would replace earlier row"); no HTTP 409 is returned from the preview endpoint itself
 
+#### Scenario: Turn rows of one case are not a name collision
+- **WHEN** client imports or previews a CSV whose consecutive rows share a `testCaseName` and carry distinct non-blank `turnIndex` values
+- **THEN** the system SHALL treat them as one test case name occurrence — no duplicate warning on import or preview, no HTTP 409 under `FAIL`, and no `skippedCount`/`overriddenCount` increment under `SKIP`/`OVERRIDE`
+
+#### Scenario: Same-named single-turn rows still collide
+- **WHEN** client imports or previews a CSV with two adjacent rows carrying the same `testCaseName` and a blank `turnIndex`
+- **THEN** the second row SHALL be treated as a within-CSV duplicate exactly as before, per the chosen `conflictStrategy`
+
 ### Requirement: Import result extended counts
 The `CsvImportResultDto` SHALL include optional fields `skippedCount` and `overriddenCount` (nullable Integer, omitted from JSON when null via `@JsonInclude(NON_NULL)`).
 
@@ -593,6 +623,10 @@ The `CsvImportResultDto` SHALL include optional fields `skippedCount` and `overr
 ### Requirement: OVERRIDE mode schema handling
 In OVERRIDE mode, the system SHALL always auto-detect the schema from the CSV and persist it to the suite, replacing any existing schema. This applies whether the suite schema is empty or not.
 
+Replacement covers field **membership and types** only. Each field's `perTurn` scope SHALL be carried forward from the dataset's current schema by field name, because a CSV expresses values and never scope — see the `multi-turn-test-case` capability, requirement *CSV schema rebuild preserves per-field scope*. A CSV column with no same-named field in the current schema is a new field and SHALL be persisted with `perTurn` absent.
+
+Status: **Implemented**
+
 #### Scenario: OVERRIDE replaces existing schema
 - **WHEN** client calls import with `importMode=OVERRIDE` and the suite has an existing `testCaseSchema`
 - **THEN** system SHALL replace the schema with the auto-detected schema from CSV, persist it, and bump the suite version
@@ -604,6 +638,10 @@ In OVERRIDE mode, the system SHALL always auto-detect the schema from the CSV an
 #### Scenario: OVERRIDE preview shows replacement schema
 - **WHEN** client calls preview with `importMode=OVERRIDE`
 - **THEN** the preview response SHALL include `autoDetectedSchema` regardless of whether the suite already has a schema
+
+#### Scenario: OVERRIDE replacement keeps field scope
+- **WHEN** client calls import with `importMode=OVERRIDE` and an existing schema field is marked `perTurn: true`
+- **THEN** the replacement schema SHALL still mark that field `perTurn: true`, while its type is re-derived from the CSV as usual
 
 ### Requirement: APPEND mode schema handling
 In APPEND mode, the system SHALL handle the test case schema as follows: if the suite's `testCaseSchema` is empty, auto-detect and persist the schema from CSV. If the suite's `testCaseSchema` exists, use it as-is for validation without modification.
@@ -1439,4 +1477,7 @@ Status: **Implemented**
 - Controllers: TestCaseController, TestCaseBulkPatchController, TestSuiteController (revalidation endpoints), MetricDeclarationController.
 - Services: TestCaseService (bulkPatch), TestCaseBulkPatchValidator, TestCaseBulkSelectorResolver, CsvExportService, CsvImportService, SchemaValidationService, RevalidationService.
 - DB: test_cases, revalidation_tasks, metric_declarations (V1.2 + V1.7 rename).
+- CSV import preview and import: `service/domain/CsvImportService.java`; preview response DTO `service/domain/dto/csv/CsvImportPreviewDto.java`; import/preview endpoints on `web/controller/TestCaseController.java` (`import`, `import/preview`).
+- Preview OpenAPI examples: `src/main/resources/openapi/examples/api-v1-datasets-datasetId-test-cases-import-preview-POST-response-200-{minimal,full}.json`.
+- CSV multi-turn functional coverage: `CsvImportModeFunctionalTests` (single-turn contract, must stay green unchanged) and `MultiTurnCsvFunctionalTests` (multi-turn preview and round trip).
 - Batch name permutation (two-phase write): the transient collision arises because names are persisted via sequential per-row `UPDATE`s while the unique index `(dataset_id, LOWER(test_case_name))` is non-deferrable and checked after each statement. Fix is a two-phase write inside the existing `@Transactional` boundary: phase 1 parks every affected row's `test_case_name` at a collision-proof temporary value, phase 2 applies the final names. Code: `data.db.repository.PostgresTestCaseRepository.parkTestCaseNames` + two-phase `batchUpdate` (covers batch PUT/PATCH via `TestCaseService.persistBatch`); `service.domain.TestCaseService.bulkPatch` item-operations loop restructured into prepare → park → apply. Final-state uniqueness gate is unchanged: `TestCaseService.validateBatchNameUniqueness` still rejects genuine duplicates before any write.

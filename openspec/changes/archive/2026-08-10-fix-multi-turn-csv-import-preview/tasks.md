@@ -54,7 +54,7 @@
 ## 6. Specs, docs and verification
 
 - [x] 6.1 Update `AGENTS.md` per its Maintenance guidelines: add the `perTurn`-preservation invariant to the multi-turn inline-conventions bullet. Done: bullet states that any CSV-derived schema carries `perTurn` forward by field name.
-- [ ] 6.2 Sync the delta specs into `openspec/specs/{multi-turn-test-case,test-cases}/spec.md` (`/opsx:sync`, or at archive time). Done: main specs carry the new and modified requirements.
+- [x] 6.2 Sync the delta specs into `openspec/specs/{multi-turn-test-case,test-cases}/spec.md` (`/opsx:sync`, or at archive time). Done: main specs carry the new and modified requirements.
 - [x] 6.3 Confirm no `openspec/config.yaml` and no `openspec/specs/README.md` update is needed (no new layer/package/convention; no spec folder or status change). Done: rationale recorded in the change, files untouched.
-- [ ] 6.4 Run `./gradlew spotlessApply` then `./gradlew checkstyleMain checkstyleTest`. Done: both clean.
-- [ ] 6.5 Run `./gradlew clean build`. Done: full suite green, including `CsvImportModeFunctionalTests` and `TestCaseFunctionalTests` unmodified (the latter pins preview `totalRows` and `sampleRows` size), plus `LoggingConventionTest` and `LayeredArchitectureTest`.
+- [x] 6.4 Run `./gradlew spotlessApply` then `./gradlew checkstyleMain checkstyleTest`. Done: both clean.
+- [x] 6.5 Run `./gradlew clean build`. Done: full suite green, including `CsvImportModeFunctionalTests` and `TestCaseFunctionalTests` unmodified (the latter pins preview `totalRows` and `sampleRows` size), plus `LoggingConventionTest` and `LayeredArchitectureTest`.

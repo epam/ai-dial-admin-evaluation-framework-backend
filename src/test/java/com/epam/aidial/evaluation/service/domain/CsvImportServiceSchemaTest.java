@@ -107,7 +107,10 @@ class CsvImportServiceSchemaTest {
         when(csvImportProperties.getMaxFileSize()).thenReturn(DataSize.ofMegabytes(10));
         when(csvImportProperties.getMaxRows()).thenReturn(10000);
         lenient().when(csvImportProperties.getBatchSize()).thenReturn(100);
-        when(testCaseValidationService.validateTestCase(any(), any(), any(), any(), anyBoolean(), any()))
+        // lenient: a purely multi-turn CSV never calls validateTestCase (only validateMultiTurn), which
+        // would otherwise trip MockitoExtension's strict-stubbing check for those test methods.
+        lenient()
+                .when(testCaseValidationService.validateTestCase(any(), any(), any(), any(), anyBoolean(), any()))
                 .thenReturn(ValidationResult.builder()
                         .valid(true)
                         .warnings(List.of())
@@ -510,7 +513,8 @@ class CsvImportServiceSchemaTest {
     }
 
     @Test
-    @DisplayName("OVERRIDE: a CSV column with no same-named current field gets perTurn absent")
+    @DisplayName("OVERRIDE: an undeclared CSV column is over-approximated per-turn in the validation schema "
+            + "(design D2), but persists shared when the CSV has no multi-turn case (design D3)")
     void overrideNewColumnHasNoPerTurn() throws Exception {
         Dataset dataset =
                 datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
@@ -521,15 +525,29 @@ class CsvImportServiceSchemaTest {
         importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
 
         ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
-        FieldDefinitionDto newField = schemaCaptor.getValue().stream()
+        FieldDefinitionDto validationNewField = schemaCaptor.getValue().stream()
                 .filter(f -> "newField".equals(f.getName()))
                 .findFirst()
                 .orElseThrow();
-        assertThat(newField.getPerTurn()).isNull();
+        // Pre-stream over-approximation: every undeclared column is treated as per-turn during
+        // validation, harmless here since this CSV's single-turn path never reads perTurn.
+        assertThat(validationNewField.getPerTurn()).isTrue();
+
+        ArgumentCaptor<String> schemaJsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaJsonCaptor.capture());
+        List<FieldDefinitionDto> persisted =
+                objectMapper.readValue(schemaJsonCaptor.getValue(), new TypeReference<>() {});
+        FieldDefinitionDto persistedNewField = persisted.stream()
+                .filter(f -> "newField".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        // No multi-turn case in this CSV, so the post-stream gate never fires: persisted scope stays shared.
+        assertThat(persistedNewField.getPerTurn()).isNull();
     }
 
     @Test
-    @DisplayName("MERGE: existing perTurn field passes through unchanged, new delta field has perTurn absent")
+    @DisplayName("MERGE: existing perTurn field passes through unchanged; the new delta field is "
+            + "over-approximated per-turn in the validation schema (D2) but persists shared (D3)")
     void mergeCarriesPerTurnOnExistingFieldOnly() throws Exception {
         Dataset dataset =
                 datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
@@ -541,7 +559,17 @@ class CsvImportServiceSchemaTest {
         ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
         List<FieldDefinitionDto> validationSchema = schemaCaptor.getValue();
         assertThat(validationSchema.getFirst().getPerTurn()).isTrue();
-        assertThat(validationSchema.get(1).getPerTurn()).isNull();
+        assertThat(validationSchema.get(1).getPerTurn()).isTrue();
+
+        ArgumentCaptor<String> schemaJsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaJsonCaptor.capture());
+        List<FieldDefinitionDto> persisted =
+                objectMapper.readValue(schemaJsonCaptor.getValue(), new TypeReference<>() {});
+        FieldDefinitionDto persistedNewMetric = persisted.stream()
+                .filter(f -> "newMetric".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(persistedNewMetric.getPerTurn()).isNull();
     }
 
     @Test
@@ -609,6 +637,70 @@ class CsvImportServiceSchemaTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(prompt.getPerTurn()).isTrue();
+    }
+
+    // -------------------------------------------------------------------------
+    // Multi-turn column scope inference from turn membership (task group 2)
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Multi-turn CSV into empty schema: persisted schema marks every undeclared column perTurn=true")
+    void multiTurnCsvEmptySchemaMarksColumnsPerTurn() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String csv = "testCaseName,turnIndex,message\nConv1,0,hi\nConv1,1,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+        FieldDefinitionDto message = persisted.stream()
+                .filter(f -> "message".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(message.getPerTurn()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Single-turn-only CSV into empty schema: persisted schema still omits perTurn (empty "
+            + "membership set reproduces today's derivation)")
+    void singleTurnOnlyCsvEmptySchemaLeavesPerTurnAbsent() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String csv = "testCaseName,message\nRow1,hi";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+        FieldDefinitionDto message = persisted.stream()
+                .filter(f -> "message".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(message.getPerTurn()).isNull();
+    }
+
+    @Test
+    @DisplayName("Preview: multi-turn CSV against empty schema marks autoDetectedSchema columns perTurn=true")
+    void previewMultiTurnCsvEmptySchemaMarksColumnsPerTurn() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.existsById(datasetId)).thenReturn(true);
+
+        String csv = "testCaseName,turnIndex,message\nConv1,0,hi\nConv1,1,hello";
+        InputStream is = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
+        CsvImportPreviewDto preview =
+                service.preview(datasetId, is, csv.length(), ',', CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        assertThat(preview.getAutoDetectedSchema()).isNotNull();
+        FieldDefinitionDto message = preview.getAutoDetectedSchema().stream()
+                .filter(f -> "message".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(message.getPerTurn()).isTrue();
     }
 
     // -------------------------------------------------------------------------

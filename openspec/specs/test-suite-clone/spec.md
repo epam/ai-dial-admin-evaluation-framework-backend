@@ -124,7 +124,14 @@ Overridable fields: `description`, `datasetId`, `deploymentRef`, `endpointRef`, 
 - **THEN** system SHALL ignore the unknown field (per Jackson default) OR respond with HTTP 400 if strict-binding validation is enabled; in either case the cloned suite SHALL NOT carry a `testCaseSchema` (the field does not exist on `TestSuite` after this change)
 
 ### Requirement: TSMD cloning
-The system SHALL clone all test suite metric definitions from the source suite into the new suite. Each cloned TSMD SHALL receive a new UUID, the new suite's ID as `testSuiteId`, and fresh timestamps. The `name`, `metricDeclarationId`, `metricDeclarationVersionId`, `enabled`, `configBindings`, and `inputBindings` fields SHALL be copied.
+The system SHALL clone all test suite metric definitions from the source suite into the new suite. For each source TSMD, every field SHALL be copied verbatim into the cloned TSMD, **except**:
+- `id` — SHALL be a freshly generated UUID
+- `testSuiteId` — SHALL be the new suite's ID
+- `createdAt`/`updatedAt` (or equivalent) — SHALL be fresh timestamps
+- `configBindings`/`inputBindings` — copied but with suite-scoped file references rewritten per the "File reference rewriting" requirement below
+- `isValid`/`validationWarnings` — determined by the revalidation rules below, not copied unconditionally
+
+This default-copy rule means a new TSMD field introduced by a future change (e.g. `condition`, the JSONata conditional-metric-execution gating expression) is cloned automatically without requiring this spec to be updated — unless that field needs its own exception, which MUST be added to the list above.
 
 The cloned TSMD's `isValid` and `validationWarnings` SHALL be determined by whether **TSMD revalidation is required**:
 
@@ -136,6 +143,10 @@ In both cases validation is synchronous and within the clone transaction; the cl
 #### Scenario: TSMDs are deep-copied
 - **WHEN** source suite has 2 TSMDs
 - **THEN** cloned suite SHALL have 2 TSMDs with identical configuration but new UUIDs
+
+#### Scenario: TSMD condition is preserved
+- **WHEN** a source TSMD has a non-null `condition` (JSONata gating expression)
+- **THEN** the cloned TSMD SHALL carry the identical `condition` value, regardless of whether TSMD revalidation is required
 
 #### Scenario: Paginated TSMD copying
 - **WHEN** source suite has more TSMDs than the configured batch size

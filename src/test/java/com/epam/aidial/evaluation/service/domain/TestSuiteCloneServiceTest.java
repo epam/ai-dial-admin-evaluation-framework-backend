@@ -296,6 +296,50 @@ class TestSuiteCloneServiceTest {
     }
 
     // -----------------------------------------------------------------------
+    // (e2) TSMD cloning loop copies the condition (JSONata gating expression) verbatim
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("(e2) TSMD cloning copies the condition (JSONata gating expression) verbatim")
+    void clone_tsmdLoop_copiesCondition() {
+        TestSuite source = buildSource();
+        UUID newId = UUID.randomUUID();
+        TestSuite newEntity = buildNewEntityWithId(source, newId);
+
+        String conditionExpr = "$data.turn.index = 0";
+        TestSuiteMetricDefinition tsmdWithCondition = TestSuiteMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .testSuiteId(sourceId)
+                .metricDeclarationId(UUID.randomUUID())
+                .metricDeclarationVersionId(UUID.randomUUID())
+                .name("M1")
+                .condition(conditionExpr)
+                .enabled(true)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+
+        when(testSuiteRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(authorResolver.getCreatedBy(any())).thenReturn("user");
+        when(testSuiteMapper.toCloneEntity(any(), any(), any(), any())).thenReturn(newEntity);
+        when(fileService.copyFilesBetweenSuites(any(), any())).thenReturn(List.of());
+        setUpValidationChain(newEntity);
+        when(tsmdRepository.findBatchByTestSuiteId(eq(sourceId), eq(0), anyInt()))
+                .thenReturn(List.of(tsmdWithCondition));
+        when(tsmdRepository.findBatchByTestSuiteId(eq(sourceId), eq(1), anyInt()))
+                .thenReturn(List.of());
+        when(testSuiteMapper.toDto(newEntity))
+                .thenReturn(TestSuiteResponseDto.builder().build());
+
+        service.clone(sourceId, cloneRequestWithNameOnly(), null);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestSuiteMetricDefinition>> tsmdCaptor = ArgumentCaptor.forClass(List.class);
+        verify(tsmdRepository).batchInsert(tsmdCaptor.capture(), anyLong());
+        assertThat(tsmdCaptor.getValue().get(0).getCondition()).isEqualTo(conditionExpr);
+    }
+
+    // -----------------------------------------------------------------------
     // (f) Unbound source (datasetId == null) → validates against empty schema, no NPE
     // -----------------------------------------------------------------------
 

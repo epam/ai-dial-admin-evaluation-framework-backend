@@ -153,7 +153,7 @@ context: |
   - Tests: `./gradlew test` (unit + Testcontainers integration in single suite; includes JooqSchemaDriftTest and JdbcTemplateFenceTest)
   - Full build (includes tests + checkstyle): `./gradlew clean build`
   - Docker: `docker build -t dial-eval-backend .`
-  - Docker (eval-cli): `docker build -f eval-cli/Dockerfile -t eval-cli:local .` — build context is the repo root (needs `evaluation-runner-core/` alongside `eval-cli/`); published to `ghcr.io/epam/eval-cli` via `.github/workflows/eval-cli-release.yml`, tagged `<branch>`/`sha-<short>`; cross-triggering `deploy-development.yml` is prevented by its `package.name` filter, not by tag naming
+  - Docker (eval-cli): `docker build -f eval-cli/Dockerfile -t eval-cli:local .` — build context is the repo root (needs `evaluation-runner-core/` alongside `eval-cli/`). Not published by CI; consumers clone the repo at a pinned ref and build the image themselves (see eval-cli/README.md)
   - Flyway: auto-applied on application start; meta migrations in src/main/resources/db/migration/meta/POSTGRES/, analytics migrations in src/main/resources/db/migration/analytics/POSTGRES/
   - jOOQ codegen: `./gradlew generateJooq` — boots Zonky EmbeddedPostgres, applies both migration sets, writes generated sources to src/main/java-generated/; run and commit after any schema migration change
 

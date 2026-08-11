@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,16 +18,22 @@ import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
+import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
+import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
+import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -67,6 +74,9 @@ class CsvImportServiceSchemaTest {
     @Mock
     private ValidationWarningsSerializer warningsSerializer;
 
+    @Mock
+    private TestCaseTurnsCsvSerializer turnsCsvSerializer;
+
     private CsvImportService service;
     private UUID datasetId;
     private ObjectMapper objectMapper;
@@ -87,20 +97,46 @@ class CsvImportServiceSchemaTest {
                 schemaTypeCoercer,
                 objectMapper,
                 warningsSerializer,
-                new TestCaseFieldScopeResolver());
+                turnsCsvSerializer,
+                new CsvSchemaFieldBuilder(),
+                new CsvTestCaseGrouper(),
+                new MultiTurnRunAssembler(new TestCaseFieldScopeResolver()),
+                new DurableWarningMerger(warningsSerializer));
         datasetId = UUID.randomUUID();
 
         when(csvImportProperties.getMaxFileSize()).thenReturn(DataSize.ofMegabytes(10));
         when(csvImportProperties.getMaxRows()).thenReturn(10000);
         lenient().when(csvImportProperties.getBatchSize()).thenReturn(100);
-        when(testCaseValidationService.validateTestCase(any(), any(), any(), any(), anyBoolean(), any()))
+        // lenient: a purely multi-turn CSV never calls validateTestCase (only validateMultiTurn), which
+        // would otherwise trip MockitoExtension's strict-stubbing check for those test methods.
+        lenient()
+                .when(testCaseValidationService.validateTestCase(any(), any(), any(), any(), anyBoolean(), any()))
                 .thenReturn(ValidationResult.builder()
                         .valid(true)
                         .warnings(List.of())
                         .build());
-        when(warningsSerializer.serializeWarnings(any())).thenReturn("[]");
-        when(warningsSerializer.serializeMap(any())).thenReturn("{}");
+        lenient()
+                .when(testCaseValidationService.validateMultiTurn(
+                        any(), any(), any(), any(), any(), anyBoolean(), any()))
+                .thenReturn(ValidationResult.builder()
+                        .valid(true)
+                        .warnings(List.of())
+                        .build());
+        lenient().when(warningsSerializer.serializeWarnings(any())).thenReturn("[]");
+        lenient().when(warningsSerializer.serializeMap(any())).thenReturn("{}");
+        lenient().when(warningsSerializer.deserializeWarnings(any())).thenReturn(List.of());
+        lenient()
+                .when(turnsCsvSerializer.serializeTurns(any()))
+                .thenAnswer(
+                        inv -> inv.getArgument(0) == null ? null : objectMapper.writeValueAsString(inv.getArgument(0)));
         lenient().when(testCaseRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    /** Builds a mutable single-key turn map — {@code Map.of} is immutable and fixup mutates turns in place. */
+    private static Map<String, Object> newTurn(String key, Object value) {
+        Map<String, Object> turn = new LinkedHashMap<>();
+        turn.put(key, value);
+        return turn;
     }
 
     // -------------------------------------------------------------------------
@@ -438,6 +474,236 @@ class CsvImportServiceSchemaTest {
     }
 
     // -------------------------------------------------------------------------
+    // perTurn scope carry-forward (RC1) — every schema-building path
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("OVERRIDE: validation schema carries perTurn forward from the dataset's current schema")
+    void overrideValidationSchemaCarriesPerTurn() throws Exception {
+        Dataset dataset =
+                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String csv = "testCaseName,prompt\nRow1,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
+        FieldDefinitionDto prompt = schemaCaptor.getValue().getFirst();
+        assertThat(prompt.getName()).isEqualTo("prompt");
+        assertThat(prompt.getPerTurn()).isTrue();
+    }
+
+    @Test
+    @DisplayName("OVERRIDE: persisted schema carries perTurn forward from the dataset's current schema")
+    void overridePersistedSchemaCarriesPerTurn() throws Exception {
+        Dataset dataset =
+                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String csv = "testCaseName,prompt\nRow1,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+        assertThat(persisted).hasSize(1);
+        assertThat(persisted.getFirst().getPerTurn()).isTrue();
+    }
+
+    @Test
+    @DisplayName("OVERRIDE: an undeclared CSV column is over-approximated per-turn in the validation schema "
+            + "(design D2), but persists shared when the CSV has no multi-turn case (design D3)")
+    void overrideNewColumnHasNoPerTurn() throws Exception {
+        Dataset dataset =
+                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String csv = "testCaseName,prompt,newField\nRow1,hello,world";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
+        FieldDefinitionDto validationNewField = schemaCaptor.getValue().stream()
+                .filter(f -> "newField".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        // Pre-stream over-approximation: every undeclared column is treated as per-turn during
+        // validation, harmless here since this CSV's single-turn path never reads perTurn.
+        assertThat(validationNewField.getPerTurn()).isTrue();
+
+        ArgumentCaptor<String> schemaJsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaJsonCaptor.capture());
+        List<FieldDefinitionDto> persisted =
+                objectMapper.readValue(schemaJsonCaptor.getValue(), new TypeReference<>() {});
+        FieldDefinitionDto persistedNewField = persisted.stream()
+                .filter(f -> "newField".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        // No multi-turn case in this CSV, so the post-stream gate never fires: persisted scope stays shared.
+        assertThat(persistedNewField.getPerTurn()).isNull();
+    }
+
+    @Test
+    @DisplayName("MERGE: existing perTurn field passes through unchanged; the new delta field is "
+            + "over-approximated per-turn in the validation schema (D2) but persists shared (D3)")
+    void mergeCarriesPerTurnOnExistingFieldOnly() throws Exception {
+        Dataset dataset =
+                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+
+        String csv = "testCaseName,prompt,newMetric\nRow1,hello,5";
+        importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = captureValidationSchema();
+        List<FieldDefinitionDto> validationSchema = schemaCaptor.getValue();
+        assertThat(validationSchema.getFirst().getPerTurn()).isTrue();
+        assertThat(validationSchema.get(1).getPerTurn()).isTrue();
+
+        ArgumentCaptor<String> schemaJsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaJsonCaptor.capture());
+        List<FieldDefinitionDto> persisted =
+                objectMapper.readValue(schemaJsonCaptor.getValue(), new TypeReference<>() {});
+        FieldDefinitionDto persistedNewMetric = persisted.stream()
+                .filter(f -> "newMetric".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(persistedNewMetric.getPerTurn()).isNull();
+    }
+
+    @Test
+    @DisplayName("Fixup re-validation schema (buildFinalSchema) carries perTurn forward")
+    void fixupFinalSchemaCarriesPerTurn() throws Exception {
+        Dataset dataset =
+                datasetWithSchema("[{\"name\":\"col1\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        when(warningsSerializer.serializeMap(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) inv.getArgument(0);
+            if (map == null || map.isEmpty()) {
+                return "{}";
+            }
+            return new ObjectMapper().writeValueAsString(map);
+        });
+
+        TestCase storedTc = TestCase.builder()
+                .id(UUID.randomUUID())
+                .datasetId(datasetId)
+                .testCaseName("Row 01")
+                .data("{\"col1\":42}")
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(0), anyInt()))
+                .thenReturn(List.of(storedTc));
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(1), anyInt()))
+                .thenReturn(List.of());
+
+        // col1 sees an INTEGER cell then a STRING cell -> widens to STRING, triggering the fixup pass.
+        String csv = "testCaseName,col1\nRow1,42\nRow2,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseValidationService, atLeastOnce())
+                .validateTestCase(any(), schemaCaptor.capture(), any(), any(), anyBoolean(), any());
+        // The fixup pass re-validates after the run rows, so its schema is the last one observed.
+        List<FieldDefinitionDto> fixupSchema = schemaCaptor.getAllValues().getLast();
+        FieldDefinitionDto col1 = fixupSchema.stream()
+                .filter(f -> "col1".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(col1.getPerTurn()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Preview: autoDetectedSchema carries perTurn forward from the dataset's current schema")
+    void previewAutoDetectedSchemaCarriesPerTurn() throws Exception {
+        Dataset dataset =
+                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
+        when(datasetRepository.existsById(datasetId)).thenReturn(true);
+
+        String csv = "testCaseName,prompt\nRow1,hello";
+        InputStream is = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
+        CsvImportPreviewDto preview =
+                service.preview(datasetId, is, csv.length(), ',', CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        assertThat(preview.getAutoDetectedSchema()).isNotNull();
+        FieldDefinitionDto prompt = preview.getAutoDetectedSchema().stream()
+                .filter(f -> "prompt".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(prompt.getPerTurn()).isTrue();
+    }
+
+    // -------------------------------------------------------------------------
+    // Multi-turn column scope inference from turn membership (task group 2)
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Multi-turn CSV into empty schema: persisted schema marks every undeclared column perTurn=true")
+    void multiTurnCsvEmptySchemaMarksColumnsPerTurn() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String csv = "testCaseName,turnIndex,message\nConv1,0,hi\nConv1,1,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+        FieldDefinitionDto message = persisted.stream()
+                .filter(f -> "message".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(message.getPerTurn()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Single-turn-only CSV into empty schema: persisted schema still omits perTurn (empty "
+            + "membership set reproduces today's derivation)")
+    void singleTurnOnlyCsvEmptySchemaLeavesPerTurnAbsent() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String csv = "testCaseName,message\nRow1,hi";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
+        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+        FieldDefinitionDto message = persisted.stream()
+                .filter(f -> "message".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(message.getPerTurn()).isNull();
+    }
+
+    @Test
+    @DisplayName("Preview: multi-turn CSV against empty schema marks autoDetectedSchema columns perTurn=true")
+    void previewMultiTurnCsvEmptySchemaMarksColumnsPerTurn() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.existsById(datasetId)).thenReturn(true);
+
+        String csv = "testCaseName,turnIndex,message\nConv1,0,hi\nConv1,1,hello";
+        InputStream is = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
+        CsvImportPreviewDto preview =
+                service.preview(datasetId, is, csv.length(), ',', CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        assertThat(preview.getAutoDetectedSchema()).isNotNull();
+        FieldDefinitionDto message = preview.getAutoDetectedSchema().stream()
+                .filter(f -> "message".equals(f.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(message.getPerTurn()).isTrue();
+    }
+
+    // -------------------------------------------------------------------------
     // Post-persist fixup pass
     // -------------------------------------------------------------------------
 
@@ -495,6 +761,176 @@ class CsvImportServiceSchemaTest {
 
         verify(testCaseRepository, never()).findBatchByDatasetId(any(), anyInt(), anyInt());
         verify(testCaseRepository, never()).batchUpdate(anyList());
+    }
+
+    // -------------------------------------------------------------------------
+    // Post-persist fixup pass — multi-turn branch (RC3, task 4)
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Fixup: per-turn values are coerced to the newly inferred type and the turn array is persisted "
+            + "(today's inspects-data-only pass is inert for a turn-only case; this is the fix)")
+    void fixupCoercesPerTurnValues() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String storedTurnsJson = "[{\"col1\":42},{\"col1\":\"hello\"}]";
+        when(turnsCsvSerializer.deserializeTurnsStrict(storedTurnsJson))
+                .thenReturn(List.of(newTurn("col1", 42), newTurn("col1", "hello")));
+
+        TestCase storedTc = TestCase.builder()
+                .id(UUID.randomUUID())
+                .datasetId(datasetId)
+                .testCaseName("conv")
+                .data("{}")
+                .multiTurnData(storedTurnsJson)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(0), anyInt()))
+                .thenReturn(List.of(storedTc));
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(1), anyInt()))
+                .thenReturn(List.of());
+
+        // col1 sees an INTEGER cell then a STRING cell -> widens to STRING, triggering the fixup pass.
+        String csv = "testCaseName,col1\nRow1,42\nRow2,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestCase>> batchCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseRepository).batchUpdate(batchCaptor.capture());
+        List<TestCase> updated = batchCaptor.getValue();
+        assertThat(updated).hasSize(1);
+        assertThat(updated.getFirst().getMultiTurnData()).contains("\"42\"").contains("\"hello\"");
+        assertThat(updated.getFirst().getData()).isEqualTo("{}");
+    }
+
+    @Test
+    @DisplayName("Fixup: a multi-turn case is re-validated via validateMultiTurn against the FULL schema, "
+            + "not validateTestCase against shared data alone")
+    void fixupValidatesMultiTurnCaseAsMultiTurn() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        String storedTurnsJson = "[{\"col1\":42},{\"col1\":\"hello\"}]";
+        when(turnsCsvSerializer.deserializeTurnsStrict(storedTurnsJson))
+                .thenReturn(List.of(newTurn("col1", 42), newTurn("col1", "hello")));
+
+        TestCase storedTc = TestCase.builder()
+                .id(UUID.randomUUID())
+                .datasetId(datasetId)
+                .testCaseName("conv")
+                .data("{}")
+                .multiTurnData(storedTurnsJson)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(0), anyInt()))
+                .thenReturn(List.of(storedTc));
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(1), anyInt()))
+                .thenReturn(List.of());
+
+        String csv = "testCaseName,col1\nRow1,42\nRow2,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<FieldDefinitionDto>> schemaCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseValidationService)
+                .validateMultiTurn(any(), any(), schemaCaptor.capture(), any(), any(), anyBoolean(), any());
+        // The full (unsplit) schema is passed — validateMultiTurn splits it by scope internally.
+        assertThat(schemaCaptor.getValue())
+                .extracting(FieldDefinitionDto::getName)
+                .containsExactly("col1");
+    }
+
+    @Test
+    @DisplayName("Fixup: a case whose stored turn array is unreadable is skipped entirely — never added to "
+            + "the batch update, so it is never rewritten as single-turn")
+    void fixupSkipsUnreadableTurnArray() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        // Valid JSON, wrong shape for List<Map<String,Object>> (elements are numbers, not objects) — a real
+        // TestCaseTurnsCsvSerializer.deserializeTurnsStrict genuinely throws JacksonException on it, so
+        // the fixup pass has a real exception to catch and log, not a hand-rolled mock exception.
+        String corruptTurnsJson = "[1,2,3]";
+        TestCaseTurnsCsvSerializer realSerializer = new TestCaseTurnsCsvSerializer(objectMapper);
+        when(turnsCsvSerializer.deserializeTurnsStrict(corruptTurnsJson))
+                .thenAnswer(inv -> realSerializer.deserializeTurnsStrict(inv.getArgument(0)));
+
+        TestCase storedTc = TestCase.builder()
+                .id(UUID.randomUUID())
+                .datasetId(datasetId)
+                .testCaseName("conv")
+                .data("{}")
+                .multiTurnData(corruptTurnsJson)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(0), anyInt()))
+                .thenReturn(List.of(storedTc));
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(1), anyInt()))
+                .thenReturn(List.of());
+
+        String csv = "testCaseName,col1\nRow1,42\nRow2,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        verify(testCaseRepository, never()).batchUpdate(anyList());
+        // The in-memory TestCase the batch handed to the fixup pass is untouched: turns still present
+        // (not nulled to convert the case to single-turn), data and validity unchanged.
+        assertThat(storedTc.getMultiTurnData()).isEqualTo(corruptTurnsJson);
+        assertThat(storedTc.getData()).isEqualTo("{}");
+        assertThat(storedTc.isValid()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Fixup: a stored multi_turn_data of the JSON literal null falls back to the single-turn "
+            + "path — shared data is still coerced, but the column is written back unchanged rather than "
+            + "silently overwritten with []")
+    void fixupTreatsJsonNullMultiTurnDataAsSingleTurn() throws Exception {
+        Dataset dataset = datasetWithSchema("[]");
+        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+        // deserializeTurnsStrict returns null for the JSON literal "null", same as for an absent column —
+        // this must NOT be confused with the unreadable-shape case (which throws).
+        when(turnsCsvSerializer.deserializeTurnsStrict("null")).thenReturn(null);
+        when(warningsSerializer.serializeMap(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) inv.getArgument(0);
+            if (map == null || map.isEmpty()) {
+                return "{}";
+            }
+            return new ObjectMapper().writeValueAsString(map);
+        });
+
+        TestCase storedTc = TestCase.builder()
+                .id(UUID.randomUUID())
+                .datasetId(datasetId)
+                .testCaseName("conv")
+                .data("{\"col1\":42}")
+                .multiTurnData("null")
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(0), anyInt()))
+                .thenReturn(List.of(storedTc));
+        when(testCaseRepository.findBatchByDatasetId(eq(datasetId), eq(1), anyInt()))
+                .thenReturn(List.of());
+
+        String csv = "testCaseName,col1\nRow1,42\nRow2,hello";
+        importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestCase>> batchCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseRepository).batchUpdate(batchCaptor.capture());
+        TestCase updated = batchCaptor.getValue().getFirst();
+        assertThat(updated.getData()).contains("\"42\"");
+        // Never rewritten as "[]" — the single-turn path never calls tc.setMultiTurnData(...), so the
+        // column goes back into batchUpdate exactly as it came in.
+        assertThat(updated.getMultiTurnData()).isEqualTo("null");
     }
 
     // -------------------------------------------------------------------------

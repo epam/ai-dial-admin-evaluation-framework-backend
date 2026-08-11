@@ -94,7 +94,7 @@ Specs for behaviors that apply across multiple domain areas.
 - **[entity-filtering](entity-filtering/spec.md)** — Implemented
   Pagination and structured `filter` (whitelist, AND/`in` operators, HTTP 400 validation) on list endpoints.
 - **[security](security/spec.md)** — Implemented
-  OIDC/JWT multi-issuer authentication + configurable security modes.
+  OIDC/JWT multi-issuer authentication + configurable security modes; DIAL API-Key authentication via DIAL Core introspection as an alternative to bearer tokens.
 - **[openapi-examples](openapi-examples/spec.md)** — Implemented
   OpenAPI request/response examples (minimal + full), resource-based JSON, OpenApiExampleCustomizer.
 - **[openapi-query-param-docs](openapi-query-param-docs/spec.md)** — Implemented
@@ -167,7 +167,7 @@ Formal versioned requirements for project-wide architectural rules. Quick-refere
 Specs for standalone command-line tools that consume the EF backend's public REST API.
 
 - **[eval-cli](eval-cli/spec.md)** — Implemented
-  Standalone Spring Boot CLI (`eval-cli` Gradle subproject, root package `com.epam.aidial.evaluation.cli`) that clones "standard" test suites from a source EF instance, fetches their configuration and test cases, executes them against a CLI-configured target deployment using `evaluation-runner-core`'s existing batch execution path, and imports the results via the source EF's `runs/import` endpoint — enabling cross-environment evaluation without a second EF deployment. Exposes `clone`, `fetch`, `run`, `import`, and `evaluate` picocli subcommands; DB-free; static bearer-token auth (OIDC planned). Related: eval-results-import, test-suite-clone, evaluation-runner-core-module.
+  Standalone Spring Boot CLI (`eval-cli` Gradle subproject, root package `com.epam.aidial.evaluation.cli`) that clones "standard" test suites from a source EF instance, fetches their configuration and test cases, executes them against a CLI-configured target deployment using `evaluation-runner-core`'s existing batch execution path, and imports the results via the source EF's `runs/import` endpoint — enabling cross-environment evaluation without a second EF deployment. Exposes `clone`, `fetch`, `run`, `import`, and `evaluate` picocli subcommands; DB-free; static Api-Key auth against both source EF and target DIAL Core. Related: eval-results-import, test-suite-clone, evaluation-runner-core-module.
 
 - **[eval-cli-distribution](eval-cli-distribution/spec.md)** — Implemented
   Packaging and CI publishing of `eval-cli` as a Docker image: `eval-cli/Dockerfile` (multi-stage build targeting `:eval-cli:bootJar`, no JDK required at runtime), a dedicated entrypoint forwarding CLI arguments, and a standalone `.github/workflows/eval-cli-release.yml` publishing to `ghcr.io/epam/eval-cli` with plain, main-app-consistent tags (`<branch>`, `sha-<short>`). Isolation from the main app's deploy pipeline is enforced by a `package.name == 'ai-dial-admin-evaluation-framework-backend'` filter added to `deploy-development.yml`'s `registry_package` trigger condition — not by any tag-naming convention on the eval-cli side. Related: eval-cli.

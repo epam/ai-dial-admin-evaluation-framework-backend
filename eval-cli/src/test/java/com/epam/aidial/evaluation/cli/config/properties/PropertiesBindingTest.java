@@ -13,7 +13,7 @@ import org.springframework.test.context.TestPropertySource;
 @TestPropertySource(
         properties = {
             "eval.source.base-url=http://source-ef:8080",
-            "eval.source.token=source-token",
+            "eval.source.api-key=source-api-key",
             "cli.work-dir=/tmp/work",
             "dial.components.core.api-key=target-api-key",
             "cli.run.concurrency-level=4",
@@ -47,7 +47,7 @@ class PropertiesBindingTest {
     @Test
     void sourcePropertiesBindCorrectly() {
         assertThat(sourceProperties.getBaseUrl()).isEqualTo("http://source-ef:8080");
-        assertThat(sourceProperties.getToken()).isEqualTo("source-token");
+        assertThat(sourceProperties.getApiKey()).isEqualTo("source-api-key");
     }
 
     @Test

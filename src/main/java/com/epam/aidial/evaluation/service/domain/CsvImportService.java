@@ -11,8 +11,16 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
+import com.epam.aidial.evaluation.service.domain.csv.ColumnBinding;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
+import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTestCase;
+import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
+import com.epam.aidial.evaluation.service.domain.csv.MultiTurnAssembly;
+import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
+import com.epam.aidial.evaluation.service.domain.csv.ParsedCsvRow;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvColumnInfoDto;
@@ -31,8 +39,6 @@ import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -72,7 +78,11 @@ public class CsvImportService {
     private final SchemaTypeCoercer schemaTypeCoercer;
     private final ObjectMapper objectMapper;
     private final ValidationWarningsSerializer warningsSerializer;
-    private final TestCaseFieldScopeResolver scopeResolver;
+    private final TestCaseTurnsCsvSerializer turnsCsvSerializer;
+    private final CsvSchemaFieldBuilder schemaFieldBuilder;
+    private final CsvTestCaseGrouper csvTestCaseGrouper;
+    private final MultiTurnRunAssembler multiTurnRunAssembler;
+    private final DurableWarningMerger durableWarningMerger;
 
     /**
      * Dry-run: parse and validate without persisting. Returns preview with detected columns and sample rows.
@@ -101,31 +111,46 @@ public class CsvImportService {
             Map<String, SchemaFieldType> fieldTypes = getFieldTypes(testCaseSchema);
 
             boolean schemaEmpty = testCaseSchema == null || testCaseSchema.isEmpty();
+            Set<String> allDataFieldNames = allDataFieldNames(bindings);
             List<FieldDefinitionDto> validationSchema =
-                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema);
+                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames);
 
             List<CsvImportWarningDto> warnings = new ArrayList<>();
             List<TestCaseResponseDto> sampleRows = new ArrayList<>();
             int totalRows = 0;
+            int totalTestCases = 0;
             int rowNum = 1;
             int padWidth = String.valueOf(csvImportProperties.getMaxRows()).length();
+            // File-level multi-turn gate (design D3): true once any closed case is multi-turn.
+            boolean sawMultiTurnCase = false;
 
             // Incremental type inference for preview schema detection
             Map<String, SchemaFieldType> inferredTypes = new LinkedHashMap<>();
-            // Within-CSV duplicate tracking
+            /*
+             Within-CSV duplicate tracking, keyed on the assembled test case (one entry per multi-turn
+             test case, one per single-turn row) — never per raw CSV row.
+            */
             LinkedHashSet<String> seenNames = new LinkedHashSet<>();
-            // Names from CSV for collision detection (APPEND/MERGE)
-            List<String> allCsvNames = new ArrayList<>();
+            /*
+             Assembled-case name occurrences for collision detection (APPEND/MERGE) and within-CSV dup
+             warnings, one pair per registered name occurrence — no larger than allCsvNames was before.
+            */
+            List<NameOccurrence> occurrences = new ArrayList<>();
 
+            /*
+             Same accumulator-driven grouping as importCsv: a test case closes as soon as testCaseName
+             changes, so preview never buffers more than the current test case's rows plus the per-name
+             bookkeeping above.
+            */
+            CsvTestCaseGrouper.Accumulator testCaseAccumulator = csvTestCaseGrouper.newAccumulator();
             for (CSVRecord record : parser) {
                 if (totalRows >= csvImportProperties.getMaxRows()) {
                     throw new ValidationException("Row count exceeds limit " + csvImportProperties.getMaxRows());
                 }
                 rowNum++;
-                ParsedRow row =
+                ParsedCsvRow row =
                         parseRow(record, bindings, rowNum, totalRows + 1, padWidth, fieldTypes, mode, schemaEmpty);
                 totalRows++;
-                allCsvNames.add(row.testCaseName());
 
                 // Incremental schema inference
                 if (shouldAutoDetectSchema(mode, schemaEmpty)) {
@@ -134,27 +159,18 @@ public class CsvImportService {
                     updateInferredTypesForNewFields(record, bindings, fieldTypes, inferredTypes);
                 }
 
-                // Within-CSV duplicate detection
-                String lowerName = row.testCaseName().toLowerCase();
-                boolean isDuplicateWithinCsv = !seenNames.add(lowerName);
-                if (isDuplicateWithinCsv) {
-                    warnings.add(buildWithinCsvDupWarning(row.rowNumber(), row.testCaseName(), conflictStrategy));
-                }
-
-                ValidationResult vr = testCaseValidationService.validateTestCase(
-                        row.data(), validationSchema, null, List.of(), false, datasetId);
-                ValidationResult combined = combineWithJsonParseErrors(vr, row);
-                if (!combined.isValid() && combined.getWarnings() != null) {
-                    for (ValidationWarningDto w : combined.getWarnings()) {
-                        warnings.add(CsvImportWarningDto.builder()
-                                .rowNumber(row.rowNumber())
-                                .columnName(w.getFieldName() != null ? w.getFieldName() : "")
-                                .message(w.getMessage())
-                                .build());
-                    }
-                }
-                if (sampleRows.size() < SAMPLE_ROWS_LIMIT) {
-                    sampleRows.add(toResponseDto(row, combined));
+                CsvTestCase accumulatedTestCase = testCaseAccumulator.add(row);
+                if (accumulatedTestCase != null) {
+                    sawMultiTurnCase = sawMultiTurnCase || accumulatedTestCase.multiTurn();
+                    totalTestCases += handlePreviewCase(
+                            accumulatedTestCase,
+                            datasetId,
+                            validationSchema,
+                            conflictStrategy,
+                            seenNames,
+                            occurrences,
+                            warnings,
+                            sampleRows);
                 }
             }
 
@@ -162,13 +178,30 @@ public class CsvImportService {
                 throw new ValidationException("Empty CSV (header only, no data rows)");
             }
 
-            // Cross-import collision detection for APPEND/MERGE (no DB query needed for OVERRIDE)
-            if (mode != CsvImportMode.OVERRIDE && !allCsvNames.isEmpty()) {
-                addCollisionWarnings(datasetId, allCsvNames, seenNames, warnings, conflictStrategy);
+            // Process the final test case
+            CsvTestCase finalCase = testCaseAccumulator.flush();
+            if (finalCase != null) {
+                sawMultiTurnCase = sawMultiTurnCase || finalCase.multiTurn();
+                totalTestCases += handlePreviewCase(
+                        finalCase,
+                        datasetId,
+                        validationSchema,
+                        conflictStrategy,
+                        seenNames,
+                        occurrences,
+                        warnings,
+                        sampleRows);
             }
 
-            List<FieldDefinitionDto> autoDetectedSchema =
-                    buildAutoDetectedSchema(mode, schemaEmpty, bindings, testCaseSchema, inferredTypes);
+            // Cross-import collision detection for APPEND/MERGE (no DB query needed for OVERRIDE)
+            if (mode != CsvImportMode.OVERRIDE && !occurrences.isEmpty()) {
+                addCollisionWarnings(datasetId, occurrences, warnings, conflictStrategy);
+            }
+
+            // Post-stream membership set (design D3): the observed multi-turn gate, exact after streaming.
+            Set<String> finalMultiTurnColumns = sawMultiTurnCase ? allDataFieldNames : Set.of();
+            List<FieldDefinitionDto> autoDetectedSchema = buildAutoDetectedSchema(
+                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
 
             List<CsvColumnInfoDto> detectedColumns =
                     buildDetectedColumns(headers, bindings, fieldTypes, autoDetectedSchema);
@@ -176,6 +209,7 @@ public class CsvImportService {
             return CsvImportPreviewDto.builder()
                     .detectedColumns(detectedColumns)
                     .totalRows(totalRows)
+                    .totalTestCases(totalTestCases)
                     .sampleRows(sampleRows)
                     .warnings(warnings.isEmpty() ? List.of() : warnings)
                     .autoDetectedSchema(autoDetectedSchema)
@@ -228,8 +262,9 @@ public class CsvImportService {
             Map<String, SchemaFieldType> fieldTypes = getFieldTypes(testCaseSchema);
 
             boolean schemaEmpty = testCaseSchema == null || testCaseSchema.isEmpty();
+            Set<String> allDataFieldNames = allDataFieldNames(bindings);
             List<FieldDefinitionDto> validationSchema =
-                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema);
+                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames);
 
             List<CsvImportWarningDto> warnings = new ArrayList<>();
             int totalRows = 0;
@@ -240,6 +275,8 @@ public class CsvImportService {
             int rowNum = 1;
             int maxRows = csvImportProperties.getMaxRows();
             int padWidth = String.valueOf(maxRows).length();
+            // File-level multi-turn gate (design D3): true once any closed case is multi-turn.
+            boolean sawMultiTurnCase = false;
 
             // Incremental type inference for schema detection
             Map<String, SchemaFieldType> inferredTypes = new LinkedHashMap<>();
@@ -249,17 +286,13 @@ public class CsvImportService {
                 testCaseRepository.deleteAllByDatasetId(datasetId, List.of());
             }
 
-            // Flat multiplication: consecutive rows sharing a testCaseName form one "run" — a single-turn
-            // case (one row, blank turnIndex) or a multi-turn case (assembled into multiTurnData). A run is
-            // flushed as soon as the name changes, keeping import streaming/bounded-memory.
-            List<ParsedRow> currentRun = new ArrayList<>();
-            Set<String> completedRunNames = new HashSet<>();
+            CsvTestCaseGrouper.Accumulator testCaseAccumulator = csvTestCaseGrouper.newAccumulator();
             for (CSVRecord record : parser) {
                 if (totalRows >= maxRows) {
                     throw new ValidationException("Row count exceeds limit " + maxRows);
                 }
                 rowNum++;
-                ParsedRow row =
+                ParsedCsvRow row =
                         parseRow(record, bindings, rowNum, totalRows + 1, padWidth, fieldTypes, mode, schemaEmpty);
                 totalRows++;
 
@@ -270,41 +303,46 @@ public class CsvImportService {
                     updateInferredTypesForNewFields(record, bindings, fieldTypes, inferredTypes);
                 }
 
-                if (!currentRun.isEmpty() && !currentRun.get(0).testCaseName().equals(row.testCaseName())) {
-                    InsertResult result = processRun(
-                            currentRun, datasetId, validationSchema, conflictStrategy, warnings, completedRunNames);
+                CsvTestCase accumulatedTestCase = testCaseAccumulator.add(row);
+                if (accumulatedTestCase != null) {
+                    sawMultiTurnCase = sawMultiTurnCase || accumulatedTestCase.multiTurn();
+                    InsertResult result = processTestCase(
+                            accumulatedTestCase, datasetId, validationSchema, conflictStrategy, warnings);
                     validCount += result.validCount();
                     invalidCount += result.invalidCount();
                     skippedCount += result.skippedCount();
                     overriddenCount += result.overriddenCount();
-                    currentRun = new ArrayList<>();
                 }
-                currentRun.add(row);
             }
 
             if (totalRows == 0) {
                 throw new ValidationException("Empty CSV (header only, no data rows)");
             }
 
-            // Process the final run
-            if (!currentRun.isEmpty()) {
-                InsertResult result = processRun(
-                        currentRun, datasetId, validationSchema, conflictStrategy, warnings, completedRunNames);
+            // Process the final test case
+            CsvTestCase finalCase = testCaseAccumulator.flush();
+            if (finalCase != null) {
+                sawMultiTurnCase = sawMultiTurnCase || finalCase.multiTurn();
+                InsertResult result =
+                        processTestCase(finalCase, datasetId, validationSchema, conflictStrategy, warnings);
                 validCount += result.validCount();
                 invalidCount += result.invalidCount();
                 skippedCount += result.skippedCount();
                 overriddenCount += result.overriddenCount();
             }
 
+            // Post-stream membership set (design D3): the observed multi-turn gate, exact after streaming.
+            Set<String> finalMultiTurnColumns = sawMultiTurnCase ? allDataFieldNames : Set.of();
+
             // Schema persistence after streaming completes
-            boolean schemaPersisted =
-                    persistSchema(datasetId, mode, schemaEmpty, bindings, testCaseSchema, inferredTypes);
+            boolean schemaPersisted = persistSchema(
+                    datasetId, mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
 
             // Post-persist fixup: coerce values for columns with newly determined types
             Set<String> changedColumns = computeChangedColumns(mode, schemaEmpty, fieldTypes, inferredTypes);
             if (!changedColumns.isEmpty()) {
-                List<FieldDefinitionDto> finalSchema =
-                        buildFinalSchema(mode, schemaEmpty, bindings, testCaseSchema, inferredTypes);
+                List<FieldDefinitionDto> finalSchema = buildFinalSchema(
+                        mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
                 fixupTestCases(datasetId, changedColumns, inferredTypes, finalSchema);
             }
 
@@ -343,26 +381,23 @@ public class CsvImportService {
     // -------------------------------------------------------------------------
 
     /**
-     * Processes one contiguous run of rows sharing a testCaseName: a single-turn case (one row, blank
-     * turnIndex) or a multi-turn case (assembled into {@code multiTurnData}). A non-contiguous reappearance
-     * of a name is reported as a conflict warning.
+     * Processes one completed contiguous group of rows sharing a testCaseName: a single-turn case (one row,
+     * blank turnIndex) or a multi-turn case (assembled into {@code multiTurnData}). A non-contiguous
+     * reappearance of a multi-turn name — already detected by the grouper's accumulator — is reported as a
+     * conflict warning.
      */
-    private InsertResult processRun(
-            List<ParsedRow> run,
+    private InsertResult processTestCase(
+            CsvTestCase testCase,
             UUID datasetId,
             List<FieldDefinitionDto> testCaseSchema,
             CsvConflictStrategy conflictStrategy,
-            List<CsvImportWarningDto> warnings,
-            Set<String> completedMultiTurnNames) {
-        // A run is multi-turn only when it carries an explicit turnIndex; otherwise a run of same-named rows
-        // is a set of single-turn duplicates handled per-row by the conflict strategy (unchanged behavior).
-        boolean multiTurn = run.stream().anyMatch(r -> r.turnIndex() != null);
-        if (!multiTurn) {
+            List<CsvImportWarningDto> warnings) {
+        if (!testCase.multiTurn()) {
             int validCount = 0;
             int invalidCount = 0;
             int skippedCount = 0;
             int overriddenCount = 0;
-            for (ParsedRow row : run) {
+            for (ParsedCsvRow row : testCase.rows()) {
                 ValidationResult vr = testCaseValidationService.validateTestCase(
                         row.data(), testCaseSchema, null, List.of(), false, datasetId);
                 ValidationResult combined = combineWithJsonParseErrors(vr, row);
@@ -377,49 +412,33 @@ public class CsvImportService {
             return new InsertResult(validCount, invalidCount, skippedCount, overriddenCount);
         }
 
-        ParsedRow first = run.get(0);
-        if (!completedMultiTurnNames.add(first.testCaseName().toLowerCase())) {
-            warnings.add(CsvImportWarningDto.builder()
-                    .rowNumber(first.rowNumber())
-                    .columnName(TEST_CASE_NAME_HEADER)
-                    .message("Test case name '" + first.testCaseName()
-                            + "' appears non-contiguously; multi-turn rows of a case must be contiguous")
-                    .build());
-        }
-        List<ParsedRow> ordered = orderTurns(run);
-        MultiTurnAssembly assembly = assembleMultiTurn(ordered, testCaseSchema);
-        ValidationResult combined = validateRunAsMultiTurn(run, ordered, assembly, datasetId, testCaseSchema, warnings);
+        addNonContiguousWarningIfNeeded(testCase, warnings);
+        MultiTurnAssembly assembly = multiTurnRunAssembler.assemble(testCase, testCaseSchema);
+        ValidationResult combined =
+                validateTestCaseAsMultiTurn(testCase, assembly, datasetId, testCaseSchema, warnings);
         return persist(
-                toMultiTurnEntity(first.testCaseName(), datasetId, assembly, combined),
+                toMultiTurnEntity(testCase.testCaseName(), datasetId, assembly, combined),
                 combined,
                 conflictStrategy,
-                first.testCaseName());
+                testCase.testCaseName());
     }
 
     /**
-     * Splits an ordered multi-turn run into its shared (test-case-level) data map and its ordered per-turn
-     * maps, using each column's schema scope. Shared columns must be identical across the run's rows; a
-     * mismatch is flagged so validation can invalidate the case.
+     * Emits the non-contiguity conflict warning when {@code testCase} is a multi-turn name reappearing
+     * after an earlier, already-completed multi-turn test case of the same name — the accumulator's
+     * {@code nonContiguous} signal. Shared by import ({@link #processTestCase}) and preview ({@link
+     * #handlePreviewCase}) so both report the identical warning for the identical condition.
      */
-    private MultiTurnAssembly assembleMultiTurn(List<ParsedRow> ordered, List<FieldDefinitionDto> schema) {
-        Map<String, Object> shared = null;
-        boolean sharedConflict = false;
-        List<Map<String, Object>> perTurnMaps = new ArrayList<>(ordered.size());
-        for (ParsedRow row : ordered) {
-            TestCaseFieldScopeResolver.Partition partition = scopeResolver.partition(row.data(), schema);
-            if (shared == null) {
-                shared = partition.shared();
-            } else if (!shared.equals(partition.shared())) {
-                sharedConflict = true;
-            }
-            perTurnMaps.add(partition.perTurn());
+    private void addNonContiguousWarningIfNeeded(CsvTestCase testCase, List<CsvImportWarningDto> warnings) {
+        if (testCase.nonContiguous()) {
+            warnings.add(CsvImportWarningDto.builder()
+                    .rowNumber(testCase.firstRowNumber())
+                    .columnName(TEST_CASE_NAME_HEADER)
+                    .message("Test case name '" + testCase.testCaseName()
+                            + "' appears non-contiguously; multi-turn rows of a case must be contiguous")
+                    .build());
         }
-        return new MultiTurnAssembly(shared != null ? shared : Map.of(), perTurnMaps, sharedConflict);
     }
-
-    /** A CSV multi-turn run split by scope: the case's shared data and its ordered per-turn maps. */
-    private record MultiTurnAssembly(
-            Map<String, Object> sharedData, List<Map<String, Object>> perTurnMaps, boolean sharedConflict) {}
 
     /** Persists one assembled entity (single-turn row or multi-turn case) via the conflict strategy. */
     private InsertResult persist(
@@ -453,9 +472,8 @@ public class CsvImportService {
         return new InsertResult(validCount, invalidCount, skippedCount, overriddenCount);
     }
 
-    private ValidationResult validateRunAsMultiTurn(
-            List<ParsedRow> run,
-            List<ParsedRow> ordered,
+    private ValidationResult validateTestCaseAsMultiTurn(
+            CsvTestCase testCase,
             MultiTurnAssembly assembly,
             UUID datasetId,
             List<FieldDefinitionDto> schema,
@@ -469,29 +487,28 @@ public class CsvImportService {
             valid = false;
             merged.add(ValidationWarningDto.builder()
                     .message("Shared (test-case-level) column values differ across turns of case '"
-                            + run.get(0).testCaseName() + "'; they must be identical")
-                    .code(ValidationWarningCode.ADDITIONAL)
+                            + testCase.testCaseName() + "'; they must be identical")
+                    .code(ValidationWarningCode.INVALID_INPUT)
                     .build());
         }
-        if (ordered.stream().anyMatch(ParsedRow::hasJsonParseErrors)) {
+        if (assembly.hasJsonParseErrors()) {
             valid = false;
             merged.add(ValidationWarningDto.builder()
                     .message("Cell could not be parsed as JSON for OBJECT/ARRAY field")
                     .code(ValidationWarningCode.UNKNOWN)
                     .build());
         }
-        if (hasDuplicateTurnIndex(run)) {
+        if (assembly.duplicateTurnIndex()) {
             valid = false;
             merged.add(ValidationWarningDto.builder()
                     .fieldName(TURN_INDEX_HEADER)
-                    .message("Duplicate turnIndex within multi-turn case '"
-                            + run.get(0).testCaseName() + "'")
-                    .code(ValidationWarningCode.ADDITIONAL)
+                    .message("Duplicate turnIndex within multi-turn case '" + testCase.testCaseName() + "'")
+                    .code(ValidationWarningCode.INVALID_INPUT)
                     .build());
         }
         ValidationResult combined =
                 ValidationResult.builder().valid(valid).warnings(merged).build();
-        collectWarnings(combined, run.get(0).rowNumber(), warnings);
+        collectWarnings(combined, testCase.firstRowNumber(), warnings);
         return combined;
     }
 
@@ -508,34 +525,83 @@ public class CsvImportService {
         }
     }
 
-    /** Orders a multi-turn run by its turnIndex ordering hint (nulls last, stable by CSV row order). */
-    private List<ParsedRow> orderTurns(List<ParsedRow> run) {
-        List<ParsedRow> ordered = new ArrayList<>(run);
-        ordered.sort(Comparator.comparingInt((ParsedRow r) -> r.turnIndex() == null ? Integer.MAX_VALUE : r.turnIndex())
-                .thenComparingInt(ParsedRow::rowNumber));
-        return ordered;
-    }
-
-    private boolean hasDuplicateTurnIndex(List<ParsedRow> run) {
-        Set<Integer> seen = new HashSet<>();
-        for (ParsedRow r : run) {
-            if (r.turnIndex() != null && !seen.add(r.turnIndex())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private TestCase toMultiTurnEntity(
             String testCaseName, UUID datasetId, MultiTurnAssembly assembly, ValidationResult vr) {
         return TestCase.builder()
                 .datasetId(datasetId)
                 .testCaseName(testCaseName)
                 .data(warningsSerializer.serializeMap(assembly.sharedData()))
-                .multiTurnData(warningsSerializer.serializeTurns(assembly.perTurnMaps()))
+                .multiTurnData(turnsCsvSerializer.serializeTurns(assembly.perTurnMaps()))
                 .valid(vr.isValid())
                 .validationWarnings(warningsSerializer.serializeWarnings(vr.getWarnings()))
                 .build();
+    }
+
+    // -------------------------------------------------------------------------
+    // Preview test case processing — mirrors processTestCase's assembly/validation, minus persistence
+    // -------------------------------------------------------------------------
+
+    /**
+     * Previews one completed contiguous group of rows exactly as {@link #processTestCase} would import it:
+     * a single-turn group of K rows assembles into K sample test cases (one name occurrence each); a
+     * multi-turn group assembles into one sample test case (one name occurrence for the whole group)
+     * carrying its {@code multiTurnData}. Returns the number of test cases this group assembles into, for
+     * the response's {@code totalTestCases}. Registers one occurrence per assembled case for both
+     * within-CSV duplicate detection and cross-import collision detection ({@link #addCollisionWarnings})
+     * — the same "one group can assemble into several test cases" rule import's counters use.
+     */
+    private int handlePreviewCase(
+            CsvTestCase testCase,
+            UUID datasetId,
+            List<FieldDefinitionDto> validationSchema,
+            CsvConflictStrategy conflictStrategy,
+            LinkedHashSet<String> seenNames,
+            List<NameOccurrence> occurrences,
+            List<CsvImportWarningDto> warnings,
+            List<TestCaseResponseDto> sampleRows) {
+        if (!testCase.multiTurn()) {
+            for (ParsedCsvRow row : testCase.rows()) {
+                registerOccurrence(
+                        row.testCaseName(), row.rowNumber(), seenNames, occurrences, warnings, conflictStrategy);
+                ValidationResult vr = testCaseValidationService.validateTestCase(
+                        row.data(), validationSchema, null, List.of(), false, datasetId);
+                ValidationResult combined = combineWithJsonParseErrors(vr, row);
+                collectWarnings(combined, row.rowNumber(), warnings);
+                if (sampleRows.size() < SAMPLE_ROWS_LIMIT) {
+                    sampleRows.add(toResponseDto(row, combined));
+                }
+            }
+            return testCase.rows().size();
+        }
+
+        registerOccurrence(
+                testCase.testCaseName(), testCase.firstRowNumber(), seenNames, occurrences, warnings, conflictStrategy);
+        addNonContiguousWarningIfNeeded(testCase, warnings);
+        MultiTurnAssembly assembly = multiTurnRunAssembler.assemble(testCase, validationSchema);
+        ValidationResult combined =
+                validateTestCaseAsMultiTurn(testCase, assembly, datasetId, validationSchema, warnings);
+        if (sampleRows.size() < SAMPLE_ROWS_LIMIT) {
+            sampleRows.add(toMultiTurnResponseDto(testCase.testCaseName(), assembly, combined));
+        }
+        return 1;
+    }
+
+    /**
+     * Registers one assembled-case name occurrence and, on a repeat (case-insensitive), emits the
+     * within-CSV duplicate warning — the same check whether the occurrence came from a single-turn row or a
+     * whole multi-turn test case.
+     */
+    private void registerOccurrence(
+            String name,
+            int rowNumber,
+            LinkedHashSet<String> seenNames,
+            List<NameOccurrence> occurrences,
+            List<CsvImportWarningDto> warnings,
+            CsvConflictStrategy conflictStrategy) {
+        occurrences.add(new NameOccurrence(name, rowNumber));
+        if (!seenNames.add(name.toLowerCase())) {
+            warnings.add(buildWithinCsvDupWarning(rowNumber, name, conflictStrategy));
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -557,82 +623,24 @@ public class CsvImportService {
             CsvImportMode mode,
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
-            List<FieldDefinitionDto> testCaseSchema) {
+            List<FieldDefinitionDto> testCaseSchema,
+            Set<String> multiTurnColumns) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
-            // OVERRIDE rebuilds field defs from CSV columns (types inferred later) and so loses field scope;
-            // scope (perTurn) is a persistent dataset-schema property, so re-apply it by field name. MERGE
-            // and APPEND already carry the existing schema's fields (with their perTurn) through unchanged.
-            return applyScopeFromDataset(buildSchemaFromBindings(bindings), testCaseSchema);
+            // Types are unknown until inference completes. A declared field still carries perTurn forward
+            // from testCaseSchema by field name (declared scope is a persistent dataset-schema property a
+            // CSV never expresses). An undeclared column gets the D2 pre-stream over-approximation:
+            // multiTurnColumns is every data-bound column name, so it is treated as per-turn during
+            // streaming — harmless for single-turn cases (their validation never consults scope), and
+            // correct for multi-turn cases, for which per-turn is the desired answer anyway.
+            return schemaFieldBuilder.buildFromBindings(bindings, null, testCaseSchema, multiTurnColumns);
         }
         if (mode == CsvImportMode.MERGE) {
-            return mergeSchemaWithBindings(testCaseSchema, bindings);
+            List<FieldDefinitionDto> merged = new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
+            merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, null, multiTurnColumns));
+            return merged;
         }
         // APPEND + non-empty schema: use existing schema as-is
         return testCaseSchema != null ? testCaseSchema : List.of();
-    }
-
-    /**
-     * Copies each field's {@code perTurn} scope from the dataset's current schema onto a freshly-built
-     * validation schema (matched by name). Only the OVERRIDE/empty path uses this — its field defs are new
-     * objects, so mutating them is safe; MERGE/APPEND carry the dataset schema's own objects through.
-     */
-    private List<FieldDefinitionDto> applyScopeFromDataset(
-            List<FieldDefinitionDto> schema, List<FieldDefinitionDto> datasetSchema) {
-        if (datasetSchema == null || datasetSchema.isEmpty()) {
-            return schema;
-        }
-        Map<String, Boolean> scopeByName = new LinkedHashMap<>();
-        for (FieldDefinitionDto f : datasetSchema) {
-            if (f != null && f.getName() != null) {
-                scopeByName.put(f.getName(), f.getPerTurn());
-            }
-        }
-        for (FieldDefinitionDto f : schema) {
-            if (f != null && f.getName() != null && scopeByName.containsKey(f.getName())) {
-                f.setPerTurn(scopeByName.get(f.getName()));
-            }
-        }
-        return schema;
-    }
-
-    private List<FieldDefinitionDto> buildSchemaFromBindings(List<ColumnBinding> bindings) {
-        List<FieldDefinitionDto> schema = new ArrayList<>();
-        for (ColumnBinding b : bindings) {
-            if (!"data".equals(b.mappedTo())) {
-                continue;
-            }
-            // type=null: actual types are unknown during inline import/preview;
-            // inference determines them later and the fixup pass corrects data
-            schema.add(FieldDefinitionDto.builder()
-                    .name(b.fieldName())
-                    .type(null)
-                    .required(false)
-                    .build());
-        }
-        return schema;
-    }
-
-    private List<FieldDefinitionDto> mergeSchemaWithBindings(
-            List<FieldDefinitionDto> existingSchema, List<ColumnBinding> bindings) {
-        List<FieldDefinitionDto> merged = new ArrayList<>(existingSchema != null ? existingSchema : List.of());
-        Set<String> existingNames = new LinkedHashSet<>();
-        for (FieldDefinitionDto f : merged) {
-            if (f != null && f.getName() != null) {
-                existingNames.add(f.getName());
-            }
-        }
-        for (ColumnBinding b : bindings) {
-            if (!"data".equals(b.mappedTo()) || existingNames.contains(b.fieldName())) {
-                continue;
-            }
-            // type=null: new column type unknown until inference completes
-            merged.add(FieldDefinitionDto.builder()
-                    .name(b.fieldName())
-                    .type(null)
-                    .required(false)
-                    .build());
-        }
-        return merged;
     }
 
     // -------------------------------------------------------------------------
@@ -649,31 +657,24 @@ public class CsvImportService {
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
-            Map<String, SchemaFieldType> inferredTypes) {
+            Map<String, SchemaFieldType> inferredTypes,
+            Set<String> multiTurnColumns) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
             // Build full auto-detected schema from inferred types (OVERRIDE, APPEND+empty, MERGE+empty)
-            List<FieldDefinitionDto> newSchema = buildSchemaFromInferred(bindings, inferredTypes);
+            List<FieldDefinitionDto> newSchema =
+                    schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
             String schemaJson = serializeSchema(newSchema);
             datasetRepository.updateTestCaseSchema(datasetId, schemaJson);
             return true;
         }
         if (mode == CsvImportMode.MERGE && !inferredTypes.isEmpty()) {
-            // Merge: add only new fields (those in inferredTypes not already in existing schema)
-            Map<String, SchemaFieldType> existingTypes = getFieldTypes(testCaseSchema);
-            List<FieldDefinitionDto> mergedSchema =
-                    new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
-            boolean anyNew = false;
-            for (Map.Entry<String, SchemaFieldType> entry : inferredTypes.entrySet()) {
-                if (!existingTypes.containsKey(entry.getKey())) {
-                    mergedSchema.add(FieldDefinitionDto.builder()
-                            .name(entry.getKey())
-                            .type(entry.getValue())
-                            .required(false)
-                            .build());
-                    anyNew = true;
-                }
-            }
-            if (anyNew) {
+            // Merge: add only new fields (those not already in the existing schema)
+            List<FieldDefinitionDto> delta =
+                    schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns);
+            if (!delta.isEmpty()) {
+                List<FieldDefinitionDto> mergedSchema =
+                        new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
+                mergedSchema.addAll(delta);
                 String schemaJson = serializeSchema(mergedSchema);
                 datasetRepository.updateTestCaseSchema(datasetId, schemaJson);
                 return true;
@@ -681,23 +682,6 @@ public class CsvImportService {
         }
         // APPEND with existing schema: no schema update
         return false;
-    }
-
-    private List<FieldDefinitionDto> buildSchemaFromInferred(
-            List<ColumnBinding> bindings, Map<String, SchemaFieldType> inferredTypes) {
-        List<FieldDefinitionDto> schema = new ArrayList<>();
-        for (ColumnBinding b : bindings) {
-            if (!"data".equals(b.mappedTo())) {
-                continue;
-            }
-            SchemaFieldType type = inferredTypes.getOrDefault(b.fieldName(), SchemaFieldType.STRING);
-            schema.add(FieldDefinitionDto.builder()
-                    .name(b.fieldName())
-                    .type(type)
-                    .required(false)
-                    .build());
-        }
-        return schema;
     }
 
     private String serializeSchema(List<FieldDefinitionDto> schema) {
@@ -745,28 +729,25 @@ public class CsvImportService {
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
-            Map<String, SchemaFieldType> inferredTypes) {
+            Map<String, SchemaFieldType> inferredTypes,
+            Set<String> multiTurnColumns) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
-            return buildSchemaFromInferred(bindings, inferredTypes);
+            return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
         }
         // MERGE + non-empty schema: existing schema + new fields from inferredTypes
-        Map<String, SchemaFieldType> existingTypes = getFieldTypes(testCaseSchema);
         List<FieldDefinitionDto> merged = new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
-        for (Map.Entry<String, SchemaFieldType> entry : inferredTypes.entrySet()) {
-            if (!existingTypes.containsKey(entry.getKey())) {
-                merged.add(FieldDefinitionDto.builder()
-                        .name(entry.getKey())
-                        .type(entry.getValue())
-                        .required(false)
-                        .build());
-            }
-        }
+        merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns));
         return merged;
     }
 
     /**
      * Re-reads all test cases for the dataset in batches, coerces changed columns to match
      * the newly determined schema types, re-validates, and batch-updates changed rows.
+     *
+     * <p>Branches on the row's <b>raw stored</b> {@code multi_turn_data} column being non-blank — not on
+     * whether it deserializes — so a case whose turns cannot be read is routed to {@link
+     * #fixupMultiTurnCase} rather than silently treated as single-turn (which would overwrite it with a
+     * {@code null} turn array and destroy every turn).
      */
     private void fixupTestCases(
             UUID datasetId,
@@ -784,36 +765,11 @@ public class CsvImportService {
 
             List<TestCase> toUpdate = new ArrayList<>();
             for (TestCase tc : batch) {
-                Map<String, Object> data = deserializeData(tc.getData());
-                String originalDataJson = tc.getData();
-                boolean dataChanged = false;
-
-                for (String col : changedColumns) {
-                    Object value = data.get(col);
-                    if (value == null) {
-                        continue;
-                    }
-                    SchemaFieldType targetType = inferredTypes.get(col);
-                    if (targetType == null) {
-                        continue;
-                    }
-                    Object coerced = schemaTypeCoercer.coerce(value, targetType);
-                    if (!coerced.equals(value)) {
-                        data.put(col, coerced);
-                        dataChanged = true;
-                    }
-                }
-
-                if (dataChanged) {
-                    String newDataJson = warningsSerializer.serializeMap(data);
-                    if (!newDataJson.equals(originalDataJson)) {
-                        ValidationResult vr = testCaseValidationService.validateTestCase(
-                                data, finalSchema, null, List.of(), false, datasetId);
-                        tc.setData(newDataJson);
-                        tc.setValid(vr.isValid());
-                        tc.setValidationWarnings(warningsSerializer.serializeWarnings(vr.getWarnings()));
-                        toUpdate.add(tc);
-                    }
+                String rawTurns = tc.getMultiTurnData();
+                if (rawTurns != null && !rawTurns.isBlank()) {
+                    fixupMultiTurnCase(datasetId, tc, rawTurns, changedColumns, inferredTypes, finalSchema, toUpdate);
+                } else {
+                    fixupSingleTurnCase(datasetId, tc, changedColumns, inferredTypes, finalSchema, toUpdate);
                 }
             }
 
@@ -823,6 +779,145 @@ public class CsvImportService {
 
             offset += batch.size();
         }
+    }
+
+    /**
+     * Single-turn fixup: coercion/re-validation logic unchanged from before the multi-turn branch was
+     * added. Per design D8, the durable-warning merger is applied to every recomputation pass, not only
+     * the multi-turn one — a single-turn case never carries a stored {@code INVALID_INPUT} warning
+     * today, so this is a no-op ({@code warningsSerializer.serializeWarnings} returns {@code "[]"} for
+     * both {@code null} and an empty list, matching what was written before), but stating the rule once
+     * and applying it everywhere is the point: a future path must not be able to quietly skip it the way
+     * {@code buildSchemaFromInferred} quietly skipped {@code perTurn} carry-forward.
+     */
+    private void fixupSingleTurnCase(
+            UUID datasetId,
+            TestCase tc,
+            Set<String> changedColumns,
+            Map<String, SchemaFieldType> inferredTypes,
+            List<FieldDefinitionDto> finalSchema,
+            List<TestCase> toUpdate) {
+        Map<String, Object> data = deserializeData(tc.getData());
+        String originalDataJson = tc.getData();
+
+        if (!coerceColumns(data, changedColumns, inferredTypes)) {
+            return;
+        }
+
+        String newDataJson = warningsSerializer.serializeMap(data);
+        if (newDataJson.equals(originalDataJson)) {
+            return;
+        }
+
+        ValidationResult vr =
+                testCaseValidationService.validateTestCase(data, finalSchema, null, List.of(), false, datasetId);
+        ValidationResult merged = durableWarningMerger.merge(vr, tc.getValidationWarnings());
+        tc.setData(newDataJson);
+        tc.setValid(merged.isValid());
+        tc.setValidationWarnings(warningsSerializer.serializeWarnings(merged.getWarnings()));
+        toUpdate.add(tc);
+    }
+
+    /**
+     * Multi-turn fixup (design D6): coerces changed columns inside shared {@code data} as well as inside
+     * every turn map, re-validates via {@link TestCaseValidationService#validateMultiTurn} against the
+     * <b>full</b> schema (it splits by scope internally), and carries forward any stored durable
+     * ({@code INVALID_INPUT}) warning via {@link DurableWarningMerger} before writing (design D8) — a
+     * plain recomputation would otherwise erase the import's own conflict verdict.
+     *
+     * <p>The row's raw {@code multi_turn_data} is read with {@link
+     * TestCaseTurnsCsvSerializer#deserializeTurnsStrict}, which throws on unreadable JSON instead of
+     * collapsing it to {@code null} the way the lenient {@code deserializeTurns} does. A row whose turns
+     * cannot be read is skipped entirely — never added to {@code toUpdate} — because writing {@code null}
+     * back would convert the case to single-turn and destroy every turn: a worse version of the bug this
+     * pass exists to fix.
+     */
+    private void fixupMultiTurnCase(
+            UUID datasetId,
+            TestCase tc,
+            String rawTurns,
+            Set<String> changedColumns,
+            Map<String, SchemaFieldType> inferredTypes,
+            List<FieldDefinitionDto> finalSchema,
+            List<TestCase> toUpdate) {
+        List<Map<String, Object>> turns;
+        try {
+            turns = turnsCsvSerializer.deserializeTurnsStrict(rawTurns);
+        } catch (JacksonException e) {
+            log.warn(
+                    "Skipping test case {} during CSV import fixup: stored multi_turn_data is unreadable, "
+                            + "leaving it untouched to avoid destroying its turns: {}",
+                    tc.getId(),
+                    e.getMessage(),
+                    e);
+            return;
+        }
+
+        if (turns == null) {
+            // The raw column is non-blank but parses to the JSON literal `null` (deserializeTurnsStrict
+            // returns null for this input, same as for an absent column). Re-serializing an empty list here
+            // would silently overwrite it with "[]" — a shape change this pass must not make — so fall back
+            // to the single-turn path, which leaves tc.getMultiTurnData() untouched and writes it back
+            // verbatim via batchUpdate.
+            fixupSingleTurnCase(datasetId, tc, changedColumns, inferredTypes, finalSchema, toUpdate);
+            return;
+        }
+
+        Map<String, Object> sharedData = deserializeData(tc.getData());
+        String originalDataJson = tc.getData();
+
+        boolean changed = coerceColumns(sharedData, changedColumns, inferredTypes);
+        for (Map<String, Object> turn : turns) {
+            if (turn != null && coerceColumns(turn, changedColumns, inferredTypes)) {
+                changed = true;
+            }
+        }
+
+        if (!changed) {
+            return;
+        }
+
+        String newDataJson = warningsSerializer.serializeMap(sharedData);
+        String newTurnsJson = turnsCsvSerializer.serializeTurns(turns);
+        if (newDataJson.equals(originalDataJson) && rawTurns.equals(newTurnsJson)) {
+            return;
+        }
+
+        ValidationResult recomputed = testCaseValidationService.validateMultiTurn(
+                sharedData, turns, finalSchema, null, List.of(), false, datasetId);
+        ValidationResult merged = durableWarningMerger.merge(recomputed, tc.getValidationWarnings());
+
+        tc.setData(newDataJson);
+        tc.setMultiTurnData(newTurnsJson);
+        tc.setValid(merged.isValid());
+        tc.setValidationWarnings(warningsSerializer.serializeWarnings(merged.getWarnings()));
+        toUpdate.add(tc);
+    }
+
+    /**
+     * Coerces every {@code changedColumns} entry present in {@code data} to its newly inferred type,
+     * mutating {@code data} in place. Shared by the single-turn path (on {@code data}) and the multi-turn
+     * path (on shared {@code data} and on each turn map). Returns whether anything actually changed.
+     */
+    private boolean coerceColumns(
+            Map<String, Object> data, Set<String> changedColumns, Map<String, SchemaFieldType> inferredTypes) {
+        boolean changed = false;
+        for (String col : changedColumns) {
+            Object value = data.get(col);
+            if (value == null) {
+                continue;
+            }
+            SchemaFieldType targetType = inferredTypes.get(col);
+            if (targetType == null) {
+                continue;
+            }
+            Object coerced = schemaTypeCoercer.coerce(value, targetType);
+            if (!coerced.equals(value)) {
+                data.put(col, coerced);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     @SuppressWarnings("unchecked")
@@ -849,7 +944,7 @@ public class CsvImportService {
             CSVRecord record, List<ColumnBinding> bindings, Map<String, SchemaFieldType> inferredTypes) {
         for (int i = 0; i < bindings.size() && i < record.size(); i++) {
             ColumnBinding b = bindings.get(i);
-            if (!"data".equals(b.mappedTo())) {
+            if (!ColumnBinding.MAPPED_TO_DATA.equals(b.mappedTo())) {
                 continue;
             }
             String raw = record.get(i);
@@ -876,7 +971,7 @@ public class CsvImportService {
             Map<String, SchemaFieldType> inferredTypes) {
         for (int i = 0; i < bindings.size() && i < record.size(); i++) {
             ColumnBinding b = bindings.get(i);
-            if (!"data".equals(b.mappedTo()) || fieldTypes.containsKey(b.fieldName())) {
+            if (!ColumnBinding.MAPPED_TO_DATA.equals(b.mappedTo()) || fieldTypes.containsKey(b.fieldName())) {
                 continue;
             }
             String raw = record.get(i);
@@ -901,17 +996,23 @@ public class CsvImportService {
     // Preview collision detection helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * Annotates the first CSV occurrence of each assembled-case name that collides with an existing test
+     * case in the dataset (APPEND/MERGE cross-import collision). Consumes {@code (caseName, rowNumber)}
+     * pairs keyed on the assembled test case — one per multi-turn test case, one per single-turn row —
+     * rather than a parallel per-row name list, so a colliding multi-turn case is annotated once, at its
+     * test case's first row number.
+     */
     private void addCollisionWarnings(
             UUID datasetId,
-            List<String> allCsvNames,
-            LinkedHashSet<String> seenInCsv,
+            List<NameOccurrence> occurrences,
             List<CsvImportWarningDto> warnings,
             CsvConflictStrategy conflictStrategy) {
         // Collect unique lower-case names that aren't within-CSV dups (first occurrence only)
         List<String> lowerNames = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
-        for (String name : allCsvNames) {
-            String lower = name.toLowerCase();
+        for (NameOccurrence occurrence : occurrences) {
+            String lower = occurrence.name().toLowerCase();
             if (seen.add(lower)) {
                 lowerNames.add(lower);
             }
@@ -929,20 +1030,18 @@ public class CsvImportService {
         for (String name : existingNames) {
             existingLower.add(name.toLowerCase());
         }
-        // Walk through CSV rows in order and annotate first collision per name
+        // Walk through the occurrences in order and annotate the first collision per name
         Set<String> annotated = new LinkedHashSet<>();
-        int rowNum = 2; // header is row 1
-        for (String name : allCsvNames) {
-            String lower = name.toLowerCase();
+        for (NameOccurrence occurrence : occurrences) {
+            String lower = occurrence.name().toLowerCase();
             if (existingLower.contains(lower) && annotated.add(lower)) {
-                String msg = buildCollisionWarningMessage(name, conflictStrategy);
+                String msg = buildCollisionWarningMessage(occurrence.name(), conflictStrategy);
                 warnings.add(CsvImportWarningDto.builder()
-                        .rowNumber(rowNum)
+                        .rowNumber(occurrence.rowNumber())
                         .columnName(TEST_CASE_NAME_HEADER)
                         .message(msg)
                         .build());
             }
-            rowNum++;
         }
     }
 
@@ -978,30 +1077,20 @@ public class CsvImportService {
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
-            Map<String, SchemaFieldType> inferredTypes) {
+            Map<String, SchemaFieldType> inferredTypes,
+            Set<String> multiTurnColumns) {
         if (mode == CsvImportMode.OVERRIDE) {
             // Always return full auto-detected schema
-            return buildSchemaFromInferred(bindings, inferredTypes);
+            return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
         } else if (mode == CsvImportMode.APPEND) {
             if (schemaEmpty) {
-                return buildSchemaFromInferred(bindings, inferredTypes);
+                return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
             }
             return null;
         } else if (mode == CsvImportMode.MERGE) {
             // Return only delta fields (new columns not in existing schema)
-            Map<String, SchemaFieldType> existingTypes = getFieldTypes(testCaseSchema);
-            List<FieldDefinitionDto> delta = new ArrayList<>();
-            for (ColumnBinding b : bindings) {
-                if (!"data".equals(b.mappedTo()) || existingTypes.containsKey(b.fieldName())) {
-                    continue;
-                }
-                SchemaFieldType type = inferredTypes.getOrDefault(b.fieldName(), SchemaFieldType.STRING);
-                delta.add(FieldDefinitionDto.builder()
-                        .name(b.fieldName())
-                        .type(type)
-                        .required(false)
-                        .build());
-            }
+            List<FieldDefinitionDto> delta =
+                    schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns);
             return delta.isEmpty() ? null : delta;
         }
         return null;
@@ -1054,18 +1143,34 @@ public class CsvImportService {
             String mappedTo;
             String fieldName;
             if (TEST_CASE_NAME_HEADER.equalsIgnoreCase(header)) {
-                mappedTo = "testCaseName";
-                fieldName = "testCaseName";
+                mappedTo = ColumnBinding.MAPPED_TO_TEST_CASE_NAME;
+                fieldName = ColumnBinding.MAPPED_TO_TEST_CASE_NAME;
             } else if (TURN_INDEX_HEADER.equalsIgnoreCase(header)) {
-                mappedTo = "turnIndex";
-                fieldName = "turnIndex";
+                mappedTo = ColumnBinding.MAPPED_TO_TURN_INDEX;
+                fieldName = ColumnBinding.MAPPED_TO_TURN_INDEX;
             } else {
-                mappedTo = "data";
+                mappedTo = ColumnBinding.MAPPED_TO_DATA;
                 fieldName = header;
             }
             bindings.add(new ColumnBinding(header, mappedTo, fieldName));
         }
         return bindings;
+    }
+
+    /**
+     * Collects every data-bound (MAPPED_TO_DATA) field name from {@code bindings} — the multi-turn scope
+     * over-approximation (design D2) used to build the pre-stream validation schema, and the exact
+     * membership set (design D3) used to build every post-stream schema when the file contains at least
+     * one multi-turn case.
+     */
+    private static Set<String> allDataFieldNames(List<ColumnBinding> bindings) {
+        Set<String> names = new LinkedHashSet<>();
+        for (ColumnBinding binding : bindings) {
+            if (ColumnBinding.MAPPED_TO_DATA.equals(binding.mappedTo())) {
+                names.add(binding.fieldName());
+            }
+        }
+        return names;
     }
 
     /**
@@ -1088,7 +1193,7 @@ public class CsvImportService {
         for (int i = 0; i < headers.size(); i++) {
             ColumnBinding b = bindings.get(i);
             String inferredType;
-            if ("data".equals(b.mappedTo())) {
+            if (ColumnBinding.MAPPED_TO_DATA.equals(b.mappedTo())) {
                 SchemaFieldType schemaType = fieldTypes.get(b.fieldName());
                 if (schemaType != null) {
                     inferredType = schemaType.name();
@@ -1126,12 +1231,12 @@ public class CsvImportService {
     }
 
     /**
-     * Parses a CSV record into a ParsedRow using the column bindings.
+     * Parses a CSV record into a ParsedCsvRow using the column bindings.
      * All non-reserved columns go into the single "data" map.
      * For OBJECT/ARRAY schema fields, attempts JSON parsing.
      * When mode==APPEND and schema is non-empty: unknown columns (not in fieldTypes) are discarded.
      */
-    private ParsedRow parseRow(
+    private ParsedCsvRow parseRow(
             CSVRecord record,
             List<ColumnBinding> bindings,
             int rowNumber,
@@ -1151,9 +1256,9 @@ public class CsvImportService {
             Object value = csvCellParser.parseCell(raw);
 
             switch (b.mappedTo()) {
-                case "testCaseName" -> testCaseName = value != null ? value.toString() : null;
-                case "turnIndex" -> turnIndex = parseTurnIndex(raw);
-                case "data" -> {
+                case ColumnBinding.MAPPED_TO_TEST_CASE_NAME -> testCaseName = value != null ? value.toString() : null;
+                case ColumnBinding.MAPPED_TO_TURN_INDEX -> turnIndex = parseTurnIndex(raw);
+                case ColumnBinding.MAPPED_TO_DATA -> {
                     if (b.fieldName() != null && !b.fieldName().isBlank()) {
                         // APPEND + non-empty schema: discard unknown columns
                         if (mode == CsvImportMode.APPEND && !schemaEmpty && !fieldTypes.containsKey(b.fieldName())) {
@@ -1189,7 +1294,7 @@ public class CsvImportService {
             testCaseName = String.format("Row %0" + padWidth + "d", dataRowIndex);
         }
 
-        return new ParsedRow(rowNumber, testCaseName, turnIndex, data, hasJsonParseErrors);
+        return new ParsedCsvRow(rowNumber, testCaseName, turnIndex, data, hasJsonParseErrors);
     }
 
     /** Parses the reserved {@code turnIndex} ordering hint; blank → null (single-turn), non-int → null. */
@@ -1236,7 +1341,7 @@ public class CsvImportService {
         }
     }
 
-    private static ValidationResult combineWithJsonParseErrors(ValidationResult vr, ParsedRow row) {
+    private static ValidationResult combineWithJsonParseErrors(ValidationResult vr, ParsedCsvRow row) {
         boolean valid = vr.isValid() && !row.hasJsonParseErrors();
         List<ValidationWarningDto> warnings = new ArrayList<>(vr.getWarnings() != null ? vr.getWarnings() : List.of());
         if (row.hasJsonParseErrors()) {
@@ -1304,7 +1409,7 @@ public class CsvImportService {
     // Conversion helpers
     // -------------------------------------------------------------------------
 
-    private TestCaseResponseDto toResponseDto(ParsedRow row, ValidationResult vr) {
+    private TestCaseResponseDto toResponseDto(ParsedCsvRow row, ValidationResult vr) {
         return TestCaseResponseDto.builder()
                 .id(null)
                 .testCaseName(row.testCaseName())
@@ -1316,7 +1421,7 @@ public class CsvImportService {
                 .build();
     }
 
-    private TestCase toEntity(ParsedRow row, UUID datasetId, ValidationResult vr) {
+    private TestCase toEntity(ParsedCsvRow row, UUID datasetId, ValidationResult vr) {
         return TestCase.builder()
                 .datasetId(datasetId)
                 .testCaseName(row.testCaseName())
@@ -1326,18 +1431,27 @@ public class CsvImportService {
                 .build();
     }
 
+    /** Preview's sample-row counterpart to {@link #toMultiTurnEntity}: an assembled case, not persisted. */
+    private TestCaseResponseDto toMultiTurnResponseDto(
+            String testCaseName, MultiTurnAssembly assembly, ValidationResult vr) {
+        return TestCaseResponseDto.builder()
+                .id(null)
+                .testCaseName(testCaseName)
+                .data(assembly.sharedData())
+                .multiTurnData(assembly.perTurnMaps())
+                .valid(vr.isValid())
+                .validationWarnings(vr.getWarnings())
+                .createdAt(null)
+                .updatedAt(null)
+                .build();
+    }
+
     // -------------------------------------------------------------------------
     // Records
     // -------------------------------------------------------------------------
 
-    private record ColumnBinding(String headerName, String mappedTo, String fieldName) {}
-
-    private record ParsedRow(
-            int rowNumber,
-            String testCaseName,
-            Integer turnIndex,
-            Map<String, Object> data,
-            boolean hasJsonParseErrors) {}
-
     private record InsertResult(int validCount, int invalidCount, int skippedCount, int overriddenCount) {}
+
+    /** One registered assembled-case name occurrence: the case's name and its first CSV row number. */
+    private record NameOccurrence(String name, int rowNumber) {}
 }

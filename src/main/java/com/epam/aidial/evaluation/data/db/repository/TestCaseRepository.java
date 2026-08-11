@@ -76,6 +76,23 @@ public interface TestCaseRepository {
     int updateDataIfUnchanged(UUID id, UUID datasetId, String dataJson, long expectedUpdatedAt, long newUpdatedAt);
 
     /**
+     * Updates the {@code data} and {@code multi_turn_data} JSONB columns together, only when the row's
+     * current {@code updated_at_ms} matches {@code expectedUpdatedAt}. Sibling of {@link
+     * #updateDataIfUnchanged} for the multi-turn revalidation path, which coerces both the shared data and
+     * each turn's data and must persist them under one guard so a concurrent edit skips both writes
+     * together rather than applying one and losing the other.
+     *
+     * @return 1 if the row was updated, 0 if the precondition failed (concurrent edit)
+     */
+    int updateDataAndTurnsIfUnchanged(
+            UUID id,
+            UUID datasetId,
+            String dataJson,
+            String multiTurnDataJson,
+            long expectedUpdatedAt,
+            long newUpdatedAt);
+
+    /**
      * Updates {@code is_valid} and {@code validation_warnings} only when the row's current
      * {@code updated_at_ms} matches {@code expectedUpdatedAt}. Mirrors {@link #updateDataIfUnchanged}.
      *
@@ -131,7 +148,15 @@ public interface TestCaseRepository {
 
     /**
      * Removes the given field keys from the {@code data} JSONB column of all test cases
-     * belonging to the specified dataset.
+     * belonging to the specified dataset, and from every element of {@code multi_turn_data} as well
+     * — but only when {@code multi_turn_data} is genuinely a JSONB array of objects, the sole shape
+     * the prune is defined for. Any other stored shape (SQL NULL, the JSONB scalar {@code null}, a
+     * non-array scalar, or an array containing a non-object element) is left byte-identical rather
+     * than touched, so a field removed from a dataset schema does not linger as an orphan per-turn
+     * key that multi-turn revalidation would otherwise report as unknown, without risking the
+     * destructive shape changes (an unreadable row failing the whole statement, or an empty array
+     * collapsing to SQL NULL and silently converting a multi-turn case to single-turn) that a naive
+     * {@code IS NOT NULL} guard would allow.
      */
     void removeDataFields(UUID datasetId, Collection<String> fieldNames);
 

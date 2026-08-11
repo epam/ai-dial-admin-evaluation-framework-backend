@@ -14,7 +14,7 @@ spring:
 eval:
   source:
     base-url: ${EVAL_SOURCE_BASE_URL:http://localhost:8080}
-    token: ${EVAL_TOKEN:}
+    api-key: ${EVAL_SOURCE_API_KEY:}
     connect-timeout-ms: ${EVAL_SOURCE_CONNECT_TIMEOUT_MS:5000}
     read-timeout-ms: ${EVAL_SOURCE_READ_TIMEOUT_MS:120000}
 

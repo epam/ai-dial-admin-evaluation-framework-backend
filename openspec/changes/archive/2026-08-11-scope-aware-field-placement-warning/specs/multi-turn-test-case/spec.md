@@ -36,14 +36,14 @@ Status: **Implemented**
 
 #### Scenario: Per-turn field re-scoped to shared reports a misplacement
 - **WHEN** a dataset schema field declared `perTurn: true` is changed to shared while stored multi-turn cases still hold that field's values inside their turn maps
-- **THEN** revalidation SHALL mark each affected case invalid with a scope-misplacement warning per offending turn, stating that the field is shared (test-case-level) and must be provided in `data`, not a turn
+- **THEN** revalidation SHALL mark each affected case invalid with a scope-misplacement warning per offending turn, stating that the field is shared (test-case-level) but its values are specified on turn level, and directing the author to re-create the column
 - **AND** the warning SHALL carry the offending turn index and SHALL NOT be the generic unknown-field warning
 - **AND** if the field is required, it SHALL NOT additionally be reported as missing from `data`
 - **AND** the stored values SHALL NOT be moved into the shared `data` map by revalidation
 
 #### Scenario: Shared field re-scoped to per-turn reports a misplacement
 - **WHEN** a dataset schema field declared shared is changed to `perTurn: true` while stored cases still hold that field's value in their shared `data` map
-- **THEN** revalidation SHALL mark each affected case invalid with a scope-misplacement warning stating that the field is per-turn and must be provided in each `multiTurnData` turn, not in `data`
+- **THEN** revalidation SHALL mark each affected case invalid with a scope-misplacement warning stating that the field is per-turn but is currently specified on a test-case level, and directing the author to re-create the column
 - **AND** the field SHALL NOT additionally be reported as a required field missing from any turn
 
 #### Scenario: Misplacement clears once the schema or the data is fixed

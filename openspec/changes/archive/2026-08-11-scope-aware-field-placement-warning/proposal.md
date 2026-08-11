@@ -19,8 +19,8 @@ This keeps the rule from being stated twice, per the project's "one definition p
 
 `TestCaseValidationService.validateMultiTurn` calls `inspect(...)` right after `splitSchema` and validates the *stripped* buckets against sub-schemas with the misplaced fields removed. A misplaced key therefore yields exactly one warning per occurrence, naming the misplacement, worded to match the existing 400 verbatim:
 
-- shared field found in a turn → `Field 'sha' is shared (test-case-level) and must be provided in data, not a turn`
-- per-turn field found in `data` → `Field 'sha' is per-turn and must be provided in each multiTurnData turn, not in data`
+- shared field found in a turn → `Field 'sha' is shared (test-case-level) but values are specified on turn level. Re-create column for correct data attachment`
+- per-turn field found in `data` → `Field 'sha' is per-turn but currently specified on a test case level. Re-create column for correct data attachment`
 
 Both halves of that stripping are needed, and the second is the non-obvious one. Removing the key from the *map* suppresses the unknown-field warning (presence in the wrong bucket). Removing the field from the *sub-schema of the bucket it belongs to* suppresses the contradictory `Required field 'sha' is missing…` warning (absence from the right bucket) — which map-stripping alone does nothing about, since the required check iterates the sub-schema and reads the bucket map. Today a misplaced required field produces both warnings at once.
 
@@ -66,7 +66,7 @@ None. This change refines the diagnostics of existing validation behaviour.
 
 **Configuration** — none. No new property, so `docs/configuration.md` is untouched.
 
-**Docs** — `docs/database-schema.md:342` enumerates the warning codes in the `validation_warnings` JSONB example; it is already stale (missing four existing codes and the `turnIndex` field) and is brought in sync along with `INVALID_SCOPE`. `docs/patterns/multi-turn-test-cases.md` states "a misplaced field → **400**" unconditionally and must record the split (400 on write, `INVALID_SCOPE` on recomputation).
+**Docs** — `docs/database-schema.md:342` enumerates the warning codes in the `validation_warnings` JSONB example; it is already stale (missing four existing codes and the `turnIndex` field) and is brought in sync along with `INVALID_SCOPE`. `AGENTS.md`'s multi-turn inline convention states "a misplaced field → **400**" unconditionally and must record the split (400 on write, `INVALID_SCOPE` on recomputation).
 
 **Tests** — three unit tests construct the touched components directly and need the new collaborator: `MultiTurnFieldsValidatorTest.java:38`, `TestCaseValidationServiceMultiTurnTest.java:53`, `TestCaseValidationServiceTypeTest.java:44` (their assertions survive). `CsvImportModeFunctionalTests.java:730` asserts `contains("Unknown data field")` and stays green as long as the prefix is preserved.
 

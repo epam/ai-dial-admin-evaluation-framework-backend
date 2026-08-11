@@ -70,9 +70,11 @@ The FE needs to render a distinct affordance for "wrong bucket" versus "stray ke
 
 Deliberately **not** added to `DurableWarningMerger`'s preserved set (`DurableWarningMerger.java:51`, currently `INVALID_INPUT` only). `INVALID_INPUT` is preserved because it describes the *CSV rows a case was assembled from* — unrecoverable from stored state. A scope misplacement is the opposite: fully re-derivable from stored data plus the current schema, so it must clear itself the moment either is fixed.
 
-### D4 — Warning wording is the existing 400 wording, verbatim
+### D4 — One string per direction, shared by the warning and the 400
 
-`Field 'sha' is shared (test-case-level) and must be provided in data, not a turn` / `Field 'sha' is per-turn and must be provided in each multiTurnData turn, not in data`.
+`Field 'sha' is shared (test-case-level) but values are specified on turn level. Re-create column for correct data attachment` / `Field 'sha' is per-turn but currently specified on a test case level. Re-create column for correct data attachment`.
+
+Each string is defined in exactly one place in the resolver, and `requireCorrectScope` throws with the same string the warning carries — so the write-time 400 and the recomputation-time warning can never drift apart. The text itself is deliberately actionable ("Re-create column…") rather than a restatement of the rule; it replaces the terser pre-change 400 wording, which described the constraint but not the remedy. Because both surfaces read from the one definition, changing the wording is a one-line edit with exact-match test assertions pinning it.
 
 The alternative — a variant that also reports whether the misplaced turn values *differ*, matching #137's "conflicting values" phrasing — was explicitly declined by the requester. The misplacement is the cause and holds whether or not the values differ; a conflict-aware variant would add a second message shape for no change in the required user action.
 

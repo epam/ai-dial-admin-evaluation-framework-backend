@@ -52,14 +52,14 @@ Status: **Planned**
 
 #### Scenario: Shared field found inside a turn is reported as misplaced
 - **WHEN** validation processes a case whose turn *i* holds a value for a field the dataset schema declares shared
-- **THEN** the case SHALL be marked invalid with an `INVALID_SCOPE` warning stating that the field is shared (test-case-level) and must be provided in `data`, not a turn
+- **THEN** the case SHALL be marked invalid with an `INVALID_SCOPE` warning stating that the field is shared (test-case-level) but its values are specified on turn level, and directing the author to re-create the column
 - **AND** the warning SHALL carry turn index *i* and path `$.multiTurnData[<i>].<field>`
 - **AND** no unknown-field warning SHALL be emitted for that field in that turn
 - **AND** if the field is required, no "required field missing" warning SHALL be emitted against `data` for it
 
 #### Scenario: Per-turn field found in shared data is reported as misplaced
 - **WHEN** validation processes a case whose `data` map holds a value for a field the dataset schema declares per-turn
-- **THEN** the case SHALL be marked invalid with an `INVALID_SCOPE` warning stating that the field is per-turn and must be provided in each `multiTurnData` turn, not in `data`
+- **THEN** the case SHALL be marked invalid with an `INVALID_SCOPE` warning stating that the field is per-turn but is currently specified on a test-case level, and directing the author to re-create the column
 - **AND** the warning SHALL carry no turn index and path `$.data.<field>`
 - **AND** no unknown-field warning SHALL be emitted for that field against `data`
 - **AND** if the field is required, no "required field missing" warning SHALL be emitted against any turn for it

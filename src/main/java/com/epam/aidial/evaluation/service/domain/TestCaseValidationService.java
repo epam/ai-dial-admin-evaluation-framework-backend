@@ -33,6 +33,7 @@ public class TestCaseValidationService {
     private final FileRefValidator fileRefValidator;
     private final TestCaseProperties testCaseProperties;
     private final TestCaseFieldScopeResolver scopeResolver;
+    private final TestCaseDataScopeResolver dataScopeResolver;
 
     /**
      * Validates test case data against the effective template, bindings, and schema.
@@ -222,12 +223,20 @@ public class TestCaseValidationService {
 
         final TestCaseFieldScopeResolver.SchemaSplit schemaSplit = scopeResolver.splitSchema(testCaseSchema);
 
+        final TestCaseDataScopeResolver.ScopePlacement placement =
+                dataScopeResolver.inspect(sharedData, safeTurns, testCaseSchema);
+        final List<FieldDefinitionDto> sharedSchema =
+                withMisplacedRequiredCleared(schemaSplit.shared(), placement.misplacedFields());
+        final List<FieldDefinitionDto> perTurnSchema =
+                withMisplacedRequiredCleared(schemaSplit.perTurn(), placement.misplacedFields());
+
         // Shared (test-case-level) fields are validated once against the shared sub-schema; their warnings
         // carry no turn index.
         ValidationResult sharedResult = validateTestCase(
-                sharedData, schemaSplit.shared(), effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
+                placement.shared(), sharedSchema, effectiveTemplate, effectiveBindings, hasOverrides, datasetId);
 
-        List<ValidationWarningDto> warnings = new ArrayList<>(sharedResult.getWarnings());
+        List<ValidationWarningDto> warnings = new ArrayList<>(placement.warnings());
+        warnings.addAll(sharedResult.getWarnings());
 
         int maxTurns = testCaseProperties.getMultiTurn().getMaxTurns();
         if (safeTurns.size() > maxTurns) {
@@ -238,16 +247,17 @@ public class TestCaseValidationService {
                     ValidationWarningCode.ADDITIONAL));
         }
 
-        for (int i = 0; i < safeTurns.size(); i++) {
+        final List<Map<String, Object>> placementTurns = placement.turns();
+        for (int i = 0; i < placementTurns.size(); i++) {
             ValidationResult turnResult = validateTestCase(
-                    safeTurns.get(i),
-                    schemaSplit.perTurn(),
+                    placementTurns.get(i),
+                    perTurnSchema,
                     effectiveTemplate,
                     effectiveBindings,
                     hasOverrides,
                     datasetId);
             for (ValidationWarningDto w : turnResult.getWarnings()) {
-                w.setTurnIndex(i);
+                stampTurnWarning(w, i);
                 warnings.add(w);
             }
         }
@@ -263,6 +273,55 @@ public class TestCaseValidationService {
                 .valid(valid)
                 .warnings(List.copyOf(warnings))
                 .build();
+    }
+
+    /**
+     * Returns a copy of {@code schema} where every field named in {@code misplacedFields} has its {@code
+     * required} flag cleared, so the required-missing check ({@code validateTestCase}, ~line 148) does not
+     * fire for a field that was never meant to live in this bucket. The field definition itself — name,
+     * type, {@code perTurn} — is kept intact, so a value legitimately placed in this bucket under the same
+     * name is still recognized as known and still type-checked; only the misplaced occurrence's
+     * contradictory "missing" signal is neutralized. Fields not in {@code misplacedFields} are returned
+     * unchanged (same instance).
+     */
+    private static List<FieldDefinitionDto> withMisplacedRequiredCleared(
+            List<FieldDefinitionDto> schema, Set<String> misplacedFields) {
+        if (misplacedFields.isEmpty()) {
+            return schema;
+        }
+        return schema.stream()
+                .map(field -> field != null && field.getName() != null && misplacedFields.contains(field.getName())
+                        ? clearRequired(field)
+                        : field)
+                .toList();
+    }
+
+    /** Returns a copy of {@code field} with {@code required=false}; does not mutate {@code field}. */
+    private static FieldDefinitionDto clearRequired(FieldDefinitionDto field) {
+        return FieldDefinitionDto.builder()
+                .name(field.getName())
+                .displayName(field.getDisplayName())
+                .type(field.getType())
+                .required(false)
+                .description(field.getDescription())
+                .perTurn(field.getPerTurn())
+                .build();
+    }
+
+    /**
+     * Stamps a per-turn warning with its {@code turnIndex} and rewrites its {@code path} from
+     * {@code $.data.<field>} to {@code $.multiTurnData[<turnIndex>].<field>}, so the path identifies the
+     * bucket the warning came from. A warning whose path is {@code null} or does not start with
+     * {@code $.data.} (e.g. an override-binding warning at {@code $.inputBindingsOverride}) is left with
+     * its original path — it is not bucket-specific, so there is nothing to rewrite.
+     */
+    private static void stampTurnWarning(ValidationWarningDto warning, int turnIndex) {
+        warning.setTurnIndex(turnIndex);
+        final String path = warning.getPath();
+        final String dataPrefix = "$.data.";
+        if (path != null && path.startsWith(dataPrefix)) {
+            warning.setPath("$.multiTurnData[" + turnIndex + "]." + path.substring(dataPrefix.length()));
+        }
     }
 
     private void validateFileFields(

@@ -18,6 +18,8 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import java.util.List;
@@ -146,6 +148,40 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
                         .build()),
                 String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("An undeclared key inside a turn map has no scope to violate: it is accepted (2xx) with "
+            + "an unknown-field warning, not rejected with 400 (#137)")
+    void undeclaredKeyInTurnAcceptedWithWarningNotRejected() {
+        TestSuiteResponseDto suite = createChatSuite("MT undeclared key");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+
+        ResponseEntity<TestCaseResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases?includeWarnings=true"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("undeclared-1")
+                        .multiTurnData(List.of(Map.of("prompt", "hi", "unexpectedKey", "x")))
+                        .build()),
+                TestCaseResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestCaseResponseDto created = response.getBody();
+        assertThat(created).isNotNull();
+        assertThat(created.isValid()).isFalse();
+
+        List<ValidationWarningDto> warnings = created.getValidationWarnings();
+        assertThat(warnings).noneMatch(w -> w.getCode() == ValidationWarningCode.INVALID_SCOPE);
+        assertThat(warnings)
+                .filteredOn(w -> "unexpectedKey".equals(w.getFieldName()))
+                .hasSize(1)
+                .first()
+                .satisfies(w -> {
+                    assertThat(w.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+                    assertThat(w.getMessage()).isEqualTo("Unknown data field 'unexpectedKey'");
+                    assertThat(w.getPath()).isEqualTo("$.multiTurnData[0].unexpectedKey");
+                    assertThat(w.getTurnIndex()).isEqualTo(0);
+                });
     }
 
     // -------------------- Execution --------------------

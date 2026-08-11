@@ -339,7 +339,8 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
     "fieldName": "string",
     "path": "string",
     "message": "string",
-    "code": "REQUIRED|TYPE|FORMAT|PATTERN|ENUM|ADDITIONAL|UNKNOWN"
+    "code": "REQUIRED|TYPE|FORMAT|PATTERN|ENUM|ADDITIONAL|UNRESOLVED_REFERENCE|INVALID_OUTPUT_SCHEMA|REQUEST_BODY_EVALUATION_ERROR|UNKNOWN|INVALID_INPUT|INVALID_SCOPE",
+    "turnIndex": "number (optional, 0-based; multi-turn cases only)"
   }
 ]
 ```

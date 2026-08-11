@@ -7,15 +7,19 @@ import com.epam.aidial.evaluation.service.domain.DeploymentService;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentType;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ToolDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import com.epam.aidial.evaluation.web.path.WildcardPathResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class DeploymentController {
 
     private final DeploymentService deploymentService;
+    private final WildcardPathResolver wildcardPathResolver;
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
@@ -65,11 +70,14 @@ public class DeploymentController {
         return deploymentService.getAllDeployments(deploymentType, ifType);
     }
 
-    @GetMapping(value = "/{deploymentType}/{deploymentId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping(value = "/{deploymentType}/**", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Get deployment by type and ID",
             description = "Returns a single deployment. Use deploymentType 'dial-model', 'dial-application', "
-                    + "or 'dial-toolset' (kebab-case).")
+                    + "or 'dial-toolset' (kebab-case). Everything after the type segment is the deployment ID, "
+                    + "so IDs containing slashes are supported as-is "
+                    + "(e.g. /api/v1/deployments/dial-application/applications/public/my-app__0.0.1). "
+                    + "Percent-encoded characters in the ID are decoded once (e.g. %20 becomes a space).")
     @ApiResponse(
             responseCode = "200",
             description = "Deployment found",
@@ -79,7 +87,8 @@ public class DeploymentController {
                             schema = @Schema(implementation = DeploymentInfoDto.class)))
     @ApiResponse(
             responseCode = "400",
-            description = "Invalid deployment type " + "(valid values: dial-model, dial-application, dial-toolset)")
+            description = "Invalid deployment type (valid values: dial-model, dial-application, dial-toolset), "
+                    + "empty deployment ID, or malformed percent-encoding in the ID")
     @ApiResponse(responseCode = "401", description = "Unauthorized (missing or invalid token to this service)")
     @ApiResponse(responseCode = "403", description = "Forbidden (no access to this deployment in DIAL Core)")
     @ApiResponse(
@@ -90,8 +99,12 @@ public class DeploymentController {
             @Parameter(description = "Deployment type: dial-model, dial-application, or dial-toolset", required = true)
                     @PathVariable
                     String deploymentType,
-            @Parameter(description = "Deployment ID", required = true) @PathVariable String deploymentId) {
-        DeploymentType type = DeploymentType.fromValue(deploymentType);
+            HttpServletRequest request) {
+        final DeploymentType type = DeploymentType.fromValue(deploymentType);
+        final String deploymentId = wildcardPathResolver.resolveTail(request);
+        if (StringUtils.isBlank(deploymentId)) {
+            throw new ValidationException("Deployment ID must not be empty");
+        }
         return deploymentService.getDeployment(type, deploymentId);
     }
 

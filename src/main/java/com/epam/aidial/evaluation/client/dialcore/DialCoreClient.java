@@ -26,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * HTTP client for DIAL Core API. Propagates the current user's token via
- * {@link com.epam.aidial.evaluation.configuration.security.AuthorizationTokenHolder}.
+ * {@link com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder}.
  */
 @Slf4j
 @Service

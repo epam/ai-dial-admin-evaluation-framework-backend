@@ -44,7 +44,7 @@ class DialCoreClientTest {
     @DisplayName("getModels returns parsed list")
     void getModelsReturnsParsedList() {
         String json = """
-                {"data":[{"id":"m1","display_name":"Model 1","display_version":"v1","owner":"org",\
+                {"data":[{"object":"model","id":"m1","display_name":"Model 1","display_version":"v1","owner":"org",\
                 "created_at":1000,"updated_at":2000}]}
                 """;
         RequestMatcher listModels =
@@ -64,7 +64,7 @@ class DialCoreClientTest {
     @DisplayName("getApplications returns parsed list")
     void getApplicationsReturnsParsedList() {
         String json = """
-                {"data":[{"id":"a1","display_name":"App 1","owner":"org",\
+                {"data":[{"object":"application","id":"a1","display_name":"App 1","owner":"org",\
                 "created_at":1000,"updated_at":2000}]}
                 """;
         RequestMatcher listApps =
@@ -83,7 +83,7 @@ class DialCoreClientTest {
     @DisplayName("getModel returns single model")
     void getModelReturnsSingleModel() {
         String json = """
-                {"id":"gpt-5","display_name":"GPT-5","display_version":"2025","owner":"org",\
+                {"object":"model","id":"gpt-5","display_name":"GPT-5","display_version":"2025","owner":"org",\
                 "created_at":1000,"updated_at":2000}
                 """;
         RequestMatcher getModel =
@@ -102,7 +102,7 @@ class DialCoreClientTest {
     @DisplayName("getApplication returns single application")
     void getApplicationReturnsSingleApplication() {
         String json = """
-                {"id":"EntityExtractor","display_name":"Entity Extractor","owner":"org",\
+                {"object":"application","id":"EntityExtractor","display_name":"Entity Extractor","owner":"org",\
                 "created_at":1000,"updated_at":2000}
                 """;
         RequestMatcher getApp =
@@ -154,7 +154,7 @@ class DialCoreClientTest {
         server.expect(listModels).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
         server.expect(listModels).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
         String json =
-                "{\"data\":[{\"id\":\"m1\",\"display_name\":\"M1\",\"owner\":\"o\",\"created_at\":1,\"updated_at\":2}]}";
+                "{\"data\":[{\"object\":\"model\",\"id\":\"m1\",\"display_name\":\"M1\",\"owner\":\"o\",\"created_at\":1,\"updated_at\":2}]}";
         server.expect(listModels).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
 
         DialCoreModelListResponseDto response = clientWithRetry.getModels();

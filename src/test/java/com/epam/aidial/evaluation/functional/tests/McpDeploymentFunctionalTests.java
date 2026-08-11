@@ -7,7 +7,8 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
-import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreDeploymentDto;
+import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationDto;
+import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialTransport;
 import com.epam.aidial.evaluation.runner.client.mcp.McpInvocationException;
@@ -53,24 +54,24 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
     // --- 13.1 Deployment listing with type/interface filters ---
 
     @Test
-    @DisplayName("GET /deployments returns models, apps, and toolsets from unified endpoint")
+    @DisplayName("GET /deployments returns models, apps, and toolsets from unified endpoint, fully mapped")
     void getAllDeploymentsReturnsAllTypes() {
         when(dialCoreClient.getDeployments(eq(null)))
                 .thenReturn(List.of(
-                        DialCoreDeploymentDto.builder()
-                                .object("model")
+                        DialCoreModelDto.builder()
                                 .id("m1")
                                 .displayName("Model 1")
                                 .build(),
-                        DialCoreDeploymentDto.builder()
-                                .object("application")
+                        DialCoreApplicationDto.builder()
                                 .id("a1")
                                 .displayName("App 1")
                                 .build(),
-                        DialCoreDeploymentDto.builder()
-                                .object("toolset")
+                        DialCoreToolsetDto.builder()
                                 .id("t1")
                                 .displayName("Toolset 1")
+                                .displayVersion("v1")
+                                .transport(DialTransport.HTTP)
+                                .allowedTools(List.of("search"))
                                 .build()));
 
         ResponseEntity<List<DeploymentInfoDto>> response = restTemplate.exchange(
@@ -81,6 +82,13 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getBody())
                 .extracting(DeploymentInfoDto::getDeploymentId)
                 .containsExactlyInAnyOrder("m1", "a1", "t1");
+        ToolsetInfoDto toolset = (ToolsetInfoDto) response.getBody().stream()
+                .filter(d -> "t1".equals(d.getDeploymentId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(toolset.getVersion()).isEqualTo("v1");
+        assertThat(toolset.getTransport()).isEqualTo(McpTransport.STREAMABLE_HTTP);
+        assertThat(toolset.getAllowedTools()).containsExactly("search");
     }
 
     @Test
@@ -88,13 +96,11 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
     void getDeploymentsWithMcpInterfaceFilter() {
         when(dialCoreClient.getDeployments(eq("mcp")))
                 .thenReturn(List.of(
-                        DialCoreDeploymentDto.builder()
-                                .object("toolset")
+                        DialCoreToolsetDto.builder()
                                 .id("t1")
                                 .displayName("MCP Toolset")
                                 .build(),
-                        DialCoreDeploymentDto.builder()
-                                .object("application")
+                        DialCoreApplicationDto.builder()
                                 .id("a1")
                                 .displayName("MCP App")
                                 .build()));
@@ -114,13 +120,11 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
     void getDeploymentsWithTypeFilterToolset() {
         when(dialCoreClient.getDeployments(eq(null)))
                 .thenReturn(List.of(
-                        DialCoreDeploymentDto.builder()
-                                .object("model")
+                        DialCoreModelDto.builder()
                                 .id("m1")
                                 .displayName("Model 1")
                                 .build(),
-                        DialCoreDeploymentDto.builder()
-                                .object("toolset")
+                        DialCoreToolsetDto.builder()
                                 .id("t1")
                                 .displayName("Toolset 1")
                                 .build()));
@@ -139,13 +143,11 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
     void getDeploymentsWithCombinedFilters() {
         when(dialCoreClient.getDeployments(eq("mcp")))
                 .thenReturn(List.of(
-                        DialCoreDeploymentDto.builder()
-                                .object("toolset")
+                        DialCoreToolsetDto.builder()
                                 .id("t1")
                                 .displayName("Toolset 1")
                                 .build(),
-                        DialCoreDeploymentDto.builder()
-                                .object("application")
+                        DialCoreApplicationDto.builder()
                                 .id("a1")
                                 .displayName("MCP App")
                                 .build()));
@@ -166,13 +168,11 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
     void getDeploymentsWithTypeFilterModel() {
         when(dialCoreClient.getDeployments(eq(null)))
                 .thenReturn(List.of(
-                        DialCoreDeploymentDto.builder()
-                                .object("model")
+                        DialCoreModelDto.builder()
                                 .id("m1")
                                 .displayName("Model 1")
                                 .build(),
-                        DialCoreDeploymentDto.builder()
-                                .object("toolset")
+                        DialCoreToolsetDto.builder()
                                 .id("t1")
                                 .displayName("Toolset 1")
                                 .build()));

@@ -8,13 +8,13 @@ The DIAL Core Client provides integration with the DIAL Core API, allowing the s
 
 ### Requirement: List all deployments
 
-The system SHALL provide an endpoint to list all available deployments (models, applications, and toolsets) from DIAL Core. The system SHALL call DIAL Core's unified `GET /v1/deployments` endpoint (with optional `interface_type` parameter), transform responses to `DeploymentInfoDto` hierarchy, and return. When `type` query parameter is provided on EF's endpoint, the system SHALL filter the response client-side by deployment type. The `routes` field on every `DialApplicationInfoDto` in the list response SHALL always be `null`.
+The system SHALL provide an endpoint to list all available deployments (models, applications, and toolsets) from DIAL Core. The system SHALL call DIAL Core's unified `GET /v1/deployments` endpoint (with optional `interface_type` parameter), transform responses to `DeploymentInfoDto` hierarchy, and return. When `type` query parameter is provided on EF's endpoint, the system SHALL filter the response client-side by deployment type. List entries SHALL be fully mapped to the `DeploymentInfoDto` hierarchy via the same per-type mappers used by the single-entity endpoints (all common fields — `version` from `display_version`, `owner`, timestamps, `descriptionKeywords`, `inputAttachmentTypes` — plus subtype-specific fields: model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, toolset `transport`/`allowedTools`). Application `routes` present in the unified payload pass through as-is; schema-route resolution via `SchemaRouteExtractor` remains exclusive to the single-application GET.
 
 #### Scenario: Successful deployment listing
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments`
 - **THEN** system calls DIAL Core `GET /v1/deployments` with user's JWT token
 - **AND** transforms responses to `DialModelInfoDto`, `DialApplicationInfoDto`, and `ToolsetInfoDto` based on entry type
-- **AND** sets `routes = null` on every `DialApplicationInfoDto`
+- **AND** fully maps each entry's common and subtype-specific fields via the same mappers used by the single-entity endpoints
 - **AND** returns merged list with HTTP 200
 
 #### Scenario: Deployment listing with interface filter
@@ -47,14 +47,21 @@ The system SHALL provide an endpoint to list all available deployments (models, 
 - **AND** the remaining valid entries SHALL be returned normally
 
 #### Scenario: Application with app-level routes in list
-- **WHEN** DIAL Core returns an application with non-null `routes`
-- **THEN** the list endpoint SHALL still return `routes: null` for that application
+- **WHEN** DIAL Core returns an application with non-null `routes` in the unified list
+- **THEN** the list endpoint SHALL return those routes mapped to `Map<String, ApplicationRouteDto>` as-is (no schema-route resolution in the list path)
 
 ---
 
 ### Requirement: Get deployment by type and ID
 
-The system SHALL provide an endpoint to get a single deployment by type and ID. The `deploymentType` path parameter determines which DIAL Core endpoint to call (`/openai/models/{id}` for `dial-model`, `/openai/applications/{id}` for `dial-application`, `/openai/toolsets/{id}` for `dial-toolset`). Path values use kebab-case. For applications with `applicationTypeSchemaId`, the system SHALL resolve effective routes by fetching the schema and merging schema-level routes with app-level routes.
+The system SHALL provide an endpoint to get a single deployment by type and ID, mapped as `GET /api/v1/deployments/{deploymentType}/**`. The `deploymentType` path parameter determines which DIAL Core endpoint to call (`/openai/models/{id}` for `dial-model`, `/openai/applications/{id}` for `dial-application`, `/openai/toolsets/{id}` for `dial-toolset`). Path values use kebab-case. For applications with `applicationTypeSchemaId`, the system SHALL resolve effective routes by fetching the schema and merging schema-level routes with app-level routes.
+
+Everything after the `{deploymentType}` segment is the deployment ID, so DIAL Core IDs that contain slashes (e.g. `applications/public/Quick App with RAG__0.0.1`) SHALL be accepted verbatim as path segments — a plain `@PathVariable` cannot capture them. The ID SHALL be resolved from the wildcard tail by `web.path.WildcardPathResolver` and decoded **exactly once** there, in the web layer: `%20` becomes a space, an intra-segment `%2F` becomes a slash, and `+` is preserved literally (a plus sign in a URL path component is not a space — hence `UriUtils.decode`, not `java.net.URLDecoder`). `DialCoreClient` therefore receives an already-decoded ID and its `RestClient` performs the single wire encoding; the client itself SHALL NOT decode or pre-encode deployment IDs.
+
+Implementation notes:
+- The resolver reads `HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE` + `PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE` and extracts the wildcard tail via `AntPathMatcher.extractPathWithinPattern`, falling back to the request URI minus the servlet context path. It is a generic web-layer component, not deployment-specific.
+- `WildcardPathResolver` returns an empty string (never `null`) when the request carries no tail; the emptiness check and its 400 belong to the controller.
+- Encoded slashes (`%2F`) are supported by the resolver, but Tomcat rejects them in request paths by default (`ALLOW_ENCODED_SLASH=false`), so they are not reachable end-to-end without changing that connector setting.
 
 #### Scenario: Successful model retrieval
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments/dial-model/{id}`
@@ -86,6 +93,34 @@ The system SHALL provide an endpoint to get a single deployment by type and ID. 
 - **AND** the schema also has `dial:applicationTypeRoutes`
 - **THEN** system SHALL return the application with merged routes (schema as base, app-level overrides on conflict)
 - **AND** log a warning for each conflicting route key
+
+#### Scenario: Slash-containing deployment ID
+- **WHEN** authenticated user sends GET request to `/api/v1/deployments/dial-application/applications/public/my-app__0.0.1`
+- **THEN** the resolved deployment ID SHALL be `applications/public/my-app__0.0.1` (all segments after the type preserved)
+- **AND** system SHALL call `DialCoreClient.getApplication("applications/public/my-app__0.0.1")`
+
+#### Scenario: Percent-encoded deployment ID decoded once
+- **WHEN** authenticated user sends GET request to `/api/v1/deployments/dial-application/applications/public/Quick%20App%20with%20RAG__0.0.1`
+- **THEN** the resolved deployment ID SHALL be `applications/public/Quick App with RAG__0.0.1`
+- **AND** a double-encoded input (`Quick%2520App__0.0.1`) SHALL resolve to the single-encoded value `Quick%20App__0.0.1`, never to the raw one
+
+#### Scenario: Plus sign in deployment ID preserved
+- **WHEN** authenticated user sends GET request to `/api/v1/deployments/dial-model/gpt-5+preview`
+- **THEN** the resolved deployment ID SHALL be `gpt-5+preview` (the `+` is NOT decoded to a space)
+
+#### Scenario: Empty deployment ID
+- **WHEN** authenticated user sends GET request to `/api/v1/deployments/dial-model/` (or `/api/v1/deployments/dial-model` with no tail)
+- **THEN** system SHALL return HTTP 400 with `VALIDATION_ERROR` and message `Deployment ID must not be empty`
+- **AND** SHALL NOT call DIAL Core
+
+#### Scenario: Malformed percent-encoding in deployment ID
+- **WHEN** the wildcard tail contains an invalid escape sequence (e.g. `broken%2`)
+- **THEN** system SHALL return HTTP 400 with `VALIDATION_ERROR` rather than a 500
+
+#### Scenario: Sibling `/tools` mapping takes precedence over the wildcard
+- **WHEN** authenticated user sends GET request to `/api/v1/deployments/tools?deploymentId=…`
+- **THEN** the exact `/tools` mapping SHALL handle the request
+- **AND** the request SHALL NOT be routed to the by-ID wildcard handler (which would reject `tools` as an invalid deployment type)
 
 #### Scenario: Invalid deployment type
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments/invalid-type/{id}`
@@ -383,6 +418,14 @@ The system SHALL expose OpenAPI documentation for the deployment endpoints, incl
 - **WHEN** user views endpoint documentation
 - **THEN** response schema shows `DeploymentInfoDto` with `$type` discriminator and both subtypes documented
 
+#### Scenario: Wildcard deployment ID documented on the by-ID operation
+
+- **WHEN** user views the `GET /api/v1/deployments/{deploymentType}/**` operation
+- **THEN** its description SHALL state that everything after the type segment is the deployment ID, that slash-containing IDs are supported as-is, and that percent-encoded characters are decoded once
+- **AND** the 400 response description SHALL cover invalid deployment type, empty deployment ID, and malformed percent-encoding
+
+**Implementation note:** the deployment ID is no longer a `@PathVariable` (it is resolved from the wildcard tail), so the operation description is the only place it is documented for clients.
+
 ---
 
 ### Requirement: Response field mapping
@@ -528,6 +571,7 @@ Status: Implemented.
 Implementation notes:
 - Encoding is centralized in `client.dialcore.DialCoreDeploymentInvoker` so that every caller of the invoker (e.g. `service.domain.TryItOutService`, `service.domain.job.EvaluationWorker`) benefits without per-caller awareness of the encoding contract.
 - Mirrors the pattern already used by `client.mcp.McpToolInvoker.buildMcpEndpoint` / `buildSseEndpoint` — decode each segment once, then use `UriComponentsBuilder.pathSegment(...).build().encode()`.
+- The **metadata** client (`DialCoreClient`, `/openai/{models|applications|toolsets}/{id}`) is deliberately NOT part of this contract: it receives an already-decoded deployment ID (decoded once in the web layer by `WildcardPathResolver`, see "Get deployment by type and ID") and passes it to its `RestClient`, which applies the single wire encoding. `DialCoreClient` SHALL NOT decode or pre-encode paths itself — doing so at the client level would also corrupt the query strings it builds (`?interface_type=`, `?id=<schema URL>`).
 
 #### Scenario: Public application id with spaces in display name
 
@@ -543,6 +587,13 @@ Implementation notes:
 - **WHEN** the client invokes the deployment
 - **THEN** the wire request path SHALL contain `Quick%20App%20(v2)__0.0.1` — the space is single-encoded as `%20`, and `(`/`)` are preserved literally because RFC 3986 lists them as `sub-delims` and therefore as valid `pchar` characters in a path segment (Spring's `HierarchicalUriComponents$Type.PATH_SEGMENT` rule honors this and does not percent-encode sub-delims)
 - **AND** the wire path SHALL NOT contain any double-encoded form — i.e., no `%2520` (double-encoded space) and no `%2528`/`%2529` (double-encoded parentheses)
+
+#### Scenario: Metadata fetch for a slash-containing application id
+
+- **GIVEN** the web layer resolved the deployment ID `applications/public/Quick App with RAG__0.0.1` (already decoded)
+- **WHEN** `DialCoreClient.getApplication(id)` is called with that value
+- **THEN** the client SHALL pass the decoded value straight to its `RestClient`
+- **AND** the wire path SHALL be `/openai/applications/applications/public/Quick%20App%20with%20RAG__0.0.1` — single-encoded, no `%2520`
 
 #### Scenario: Model id with no special characters (regression guard)
 
@@ -568,26 +619,35 @@ Implementation notes:
 
 ### Requirement: Deployment type discriminator field
 
-`DialCoreDeploymentDto` SHALL use the field `object` (not `type`) as the deployment type discriminator, reflecting the actual DIAL API response. The JSON field name is `"object"` and the Java field name SHALL be `object`. Valid values are `"model"`, `"application"`, `"toolset"`. `DeploymentMapper.toDeploymentInfoDto()` SHALL branch on `source.getObject()`.
+`DialCoreDeploymentDto` SHALL be an abstract polymorphic base using Jackson `@JsonTypeInfo(use = Id.NAME, include = As.EXISTING_PROPERTY, property = "object", visible = true, defaultImpl = DialCoreUnknownDeploymentDto.class)` with `@JsonSubTypes` mapping `"model"` → `DialCoreModelDto`, `"application"` → `DialCoreApplicationDto`, `"toolset"` → `DialCoreToolsetDto`. The `object` field remains a visible `String` on the base (reflecting the actual DIAL API response field name). `DeploymentMapper.toDeploymentInfoDto()` SHALL dispatch via a pattern-matching switch on the concrete subtype (no string comparison on `getObject()`). Unknown or missing `object` values deserialize to `DialCoreUnknownDeploymentDto`; the mapper returns `null` for it so `DeploymentService` logs a warning (with the raw `object` value) and skips the entry.
 Status: **Implemented**
 
 #### Scenario: Model entry mapped correctly
 - **WHEN** the unified list entry has `"object": "model"`
-- **THEN** `toDeploymentInfoDto()` returns a `DialModelInfoDto`
+- **THEN** it deserializes to `DialCoreModelDto`
+- **AND** `toDeploymentInfoDto()` returns a `DialModelInfoDto`
 
 #### Scenario: Toolset entry mapped correctly
 - **WHEN** the unified list entry has `"object": "toolset"`
-- **THEN** `toDeploymentInfoDto()` returns a `ToolsetInfoDto`
+- **THEN** it deserializes to `DialCoreToolsetDto`
+- **AND** `toDeploymentInfoDto()` returns a `ToolsetInfoDto`
 
 #### Scenario: Application entry mapped correctly
 - **WHEN** the unified list entry has `"object": "application"`
-- **THEN** `toDeploymentInfoDto()` returns a `DialApplicationInfoDto`
+- **THEN** it deserializes to `DialCoreApplicationDto`
+- **AND** `toDeploymentInfoDto()` returns a `DialApplicationInfoDto`
+
+#### Scenario: Unknown object value falls back and is skipped
+- **WHEN** the unified list entry has an `object` value that is missing or not among `"model"`, `"application"`, `"toolset"`
+- **THEN** it deserializes to `DialCoreUnknownDeploymentDto`
+- **AND** `toDeploymentInfoDto()` returns `null`
+- **AND** `DeploymentService` logs a warning with the raw `object` value and the entry's `id`, then skips it
 
 ---
 
 ### Requirement: DialTransport enum
 
-A `DialTransport` enum SHALL exist in `client.dialcore.dto` with values `HTTP("HTTP")` and `SSE("SSE")`. `DialCoreToolsetDto.transport` and `DialCoreDeploymentDto.transport` SHALL use this enum type. Jackson SHALL use `@JsonCreator` on `DialTransport.fromValue()` and fail fast (throw `IllegalArgumentException`) on unrecognized values.
+A `DialTransport` enum SHALL exist in `client.dialcore.dto` with values `HTTP("HTTP")` and `SSE("SSE")`. `DialCoreToolsetDto.transport` SHALL use this enum type. Jackson SHALL use `@JsonCreator` on `DialTransport.fromValue()` and fail fast (throw `IllegalArgumentException`) on unrecognized values.
 Status: **Implemented**
 
 #### Scenario: Known HTTP transport value deserialized
@@ -619,31 +679,35 @@ Status: **Implemented**
 
 ---
 
-### Requirement: Transport field in unified deployment DTO
+### Requirement: Transport field on toolset entries
 
-`DialCoreDeploymentDto` SHALL include a `transport` field of type `DialTransport` to capture the transport value present on toolset entries in the unified `/v1/deployments` response. The field SHALL be `null` for non-toolset entries (`@JsonIgnoreProperties(ignoreUnknown = true)` handles absent fields).
+`transport` (type `DialTransport`) SHALL live on the `DialCoreToolsetDto` subtype, not on the `DialCoreDeploymentDto` base — unified list toolset entries deserialize to `DialCoreToolsetDto` (via the `object` discriminator), so `transport` is captured there. Non-toolset subtypes (`DialCoreModelDto`, `DialCoreApplicationDto`) SHALL have no `transport` field at all, which is stronger than the field merely being `null`.
 Status: **Implemented**
 
 #### Scenario: Toolset HTTP transport captured from unified list
 - **WHEN** the unified list entry has `"object": "toolset"` and `"transport": "HTTP"`
-- **THEN** `DialCoreDeploymentDto.transport` is `DialTransport.HTTP`
+- **THEN** it deserializes to `DialCoreToolsetDto` with `transport = DialTransport.HTTP`
 
 #### Scenario: Toolset SSE transport captured from unified list
 - **WHEN** the unified list entry has `"object": "toolset"` and `"transport": "SSE"`
-- **THEN** `DialCoreDeploymentDto.transport` is `DialTransport.SSE`
+- **THEN** it deserializes to `DialCoreToolsetDto` with `transport = DialTransport.SSE`
 
-#### Scenario: Model entry has null transport
+#### Scenario: Model entry has no transport field
 - **WHEN** the unified list entry has `"object": "model"` (no transport field)
-- **THEN** `DialCoreDeploymentDto.transport` is `null`
+- **THEN** it deserializes to `DialCoreModelDto`, which has no `transport` field
 
 ---
 
 ## Implementation Notes (MCP Extension)
 - Modified: `DialCoreClient` — add `getDeployments(interfaceType)` method calling `/v1/deployments`; keep `getToolset(id)` for single-item detail; deserializes response as bare `List<DialCoreDeploymentDto>` (not a wrapped object)
 - Modified: `DeploymentService` — replace 3 parallel calls with single `/v1/deployments` call; add type/interface filtering; consumes `List<DialCoreDeploymentDto>` directly
-- Modified: `DeploymentMapper` — add unified response mapping via `toDeploymentInfoDto()` branching on `source.getObject()`; add `dialTransportToMcp()` converter (`HTTP` → `STREAMABLE_HTTP`, `SSE` → `SSE`)
-- Modified: `DeploymentController` — add `type` and `interface` query params; tools endpoint at `GET /deployments/tools?deploymentId=&transport=` (query params, not path variables)
-- New DTO: `DialCoreDeploymentDto` in `client.dialcore.dto` — unified response entry from `/v1/deployments`; has `object`, `transport` (DialTransport), `interfaces` (List<InterfaceType>)
+- Modified: `DeploymentMapper` — `toDeploymentInfoDto()` dispatches via a pattern-matching switch on the concrete subtype (`DialCoreModelDto`/`DialCoreApplicationDto`/`DialCoreToolsetDto`), not `source.getObject()` string branching; add `dialTransportToMcp()` converter (`HTTP` → `STREAMABLE_HTTP`, `SSE` → `SSE`)
+- Modified: `DeploymentController` — add `type` and `interface` query params; tools endpoint at `GET /deployments/tools?deploymentId=&transport=` (query params, not path variables); by-ID endpoint mapped as `/{deploymentType}/**` with the ID resolved from the wildcard tail via the injected `WildcardPathResolver` and rejected with 400 when blank
+- New: `web.path.WildcardPathResolver` — generic web-layer `@Component` returning the decoded `/**` tail of the matched mapping pattern; the single place a slash-containing path value is extracted and percent-decoded (exactly once, `+` preserved)
+- New: `DialCoreDeploymentDto` in `client.dialcore.dto` is now the abstract polymorphic base of the deployment DTO hierarchy — carries common fields (`object`, `id`, `displayName`, `displayVersion`, `description`, `descriptionKeywords`, `iconUrl`, `reference`, `owner`, `status`, `createdAt`, `updatedAt`, `defaults`, `maxRetryAttempts`, `inputAttachmentTypes`, `interfaces` (List<InterfaceType>), `features`); `transport` moved to the `DialCoreToolsetDto` subtype
 - New enum: `DialTransport` in `client.dialcore.dto` — `HTTP("HTTP")`, `SSE("SSE")`, fail-fast on unknown values via `@JsonCreator`
-- New DTO: `DialCoreToolsetDto` in `client.dialcore.dto` — for single toolset detail; `transport` field uses `DialTransport`
+- New DTO: `DialCoreToolsetDto` in `client.dialcore.dto` — extends the base; used for both single toolset detail and the toolset variant of unified list entries; adds `transport` (DialTransport) and `allowedTools`
+- New DTO: `DialCoreUnknownDeploymentDto` in `client.dialcore.dto` — empty fallback subtype registered as `@JsonTypeInfo` `defaultImpl`; deserialization target when `object` is missing or unrecognized, so the entry is skipped (logged) instead of failing the whole list fetch
+- Deleted: `DialCoreFeaturesDto` — dead any-setter container with no consumers; the base's `Map<String, Object> features` replaces it
 - Deleted: `DialCoreDeploymentListResponseDto` — removed; DIAL returns a bare array
+- Single-entity `/openai/{models|applications}/{id}` payloads rely on the `object` discriminator being present on the wire — DIAL Core always sends it, so polymorphic deserialization to the concrete subtype succeeds even when the static Java type at the call site is already the subtype

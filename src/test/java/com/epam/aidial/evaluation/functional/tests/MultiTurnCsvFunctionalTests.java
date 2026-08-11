@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -308,8 +309,10 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
     }
 
     @Test
-    @DisplayName("Preview reports a shared-column mismatch across turn rows as a conflict, matching import")
-    void previewPredictsSharedColumnMismatchConflict() {
+    @DisplayName("Preview no longer reports a shared-column conflict for an undeclared column that disagrees "
+            + "across turns — the multi-turn CSV infers it per-turn instead, matching import "
+            + "(infer-csv-field-scope-from-turn-membership)")
+    void previewInfersUndeclaredDisagreeingColumnPerTurnInsteadOfConflict() {
         UUID datasetId = promptDataset();
         String csv = "testCaseName,turnIndex,prompt,category\nconv,0,a,catA\nconv,1,b,catB";
 
@@ -320,16 +323,23 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         assertThat(body).isNotNull();
         assertThat(body.getTotalTestCases()).isEqualTo(1);
         assertThat(body.getWarnings())
-                .anyMatch(
+                .noneMatch(
                         w -> w.getMessage().contains("Shared") && w.getMessage().contains("must be identical"));
+        assertThat(fieldByName(body.getAutoDetectedSchema(), "category").getPerTurn())
+                .isTrue();
         assertThat(body.getSampleRows()).hasSize(1);
-        assertThat(body.getSampleRows().get(0).isValid()).isFalse();
+        TestCaseResponseDto sample = body.getSampleRows().get(0);
+        assertThat(sample.isValid()).isTrue();
+        assertThat(sample.getMultiTurnData()).hasSize(2);
+        assertThat(sample.getMultiTurnData().get(0).get("category")).isEqualTo("catA");
+        assertThat(sample.getMultiTurnData().get(1).get("category")).isEqualTo("catB");
     }
 
     @Test
-    @DisplayName("Preview against an empty dataset schema still reports the all-shared conflict when turn "
-            + "rows differ on a column, invalidating the case")
-    void previewPredictsSharedColumnMismatchAgainstEmptySchema() {
+    @DisplayName("Preview against an empty dataset schema no longer reports the all-shared conflict when turn "
+            + "rows differ on an undeclared column — the multi-turn CSV infers it per-turn instead "
+            + "(infer-csv-field-scope-from-turn-membership)")
+    void previewInfersUndeclaredDisagreeingColumnPerTurnAgainstEmptySchema() {
         UUID datasetId = newDatasetWithSchema(List.of());
         String csv = "testCaseName,turnIndex,prompt\nconv,0,a\nconv,1,b";
 
@@ -340,10 +350,16 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         assertThat(body).isNotNull();
         assertThat(body.getTotalTestCases()).isEqualTo(1);
         assertThat(body.getWarnings())
-                .anyMatch(
+                .noneMatch(
                         w -> w.getMessage().contains("Shared") && w.getMessage().contains("must be identical"));
+        assertThat(fieldByName(body.getAutoDetectedSchema(), "prompt").getPerTurn())
+                .isTrue();
         assertThat(body.getSampleRows()).hasSize(1);
-        assertThat(body.getSampleRows().get(0).isValid()).isFalse();
+        TestCaseResponseDto sample = body.getSampleRows().get(0);
+        assertThat(sample.isValid()).isTrue();
+        assertThat(sample.getMultiTurnData()).hasSize(2);
+        assertThat(sample.getMultiTurnData().get(0).get("prompt")).isEqualTo("a");
+        assertThat(sample.getMultiTurnData().get(1).get("prompt")).isEqualTo("b");
     }
 
     @Test
@@ -621,24 +637,30 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
     }
 
     @Test
-    @DisplayName("A shared-column mismatch across turn rows leaves the persisted case invalid with an "
-            + "INVALID_INPUT warning after import")
-    void persistedCaseStaysInvalidAfterSharedColumnMismatch() {
+    @DisplayName("An undeclared column that disagrees across turn rows no longer invalidates the case on "
+            + "import — the multi-turn CSV infers it per-turn instead of shared "
+            + "(infer-csv-field-scope-from-turn-membership)")
+    void importInfersUndeclaredDisagreeingColumnPerTurnInsteadOfConflict() {
         UUID datasetId = promptDataset();
         String csv = "testCaseName,turnIndex,prompt,category\nconv,0,a,catA\nconv,1,b,catB";
 
         ResponseEntity<CsvImportResultDto> response = importCsv(datasetId, csv, null);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().getInvalidCount()).isEqualTo(1);
+        assertThat(response.getBody().getValidCount()).isEqualTo(1);
+        assertThat(response.getBody().getInvalidCount()).isEqualTo(0);
 
         TestCase persisted = soleTestCase(datasetId);
-        assertThat(persisted.isValid()).isFalse();
-        assertThat(parseWarnings(persisted))
-                .anyMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT
-                        && w.getMessage() != null
-                        && w.getMessage().contains("Shared")
-                        && w.getMessage().contains("must be identical"));
+        assertThat(persisted.isValid()).isTrue();
+        assertThat(parseWarnings(persisted)).noneMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT);
+        List<Map<String, Object>> turns = parseTurns(persisted);
+        assertThat(turns).hasSize(2);
+        assertThat(turns.get(0).get("category")).isEqualTo("catA");
+        assertThat(turns.get(1).get("category")).isEqualTo("catB");
+
+        DatasetResponseDto dataset = getDataset(datasetId);
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "category").getPerTurn())
+                .isTrue();
     }
 
     @Test
@@ -757,6 +779,245 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         assertThat(parseWarnings(stored)).isEmpty();
     }
 
+    // -------------------- Turn-membership scope inference (infer-csv-field-scope-from-turn-membership) ------
+
+    @Test
+    @DisplayName("Multi-turn CSV imported into an empty dataset infers perTurn:true for every data column, "
+            + "keeps the case valid through the post-import revalidation, and reports no shared-conflict "
+            + "warning")
+    void multiTurnCsvIntoEmptyDatasetInfersPerTurnScope() {
+        UUID datasetId = newDatasetWithSchema(List.of());
+        String csv = "testCaseName,turnIndex,prompt,category\nconv,0,hello,greeting\nconv,1,world,greeting";
+
+        ResponseEntity<CsvImportResultDto> response = importCsv(datasetId, csv, null);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getValidCount()).isEqualTo(1);
+        assertThat(response.getBody().getInvalidCount()).isEqualTo(0);
+        assertThat(response.getBody().getWarnings())
+                .noneMatch(
+                        w -> w.getMessage().contains("Shared") && w.getMessage().contains("must be identical"));
+
+        // Import triggers dataset-rooted revalidation synchronously within the request (schema was
+        // persisted); the case's validity below already reflects that pass, not just the initial parse.
+        DatasetResponseDto dataset = getDataset(datasetId);
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "prompt").getPerTurn())
+                .isTrue();
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "category").getPerTurn())
+                .isTrue();
+
+        List<TestCaseResponseDto> cases = listTestCases(datasetId);
+        assertThat(cases).hasSize(1);
+        TestCaseResponseDto conv = cases.get(0);
+        assertThat(conv.getMultiTurnData()).hasSize(2);
+        assertThat(conv.getMultiTurnData().get(0).get("prompt")).isEqualTo("hello");
+        assertThat(conv.getMultiTurnData().get(0).get("category")).isEqualTo("greeting");
+        assertThat(conv.getMultiTurnData().get(1).get("prompt")).isEqualTo("world");
+        assertThat(conv.getMultiTurnData().get(1).get("category")).isEqualTo("greeting");
+        assertThat(conv.isValid()).isTrue();
+        assertThat(conv.getValidationWarnings()).isNullOrEmpty();
+
+        TestCase persisted = soleTestCase(datasetId);
+        assertThat(persisted.isValid()).isTrue();
+        assertThat(parseWarnings(persisted)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("An exported multi-turn CSV round-trips into a schema-less dataset: turn counts match, "
+            + "merged effective views match up to blank materialization, and the two exports are "
+            + "byte-identical")
+    void exportedMultiTurnCsvRoundTripsIntoSchemaLessDataset() {
+        UUID sourceDataset = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .perTurn(true)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("category")
+                        .type(SchemaFieldType.STRING)
+                        .required(false)
+                        .build()));
+        TestCaseResponseDto sourceCase = createMultiTurnCase(
+                sourceDataset,
+                "conv",
+                Map.of("category", "greeting"),
+                List.of(Map.of("prompt", "first"), Map.of("prompt", "second")));
+        assertThat(sourceCase.isValid()).isTrue();
+
+        String firstExport = exportCsv(sourceDataset);
+
+        UUID destinationDataset = newDatasetWithSchema(List.of());
+        ResponseEntity<CsvImportResultDto> importResponse = importCsv(destinationDataset, firstExport, null);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(importResponse.getBody()).isNotNull();
+        assertThat(importResponse.getBody().getValidCount()).isEqualTo(1);
+        assertThat(importResponse.getBody().getInvalidCount()).isEqualTo(0);
+
+        String secondExport = exportCsv(destinationDataset);
+        assertThat(secondExport).isEqualTo(firstExport);
+
+        List<TestCaseResponseDto> destinationCases = listTestCases(destinationDataset);
+        assertThat(destinationCases).hasSize(1);
+        TestCaseResponseDto destinationCase = destinationCases.get(0);
+        assertThat(destinationCase.isValid()).isTrue();
+        assertThat(destinationCase.getMultiTurnData())
+                .hasSize(sourceCase.getMultiTurnData().size());
+        for (int i = 0; i < sourceCase.getMultiTurnData().size(); i++) {
+            assertThat(mergedTurnView(destinationCase, i)).isEqualTo(mergedTurnView(sourceCase, i));
+        }
+
+        // Fidelity loss is accepted (design risk): the destination infers "category" per-turn since the
+        // file contains a multi-turn case, even though the source declared it shared.
+        DatasetResponseDto destinationDatasetDto = getDataset(destinationDataset);
+        assertThat(fieldByName(destinationDatasetDto.getTestCaseSchema(), "category")
+                        .getPerTurn())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("A declared-shared column is never re-scoped by turn-membership inference: turn rows "
+            + "disagreeing on it still raise a conflict and invalidate the case")
+    void declaredSharedColumnIsNeverReScopedByInference() {
+        UUID datasetId = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .perTurn(true)
+                        .build(),
+                // "category" is declared with perTurn absent — declared shared, verbatim per D1 tier 1.
+                FieldDefinitionDto.builder()
+                        .name("category")
+                        .type(SchemaFieldType.STRING)
+                        .required(false)
+                        .build()));
+        String csv = "testCaseName,turnIndex,prompt,category\nconv,0,a,catA\nconv,1,b,catB";
+
+        ResponseEntity<CsvImportResultDto> response = importCsv(datasetId, csv, null);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getInvalidCount()).isEqualTo(1);
+
+        TestCase persisted = soleTestCase(datasetId);
+        assertThat(persisted.isValid()).isFalse();
+        assertThat(parseWarnings(persisted))
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.INVALID_INPUT
+                        && w.getMessage() != null
+                        && w.getMessage().contains("Shared")
+                        && w.getMessage().contains("must be identical"));
+
+        DatasetResponseDto dataset = getDataset(datasetId);
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "category").getPerTurn())
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("A mixed single/multi-turn CSV imported into an empty dataset marks every field perTurn:true; "
+            + "the single-turn case keeps its values in data and stays valid")
+    void mixedCsvIntoEmptyDatasetMarksEveryFieldPerTurn() {
+        UUID datasetId = newDatasetWithSchema(List.of());
+        String csv = "testCaseName,turnIndex,prompt\nconv,0,hello\nconv,1,world\nsingle,,static";
+
+        ResponseEntity<CsvImportResultDto> response = importCsv(datasetId, csv, null);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getValidCount()).isEqualTo(2);
+        assertThat(response.getBody().getInvalidCount()).isEqualTo(0);
+
+        DatasetResponseDto dataset = getDataset(datasetId);
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "prompt").getPerTurn())
+                .isTrue();
+
+        List<TestCaseResponseDto> cases = listTestCases(datasetId);
+        TestCaseResponseDto conv = cases.stream()
+                .filter(tc -> "conv".equals(tc.getTestCaseName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(conv.getMultiTurnData()).hasSize(2);
+        assertThat(conv.getMultiTurnData().get(0).get("prompt")).isEqualTo("hello");
+        assertThat(conv.getMultiTurnData().get(1).get("prompt")).isEqualTo("world");
+        assertThat(conv.isValid()).isTrue();
+
+        TestCaseResponseDto single = cases.stream()
+                .filter(tc -> "single".equals(tc.getTestCaseName()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(single.getMultiTurnData()).isNullOrEmpty();
+        assertThat(single.getData().get("prompt")).isEqualTo("static");
+        assertThat(single.isValid()).isTrue();
+    }
+
+    @Test
+    @DisplayName("A purely single-turn CSV imported into an empty dataset produces a schema with no perTurn "
+            + "on any field — identical to pre-inference behavior")
+    void purelySingleTurnCsvIntoEmptyDatasetOmitsPerTurn() {
+        UUID datasetId = newDatasetWithSchema(List.of());
+        String csv = "testCaseName,prompt\nrow1,a\nrow2,b";
+
+        ResponseEntity<CsvImportResultDto> response = importCsv(datasetId, csv, null);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getValidCount()).isEqualTo(2);
+        assertThat(response.getBody().getInvalidCount()).isEqualTo(0);
+
+        DatasetResponseDto dataset = getDataset(datasetId);
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "prompt").getPerTurn())
+                .isNull();
+
+        List<TestCaseResponseDto> cases = listTestCases(datasetId);
+        assertThat(cases).hasSize(2);
+        assertThat(cases).allMatch(TestCaseResponseDto::isValid);
+        assertThat(cases)
+                .allMatch(tc ->
+                        tc.getMultiTurnData() == null || tc.getMultiTurnData().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Preview of a multi-turn CSV against an empty schema reports exactly the scope import would "
+            + "persist: autoDetectedSchema marks every data column perTurn:true, sample rows carry them in "
+            + "multiTurnData, and no shared-conflict warning is emitted")
+    void previewOfMultiTurnCsvAgainstEmptySchemaMatchesImport() {
+        UUID datasetId = newDatasetWithSchema(List.of());
+        String csv = "testCaseName,turnIndex,prompt,category\nconv,0,hello,greeting\nconv,1,world,greeting";
+
+        ResponseEntity<CsvImportPreviewDto> previewResponse = previewCsv(datasetId, csv, null, null);
+        assertThat(previewResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        CsvImportPreviewDto previewBody = previewResponse.getBody();
+        assertThat(previewBody).isNotNull();
+        assertThat(fieldByName(previewBody.getAutoDetectedSchema(), "prompt").getPerTurn())
+                .isTrue();
+        assertThat(fieldByName(previewBody.getAutoDetectedSchema(), "category").getPerTurn())
+                .isTrue();
+        assertThat(previewBody.getWarnings())
+                .noneMatch(
+                        w -> w.getMessage().contains("Shared") && w.getMessage().contains("must be identical"));
+        assertThat(previewBody.getSampleRows()).hasSize(1);
+        TestCaseResponseDto sample = previewBody.getSampleRows().get(0);
+        assertThat(sample.getMultiTurnData()).hasSize(2);
+        assertThat(sample.getMultiTurnData().get(0).get("prompt")).isEqualTo("hello");
+        assertThat(sample.getMultiTurnData().get(0).get("category")).isEqualTo("greeting");
+        assertThat(sample.getMultiTurnData().get(1).get("prompt")).isEqualTo("world");
+        assertThat(sample.getMultiTurnData().get(1).get("category")).isEqualTo("greeting");
+
+        // Same CSV actually imported must persist exactly the scope preview reported.
+        ResponseEntity<CsvImportResultDto> importResponse = importCsv(datasetId, csv, null);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        DatasetResponseDto dataset = getDataset(datasetId);
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "prompt").getPerTurn())
+                .isTrue();
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "category").getPerTurn())
+                .isTrue();
+        List<TestCaseResponseDto> cases = listTestCases(datasetId);
+        assertThat(cases).hasSize(1);
+        TestCaseResponseDto imported = cases.get(0);
+        assertThat(imported.getMultiTurnData()).hasSize(2);
+        assertThat(imported.getMultiTurnData().get(0).get("prompt")).isEqualTo("hello");
+        assertThat(imported.getMultiTurnData().get(1).get("prompt")).isEqualTo("world");
+        assertThat(imported.isValid()).isTrue();
+    }
+
     // -------------------- Helpers --------------------
 
     private TestCase soleTestCase(UUID datasetId) {
@@ -777,6 +1038,21 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
 
     private List<Map<String, Object>> parseTurns(TestCase tc) {
         return objectMapper.readValue(tc.getMultiTurnData(), new TypeReference<>() {});
+    }
+
+    /**
+     * The per-turn effective view: shared {@code data} merged with the given turn's own map, turn values
+     * winning on key collision — used to compare a source case's view against a re-imported destination
+     * case's view "up to blank materialization" regardless of which fields each side scoped as shared vs
+     * per-turn.
+     */
+    private Map<String, Object> mergedTurnView(TestCaseResponseDto testCase, int turnIndex) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (testCase.getData() != null) {
+            merged.putAll(testCase.getData());
+        }
+        merged.putAll(testCase.getMultiTurnData().get(turnIndex));
+        return merged;
     }
 
     private ResponseEntity<TestCaseResponseDto> patchTestCase(UUID datasetId, UUID id, Map<String, Object> patchBody) {

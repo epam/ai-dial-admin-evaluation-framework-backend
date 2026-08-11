@@ -1,7 +1,5 @@
 package com.epam.aidial.evaluation.web.controller;
 
-import static com.epam.aidial.evaluation.web.controller.DeploymentController.ROOT_URL;
-
 import com.epam.aidial.evaluation.client.dialcore.dto.InterfaceType;
 import com.epam.aidial.evaluation.runner.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -34,14 +32,11 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @Slf4j
 @RestController
-@RequestMapping(ROOT_URL)
+@RequestMapping("/api/v1/deployments")
 @RequiredArgsConstructor
 @LogExecution
 @Tag(name = "Deployments", description = "List and get deployments (models and applications) from DIAL Core")
 public class DeploymentController {
-
-    public static final String ROOT_URL = "/api/v1/deployments";
-    public static final String BY_TYPE_URL_SEGMENT = "/{deploymentType}";
 
     private final DeploymentService deploymentService;
     private final WildcardPathResolver wildcardPathResolver;
@@ -75,7 +70,7 @@ public class DeploymentController {
         return deploymentService.getAllDeployments(deploymentType, ifType);
     }
 
-    @GetMapping(value = BY_TYPE_URL_SEGMENT + "/**", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping(value = "/{deploymentType}/**", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Get deployment by type and ID",
             description = "Returns a single deployment. Use deploymentType 'dial-model', 'dial-application', "

@@ -169,6 +169,9 @@ Specs for standalone command-line tools that consume the EF backend's public RES
 - **[eval-cli](eval-cli/spec.md)** — Implemented
   Standalone Spring Boot CLI (`eval-cli` Gradle subproject, root package `com.epam.aidial.evaluation.cli`) that clones "standard" test suites from a source EF instance, fetches their configuration and test cases, executes them against a CLI-configured target deployment using `evaluation-runner-core`'s existing batch execution path, and imports the results via the source EF's `runs/import` endpoint — enabling cross-environment evaluation without a second EF deployment. Exposes `clone`, `fetch`, `run`, `import`, and `evaluate` picocli subcommands; DB-free; static Api-Key auth against both source EF and target DIAL Core. Related: eval-results-import, test-suite-clone, evaluation-runner-core-module.
 
+- **[eval-cli-distribution](eval-cli-distribution/spec.md)** — Implemented
+  Packaging of `eval-cli` as a locally buildable Docker image: `eval-cli/Dockerfile` (multi-stage build targeting `:eval-cli:bootJar`, no JDK required at runtime) plus a dedicated entrypoint forwarding CLI arguments. Deliberately **not** published by CI — this monorepo's release tooling assumes one image per repo, so consumers clone this repo at a pinned ref and build the image themselves (`docker build -f eval-cli/Dockerfile -t eval-cli:local .` from the repo root) rather than pulling from a registry. Related: eval-cli.
+
 ### Vision / Planned
 
 Specs documented but not yet fully implemented.

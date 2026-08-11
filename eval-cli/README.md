@@ -35,6 +35,36 @@ java -jar eval-cli.jar evaluate \
   --deployment-id my-model
 ```
 
+### Docker
+
+No pre-built image is published — this repo's shared release tooling assumes one Docker image per
+repository, and eval-cli is a second one. Build the image yourself instead, ideally from a pinned tag
+or commit rather than a floating branch, so your pipeline's behavior stays reproducible:
+
+```bash
+git clone --branch <tag-or-commit> <this-repo-url> eval-cli-src
+cd eval-cli-src
+docker build -f eval-cli/Dockerfile -t eval-cli:<tag-or-commit> .
+```
+
+Running it requires no local JDK; the entrypoint forwards all arguments to the CLI, so subcommands and
+flags are passed straight through to `docker run`. Mount a host directory to `/app/eval-cli-work` if
+you want the fetched suite bundles and result CSVs (written under `cli.work-dir`) to persist outside
+the container:
+
+```bash
+docker run --rm \
+  -e EVAL_SOURCE_API_KEY=<source EF API key> \
+  -e DIAL_CORE_URL=http://host.docker.internal:8080 \
+  -e DIAL_CORE_API_KEY=<target DIAL Core API key> \
+  -v $(pwd)/eval-cli-work:/app/eval-cli-work \
+  eval-cli:<tag-or-commit> \
+  evaluate \
+    --suites 78ca0a5f-da3d-45fd-bb36-b44380c105eb \
+    --clone-suffix eval \
+    --deployment-id my-model
+```
+
 ## Configuration
 
 All properties can be supplied via environment variables (shown in the **Environment Variable** column)

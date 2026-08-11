@@ -25,7 +25,7 @@ a stable environment default. Everything else (source/target auth, target host) 
 ## Quick start
 
 ```bash
-export EVAL_TOKEN=<source EF bearer token>
+export EVAL_SOURCE_API_KEY=<source EF API key>
 export DIAL_CORE_URL=http://host.docker.internal:8080
 export DIAL_CORE_API_KEY=<target DIAL Core API key>
 
@@ -46,18 +46,19 @@ variable is absent.
 | Property | Environment Variable | Default | Required | Description |
 |----------|---------------------|---------|----------|-------------|
 | `eval.source.base-url` | `EVAL_SOURCE_BASE_URL` | `http://localhost:8080` | Yes | Base URL of the source EF instance. |
-| `eval.source.token` | `EVAL_TOKEN` | _(empty)_ | Yes | Static bearer token for authenticating requests to the source EF. |
+| `eval.source.api-key` | `EVAL_SOURCE_API_KEY` | _(empty)_ | Yes | API key sent as the `Api-Key` header on every request to the source EF. |
 | `eval.source.connect-timeout-ms` | `EVAL_SOURCE_CONNECT_TIMEOUT_MS` | `5000` | No | TCP connection timeout to the source EF (ms). |
 | `eval.source.read-timeout-ms` | `EVAL_SOURCE_READ_TIMEOUT_MS` | `120000` | No | Read timeout for source EF HTTP responses (ms). |
 
 ### Target authentication (`dial.components.core.api-key`)
 
 The target environment (the DIAL Core instance fronting the deployment under evaluation) is
-authenticated via an `Api-Key` header — the same mechanism the EF backend uses for DIAL Core file
-operations — rather than a bearer token, since this standalone CLI has no signed-in user session to
-propagate a JWT from. It is **env-var-only**, like `eval.source.token`: no CLI flag, no file — in a CI
-job (this tool's primary deployment context), the platform's own secret store → env var injection
-already gets automatic log redaction and leaves no on-disk artifact to clean up.
+authenticated via an `Api-Key` header — the same mechanism used for the source EF connection above,
+and the same one the EF backend itself uses for DIAL Core file operations — since this standalone CLI
+has no signed-in user session to propagate a JWT from. It is **env-var-only**, like
+`eval.source.api-key`: no CLI flag, no file — in a CI job (this tool's primary deployment context), the
+platform's own secret store → env var injection already gets automatic log redaction and leaves no
+on-disk artifact to clean up.
 
 | Property | Environment Variable | Default | Required | Description |
 |----------|---------------------|---------|----------|-------------|
@@ -137,10 +138,9 @@ request-build time (headers a test case cannot override, including the `Api-Key`
 
 ## Notes
 
-- **Authentication**: both the source EF (`eval.source.token` / `EVAL_TOKEN`) and target DIAL Core
-  (`dial.components.core.api-key` / `DIAL_CORE_API_KEY`) credentials are static, env-var-only secrets —
-  no CLI flag, no file. OIDC client-credentials support for the source EF (automatic token refresh) is a
-  planned follow-up, not yet available.
+- **Authentication**: both the source EF (`eval.source.api-key` / `EVAL_SOURCE_API_KEY`) and target
+  DIAL Core (`dial.components.core.api-key` / `DIAL_CORE_API_KEY`) credentials use the same `Api-Key`
+  header mechanism and are static, env-var-only secrets — no CLI flag, no file.
 - **Idempotency**: `evaluate` (and `clone`) is safe to re-run. If a `<name>_<suffix>` clone already
   exists on the source EF it is reused; a fresh `fetch` / `run` / `import` cycle produces a new run
   import against the same clone.

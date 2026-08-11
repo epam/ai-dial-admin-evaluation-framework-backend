@@ -32,7 +32,7 @@ import org.springframework.web.client.RestClient;
 @TestPropertySource(
         properties = {
             "eval.source.base-url=http://source-ef:8080",
-            "eval.source.token=source-token",
+            "eval.source.api-key=source-api-key",
             "cli.work-dir=/tmp/work",
             "cli.run.concurrency-level=4",
             "cli.run.request-timeout-ms=3600000",

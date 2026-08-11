@@ -18,6 +18,7 @@ import com.epam.aidial.evaluation.functional.tests.AnalyticsResultCountFunctiona
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultGetByIdFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultListFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsRetryFieldsFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.ApiKeyAuthenticationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.CsvImportModeFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetCloneFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetCrudFunctionalTests;
@@ -433,6 +434,24 @@ public class PostgresFunctionalTests extends FunctionalTests {
                 "providers.test.principalClaim=sub"
             })
     class OidcStartupTests extends OidcSecurityStartupSmokeTest {}
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "config.rest.security.mode=oidc",
+                "config.rest.security.disable-swagger-authorization=true",
+                "providers.test.issuer=https://issuer.example.com",
+                "providers.test.jwkSetUri=https://issuer.example.com/.well-known/jwks.json",
+                "providers.test.audiences[0]=test-audience",
+                "providers.test.roleClaims[0]=roles",
+                "providers.test.allowedRoles[0]=admin",
+                "providers.test.principalClaim=sub",
+                "config.rest.security.api-key.enabled=true",
+                "config.rest.security.api-key.core-url=http://localhost:1",
+                "config.rest.security.api-key.roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.startup-probe=false"
+            })
+    class ApiKeyAuthenticationTests extends ApiKeyAuthenticationFunctionalTests {}
 
     @Nested
     class FileTests extends FileFunctionalTests {}

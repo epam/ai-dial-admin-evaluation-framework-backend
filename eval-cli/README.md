@@ -54,7 +54,7 @@ the container:
 
 ```bash
 docker run --rm \
-  -e EVAL_TOKEN=<source EF bearer token> \
+  -e EVAL_SOURCE_API_KEY=<source EF API key> \
   -e DIAL_CORE_URL=http://host.docker.internal:8080 \
   -e DIAL_CORE_API_KEY=<target DIAL Core API key> \
   -v $(pwd)/eval-cli-work:/app/eval-cli-work \

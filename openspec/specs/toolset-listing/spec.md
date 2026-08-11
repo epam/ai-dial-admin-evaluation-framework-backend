@@ -81,6 +81,8 @@ Status: **Implemented**
 
 The system SHALL provide `GET /api/v1/deployments/tools?deploymentId={id}` to return the list of tools available on any MCP-capable deployment, including their schemas. The deployment ID is passed as a query parameter (not a path variable) because deployment IDs may contain slashes (e.g., `toolsets/public/3DMolVisualizer_(copy)__0.0.2`). An optional `transport` query parameter selects the MCP transport protocol; defaults to `STREAMABLE_HTTP` when omitted.
 
+The sibling by-ID endpoint solves the same slash problem differently — it maps `/{deploymentType}/**` and resolves the ID from the wildcard tail (see "Get deployment by type and ID" in the [dial-core-client spec](../dial-core-client/spec.md)) — because its ID is a path resource, not a filter argument. Both conventions coexist deliberately: the `/tools` mapping is an exact path and therefore takes precedence over the wildcard, so `GET /api/v1/deployments/tools` SHALL NOT be interpreted as a deployment of type `tools`.
+
 #### Scenario: List tools for a deployment
 - **WHEN** authenticated user sends `GET /api/v1/deployments/tools?deploymentId=my-toolset`
 - **THEN** system SHALL call `McpToolInvoker.listTools(id, token, transport)` with the effective transport
@@ -121,6 +123,11 @@ The `DeploymentType` enum SHALL include a `DIAL_TOOLSET` value with serialized f
 #### Scenario: Get toolset by type and ID
 - **WHEN** authenticated user sends `GET /api/v1/deployments/dial-toolset/{id}`
 - **THEN** system SHALL call `GET /openai/toolsets/{id}` on DIAL Core and return the mapped `ToolsetInfoDto`
+
+#### Scenario: Get toolset by slash-containing ID
+- **WHEN** authenticated user sends `GET /api/v1/deployments/dial-toolset/toolsets/public/3DMolVisualizer_(copy)__0.0.2`
+- **THEN** the resolved deployment ID SHALL be `toolsets/public/3DMolVisualizer_(copy)__0.0.2` (the whole wildcard tail)
+- **AND** system SHALL call `DialCoreClient.getToolset` with that value
 
 ### Requirement: InterfaceType enum
 

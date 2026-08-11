@@ -1,8 +1,11 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
@@ -10,10 +13,13 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteUpstreamDto;
+import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialModelInfoDto;
+import com.epam.aidial.evaluation.service.domain.dto.deployment.ToolsetInfoDto;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -118,6 +124,100 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getDeploymentId()).isEqualTo("EntityExtractor");
         assertThat(response.getBody().getDisplayName()).isEqualTo("Entity Extractor");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/dial-application/{id} passes a slash-containing ID to DIAL Core intact")
+    void getDeploymentWithSlashContainingIdKeepsAllSegments() {
+        String deploymentId = "applications/public/my-app__0.0.1";
+        when(dialCoreClient.getApplication(eq(deploymentId)))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id(deploymentId)
+                        .displayName("My App")
+                        .createdAt(1000L)
+                        .updatedAt(2000L)
+                        .build());
+
+        ResponseEntity<DialApplicationInfoDto> response = restTemplate.getForEntity(
+                URI.create(apiUrl("/deployments/dial-application/" + deploymentId)), DialApplicationInfoDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeploymentId()).isEqualTo(deploymentId);
+        verify(dialCoreClient).getApplication(deploymentId);
+    }
+
+    @Test
+    @DisplayName("GET /deployments/dial-application/{id} decodes percent-encoded characters in the ID once")
+    void getDeploymentWithPercentEncodedIdDecodesOnce() {
+        String deploymentId = "applications/public/Quick App with RAG__0.0.1";
+        when(dialCoreClient.getApplication(eq(deploymentId)))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id(deploymentId)
+                        .displayName("Quick App with RAG")
+                        .createdAt(1000L)
+                        .updatedAt(2000L)
+                        .build());
+
+        ResponseEntity<DialApplicationInfoDto> response = restTemplate.getForEntity(
+                URI.create(apiUrl("/deployments/dial-application/applications/public/Quick%20App%20with%20RAG__0.0.1")),
+                DialApplicationInfoDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeploymentId()).isEqualTo(deploymentId);
+        verify(dialCoreClient).getApplication(deploymentId);
+    }
+
+    @Test
+    @DisplayName("GET /deployments/dial-toolset/{id} passes a slash-containing toolset ID to DIAL Core intact")
+    void getToolsetWithSlashContainingIdKeepsAllSegments() {
+        String deploymentId = "toolsets/public/3DMolVisualizer_(copy)__0.0.2";
+        when(dialCoreClient.getToolset(eq(deploymentId)))
+                .thenReturn(DialCoreToolsetDto.builder()
+                        .id(deploymentId)
+                        .displayName("3D Mol Visualizer")
+                        .createdAt(1000L)
+                        .updatedAt(2000L)
+                        .build());
+
+        ResponseEntity<ToolsetInfoDto> response = restTemplate.getForEntity(
+                URI.create(apiUrl("/deployments/dial-toolset/" + deploymentId)), ToolsetInfoDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeploymentId()).isEqualTo(deploymentId);
+        verify(dialCoreClient).getToolset(deploymentId);
+    }
+
+    @Test
+    @DisplayName("GET /deployments/dial-model/ with an empty deployment ID returns 400 and calls no client method")
+    void getDeploymentWithEmptyIdReturns400() {
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                URI.create(apiUrl("/deployments/dial-model/")),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("code")).isEqualTo("VALIDATION_ERROR");
+        assertThat((String) response.getBody().get("message")).contains("Deployment ID must not be empty");
+        verify(dialCoreClient, never()).getModel(any());
+    }
+
+    @Test
+    @DisplayName("GET /deployments/tools still routes to the tool discovery endpoint, not the by-ID wildcard")
+    void toolsPathIsNotSwallowedByWildcardMapping() {
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                URI.create(apiUrl("/deployments/tools")), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        // 'tools' is not a valid deployment type — reaching the wildcard handler would fail with
+        // VALIDATION_ERROR; instead the exact /tools mapping wins and reports the missing query param.
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat((String) response.getBody().get("message")).contains("deploymentId");
+        verify(dialCoreClient, never()).getToolset(any());
     }
 
     @Test

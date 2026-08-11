@@ -111,8 +111,9 @@ public class CsvImportService {
             Map<String, SchemaFieldType> fieldTypes = getFieldTypes(testCaseSchema);
 
             boolean schemaEmpty = testCaseSchema == null || testCaseSchema.isEmpty();
+            Set<String> allDataFieldNames = allDataFieldNames(bindings);
             List<FieldDefinitionDto> validationSchema =
-                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema);
+                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames);
 
             List<CsvImportWarningDto> warnings = new ArrayList<>();
             List<TestCaseResponseDto> sampleRows = new ArrayList<>();
@@ -120,6 +121,8 @@ public class CsvImportService {
             int totalTestCases = 0;
             int rowNum = 1;
             int padWidth = String.valueOf(csvImportProperties.getMaxRows()).length();
+            // File-level multi-turn gate (design D3): true once any closed case is multi-turn.
+            boolean sawMultiTurnCase = false;
 
             // Incremental type inference for preview schema detection
             Map<String, SchemaFieldType> inferredTypes = new LinkedHashMap<>();
@@ -158,6 +161,7 @@ public class CsvImportService {
 
                 CsvTestCase accumulatedTestCase = testCaseAccumulator.add(row);
                 if (accumulatedTestCase != null) {
+                    sawMultiTurnCase = sawMultiTurnCase || accumulatedTestCase.multiTurn();
                     totalTestCases += handlePreviewCase(
                             accumulatedTestCase,
                             datasetId,
@@ -177,6 +181,7 @@ public class CsvImportService {
             // Process the final test case
             CsvTestCase finalCase = testCaseAccumulator.flush();
             if (finalCase != null) {
+                sawMultiTurnCase = sawMultiTurnCase || finalCase.multiTurn();
                 totalTestCases += handlePreviewCase(
                         finalCase,
                         datasetId,
@@ -193,8 +198,10 @@ public class CsvImportService {
                 addCollisionWarnings(datasetId, occurrences, warnings, conflictStrategy);
             }
 
-            List<FieldDefinitionDto> autoDetectedSchema =
-                    buildAutoDetectedSchema(mode, schemaEmpty, bindings, testCaseSchema, inferredTypes);
+            // Post-stream membership set (design D3): the observed multi-turn gate, exact after streaming.
+            Set<String> finalMultiTurnColumns = sawMultiTurnCase ? allDataFieldNames : Set.of();
+            List<FieldDefinitionDto> autoDetectedSchema = buildAutoDetectedSchema(
+                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
 
             List<CsvColumnInfoDto> detectedColumns =
                     buildDetectedColumns(headers, bindings, fieldTypes, autoDetectedSchema);
@@ -255,8 +262,9 @@ public class CsvImportService {
             Map<String, SchemaFieldType> fieldTypes = getFieldTypes(testCaseSchema);
 
             boolean schemaEmpty = testCaseSchema == null || testCaseSchema.isEmpty();
+            Set<String> allDataFieldNames = allDataFieldNames(bindings);
             List<FieldDefinitionDto> validationSchema =
-                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema);
+                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames);
 
             List<CsvImportWarningDto> warnings = new ArrayList<>();
             int totalRows = 0;
@@ -267,6 +275,8 @@ public class CsvImportService {
             int rowNum = 1;
             int maxRows = csvImportProperties.getMaxRows();
             int padWidth = String.valueOf(maxRows).length();
+            // File-level multi-turn gate (design D3): true once any closed case is multi-turn.
+            boolean sawMultiTurnCase = false;
 
             // Incremental type inference for schema detection
             Map<String, SchemaFieldType> inferredTypes = new LinkedHashMap<>();
@@ -295,6 +305,7 @@ public class CsvImportService {
 
                 CsvTestCase accumulatedTestCase = testCaseAccumulator.add(row);
                 if (accumulatedTestCase != null) {
+                    sawMultiTurnCase = sawMultiTurnCase || accumulatedTestCase.multiTurn();
                     InsertResult result = processTestCase(
                             accumulatedTestCase, datasetId, validationSchema, conflictStrategy, warnings);
                     validCount += result.validCount();
@@ -311,6 +322,7 @@ public class CsvImportService {
             // Process the final test case
             CsvTestCase finalCase = testCaseAccumulator.flush();
             if (finalCase != null) {
+                sawMultiTurnCase = sawMultiTurnCase || finalCase.multiTurn();
                 InsertResult result =
                         processTestCase(finalCase, datasetId, validationSchema, conflictStrategy, warnings);
                 validCount += result.validCount();
@@ -319,15 +331,18 @@ public class CsvImportService {
                 overriddenCount += result.overriddenCount();
             }
 
+            // Post-stream membership set (design D3): the observed multi-turn gate, exact after streaming.
+            Set<String> finalMultiTurnColumns = sawMultiTurnCase ? allDataFieldNames : Set.of();
+
             // Schema persistence after streaming completes
-            boolean schemaPersisted =
-                    persistSchema(datasetId, mode, schemaEmpty, bindings, testCaseSchema, inferredTypes);
+            boolean schemaPersisted = persistSchema(
+                    datasetId, mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
 
             // Post-persist fixup: coerce values for columns with newly determined types
             Set<String> changedColumns = computeChangedColumns(mode, schemaEmpty, fieldTypes, inferredTypes);
             if (!changedColumns.isEmpty()) {
-                List<FieldDefinitionDto> finalSchema =
-                        buildFinalSchema(mode, schemaEmpty, bindings, testCaseSchema, inferredTypes);
+                List<FieldDefinitionDto> finalSchema = buildFinalSchema(
+                        mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
                 fixupTestCases(datasetId, changedColumns, inferredTypes, finalSchema);
             }
 
@@ -608,17 +623,20 @@ public class CsvImportService {
             CsvImportMode mode,
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
-            List<FieldDefinitionDto> testCaseSchema) {
+            List<FieldDefinitionDto> testCaseSchema,
+            Set<String> multiTurnColumns) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
-            // Types are unknown until inference completes; the builder still carries perTurn forward from
-            // testCaseSchema by field name, since scope is a persistent dataset-schema property a CSV never
-            // expresses. MERGE and APPEND already carry the existing schema's fields (with their perTurn)
-            // through unchanged.
-            return schemaFieldBuilder.buildFromBindings(bindings, null, testCaseSchema);
+            // Types are unknown until inference completes. A declared field still carries perTurn forward
+            // from testCaseSchema by field name (declared scope is a persistent dataset-schema property a
+            // CSV never expresses). An undeclared column gets the D2 pre-stream over-approximation:
+            // multiTurnColumns is every data-bound column name, so it is treated as per-turn during
+            // streaming — harmless for single-turn cases (their validation never consults scope), and
+            // correct for multi-turn cases, for which per-turn is the desired answer anyway.
+            return schemaFieldBuilder.buildFromBindings(bindings, null, testCaseSchema, multiTurnColumns);
         }
         if (mode == CsvImportMode.MERGE) {
             List<FieldDefinitionDto> merged = new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
-            merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, null));
+            merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, null, multiTurnColumns));
             return merged;
         }
         // APPEND + non-empty schema: use existing schema as-is
@@ -639,11 +657,12 @@ public class CsvImportService {
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
-            Map<String, SchemaFieldType> inferredTypes) {
+            Map<String, SchemaFieldType> inferredTypes,
+            Set<String> multiTurnColumns) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
             // Build full auto-detected schema from inferred types (OVERRIDE, APPEND+empty, MERGE+empty)
             List<FieldDefinitionDto> newSchema =
-                    schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema);
+                    schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
             String schemaJson = serializeSchema(newSchema);
             datasetRepository.updateTestCaseSchema(datasetId, schemaJson);
             return true;
@@ -651,7 +670,7 @@ public class CsvImportService {
         if (mode == CsvImportMode.MERGE && !inferredTypes.isEmpty()) {
             // Merge: add only new fields (those not already in the existing schema)
             List<FieldDefinitionDto> delta =
-                    schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes);
+                    schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns);
             if (!delta.isEmpty()) {
                 List<FieldDefinitionDto> mergedSchema =
                         new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
@@ -710,13 +729,14 @@ public class CsvImportService {
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
-            Map<String, SchemaFieldType> inferredTypes) {
+            Map<String, SchemaFieldType> inferredTypes,
+            Set<String> multiTurnColumns) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
-            return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema);
+            return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
         }
         // MERGE + non-empty schema: existing schema + new fields from inferredTypes
         List<FieldDefinitionDto> merged = new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
-        merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes));
+        merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns));
         return merged;
     }
 
@@ -1057,19 +1077,20 @@ public class CsvImportService {
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
-            Map<String, SchemaFieldType> inferredTypes) {
+            Map<String, SchemaFieldType> inferredTypes,
+            Set<String> multiTurnColumns) {
         if (mode == CsvImportMode.OVERRIDE) {
             // Always return full auto-detected schema
-            return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema);
+            return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
         } else if (mode == CsvImportMode.APPEND) {
             if (schemaEmpty) {
-                return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema);
+                return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
             }
             return null;
         } else if (mode == CsvImportMode.MERGE) {
             // Return only delta fields (new columns not in existing schema)
             List<FieldDefinitionDto> delta =
-                    schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes);
+                    schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns);
             return delta.isEmpty() ? null : delta;
         }
         return null;
@@ -1134,6 +1155,22 @@ public class CsvImportService {
             bindings.add(new ColumnBinding(header, mappedTo, fieldName));
         }
         return bindings;
+    }
+
+    /**
+     * Collects every data-bound (MAPPED_TO_DATA) field name from {@code bindings} — the multi-turn scope
+     * over-approximation (design D2) used to build the pre-stream validation schema, and the exact
+     * membership set (design D3) used to build every post-stream schema when the file contains at least
+     * one multi-turn case.
+     */
+    private static Set<String> allDataFieldNames(List<ColumnBinding> bindings) {
+        Set<String> names = new LinkedHashSet<>();
+        for (ColumnBinding binding : bindings) {
+            if (ColumnBinding.MAPPED_TO_DATA.equals(binding.mappedTo())) {
+                names.add(binding.fieldName());
+            }
+        }
+        return names;
     }
 
     /**

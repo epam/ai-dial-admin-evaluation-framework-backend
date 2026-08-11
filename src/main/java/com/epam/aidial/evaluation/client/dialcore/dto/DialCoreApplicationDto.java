@@ -1,37 +1,28 @@
 package com.epam.aidial.evaluation.client.dialcore.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import java.util.List;
 import java.util.Map;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.annotation.JsonNaming;
 
+/**
+ * DIAL Core application deployment payload, discriminator {@code object=application}.
+ */
 @Data
-@Builder
+@EqualsAndHashCode(callSuper = true)
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class DialCoreApplicationDto {
+public class DialCoreApplicationDto extends DialCoreDeploymentDto {
 
-    private String id;
     private String application;
-    private String displayName;
-    private String description;
-    private String reference;
-    private String owner;
-    private String object;
-    private String status;
-    private Long createdAt;
-    private Long updatedAt;
-    private Map<String, Object> features;
-    private Map<String, Object> defaults;
-    private List<String> descriptionKeywords;
-    private Integer maxRetryAttempts;
     private Map<String, Object> applicationProperties;
     private String applicationTypeSchemaId;
     private Map<String, DialCoreRouteDto> routes;

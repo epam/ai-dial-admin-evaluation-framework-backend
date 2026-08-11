@@ -81,6 +81,8 @@ Status: **Implemented**
 
 The system SHALL provide `GET /api/v1/deployments/tools?deploymentId={id}` to return the list of tools available on any MCP-capable deployment, including their schemas. The deployment ID is passed as a query parameter (not a path variable) because deployment IDs may contain slashes (e.g., `toolsets/public/3DMolVisualizer_(copy)__0.0.2`). An optional `transport` query parameter selects the MCP transport protocol; defaults to `STREAMABLE_HTTP` when omitted.
 
+The sibling by-ID endpoint solves the same slash problem differently — it maps `/{deploymentType}/**` and resolves the ID from the wildcard tail (see "Get deployment by type and ID" in the [dial-core-client spec](../dial-core-client/spec.md)) — because its ID is a path resource, not a filter argument. Both conventions coexist deliberately: the `/tools` mapping is an exact path and therefore takes precedence over the wildcard, so `GET /api/v1/deployments/tools` SHALL NOT be interpreted as a deployment of type `tools`.
+
 #### Scenario: List tools for a deployment
 - **WHEN** authenticated user sends `GET /api/v1/deployments/tools?deploymentId=my-toolset`
 - **THEN** system SHALL call `McpToolInvoker.listTools(id, token, transport)` with the effective transport
@@ -122,6 +124,11 @@ The `DeploymentType` enum SHALL include a `DIAL_TOOLSET` value with serialized f
 - **WHEN** authenticated user sends `GET /api/v1/deployments/dial-toolset/{id}`
 - **THEN** system SHALL call `GET /openai/toolsets/{id}` on DIAL Core and return the mapped `ToolsetInfoDto`
 
+#### Scenario: Get toolset by slash-containing ID
+- **WHEN** authenticated user sends `GET /api/v1/deployments/dial-toolset/toolsets/public/3DMolVisualizer_(copy)__0.0.2`
+- **THEN** the resolved deployment ID SHALL be `toolsets/public/3DMolVisualizer_(copy)__0.0.2` (the whole wildcard tail)
+- **AND** system SHALL call `DialCoreClient.getToolset` with that value
+
 ### Requirement: InterfaceType enum
 
 Status: **Implemented**
@@ -141,7 +148,7 @@ The system SHALL define an `InterfaceType` enum for valid interface types used i
 - New DTO: `ToolsetInfoDto extends DeploymentInfoDto` in `service.domain.dto.deployment`
 - New DTO: `ToolDefinitionDto` in `service.domain.dto.deployment` — `name`, `description`, `inputSchema` (Map), `outputSchema` (Map, nullable)
 - New enum: `InterfaceType` in `service.domain.dto.deployment` — `CHAT`, `EMBEDDING`, `MCP`, `CUSTOM_UI`
-- New DIAL Core DTO: `DialCoreDeploymentDto` in `client.dialcore.dto` — unified response from `/v1/deployments` (replaces separate model/app/toolset list DTOs for listing)
+- New DIAL Core DTO: `DialCoreDeploymentDto` in `client.dialcore.dto` — abstract polymorphic base (discriminator `object`) of the `DialCoreModelDto`/`DialCoreApplicationDto`/`DialCoreToolsetDto` hierarchy; unified response entries from `/v1/deployments` deserialize directly to the matching concrete subtype (replaces separate model/app/toolset list DTOs for listing)
 - Modified: `DeploymentType` enum — add `DIAL_TOOLSET("dial-toolset")`
 - Modified: `DialCoreClient` — add `getDeployments(interfaceType)` method calling `/v1/deployments`; keep `getToolset(id)` for single-item detail
 - Modified: `DeploymentService` — replace 3 parallel calls with single `/v1/deployments` call; add type/interface filtering

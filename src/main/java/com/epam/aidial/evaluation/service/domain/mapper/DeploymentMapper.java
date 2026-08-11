@@ -56,8 +56,7 @@ public interface DeploymentMapper {
     DialModelInfoDto toDialModelInfoDto(DialCoreModelDto source);
 
     @Mapping(source = "id", target = "deploymentId")
-    @Mapping(target = "version", ignore = true)
-    @Mapping(target = "inputAttachmentTypes", ignore = true)
+    @Mapping(source = "displayVersion", target = "version")
     @Mapping(
             target = "applicationTypeSchemaId",
             source = "applicationTypeSchemaId",
@@ -102,12 +101,7 @@ public interface DeploymentMapper {
     RouteAttachmentPathsDto toRouteAttachmentPathsDto(DialCoreSchemaAttachmentPathsDto source);
 
     @Mapping(source = "id", target = "deploymentId")
-    @Mapping(source = "displayName", target = "displayName")
-    @Mapping(target = "version", ignore = true)
-    @Mapping(target = "inputAttachmentTypes", ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "updatedAt", ignore = true)
-    @Mapping(target = "descriptionKeywords", ignore = true)
+    @Mapping(source = "displayVersion", target = "version")
     @Mapping(source = "transport", target = "transport", qualifiedByName = "dialTransportToMcp")
     ToolsetInfoDto toToolsetInfoDto(DialCoreToolsetDto source);
 
@@ -123,34 +117,18 @@ public interface DeploymentMapper {
     }
 
     /**
-     * Maps a unified deployment entry from /v1/deployments to the appropriate subtype.
+     * Fully maps a unified deployment entry from /v1/deployments to the matching info subtype:
+     * all base fields (version from displayVersion, owner, timestamps, descriptionKeywords,
+     * inputAttachmentTypes) plus subtype-specific ones (model capabilities/limits/pricing,
+     * application properties/schemaId/routes, toolset transport/allowedTools).
      */
     default DeploymentInfoDto toDeploymentInfoDto(DialCoreDeploymentDto source) {
-        if (source == null) {
-            return null;
-        }
-        String object = source.getObject();
-        if ("model".equals(object)) {
-            return DialModelInfoDto.builder()
-                    .deploymentId(source.getId())
-                    .displayName(source.getDisplayName())
-                    .description(source.getDescription())
-                    .build();
-        } else if ("application".equals(object)) {
-            return DialApplicationInfoDto.builder()
-                    .deploymentId(source.getId())
-                    .displayName(source.getDisplayName())
-                    .description(source.getDescription())
-                    .build();
-        } else if ("toolset".equals(object)) {
-            return ToolsetInfoDto.builder()
-                    .deploymentId(source.getId())
-                    .displayName(source.getDisplayName())
-                    .description(source.getDescription())
-                    .transport(dialTransportToMcp(source.getTransport()))
-                    .build();
-        }
-        // Unknown object type — return null so the caller can log and skip
-        return null;
+        return switch (source) {
+            case DialCoreModelDto model -> toDialModelInfoDto(model);
+            case DialCoreApplicationDto application -> toDialApplicationInfoDto(application);
+            case DialCoreToolsetDto toolset -> toToolsetInfoDto(toolset);
+            // Unknown object type (or null entry) — return null so the caller can log and skip
+            case null, default -> null;
+        };
     }
 }

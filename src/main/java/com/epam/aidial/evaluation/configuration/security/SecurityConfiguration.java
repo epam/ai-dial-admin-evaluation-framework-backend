@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.web.security.JwtAuthenticationConverterFactory
 import com.epam.aidial.evaluation.web.security.JwtProviderUtils;
 import com.epam.aidial.evaluation.web.security.TokenDecoderFactory;
 import com.epam.aidial.evaluation.web.security.TokenDecoderFactoryImpl;
+import com.epam.aidial.evaluation.web.security.apikey.ApiKeyAuthenticationFilter;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -15,8 +16,11 @@ import java.util.Set;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -25,6 +29,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Slf4j
@@ -75,11 +80,23 @@ public class SecurityConfiguration {
     }
 
     @Bean
+    @ConditionalOnBean(ApiKeyAuthenticationFilter.class)
+    public FilterRegistrationBean<ApiKeyAuthenticationFilter> apiKeyFilterRegistration(
+            ApiKeyAuthenticationFilter filter) {
+        // The filter is wired into the Spring Security chain via addFilterBefore() below, not as a
+        // top-level servlet filter, so suppress Spring Boot's default auto-registration of it.
+        FilterRegistrationBean<ApiKeyAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             TokenDecoderFactory tokenDecoderFactory,
             JwtAuthenticationConverterFactory jwtAuthenticationConverterFactory,
-            Map<String, Set<String>> allowedRolesByIssuer)
+            Map<String, Set<String>> allowedRolesByIssuer,
+            ObjectProvider<ApiKeyAuthenticationFilter> apiKeyAuthenticationFilter)
             throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
@@ -119,6 +136,8 @@ public class SecurityConfiguration {
                                     }
                                     return new JwtAuthenticationToken(token, filtered, authenticationToken.getName());
                                 })));
+        apiKeyAuthenticationFilter.ifAvailable(
+                filter -> http.addFilterBefore(filter, BearerTokenAuthenticationFilter.class));
         return http.build();
     }
 

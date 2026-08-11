@@ -32,18 +32,18 @@ public class SourceClientConfiguration {
 
         return builder.baseUrl(properties.getBaseUrl())
                 .requestFactory(requestFactory)
-                .requestInterceptor(staticBearerTokenInterceptor(properties.getToken()))
+                .requestInterceptor(staticApiKeyInterceptor(properties.getApiKey()))
                 .build();
     }
 
     /**
-     * Returns a request interceptor that sets a static {@code Authorization: Bearer <token>} header.
+     * Returns a request interceptor that sets a static {@code Api-Key} header.
      *
-     * <p>This is the source-EF bearer token, distinct from the target DIAL Core token.
+     * <p>This is the source-EF API key, distinct from the target DIAL Core API key.
      */
-    private static ClientHttpRequestInterceptor staticBearerTokenInterceptor(String token) {
+    static ClientHttpRequestInterceptor staticApiKeyInterceptor(String apiKey) {
         return (HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {
-            request.getHeaders().setBearerAuth(token);
+            request.getHeaders().set("Api-Key", apiKey);
             return execution.execute(request, body);
         };
     }

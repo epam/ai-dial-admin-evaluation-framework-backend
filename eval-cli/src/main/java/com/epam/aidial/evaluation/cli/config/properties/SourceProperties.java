@@ -25,7 +25,7 @@ public class SourceProperties {
     private String baseUrl;
 
     @NotBlank
-    private String token;
+    private String apiKey;
 
     @Min(0)
     private int connectTimeoutMs;

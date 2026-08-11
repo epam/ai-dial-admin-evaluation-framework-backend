@@ -81,12 +81,12 @@ The CLI SHALL expose `clone`, `fetch`, `run`, and `import` as independently invo
 - **WHEN** a user invokes the `evaluate` command with one or more configured suites
 - **THEN** the CLI performs clone, fetch, run, and import for each configured suite in that order
 
-### Requirement: Source Bearer Token / Target API-Key Authentication
-The CLI SHALL authenticate its calls to the source EF using a bearer token supplied via configuration (`eval.source.token`, env var `EVAL_TOKEN`), and its calls to the target environment's deployment invocation endpoint using an API key supplied via configuration (`dial.components.core.api-key`, env var `DIAL_CORE_API_KEY`), without performing any token acquisition or refresh flow itself. Both credentials SHALL be sourced from environment variables only — there SHALL be no CLI-flag or file-based delivery for either.
+### Requirement: Source and Target API-Key Authentication
+The CLI SHALL authenticate its calls to the source EF and to the target environment's deployment invocation endpoint using API keys supplied via configuration — `eval.source.api-key` (env var `EVAL_SOURCE_API_KEY`) for the source EF and `dial.components.core.api-key` (env var `DIAL_CORE_API_KEY`) for the target — without performing any token acquisition or refresh flow itself. Both credentials SHALL be sourced from environment variables only — there SHALL be no CLI-flag or file-based delivery for either.
 
-#### Scenario: Configured token is sent to the source EF
+#### Scenario: Configured API key is sent to the source EF
 - **WHEN** the CLI calls any source EF endpoint
-- **THEN** the request includes an `Authorization: Bearer <eval.source.token>` header
+- **THEN** the request includes an `Api-Key: <eval.source.api-key>` header
 
 #### Scenario: Configured API key is sent to the target deployment
 - **WHEN** the CLI invokes the configured target deployment during the `run` command

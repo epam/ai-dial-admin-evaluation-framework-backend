@@ -23,18 +23,24 @@ import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
+import com.epam.aidial.evaluation.runner.job.DeploymentInvocationSupport;
+import com.epam.aidial.evaluation.runner.job.ExecutionErrorCodes;
 import com.epam.aidial.evaluation.runner.job.SseEvent;
 import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
+import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
@@ -42,6 +48,7 @@ import com.epam.aidial.evaluation.service.domain.dto.SseEventDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutCoreResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
+import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
@@ -97,6 +104,7 @@ public class TryItOutService {
     private final EvaluationRunProperties evaluationRunProperties;
     private final DialCoreProperties dialCoreProperties;
     private final SseEventProcessingProperties sseEventProcessingProperties;
+    private final ResponseColumnExtractor responseColumnExtractor;
 
     public TryItOutResponseDto tryWithTestCase(UUID testSuiteId, UUID testCaseId) {
         TestSuite suite = loadSuite(testSuiteId);
@@ -112,6 +120,10 @@ public class TryItOutService {
                     .orElseThrow(() -> new EntityNotFoundException("TestCase " + testCaseId + " not found in dataset "
                             + suite.getDatasetId() + " (referenced by suite " + testSuiteId + ")"));
 
+            if (testCase.getMultiTurnData() != null) {
+                throw new InvalidOperationException("Cannot try out: MCP suites do not support multi-turn test cases");
+            }
+
             // Suite-level bindings are the effective bindings — per-test-case overrides no longer exist
             List<InputBindingDto> effectiveBindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
 
@@ -126,11 +138,102 @@ public class TryItOutService {
         EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
         validateSuitePreconditions(deploymentRef, endpointRef, suite.getRequestTemplate());
 
-        ResolvedRequestDto resolved = resolvedRequestService.resolveRequest(testSuiteId, testCaseId);
-        validateResolutionResult(resolved);
+        ResolvedRequestService.TurnPlan plan = resolvedRequestService.planTurns(testSuiteId, testCaseId);
+        if (plan.turnDataList().size() <= 1) {
+            ResolvedRequestDto resolved = resolvedRequestService.resolveRequest(testSuiteId, testCaseId);
+            validateResolutionResult(resolved);
+            return invokeAndBuildResponse(resolved, deploymentRef, endpointRef.getMethod(), testSuiteId);
+        }
 
-        return invokeAndBuildResponse(resolved, deploymentRef, endpointRef.getMethod(), testSuiteId);
+        return runTurnSequence(plan, deploymentRef, endpointRef.getMethod(), testSuiteId);
     }
+
+    /**
+     * Executes every turn of a multi-turn test case sequentially, fail-fast: a turn that resolves to a
+     * non-2xx status or a request-body JSONata evaluation failure stops the sequence, and that turn
+     * becomes the returned result. Each successful turn's extracted response columns are threaded to the
+     * next turn as {@code frameBindings}, mirroring {@code TurnLoopExecutor}'s history-accumulation
+     * contract so {@code $history}-style request templates behave identically to a real run. Only the
+     * last executed turn is returned — a JSONata template that accumulates history (the common case)
+     * already carries every prior turn's messages in that turn's resolved request body, so a separate
+     * per-turn history payload would just duplicate it.
+     */
+    private TryItOutResponseDto runTurnSequence(
+            ResolvedRequestService.TurnPlan plan,
+            DeploymentReferenceDto deploymentRef,
+            HttpMethod method,
+            UUID testSuiteId) {
+        int totalTurns = plan.turnDataList().size();
+        Map<String, Object> frameBindings = Map.of();
+        TurnInvocationResult current = null;
+
+        for (int turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
+            Map<String, Object> turnData = plan.turnDataList().get(turnIndex);
+            boolean turnFailed;
+            try {
+                ResolvedRequestDto resolved =
+                        requestResolver.resolveForRun(plan.template(), plan.bindings(), turnData, frameBindings);
+                validateResolutionResult(resolved);
+                current = invokeTurn(resolved, deploymentRef, method, testSuiteId);
+                turnFailed = DeploymentInvocationSupport.resolveExecutionStatus(
+                                current.response().getStatusCode())
+                        != ExecutionStatus.SUCCESS;
+            } catch (RequestBodyEvaluationException e) {
+                current = buildEvaluationFailureResult(e);
+                turnFailed = true;
+            }
+
+            if (turnFailed) {
+                break;
+            }
+            if (turnIndex < totalTurns - 1) {
+                frameBindings = extractFrameBindings(plan.responseColumns(), current);
+            }
+        }
+
+        return TryItOutResponseDto.builder()
+                .resolvedRequest(current.resolvedRequest())
+                .response(current.response())
+                .durationMs(current.durationMs())
+                .traceId(current.traceId())
+                .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(current.traceId()))
+                .build();
+    }
+
+    private Map<String, Object> extractFrameBindings(
+            List<ResponseColumnDefinitionDto> responseColumns, TurnInvocationResult result) {
+        String responseBodyJson = writeOrNull(result.response().getBody());
+        String requestBodyJson =
+                writeOrNull(resolvedBodyContent(result.resolvedRequest().getBody()));
+        return responseColumnExtractor
+                .extract(responseColumns, responseBodyJson, requestBodyJson)
+                .values();
+    }
+
+    private Object resolvedBodyContent(ResolvedBodyDto body) {
+        return body instanceof ResolvedJsonBodyDto jsonBody ? jsonBody.getContent() : body;
+    }
+
+    private String writeOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return objectMapper.writeValueAsString(value);
+    }
+
+    private TurnInvocationResult buildEvaluationFailureResult(RequestBodyEvaluationException e) {
+        String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                ExecutionErrorCodes.REQUEST_BODY_EVALUATION_ERROR, e.getMessage(), objectMapper);
+        TryItOutCoreResponseDto response = TryItOutCoreResponseDto.builder()
+                .statusCode(0)
+                .body(objectMapper.readTree(errorBody))
+                .build();
+        return new TurnInvocationResult(null, response, 0L, null);
+    }
+
+    /** Carries one turn's invocation result before it becomes the returned top-level result. */
+    private record TurnInvocationResult(
+            ResolvedRequestDto resolvedRequest, TryItOutCoreResponseDto response, Long durationMs, String traceId) {}
 
     public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<String, Object> variables) {
         TestSuite suite = loadSuite(testSuiteId);
@@ -326,6 +429,18 @@ public class TryItOutService {
 
     private TryItOutResponseDto invokeAndBuildResponse(
             ResolvedRequestDto resolved, DeploymentReferenceDto deploymentRef, HttpMethod method, UUID testSuiteId) {
+        TurnInvocationResult result = invokeTurn(resolved, deploymentRef, method, testSuiteId);
+        return TryItOutResponseDto.builder()
+                .resolvedRequest(result.resolvedRequest())
+                .response(result.response())
+                .durationMs(result.durationMs())
+                .traceId(result.traceId())
+                .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(result.traceId()))
+                .build();
+    }
+
+    private TurnInvocationResult invokeTurn(
+            ResolvedRequestDto resolved, DeploymentReferenceDto deploymentRef, HttpMethod method, UUID testSuiteId) {
         String fullPath = urlBuilder.buildUrl(deploymentRef.getId(), resolved.getUrl());
         HttpHeaders headers = toHttpHeaders(resolved.getHeaders());
         MultiValueMap<String, String> queryParams = toQueryParams(resolved.getQueryParams());
@@ -364,13 +479,7 @@ public class TryItOutService {
                             .build();
                 }
 
-                return TryItOutResponseDto.builder()
-                        .resolvedRequest(resolved)
-                        .response(responseDto)
-                        .durationMs(durationMs)
-                        .traceId(traceId)
-                        .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(traceId))
-                        .build();
+                return new TurnInvocationResult(resolved, responseDto, durationMs, traceId);
             }
         } catch (RuntimeException e) {
             span.recordException(e);

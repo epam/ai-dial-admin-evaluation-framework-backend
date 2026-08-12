@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
@@ -30,21 +31,26 @@ import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
 import com.epam.aidial.evaluation.runner.job.SseEvent;
 import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
+import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
 import com.epam.aidial.evaluation.service.domain.TryItOutService.TryItOutValidationException;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
+import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import io.opentelemetry.api.OpenTelemetry;
@@ -140,6 +146,9 @@ class TryItOutServiceTest {
     @Mock
     private SseEventProcessingProperties sseEventProcessingProperties;
 
+    @Mock
+    private ResponseColumnExtractor responseColumnExtractor;
+
     private TryItOutService service;
     private final ObjectMapper realObjectMapper = new ObjectMapper();
 
@@ -168,7 +177,8 @@ class TryItOutServiceTest {
                 sseEventParser,
                 evaluationRunProperties,
                 dialCoreProperties,
-                sseEventProcessingProperties);
+                sseEventProcessingProperties,
+                responseColumnExtractor);
         lenient()
                 .when(serializerRegistry.serialize(any()))
                 .thenReturn(new SerializedBody(MediaType.APPLICATION_JSON, Map.of("prompt", "Hello")));
@@ -177,6 +187,18 @@ class TryItOutServiceTest {
         lenient().when(dialCoreProperties.getTryOut()).thenReturn(tryOutProperties);
         lenient().when(tryOutProperties.getReadTimeoutMs()).thenReturn(30_000);
         lenient().when(sseEventProcessingProperties.getMaxTotalDurationMs()).thenReturn(3_600_000L);
+        // Default: a single-turn plan, so existing single-shot tests take the pre-multi-turn code path
+        // unchanged. Multi-turn tests override this stub explicitly.
+        lenient()
+                .when(resolvedRequestService.planTurns(any(), any()))
+                .thenReturn(new ResolvedRequestService.TurnPlan(null, null, null, List.of(Map.of())));
+        // Multi-turn frame-binding extraction serializes via the real mapper; delegate the mock accordingly.
+        lenient()
+                .when(objectMapperMock.writeValueAsString(any()))
+                .thenAnswer(inv -> realObjectMapper.writeValueAsString(inv.getArgument(0)));
+        lenient()
+                .when(objectMapperMock.readTree(any(String.class)))
+                .thenAnswer(inv -> realObjectMapper.readTree((String) inv.getArgument(0)));
     }
 
     private TestSuite buildSuite(String deploymentRefJson, String endpointRefJson, String requestTemplateJson) {
@@ -358,6 +380,160 @@ class TryItOutServiceTest {
                     .isInstanceOf(TryItOutValidationException.class);
 
             verifyNoInteractions(deploymentInvoker);
+        }
+    }
+
+    @Nested
+    @DisplayName("tryWithTestCase multi-turn")
+    class MultiTurnTryWithTestCase {
+
+        private final RequestTemplateDto template =
+                RequestTemplateDto.builder().urlTemplate("/chat/completions").build();
+        private final List<InputBindingDto> bindings = List.of();
+        private final List<ResponseColumnDefinitionDto> responseColumns = List.of();
+
+        private void setUpDeploymentSuite() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+        }
+
+        @Test
+        @DisplayName("executes every turn, threading extracted response columns as the next turn's frame bindings")
+        void shouldExecuteAllTurnsThreadingFrameBindings() {
+            setUpDeploymentSuite();
+            List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"), Map.of("q", "3"));
+            when(resolvedRequestService.planTurns(SUITE_ID, TEST_CASE_ID))
+                    .thenReturn(new ResolvedRequestService.TurnPlan(template, bindings, responseColumns, turnData));
+
+            Map<String, Object> frame1 = Map.of("history", "after-turn-0");
+            Map<String, Object> frame2 = Map.of("history", "after-turn-1");
+            when(requestResolver.resolveForRun(eq(template), eq(bindings), eq(turnData.get(0)), eq(Map.of())))
+                    .thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(eq(template), eq(bindings), eq(turnData.get(1)), eq(frame1)))
+                    .thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(eq(template), eq(bindings), eq(turnData.get(2)), eq(frame2)))
+                    .thenReturn(buildResolvedRequest());
+
+            when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
+                    .thenReturn(nonStreamingResult(200, Map.of("turn", 1)))
+                    .thenReturn(nonStreamingResult(200, Map.of("turn", 2)));
+
+            when(responseColumnExtractor.extract(eq(responseColumns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", frame1))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", frame2));
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            assertThat(result.getResponse().getBody()).isEqualTo(Map.of("turn", 2));
+
+            verify(requestResolver).resolveForRun(template, bindings, turnData.get(0), Map.of());
+            verify(requestResolver).resolveForRun(template, bindings, turnData.get(1), frame1);
+            verify(requestResolver).resolveForRun(template, bindings, turnData.get(2), frame2);
+        }
+
+        @Test
+        @DisplayName("stops at the first failed turn (fail-fast)")
+        void shouldStopAtFirstFailedTurn() {
+            setUpDeploymentSuite();
+            List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"), Map.of("q", "3"));
+            when(resolvedRequestService.planTurns(SUITE_ID, TEST_CASE_ID))
+                    .thenReturn(new ResolvedRequestService.TurnPlan(template, bindings, responseColumns, turnData));
+
+            when(requestResolver.resolveForRun(eq(template), eq(bindings), any(), any()))
+                    .thenReturn(buildResolvedRequest());
+            when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("turn", 0)))
+                    .thenReturn(nonStreamingResult(500, Map.of("error", "boom")));
+            when(responseColumnExtractor.extract(eq(responseColumns), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of()));
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(500);
+            assertThat(result.getResponse().getBody()).isEqualTo(Map.of("error", "boom"));
+            verify(deploymentInvoker, org.mockito.Mockito.times(2))
+                    .invokeWithStreaming(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("stops the sequence when a turn's request body fails JSONata evaluation")
+        void shouldStopWhenRequestBodyEvaluationFails() {
+            setUpDeploymentSuite();
+            List<Map<String, Object>> turnData = List.of(Map.of("q", "1"), Map.of("q", "2"));
+            when(resolvedRequestService.planTurns(SUITE_ID, TEST_CASE_ID))
+                    .thenReturn(new ResolvedRequestService.TurnPlan(template, bindings, responseColumns, turnData));
+
+            when(requestResolver.resolveForRun(eq(template), eq(bindings), eq(turnData.get(0)), eq(Map.of())))
+                    .thenThrow(new RequestBodyEvaluationException("boom"));
+            when(objectMapperMock.createObjectNode()).thenAnswer(inv -> realObjectMapper.createObjectNode());
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(0);
+            verifyNoInteractions(deploymentInvoker);
+        }
+
+        @Test
+        @DisplayName("a multi-turn test case collapsed to a single turn behaves like a single-turn case")
+        void shouldBehaveLikeSingleTurnWhenPlanCollapsesToSingleTurn() {
+            setUpDeploymentSuite();
+            when(resolvedRequestService.planTurns(SUITE_ID, TEST_CASE_ID))
+                    .thenReturn(new ResolvedRequestService.TurnPlan(
+                            template, bindings, responseColumns, List.of(Map.of("shared", "value"))));
+            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(buildResolvedRequest());
+            when(urlBuilder.buildUrl("gpt-4", "/chat/completions"))
+                    .thenReturn("/openai/deployments/gpt-4/chat/completions");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            assertThat(result.getResponse().getBody()).isEqualTo(Map.of("result", "ok"));
+            verifyNoInteractions(responseColumnExtractor);
+        }
+
+        @Test
+        @DisplayName("rejects an MCP_TOOL suite whose test case has multi-turn data, without invoking the tool")
+        void shouldRejectMcpSuiteWithMultiTurnTestCase() {
+            TestSuite suite = TestSuite.builder()
+                    .id(SUITE_ID)
+                    .datasetId(UUID.randomUUID())
+                    .suiteType(SuiteType.MCP_TOOL)
+                    .mcpDeploymentRef("{}")
+                    .toolRef("{}")
+                    .argumentTemplate("{}")
+                    .build();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.mapMcpDeploymentRef("{}"))
+                    .thenReturn(com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto.builder()
+                            .id("mcp-deployment")
+                            .build());
+            when(jsonbMapper.mapToolRef("{}"))
+                    .thenReturn(com.epam.aidial.evaluation.runner.dto.ToolReferenceDto.builder()
+                            .name("search")
+                            .build());
+            when(jsonbMapper.mapArgumentTemplate("{}"))
+                    .thenReturn(com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto.builder()
+                            .build());
+
+            TestCase testCase = TestCase.builder()
+                    .id(TEST_CASE_ID)
+                    .data("{}")
+                    .multiTurnData("[{\"q\":\"1\"},{\"q\":\"2\"}]")
+                    .build();
+            when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, suite.getDatasetId()))
+                    .thenReturn(Optional.of(testCase));
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+                    .isInstanceOf(InvalidOperationException.class)
+                    .hasMessageContaining("multi-turn");
+
+            verifyNoInteractions(mcpToolInvoker);
         }
     }
 

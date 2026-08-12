@@ -14,8 +14,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TryItOutResponseDto {
 
+    /** The last executed turn's resolved request; the only turn for a single-turn invocation. */
     private ResolvedRequestDto resolvedRequest;
+
+    /** The last executed turn's response; the only turn for a single-turn invocation. */
     private TryItOutCoreResponseDto response;
+
     private Long durationMs;
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

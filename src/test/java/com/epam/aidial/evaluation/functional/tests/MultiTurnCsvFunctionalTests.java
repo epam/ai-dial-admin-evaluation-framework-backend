@@ -450,6 +450,9 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
     @DisplayName("Post-persist fixup's re-serialized turn keeps every key except an explicit-null value the "
             + "shared NON_NULL ObjectMapper drops (pre-existing trade-off; must not silently widen)")
     void fixupPreservesPerTurnKeySetExceptExplicitNull() throws IOException {
+        // Note: the derived schema here is all-shared (a purely single-turn CSV), so the fixup's
+        // re-validation stores this case invalid with the case-level no-per-turn-columns warning. That is
+        // intended and irrelevant here — this test asserts turn *content* only, deliberately.
         UUID datasetId = newDatasetWithSchema(List.of());
         UUID caseId = metaTestDataHelper.seedTestCaseInDataset(datasetId, "conv", "{}");
         metaTestDataHelper.forceRawMultiTurnData(
@@ -471,6 +474,59 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         assertThat(turns.get(0).get("score")).isEqualTo("42");
         assertThat(turns.get(0).get("label")).isEqualTo("a");
         assertThat(turns.get(1)).containsKeys("score", "note", "label");
+    }
+
+    @Test
+    @DisplayName("CSV import fixup reports a scope-misplacement (INVALID_SCOPE), not a generic unknown-field "
+            + "warning, for a pre-existing case whose stored field disagrees with the newly persisted schema "
+            + "(#137)")
+    void fixupReportsScopeMisplacementInsteadOfGenericUnknownField() {
+        UUID datasetId = newDatasetWithSchema(List.of());
+        // Seeded directly (bypassing all validation) so the case starts out stale relative to any schema:
+        // "tone" sits inside both turn maps, stored as numbers so the fixup coercion below actually
+        // changes their representation and is forced to write + re-validate this row.
+        UUID convId =
+                metaTestDataHelper.seedMultiTurnTestCaseInDataset(datasetId, "conv", "[{\"tone\":42},{\"tone\":43}]");
+
+        // A purely single-turn CSV declaring "tone" persists it with perTurn absent (shared) per the
+        // turn-membership inference rule — disagreeing with where "conv" already stores its value.
+        // APPEND (not the OVERRIDE default) so the pre-seeded "conv" row is not deleted before fixup runs —
+        // it is not named in this CSV at all.
+        String csv = "testCaseName,tone\nother,formal";
+        ResponseEntity<CsvImportResultDto> response = importCsv(datasetId, csv, "APPEND", null);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        DatasetResponseDto dataset = getDataset(datasetId);
+        assertThat(fieldByName(dataset.getTestCaseSchema(), "tone").getPerTurn())
+                .isNull();
+
+        TestCase conv =
+                testCaseRepository.findByIdAndDatasetId(convId, datasetId).orElseThrow();
+        assertThat(conv.isValid()).isFalse();
+        // The persisted schema declares "tone" shared, so it declares no per-turn column at all and the
+        // case also carries the case-level no-per-turn-columns warning; the misplacement assertions filter
+        // it out. (The sibling test fixupPreservesPerTurnKeySetExceptExplicitNull is in the same position
+        // and now also stores its case invalid, but asserts only turn content, so it stays green.)
+        // Exactly three warnings: one INVALID_SCOPE per offending turn plus the case-level one. Pinning the
+        // unfiltered count keeps a spurious warning of any other code from slipping through.
+        assertThat(parseWarnings(conv)).hasSize(3);
+        List<ValidationWarningDto> warnings = parseWarnings(conv).stream()
+                .filter(w -> w.getCode() == ValidationWarningCode.INVALID_SCOPE)
+                .toList();
+        assertThat(warnings).hasSize(2);
+        assertThat(parseWarnings(conv))
+                .noneMatch(w -> w.getMessage() != null && w.getMessage().contains("Unknown data field"));
+        assertThat(warnings.stream().map(ValidationWarningDto::getPath))
+                .containsExactlyInAnyOrder("$.multiTurnData[0].tone", "$.multiTurnData[1].tone");
+        assertThat(parseWarnings(conv)).anySatisfy(w -> {
+            assertThat(w.getPath()).isEqualTo("$.multiTurnData");
+            assertThat(w.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+        });
+
+        // The fixup pass coerced the value's representation (number -> string) but did not relocate it.
+        List<Map<String, Object>> turns = parseTurns(conv);
+        assertThat(turns.get(0).get("tone")).isEqualTo("42");
+        assertThat(turns.get(1).get("tone")).isEqualTo("43");
     }
 
     // -------------------- Dataset revalidation Phase 1 — multi-turn (RC4, task 5.6/5.6b) --------------------
@@ -577,6 +633,227 @@ public abstract class MultiTurnCsvFunctionalTests extends AbstractMultiTurnFunct
         assertThat(after.getMultiTurnData()).isEqualTo(before.getMultiTurnData());
         assertThat(after.isValid()).isEqualTo(before.isValid());
         assertThat(after.getUpdatedAt()).isEqualTo(before.getUpdatedAt());
+    }
+
+    @Test
+    @DisplayName("A per-turn field re-scoped to shared reports an INVALID_SCOPE warning per offending turn "
+            + "without relocating the stored values, and the warning clears once the field is re-scoped back "
+            + "(#137)")
+    void perTurnFieldRescopedToSharedReportsMisplacementThenClearsWhenRescopedBack() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("tone")
+                .type(SchemaFieldType.STRING)
+                .required(false)
+                .perTurn(true)
+                .build()));
+        TestCaseResponseDto conv =
+                createMultiTurnCase(datasetId, "conv", List.of(Map.of("tone", "formal"), Map.of("tone", "casual")));
+        assertThat(conv.isValid()).isTrue();
+
+        // 5.4 — flipping "tone" to shared (perTurn absent) while its values remain inside the turns.
+        updateSchemaAndAwaitRevalidation(
+                datasetId,
+                List.of(FieldDefinitionDto.builder()
+                        .name("tone")
+                        .type(SchemaFieldType.STRING)
+                        .required(false)
+                        .build()));
+
+        TestCase misplaced =
+                testCaseRepository.findByIdAndDatasetId(conv.getId(), datasetId).orElseThrow();
+        assertThat(misplaced.isValid()).isFalse();
+        // Flipping the dataset's only per-turn field to shared also leaves it with no per-turn column at
+        // all, so the case additionally carries the case-level no-per-turn-columns warning. The
+        // misplacement assertions below are about the per-field warnings, hence the filter by code — the
+        // unfiltered count is pinned first so a spurious warning of another code cannot slip through.
+        assertThat(parseWarnings(misplaced)).hasSize(3);
+        List<ValidationWarningDto> misplacedWarnings = parseWarnings(misplaced).stream()
+                .filter(w -> w.getCode() == ValidationWarningCode.INVALID_SCOPE)
+                .toList();
+        assertThat(misplacedWarnings).hasSize(2);
+        assertThat(misplacedWarnings).allSatisfy(w -> {
+            assertThat(w.getCode()).isEqualTo(ValidationWarningCode.INVALID_SCOPE);
+            assertThat(w.getMessage())
+                    .isEqualTo("Field 'tone' is shared (test-case-level) but values are specified on turn level. "
+                            + "Re-create column for correct data attachment");
+        });
+        assertThat(misplacedWarnings.stream().map(ValidationWarningDto::getTurnIndex))
+                .containsExactlyInAnyOrder(0, 1);
+        assertThat(misplacedWarnings.stream().map(ValidationWarningDto::getPath))
+                .containsExactlyInAnyOrder("$.multiTurnData[0].tone", "$.multiTurnData[1].tone");
+        // The two warning kinds coexist: the per-field ones name the stranded values, the case-level one
+        // names why no turn can hold them.
+        assertThat(parseWarnings(misplaced)).anySatisfy(w -> {
+            assertThat(w.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+            assertThat(w.getPath()).isEqualTo("$.multiTurnData");
+            assertThat(w.getTurnIndex()).isNull();
+        });
+        // Revalidation never relocates stored values between buckets.
+        assertThat(misplaced.getData()).isEqualTo("{}");
+        List<Map<String, Object>> misplacedTurns = parseTurns(misplaced);
+        assertThat(misplacedTurns.get(0).get("tone")).isEqualTo("formal");
+        assertThat(misplacedTurns.get(1).get("tone")).isEqualTo("casual");
+
+        // 5.5 — re-scoping "tone" back to perTurn:true clears the warning: it is recomputed from stored
+        // data and the current schema on every pass, never carried forward.
+        updateSchemaAndAwaitRevalidation(
+                datasetId,
+                List.of(FieldDefinitionDto.builder()
+                        .name("tone")
+                        .type(SchemaFieldType.STRING)
+                        .required(false)
+                        .perTurn(true)
+                        .build()));
+
+        TestCase cleared =
+                testCaseRepository.findByIdAndDatasetId(conv.getId(), datasetId).orElseThrow();
+        assertThat(cleared.isValid()).isTrue();
+        assertThat(parseWarnings(cleared)).noneMatch(w -> w.getCode() == ValidationWarningCode.INVALID_SCOPE);
+    }
+
+    @Test
+    @DisplayName("Importing a turnIndex CSV into an all-declared-shared dataset counts the assembled case as "
+            + "invalid with the case-level $.multiTurnData warning")
+    void importOfMultiTurnCsvIntoAllSharedSchemaInvalidatesTheCase() {
+        // "tone" is DECLARED shared, so turn-membership inference never re-scopes it (tier 1) and the
+        // dataset keeps zero per-turn columns. The two turn rows repeat the same shared value, so no
+        // shared-column conflict fires and the no-per-turn-columns warning is isolated.
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("tone")
+                .type(SchemaFieldType.STRING)
+                .required(false)
+                .build()));
+
+        String csv = "testCaseName,turnIndex,tone\nconv,0,formal\nconv,1,formal";
+        ResponseEntity<CsvImportResultDto> response = importCsv(datasetId, csv, "APPEND", null);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getInvalidCount()).isEqualTo(1);
+        assertThat(response.getBody().getValidCount()).isZero();
+
+        List<TestCaseResponseDto> cases = listTestCases(datasetId);
+        assertThat(cases).hasSize(1);
+        TestCaseResponseDto conv = cases.get(0);
+        assertThat(conv.getMultiTurnData()).hasSize(2);
+        assertThat(conv.isValid()).isFalse();
+
+        TestCase stored =
+                testCaseRepository.findByIdAndDatasetId(conv.getId(), datasetId).orElseThrow();
+        assertThat(parseWarnings(stored)).anySatisfy(w -> {
+            assertThat(w.getPath()).isEqualTo("$.multiTurnData");
+            assertThat(w.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+            assertThat(w.getTurnIndex()).isNull();
+        });
+    }
+
+    @Test
+    @DisplayName("A case carrying turns in an all-shared schema is invalid until a per-turn column is declared, "
+            + "then the case-level warning clears")
+    void noPerTurnColumnsWarningClearsWhenPerTurnColumnDeclared() {
+        // "extra" is deliberately left unset in the case's `data`: flipping a field whose value sits in
+        // `data` would create a `$.data.<field>` misplacement instead, and the case would stay invalid.
+        UUID datasetId = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder()
+                        .name("tone")
+                        .type(SchemaFieldType.STRING)
+                        .required(false)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("extra")
+                        .type(SchemaFieldType.STRING)
+                        .required(false)
+                        .build()));
+        TestCaseResponseDto conv =
+                createMultiTurnCase(datasetId, "conv", Map.of("tone", "formal"), List.of(Map.of(), Map.of()));
+        assertThat(conv.isValid()).isFalse();
+        // The create response omits warnings unless ?includeWarnings=true, so assert on the stored row.
+        TestCase stored =
+                testCaseRepository.findByIdAndDatasetId(conv.getId(), datasetId).orElseThrow();
+        assertThat(parseWarnings(stored))
+                .anySatisfy(w -> assertThat(w.getPath()).isEqualTo("$.multiTurnData"));
+
+        updateSchemaAndAwaitRevalidation(
+                datasetId,
+                List.of(
+                        FieldDefinitionDto.builder()
+                                .name("tone")
+                                .type(SchemaFieldType.STRING)
+                                .required(false)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("extra")
+                                .type(SchemaFieldType.STRING)
+                                .required(false)
+                                .perTurn(true)
+                                .build()));
+
+        TestCase clearedCase =
+                testCaseRepository.findByIdAndDatasetId(conv.getId(), datasetId).orElseThrow();
+        assertThat(clearedCase.isValid()).isTrue();
+        assertThat(parseWarnings(clearedCase)).noneMatch(w -> "$.multiTurnData".equals(w.getPath()));
+    }
+
+    @Test
+    @DisplayName("A shared field re-scoped to per-turn reports an INVALID_SCOPE warning against $.data without "
+            + "a required-missing twin on any turn (#137)")
+    void sharedFieldRescopedToPerTurnReportsMisplacementAgainstSharedData() {
+        UUID datasetId = newDatasetWithSchema(List.of(
+                FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .perTurn(true)
+                        .build(),
+                FieldDefinitionDto.builder()
+                        .name("system")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build()));
+        TestCaseResponseDto conv = createMultiTurnCase(
+                datasetId, "conv", Map.of("system", "SYSVAL"), List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1")));
+        assertThat(conv.isValid()).isTrue();
+
+        updateSchemaAndAwaitRevalidation(
+                datasetId,
+                List.of(
+                        FieldDefinitionDto.builder()
+                                .name("prompt")
+                                .type(SchemaFieldType.STRING)
+                                .required(true)
+                                .perTurn(true)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("system")
+                                .type(SchemaFieldType.STRING)
+                                .required(true)
+                                .perTurn(true)
+                                .build()));
+
+        TestCase stored =
+                testCaseRepository.findByIdAndDatasetId(conv.getId(), datasetId).orElseThrow();
+        assertThat(stored.isValid()).isFalse();
+        List<ValidationWarningDto> warnings = parseWarnings(stored);
+        assertThat(warnings)
+                .filteredOn(w -> w.getCode() == ValidationWarningCode.INVALID_SCOPE)
+                .hasSize(1)
+                .first()
+                .satisfies(w -> {
+                    assertThat(w.getMessage())
+                            .isEqualTo("Field 'system' is per-turn but currently specified on a test case level. "
+                                    + "Re-create column for correct data attachment");
+                    assertThat(w.getPath()).isEqualTo("$.data.system");
+                    assertThat(w.getTurnIndex()).isNull();
+                });
+        // No "required field missing" (REQUIRED) warning against "system" on any turn — pinned on
+        // fieldName, not just turnIndex, so this fails if the required-missing twin reappears for "system"
+        // specifically, not merely if some unrelated per-turn REQUIRED warning happens to vanish.
+        assertThat(warnings)
+                .noneMatch(w -> w.getCode() == ValidationWarningCode.REQUIRED
+                        && w.getTurnIndex() != null
+                        && "system".equals(w.getFieldName()));
+
+        // Not relocated: the value stays in shared data.
+        assertThat(stored.getData()).contains("SYSVAL");
     }
 
     // -------------------- Durable import conflicts and multi-turn revalidation (RC4, task 5.8-5.10)

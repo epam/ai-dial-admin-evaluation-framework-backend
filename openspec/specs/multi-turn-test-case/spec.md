@@ -255,6 +255,8 @@ Dataset-rooted revalidation (Phase 1) re-coerces and re-validates the test cases
 
 It SHALL treat a case carrying a turn array as multi-turn: it SHALL coerce the values inside each turn as well as the shared `data`, and SHALL compute validity and warnings from the shared data against the schema's shared fields and each turn against the schema's per-turn fields — never from the shared `data` against the whole schema. The updated turn array SHALL be persisted together with the shared data under the same concurrent-edit guard that protects the shared data today.
 
+Revalidation SHALL NOT relocate values between the shared `data` map and the turn maps. When a schema change re-scopes a field, the stored values stay where they are and the resulting misplacement SHALL be reported as a scope-misplacement warning that names the field, the bucket it now belongs in, and the bucket it was found in — never as a generic unknown-field warning. The same applies to the CSV-import fixup pass, which re-validates stored cases against a newly persisted schema.
+
 If a case's stored turn array is present but unreadable, revalidation SHALL leave that case untouched and log a warning, writing neither its data nor its validity — rewriting it would convert the case to single-turn and destroy every turn.
 
 Status: **Implemented**
@@ -281,6 +283,27 @@ Status: **Implemented**
 - **WHEN** a field is removed from a dataset's `testCaseSchema` and the system prunes that field from stored test case data
 - **THEN** the field SHALL be removed from each turn of a multi-turn case as well as from the shared `data`
 - **AND** the subsequent revalidation SHALL NOT report the removed field as an unknown field on any turn
+
+#### Scenario: Per-turn field re-scoped to shared reports a misplacement
+- **WHEN** a dataset schema field declared `perTurn: true` is changed to shared while stored multi-turn cases still hold that field's values inside their turn maps
+- **THEN** revalidation SHALL mark each affected case invalid with a scope-misplacement warning per offending turn, stating that the field is shared (test-case-level) but its values are specified on turn level, and directing the author to re-create the column
+- **AND** the warning SHALL carry the offending turn index and SHALL NOT be the generic unknown-field warning
+- **AND** if the field is required, it SHALL NOT additionally be reported as missing from `data`
+- **AND** the stored values SHALL NOT be moved into the shared `data` map by revalidation
+
+#### Scenario: Shared field re-scoped to per-turn reports a misplacement
+- **WHEN** a dataset schema field declared shared is changed to `perTurn: true` while stored cases still hold that field's value in their shared `data` map
+- **THEN** revalidation SHALL mark each affected case invalid with a scope-misplacement warning stating that the field is per-turn but is currently specified on a test-case level, and directing the author to re-create the column
+- **AND** the field SHALL NOT additionally be reported as a required field missing from any turn
+
+#### Scenario: Misplacement clears once the schema or the data is fixed
+- **WHEN** a case carrying a scope-misplacement warning is followed by a change that reconciles scope and storage — the schema field is re-scoped back, or the value is moved to the correct bucket — and the case is revalidated
+- **THEN** the misplacement warning SHALL be absent from the case's stored warnings
+- **AND** the case SHALL become valid if nothing else invalidates it
+
+#### Scenario: CSV import fixup reports the same misplacement
+- **WHEN** a CSV import persists a schema whose field scope disagrees with where a stored case holds that field's values, and the post-persist fixup re-validates the case
+- **THEN** the fixup SHALL report the same scope-misplacement warning shape as revalidation, not a generic unknown-field warning
 
 #### Scenario: Single-turn revalidation is unchanged
 - **WHEN** revalidation processes a case with no turn array

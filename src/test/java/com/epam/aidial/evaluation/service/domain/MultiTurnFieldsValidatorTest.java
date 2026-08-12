@@ -35,7 +35,8 @@ class MultiTurnFieldsValidatorTest {
     void setUp() {
         TestCaseProperties props = new TestCaseProperties();
         props.getMultiTurn().setMaxTurns(10);
-        validator = new MultiTurnFieldsValidator(props, new TestCaseFieldScopeResolver());
+        validator =
+                new MultiTurnFieldsValidator(props, new TestCaseDataScopeResolver(new TestCaseFieldScopeResolver()));
     }
 
     @Test
@@ -58,7 +59,9 @@ class MultiTurnFieldsValidatorTest {
     void perTurnFieldInDataRejected() {
         assertThatThrownBy(() ->
                         validator.validateStructure(Map.of("prompt", "x"), List.of(Map.of("prompt", "hi")), SCHEMA))
-                .isInstanceOf(ValidationException.class);
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Field 'prompt' is per-turn but currently specified on a test case level. Re-create "
+                        + "column for correct data attachment");
     }
 
     @Test
@@ -66,7 +69,9 @@ class MultiTurnFieldsValidatorTest {
     void sharedFieldInTurnRejected() {
         assertThatThrownBy(() ->
                         validator.validateStructure(Map.of(), List.of(Map.of("prompt", "hi", "tags", "a")), SCHEMA))
-                .isInstanceOf(ValidationException.class);
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Field 'tags' is shared (test-case-level) but values are specified on turn level. "
+                        + "Re-create column for correct data attachment");
     }
 
     @Test

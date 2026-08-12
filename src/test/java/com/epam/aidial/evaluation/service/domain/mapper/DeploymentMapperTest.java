@@ -81,6 +81,53 @@ class DeploymentMapperTest {
     }
 
     @Test
+    @DisplayName("maps DialCoreModelDto to DialModelInfoDto with object display name")
+    void mapsModelToDialModelInfoDtoWithObjectDisplayName() {
+        DialCoreModelDto source = DialCoreModelDto.builder()
+                .id("gpt-5-mini")
+                .displayName(Map.of("en", "hello", "fr", "bonjur"))
+                .displayVersion("2025-08-07")
+                .description(Map.of("en", "description", "fr", "le description"))
+                .owner("org-owner")
+                .createdAt(1768856213216L)
+                .updatedAt(1768856213216L)
+                .descriptionKeywords(List.of("Text", "Gen"))
+                .inputAttachmentTypes(List.of("*/*"))
+                .capabilities(DialCoreCapabilitiesDto.builder()
+                        .scaleTypes(List.of("standard"))
+                        .chatCompletion(true)
+                        .build())
+                .limits(DialCoreLimitsDto.builder()
+                        .maxTotalTokens(128000)
+                        .maxCompletionTokens(4096)
+                        .build())
+                .pricing(DialCorePricingDto.builder()
+                        .unit("token")
+                        .prompt("0.15")
+                        .completion("0.60")
+                        .build())
+                .build();
+
+        DialModelInfoDto result = mapper.toDialModelInfoDto(source);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getDeploymentId()).isEqualTo("gpt-5-mini");
+        assertThat(result.getDisplayName()).isEqualTo("hello");
+        assertThat(result.getDescription()).isEqualTo("description");
+        assertThat(result.getVersion()).isEqualTo("2025-08-07");
+        assertThat(result.getOwner()).isEqualTo("org-owner");
+        assertThat(result.getCreatedAt()).isEqualTo(1768856213216L);
+        assertThat(result.getUpdatedAt()).isEqualTo(1768856213216L);
+        assertThat(result.getDescriptionKeywords()).containsExactly("Text", "Gen");
+        assertThat(result.getInputAttachmentTypes()).containsExactly("*/*");
+        assertThat(result.getCapabilities()).isNotNull();
+        assertThat(result.getCapabilities().getScaleTypes()).containsExactly("standard");
+        assertThat(result.getCapabilities().getChatCompletion()).isTrue();
+        assertThat(result.getLimits().getMaxTotalTokens()).isEqualTo(128000);
+        assertThat(result.getPricing().getUnit()).isEqualTo("token");
+    }
+
+    @Test
     @DisplayName("maps DialCoreApplicationDto to DialApplicationInfoDto with routes")
     void mapsApplicationToDialApplicationInfoDtoWithRoutes() {
         DialCoreRouteDto route = DialCoreRouteDto.builder()

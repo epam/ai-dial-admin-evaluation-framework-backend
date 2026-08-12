@@ -79,7 +79,7 @@ Status: **Implemented**
   layer)
 
 ### Requirement: ALL-turns-match filtering for multi-turn cases
-When a suite `testCaseFilter` is applied to runnable-case selection, filtering SHALL be scope-aware. A predicate on a **shared** (`perTurn=false`) field SHALL bind to the case's shared `data` map (a row-level predicate, constant across turns). A predicate on a **per-turn** (`perTurn=true`) field SHALL bind to the individual turn element and be evaluated under a universal quantifier: a multi-turn case matches the per-turn predicate if and only if **every** turn satisfies it. A single-turn case is the trivial one-turn case (identical to current behavior). A turn for which a per-turn predicate is unknown/null (e.g. a missing field) SHALL count as failing. A filter MAY combine shared and per-turn predicates; the shared parts are evaluated once at row level and the per-turn parts under the all-turns quantifier.
+When a suite `testCaseFilter` is applied to runnable-case selection, filtering SHALL be scope-aware. A predicate on a **shared** (`perTurn=false`) field SHALL bind to the case's shared `data` map (a row-level predicate, constant across turns). A predicate on a **per-turn** (`perTurn=true`) field SHALL bind to the individual turn element and be evaluated under a universal quantifier: a multi-turn case matches the per-turn predicate if and only if **every** turn satisfies it. A single-turn case is the trivial one-turn case (identical to current behavior). A turn whose per-turn predicate is not satisfied SHALL count as failing, and per-operator null semantics decide satisfaction for a missing or null field: a **positive** predicate (`co`, `eq`, `lt`, `gt`, `le`, `ge`, `in`) SHALL NOT be satisfied by a missing/null field, while a **negated** predicate (`nc`, `ne` with a non-null operand, `not(...)`) SHALL be satisfied by it. A filter MAY combine shared and per-turn predicates; the shared parts are evaluated once at row level and the per-turn parts under the all-turns quantifier.
 Status: **Implemented**
 
 #### Scenario: Shared-field filter selects at case level
@@ -95,8 +95,16 @@ Status: **Implemented**
 - **THEN** the entire case is excluded from runnable selection
 
 #### Scenario: Missing per-turn field fails
-- **WHEN** a turn lacks the per-turn field referenced by the filter
+- **WHEN** a turn lacks the per-turn field referenced by a positive filter predicate (e.g. `category eq "A"`)
 - **THEN** that turn is treated as failing and the case is excluded
+
+#### Scenario: Missing per-turn field satisfies a negated predicate
+- **WHEN** a filter is a negated predicate on a per-turn field (e.g. `expected nc "London"`) and some turns of a multi-turn case have a missing or null value for that field while no turn holds a value that violates the predicate
+- **THEN** every turn is treated as satisfying the predicate and the case is selected as runnable
+
+#### Scenario: A violating turn still excludes the case under a negated predicate
+- **WHEN** a filter is `expected nc "London"` and one turn of a multi-turn case has `expected = "London"`
+- **THEN** that turn fails and the entire case is excluded, regardless of the other turns' null values
 
 ### Requirement: Filter compiles once over a coalesced turns array
 The filter SHALL be compiled once using scope-aware bindings: shared-field bindings resolve against the outer row's `data`, and per-turn-field bindings resolve against a per-turn element. The per-turn portion SHALL be wrapped as a universal quantifier over `COALESCE(multi_turn_data, jsonb_build_array(data))` using a `NOT EXISTS (... WHERE (<filter>) IS NOT TRUE)` lateral, correlated to the outer row so shared-field references remain valid inside the lateral. The lateral is added only when a filter is present, so unfiltered selection is unchanged.
@@ -119,6 +127,11 @@ Status: **Implemented**
   against `elem` and wraps the `Condition` in the `NOT EXISTS` lateral over
   `COALESCE(multi_turn_data, jsonb_build_array(data))`, passed to `PostgresTestCaseRepository` as an
   opaque `extraCondition`.
+- Per-operator null polarity lives entirely in `FilterTranslator` (see the `structured-query-model` spec's
+  null-handling requirement): negated comparisons render as `(<pred>) IS NOT FALSE`, so a total leaf never
+  reaches the lateral's `IS NOT TRUE` as UNKNOWN and `QueryDslRunnableTestCaseSelector` needs no knowledge
+  of operator polarity. End-to-end proof:
+  `MultiTurnFilterFunctionalTests.negatedFilterTreatsMissingPerTurnValueAsMatching` (GH #141).
 - Translation reuse: `FilterTranslator`, `TestCaseFieldBindingsBuilder`; base predicate mirrors
   `PostgresTestCaseRepository.validNotExcludedCondition`.
 - Run wiring: `RunnableTestCaseCounter`, `TestSuiteRunService.createRun` (guard #4),

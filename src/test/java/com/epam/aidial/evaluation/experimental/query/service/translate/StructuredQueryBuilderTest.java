@@ -280,7 +280,9 @@ class StructuredQueryBuilderTest {
                                 LogicalOp.NOT,
                                 List.of(cmp(ComparisonOp.EQ, field("name"), value(ValueType.STRING, "skip"))))));
         String sql = render(rowQuery(tree, null, null));
-        assertThat(sql).contains("\"is_valid\" = true").contains("not (").contains(" and ");
+        // `not` renders as a null-total negation (`IS NOT TRUE`) rather than a bare `NOT (…)`, so a null
+        // operand in the child predicate is negated to true instead of propagating UNKNOWN.
+        assertThat(sql).contains("\"is_valid\" = true").contains("is not true").contains(" and ");
     }
 
     @Test

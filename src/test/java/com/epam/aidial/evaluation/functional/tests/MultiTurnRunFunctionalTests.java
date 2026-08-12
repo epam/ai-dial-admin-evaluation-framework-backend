@@ -14,6 +14,7 @@ import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
@@ -22,6 +23,7 @@ import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -92,6 +94,53 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
         return response.getBody();
     }
 
+    /**
+     * Same chat suite shape, but the dataset schema declares {@code prompt} <b>shared</b> — so the dataset
+     * has no per-turn column at all and any case carrying turns is invalid.
+     */
+    private TestSuiteResponseDto createAllSharedSchemaChatSuite(String name) {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name + " " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("messages", List.of(Map.of("role", "user", "content", "${{prompt}}"))))
+                                .build())
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("answer")
+                        .expression("choices[0].message.content")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
     // -------------------- Authoring --------------------
 
     @Test
@@ -113,6 +162,28 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
         // A single-turn case in the same dataset omits multiTurnData
         TestCaseResponseDto single = createSingleTurnCase(datasetId, "single-1", Map.of("prompt", "hi"));
         assertThat(single.getMultiTurnData()).isNull();
+    }
+
+    @Test
+    @DisplayName("Run creation returns 409 when the only case carries turns and the dataset declares no "
+            + "per-turn column")
+    void runRejectedWhenMultiTurnCaseHasNoPerTurnColumns() {
+        TestSuiteResponseDto suite = createAllSharedSchemaChatSuite("MT no-perturn-columns");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        // Empty turn maps: a declared shared field inside a turn is rejected with 400 at write time, so
+        // this is the shape a UI produces when an author adds turns to an all-shared dataset.
+        TestCaseResponseDto conv =
+                createMultiTurnCase(datasetId, "conv", Map.of("prompt", "hi"), List.of(Map.of(), Map.of()));
+        assertThat(conv.isValid()).isFalse();
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/runs"),
+                jsonEntity(TestSuiteRunRequestDto.builder()
+                        .runConfig(RunConfigDto.builder().numberOfRuns(1).build())
+                        .build()),
+                String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("no valid and enabled test cases");
     }
 
     @Test

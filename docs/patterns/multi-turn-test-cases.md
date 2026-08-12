@@ -12,6 +12,8 @@ Any CSV-derived schema — validation-time, persisted, final/fixup, and preview'
 
 `TestCaseFieldScopeResolver` (`service.domain`) is the single source splitting a schema/map into shared vs per-turn; a misplaced field → **400**, over-cap (`test-case.multi-turn.max-turns`, default 10) → warning.
 
+A case carrying a non-empty `multiTurnData` while the dataset schema declares **no** `perTurn: true` field → invalidating case-level warning (code `ADDITIONAL`, path `$.multiTurnData`, no `fieldName`/`turnIndex`). Nothing can be stored in those turns and the turn loop collapses the case to `N = 1`, so the turns are dead weight. The trigger is schema-only — never suite bindings, since validity is dataset-scoped — and it is recomputed on every validation pass, so declaring a per-turn column or clearing `multiTurnData` clears it. The warning is **prepended** to the warning list so `validation.max-warnings-per-case` truncation cannot drop it behind a pile of per-field `INVALID_SCOPE` warnings; both coexist when both apply.
+
 ## Execution
 
 `EvaluationWorker` dispatches **every** DEPLOYMENT HTTP case — single-turn and multi-turn alike — through the unified `runner.job.TurnLoopExecutor` (the old chat-completions-only `MultiTurnExecutor` was retired).

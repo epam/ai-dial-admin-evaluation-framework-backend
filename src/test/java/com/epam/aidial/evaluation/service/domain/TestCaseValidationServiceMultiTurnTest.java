@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,6 +48,11 @@ class TestCaseValidationServiceMultiTurnTest {
     // prompt: per-turn required; system: shared required; tags: shared optional.
     private static final List<FieldDefinitionDto> SCHEMA =
             List.of(field("prompt", true, true), field("system", false, true), field("tags", false, false));
+
+    // A schema declaring no per-turn column at all: every field is shared, so a case's turns can hold
+    // nothing legitimately.
+    private static final List<FieldDefinitionDto> ALL_SHARED =
+            List.of(field("system", false, true), field("tags", false, false));
 
     @BeforeEach
     void setUp() {
@@ -96,10 +102,118 @@ class TestCaseValidationServiceMultiTurnTest {
     @Test
     @DisplayName("empty per-turn maps are valid when no per-turn field is required")
     void emptyPerTurnAllowed() {
-        List<FieldDefinitionDto> allShared = List.of(field("prompt", true, false), field("system", false, false));
+        // "prompt" is declared per-turn (just not required), so the schema DOES declare a per-turn column
+        // and the no-per-turn-columns warning must stay silent.
+        List<FieldDefinitionDto> perTurnDeclared = List.of(field("prompt", true, false), field("system", false, false));
         ValidationResult r = service.validateMultiTurn(
-                Map.of(), List.of(Map.of(), Map.of()), allShared, null, List.of(), false, null);
+                Map.of(), List.of(Map.of(), Map.of()), perTurnDeclared, null, List.of(), false, null);
         assertThat(r.isValid()).isTrue();
+        assertThat(r.getWarnings()).noneMatch(w -> "$.multiTurnData".equals(w.getPath()));
+    }
+
+    @Test
+    @DisplayName("a case carrying turns in an all-shared schema is invalidated by one case-level warning")
+    void turnsWithoutPerTurnColumnsInvalidateTheCase() {
+        // The turn maps are empty because any key in them would add its own warning (a declared shared
+        // field → INVALID_SCOPE, an undeclared key → Unknown data field), and this test pins the
+        // no-per-turn-columns warning as the *only* one. Both combinations are covered separately below.
+        ValidationResult r = service.validateMultiTurn(
+                Map.of("system", "s"), List.of(Map.of(), Map.of()), ALL_SHARED, null, List.of(), false, null);
+
+        assertThat(r.isValid()).isFalse();
+        assertThat(r.getWarnings()).hasSize(1);
+        ValidationWarningDto warning = r.getWarnings().get(0);
+        assertThat(warning.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+        assertThat(warning.getPath()).isEqualTo("$.multiTurnData");
+        assertThat(warning.getFieldName()).isNull();
+        assertThat(warning.getTurnIndex()).isNull();
+        assertThat(warning.getMessage())
+                .isEqualTo("Test case has 2 turns but the dataset schema declares no per-turn columns; "
+                        + "turn data cannot be attached");
+    }
+
+    @Test
+    @DisplayName("misplaced turn values and the no-per-turn-columns warning are both reported")
+    void misplacementAndNoPerTurnColumnsWarningCoexist() {
+        // "system" is declared shared, so each turn holding it is a misplacement — and the schema declares
+        // no per-turn column at all, which is why no turn could ever hold it legitimately.
+        ValidationResult r = service.validateMultiTurn(
+                Map.of("system", "s"),
+                List.of(Map.of("system", "a"), Map.of("system", "b")),
+                ALL_SHARED,
+                null,
+                List.of(),
+                false,
+                null);
+
+        assertThat(r.isValid()).isFalse();
+        assertThat(r.getWarnings()).hasSize(3);
+        assertThat(r.getWarnings())
+                .filteredOn(w -> w.getCode() == ValidationWarningCode.INVALID_SCOPE)
+                .hasSize(2)
+                .extracting(ValidationWarningDto::getTurnIndex)
+                .containsExactlyInAnyOrder(0, 1);
+        assertThat(r.getWarnings()).anySatisfy(w -> {
+            assertThat(w.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+            assertThat(w.getPath()).isEqualTo("$.multiTurnData");
+            assertThat(w.getTurnIndex()).isNull();
+        });
+    }
+
+    @Test
+    @DisplayName("the no-per-turn-columns warning survives max-warnings-per-case truncation")
+    void noPerTurnColumnsWarningSurvivesWarningCapTruncation() {
+        when(validationProperties.getMaxWarningsPerCase()).thenReturn(5);
+
+        // Five turns each misplacing the declared-shared "system" fill the cap exactly, so an *appended*
+        // case-level warning would be the one entry truncation drops. It is prepended, so it survives.
+        List<Map<String, Object>> turns = List.of(
+                Map.of("system", "a"),
+                Map.of("system", "b"),
+                Map.of("system", "c"),
+                Map.of("system", "d"),
+                Map.of("system", "e"));
+        ValidationResult r =
+                service.validateMultiTurn(Map.of("system", "s"), turns, ALL_SHARED, null, List.of(), false, null);
+
+        assertThat(r.isValid()).isFalse();
+        assertThat(r.getWarnings()).hasSize(5);
+        assertThat(r.getWarnings()).anyMatch(w -> "$.multiTurnData".equals(w.getPath()));
+    }
+
+    @Test
+    @DisplayName("an over-cap case in an all-shared schema carries both case-level warnings")
+    void overCapAndNoPerTurnColumnsWarningsCoexist() {
+        // 11 empty turns against a 10-turn cap: both case-level defects apply and are independent, so both
+        // warnings must be present at $.multiTurnData (empty turn maps keep field-level noise out).
+        List<Map<String, Object>> turns = new ArrayList<>();
+        for (int i = 0; i < 11; i++) {
+            turns.add(Map.of());
+        }
+
+        ValidationResult r =
+                service.validateMultiTurn(Map.of("system", "s"), turns, ALL_SHARED, null, List.of(), false, null);
+
+        assertThat(r.isValid()).isFalse();
+        assertThat(r.getWarnings()).hasSize(2);
+        assertThat(r.getWarnings()).allSatisfy(w -> {
+            assertThat(w.getPath()).isEqualTo("$.multiTurnData");
+            assertThat(w.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+            assertThat(w.getTurnIndex()).isNull();
+        });
+        assertThat(r.getWarnings())
+                .extracting(ValidationWarningDto::getMessage)
+                .anySatisfy(m -> assertThat(m).contains("exceeding the maximum of 10"))
+                .anySatisfy(m -> assertThat(m).contains("11 turns", "no per-turn columns"));
+    }
+
+    @Test
+    @DisplayName("a single-turn case in an all-shared schema is unaffected by the no-per-turn-columns rule")
+    void singleTurnCaseInAllSharedSchemaStaysValid() {
+        ValidationResult r = service.validateTestCase(Map.of("system", "s"), ALL_SHARED, null, List.of(), false, null);
+
+        assertThat(r.isValid()).isTrue();
+        assertThat(r.getWarnings()).isEmpty();
     }
 
     @Test

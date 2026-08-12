@@ -18,10 +18,8 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteUpstrea
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialModelInfoDto;
-
 import java.util.List;
 import java.util.Map;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,29 +38,29 @@ class DeploymentMapperTest {
     @DisplayName("maps DialCoreModelDto to DialModelInfoDto")
     void mapsModelToDialModelInfoDto() {
         DialCoreModelDto source = DialCoreModelDto.builder()
-            .id("gpt-5-mini")
-            .displayName("GPT-5 mini")
-            .displayVersion("2025-08-07")
-            .description("A model")
-            .owner("org-owner")
-            .createdAt(1768856213216L)
-            .updatedAt(1768856213216L)
-            .descriptionKeywords(List.of("Text", "Gen"))
-            .inputAttachmentTypes(List.of("*/*"))
-            .capabilities(DialCoreCapabilitiesDto.builder()
-                .scaleTypes(List.of("standard"))
-                .chatCompletion(true)
-                .build())
-            .limits(DialCoreLimitsDto.builder()
-                .maxTotalTokens(128000)
-                .maxCompletionTokens(4096)
-                .build())
-            .pricing(DialCorePricingDto.builder()
-                .unit("token")
-                .prompt("0.15")
-                .completion("0.60")
-                .build())
-            .build();
+                .id("gpt-5-mini")
+                .displayName("GPT-5 mini")
+                .displayVersion("2025-08-07")
+                .description("A model")
+                .owner("org-owner")
+                .createdAt(1768856213216L)
+                .updatedAt(1768856213216L)
+                .descriptionKeywords(List.of("Text", "Gen"))
+                .inputAttachmentTypes(List.of("*/*"))
+                .capabilities(DialCoreCapabilitiesDto.builder()
+                        .scaleTypes(List.of("standard"))
+                        .chatCompletion(true)
+                        .build())
+                .limits(DialCoreLimitsDto.builder()
+                        .maxTotalTokens(128000)
+                        .maxCompletionTokens(4096)
+                        .build())
+                .pricing(DialCorePricingDto.builder()
+                        .unit("token")
+                        .prompt("0.15")
+                        .completion("0.60")
+                        .build())
+                .build();
 
         DialModelInfoDto result = mapper.toDialModelInfoDto(source);
 
@@ -86,29 +84,29 @@ class DeploymentMapperTest {
     @DisplayName("maps DialCoreModelDto to DialModelInfoDto with object display name")
     void mapsModelToDialModelInfoDtoWithObjectDisplayName() {
         DialCoreModelDto source = DialCoreModelDto.builder()
-            .id("gpt-5-mini")
-            .displayName(Map.of("en", "hello", "fr", "bonjur"))
-            .displayVersion("2025-08-07")
-            .description(Map.of("en", "description", "fr", "le description"))
-            .owner("org-owner")
-            .createdAt(1768856213216L)
-            .updatedAt(1768856213216L)
-            .descriptionKeywords(List.of("Text", "Gen"))
-            .inputAttachmentTypes(List.of("*/*"))
-            .capabilities(DialCoreCapabilitiesDto.builder()
-                .scaleTypes(List.of("standard"))
-                .chatCompletion(true)
-                .build())
-            .limits(DialCoreLimitsDto.builder()
-                .maxTotalTokens(128000)
-                .maxCompletionTokens(4096)
-                .build())
-            .pricing(DialCorePricingDto.builder()
-                .unit("token")
-                .prompt("0.15")
-                .completion("0.60")
-                .build())
-            .build();
+                .id("gpt-5-mini")
+                .displayName(Map.of("en", "hello", "fr", "bonjur"))
+                .displayVersion("2025-08-07")
+                .description(Map.of("en", "description", "fr", "le description"))
+                .owner("org-owner")
+                .createdAt(1768856213216L)
+                .updatedAt(1768856213216L)
+                .descriptionKeywords(List.of("Text", "Gen"))
+                .inputAttachmentTypes(List.of("*/*"))
+                .capabilities(DialCoreCapabilitiesDto.builder()
+                        .scaleTypes(List.of("standard"))
+                        .chatCompletion(true)
+                        .build())
+                .limits(DialCoreLimitsDto.builder()
+                        .maxTotalTokens(128000)
+                        .maxCompletionTokens(4096)
+                        .build())
+                .pricing(DialCorePricingDto.builder()
+                        .unit("token")
+                        .prompt("0.15")
+                        .completion("0.60")
+                        .build())
+                .build();
 
         DialModelInfoDto result = mapper.toDialModelInfoDto(source);
 
@@ -133,30 +131,30 @@ class DeploymentMapperTest {
     @DisplayName("maps DialCoreApplicationDto to DialApplicationInfoDto with routes")
     void mapsApplicationToDialApplicationInfoDtoWithRoutes() {
         DialCoreRouteDto route = DialCoreRouteDto.builder()
-            .name("v1")
-            .rewritePath(true)
-            .paths(List.of("/v1/.*"))
-            .methods(List.of("GET"))
-            .upstreams(List.of(DialCoreRouteUpstreamDto.builder()
-                .endpoint("http://upstream")
-                .weight(1)
-                .tier(0)
-                .build()))
-            .attachmentPaths(DialCoreAttachmentPathsDto.builder()
-                .requestBody(List.of())
-                .responseBody(List.of())
-                .build())
-            .build();
+                .name("v1")
+                .rewritePath(true)
+                .paths(List.of("/v1/.*"))
+                .methods(List.of("GET"))
+                .upstreams(List.of(DialCoreRouteUpstreamDto.builder()
+                        .endpoint("http://upstream")
+                        .weight(1)
+                        .tier(0)
+                        .build()))
+                .attachmentPaths(DialCoreAttachmentPathsDto.builder()
+                        .requestBody(List.of())
+                        .responseBody(List.of())
+                        .build())
+                .build();
         DialCoreApplicationDto source = DialCoreApplicationDto.builder()
-            .id("EntityExtractor")
-            .displayName("Entity Extractor")
-            .owner("org-owner")
-            .createdAt(1769192823293L)
-            .updatedAt(1769194293867L)
-            .applicationTypeSchemaId("https://schema.example/")
-            .applicationProperties(Map.of())
-            .routes(Map.of("v1", route))
-            .build();
+                .id("EntityExtractor")
+                .displayName("Entity Extractor")
+                .owner("org-owner")
+                .createdAt(1769192823293L)
+                .updatedAt(1769194293867L)
+                .applicationTypeSchemaId("https://schema.example/")
+                .applicationProperties(Map.of())
+                .routes(Map.of("v1", route))
+                .build();
 
         DialApplicationInfoDto result = mapper.toDialApplicationInfoDto(source);
 
@@ -180,15 +178,15 @@ class DeploymentMapperTest {
     @DisplayName("maps route response and attachment paths")
     void mapsRouteResponseAndAttachmentPaths() {
         DialCoreRouteDto source = DialCoreRouteDto.builder()
-            .response(DialCoreRouteResponseDto.builder()
-                .status(200)
-                .body("OK")
-                .build())
-            .attachmentPaths(DialCoreAttachmentPathsDto.builder()
-                .requestBody(List.of("@.attachments"))
-                .responseBody(List.of("@.result"))
-                .build())
-            .build();
+                .response(DialCoreRouteResponseDto.builder()
+                        .status(200)
+                        .body("OK")
+                        .build())
+                .attachmentPaths(DialCoreAttachmentPathsDto.builder()
+                        .requestBody(List.of("@.attachments"))
+                        .responseBody(List.of("@.result"))
+                        .build())
+                .build();
 
         ApplicationRouteDto result = mapper.toApplicationRouteDto(source);
 
@@ -203,28 +201,28 @@ class DeploymentMapperTest {
     @DisplayName("maps DialCoreSchemaRouteDto to ApplicationRouteDto with all fields")
     void mapsSchemaRouteDtoToApplicationRouteDto() {
         DialCoreSchemaRouteDto source = DialCoreSchemaRouteDto.builder()
-            .paths(List.of("/v1/.*"))
-            .methods(List.of("GET", "POST"))
-            .upstreams(List.of(DialCoreSchemaRouteUpstreamDto.builder()
-                .endpoint("http://upstream-svc")
-                .weight(1)
-                .tier(0)
-                .extraData(Map.of("key", "value"))
-                .build()))
-            .userRoles(List.of("admin"))
-            .rewritePath(true)
-            .order(100)
-            .maxRetryAttempts(3)
-            .permissions(List.of("read"))
-            .attachmentPaths(DialCoreSchemaAttachmentPathsDto.builder()
-                .requestBody(List.of("@.files"))
-                .responseBody(List.of("@.output"))
-                .build())
-            .response(DialCoreSchemaRouteResponseDto.builder()
-                .status(200)
-                .body("{\"ok\":true}")
-                .build())
-            .build();
+                .paths(List.of("/v1/.*"))
+                .methods(List.of("GET", "POST"))
+                .upstreams(List.of(DialCoreSchemaRouteUpstreamDto.builder()
+                        .endpoint("http://upstream-svc")
+                        .weight(1)
+                        .tier(0)
+                        .extraData(Map.of("key", "value"))
+                        .build()))
+                .userRoles(List.of("admin"))
+                .rewritePath(true)
+                .order(100)
+                .maxRetryAttempts(3)
+                .permissions(List.of("read"))
+                .attachmentPaths(DialCoreSchemaAttachmentPathsDto.builder()
+                        .requestBody(List.of("@.files"))
+                        .responseBody(List.of("@.output"))
+                        .build())
+                .response(DialCoreSchemaRouteResponseDto.builder()
+                        .status(200)
+                        .body("{\"ok\":true}")
+                        .build())
+                .build();
 
         ApplicationRouteDto result = mapper.toApplicationRouteDto(source);
 
@@ -251,12 +249,12 @@ class DeploymentMapperTest {
     @DisplayName("maps schema route with null nested objects")
     void mapsSchemaRouteWithNullNestedObjects() {
         DialCoreSchemaRouteDto source = DialCoreSchemaRouteDto.builder()
-            .paths(List.of("/v1/.*"))
-            .methods(List.of("GET"))
-            .upstreams(List.of())
-            .attachmentPaths(null)
-            .response(null)
-            .build();
+                .paths(List.of("/v1/.*"))
+                .methods(List.of("GET"))
+                .upstreams(List.of())
+                .attachmentPaths(null)
+                .response(null)
+                .build();
 
         ApplicationRouteDto result = mapper.toApplicationRouteDto(source);
 
@@ -270,11 +268,11 @@ class DeploymentMapperTest {
     @DisplayName("handles null nested fields")
     void handlesNullNestedFields() {
         DialCoreModelDto source = DialCoreModelDto.builder()
-            .id("id1")
-            .displayName("Name")
-            .createdAt(1L)
-            .updatedAt(2L)
-            .build();
+                .id("id1")
+                .displayName("Name")
+                .createdAt(1L)
+                .updatedAt(2L)
+                .build();
 
         DialModelInfoDto result = mapper.toDialModelInfoDto(source);
 

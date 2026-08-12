@@ -54,16 +54,8 @@ public interface DeploymentMapper {
             target = "pricing",
             source = "pricing",
             nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
-    @Mapping(
-        target = "displayName",
-        source = "displayName",
-        qualifiedByName = "mapMultilingual"
-    )
-    @Mapping(
-        target = "description",
-        source = "description",
-        qualifiedByName = "mapMultilingual"
-    )
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     DialModelInfoDto toDialModelInfoDto(DialCoreModelDto source);
 
     @Mapping(source = "id", target = "deploymentId")
@@ -77,16 +69,8 @@ public interface DeploymentMapper {
             source = "applicationProperties",
             nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "routes", source = "routes", qualifiedByName = "mapRoutes")
-    @Mapping(
-        target = "displayName",
-        source = "displayName",
-        qualifiedByName = "mapMultilingual"
-    )
-    @Mapping(
-        target = "description",
-        source = "description",
-        qualifiedByName = "mapMultilingual"
-    )
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     DialApplicationInfoDto toDialApplicationInfoDto(DialCoreApplicationDto source);
 
     @Named("mapRoutes")
@@ -124,16 +108,8 @@ public interface DeploymentMapper {
     @Mapping(source = "id", target = "deploymentId")
     @Mapping(source = "displayVersion", target = "version")
     @Mapping(source = "transport", target = "transport", qualifiedByName = "dialTransportToMcp")
-    @Mapping(
-        target = "displayName",
-        source = "displayName",
-        qualifiedByName = "mapMultilingual"
-    )
-    @Mapping(
-        target = "description",
-        source = "description",
-        qualifiedByName = "mapMultilingual"
-    )
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     ToolsetInfoDto toToolsetInfoDto(DialCoreToolsetDto source);
 
     @Named("mapMultilingual")

@@ -21,9 +21,10 @@ import org.springframework.http.ResponseEntity;
 
 /**
  * Functional tests for the suite-level {@code testCaseFilter} applied at run time as ALL-turns-match: a
- * multi-turn case runs only when every turn satisfies the filter; a turn whose predicate is false or
- * unknown (missing field) excludes the whole case. Single-turn cases behave as the trivial 1-turn case,
- * and a suite with no filter runs every valid case unchanged.
+ * multi-turn case runs only when every turn satisfies the filter. Satisfaction for a missing/null per-turn
+ * field follows the operator's polarity — a positive predicate is not satisfied (so the case is excluded),
+ * a negated one is (GH #141). Single-turn cases behave as the trivial 1-turn case, and a suite with no
+ * filter runs every valid case unchanged.
  */
 @DisplayName("Multi-turn Suite Filter Functional Tests")
 public abstract class MultiTurnFilterFunctionalTests extends AbstractMultiTurnFunctionalTest {
@@ -33,6 +34,17 @@ public abstract class MultiTurnFilterFunctionalTests extends AbstractMultiTurnFu
         return Map.of(
                 "op",
                 "eq",
+                "args",
+                List.of(
+                        Map.of("type", "field", "name", "data::category"),
+                        Map.of("type", "value", "value_type", "string", "value", value)));
+    }
+
+    /** {@code data::category nc <value>} as a raw StructuredQuery filter map. */
+    private static Map<String, Object> categoryNotContains(String value) {
+        return Map.of(
+                "op",
+                "nc",
                 "args",
                 List.of(
                         Map.of("type", "field", "name", "data::category"),
@@ -125,5 +137,36 @@ public abstract class MultiTurnFilterFunctionalTests extends AbstractMultiTurnFu
                 String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("A NOT CONTAIN filter runs a multi-turn case whose intermediate turns have no value (GH #141)")
+    void negatedFilterTreatsMissingPerTurnValueAsMatching() {
+        TestSuiteResponseDto suite = createChatSuite("MT filter nc", categoryNotContains("London"));
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        // Turns 1-2 carry no `category` at all; only the last turn has one, and it is not "London".
+        createMultiTurnCase(
+                datasetId,
+                "mt-null-intermediate-turns",
+                List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1"), Map.of("prompt", "q2", "category", "Berlin")));
+        // One turn holds the excluded value, so the whole case must still be excluded.
+        createMultiTurnCase(
+                datasetId,
+                "mt-violating-turn",
+                List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1", "category", "London")));
+        createSingleTurnCase(datasetId, "single-null-category", Map.of("prompt", "s0"));
+        createSingleTurnCase(datasetId, "single-violating", Map.of("prompt", "s1", "category", "London"));
+        stubDeployment();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        Map<String, Long> rows = rowsPerTestCase(run.getId());
+        // Included: a missing value cannot contain "London", so every turn satisfies the negated predicate.
+        assertThat(rows).containsOnlyKeys("mt-null-intermediate-turns", "single-null-category");
+        assertThat(rows.get("mt-null-intermediate-turns")).isEqualTo(3L);
+        assertThat(rows.get("single-null-category")).isEqualTo(1L);
+        // Excluded: a turn whose value actually contains "London" fails the predicate.
+        assertThat(rows).doesNotContainKeys("mt-violating-turn", "single-violating");
     }
 }

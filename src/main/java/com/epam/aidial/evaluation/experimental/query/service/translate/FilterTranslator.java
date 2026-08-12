@@ -69,7 +69,7 @@ public class FilterTranslator {
                 if (args.size() != 1) {
                     throw new ValidationException("'not' expects exactly one child node");
                 }
-                yield DSL.not(toCondition(args.get(0), bindings));
+                yield negate(toCondition(args.get(0), bindings));
             }
         };
     }
@@ -103,7 +103,7 @@ public class FilterTranslator {
                 && isArrayField(leftExpr, bindings)) {
             final Condition contains =
                     arrayContains((Field<JSONB>) exprTranslator.toField(leftExpr, bindings), right, bindings);
-            return op == ComparisonOp.CO ? contains : DSL.not(contains);
+            return op.negated() ? nullSatisfies(DSL.not(contains)) : contains;
         }
 
         final Field left = exprTranslator.toField(leftExpr, bindings);
@@ -122,17 +122,41 @@ public class FilterTranslator {
                     throw new ValidationException("null literal is only valid with 'eq'/'ne', not '" + op.code() + "'");
             };
         }
-        return switch (op) {
-            case CO -> ((Field<String>) left).likeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
-            case NC -> ((Field<String>) left).notLikeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
-            case EQ -> left.eq(exprTranslator.toField(right, bindings));
-            case NE -> left.ne(exprTranslator.toField(right, bindings));
-            case LT -> left.lt(exprTranslator.toField(right, bindings));
-            case GT -> left.gt(exprTranslator.toField(right, bindings));
-            case LE -> left.le(exprTranslator.toField(right, bindings));
-            case GE -> left.ge(exprTranslator.toField(right, bindings));
-            case IN -> throw new IllegalStateException("'in' handled above");
-        };
+        final Condition condition =
+                switch (op) {
+                    case CO -> ((Field<String>) left).likeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
+                    case NC -> ((Field<String>) left).notLikeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
+                    case EQ -> left.eq(exprTranslator.toField(right, bindings));
+                    case NE -> left.ne(exprTranslator.toField(right, bindings));
+                    case LT -> left.lt(exprTranslator.toField(right, bindings));
+                    case GT -> left.gt(exprTranslator.toField(right, bindings));
+                    case LE -> left.le(exprTranslator.toField(right, bindings));
+                    case GE -> left.ge(exprTranslator.toField(right, bindings));
+                    case IN -> throw new IllegalStateException("'in' handled above");
+                };
+        return op.negated() ? nullSatisfies(condition) : condition;
+    }
+
+    /**
+     * Makes a negated comparison total: an UNKNOWN result — which SQL three-valued logic produces whenever
+     * an operand is null — counts as satisfied, because a missing value cannot contain or equal anything.
+     * Without this, {@code nc}/{@code ne} silently drop null-valued rows, and inside the multi-turn
+     * ALL-turns-match quantifier (whose {@code IS NOT TRUE} treats UNKNOWN as a failing turn) a single turn
+     * with a null field excludes the whole test case. Deliberately not applied to positive operators: their
+     * UNKNOWN already means "no match" everywhere, and wrapping them would put a {@code BooleanTest} around
+     * otherwise sargable predicates on indexed columns.
+     */
+    private static Condition nullSatisfies(Condition condition) {
+        return DSL.condition("({0}) is not false", condition);
+    }
+
+    /**
+     * Negates a child predicate so that an UNKNOWN child is negated to {@code true}, keeping {@code not}
+     * consistent with the negated comparison operators (see {@link #nullSatisfies}). Plain {@code NOT} would
+     * propagate UNKNOWN and drop the row instead.
+     */
+    private static Condition negate(Condition condition) {
+        return DSL.condition("({0}) is not true", condition);
     }
 
     private List<Object> inValues(Expr right, Map<String, QueryFieldBinding> bindings) {

@@ -378,12 +378,12 @@ what is <em>legal inside</em> a <code>select</code> entry differs by mode.</p>
 <tr>
 <td><code>co</code></td>
 <td>CONTAINS</td>
-<td>left <code>ILIKE '%' || ? || '%'</code> (case-insensitive substring; literal <code>%</code>/<code>_</code> in the pattern operand are escaped)</td>
+<td>left <code>ILIKE '%' || ? || '%'</code> (case-insensitive substring; literal <code>%</code>/<code>_</code> in the pattern operand are escaped) — but <strong>array-element containment</strong> when the left operand is an <code>array</code>-typed field, see the note below</td>
 </tr>
 <tr>
 <td><code>nc</code></td>
 <td>NOT_CONTAINS</td>
-<td>left <code>NOT ILIKE '%' || ? || '%'</code> (same escaping)</td>
+<td>left <code>NOT ILIKE '%' || ? || '%'</code> (same escaping) — negated array-element containment for an <code>array</code>-typed left operand</td>
 </tr>
 <tr>
 <td><code>lt</code></td>
@@ -416,7 +416,18 @@ what is <em>legal inside</em> a <code>select</code> entry differs by mode.</p>
 - <strong><code>co</code>/<code>nc</code> are positional</strong> (not commutative): the <strong>left</strong> operand is the value being
   searched, the <strong>right</strong> operand supplies the substring pattern. They are case-insensitive
   (<code>ILIKE</code>) and escape <code>%</code>/<code>_</code> in the pattern operand so the user's literal characters are
-  not treated as wildcards.</p>
+  not treated as wildcards.
+- <strong>On an <code>array</code>-typed field, <code>co</code>/<code>nc</code> mean element containment, not substring</strong>: the row
+  matches when the array holds the operand as a <strong>whole element</strong>. <code>co</code> with a bare field
+  operand (e.g. <code>data::tags</code>) matches <strong>case-sensitively</strong>; wrapping that field in
+  <code>lower</code>/<code>upper</code> (e.g. <code>lower(data::tags) co &quot;tee&quot;</code>) matches <strong>ignoring case</strong> —
+  <code>[&quot;Tee&quot;]</code> matches, <code>[&quot;tee-shirt&quot;]</code> does not. A non-string operand matches the
+  equally-typed element (<code>5</code> matches <code>[5]</code>), and the case-insensitive form additionally
+  matches a non-string element whose text rendering equals the operand (<code>&quot;1&quot;</code> matches
+  <code>[1, 2]</code>). Rows whose <code>array</code>-declared field holds a <strong>non-array</strong> value (or no
+  value) differ by shape: under the case-insensitive form they never match <code>co</code> and always match
+  <code>nc</code>; the bare form instead compares a string value for equality and an object value by key, so
+  <code>&quot;tee&quot;</code> and <code>{&quot;tee&quot;: 1}</code> do match it.</p>
 <h3 id="collision-note">Collision note</h3>
 <p>Logical keywords appear only as the <code>op</code> value (not as object keys alongside field names),
 so there is no field-name/operator collision in this shape — one reason it was chosen over
@@ -562,6 +573,13 @@ as <code>cursor</code> pagination (§7); both await D10/implementation.</p>
   ordered-set aggregate — <code>percentile_cont</code>, <code>percentile_disc</code>.
   Any other name (e.g. <code>round</code>, <code>div</code>) is rejected with
   <code>unsupported function '…' in query expression</code>.</li>
+<li><strong><code>lower</code>/<code>upper</code> over an <code>array</code>-typed field are a case-insensitivity hint, not a call.</strong>
+  In the left operand of <code>co</code>/<code>nc</code> only, a single-argument <code>lower</code>/<code>upper</code> around an
+  <code>array</code>-typed field is consumed by the translator: the comparison becomes case-insensitive
+  whole-element containment (§4.2 note) and the function itself is never emitted — SQL has no
+  <code>lower(jsonb)</code>. Everywhere else <code>lower</code>/<code>upper</code> translate to the SQL function, so applying
+  either to an <code>array</code>- or <code>object</code>-typed field under any <em>other</em> operator produces a statement
+  the database rejects.</li>
 </ul>
 <h3 id="45-flat-property-abstraction-field-references-and-physical-sources">4.5 Flat property abstraction (field references and physical sources)</h3>
 <p>A <code>field</code> reference names a <strong>flat, allowlisted property</strong> as published by the entity's

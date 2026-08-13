@@ -12,6 +12,7 @@ public enum InterfaceType {
     CUSTOM_UI("custom_ui"),
     OPEN_AI_CHAT_COMPLETIONS("openaiChatCompletions"),
     OPEN_AI_RESPONSES("openaiResponses"),
+    OPEN_AI_EMBEDDINGS("openaiEmbeddings"),
     ANTHROPIC_MESSAGES("anthropicMessages");
 
     private final String value;

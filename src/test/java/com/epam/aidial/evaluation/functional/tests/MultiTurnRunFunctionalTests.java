@@ -44,57 +44,6 @@ import org.springframework.http.ResponseEntity;
 public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunctionalTest {
 
     /**
-     * Chat suite whose request-template body is authored as a JSONata source string that accumulates
-     * history via the {@code $history} frame variable (bound from the previous turn's {@code history}
-     * response column) instead of the old hardcoded {@code messages}-array auto-accumulation. Turn 0
-     * evaluates with {@code $history} unbound (undefined-append), matching the new per-turn contract.
-     */
-    private TestSuiteResponseDto createHistoryAccumulatingChatSuite(String name) {
-        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
-                .name(name + " " + UUID.randomUUID())
-                .deploymentRef(DeploymentReferenceDto.builder()
-                        .id("deployment-1")
-                        .name("Deployment One")
-                        .version("v1")
-                        .build())
-                .endpointRef(EndpointContractDto.builder()
-                        .method(HttpMethod.POST)
-                        .relativeUrlPattern("/v1/chat")
-                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
-                                .schema(Map.of("type", "object", "properties", Map.of()))
-                                .build())
-                        .build())
-                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
-                        .name("prompt")
-                        .type(SchemaFieldType.STRING)
-                        .required(true)
-                        .perTurn(true)
-                        .build())))
-                .requestTemplate(RequestTemplateDto.builder()
-                        .urlTemplate("/v1/chat")
-                        .body(JsonRequestBodyDto.builder()
-                                .jsonataContent("{\"messages\": $append($history, "
-                                        + "[{\"role\": \"user\", \"content\": \"${{prompt}}\"}])}")
-                                .build())
-                        .build())
-                .inputBindings(List.of(InputBindingDto.builder()
-                        .templateVariable("prompt")
-                        .dataField("prompt")
-                        .build()))
-                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
-                        .name("history")
-                        .expression("$append($_request.messages, [$_response.choices[0].message])")
-                        .type(SchemaFieldType.ARRAY)
-                        .build()))
-                .build();
-
-        ResponseEntity<TestSuiteResponseDto> response =
-                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        return response.getBody();
-    }
-
-    /**
      * Same chat suite shape, but the dataset schema declares {@code prompt} <b>shared</b> — so the dataset
      * has no per-turn column at all and any case carrying turns is invalid.
      */

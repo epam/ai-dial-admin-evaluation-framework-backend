@@ -7,10 +7,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
-import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
-import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -28,39 +26,17 @@ import com.epam.aidial.evaluation.service.domain.dto.TryItOutWithVariablesReques
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("Try It Out Functional Tests")
-public abstract class TryItOutFunctionalTests extends BaseFunctionalTest {
-
-    @Autowired
-    private DialCoreDeploymentInvoker deploymentInvoker;
-
-    @Autowired
-    private MetaTestDataHelper metaTestDataHelper;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    private UUID newDatasetWithSchema(List<FieldDefinitionDto> schema) {
-        try {
-            String schemaJson = objectMapper.writeValueAsString(schema);
-            return metaTestDataHelper
-                    .createDataset("tryitout-" + UUID.randomUUID(), schemaJson)
-                    .getId();
-        } catch (JacksonException e) {
-            throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
-        }
-    }
+public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctionalTest {
 
     // --- 6.4 Test-case try-it-out ---
 
@@ -91,6 +67,79 @@ public abstract class TryItOutFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getBody().getResponse()).isNotNull();
         assertThat(response.getBody().getResponse().getStatusCode()).isEqualTo(200);
         assertThat(response.getBody().getDurationMs()).isNotNull();
+    }
+
+    // --- try-it-out with a multi-turn test case: executes every turn, threading $history across turns ---
+
+    @Test
+    @DisplayName("Should execute every turn of a multi-turn test case and return the final turn's accumulated request")
+    void shouldTryItOutWithMultiTurnTestCase() {
+        TestSuiteResponseDto suite = createHistoryAccumulatingChatSuite("TryOut MT");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        TestCaseResponseDto tc = createMultiTurnCase(
+                datasetId, "conv-1", List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1"), Map.of("prompt", "q2")));
+
+        AtomicInteger call = new AtomicInteger();
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenAnswer(inv -> chatReply("reply-" + call.getAndIncrement()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TryItOutResponseDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getResponse()).isNotNull();
+        assertThat(body.getResponse().getStatusCode()).isEqualTo(200);
+
+        // The final turn's request already carries the accumulated history: turns 0 and 1's user
+        // messages + assistant replies, since $append($history, [...]) folds every prior turn in.
+        String turn2RequestBody =
+                objectMapper.writeValueAsString(body.getResolvedRequest().getBody());
+        assertThat(turn2RequestBody)
+                .contains("q0")
+                .contains("reply-0")
+                .contains("q1")
+                .contains("reply-1")
+                .contains("q2");
+
+        // history carries every turn, in order, including the last (which duplicates the top-level fields).
+        assertThat(body.getHistory()).hasSize(3);
+        String turn0RequestBody = objectMapper.writeValueAsString(
+                body.getHistory().get(0).getResolvedRequest().getBody());
+        assertThat(turn0RequestBody).contains("q0").doesNotContain("q1");
+        assertThat(body.getHistory().get(2).getResponse()).isEqualTo(body.getResponse());
+        assertThat(body.getHistory().get(2).getResolvedRequest()).isEqualTo(body.getResolvedRequest());
+    }
+
+    @Test
+    @DisplayName("Should stop at the first failed turn and return that turn's error response")
+    void shouldStopAtFirstFailedTurnForMultiTurnTestCase() {
+        TestSuiteResponseDto suite = createHistoryAccumulatingChatSuite("TryOut MT fail-fast");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        TestCaseResponseDto tc =
+                createMultiTurnCase(datasetId, "conv-fail", List.of(Map.of("prompt", "q0"), Map.of("prompt", "q1")));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(chatReply("reply-0"))
+                .thenReturn(
+                        new DeploymentInvocationResult(500, false, Map.of("error", "boom"), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TryItOutResponseDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getResponse().getStatusCode()).isEqualTo(500);
+
+        assertThat(body.getHistory()).hasSize(2);
+        assertThat(body.getHistory().get(0).getResponse().getStatusCode()).isEqualTo(200);
+        assertThat(body.getHistory().get(1).getResponse()).isEqualTo(body.getResponse());
     }
 
     // --- Fix: a JSON body whose JSONata evaluation fails must abort try-it-out, never invoke the

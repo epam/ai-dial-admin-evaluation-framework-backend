@@ -15,7 +15,7 @@ spring:
       max-request-size: 55MB
   threads:
     virtual:
-      enabled: true
+      enabled: ${VIRTUAL_THREADS_ENABLED:true}
 
 # Auth configuration
 auth:
@@ -241,7 +241,7 @@ app:
       EXIT: "Exit:  $[methodName]() in $[invocationTime]ms → $[returnValue]"
       EXCEPTION: "Exception: $[methodName]() in $[invocationTime]ms"
   trace-log-advisor:
-    expression: "@within(com.epam.aidial.evaluation.configuration.logging.LogExecution)"
+    expression: "@within(com.epam.aidial.evaluation.runner.config.logging.LogExecution)"
   grafana:
     base-url: ${GRAFANA_BASE_URL:}
     tempo-datasource-uid: ${GRAFANA_TEMPO_DATASOURCE_UID:tempo}

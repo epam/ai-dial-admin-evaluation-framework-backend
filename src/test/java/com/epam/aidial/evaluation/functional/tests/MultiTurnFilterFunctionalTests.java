@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
@@ -48,6 +50,23 @@ public abstract class MultiTurnFilterFunctionalTests extends AbstractMultiTurnFu
                 "args",
                 List.of(
                         Map.of("type", "field", "name", "data::category"),
+                        Map.of("type", "value", "value_type", "string", "value", value)));
+    }
+
+    /** {@code lower(data::tags) co <value>} — the case-insensitive array-containment shape from GH #142. */
+    private static Map<String, Object> lowerTagsContains(String value) {
+        return Map.of(
+                "op",
+                "co",
+                "args",
+                List.of(
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "lower",
+                                "args",
+                                List.of(Map.of("type", "field", "name", "data::tags"))),
                         Map.of("type", "value", "value_type", "string", "value", value)));
     }
 
@@ -137,6 +156,53 @@ public abstract class MultiTurnFilterFunctionalTests extends AbstractMultiTurnFu
                 String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("A case-insensitive array CONTAINS filter on a per-turn ARRAY field is ALL-turns-match (GH #142)")
+    void caseInsensitiveArrayContainsFilterIsAllTurnsMatch() {
+        TestSuiteResponseDto suite = createChatSuite(
+                "MT filter array co",
+                lowerTagsContains("tee"),
+                List.of(FieldDefinitionDto.builder()
+                        .name("tags")
+                        .type(SchemaFieldType.ARRAY)
+                        .required(false)
+                        .perTurn(true)
+                        .build()));
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        // Every turn holds a differently-cased whole element "tee".
+        createMultiTurnCase(
+                datasetId,
+                "mt-tags-all-turns",
+                List.of(
+                        Map.of("prompt", "q0", "tags", List.of("Tee", "x")),
+                        Map.of("prompt", "q1", "tags", List.of("tee"))));
+        // One turn holds only a substring match, which is not a whole element — the case must be excluded.
+        createMultiTurnCase(
+                datasetId,
+                "mt-tags-one-turn-substring",
+                List.of(
+                        Map.of("prompt", "q0", "tags", List.of("Tee")),
+                        Map.of("prompt", "q1", "tags", List.of("tee-shirt"))));
+        // A turn with no tags at all fails the positive predicate, so the case is excluded.
+        createMultiTurnCase(
+                datasetId,
+                "mt-tags-missing-turn",
+                List.of(Map.of("prompt", "q0", "tags", List.of("tee")), Map.of("prompt", "q1")));
+        createSingleTurnCase(datasetId, "single-tags-match", Map.of("prompt", "s0", "tags", List.of("TEE")));
+        createSingleTurnCase(datasetId, "single-tags-nomatch", Map.of("prompt", "s1", "tags", List.of("y")));
+        stubDeployment();
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        Map<String, Long> rows = rowsPerTestCase(run.getId());
+        assertThat(rows).containsOnlyKeys("mt-tags-all-turns", "single-tags-match");
+        assertThat(rows.get("mt-tags-all-turns")).isEqualTo(2L);
+        assertThat(rows.get("single-tags-match")).isEqualTo(1L);
+        assertThat(rows)
+                .doesNotContainKeys("mt-tags-one-turn-substring", "mt-tags-missing-turn", "single-tags-nomatch");
     }
 
     @Test

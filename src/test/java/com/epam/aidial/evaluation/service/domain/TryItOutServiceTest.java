@@ -433,6 +433,15 @@ class TryItOutServiceTest {
             verify(requestResolver).resolveForRun(template, bindings, turnData.get(0), Map.of());
             verify(requestResolver).resolveForRun(template, bindings, turnData.get(1), frame1);
             verify(requestResolver).resolveForRun(template, bindings, turnData.get(2), frame2);
+
+            assertThat(result.getHistory()).hasSize(3);
+            assertThat(result.getHistory().get(0).getResponse().getBody()).isEqualTo(Map.of("turn", 0));
+            assertThat(result.getHistory().get(1).getResponse().getBody()).isEqualTo(Map.of("turn", 1));
+            assertThat(result.getHistory().get(2).getResponse().getBody()).isEqualTo(Map.of("turn", 2));
+            assertThat(result.getHistory().get(2).getResponse()).isEqualTo(result.getResponse());
+            assertThat(result.getHistory().get(2).getResolvedRequest()).isEqualTo(result.getResolvedRequest());
+            assertThat(result.getHistory().get(2).getDurationMs()).isEqualTo(result.getDurationMs());
+            assertThat(result.getHistory().get(2).getTraceId()).isEqualTo(result.getTraceId());
         }
 
         @Test
@@ -458,6 +467,10 @@ class TryItOutServiceTest {
             assertThat(result.getResponse().getBody()).isEqualTo(Map.of("error", "boom"));
             verify(deploymentInvoker, org.mockito.Mockito.times(2))
                     .invokeWithStreaming(any(), any(), any(), any(), any());
+
+            assertThat(result.getHistory()).hasSize(2);
+            assertThat(result.getHistory().get(0).getResponse().getStatusCode()).isEqualTo(200);
+            assertThat(result.getHistory().get(1).getResponse()).isEqualTo(result.getResponse());
         }
 
         @Test
@@ -476,6 +489,9 @@ class TryItOutServiceTest {
 
             assertThat(result.getResponse().getStatusCode()).isEqualTo(0);
             verifyNoInteractions(deploymentInvoker);
+
+            assertThat(result.getHistory()).hasSize(1);
+            assertThat(result.getHistory().get(0).getResponse()).isEqualTo(result.getResponse());
         }
 
         @Test
@@ -495,6 +511,7 @@ class TryItOutServiceTest {
 
             assertThat(result.getResponse().getBody()).isEqualTo(Map.of("result", "ok"));
             verifyNoInteractions(responseColumnExtractor);
+            assertThat(result.getHistory()).isNull();
         }
 
         @Test

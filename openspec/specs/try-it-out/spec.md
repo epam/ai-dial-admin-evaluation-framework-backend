@@ -9,7 +9,7 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Try it out with test case data
-The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/try-it-out` to resolve the effective request template using the test case's data and effective bindings, send the resolved request to the DIAL Core deployment referenced by the test suite, and return the deployment's response along with the resolved request details. When the test case is multi-turn, the system SHALL execute every turn of the sequence and return the result of the last executed turn.
+The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/try-it-out` to resolve the effective request template using the test case's data and effective bindings, send the resolved request to the DIAL Core deployment referenced by the test suite, and return the deployment's response along with the resolved request details. When the test case is multi-turn, the system SHALL execute every turn of the sequence and return the result of the last executed turn, plus a per-turn `history` when more than one turn actually ran.
 
 Status: **Implemented**
 
@@ -39,17 +39,17 @@ Status: **Implemented**
 - **AND** each turn's effective data SHALL be the merge of the test case's shared `data` with that turn's entry (per-turn wins on key collision)
 - **AND** each turn after the first SHALL be resolved using `frameBindings` derived from the response columns extracted from the previous turn's response (via the suite's `responseColumns` definitions), enabling `$history`-style JSONata expressions in the request template to accumulate across turns exactly as they do in a real suite run
 - **AND** the first turn SHALL be resolved with empty `frameBindings`
-- **AND** the response SHALL be a `TryItOutResponseDto` containing the last executed turn's `resolvedRequest`/`response`/`durationMs`/`traceId` — identical in shape to a single-turn response. Intermediate turns are not returned individually: when the request template accumulates history via `$append($history, [...])`, the last turn's `resolvedRequest` already carries every prior turn's messages.
+- **AND** the response SHALL be a `TryItOutResponseDto` containing the last executed turn's `resolvedRequest`/`response`/`durationMs`/`traceId` at the top level, plus a `history` array with one entry per executed turn (see "Multi-turn response includes per-turn history")
 
 #### Scenario: Multi-turn data present but no per-turn binding collapses to a single turn
 - **WHEN** the test case has non-null `multiTurnData` with more than one entry, but no effective input binding references any `perTurn=true` schema field
 - **THEN** the system SHALL treat the case as a single turn using only the shared `data` (identical to the `PerTurnBindingDetector` collapse behavior used by real runs)
-- **AND** the response SHALL be identical in shape to a single-turn test case's response
+- **AND** the response SHALL be identical in shape to a single-turn test case's response (no `history`)
 
 #### Scenario: Turn failure stops the sequence
 - **WHEN** executing a multi-turn test case and a turn's invocation resolves to a non-2xx DIAL Core status, or fails request-body JSONata evaluation (`RequestBodyEvaluationException`)
 - **THEN** the system SHALL stop executing further turns (fail-fast)
-- **AND** the failed turn's resolved request and error response SHALL be returned as the `resolvedRequest`/`response`
+- **AND** the failed turn's resolved request and error response SHALL be returned as the `resolvedRequest`/`response`, and as the last entry of `history`
 - **NOTE**: a transport-level failure during a turn's invocation (timeout, connection refused, unreachable deployment) is NOT caught by this mechanism — it propagates uncaught exactly as in the single-turn path, producing the pre-existing plain 502/504 error response.
 - **NOTE**: `ValidationException` (null resolved URL) or `TryItOutValidationException` (unresolved REQUIRED template variables) thrown by `validateResolutionResult` for turns after the first are ALSO not caught by this mechanism — `runTurnSequence`'s catch clause only catches `RequestBodyEvaluationException`. These propagate uncaught exactly like transport-level failures.
 
@@ -206,7 +206,7 @@ The `TryItOutResponseDto` SHALL accommodate MCP responses alongside HTTP respons
 ---
 
 ### Requirement: TryItOutResponseDto structure
-The response SHALL be an envelope containing the resolved request, the DIAL Core response, timing information, and the OTel trace ID of the invocation. For a multi-turn test case, the envelope carries only the last executed turn's data — the same shape as a single-turn response.
+The response SHALL be an envelope containing the resolved request, the DIAL Core response, timing information, and the OTel trace ID of the invocation. The top-level fields always reflect the **last executed turn** — identical in shape to a single-turn response. For a genuine multi-turn sequence (more than one turn actually executed), the envelope additionally carries a `history` field: an ordered list of one entry per executed turn (0..N-1, including the last), each entry having the same `resolvedRequest`/`response`/`durationMs`/`traceId`/`grafanaTraceUrl` shape as the envelope itself. `history` is omitted (`null`, not serialized) for a real single-turn test case and for a multi-turn test case that collapses to a single turn (no per-turn binding bound) — both never enter the turn loop.
 
 `TryItOutCoreResponseDto` SHALL include:
 - `statusCode` (int) — HTTP status code from DIAL Core
@@ -253,10 +253,16 @@ The response SHALL be an envelope containing the resolved request, the DIAL Core
 - **WHEN** the test suite uses a `application/x-www-form-urlencoded` request template
 - **THEN** `resolvedRequest.body` SHALL be a `ResolvedUrlEncodedBodyDto` showing the resolved `List<KeyValueTemplateDto>` entries
 
-#### Scenario: Multi-turn response is byte-identical in shape to a single-turn response
-- **WHEN** a try-it-out invocation resolves to more than one turn
-- **THEN** the top-level `resolvedRequest`/`response`/`durationMs`/`traceId` fields SHALL contain the last executed turn's result
-- **AND** no additional fields SHALL be present beyond those already defined for a single-turn response
+#### Scenario: Multi-turn response includes per-turn history
+- **WHEN** a try-it-out invocation resolves to more than one turn (a genuine multi-turn sequence, N>1)
+- **THEN** `TryItOutResponseDto.history` SHALL be present, containing exactly N entries, one per executed turn, ordered 0..N-1
+- **AND** each entry SHALL carry that turn's own `resolvedRequest`/`response`/`durationMs`/`traceId`/`grafanaTraceUrl`
+- **AND** the last entry in `history` SHALL be identical to the envelope's own top-level `resolvedRequest`/`response`/`durationMs`/`traceId`/`grafanaTraceUrl`
+- **AND** if the sequence stopped early due to a failing turn (fail-fast), `history` SHALL contain only the turns that actually ran, with the last entry being the failing turn
+
+#### Scenario: Single-turn response omits history
+- **WHEN** a try-it-out invocation is a real single-turn test case, or a multi-turn test case whose plan collapses to a single turn (no per-turn binding bound)
+- **THEN** `TryItOutResponseDto.history` SHALL be absent (`null`, omitted from JSON) — the response shape is unchanged from a plain single-turn response
 
 ---
 

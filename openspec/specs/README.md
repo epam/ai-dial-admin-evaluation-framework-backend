@@ -73,7 +73,7 @@ Specs for external service integrations.
 ### Try It Out
 
 - **[try-it-out](try-it-out/spec.md)** — Implemented
-  Endpoints for sending a resolved request to a DIAL Core deployment or MCP tool call and proxying the response. Covers test-case-based and variables-based modes for both HTTP and MCP suites, URL routing, timeout configuration, error proxying, type-aware validation rules, and SSE streaming response handling (`streaming=true`, `events` list, `{"events":[...]}` body envelope). For multi-turn test cases, the test-case-based endpoint executes every turn sequentially, threading `frameBindings` between turns, and returns only the last executed turn's result — byte-identical in shape to a single-turn response (fail-fast on turn failure; MCP suites reject multi-turn test cases). Related: multi-turn-test-case.
+  Endpoints for sending a resolved request to a DIAL Core deployment or MCP tool call and proxying the response. Covers test-case-based and variables-based modes for both HTTP and MCP suites, URL routing, timeout configuration, error proxying, type-aware validation rules, and SSE streaming response handling (`streaming=true`, `events` list, `{"events":[...]}` body envelope). For multi-turn test cases, the test-case-based endpoint executes every turn sequentially, threading `frameBindings` between turns; the top-level fields carry the last executed turn (byte-identical in shape to a single-turn response), plus a `history` array with one entry per executed turn when more than one turn actually ran (fail-fast on turn failure; MCP suites reject multi-turn test cases). Related: multi-turn-test-case.
 
 ### SSE Streaming
 

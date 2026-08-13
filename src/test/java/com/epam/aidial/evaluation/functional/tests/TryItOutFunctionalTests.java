@@ -104,6 +104,14 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                 .contains("q1")
                 .contains("reply-1")
                 .contains("q2");
+
+        // history carries every turn, in order, including the last (which duplicates the top-level fields).
+        assertThat(body.getHistory()).hasSize(3);
+        String turn0RequestBody = objectMapper.writeValueAsString(
+                body.getHistory().get(0).getResolvedRequest().getBody());
+        assertThat(turn0RequestBody).contains("q0").doesNotContain("q1");
+        assertThat(body.getHistory().get(2).getResponse()).isEqualTo(body.getResponse());
+        assertThat(body.getHistory().get(2).getResolvedRequest()).isEqualTo(body.getResolvedRequest());
     }
 
     @Test
@@ -128,6 +136,10 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         TryItOutResponseDto body = response.getBody();
         assertThat(body).isNotNull();
         assertThat(body.getResponse().getStatusCode()).isEqualTo(500);
+
+        assertThat(body.getHistory()).hasSize(2);
+        assertThat(body.getHistory().get(0).getResponse().getStatusCode()).isEqualTo(200);
+        assertThat(body.getHistory().get(1).getResponse()).isEqualTo(body.getResponse());
     }
 
     // --- Fix: a JSON body whose JSONata evaluation fails must abort try-it-out, never invoke the

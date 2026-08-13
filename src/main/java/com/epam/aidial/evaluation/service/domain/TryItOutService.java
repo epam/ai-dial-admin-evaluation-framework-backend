@@ -151,12 +151,10 @@ public class TryItOutService {
     /**
      * Executes every turn of a multi-turn test case sequentially, fail-fast: a turn that resolves to a
      * non-2xx status or a request-body JSONata evaluation failure stops the sequence, and that turn
-     * becomes the returned result. Each successful turn's extracted response columns are threaded to the
-     * next turn as {@code frameBindings}, mirroring {@code TurnLoopExecutor}'s history-accumulation
-     * contract so {@code $history}-style request templates behave identically to a real run. Only the
-     * last executed turn is returned — a JSONata template that accumulates history (the common case)
-     * already carries every prior turn's messages in that turn's resolved request body, so a separate
-     * per-turn history payload would just duplicate it.
+     * becomes the returned top-level result and the last entry of {@code history}. Each successful turn's
+     * extracted response columns are threaded to the next turn as {@code frameBindings}, mirroring
+     * {@code TurnLoopExecutor}'s history-accumulation contract so {@code $history}-style request templates
+     * behave identically to a real run.
      */
     private TryItOutResponseDto runTurnSequence(
             ResolvedRequestService.TurnPlan plan,
@@ -166,6 +164,7 @@ public class TryItOutService {
         int totalTurns = plan.turnDataList().size();
         Map<String, Object> frameBindings = Map.of();
         TurnInvocationResult current = null;
+        List<TryItOutResponseDto> history = new ArrayList<>();
 
         for (int turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
             Map<String, Object> turnData = plan.turnDataList().get(turnIndex);
@@ -183,6 +182,8 @@ public class TryItOutService {
                 turnFailed = true;
             }
 
+            history.add(toHistoryEntry(current));
+
             if (turnFailed) {
                 break;
             }
@@ -197,6 +198,17 @@ public class TryItOutService {
                 .durationMs(current.durationMs())
                 .traceId(current.traceId())
                 .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(current.traceId()))
+                .history(history)
+                .build();
+    }
+
+    private TryItOutResponseDto toHistoryEntry(TurnInvocationResult result) {
+        return TryItOutResponseDto.builder()
+                .resolvedRequest(result.resolvedRequest())
+                .response(result.response())
+                .durationMs(result.durationMs())
+                .traceId(result.traceId())
+                .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(result.traceId()))
                 .build();
     }
 

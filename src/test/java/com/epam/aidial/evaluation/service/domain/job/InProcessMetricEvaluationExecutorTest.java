@@ -78,6 +78,9 @@ class InProcessMetricEvaluationExecutorTest {
     @Mock
     private ConditionExpressionEvaluator conditionExpressionEvaluator;
 
+    @Mock
+    private Clock clock;
+
     @InjectMocks
     private InProcessMetricEvaluationExecutor executor;
 
@@ -128,6 +131,7 @@ class InProcessMetricEvaluationExecutorTest {
                 .build();
         when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context)))
                 .thenReturn(response);
+        when(clock.millis()).thenReturn(1_000L, 1_000L, 1_150L);
 
         ObjectNode values = objectMapper.createObjectNode();
         values.putObject("Accuracy").put("score", 1);
@@ -144,6 +148,7 @@ class InProcessMetricEvaluationExecutorTest {
         assertThat(items).hasSize(1);
         assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(items.get(0).getMetricValues()).isNotNull();
+        assertThat(items.get(0).getAvgMetricEvalDurationMs()).isEqualTo(150L);
     }
 
     @Test
@@ -185,6 +190,7 @@ class InProcessMetricEvaluationExecutorTest {
                 })
                 .when(worker)
                 .evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context));
+        when(clock.millis()).thenReturn(5_000L, 5_000L, 5_300L);
 
         // After timeout, the executor records the TSMD as a TsmdEvaluationResult.Failure via putIfAbsent
         // The output mapper is mocked — verify the executor correctly produces FAILED status
@@ -206,6 +212,9 @@ class InProcessMetricEvaluationExecutorTest {
         List<EvalSummaryBatchWriteItemDto> items = captor.getValue();
         assertThat(items).hasSize(1);
         assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(items.get(0).getAvgMetricEvalDurationMs())
+                .as("a timed-out TSMD still contributes its real elapsed time (dispatch to timeout detection)")
+                .isEqualTo(300L);
     }
 
     @Test
@@ -298,6 +307,76 @@ class InProcessMetricEvaluationExecutorTest {
         assertThat(captor.getValue().get(0).getExecutionStatus())
                 .as("a broken condition must not fail the result row")
                 .isEqualTo(ExecutionStatus.SUCCESS);
+    }
+
+    @Test
+    @DisplayName("Failed TSMD call still contributes its elapsed time to the average")
+    void failedTsmdCall_stillContributesElapsedTimeToAverage() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("FlakyMetric")
+                .declarationProviderId("dial")
+                .metricDeclarationName("flaky_eval")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L);
+
+        TestCaseRunResult result = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context)))
+                .thenThrow(new RuntimeException("transport failure"));
+        when(clock.millis()).thenReturn(2_000L, 2_000L, 2_500L);
+
+        ObjectNode values = objectMapper.createObjectNode();
+        ObjectNode infos = objectMapper.createObjectNode();
+        doReturn(values).when(outputMapper).buildMetricValues(any());
+        doReturn(infos).when(outputMapper).buildMetricInfos(any());
+
+        executor.execute(context);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());
+
+        List<EvalSummaryBatchWriteItemDto> items = captor.getValue();
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(items.get(0).getAvgMetricEvalDurationMs())
+                .as("a failed TSMD call still contributes its real elapsed time, same as a successful one")
+                .isEqualTo(500L);
+    }
+
+    @Test
+    @DisplayName("computeAvgMetricEvalDurationMs excludes ConditionError entries and defaults to 0")
+    void computeAvgMetricEvalDurationMs_excludesConditionErrorsAndDefaultsToZero() {
+        EvaluationResponseDto response = EvaluationResponseDto.builder().build();
+
+        Map<String, TsmdEvaluationResult> mixed = Map.of(
+                "successMetric", new TsmdEvaluationResult.Success(response, List.of(), 100L),
+                "failedMetric", new TsmdEvaluationResult.Failure(new RuntimeException("boom"), List.of(), 300L),
+                "conditionErrorMetric", new TsmdEvaluationResult.ConditionError("bad condition", List.of()));
+
+        assertThat(executor.computeAvgMetricEvalDurationMs(mixed))
+                .as("average must be over Success/Failure only: (100 + 300) / 2")
+                .isEqualTo(200L);
+
+        assertThat(executor.computeAvgMetricEvalDurationMs(Map.of()))
+                .as("no dispatched TSMDs defaults to 0")
+                .isEqualTo(0L);
     }
 
     @Test

@@ -252,6 +252,7 @@ public class AnalyticsTestDataHelper {
                 .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA, JSONB.valueOf(fixture.getTestCaseDataJson()))
                 .set(TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS, fixture.getExecutionStatus())
                 .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, fixture.getExecDurationMs())
+                .set(TEST_CASE_EVAL_SUMMARIES.AVG_METRIC_EVAL_DURATION_MS, fixture.getAvgMetricEvalDurationMs())
                 .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, JSONB.valueOf(fixture.getMetricValuesJson()))
                 .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, fixture.getCreatedAtMs())
                 .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, fixture.getComputedAtMs())

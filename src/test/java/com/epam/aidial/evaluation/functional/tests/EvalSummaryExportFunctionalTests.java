@@ -870,6 +870,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                     .testCaseData(testCaseData)
                     .executionStatus(ExecutionStatus.SUCCESS)
                     .execDurationMs(123L)
+                    .avgMetricEvalDurationMs(0L)
                     .responseStatusCode(200)
                     .metricValues(metricValues)
                     .build());
@@ -912,6 +913,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                 .testCaseData(testCaseData)
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(150L)
+                .avgMetricEvalDurationMs(0L)
                 .responseStatusCode(200)
                 .metricValues(metricValues)
                 .build();
@@ -976,6 +978,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                     .extractedColumns(extractedColumns)
                     .executionStatus(ExecutionStatus.SUCCESS)
                     .execDurationMs(200L)
+                    .avgMetricEvalDurationMs(0L)
                     .responseStatusCode(200)
                     .metricValues(metricValues)
                     .build());

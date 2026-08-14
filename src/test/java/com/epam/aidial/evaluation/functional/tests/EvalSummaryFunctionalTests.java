@@ -607,6 +607,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
                 .testCaseData(JsonNodeFactory.instance.objectNode())
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(100L)
+                .avgMetricEvalDurationMs(0L)
                 .metricValues(JsonNodeFactory.instance.objectNode())
                 .extractionWarnings(extractionWarnings)
                 .build();
@@ -903,6 +904,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
                 .testCaseData(testCaseData)
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(1234L)
+                .avgMetricEvalDurationMs(0L)
                 .responseStatusCode(200)
                 .metricValues(metricValues)
                 .build();

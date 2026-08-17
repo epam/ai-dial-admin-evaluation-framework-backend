@@ -206,6 +206,7 @@ public abstract class EvalSummaryAggregationFunctionalTests extends BaseFunction
                 .testCaseData(testCaseData)
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(500L)
+                .metricEvalDurationMs(0L)
                 .responseStatusCode(200)
                 .metricValues(defaultMetrics)
                 .build();

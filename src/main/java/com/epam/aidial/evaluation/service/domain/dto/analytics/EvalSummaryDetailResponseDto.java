@@ -38,6 +38,12 @@ public class EvalSummaryDetailResponseDto {
     private String executionStatus;
     private Long execDurationMs;
 
+    @Schema(
+            description = "Sum of latency (ms) across the metric provider /evaluate calls dispatched for this row's "
+                    + "computation.",
+            example = "120")
+    private Long metricEvalDurationMs;
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer responseStatusCode;
 

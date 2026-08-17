@@ -59,6 +59,9 @@ public class EvalSummaryBatchWriteItemDto {
     @NotNull(message = "execDurationMs is required")
     private Long execDurationMs;
 
+    @NotNull(message = "metricEvalDurationMs is required")
+    private Long metricEvalDurationMs;
+
     private Integer responseStatusCode;
 
     @NotNull(message = "metricValues is required")

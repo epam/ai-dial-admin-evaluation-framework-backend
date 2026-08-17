@@ -203,26 +203,70 @@ public abstract class RevalidationCoercionFunctionalTests extends BaseFunctional
     @DisplayName("Concurrent edit (updated_at bumped before guarded UPDATE) leaves row untouched")
     void concurrentEditGuardMissDirectRepository() {
         TestSuiteResponseDto suite = createSuiteWithSchema(List.of(fieldDef("flag", SchemaFieldType.BOOLEAN, false)));
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
         TestCaseResponseDto tc = createTestCase(suite.getId(), "tc-guard", Map.of("flag", true));
-        TestCase preState = testCaseRepository
-                .findByIdAndDatasetId(tc.getId(), metaTestDataHelper.getDatasetId(suite.getId()))
-                .orElseThrow();
+        TestCase preState =
+                testCaseRepository.findByIdAndDatasetId(tc.getId(), datasetId).orElseThrow();
         long staleSeenAt = preState.getUpdatedAt() - 1000;
 
         int dataRows = testCaseRepository.updateDataIfUnchanged(
-                tc.getId(), suite.getId(), "{\"flag\":\"true\"}", staleSeenAt, staleSeenAt + 5000);
+                tc.getId(), datasetId, "{\"flag\":\"true\"}", staleSeenAt, staleSeenAt + 5000);
         int validationRows = testCaseRepository.updateValidationIfUnchanged(
-                tc.getId(), suite.getId(), false, "[]", staleSeenAt, staleSeenAt + 5000);
+                tc.getId(), datasetId, false, "[]", staleSeenAt, staleSeenAt + 5000);
 
         assertThat(dataRows).isZero();
         assertThat(validationRows).isZero();
 
-        TestCase postState = testCaseRepository
-                .findByIdAndDatasetId(tc.getId(), metaTestDataHelper.getDatasetId(suite.getId()))
-                .orElseThrow();
+        TestCase postState =
+                testCaseRepository.findByIdAndDatasetId(tc.getId(), datasetId).orElseThrow();
         assertThat(postState.getUpdatedAt()).isEqualTo(preState.getUpdatedAt());
         assertThat(postState.getData()).isEqualTo(preState.getData());
         assertThat(postState.isValid()).isEqualTo(preState.isValid());
+    }
+
+    @Test
+    @DisplayName("updateDataAndTurnsIfUnchanged writes both data and multi_turn_data when the guard matches")
+    void updateDataAndTurnsIfUnchangedWritesBothColumns() {
+        TestSuiteResponseDto suite = createSuiteWithSchema(List.of(fieldDef("flag", SchemaFieldType.BOOLEAN, false)));
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "tc-turns-guard-match", Map.of("flag", true));
+        TestCase preState =
+                testCaseRepository.findByIdAndDatasetId(tc.getId(), datasetId).orElseThrow();
+        long seenAt = preState.getUpdatedAt();
+        long newUpdatedAt = seenAt + 1000;
+
+        int rows = testCaseRepository.updateDataAndTurnsIfUnchanged(
+                tc.getId(), datasetId, "{}", "[{\"flag\":true},{\"flag\":false}]", seenAt, newUpdatedAt);
+
+        assertThat(rows).isEqualTo(1);
+        TestCase postState =
+                testCaseRepository.findByIdAndDatasetId(tc.getId(), datasetId).orElseThrow();
+        assertThat(parseData(postState)).isEmpty();
+        assertThat(parseTurns(postState)).containsExactly(Map.of("flag", true), Map.of("flag", false));
+        assertThat(postState.getUpdatedAt()).isEqualTo(newUpdatedAt);
+    }
+
+    @Test
+    @DisplayName(
+            "Concurrent edit (updated_at bumped before guarded UPDATE) leaves the combined data+turns update untouched")
+    void concurrentEditGuardMissBlocksDataAndTurnsUpdate() {
+        TestSuiteResponseDto suite = createSuiteWithSchema(List.of(fieldDef("flag", SchemaFieldType.BOOLEAN, false)));
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "tc-guard-turns", Map.of("flag", true));
+        TestCase preState =
+                testCaseRepository.findByIdAndDatasetId(tc.getId(), datasetId).orElseThrow();
+        long staleSeenAt = preState.getUpdatedAt() - 1000;
+
+        int rows = testCaseRepository.updateDataAndTurnsIfUnchanged(
+                tc.getId(), datasetId, "{\"flag\":\"true\"}", "[{\"flag\":\"true\"}]", staleSeenAt, staleSeenAt + 5000);
+
+        assertThat(rows).isZero();
+
+        TestCase postState =
+                testCaseRepository.findByIdAndDatasetId(tc.getId(), datasetId).orElseThrow();
+        assertThat(postState.getUpdatedAt()).isEqualTo(preState.getUpdatedAt());
+        assertThat(postState.getData()).isEqualTo(preState.getData());
+        assertThat(postState.getMultiTurnData()).isEqualTo(preState.getMultiTurnData());
     }
 
     @Test
@@ -366,6 +410,14 @@ public abstract class RevalidationCoercionFunctionalTests extends BaseFunctional
             return objectMapper.readValue(tc.getData(), new TypeReference<>() {});
         } catch (Exception e) {
             throw new AssertionError("Failed to parse test case data: " + tc.getData(), e);
+        }
+    }
+
+    private List<Map<String, Object>> parseTurns(TestCase tc) {
+        try {
+            return objectMapper.readValue(tc.getMultiTurnData(), new TypeReference<>() {});
+        } catch (Exception e) {
+            throw new AssertionError("Failed to parse test case multiTurnData: " + tc.getMultiTurnData(), e);
         }
     }
 }

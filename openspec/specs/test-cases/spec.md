@@ -155,7 +155,9 @@ Status: **Planned**
 - **THEN** system SHALL recalculate valid against the dataset's schema and include validationWarnings if `valid=false`
 
 ### Requirement: multiTurnData authoring field
-The test-case request, response, and batch-put DTOs SHALL expose an optional `multiTurnData` (`List<Map<String,Object>>`); the model and `test_cases` table carry a nullable `multi_turn_data JSONB` column. The field is omitted (`@JsonInclude(NON_NULL)`) for single-turn cases. A test case MAY populate `data` **and** `multiTurnData` together: `data` carries the dataset's **shared** (`perTurn=false`) fields — test-case-level values constant across turns — while each `multiTurnData[i]` carries the **per-turn** (`perTurn=true`) fields. The two fields are NO LONGER mutually exclusive; there SHALL be no DB CHECK constraint or application 400 enforcing exclusivity. The multi-turn discriminator remains `multiTurnData != null` (independent of whether `data` is empty). A field placed in the wrong scope bucket — a per-turn field present in `data`, or a shared field present in any turn map — SHALL be rejected with HTTP 400 `VALIDATION_ERROR` at create/PUT/PATCH/batch (a structural placement error, distinct from content warnings).
+The test-case request, response, and batch-put DTOs SHALL expose an optional `multiTurnData` (`List<Map<String,Object>>`); the model and `test_cases` table carry a nullable `multi_turn_data JSONB` column. The field is omitted (`@JsonInclude(NON_NULL)`) for single-turn cases. A test case MAY populate `data` **and** `multiTurnData` together: `data` carries the dataset's **shared** (`perTurn=false`) fields — test-case-level values constant across turns — while each `multiTurnData[i]` carries the **per-turn** (`perTurn=true`) fields. The two fields are NO LONGER mutually exclusive; there SHALL be no DB CHECK constraint or application 400 enforcing exclusivity. The multi-turn discriminator remains `multiTurnData != null` (independent of whether `data` is empty).
+
+On a write carrying `multiTurnData`, a field **declared in the dataset schema** and placed in the wrong scope bucket — a per-turn field present in `data`, or a shared field present in any turn map — SHALL be rejected with HTTP 400 `VALIDATION_ERROR` at create/PUT/PATCH/batch (a structural placement error, distinct from content warnings). Scope placement SHALL NOT be checked when `multiTurnData` is absent: a single-turn case has no turn bucket, so no placement can be violated. A key that is **not declared** in the dataset schema SHALL NOT be rejected: it has no scope to violate, and is reported as a content warning that invalidates the case (see *Per-turn validation against the dataset schema*).
 Status: **Planned**
 
 #### Scenario: Round-trip a multi-turn case
@@ -167,11 +169,35 @@ Status: **Planned**
 - **THEN** the write SHALL succeed, both are persisted, and the case is treated as multi-turn (`multiTurnData != null`)
 
 #### Scenario: Misplaced field rejected
-- **WHEN** a write places a per-turn field inside `data`, or a shared field inside a turn map
+- **WHEN** a write carrying `multiTurnData` places a per-turn field inside `data`, or a shared field inside a turn map, and that field is declared in the dataset schema
 - **THEN** the request is rejected with HTTP 400 `VALIDATION_ERROR`
 
+#### Scenario: Single-turn write is not scope-checked
+- **WHEN** a write omits `multiTurnData` (single-turn case)
+- **THEN** no scope-placement rejection SHALL occur, whatever the declared scope of the fields present in `data`
+
+#### Scenario: Undeclared field is warned about, not rejected
+- **WHEN** a write places a key that no dataset schema field declares into `data` or into a turn map
+- **THEN** the write SHALL succeed and the case SHALL be stored with `is_valid=false` and an unknown-field warning whose `path` identifies the bucket the key was found in
+
 ### Requirement: Per-turn validation against the dataset schema
-Test-case validation SHALL be scope-aware. Shared fields SHALL be validated against the `data` map, and per-turn fields SHALL be validated against every element of `multiTurnData`, both using the dataset `test_case_schema`. A required shared field missing from `data`, or a required per-turn field missing from any turn, or a type mismatch in either bucket, SHALL be a content warning (not a 400) that sets `is_valid=false`. The case's `is_valid` is true iff no shared-field warning and every turn passes. Validation warnings aggregate across turns, each per-turn warning carrying the originating turn index. A multi-turn case whose per-turn maps are all empty (`{}`) SHALL be valid provided no required per-turn field is unmet — the turn count alone determines the number of turns run.
+Test-case validation SHALL be scope-aware. Shared fields SHALL be validated against the `data` map, and per-turn fields SHALL be validated against every element of `multiTurnData`, both using the dataset `test_case_schema`. A required shared field missing from `data`, or a required per-turn field missing from any turn, or a type mismatch in either bucket, SHALL be a content warning (not a 400) that sets `is_valid=false`. The case's `is_valid` is true iff validation produces no warning at all — including case-level warnings that belong to neither the shared bucket nor any single turn (the over-max-turns warning and the no-per-turn-columns warning below). Validation warnings aggregate across turns, each per-turn warning carrying the originating turn index.
+
+A multi-turn case whose per-turn maps are all empty (`{}`) SHALL be valid provided the dataset schema declares at least one `perTurn: true` field and no required per-turn field is unmet. The number of turns actually executed is not decided by validation — it follows the turn-count rule in `multi-turn-test-case`.
+
+A multi-turn case (`multiTurnData` non-empty) whose dataset schema declares **no** `perTurn: true` field SHALL be marked `is_valid=false` with exactly one such warning — stating that the case carries turns while the dataset declares no per-turn columns, so the turn data cannot be attached. The warning SHALL report the case's turn count, SHALL use code `ADDITIONAL`, SHALL carry no field name and no turn index, and SHALL use path `$.multiTurnData` — it describes the case, not any one turn or field. It is independent of the over-max-turns warning, which shares that path and code: a case that is both over-cap and without per-turn columns SHALL carry both. The condition SHALL depend solely on the dataset schema's declared field scopes, never on any suite's input bindings, since validity is dataset-scoped. The warning SHALL be recomputed from stored state on every pass that recomputes the case's validity — the write paths, dataset revalidation, and CSV-import row validation, plus the post-import fixup pass on the cases it actually rewrites — so declaring a per-turn column, or clearing the case's `multiTurnData`, clears it. It SHALL NOT be carried forward from previously stored warnings.
+
+Because warnings are truncated to a configured per-case maximum, this warning SHALL be ordered ahead of the shared-bucket and per-turn warnings, so a case with many field-level warnings cannot lose the case-level explanation to truncation.
+
+A declared field found in the wrong scope bucket SHALL produce a dedicated **scope-misplacement** warning that names the field, the bucket it belongs in, and the bucket it was found in — never a generic unknown-field warning. The `ValidationWarningCode` enum SHALL include a value `INVALID_SCOPE` denoting "this value is stored in the wrong scope bucket", so clients can distinguish it from "this key matches no schema field" (`ADDITIONAL`) and from a genuinely absent value (`REQUIRED`). The warning's wording SHALL match the corresponding write-path rejection message so the two surfaces read identically.
+
+A misplaced field SHALL yield exactly one warning per occurrence — one per offending turn when it sits in turn maps, one when it sits in `data` — and SHALL NOT additionally be reported as unknown or type-mismatched in the bucket it was found in, nor as missing from the bucket it belongs in. Suppression is symmetric in both directions: a shared field found in turns SHALL NOT also be reported as missing from `data`, and a per-turn field found in `data` SHALL NOT also be reported as missing from any turn.
+
+The no-per-turn-columns warning and scope-misplacement warnings are independent and SHALL both be reported when both apply: the misplacement warnings name each offending field, while the case-level warning names the root cause the per-field warnings do not express.
+
+A scope-misplacement warning SHALL be derived from the case's stored data and the dataset's current schema on every validation pass; it SHALL NOT be carried forward from previously stored warnings, so correcting either the data or the schema clears it.
+
+Each validation warning SHALL identify its bucket in its `path`: warnings against the shared map use `$.data.<field>`, and warnings against turn *i* use `$.multiTurnData[<i>].<field>`. A warning that describes the turn array as a whole rather than one turn uses `$.multiTurnData`.
 Status: **Planned**
 
 #### Scenario: One invalid turn invalidates the case
@@ -183,11 +209,57 @@ Status: **Planned**
 - **THEN** the case is stored with `is_valid=false` and a warning against `data` (no turn index)
 
 #### Scenario: Empty per-turn maps are valid
-- **WHEN** a multi-turn case has all-shared schema fields and each `multiTurnData[i]` is `{}`, with all required shared fields present in `data`
-- **THEN** the case is valid and runs one test-case run per the turn count
+- **WHEN** a multi-turn case's dataset schema declares at least one `perTurn: true` field, each `multiTurnData[i]` is `{}`, no per-turn field is required, and all required shared fields are present in `data`
+- **THEN** the case SHALL be valid and SHALL NOT carry the no-per-turn-columns warning
+
+#### Scenario: Multi-turn case in an all-shared schema is invalidated
+- **WHEN** a case carries a non-empty `multiTurnData` and its dataset schema declares no `perTurn: true` field
+- **THEN** the case SHALL be stored with `is_valid=false` and one warning at path `$.multiTurnData` with code `ADDITIONAL`, no field name and no turn index, reporting the case's turn count and stating that the dataset declares no per-turn columns
+- **AND** the case SHALL be excluded from runnable test-case selection like any other invalid case
+
+#### Scenario: Single-turn case in an all-shared schema stays valid
+- **WHEN** a case has no `multiTurnData` and its dataset schema declares no `perTurn: true` field
+- **THEN** no no-per-turn-columns warning SHALL be emitted and validity SHALL be unchanged from the single-turn behavior
+
+#### Scenario: Declaring a per-turn column clears the warning
+- **WHEN** a case carries the no-per-turn-columns warning and the dataset schema is then changed to declare a `perTurn: true` field
+- **THEN** the next validation pass SHALL NOT report that warning, and the case SHALL become valid if nothing else invalidates it
+
+#### Scenario: Shared field found inside a turn is reported as misplaced
+- **WHEN** validation processes a case whose turn *i* holds a value for a field the dataset schema declares shared
+- **THEN** the case SHALL be marked invalid with an `INVALID_SCOPE` warning stating that the field is shared (test-case-level) but its values are specified on turn level, and directing the author to re-create the column
+- **AND** the warning SHALL carry turn index *i* and path `$.multiTurnData[<i>].<field>`
+- **AND** no unknown-field warning SHALL be emitted for that field in that turn
+- **AND** if the field is required, no "required field missing" warning SHALL be emitted against `data` for it
+
+#### Scenario: Per-turn field found in shared data is reported as misplaced
+- **WHEN** validation processes a case whose `data` map holds a value for a field the dataset schema declares per-turn
+- **THEN** the case SHALL be marked invalid with an `INVALID_SCOPE` warning stating that the field is per-turn but is currently specified on a test-case level, and directing the author to re-create the column
+- **AND** the warning SHALL carry no turn index and path `$.data.<field>`
+- **AND** no unknown-field warning SHALL be emitted for that field against `data`
+- **AND** if the field is required, no "required field missing" warning SHALL be emitted against any turn for it
+
+#### Scenario: Misplacement in both directions is reported once each
+- **WHEN** a case simultaneously holds a per-turn field in `data` and a shared field in one of its turns
+- **THEN** both misplacements SHALL be reported, each as its own `INVALID_SCOPE` warning at its own path
+- **AND** neither field SHALL produce an unknown-field or required-missing warning
+
+#### Scenario: Misplacement and the no-per-turn-columns warning coexist
+- **WHEN** a case carries turns holding values for fields the dataset schema declares shared, and that schema declares no `perTurn: true` field at all
+- **THEN** the case SHALL carry one `INVALID_SCOPE` warning per misplaced occurrence **and** the case-level no-per-turn-columns warning at `$.multiTurnData`
+- **AND** the case-level warning SHALL survive when the per-case warning maximum truncates the field-level ones
+
+#### Scenario: Undeclared key stays an unknown-field warning
+- **WHEN** validation processes a case holding a key that no dataset schema field declares
+- **THEN** the warning SHALL remain an unknown-field warning naming the key, not a scope-misplacement warning
+- **AND** its `path` SHALL identify the bucket the key was found in
+
+#### Scenario: Fixing the schema clears the misplacement warning
+- **WHEN** a case carries a scope-misplacement warning and the dataset schema is then changed so the field's declared scope matches where the value is stored
+- **THEN** the next validation pass SHALL NOT report that warning, and the case SHALL become valid if nothing else invalidates it
 
 ### Requirement: data and multiTurnData are independently PATCH-able
-Both `data` and `multiTurnData` SHALL be part of the merge-PATCH whitelist alongside `testCaseName`. Patching `data` SHALL update only the shared bucket, and patching `multiTurnData` SHALL update only the per-turn bucket; neither SHALL implicitly clear the other. Setting `multiTurnData: null` SHALL revert the case to single-turn. Placement and per-scope validation SHALL run after the merge (misplaced field → 400; content issues → invalidating warnings).
+Both `data` and `multiTurnData` SHALL be part of the merge-PATCH whitelist alongside `testCaseName`. Patching `data` SHALL update only the shared bucket, and patching `multiTurnData` SHALL update only the per-turn bucket; neither SHALL implicitly clear the other. Setting `multiTurnData: null` SHALL revert the case to single-turn. Placement and per-scope validation SHALL run after the merge (misplaced **declared** field → 400; content issues, including a misplaced undeclared key → invalidating warnings).
 Status: **Planned**
 
 #### Scenario: PATCH updates shared data without clearing turns
@@ -495,6 +567,12 @@ The import endpoint SHALL accept both CSV files and ZIP archives. The file forma
 ### Requirement: Import preview (CSV or ZIP)
 The import preview endpoint SHALL support both CSV and ZIP formats with the same detection logic as the import endpoint.
 
+The preview response SHALL report both `totalRows` — the number of CSV data rows parsed — and `totalTestCases` — the number of test cases those rows assemble into. The two differ only when the CSV contains multi-turn cases, whose turn rows assemble into one case each; for a single-turn CSV they are equal. Both describe the CSV as submitted and SHALL NOT be reduced by rows a conflict strategy would skip.
+
+`sampleRows` SHALL contain assembled test cases (bounded by the sample limit), not raw CSV rows. A sample for a multi-turn case SHALL carry its `multiTurnData` turn array and its shared `data`; a sample for a single-turn case SHALL carry a flat `data` with no turn array.
+
+Status: **Implemented**
+
 #### Scenario: Preview CSV file
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import/preview` with a CSV file
 - **THEN** system SHALL return the preview (current behavior)
@@ -503,6 +581,18 @@ The import preview endpoint SHALL support both CSV and ZIP formats with the same
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import/preview` with a ZIP file
 - **THEN** system SHALL extract and preview the `test-cases.csv` within the archive
 - **AND** FILE columns SHALL show the relative paths from the CSV (not DIAL file paths, since files are not yet uploaded during preview)
+
+#### Scenario: Preview reports test case count alongside row count
+- **WHEN** client previews a CSV whose rows include a multi-turn case of N turns
+- **THEN** `totalRows` SHALL count every CSV data row and `totalTestCases` SHALL count the N turn rows as one test case
+
+#### Scenario: Multi-turn sample carries the validity import would produce
+- **WHEN** client previews a CSV containing a multi-turn case
+- **THEN** the sample's validity and warnings SHALL be those the import would compute for the assembled case — schema validation of its shared and per-turn data, merged with any multi-turn conflict — not a default or a per-row verdict
+
+#### Scenario: Single-turn CSV preview is unchanged apart from the new count
+- **WHEN** client previews a CSV containing no `turnIndex` values
+- **THEN** `totalTestCases` SHALL equal `totalRows`, each sample row SHALL carry a flat `data` with no turn array, and no other previously reported field SHALL change value
 
 ### Requirement: CSV import mode parameter
 The CSV import and import preview endpoints SHALL accept an optional `importMode` query parameter of type `CsvImportMode` enum with values `OVERRIDE`, `APPEND`, and `MERGE`. When omitted, the system SHALL default to `OVERRIDE`.
@@ -533,6 +623,10 @@ The CSV import and import preview endpoints SHALL accept an optional `importMode
 
 ### Requirement: CSV conflict strategy parameter
 The CSV import and import preview endpoints SHALL accept an optional `conflictStrategy` query parameter of type `CsvConflictStrategy` enum with values `FAIL`, `SKIP`, and `OVERRIDE`. When omitted, the system SHALL default to `FAIL`. The conflict strategy governs behavior when a `testCaseName` collision occurs — either a CSV row name matching an existing test case in the suite (case-insensitive), or a duplicate name within the CSV itself. The parameter applies to all import modes, including `OVERRIDE` (where cross-import collisions are impossible after deleteAll, but within-CSV duplicates are still subject to the strategy). Within-CSV duplicates are handled identically to cross-import collisions under the chosen strategy: `FAIL` rejects the import with HTTP 409 on the first duplicate, `SKIP` silently skips duplicate rows (first wins), `OVERRIDE` replaces the earlier row with the later one (last wins via upsert).
+
+Collision and duplicate detection SHALL key on the **assembled test case**, not the raw CSV row. Consecutive rows sharing a `testCaseName` and carrying a `turnIndex` that parses as an integer assemble into one multi-turn test case and SHALL count as a single name occurrence — turn rows of one case are never duplicates of each other. Consecutive rows sharing a `testCaseName` with a blank `turnIndex` remain separate test cases and SHALL each count as an occurrence, so same-named single-turn rows collide exactly as before.
+
+Status: **Implemented**
 
 #### Scenario: FAIL strategy rejects import on name collision
 - **WHEN** client calls import with any `importMode` and `conflictStrategy=FAIL` (or omitted) and a `testCaseName` collision occurs (a CSV row name matching an existing test case in APPEND/MERGE modes, or a within-CSV duplicate in any mode)
@@ -575,6 +669,14 @@ The CSV import and import preview endpoints SHALL accept an optional `conflictSt
 - **WHEN** client calls the preview endpoint with a CSV that contains duplicate `testCaseName` values
 - **THEN** preview response SHALL annotate duplicate rows with strategy-appropriate warnings (FAIL: "would cause import failure"; SKIP: "would be skipped"; OVERRIDE: "would replace earlier row"); no HTTP 409 is returned from the preview endpoint itself
 
+#### Scenario: Turn rows of one case are not a name collision
+- **WHEN** client imports or previews a CSV whose consecutive rows share a `testCaseName` and carry distinct non-blank `turnIndex` values
+- **THEN** the system SHALL treat them as one test case name occurrence — no duplicate warning on import or preview, no HTTP 409 under `FAIL`, and no `skippedCount`/`overriddenCount` increment under `SKIP`/`OVERRIDE`
+
+#### Scenario: Same-named single-turn rows still collide
+- **WHEN** client imports or previews a CSV with two adjacent rows carrying the same `testCaseName` and a blank `turnIndex`
+- **THEN** the second row SHALL be treated as a within-CSV duplicate exactly as before, per the chosen `conflictStrategy`
+
 ### Requirement: Import result extended counts
 The `CsvImportResultDto` SHALL include optional fields `skippedCount` and `overriddenCount` (nullable Integer, omitted from JSON when null via `@JsonInclude(NON_NULL)`).
 
@@ -593,6 +695,10 @@ The `CsvImportResultDto` SHALL include optional fields `skippedCount` and `overr
 ### Requirement: OVERRIDE mode schema handling
 In OVERRIDE mode, the system SHALL always auto-detect the schema from the CSV and persist it to the suite, replacing any existing schema. This applies whether the suite schema is empty or not.
 
+Replacement covers field **membership and types** only. Each field's `perTurn` scope SHALL be carried forward from the dataset's current schema by field name, because a CSV expresses values and never scope — see the `multi-turn-test-case` capability, requirement *CSV schema rebuild preserves per-field scope*. A CSV column with no same-named field in the current schema is a new field and SHALL be persisted with `perTurn` absent.
+
+Status: **Implemented**
+
 #### Scenario: OVERRIDE replaces existing schema
 - **WHEN** client calls import with `importMode=OVERRIDE` and the suite has an existing `testCaseSchema`
 - **THEN** system SHALL replace the schema with the auto-detected schema from CSV, persist it, and bump the suite version
@@ -604,6 +710,10 @@ In OVERRIDE mode, the system SHALL always auto-detect the schema from the CSV an
 #### Scenario: OVERRIDE preview shows replacement schema
 - **WHEN** client calls preview with `importMode=OVERRIDE`
 - **THEN** the preview response SHALL include `autoDetectedSchema` regardless of whether the suite already has a schema
+
+#### Scenario: OVERRIDE replacement keeps field scope
+- **WHEN** client calls import with `importMode=OVERRIDE` and an existing schema field is marked `perTurn: true`
+- **THEN** the replacement schema SHALL still mark that field `perTurn: true`, while its type is re-derived from the CSV as usual
 
 ### Requirement: APPEND mode schema handling
 In APPEND mode, the system SHALL handle the test case schema as follows: if the suite's `testCaseSchema` is empty, auto-detect and persist the schema from CSV. If the suite's `testCaseSchema` exists, use it as-is for validation without modification.
@@ -1439,4 +1549,11 @@ Status: **Implemented**
 - Controllers: TestCaseController, TestCaseBulkPatchController, TestSuiteController (revalidation endpoints), MetricDeclarationController.
 - Services: TestCaseService (bulkPatch), TestCaseBulkPatchValidator, TestCaseBulkSelectorResolver, CsvExportService, CsvImportService, SchemaValidationService, RevalidationService.
 - DB: test_cases, revalidation_tasks, metric_declarations (V1.2 + V1.7 rename).
+- CSV import preview and import: `service/domain/CsvImportService.java`; preview response DTO `service/domain/dto/csv/CsvImportPreviewDto.java`; import/preview endpoints on `web/controller/TestCaseController.java` (`import`, `import/preview`).
+- Preview OpenAPI examples: `src/main/resources/openapi/examples/api-v1-datasets-datasetId-test-cases-import-preview-POST-response-200-{minimal,full}.json`.
+- CSV multi-turn functional coverage: `CsvImportModeFunctionalTests` (single-turn contract, must stay green unchanged) and `MultiTurnCsvFunctionalTests` (multi-turn preview and round trip).
 - Batch name permutation (two-phase write): the transient collision arises because names are persisted via sequential per-row `UPDATE`s while the unique index `(dataset_id, LOWER(test_case_name))` is non-deferrable and checked after each statement. Fix is a two-phase write inside the existing `@Transactional` boundary: phase 1 parks every affected row's `test_case_name` at a collision-proof temporary value, phase 2 applies the final names. Code: `data.db.repository.PostgresTestCaseRepository.parkTestCaseNames` + two-phase `batchUpdate` (covers batch PUT/PATCH via `TestCaseService.persistBatch`); `service.domain.TestCaseService.bulkPatch` item-operations loop restructured into prepare → park → apply. Final-state uniqueness gate is unchanged: `TestCaseService.validateBatchNameUniqueness` still rejects genuine duplicates before any write.
+- No-per-turn-columns warning — trigger and warning construction: `TestCaseValidationService.validateMultiTurn` (`src/main/java/com/epam/aidial/evaluation/service/domain/TestCaseValidationService.java`), immediately after the max-turns cap check, using the per-turn sub-schema already produced by `TestCaseFieldScopeResolver.splitSchema`. The warning is prepended to the warning list so the `validation.max-warnings-per-case` truncation at the end of the method cannot drop it.
+- Inherited by every validation entry point without further wiring: `TestCaseService` (write paths), `RevalidationService` (dataset revalidation), `CsvImportService` (row validation and post-persist fixup — the latter recomputes only for cases it coerces and rewrites).
+- Runnable exclusion is the existing `is_valid` filter in `RunnableTestCaseSelector`; no change there.
+- Run-time turn count remains `PerTurnBindingDetector` + `TurnLoopExecutor` (`evaluation-runner-core`); this change does not touch execution.

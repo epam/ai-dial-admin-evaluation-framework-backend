@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.mapper;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseBatchPutItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
 public class TestCaseMapper {
 
     private final ValidationWarningsSerializer warningsSerializer;
+    private final TestCaseTurnsCsvSerializer turnsCsvSerializer;
 
     public TestCaseResponseDto toDto(TestCase entity, boolean includeWarnings) {
         if (entity == null) {
@@ -25,7 +27,7 @@ public class TestCaseMapper {
                 .id(entity.getId())
                 .testCaseName(entity.getTestCaseName())
                 .data(warningsSerializer.deserializeMap(entity.getData()))
-                .multiTurnData(warningsSerializer.deserializeTurns(entity.getMultiTurnData()))
+                .multiTurnData(turnsCsvSerializer.deserializeTurns(entity.getMultiTurnData()))
                 .valid(entity.isValid())
                 .validationWarnings(
                         includeWarnings ? warningsSerializer.deserializeWarnings(entity.getValidationWarnings()) : null)
@@ -45,7 +47,7 @@ public class TestCaseMapper {
                 .datasetId(datasetId)
                 .testCaseName(dto.getTestCaseName())
                 .data(warningsSerializer.serializeMap(dto.getData()))
-                .multiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()))
+                .multiTurnData(turnsCsvSerializer.serializeTurns(dto.getMultiTurnData()))
                 .valid(false)
                 .validationWarnings("[]")
                 .build();
@@ -57,7 +59,7 @@ public class TestCaseMapper {
         }
         entity.setTestCaseName(dto.getTestCaseName());
         entity.setData(warningsSerializer.serializeMap(dto.getData()));
-        entity.setMultiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()));
+        entity.setMultiTurnData(turnsCsvSerializer.serializeTurns(dto.getMultiTurnData()));
     }
 
     public void updateEntity(TestCase entity, TestCaseBatchPutItemDto dto) {
@@ -66,6 +68,6 @@ public class TestCaseMapper {
         }
         entity.setTestCaseName(dto.getTestCaseName());
         entity.setData(warningsSerializer.serializeMap(dto.getData()));
-        entity.setMultiTurnData(warningsSerializer.serializeTurns(dto.getMultiTurnData()));
+        entity.setMultiTurnData(turnsCsvSerializer.serializeTurns(dto.getMultiTurnData()));
     }
 }

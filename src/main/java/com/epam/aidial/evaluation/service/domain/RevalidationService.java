@@ -15,6 +15,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RevalidationStatus;
 import com.epam.aidial.evaluation.runner.dto.RevalidationTaskDto;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaChangeCoercer.CoercionResult;
@@ -22,6 +23,7 @@ import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
 
 @Service
 @LogExecution
@@ -47,7 +50,9 @@ public class RevalidationService {
     private final JsonbMapper jsonbMapper;
     private final RevalidationProperties revalidationProperties;
     private final ValidationWarningsSerializer warningsSerializer;
+    private final TestCaseTurnsCsvSerializer testCaseTurnsSerializer;
     private final SchemaChangeCoercer schemaChangeCoercer;
+    private final DurableWarningMerger durableWarningMerger;
     private final Clock clock;
     private final ResponseColumnUnionResolver responseColumnUnionResolver;
 
@@ -132,11 +137,10 @@ public class RevalidationService {
 
     /**
      * Phase 1 — dataset-rooted test-case coercion + schema-shape validation.
-     * For every test case in the dataset: coerce the {@code data} map against the new schema
-     * (skip the row on concurrent edit via {@link TestCaseRepository#updateDataIfUnchanged}),
-     * then validate {@code data} against the dataset schema (template-variable / file-ref checks
-     * are deferred to Phase 2 since they require suite context). Writes (isValid, warnings)
-     * via {@link TestCaseRepository#updateValidationIfUnchanged}.
+     * For every test case in the dataset: branch on whether it carries a stored turn array
+     * ({@link #processMultiTurnCase}) or not ({@link #processSingleTurnCase}), coercing and
+     * re-validating accordingly. Template-variable cross-checks and FILE-reference validation are
+     * deferred to Phase 2 since they require suite context.
      */
     private Phase1Outcome runPhase1(RevalidationTask task, UUID datasetId, List<FieldDefinitionDto> datasetSchema) {
         int batchSize = revalidationProperties.getBatchSize();
@@ -162,59 +166,17 @@ public class RevalidationService {
             List<TestCase> batch = testCaseRepository.findBatchByDatasetId(datasetId, offset, batchSize);
             for (TestCase tc : batch) {
                 processedCases++;
-                Map<String, Object> dataMap = warningsSerializer.deserializeMap(tc.getData());
-                long seenAt = tc.getUpdatedAt() != null ? tc.getUpdatedAt() : 0L;
+                String rawTurns = tc.getMultiTurnData();
+                CaseOutcome outcome = (rawTurns != null && !rawTurns.isBlank())
+                        ? processMultiTurnCase(tc, datasetId, rawTurns, datasetSchema)
+                        : processSingleTurnCase(tc, datasetId, datasetSchema);
 
-                CoercionResult coercion = schemaChangeCoercer.coerceMap(dataMap, datasetSchema);
-                Map<String, Object> postCoercionData = coercion.coercedData();
-
-                if (coercion.changed()) {
-                    long newUpdatedAt = clock.millis();
-                    int rowsAffected = testCaseRepository.updateDataIfUnchanged(
-                            tc.getId(),
-                            datasetId,
-                            warningsSerializer.serializeMap(postCoercionData),
-                            seenAt,
-                            newUpdatedAt);
-                    if (rowsAffected == 0) {
-                        log.debug(
-                                "Skipping revalidation for test case {} — concurrent edit detected (data update guard miss)",
-                                tc.getId());
-                        skippedCount++;
-                        continue;
-                    }
-                    seenAt = newUpdatedAt;
-                }
-
-                // Dataset-rooted validation: data-vs-schema shape only.
-                // Template-variable cross-checks and FILE-reference validation move to Phase 2
-                // (per-suite) where the necessary template/bindings + file-bucket context exist.
-                ValidationResult result = testCaseValidationService.validateTestCase(
-                        postCoercionData,
-                        datasetSchema,
-                        /* effectiveTemplate */ null,
-                        /* effectiveBindings */ List.of(),
-                        /* hasOverrides     */ false,
-                        /* datasetId        */ datasetId);
-
-                long validationUpdatedAt = clock.millis();
-                int validationRows = testCaseRepository.updateValidationIfUnchanged(
-                        tc.getId(),
-                        datasetId,
-                        result.isValid(),
-                        warningsSerializer.serializeWarnings(result.getWarnings()),
-                        seenAt,
-                        validationUpdatedAt);
-                if (validationRows == 0) {
-                    log.debug(
-                            "Skipping validation update for test case {} — concurrent edit detected (validation update guard miss)",
-                            tc.getId());
+                if (outcome.skipped()) {
                     skippedCount++;
                     continue;
                 }
-
-                coercedCellCount += coercion.coercedCellCount();
-                if (result.isValid()) {
+                coercedCellCount += outcome.coercedCellCount();
+                if (outcome.valid()) {
                     validCount++;
                 } else {
                     invalidCount++;
@@ -236,6 +198,171 @@ public class RevalidationService {
         }
 
         return new Phase1Outcome(processedCases, validCount, invalidCount, coercedCellCount, skippedCount);
+    }
+
+    /**
+     * Single-turn Phase 1 processing — unchanged behavior from before the multi-turn branch existed.
+     * Coerces {@code data} against the dataset schema (skip on concurrent edit via {@link
+     * TestCaseRepository#updateDataIfUnchanged}), re-validates it, carries forward any stored {@code
+     * INVALID_INPUT} warning via {@link DurableWarningMerger} (design D8 — a no-op here, since a
+     * single-turn case never carries one today, but the rule applies to every recomputation pass
+     * uniformly), and persists the verdict via {@link TestCaseRepository#updateValidationIfUnchanged}.
+     */
+    private CaseOutcome processSingleTurnCase(TestCase tc, UUID datasetId, List<FieldDefinitionDto> datasetSchema) {
+        Map<String, Object> dataMap = warningsSerializer.deserializeMap(tc.getData());
+        long seenAt = tc.getUpdatedAt() != null ? tc.getUpdatedAt() : 0L;
+
+        CoercionResult coercion = schemaChangeCoercer.coerceMap(dataMap, datasetSchema);
+        Map<String, Object> postCoercionData = coercion.coercedData();
+
+        if (coercion.changed()) {
+            long newUpdatedAt = clock.millis();
+            int rowsAffected = testCaseRepository.updateDataIfUnchanged(
+                    tc.getId(), datasetId, warningsSerializer.serializeMap(postCoercionData), seenAt, newUpdatedAt);
+            if (rowsAffected == 0) {
+                log.debug(
+                        "Skipping revalidation for test case {} — concurrent edit detected (data update guard miss)",
+                        tc.getId());
+                return CaseOutcome.ofSkipped();
+            }
+            seenAt = newUpdatedAt;
+        }
+
+        // Dataset-rooted validation: data-vs-schema shape only.
+        // Template-variable cross-checks and FILE-reference validation move to Phase 2
+        // (per-suite) where the necessary template/bindings + file-bucket context exist.
+        ValidationResult result = testCaseValidationService.validateTestCase(
+                postCoercionData,
+                datasetSchema,
+                /* effectiveTemplate */ null,
+                /* effectiveBindings */ List.of(),
+                /* hasOverrides     */ false,
+                /* datasetId        */ datasetId);
+        ValidationResult merged = durableWarningMerger.merge(result, tc.getValidationWarnings());
+
+        long validationUpdatedAt = clock.millis();
+        int validationRows = testCaseRepository.updateValidationIfUnchanged(
+                tc.getId(),
+                datasetId,
+                merged.isValid(),
+                warningsSerializer.serializeWarnings(merged.getWarnings()),
+                seenAt,
+                validationUpdatedAt);
+        if (validationRows == 0) {
+            log.debug(
+                    "Skipping validation update for test case {} — concurrent edit detected (validation update guard miss)",
+                    tc.getId());
+            return CaseOutcome.ofSkipped();
+        }
+
+        return CaseOutcome.ofCompleted(merged.isValid(), coercion.coercedCellCount());
+    }
+
+    /**
+     * Multi-turn Phase 1 processing (design D7(b)): coerces the shared {@code data} map and every
+     * turn map against the dataset schema, re-validates scope-aware via {@link
+     * TestCaseValidationService#validateMultiTurn} against the <b>full</b> schema (it splits by
+     * scope internally — passing a pre-split list would silently reclassify every per-turn field as
+     * unknown), carries forward any stored {@code INVALID_INPUT} warning via {@link
+     * DurableWarningMerger} (design D8), and persists {@code data} and {@code multi_turn_data}
+     * together via {@link TestCaseRepository#updateDataAndTurnsIfUnchanged} so a concurrent edit
+     * skips both writes rather than applying one and losing the other.
+     *
+     * <p>The row's raw {@code multi_turn_data} is read with {@link
+     * TestCaseTurnsCsvSerializer#deserializeTurnsStrict}, which throws on unreadable JSON instead
+     * of collapsing it to {@code null} the way the lenient {@code deserializeTurns} does (design D6):
+     * a row whose turns cannot be read is skipped entirely — neither guarded write runs — because
+     * writing {@code null} back would convert the case to single-turn and destroy every turn.
+     */
+    private CaseOutcome processMultiTurnCase(
+            TestCase tc, UUID datasetId, String rawTurns, List<FieldDefinitionDto> datasetSchema) {
+        List<Map<String, Object>> turns;
+        try {
+            turns = testCaseTurnsSerializer.deserializeTurnsStrict(rawTurns);
+        } catch (JacksonException e) {
+            log.warn(
+                    "Skipping test case {} during dataset revalidation: stored multi_turn_data is unreadable, "
+                            + "leaving it untouched to avoid destroying its turns: {}",
+                    tc.getId(),
+                    e.getMessage(),
+                    e);
+            return CaseOutcome.ofSkipped();
+        }
+
+        if (turns == null) {
+            // The raw column is non-blank but parses to the JSON literal `null` (deserializeTurnsStrict
+            // returns null for this input, same as for an absent column). Fall back to the single-turn
+            // path, which leaves tc.getMultiTurnData() untouched (only `data` is written) rather than
+            // re-serializing an empty turn array and silently changing its shape.
+            return processSingleTurnCase(tc, datasetId, datasetSchema);
+        }
+
+        Map<String, Object> sharedData = warningsSerializer.deserializeMap(tc.getData());
+        long seenAt = tc.getUpdatedAt() != null ? tc.getUpdatedAt() : 0L;
+
+        CoercionResult sharedCoercion = schemaChangeCoercer.coerceMap(sharedData, datasetSchema);
+        Map<String, Object> postCoercionShared = sharedCoercion.coercedData();
+
+        List<Map<String, Object>> postCoercionTurns = new ArrayList<>(turns.size());
+        boolean anyChanged = sharedCoercion.changed();
+        long coercedCellCount = sharedCoercion.coercedCellCount();
+        for (Map<String, Object> turn : turns) {
+            CoercionResult turnCoercion = schemaChangeCoercer.coerceMap(turn, datasetSchema);
+            postCoercionTurns.add(turnCoercion.coercedData());
+            if (turnCoercion.changed()) {
+                anyChanged = true;
+            }
+            coercedCellCount += turnCoercion.coercedCellCount();
+        }
+
+        // Widened relative to the single-turn guard: a turn-only change must trigger the write too,
+        // while an unchanged multi-turn case still writes nothing (otherwise every revalidation would
+        // bump updated_at_ms on every multi-turn case).
+        if (anyChanged) {
+            long newUpdatedAt = clock.millis();
+            int rowsAffected = testCaseRepository.updateDataAndTurnsIfUnchanged(
+                    tc.getId(),
+                    datasetId,
+                    warningsSerializer.serializeMap(postCoercionShared),
+                    testCaseTurnsSerializer.serializeTurns(postCoercionTurns),
+                    seenAt,
+                    newUpdatedAt);
+            if (rowsAffected == 0) {
+                log.debug(
+                        "Skipping revalidation for test case {} — concurrent edit detected "
+                                + "(data/turns update guard miss)",
+                        tc.getId());
+                return CaseOutcome.ofSkipped();
+            }
+            seenAt = newUpdatedAt;
+        }
+
+        ValidationResult result = testCaseValidationService.validateMultiTurn(
+                postCoercionShared,
+                postCoercionTurns,
+                datasetSchema,
+                /* effectiveTemplate */ null,
+                /* effectiveBindings */ List.of(),
+                /* hasOverrides     */ false,
+                /* datasetId        */ datasetId);
+        ValidationResult merged = durableWarningMerger.merge(result, tc.getValidationWarnings());
+
+        long validationUpdatedAt = clock.millis();
+        int validationRows = testCaseRepository.updateValidationIfUnchanged(
+                tc.getId(),
+                datasetId,
+                merged.isValid(),
+                warningsSerializer.serializeWarnings(merged.getWarnings()),
+                seenAt,
+                validationUpdatedAt);
+        if (validationRows == 0) {
+            log.debug(
+                    "Skipping validation update for test case {} — concurrent edit detected (validation update guard miss)",
+                    tc.getId());
+            return CaseOutcome.ofSkipped();
+        }
+
+        return CaseOutcome.ofCompleted(merged.isValid(), coercedCellCount);
     }
 
     /**
@@ -311,4 +438,19 @@ public class RevalidationService {
      */
     private record Phase1Outcome(
             int processedCases, int validCount, int invalidCount, long coercedCellCount, int skippedCount) {}
+
+    /**
+     * Pure-data carrier for one test case's Phase 1 outcome, returned by {@link #processSingleTurnCase}
+     * and {@link #processMultiTurnCase} so {@link #runPhase1}'s batch loop can aggregate counters without
+     * either helper reaching back into the loop's local variables.
+     */
+    private record CaseOutcome(boolean skipped, boolean valid, long coercedCellCount) {
+        static CaseOutcome ofSkipped() {
+            return new CaseOutcome(true, false, 0L);
+        }
+
+        static CaseOutcome ofCompleted(boolean valid, long coercedCellCount) {
+            return new CaseOutcome(false, valid, coercedCellCount);
+        }
+    }
 }

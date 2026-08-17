@@ -29,6 +29,7 @@ import com.epam.aidial.evaluation.service.domain.dto.deployment.RouteResponseDto
 import com.epam.aidial.evaluation.service.domain.dto.deployment.RouteUpstreamDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ToolsetInfoDto;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -53,11 +54,12 @@ public interface DeploymentMapper {
             target = "pricing",
             source = "pricing",
             nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     DialModelInfoDto toDialModelInfoDto(DialCoreModelDto source);
 
     @Mapping(source = "id", target = "deploymentId")
-    @Mapping(target = "version", ignore = true)
-    @Mapping(target = "inputAttachmentTypes", ignore = true)
+    @Mapping(source = "displayVersion", target = "version")
     @Mapping(
             target = "applicationTypeSchemaId",
             source = "applicationTypeSchemaId",
@@ -67,6 +69,8 @@ public interface DeploymentMapper {
             source = "applicationProperties",
             nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "routes", source = "routes", qualifiedByName = "mapRoutes")
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     DialApplicationInfoDto toDialApplicationInfoDto(DialCoreApplicationDto source);
 
     @Named("mapRoutes")
@@ -102,14 +106,20 @@ public interface DeploymentMapper {
     RouteAttachmentPathsDto toRouteAttachmentPathsDto(DialCoreSchemaAttachmentPathsDto source);
 
     @Mapping(source = "id", target = "deploymentId")
-    @Mapping(source = "displayName", target = "displayName")
-    @Mapping(target = "version", ignore = true)
-    @Mapping(target = "inputAttachmentTypes", ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "updatedAt", ignore = true)
-    @Mapping(target = "descriptionKeywords", ignore = true)
+    @Mapping(source = "displayVersion", target = "version")
     @Mapping(source = "transport", target = "transport", qualifiedByName = "dialTransportToMcp")
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     ToolsetInfoDto toToolsetInfoDto(DialCoreToolsetDto source);
+
+    @Named("mapMultilingual")
+    default String mapMultilingual(Object displayName) {
+        if (displayName instanceof Map<?, ?> map) {
+            return Objects.toString(map.get("en"));
+        } else {
+            return Objects.toString(displayName);
+        }
+    }
 
     @Named("dialTransportToMcp")
     default McpTransport dialTransportToMcp(DialTransport dialTransport) {
@@ -123,34 +133,18 @@ public interface DeploymentMapper {
     }
 
     /**
-     * Maps a unified deployment entry from /v1/deployments to the appropriate subtype.
+     * Fully maps a unified deployment entry from /v1/deployments to the matching info subtype:
+     * all base fields (version from displayVersion, owner, timestamps, descriptionKeywords,
+     * inputAttachmentTypes) plus subtype-specific ones (model capabilities/limits/pricing,
+     * application properties/schemaId/routes, toolset transport/allowedTools).
      */
     default DeploymentInfoDto toDeploymentInfoDto(DialCoreDeploymentDto source) {
-        if (source == null) {
-            return null;
-        }
-        String object = source.getObject();
-        if ("model".equals(object)) {
-            return DialModelInfoDto.builder()
-                    .deploymentId(source.getId())
-                    .displayName(source.getDisplayName())
-                    .description(source.getDescription())
-                    .build();
-        } else if ("application".equals(object)) {
-            return DialApplicationInfoDto.builder()
-                    .deploymentId(source.getId())
-                    .displayName(source.getDisplayName())
-                    .description(source.getDescription())
-                    .build();
-        } else if ("toolset".equals(object)) {
-            return ToolsetInfoDto.builder()
-                    .deploymentId(source.getId())
-                    .displayName(source.getDisplayName())
-                    .description(source.getDescription())
-                    .transport(dialTransportToMcp(source.getTransport()))
-                    .build();
-        }
-        // Unknown object type — return null so the caller can log and skip
-        return null;
+        return switch (source) {
+            case DialCoreModelDto model -> toDialModelInfoDto(model);
+            case DialCoreApplicationDto application -> toDialApplicationInfoDto(application);
+            case DialCoreToolsetDto toolset -> toToolsetInfoDto(toolset);
+            // Unknown object type (or null entry) — return null so the caller can log and skip
+            case null, default -> null;
+        };
     }
 }

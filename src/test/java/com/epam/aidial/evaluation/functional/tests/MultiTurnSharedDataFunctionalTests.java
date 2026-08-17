@@ -14,8 +14,11 @@ import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import java.util.List;
@@ -160,6 +163,56 @@ public abstract class MultiTurnSharedDataFunctionalTests extends AbstractMultiTu
                 .collect(Collectors.groupingBy(r -> String.valueOf(r.get("test_case_name")), Collectors.counting()));
         assertThat(rows).containsOnlyKeys("keep-me");
         assertThat(rows.get("keep-me")).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("A case carrying turns in an all-shared dataset schema is stored invalid with a case-level "
+            + "$.multiTurnData warning")
+    void turnsWithoutPerTurnColumnsStoredInvalid() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("system")
+                .type(SchemaFieldType.STRING)
+                .required(false)
+                .build()));
+
+        // The turn maps must be empty: a declared shared field inside a turn is a 400 (see
+        // sharedFieldInTurnRejected) and an undeclared key would add its own unknown-field warning, so
+        // empty turns are the only shape that isolates the no-per-turn-columns warning.
+        ResponseEntity<TestCaseResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases?includeWarnings=true"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("no-perturn-columns")
+                        .data(Map.of("system", "SYSVAL"))
+                        .multiTurnData(List.of(Map.of(), Map.of()))
+                        .build()),
+                TestCaseResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestCaseResponseDto created = response.getBody();
+        assertThat(created).isNotNull();
+        assertThat(created.isValid()).isFalse();
+        assertThat(created.getValidationWarnings()).hasSize(1);
+        ValidationWarningDto warning = created.getValidationWarnings().get(0);
+        assertThat(warning.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+        assertThat(warning.getPath()).isEqualTo("$.multiTurnData");
+        assertThat(warning.getFieldName()).isNull();
+        assertThat(warning.getTurnIndex()).isNull();
+        assertThat(warning.getMessage()).contains("2 turns", "no per-turn columns");
+
+        // The other half of the clearing rule (the schema-side half is covered in MultiTurnCsvFunctionalTests):
+        // dropping the turns reverts the case to single-turn, so the warning is no longer computed.
+        // Raw JSON, not a Map: the shared ObjectMapper's NON_NULL inclusion would drop the explicit null and
+        // send `{}`, which merge-PATCH reads as "change nothing".
+        ResponseEntity<TestCaseResponseDto> patched = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/test-cases/" + created.getId() + "?includeWarnings=true"),
+                HttpMethod.PATCH,
+                jsonEntity("{\"multiTurnData\":null}"),
+                TestCaseResponseDto.class);
+        assertThat(patched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(patched.getBody()).isNotNull();
+        assertThat(patched.getBody().getMultiTurnData()).isNull();
+        assertThat(patched.getBody().isValid()).isTrue();
+        assertThat(patched.getBody().getValidationWarnings()).isNullOrEmpty();
     }
 
     @Test

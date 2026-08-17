@@ -14,6 +14,7 @@ This document is the operator-facing reference for every configurable property o
    - [Mode](#31-mode)
    - [Identity Providers](#32-identity-providers)
    - [JWT Claim Resolution](#33-jwt-claim-resolution)
+   - [DIAL API-Key Authentication](#34-dial-api-key-authentication)
 4. [Data Layer](#4-data-layer)
    - [Meta Datasource](#41-meta-datasource)
    - [Analytics Datasource](#42-analytics-datasource)
@@ -194,6 +195,22 @@ providers:
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `security.jwt.user-claim` | `SECURITY_JWT_USER_CLAIM` | `sub` | No | `config.rest.security.mode=oidc` | JWT claim used by `AuthorResolver` to populate `createdBy`/`updatedBy` on domain entities. Falls back to `"anonymous"` when `config.rest.security.mode=none`. |
+
+### 3.4 DIAL API-Key Authentication
+
+An alternative to OIDC/JWT bearer tokens: a caller may authenticate with an `Api-Key` header instead, validated by delegating to DIAL Core's `GET /v1/user/info`. Only active when `config.rest.security.mode=oidc`.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `config.rest.security.api-key.enabled` | `API_KEY_ENABLED` | `false` | No | `config.rest.security.mode=oidc` | Enables DIAL API-Key authentication via the `Api-Key` request header. |
+| `config.rest.security.api-key.core-url` | `API_KEY_CORE_URL` | - | Yes | `config.rest.security.api-key.enabled=true` | Base URL of the DIAL Core instance used to introspect API keys via `GET /v1/user/info`. |
+| `config.rest.security.api-key.cache-ttl-seconds` | `API_KEY_CACHE_TTL_SECONDS` | `60` | No | `config.rest.security.api-key.enabled=true` | Time-to-live, in seconds, for cached successful introspection results. |
+| `config.rest.security.api-key.cache-max-size` | `API_KEY_CACHE_MAX_SIZE` | `10000` | No | `config.rest.security.api-key.enabled=true` | Maximum number of cached introspection results. |
+| `config.rest.security.api-key.request-timeout-ms` | `API_KEY_REQUEST_TIMEOUT_MS` | `3000` | No | `config.rest.security.api-key.enabled=true` | Connect/read timeout, in milliseconds, for the introspection call to DIAL Core. |
+| `config.rest.security.api-key.roles-mapping` | `API_KEY_ROLES_MAPPING` | - (empty) | Conditional | `config.rest.security.api-key.enabled=true` | JSON object mapping DIAL Core project-key role names to lists of this service's authority strings. Required (with `default-roles-mapping`) that at least one of the two mappings is non-empty. |
+| `config.rest.security.api-key.default-roles-mapping` | `API_KEY_DEFAULT_ROLES_MAPPING` | - (empty) | Conditional | `config.rest.security.api-key.enabled=true` | JSON object mapping DIAL Core roles from the JWT-rooted per-request-key response shape (`userClaims`) to lists of this service's authority strings. |
+| `config.rest.security.api-key.user-claims-role-claim` | `API_KEY_USER_CLAIMS_ROLE_CLAIM` | `roles` | No | `config.rest.security.api-key.enabled=true` | Claim name read out of the introspection response's `userClaims` object to obtain the caller's raw roles. |
+| `config.rest.security.api-key.startup-probe` | `API_KEY_STARTUP_PROBE` | `true` | No | `config.rest.security.api-key.enabled=true` | When `true`, the service calls DIAL Core's `/v1/user/info` at startup to verify connectivity and fails to start if Core is unreachable or misconfigured. |
 
 ---
 

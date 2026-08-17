@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -150,6 +151,16 @@ public abstract class AbstractMultiTurnFunctionalTest extends BaseFunctionalTest
      * carried on the suite (validated at write time; applied at run time as ALL-turns-match).
      */
     protected TestSuiteResponseDto createChatSuite(String name, Map<String, Object> testCaseFilter) {
+        return createChatSuite(name, testCaseFilter, List.of());
+    }
+
+    /**
+     * As {@link #createChatSuite(String, Map)}, but appends {@code extraFields} to the dataset schema — for
+     * filters that need a per-turn field of another type (e.g. an {@code ARRAY}) alongside
+     * {@code prompt}/{@code category}.
+     */
+    protected TestSuiteResponseDto createChatSuite(
+            String name, Map<String, Object> testCaseFilter, List<FieldDefinitionDto> extraFields) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name + " " + UUID.randomUUID())
                 .deploymentRef(DeploymentReferenceDto.builder()
@@ -164,19 +175,22 @@ public abstract class AbstractMultiTurnFunctionalTest extends BaseFunctionalTest
                                 .schema(Map.of("type", "object", "properties", Map.of()))
                                 .build())
                         .build())
-                .datasetId(newDatasetWithSchema(List.of(
-                        FieldDefinitionDto.builder()
-                                .name("prompt")
-                                .type(SchemaFieldType.STRING)
-                                .required(true)
-                                .perTurn(true)
-                                .build(),
-                        FieldDefinitionDto.builder()
-                                .name("category")
-                                .type(SchemaFieldType.STRING)
-                                .required(false)
-                                .perTurn(true)
-                                .build())))
+                .datasetId(newDatasetWithSchema(Stream.concat(
+                                Stream.of(
+                                        FieldDefinitionDto.builder()
+                                                .name("prompt")
+                                                .type(SchemaFieldType.STRING)
+                                                .required(true)
+                                                .perTurn(true)
+                                                .build(),
+                                        FieldDefinitionDto.builder()
+                                                .name("category")
+                                                .type(SchemaFieldType.STRING)
+                                                .required(false)
+                                                .perTurn(true)
+                                                .build()),
+                                extraFields.stream())
+                        .toList()))
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/chat")
                         .body(JsonRequestBodyDto.builder()
@@ -209,5 +223,57 @@ public abstract class AbstractMultiTurnFunctionalTest extends BaseFunctionalTest
         } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize testCaseSchema fixture", e);
         }
+    }
+
+    /**
+     * Chat suite whose request-template body is authored as a JSONata source string that accumulates
+     * history via the {@code $history} frame variable (bound from the previous turn's {@code history}
+     * response column) instead of a hardcoded {@code messages}-array auto-accumulation. Turn 0 evaluates
+     * with {@code $history} unbound (undefined-append). Reused by {@link MultiTurnRunFunctionalTests} and
+     * {@link TryItOutFunctionalTests}.
+     */
+    protected TestSuiteResponseDto createHistoryAccumulatingChatSuite(String name) {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name + " " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .perTurn(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .jsonataContent("{\"messages\": $append($history, "
+                                        + "[{\"role\": \"user\", \"content\": \"${{prompt}}\"}])}")
+                                .build())
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("history")
+                        .expression("$append($_request.messages, [$_response.choices[0].message])")
+                        .type(SchemaFieldType.ARRAY)
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
     }
 }

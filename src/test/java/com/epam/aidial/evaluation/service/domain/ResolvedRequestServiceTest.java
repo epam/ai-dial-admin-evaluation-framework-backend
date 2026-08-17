@@ -12,11 +12,14 @@ import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
+import com.epam.aidial.evaluation.runner.job.PerTurnBindingDetector;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
+import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -59,6 +62,15 @@ class ResolvedRequestServiceTest {
 
     @Mock
     private RequestResolver requestResolver;
+
+    @Mock
+    private TestCaseTurnsCsvSerializer turnsSerializer;
+
+    @Mock
+    private DatasetSchemaProvider datasetSchemaProvider;
+
+    @Mock
+    private PerTurnBindingDetector perTurnBindingDetector;
 
     @InjectMocks
     private ResolvedRequestService service;
@@ -201,5 +213,113 @@ class ResolvedRequestServiceTest {
                 .hasMessageContaining("requestIndex");
 
         verify(requestResolver, never()).resolve(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("planTurns plans a single turn from shared data when multiTurnData is absent")
+    void planTurns_singleTurn_whenNoMultiTurnData() {
+        TestSuite suite = TestSuite.builder()
+                .id(SUITE_ID)
+                .datasetId(DATASET_ID)
+                .requestTemplate("{}")
+                .inputBindings("[]")
+                .responseColumns("[]")
+                .build();
+        when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+        TestCase testCase = TestCase.builder()
+                .id(TEST_CASE_ID)
+                .data("{\"field\":\"value\"}")
+                .build();
+        when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
+
+        RequestTemplateDto template = RequestTemplateDto.builder().build();
+        List<InputBindingDto> bindings = List.of();
+        Map<String, Object> data = Map.of("field", "value");
+        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(template);
+        when(jsonbMapper.mapInputBindings("[]")).thenReturn(bindings);
+        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(List.of());
+        when(warningsSerializer.deserializeMap("{\"field\":\"value\"}")).thenReturn(data);
+        when(turnsSerializer.deserializeTurns(null)).thenReturn(null);
+
+        ResolvedRequestService.TurnPlan plan = service.planTurns(SUITE_ID, TEST_CASE_ID);
+
+        assertThat(plan.turnDataList()).containsExactly(data);
+        verify(datasetSchemaProvider, never()).getSchema(any());
+        verify(perTurnBindingDetector, never()).referencesPerTurnField(any(), any());
+    }
+
+    @Test
+    @DisplayName("planTurns collapses to a single turn when no effective binding targets a perTurn field")
+    void planTurns_collapsesToSingleTurn_whenNoPerTurnBinding() {
+        TestSuite suite = TestSuite.builder()
+                .id(SUITE_ID)
+                .datasetId(DATASET_ID)
+                .requestTemplate("{}")
+                .inputBindings("[]")
+                .responseColumns("[]")
+                .build();
+        when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+        TestCase testCase = TestCase.builder()
+                .id(TEST_CASE_ID)
+                .data("{\"field\":\"value\"}")
+                .multiTurnData("[{\"turn\":1},{\"turn\":2}]")
+                .build();
+        when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
+
+        RequestTemplateDto template = RequestTemplateDto.builder().build();
+        List<InputBindingDto> bindings = List.of();
+        Map<String, Object> sharedData = Map.of("field", "value");
+        List<Map<String, Object>> turns = List.of(Map.of("turn", 1), Map.of("turn", 2));
+        List<FieldDefinitionDto> schema = List.of();
+        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(template);
+        when(jsonbMapper.mapInputBindings("[]")).thenReturn(bindings);
+        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(List.of());
+        when(warningsSerializer.deserializeMap("{\"field\":\"value\"}")).thenReturn(sharedData);
+        when(turnsSerializer.deserializeTurns("[{\"turn\":1},{\"turn\":2}]")).thenReturn(turns);
+        when(datasetSchemaProvider.getSchema(DATASET_ID)).thenReturn(schema);
+        when(perTurnBindingDetector.referencesPerTurnField(bindings, schema)).thenReturn(false);
+
+        ResolvedRequestService.TurnPlan plan = service.planTurns(SUITE_ID, TEST_CASE_ID);
+
+        assertThat(plan.turnDataList()).containsExactly(sharedData);
+    }
+
+    @Test
+    @DisplayName("planTurns builds one merged turn per multiTurnData entry when a perTurn binding is present")
+    void planTurns_buildsPerTurnList_whenPerTurnBindingPresent() {
+        TestSuite suite = TestSuite.builder()
+                .id(SUITE_ID)
+                .datasetId(DATASET_ID)
+                .requestTemplate("{}")
+                .inputBindings("[]")
+                .responseColumns("[]")
+                .build();
+        when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+        TestCase testCase = TestCase.builder()
+                .id(TEST_CASE_ID)
+                .data("{\"shared\":\"s\"}")
+                .multiTurnData("[{\"question\":\"q1\"},{\"question\":\"q2\",\"shared\":\"overridden\"}]")
+                .build();
+        when(testCaseRepository.findByIdAndDatasetId(TEST_CASE_ID, DATASET_ID)).thenReturn(Optional.of(testCase));
+
+        RequestTemplateDto template = RequestTemplateDto.builder().build();
+        List<InputBindingDto> bindings = List.of();
+        Map<String, Object> sharedData = Map.of("shared", "s");
+        Map<String, Object> turn1 = Map.of("question", "q1");
+        Map<String, Object> turn2 = Map.of("question", "q2", "shared", "overridden");
+        List<FieldDefinitionDto> schema = List.of();
+        when(jsonbMapper.mapRequestTemplate("{}")).thenReturn(template);
+        when(jsonbMapper.mapInputBindings("[]")).thenReturn(bindings);
+        when(jsonbMapper.mapResponseColumns("[]")).thenReturn(List.of());
+        when(warningsSerializer.deserializeMap("{\"shared\":\"s\"}")).thenReturn(sharedData);
+        when(turnsSerializer.deserializeTurns(any())).thenReturn(List.of(turn1, turn2));
+        when(datasetSchemaProvider.getSchema(DATASET_ID)).thenReturn(schema);
+        when(perTurnBindingDetector.referencesPerTurnField(bindings, schema)).thenReturn(true);
+
+        ResolvedRequestService.TurnPlan plan = service.planTurns(SUITE_ID, TEST_CASE_ID);
+
+        assertThat(plan.turnDataList())
+                .containsExactly(
+                        Map.of("shared", "s", "question", "q1"), Map.of("shared", "overridden", "question", "q2"));
     }
 }

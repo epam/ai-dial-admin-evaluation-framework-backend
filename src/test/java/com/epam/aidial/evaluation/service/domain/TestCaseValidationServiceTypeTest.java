@@ -46,7 +46,8 @@ class TestCaseValidationServiceTypeTest {
                 validationProperties,
                 fileRefValidator,
                 testCaseProperties,
-                new TestCaseFieldScopeResolver());
+                new TestCaseFieldScopeResolver(),
+                new TestCaseDataScopeResolver(new TestCaseFieldScopeResolver()));
         when(validationProperties.getMaxWarningsPerCase()).thenReturn(100);
         when(templateVariableExtractor.extract(any())).thenReturn(List.of());
     }

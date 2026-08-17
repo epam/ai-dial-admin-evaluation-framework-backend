@@ -15,7 +15,7 @@ spring:
       max-request-size: 55MB
   threads:
     virtual:
-      enabled: true
+      enabled: ${VIRTUAL_THREADS_ENABLED:true}
 
 # Auth configuration
 auth:
@@ -215,6 +215,16 @@ config:
       disable-swagger-authorization: true
       default:
         allowedRoles: admin
+      api-key:
+        enabled: ${API_KEY_ENABLED:false}
+        core-url: ${API_KEY_CORE_URL:}
+        cache-ttl-seconds: ${API_KEY_CACHE_TTL_SECONDS:60}
+        cache-max-size: ${API_KEY_CACHE_MAX_SIZE:10000}
+        request-timeout-ms: ${API_KEY_REQUEST_TIMEOUT_MS:3000}
+        roles-mapping: "${API_KEY_ROLES_MAPPING:}"
+        default-roles-mapping: "${API_KEY_DEFAULT_ROLES_MAPPING:}"
+        user-claims-role-claim: ${API_KEY_USER_CLAIMS_ROLE_CLAIM:roles}
+        startup-probe: ${API_KEY_STARTUP_PROBE:true}
 
 # Logger configuration
 logger:
@@ -231,7 +241,7 @@ app:
       EXIT: "Exit:  $[methodName]() in $[invocationTime]ms → $[returnValue]"
       EXCEPTION: "Exception: $[methodName]() in $[invocationTime]ms"
   trace-log-advisor:
-    expression: "@within(com.epam.aidial.evaluation.configuration.logging.LogExecution)"
+    expression: "@within(com.epam.aidial.evaluation.runner.config.logging.LogExecution)"
   grafana:
     base-url: ${GRAFANA_BASE_URL:}
     tempo-datasource-uid: ${GRAFANA_TEMPO_DATASOURCE_UID:tempo}

@@ -120,6 +120,7 @@ public class DatasetCloneService {
                         .datasetId(newDatasetId)
                         .testCaseName(tc.getTestCaseName())
                         .data(rewriteRef(tc.getData(), sourcePrefix, targetPrefix))
+                        .multiTurnData(rewriteRef(tc.getMultiTurnData(), sourcePrefix, targetPrefix))
                         .valid(tc.isValid())
                         .validationWarnings(tc.getValidationWarnings())
                         .build());

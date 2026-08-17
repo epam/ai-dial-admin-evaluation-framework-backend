@@ -399,6 +399,28 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("8.2 vanilla clone preserves the source TSMD's condition (JSONata gating expression) verbatim")
+    void shouldPreserveTsmdConditionOnClone() {
+        TestSuiteResponseDto source = createDeploymentSuite("TSMD Condition Source " + UUID.randomUUID());
+        String conditionExpr = "$data.turn.index = 0";
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                source.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "ConditionalM", "[]", "[]", conditionExpr);
+
+        TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
+                .name("TSMD Condition Clone " + UUID.randomUUID())
+                .build();
+        ResponseEntity<TestSuiteUpdateResultDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(request),
+                TestSuiteUpdateResultDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID clonedId = response.getBody().getSuite().getId();
+        TestSuiteMetricDefinitionResponseDto cloned = tsmdByName(listTsmds(clonedId), "ConditionalM");
+        assertThat(cloned.getCondition()).isEqualTo(conditionExpr);
+    }
+
+    @Test
     @DisplayName("8.2 datasetId override recomputes cloned TSMD validity against the new dataset schema")
     void shouldRecomputeTsmdValidityOnDatasetIdOverride() {
         // createDeploymentSuite binds the source to a dataset whose schema has column "prompt".

@@ -122,6 +122,25 @@ public class MetaTestDataHelper {
     }
 
     /**
+     * Seeds a single multi-turn test case with caller-supplied {@code name} and {@code multiTurnDataJson}
+     * (a JSON array of per-turn data maps) into the dataset, and returns its generated id. Mirrors
+     * {@link #seedTestCaseInDataset}, but populates {@code multi_turn_data} instead of {@code data}.
+     */
+    @Transactional("metaTransactionManager")
+    public UUID seedMultiTurnTestCaseInDataset(UUID datasetId, String name, String multiTurnDataJson) {
+        TestCase tc = TestCase.builder()
+                .datasetId(datasetId)
+                .testCaseName(name)
+                .data("{}")
+                .multiTurnData(multiTurnDataJson)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        testCaseRepository.save(tc);
+        return tc.getId();
+    }
+
+    /**
      * Creates a test suite bound to a freshly minted dataset. Convenience overload for tests that
      * don't care which dataset the suite uses.
      */
@@ -529,6 +548,23 @@ public class MetaTestDataHelper {
         metaDsl.update(TEST_CASES)
                 .set(TEST_CASES.IS_VALID, false)
                 .set(TEST_CASES.VALIDATION_WARNINGS, toJsonb(warningsJson != null ? warningsJson : "[]"))
+                .where(TEST_CASES.ID.eq(testCaseId.toString()))
+                .execute();
+    }
+
+    /**
+     * Forces a test case's {@code multi_turn_data} column to caller-supplied raw JSON, bypassing the
+     * API's write path and its shared, {@code NON_NULL}-inclusion {@code ObjectMapper} (which always
+     * serializes a well-formed turn-array shape and drops explicit JSON nulls). Lets tests plant JSON the
+     * normal path could never produce: a shape {@code ValidationWarningsSerializer.deserializeTurnsStrict}
+     * cannot parse into turn maps (e.g. a JSON array of scalars), to exercise the unreadable-turn-array
+     * guard; or a turn map containing an explicit JSON {@code null} value, to pin the drop as a known
+     * trade-off. The JSON must still be valid (the column is {@code jsonb}); only its shape is under the
+     * caller's control.
+     */
+    public void forceRawMultiTurnData(UUID testCaseId, String rawJson) {
+        metaDsl.update(TEST_CASES)
+                .set(TEST_CASES.MULTI_TURN_DATA, rawJson != null ? toJsonb(rawJson) : null)
                 .where(TEST_CASES.ID.eq(testCaseId.toString()))
                 .execute();
     }

@@ -322,7 +322,7 @@ public class TestSuiteCloneService {
                     }
                     List<TestSuiteMetricDefinition> clonedTsmds = new ArrayList<>(sourceBatch.size());
                     for (TestSuiteMetricDefinition tsmd : sourceBatch) {
-                        TestSuiteMetricDefinition cloned = TestSuiteMetricDefinition.builder()
+                        final var cloned = TestSuiteMetricDefinition.builder()
                                 .id(UUID.randomUUID())
                                 .testSuiteId(newId)
                                 .metricDeclarationId(tsmd.getMetricDeclarationId())
@@ -330,6 +330,7 @@ public class TestSuiteCloneService {
                                 .name(tsmd.getName())
                                 .configBindings(rewriteRef(tsmd.getConfigBindings(), sourcePrefix, targetPrefix))
                                 .inputBindings(rewriteRef(tsmd.getInputBindings(), sourcePrefix, targetPrefix))
+                                .condition(tsmd.getCondition())
                                 .enabled(tsmd.isEnabled())
                                 .valid(!tsmdRevalidation.required() && tsmd.isValid())
                                 .validationWarnings(tsmdRevalidation.required() ? "[]" : tsmd.getValidationWarnings())

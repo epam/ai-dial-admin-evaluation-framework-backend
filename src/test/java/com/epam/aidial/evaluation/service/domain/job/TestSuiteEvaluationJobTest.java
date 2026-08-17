@@ -350,8 +350,8 @@ class TestSuiteEvaluationJobTest {
             when(evaluationRunProperties.getExecution()).thenReturn(execution);
             when(evaluationRunProperties.getRetry()).thenReturn(retry);
 
-            EvaluationContext context = (EvaluationContext)
-                    ReflectionTestUtils.invokeMethod(job, "buildContext", run, new AtomicBoolean(false), "token");
+            EvaluationContext context = (EvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token");
 
             assertThat(context.getSnapshotRequestName()).isEqualTo("first");
             assertThat(context.getSnapshotAdditionalRequests()).isEqualTo(additionalRequests);
@@ -382,8 +382,8 @@ class TestSuiteEvaluationJobTest {
             when(evaluationRunProperties.getExecution()).thenReturn(execution);
             when(evaluationRunProperties.getRetry()).thenReturn(retry);
 
-            EvaluationContext context = (EvaluationContext)
-                    ReflectionTestUtils.invokeMethod(job, "buildContext", run, new AtomicBoolean(false), "token");
+            EvaluationContext context = (EvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token");
 
             assertThat(context.getSnapshotRequestName()).isNull();
             assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
@@ -406,7 +406,7 @@ class TestSuiteEvaluationJobTest {
                     .build();
 
             MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildMetricEvaluationContext", run, new AtomicBoolean(false));
+                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
 
             assertThat(context.requestLabelAt(0)).isEqualTo("first");
             assertThat(context.requestLabelAt(1)).isEqualTo("second");
@@ -424,7 +424,7 @@ class TestSuiteEvaluationJobTest {
                     .build();
 
             MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildMetricEvaluationContext", run, new AtomicBoolean(false));
+                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
 
             assertThat(context.requestLabelAt(0)).isNull();
             assertThat(context.requestLabelAt(1)).isNull();

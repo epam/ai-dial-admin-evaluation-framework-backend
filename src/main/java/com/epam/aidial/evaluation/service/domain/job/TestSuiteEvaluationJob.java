@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
@@ -127,6 +128,7 @@ public class TestSuiteEvaluationJob {
 
             TestSuiteRun run =
                     repository.findById(runId).orElseThrow(() -> new IllegalStateException("Run not found: " + runId));
+            Supplier<SuiteSnapshotDto> snapshot = lazySnapshot(run);
 
             if (!skipDeploymentPhase) {
                 // Inconsistent snapshot guard
@@ -150,19 +152,20 @@ public class TestSuiteEvaluationJob {
                 }
 
                 // Phase 1: Deployment evaluation
-                EvaluationContext context = buildContext(run, cancellationSignal, token);
+                EvaluationContext context = buildContext(run, snapshot.get(), cancellationSignal, token);
                 evaluationExecutor.execute(context);
             }
 
             // Phase 2: Metric evaluation
             if (!cancellationSignal.get()) {
-                MetricEvaluationContext metricContext = buildMetricEvaluationContext(run, cancellationSignal);
+                MetricEvaluationContext metricContext =
+                        buildMetricEvaluationContext(run, snapshot.get(), cancellationSignal);
                 metricEvaluationExecutor.execute(metricContext);
 
                 // Phase 3: Metric score statistics — reuses Phase 2's computationId. Non-fatal: a
                 // failure here must not fail an otherwise-good run (scores are regenerable).
                 if (!cancellationSignal.get()) {
-                    computeMetricScores(run, metricContext, cancellationSignal);
+                    computeMetricScores(run, snapshot.get(), metricContext, cancellationSignal);
                 }
             }
 
@@ -344,7 +347,8 @@ public class TestSuiteEvaluationJob {
         return null;
     }
 
-    private MetricEvaluationContext buildMetricEvaluationContext(TestSuiteRun run, AtomicBoolean cancellationSignal) {
+    private MetricEvaluationContext buildMetricEvaluationContext(
+            TestSuiteRun run, SuiteSnapshotDto snapshot, AtomicBoolean cancellationSignal) {
         List<AggregatedMetricDefinition> tsmds =
                 testSuiteMetricDefinitionService.findAllEnabledAndValidAggregatedByTestSuiteId(run.getTestSuiteId());
 
@@ -360,7 +364,7 @@ public class TestSuiteEvaluationJob {
                 .defaultConcurrencyPerProvider(metricEvaluationProperties.getDefaultConcurrencyPerProvider())
                 .batchSize(metricEvaluationProperties.getBatchSize())
                 .perResultTimeoutMs(metricEvaluationProperties.getPerResultTimeoutMs())
-                .requestLabels(buildRequestLabels(resolveSnapshot(run)))
+                .requestLabels(buildRequestLabels(snapshot))
                 .build();
     }
 
@@ -388,13 +392,16 @@ public class TestSuiteEvaluationJob {
      * the run still completes, because scores are a regenerable projection over the eval summaries.
      */
     private void computeMetricScores(
-            TestSuiteRun run, MetricEvaluationContext metricContext, AtomicBoolean cancellationSignal) {
+            TestSuiteRun run,
+            SuiteSnapshotDto snapshot,
+            MetricEvaluationContext metricContext,
+            AtomicBoolean cancellationSignal) {
         try {
             MetricScoreComputationContext ctx = MetricScoreComputationContext.builder()
                     .testSuiteRunId(run.getId())
                     .testSuiteId(run.getTestSuiteId())
                     .computationId(metricContext.getComputationId())
-                    .overallScoreDefinition(resolveSnapshot(run).getOverallScore())
+                    .overallScoreDefinition(snapshot.getOverallScore())
                     .computedAtMs(clock.millis())
                     .cancellationSignal(cancellationSignal)
                     .build();
@@ -408,16 +415,14 @@ public class TestSuiteEvaluationJob {
         }
     }
 
-    private EvaluationContext buildContext(TestSuiteRun run, AtomicBoolean cancellationSignal, String token) {
+    private EvaluationContext buildContext(
+            TestSuiteRun run, SuiteSnapshotDto snapshot, AtomicBoolean cancellationSignal, String token) {
         RunConfigDto config = parseRunConfig(run.getRunConfig(), run.getId());
         EvaluationRunProperties.Execution execProps = evaluationRunProperties.getExecution();
         EvaluationRunProperties.Retry retryProps = evaluationRunProperties.getRetry();
 
         ExecutionSettingsDto exec = config.getExecution();
         RetryPolicyDto retry = config.getRetry();
-
-        // Resolve snapshot: persisted snapshot or synthesized from live suite (legacy runs)
-        SuiteSnapshotDto snapshot = resolveSnapshot(run);
 
         SuiteType suiteType =
                 snapshot.getSuiteType() != null ? SuiteType.valueOf(snapshot.getSuiteType()) : SuiteType.DEPLOYMENT;
@@ -464,6 +469,31 @@ public class TestSuiteEvaluationJob {
                 .argumentTemplateDto(snapshot.getArgumentTemplate())
                 .inputBindings(snapshot.getInputBindings())
                 .build();
+    }
+
+    /**
+     * Wraps {@link #resolveSnapshot(TestSuiteRun)} so all three phases share one resolution: parsing the
+     * snapshot JSON — and, for legacy snapshot-less runs, re-fetching the live suite + dataset — is pure
+     * waste on every repeat.
+     *
+     * <p>Deliberately lazy rather than resolved eagerly at the call site: resolution can throw (bad JSON,
+     * unsupported snapshot version, suite/dataset gone), and hoisting it above the inconsistent-snapshot
+     * guard would report those as a generic {@code UNEXPECTED_ERROR} instead of the specific
+     * {@code SNAPSHOT_STATE_INCONSISTENT}. Single-threaded per run, so the memoization needs no
+     * synchronization.
+     */
+    private Supplier<SuiteSnapshotDto> lazySnapshot(TestSuiteRun run) {
+        return new Supplier<>() {
+            private SuiteSnapshotDto resolved;
+
+            @Override
+            public SuiteSnapshotDto get() {
+                if (resolved == null) {
+                    resolved = resolveSnapshot(run);
+                }
+                return resolved;
+            }
+        };
     }
 
     private SuiteSnapshotDto resolveSnapshot(TestSuiteRun run) {

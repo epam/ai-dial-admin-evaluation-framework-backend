@@ -14,12 +14,16 @@ import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,12 +44,10 @@ import org.springframework.http.ResponseEntity;
 public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunctionalTest {
 
     /**
-     * Chat suite whose request-template body is authored as a JSONata source string that accumulates
-     * history via the {@code $history} frame variable (bound from the previous turn's {@code history}
-     * response column) instead of the old hardcoded {@code messages}-array auto-accumulation. Turn 0
-     * evaluates with {@code $history} unbound (undefined-append), matching the new per-turn contract.
+     * Same chat suite shape, but the dataset schema declares {@code prompt} <b>shared</b> — so the dataset
+     * has no per-turn column at all and any case carrying turns is invalid.
      */
-    private TestSuiteResponseDto createHistoryAccumulatingChatSuite(String name) {
+    private TestSuiteResponseDto createAllSharedSchemaChatSuite(String name) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name + " " + UUID.randomUUID())
                 .deploymentRef(DeploymentReferenceDto.builder()
@@ -64,13 +66,11 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
                         .name("prompt")
                         .type(SchemaFieldType.STRING)
                         .required(true)
-                        .perTurn(true)
                         .build())))
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/chat")
                         .body(JsonRequestBodyDto.builder()
-                                .jsonataContent("{\"messages\": $append($history, "
-                                        + "[{\"role\": \"user\", \"content\": \"${{prompt}}\"}])}")
+                                .content(Map.of("messages", List.of(Map.of("role", "user", "content", "${{prompt}}"))))
                                 .build())
                         .build())
                 .inputBindings(List.of(InputBindingDto.builder()
@@ -78,9 +78,9 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
                         .dataField("prompt")
                         .build()))
                 .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
-                        .name("history")
-                        .expression("$append($_request.messages, [$_response.choices[0].message])")
-                        .type(SchemaFieldType.ARRAY)
+                        .name("answer")
+                        .expression("choices[0].message.content")
+                        .type(SchemaFieldType.STRING)
                         .build()))
                 .build();
 
@@ -111,6 +111,28 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
         // A single-turn case in the same dataset omits multiTurnData
         TestCaseResponseDto single = createSingleTurnCase(datasetId, "single-1", Map.of("prompt", "hi"));
         assertThat(single.getMultiTurnData()).isNull();
+    }
+
+    @Test
+    @DisplayName("Run creation returns 409 when the only case carries turns and the dataset declares no "
+            + "per-turn column")
+    void runRejectedWhenMultiTurnCaseHasNoPerTurnColumns() {
+        TestSuiteResponseDto suite = createAllSharedSchemaChatSuite("MT no-perturn-columns");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        // Empty turn maps: a declared shared field inside a turn is rejected with 400 at write time, so
+        // this is the shape a UI produces when an author adds turns to an all-shared dataset.
+        TestCaseResponseDto conv =
+                createMultiTurnCase(datasetId, "conv", Map.of("prompt", "hi"), List.of(Map.of(), Map.of()));
+        assertThat(conv.isValid()).isFalse();
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/runs"),
+                jsonEntity(TestSuiteRunRequestDto.builder()
+                        .runConfig(RunConfigDto.builder().numberOfRuns(1).build())
+                        .build()),
+                String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("no valid and enabled test cases");
     }
 
     @Test
@@ -146,6 +168,40 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
                         .build()),
                 String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("An undeclared key inside a turn map has no scope to violate: it is accepted (2xx) with "
+            + "an unknown-field warning, not rejected with 400 (#137)")
+    void undeclaredKeyInTurnAcceptedWithWarningNotRejected() {
+        TestSuiteResponseDto suite = createChatSuite("MT undeclared key");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+
+        ResponseEntity<TestCaseResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases?includeWarnings=true"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("undeclared-1")
+                        .multiTurnData(List.of(Map.of("prompt", "hi", "unexpectedKey", "x")))
+                        .build()),
+                TestCaseResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestCaseResponseDto created = response.getBody();
+        assertThat(created).isNotNull();
+        assertThat(created.isValid()).isFalse();
+
+        List<ValidationWarningDto> warnings = created.getValidationWarnings();
+        assertThat(warnings).noneMatch(w -> w.getCode() == ValidationWarningCode.INVALID_SCOPE);
+        assertThat(warnings)
+                .filteredOn(w -> "unexpectedKey".equals(w.getFieldName()))
+                .hasSize(1)
+                .first()
+                .satisfies(w -> {
+                    assertThat(w.getCode()).isEqualTo(ValidationWarningCode.ADDITIONAL);
+                    assertThat(w.getMessage()).isEqualTo("Unknown data field 'unexpectedKey'");
+                    assertThat(w.getPath()).isEqualTo("$.multiTurnData[0].unexpectedKey");
+                    assertThat(w.getTurnIndex()).isEqualTo(0);
+                });
     }
 
     // -------------------- Execution --------------------

@@ -6,12 +6,14 @@ import com.epam.aidial.evaluation.experimental.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.experimental.query.model.Expr;
 import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
 import com.epam.aidial.evaluation.experimental.query.model.FilterNode;
+import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
 import com.epam.aidial.evaluation.experimental.query.model.LogicalNode;
 import com.epam.aidial.evaluation.experimental.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
+import com.epam.aidial.evaluation.experimental.query.service.translate.function.QueryFunctionNames;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
@@ -69,7 +71,7 @@ public class FilterTranslator {
                 if (args.size() != 1) {
                     throw new ValidationException("'not' expects exactly one child node");
                 }
-                yield DSL.not(toCondition(args.get(0), bindings));
+                yield negate(toCondition(args.get(0), bindings));
             }
         };
     }
@@ -95,15 +97,16 @@ public class FilterTranslator {
         final Expr right = args.get(1);
         final ComparisonOp op = node.op();
 
-        // Array-element containment: `co`/`nc` on a bare array-typed field means "the JSONB array
-        // contains this element", not substring LIKE. Precondition: the left operand is a bare
-        // FieldExpr whose binding type is ARRAY (a function-wrapped or non-array left keeps LIKE).
-        if ((op == ComparisonOp.CO || op == ComparisonOp.NC)
-                && !isNullLiteral(right)
-                && isArrayField(leftExpr, bindings)) {
-            final Condition contains =
-                    arrayContains((Field<JSONB>) exprTranslator.toField(leftExpr, bindings), right, bindings);
-            return op == ComparisonOp.CO ? contains : DSL.not(contains);
+        // Array-element containment: `co`/`nc` on an array-typed field means "the JSONB array contains
+        // this element", not substring LIKE. The operand is either the bare ARRAY-bound field or that
+        // field under a case-normalizing wrapper; anything else keeps LIKE.
+        if (op == ComparisonOp.CO || op == ComparisonOp.NC) {
+            final ArrayOperand arrayOperand = resolveArrayOperand(leftExpr, bindings);
+            if (arrayOperand != null && !isNullLiteral(right)) {
+                final Field<JSONB> column = (Field<JSONB>) exprTranslator.toField(arrayOperand.field(), bindings);
+                final Condition contains = arrayContains(column, right, bindings, arrayOperand.ignoreCase());
+                return op.negated() ? nullSatisfies(DSL.not(contains)) : contains;
+            }
         }
 
         final Field left = exprTranslator.toField(leftExpr, bindings);
@@ -122,17 +125,41 @@ public class FilterTranslator {
                     throw new ValidationException("null literal is only valid with 'eq'/'ne', not '" + op.code() + "'");
             };
         }
-        return switch (op) {
-            case CO -> ((Field<String>) left).likeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
-            case NC -> ((Field<String>) left).notLikeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
-            case EQ -> left.eq(exprTranslator.toField(right, bindings));
-            case NE -> left.ne(exprTranslator.toField(right, bindings));
-            case LT -> left.lt(exprTranslator.toField(right, bindings));
-            case GT -> left.gt(exprTranslator.toField(right, bindings));
-            case LE -> left.le(exprTranslator.toField(right, bindings));
-            case GE -> left.ge(exprTranslator.toField(right, bindings));
-            case IN -> throw new IllegalStateException("'in' handled above");
-        };
+        final Condition condition =
+                switch (op) {
+                    case CO -> ((Field<String>) left).likeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
+                    case NC -> ((Field<String>) left).notLikeIgnoreCase(containsPattern(right), LIKE_ESCAPE);
+                    case EQ -> left.eq(exprTranslator.toField(right, bindings));
+                    case NE -> left.ne(exprTranslator.toField(right, bindings));
+                    case LT -> left.lt(exprTranslator.toField(right, bindings));
+                    case GT -> left.gt(exprTranslator.toField(right, bindings));
+                    case LE -> left.le(exprTranslator.toField(right, bindings));
+                    case GE -> left.ge(exprTranslator.toField(right, bindings));
+                    case IN -> throw new IllegalStateException("'in' handled above");
+                };
+        return op.negated() ? nullSatisfies(condition) : condition;
+    }
+
+    /**
+     * Makes a negated comparison total: an UNKNOWN result — which SQL three-valued logic produces whenever
+     * an operand is null — counts as satisfied, because a missing value cannot contain or equal anything.
+     * Without this, {@code nc}/{@code ne} silently drop null-valued rows, and inside the multi-turn
+     * ALL-turns-match quantifier (whose {@code IS NOT TRUE} treats UNKNOWN as a failing turn) a single turn
+     * with a null field excludes the whole test case. Deliberately not applied to positive operators: their
+     * UNKNOWN already means "no match" everywhere, and wrapping them would put a {@code BooleanTest} around
+     * otherwise sargable predicates on indexed columns.
+     */
+    private static Condition nullSatisfies(Condition condition) {
+        return DSL.condition("({0}) is not false", condition);
+    }
+
+    /**
+     * Negates a child predicate so that an UNKNOWN child is negated to {@code true}, keeping {@code not}
+     * consistent with the negated comparison operators (see {@link #nullSatisfies}). Plain {@code NOT} would
+     * propagate UNKNOWN and drop the row instead.
+     */
+    private static Condition negate(Condition condition) {
+        return DSL.condition("({0}) is not true", condition);
     }
 
     private List<Object> inValues(Expr right, Map<String, QueryFieldBinding> bindings) {
@@ -153,6 +180,39 @@ public class FilterTranslator {
         return values;
     }
 
+    /**
+     * The left operand of a {@code co}/{@code nc} comparison resolved to an array field: the bare
+     * {@code ARRAY}-bound {@link FieldExpr} to translate, plus whether the comparison must fold case.
+     */
+    private record ArrayOperand(FieldExpr field, boolean ignoreCase) {}
+
+    /**
+     * Resolves a {@code co}/{@code nc} left operand to an {@link ArrayOperand}, or {@code null} when it
+     * is not an array field at all (a scalar field, a function over a non-array field, any other
+     * expression — all of which keep scalar LIKE).
+     *
+     * <p>A bare {@link FieldExpr} bound to {@code ARRAY} compares case-sensitively. A single-argument
+     * {@code lower}/{@code upper} around such a field is read as "compare ignoring case" and the
+     * wrapper is discarded: {@code lower(jsonb)}/{@code upper(jsonb)} do not exist in Postgres, so
+     * translating that shape literally can only produce a statement that fails at execution
+     * (SQLSTATE 42883, GH #142) — case normalization is the sole intent it can express. The wrapper name
+     * is matched **ignoring case**, exactly as {@code QueryFunctionRegistry} resolves it, so {@code LOWER}
+     * cannot slip past this routing into the failing literal translation.
+     */
+    private static ArrayOperand resolveArrayOperand(Expr expr, Map<String, QueryFieldBinding> bindings) {
+        if (isArrayField(expr, bindings)) {
+            return new ArrayOperand((FieldExpr) expr, false);
+        }
+        if (expr instanceof FnExpr fn
+                && QueryFunctionNames.isCaseNormalizing(fn.name())
+                && fn.args() != null
+                && fn.args().size() == 1
+                && isArrayField(fn.args().get(0), bindings)) {
+            return new ArrayOperand((FieldExpr) fn.args().get(0), true);
+        }
+        return null;
+    }
+
     /** True only for a bare {@link FieldExpr} bound to an {@code ARRAY}-typed field. */
     private static boolean isArrayField(Expr expr, Map<String, QueryFieldBinding> bindings) {
         if (!(expr instanceof FieldExpr field)) {
@@ -164,18 +224,48 @@ public class FilterTranslator {
 
     /**
      * Builds a JSONB array-element containment condition over {@code column}. A string element uses
-     * the {@code ?} element-existence operator ({@code ??} escapes the jOOQ bind placeholder); any
-     * other scalar literal uses {@code @>} against the element promoted to JSONB via {@code to_jsonb}.
-     * The operand is always a bound parameter — never concatenated into SQL.
+     * the {@code ?} element-existence operator ({@code ??} escapes the jOOQ bind placeholder), or —
+     * when {@code ignoreCase} holds — case-folded whole-element comparison over the expanded array;
+     * any other scalar literal uses {@code @>} against the element promoted to JSONB via
+     * {@code to_jsonb} (case folding is meaningless for a non-string literal, so the wrapper is simply
+     * dropped). The operand is always a bound parameter — never concatenated into SQL.
      */
-    private Condition arrayContains(Field<JSONB> column, Expr right, Map<String, QueryFieldBinding> bindings) {
+    private Condition arrayContains(
+            Field<JSONB> column, Expr right, Map<String, QueryFieldBinding> bindings, boolean ignoreCase) {
         if (right instanceof ValueExpr value && value.valueType() == ValueType.STRING && value.value() != null) {
-            return DSL.condition("{0} ?? {1}", column, DSL.val(value.value()));
+            return ignoreCase
+                    ? arrayContainsIgnoreCase(column, value.value())
+                    : DSL.condition("{0} ?? {1}", column, DSL.val(value.value()));
         }
         if (!(right instanceof ValueExpr)) {
             throw new ValidationException("'co'/'nc' on an array field require a scalar literal right operand");
         }
         return DSL.condition("{0} @> to_jsonb({1})", column, exprTranslator.toField(right, bindings));
+    }
+
+    /**
+     * Case-insensitive whole-element containment: expands the array with {@code jsonb_array_elements_text}
+     * and compares every element to the bound operand case-folded. Two documented divergences from the
+     * bare-field {@code ?} form follow from that: elements are compared by their JSON <em>text
+     * rendering</em>, so a string operand also matches an equally-rendered non-string element ({@code "1"}
+     * matches the element {@code 1}), while a non-array value never matches — {@code ?} instead treats a
+     * string value as an equality test and an object value as a key test, so it <em>does</em> match those.
+     *
+     * <p>The {@code array}-type guard sits <em>inside</em> the function argument rather than as a sibling
+     * {@code AND} conjunct: {@code jsonb_array_elements_text} raises on a scalar or object value, and the
+     * planner is free to cost-order top-level conjuncts, so only {@code CASE} — which evaluates just the
+     * selected branch — guarantees the guard holds under any plan. That guard is also what makes
+     * {@code nc} total here: a null, absent, or non-array value yields the empty array, so {@code EXISTS}
+     * is {@code false} (never UNKNOWN) and its negation is {@code true} on its own. {@link #nullSatisfies}
+     * still wraps the negation for uniformity with the {@code ?}/{@code @>} forms, where the operand
+     * genuinely can be null — here it is inert.
+     */
+    private static Condition arrayContainsIgnoreCase(Field<JSONB> column, String operand) {
+        return DSL.condition(
+                "exists (select 1 from jsonb_array_elements_text("
+                        + "case when jsonb_typeof({0}) = 'array' then {0} else '[]'::jsonb end) as e(v) "
+                        + "where lower(e.v) = lower({1}))",
+                column, DSL.val(operand));
     }
 
     private static boolean isNullLiteral(Expr expr) {

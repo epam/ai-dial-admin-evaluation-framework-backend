@@ -29,6 +29,7 @@ import com.epam.aidial.evaluation.service.domain.dto.deployment.RouteResponseDto
 import com.epam.aidial.evaluation.service.domain.dto.deployment.RouteUpstreamDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ToolsetInfoDto;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -53,6 +54,8 @@ public interface DeploymentMapper {
             target = "pricing",
             source = "pricing",
             nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     DialModelInfoDto toDialModelInfoDto(DialCoreModelDto source);
 
     @Mapping(source = "id", target = "deploymentId")
@@ -66,6 +69,8 @@ public interface DeploymentMapper {
             source = "applicationProperties",
             nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "routes", source = "routes", qualifiedByName = "mapRoutes")
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     DialApplicationInfoDto toDialApplicationInfoDto(DialCoreApplicationDto source);
 
     @Named("mapRoutes")
@@ -103,7 +108,18 @@ public interface DeploymentMapper {
     @Mapping(source = "id", target = "deploymentId")
     @Mapping(source = "displayVersion", target = "version")
     @Mapping(source = "transport", target = "transport", qualifiedByName = "dialTransportToMcp")
+    @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
     ToolsetInfoDto toToolsetInfoDto(DialCoreToolsetDto source);
+
+    @Named("mapMultilingual")
+    default String mapMultilingual(Object displayName) {
+        if (displayName instanceof Map<?, ?> map) {
+            return Objects.toString(map.get("en"));
+        } else {
+            return Objects.toString(displayName);
+        }
+    }
 
     @Named("dialTransportToMcp")
     default McpTransport dialTransportToMcp(DialTransport dialTransport) {

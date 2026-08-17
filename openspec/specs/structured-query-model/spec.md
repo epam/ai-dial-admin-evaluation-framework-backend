@@ -368,8 +368,23 @@ operators SHALL map to SQL per the wire contract: `eq`/`ne`/`lt`/`gt`/`le`/`ge` 
 When the left operand of `co`/`nc` is an **array-typed field** (a JSONB field declared `array`),
 `co`/`nc` SHALL instead translate to JSONB array-element containment / its negation rather than
 `LIKE`: a string right operand SHALL use the JSONB `?` element-existence operator, and a non-string
-literal SHALL use `@>` against a one-element JSON array, with the operand bound as a parameter (never
-concatenated). Aggregate functions SHALL translate to their SQL aggregates;
+literal SHALL use `@> to_jsonb(<operand>)` (JSONB containment of the scalar element), with the operand
+bound as a parameter (never concatenated). When the left operand of `co`/`nc` is a **case-normalizing
+function** (`lower` or `upper`) applied to a bare array-typed field, the wrapper SHALL be discarded and
+`co`/`nc` SHALL translate to **case-insensitive whole-element** array containment / its negation: the row
+matches when some array element equals the right operand ignoring case, and an element that merely
+contains the operand as a substring SHALL NOT match. Elements SHALL be compared by their JSON **text
+rendering**, so a string operand also matches a non-string element whose rendering equals it (e.g. `"1"`
+matches the element `1`) — unlike the bare-field `?` form, which inspects string elements only. Under this
+case-insensitive form a row whose array-declared field holds a **non-array** value (or no value) SHALL NOT
+match, and SHALL NOT cause the statement to fail — a further divergence from the bare-field form, where
+`?` matches a string value equal to the operand and an object value carrying it as a key. The operand
+SHALL be bound as a parameter. The wrapper name SHALL be matched case-insensitively, as the function
+registry resolves it. For a non-string right operand the
+wrapper SHALL be discarded and the case-sensitive `@>` form SHALL be used (a non-string literal has no
+case). No other operator and no other function SHALL be unwrapped: outside the `co`/`nc` array branch,
+`lower`/`upper` SHALL keep translating to the SQL function itself.
+Aggregate functions SHALL translate to their SQL aggregates;
 ordered-set aggregates `percentile_cont`/`percentile_disc` SHALL translate to
 `percentile_cont(fraction) WITHIN GROUP (ORDER BY column)` /
 `percentile_disc(fraction) WITHIN GROUP (ORDER BY column)` with the `fraction` bound as a parameter.
@@ -393,9 +408,48 @@ Status: **Implemented**
 - **THEN** the translator emits a JSONB element-existence predicate (the `?` operator) with the
   operand bound as a parameter, not a `LIKE`, and `nc` emits its negation
 
+#### Scenario: Contains on a case-normalized array field matches whole elements ignoring case
+- **WHEN** a query uses the `co` operator whose left operand is `lower(<array-typed field>)` (or
+  `upper(...)`) with a string right operand (e.g. `lower(tags) CONTAINS 'tee'`)
+- **THEN** the translator discards the wrapper and emits case-insensitive whole-element array
+  containment with the operand bound as a parameter, so a row whose array holds `"Tee"` matches, a row
+  whose array holds only `"tee-shirt"` does not, and the emitted SQL never applies `lower`/`upper` to a
+  JSONB value
+
+#### Scenario: NOT CONTAIN on a case-normalized array field negates the containment
+- **WHEN** a query uses the `nc` operator whose left operand is `lower(<array-typed field>)` with a
+  string right operand
+- **THEN** the translator emits the negation of the case-insensitive whole-element containment, and it
+  stays total over null operands (a row whose array is null or absent matches)
+
+#### Scenario: Case-normalized array containment ignores a non-array value instead of failing
+- **WHEN** a query filters `lower(<array-typed field>) CONTAINS 'tee'` over rows where one row's
+  array-declared field holds a non-array JSON value (e.g. the string `"tee"` or an object) and another
+  holds no value at all
+- **THEN** the statement executes successfully, those rows do not match, and the rows whose arrays hold a
+  matching element still match; under `nc` the non-array and missing-value rows match
+
+#### Scenario: Case-normalized array containment compares elements by their text rendering
+- **WHEN** a query filters `lower(<array-typed field>) CONTAINS '1'` (a string operand) and a row's array
+  is `[1, 2]`
+- **THEN** the row matches, even though the bare-field `?` form of the same comparison would not
+
+#### Scenario: Wrapper name is recognized regardless of its case
+- **WHEN** a query uses the `co` operator whose left operand is `LOWER(<array-typed field>)` (an upper-case
+  spelling the function registry resolves the same way as `lower`)
+- **THEN** the translator routes it to case-insensitive whole-element containment, exactly as for `lower`,
+  and never emits the SQL function against the JSONB value
+
+#### Scenario: Case-normalized array field with a non-string operand keeps JSON containment
+- **WHEN** a query uses the `co` operator whose left operand is `lower(<array-typed field>)` and whose
+  right operand is a non-string literal (e.g. an integer)
+- **THEN** the translator discards the wrapper and emits the `@> to_jsonb(<operand>)` containment
+  predicate
+
 #### Scenario: Contains on a non-array left operand falls through to LIKE
-- **WHEN** a query uses the `co` operator whose left operand is NOT a bare array-typed field (e.g. a
-  scalar field, or a function-wrapped expression)
+- **WHEN** a query uses the `co` operator whose left operand is neither a bare array-typed field nor a
+  `lower`/`upper` wrapper around one (e.g. a scalar field, a `lower(<string field>)`, or any other
+  function-wrapped expression)
 - **THEN** the translator does not apply array detection and emits the case-insensitive `LIKE`
   predicate (its scalar `co`/`nc` behavior)
 
@@ -408,6 +462,47 @@ Status: **Implemented**
 - **WHEN** a query selects `percentile_cont(0.1, "metric:Accuracy:score")`
 - **THEN** the translator emits `percentile_cont(?) WITHIN GROUP (ORDER BY <numeric-cast JSONB path>)`
   with the fraction bound as a parameter
+
+### Requirement: Null handling in comparison and negation operators
+The system SHALL make **negated** filter operators total over null operands: `nc` (in both its
+scalar-`LIKE` form and its array-element-containment form) and `ne` with a non-null right operand SHALL
+evaluate to **true** when either operand is null, rather than to SQL UNKNOWN. `eq`/`ne` against an explicit
+null literal SHALL keep their `IS NULL`/`IS NOT NULL` translation, which is already total. The `not`
+logical node SHALL likewise be total: `not(<child>)` SHALL evaluate to true when the child predicate is
+false **or** unknown.
+
+**Positive** operators (`co`, `eq`, `lt`, `gt`, `le`, `ge`, `in`) SHALL retain SQL three-valued semantics —
+a null operand yields UNKNOWN, which excludes the row in a `WHERE` clause and counts as non-matching under
+the multi-turn all-turns quantifier. This asymmetry is intentional: an absent value cannot satisfy a
+positive assertion, but it trivially satisfies a negated one.
+
+These semantics SHALL apply uniformly to every queryable entity and to every filter consumer (the query
+execution endpoint, list-endpoint filters, and suite `testCaseFilter` run selection).
+Status: **Implemented**
+
+#### Scenario: NOT CONTAIN matches a row whose field is null
+- **WHEN** a filter is `nc(field, "London")` and a row's `field` is null or absent
+- **THEN** the row SHALL match, because a missing value does not contain "London"
+
+#### Scenario: NOT CONTAIN on an array field matches a null array
+- **WHEN** a filter is `nc(arrayField, "text")` and a row's `arrayField` JSONB value is null or absent
+- **THEN** the row SHALL match
+
+#### Scenario: NOT EQUALS matches a row whose field is null
+- **WHEN** a filter is `ne(field, "London")` with a non-null right operand and a row's `field` is null
+- **THEN** the row SHALL match
+
+#### Scenario: Explicit null literal comparison is unchanged
+- **WHEN** a filter is `eq(field, null)` or `ne(field, null)`
+- **THEN** the translator SHALL emit `IS NULL` / `IS NOT NULL` respectively, unchanged by this requirement
+
+#### Scenario: CONTAINS does not match a row whose field is null
+- **WHEN** a filter is `co(field, "London")` and a row's `field` is null or absent
+- **THEN** the row SHALL NOT match
+
+#### Scenario: Negation of a positive predicate over a null field matches
+- **WHEN** a filter is `not(co(field, "London"))` and a row's `field` is null or absent
+- **THEN** the row SHALL match, consistent with `nc(field, "London")`
 
 ### Requirement: Response envelope
 The system SHALL return query results as a response object carrying a `rows` array and a nullable
@@ -507,6 +602,10 @@ Status: **Implemented**
   `QueryMode`/`LogicalOp`/`ComparisonOp`/`SortDir`/`ValueType`.
 - Custom routing: `FilterNodeDeserializer` (wired via `using`/`contentUsing` at each use site,
   never on the `FilterNode` interface, to avoid inheritance-driven recursion).
+- Null polarity: `ComparisonOp.negated()` declares which operators assert absence (`nc`, `ne`);
+  `FilterTranslator` wraps those comparisons in `(<pred>) IS NOT FALSE` and the `not` node in
+  `(<child>) IS NOT TRUE`, leaving positive comparisons unwrapped so they stay sargable. Rendered-SQL
+  proof: `experimental/query/service/translate/FilterTranslatorNullSemanticsTest`.
 - Wire contract: `docs/experimental/structured-query-model.md` (v7); design notes:
   `docs/experimental/structured-query-object-model-notes.md`.
 - Binding proof: `experimental/query/model/StructuredQueryDeserializationTest` round-trips the spec
@@ -544,8 +643,28 @@ Status: **Implemented**
   (p10/p90 over metric scores).
 - Discovery of queryable entities and their flat field schemas is a separate capability —
   see [query-schema-discovery](../query-schema-discovery/spec.md).
-- `FilterTranslator.toComparison`: array-field detection triggers ONLY when the left operand is a bare
-  `FieldExpr` whose `QueryFieldBinding` type is `QueryFieldType.ARRAY` (looked up via `bindings.get(name)`,
-  which wins over the `JsonbFieldResolver` fallback); a non-`FieldExpr` left operand keeps scalar LIKE.
-  jOOQ plain SQL escapes the `?` operator as `??`. Array-typed flattened `data::<field>` bindings are
-  produced by `TestCaseFieldBindingsBuilder` (see `query-schema-discovery`).
+- `FilterTranslator.toComparison`: array-field detection triggers when the left operand **resolves to** a
+  bare `FieldExpr` whose `QueryFieldBinding` type is `QueryFieldType.ARRAY` (looked up via
+  `bindings.get(name)`, which wins over the `JsonbFieldResolver` fallback) — either directly, or by
+  unwrapping a single-argument `lower`/`upper` `FnExpr` around such a field, which additionally selects the
+  case-insensitive containment form. Any other left operand — a scalar field, a `lower` over a non-array
+  field, any other function — keeps scalar LIKE. jOOQ plain SQL escapes the `?` operator as `??`.
+  Array-typed flattened `data::<field>` bindings are produced by `TestCaseFieldBindingsBuilder` (see
+  `query-schema-discovery`).
+- The case-insensitive form expands the array with `jsonb_array_elements_text` over a
+  `case when jsonb_typeof(<col>) = 'array' then <col> else '[]'::jsonb end` argument: the guard must sit
+  inside the function argument, since `jsonb_array_elements_text` raises on a scalar/object value and
+  `AND` conjunct evaluation order is not guaranteed by the planner.
+- The wrapper is meaningful only as a case-normalization hint: `lower`/`upper` are undefined on `jsonb`
+  in Postgres, so translating such an operand literally yields a statement that fails at execution
+  (SQLSTATE 42883) rather than a different result set (GH #142).
+- Case-insensitive whole-element containment expands the array with `jsonb_array_elements_text` and
+  compares each element to the bound operand case-insensitively — a per-row element scan. This costs no
+  index access that the bare form has: `test_cases.data` carries no GIN index, and both forms put the
+  extracted expression `data -> '<field>'` on the left, which `jsonb_ops` cannot serve anyway.
+- The `CASE` type guard — not the `is not false` wrapper — is what makes the wrapped `nc` total over
+  null/absent/non-array values: `EXISTS` is never UNKNOWN, so `nullSatisfies` is inert on this branch and
+  is kept only for uniformity with the `?`/`@>` forms.
+- Consumers inherit the behavior without change: the `/queries/execute` endpoint, list-endpoint filters,
+  and suite `testCaseFilter` run selection (`QueryDslRunnableTestCaseSelector`, whose ALL-turns-match
+  quantifier wraps whatever leaf predicate the translator produces).

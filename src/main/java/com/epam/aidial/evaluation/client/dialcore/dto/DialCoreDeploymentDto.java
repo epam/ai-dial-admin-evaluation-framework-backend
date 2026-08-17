@@ -40,9 +40,9 @@ public abstract class DialCoreDeploymentDto {
 
     private String object;
     private String id;
-    private String displayName;
+    private Object displayName;
     private String displayVersion;
-    private String description;
+    private Object description;
     private List<String> descriptionKeywords;
     private String iconUrl;
     private String reference;

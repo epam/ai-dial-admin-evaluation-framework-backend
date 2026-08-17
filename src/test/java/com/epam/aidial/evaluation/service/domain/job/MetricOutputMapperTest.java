@@ -100,7 +100,7 @@ class MetricOutputMapperTest {
         Map<String, TsmdEvaluationResult> tsmdResults = Map.of(
                 "Accuracy",
                 new TsmdEvaluationResult.Failure(
-                        new RuntimeException("Connection refused"), List.of("score", "confidence")));
+                        new RuntimeException("Connection refused"), List.of("score", "confidence"), 0L));
 
         ObjectNode values = mapper.buildMetricValues(tsmdResults);
         ObjectNode infos = mapper.buildMetricInfos(tsmdResults);
@@ -118,8 +118,8 @@ class MetricOutputMapperTest {
     @Test
     @DisplayName("Transport failure with empty field names — empty {} in metricValues, flat error in metricInfos")
     void shouldMapTransportFailureWithEmptyFieldNames() {
-        Map<String, TsmdEvaluationResult> tsmdResults =
-                Map.of("Accuracy", new TsmdEvaluationResult.Failure(new RuntimeException("Schema missing"), List.of()));
+        Map<String, TsmdEvaluationResult> tsmdResults = Map.of(
+                "Accuracy", new TsmdEvaluationResult.Failure(new RuntimeException("Schema missing"), List.of(), 0L));
 
         ObjectNode values = mapper.buildMetricValues(tsmdResults);
         ObjectNode infos = mapper.buildMetricInfos(tsmdResults);
@@ -159,7 +159,7 @@ class MetricOutputMapperTest {
         tsmdResults.put("Accuracy", success("exact_match", Map.of("score", valueOutput(new BigDecimal("0.9"), null))));
         tsmdResults.put(
                 "Relevancy",
-                new TsmdEvaluationResult.Failure(new RuntimeException("Timeout"), List.of("relevance_score")));
+                new TsmdEvaluationResult.Failure(new RuntimeException("Timeout"), List.of("relevance_score"), 0L));
 
         ObjectNode values = mapper.buildMetricValues(tsmdResults);
         ObjectNode infos = mapper.buildMetricInfos(tsmdResults);
@@ -189,7 +189,7 @@ class MetricOutputMapperTest {
                 .metricName(metricName)
                 .output(output)
                 .build();
-        return new TsmdEvaluationResult.Success(response, List.of());
+        return new TsmdEvaluationResult.Success(response, List.of(), 0L);
     }
 
     private MetricOutputFieldDto valueOutput(BigDecimal value, Map<String, Object> details) {

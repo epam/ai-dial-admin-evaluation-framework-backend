@@ -28,13 +28,13 @@ public class BuiltInQueryFunctions {
     @Bean
     @SuppressWarnings({"unchecked"})
     public QueryFunction lowerFunction() {
-        return QueryFunction.of("lower", (fn, ctx) -> DSL.lower((Field<String>) ctx.singleArg(fn)));
+        return QueryFunction.of(QueryFunctionNames.LOWER, (fn, ctx) -> DSL.lower((Field<String>) ctx.singleArg(fn)));
     }
 
     @Bean
     @SuppressWarnings({"unchecked"})
     public QueryFunction upperFunction() {
-        return QueryFunction.of("upper", (fn, ctx) -> DSL.upper((Field<String>) ctx.singleArg(fn)));
+        return QueryFunction.of(QueryFunctionNames.UPPER, (fn, ctx) -> DSL.upper((Field<String>) ctx.singleArg(fn)));
     }
 
     @Bean

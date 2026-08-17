@@ -339,7 +339,8 @@ Individual test cases belonging to a dataset. Per-suite enablement is controlled
     "fieldName": "string",
     "path": "string",
     "message": "string",
-    "code": "REQUIRED|TYPE|FORMAT|PATTERN|ENUM|ADDITIONAL|UNKNOWN"
+    "code": "REQUIRED|TYPE|FORMAT|PATTERN|ENUM|ADDITIONAL|UNRESOLVED_REFERENCE|INVALID_OUTPUT_SCHEMA|REQUEST_BODY_EVALUATION_ERROR|UNKNOWN|INVALID_INPUT|INVALID_SCOPE",
+    "turnIndex": "number (optional, 0-based; multi-turn cases only)"
   }
 ]
 ```
@@ -744,6 +745,7 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `extracted_columns` | JSONB | NOT NULL | `'{}'::jsonb` | Extracted column values (denormalized) |
 | `execution_status` | VARCHAR(20) | NOT NULL | - | Execution status (SUCCESS, FAILED, TIMEOUT, ERROR) |
 | `exec_duration_ms` | BIGINT | NOT NULL | - | Execution duration in milliseconds |
+| `metric_eval_duration_ms` | BIGINT | NOT NULL | 0 | Sum of latency (ms) across the TSMD provider `/evaluate` calls dispatched for this row's computation (V1.16); excludes TSMDs with a condition error (no call made) |
 | `response_status_code` | INTEGER | NULL | - | HTTP response status code |
 | `metric_values` | JSONB | NOT NULL | `'{}'::jsonb` | Compact metric output values (keyed by metric name, nested by output name) |
 | `metric_infos` | JSONB | NULL | - | Detailed metric output info/metadata (lazy-loaded) |
@@ -953,6 +955,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_run_results; extended `uq_results_run_case_index` with `turn_index` |
 | V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; extended `uq_eval_summaries_natural_key` with `turn_index` |
 | V1.15 | `V1.15__AddEvalSummariesRunComputedAtIndex.sql` | Added index `idx_eval_summaries_run_computed_at` on test_case_eval_summaries `(test_suite_run_id, computed_at_ms DESC, computation_id)` for latest-computation resolution off the fact table |
+| V1.16 | `V1.16__AddMetricEvalDurationToEvalSummaries.sql` | Added `metric_eval_duration_ms` (BIGINT NOT NULL DEFAULT 0) to test_case_eval_summaries |
 
 ---
 

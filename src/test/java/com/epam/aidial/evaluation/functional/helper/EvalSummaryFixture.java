@@ -42,7 +42,7 @@ public class EvalSummaryFixture {
     private final long execDurationMs = 100L;
 
     @Builder.Default
-    private final long avgMetricEvalDurationMs = 0L;
+    private final long metricEvalDurationMs = 0L;
 
     @Builder.Default
     private final String testCaseDataJson = "{}";

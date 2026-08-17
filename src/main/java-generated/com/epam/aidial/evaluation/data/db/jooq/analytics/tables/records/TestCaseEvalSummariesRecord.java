@@ -323,17 +323,17 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
 
     /**
      * Setter for
-     * <code>analytics.test_case_eval_summaries.avg_metric_eval_duration_ms</code>.
+     * <code>analytics.test_case_eval_summaries.metric_eval_duration_ms</code>.
      */
-    public void setAvgMetricEvalDurationMs(Long value) {
+    public void setMetricEvalDurationMs(Long value) {
         set(20, value);
     }
 
     /**
      * Getter for
-     * <code>analytics.test_case_eval_summaries.avg_metric_eval_duration_ms</code>.
+     * <code>analytics.test_case_eval_summaries.metric_eval_duration_ms</code>.
      */
-    public Long getAvgMetricEvalDurationMs() {
+    public Long getMetricEvalDurationMs() {
         return (Long) get(20);
     }
 
@@ -360,7 +360,7 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
     /**
      * Create a detached, initialised TestCaseEvalSummariesRecord
      */
-    public TestCaseEvalSummariesRecord(String id, String testSuiteId, String testSuiteRunId, String testCaseRunResultId, String testCaseId, String testCaseName, Integer runIndex, String computationId, JSONB testCaseData, JSONB extractedColumns, String executionStatus, Long execDurationMs, Integer responseStatusCode, JSONB metricValues, JSONB metricInfos, Long createdAtMs, Long computedAtMs, JSONB extractionWarnings, Integer turnIndex, Integer totalTurns, Long avgMetricEvalDurationMs) {
+    public TestCaseEvalSummariesRecord(String id, String testSuiteId, String testSuiteRunId, String testCaseRunResultId, String testCaseId, String testCaseName, Integer runIndex, String computationId, JSONB testCaseData, JSONB extractedColumns, String executionStatus, Long execDurationMs, Integer responseStatusCode, JSONB metricValues, JSONB metricInfos, Long createdAtMs, Long computedAtMs, JSONB extractionWarnings, Integer turnIndex, Integer totalTurns, Long metricEvalDurationMs) {
         super(TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES);
 
         setId(id);
@@ -383,7 +383,7 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
         setExtractionWarnings(extractionWarnings);
         setTurnIndex(turnIndex);
         setTotalTurns(totalTurns);
-        setAvgMetricEvalDurationMs(avgMetricEvalDurationMs);
+        setMetricEvalDurationMs(metricEvalDurationMs);
         resetTouchedOnNotNull();
     }
 }

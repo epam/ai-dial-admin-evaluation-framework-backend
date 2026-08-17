@@ -15,8 +15,8 @@ class EvalSummaryRecordMapperTest {
     private final EvalSummaryRecordMapper mapper = new EvalSummaryRecordMapper();
 
     @Test
-    @DisplayName("map() round-trips avgMetricEvalDurationMs from a typed record")
-    void map_roundTripsAvgMetricEvalDurationMs() {
+    @DisplayName("map() round-trips metricEvalDurationMs from a typed record")
+    void map_roundTripsMetricEvalDurationMs() {
         TestCaseEvalSummariesRecord record = new TestCaseEvalSummariesRecord();
         record.setId(UUID.randomUUID().toString());
         record.setTestSuiteId(UUID.randomUUID().toString());
@@ -32,7 +32,7 @@ class EvalSummaryRecordMapperTest {
         record.setExtractedColumns(JSONB.valueOf("{}"));
         record.setExecutionStatus("SUCCESS");
         record.setExecDurationMs(1234L);
-        record.setAvgMetricEvalDurationMs(456L);
+        record.setMetricEvalDurationMs(456L);
         record.setMetricValues(JSONB.valueOf("{}"));
         record.setExtractionWarnings(JSONB.valueOf("[]"));
         record.setCreatedAtMs(1000L);
@@ -41,6 +41,6 @@ class EvalSummaryRecordMapperTest {
         EvalSummary entity = mapper.map(record);
 
         assertThat(entity.getExecDurationMs()).isEqualTo(1234L);
-        assertThat(entity.getAvgMetricEvalDurationMs()).isEqualTo(456L);
+        assertThat(entity.getMetricEvalDurationMs()).isEqualTo(456L);
     }
 }

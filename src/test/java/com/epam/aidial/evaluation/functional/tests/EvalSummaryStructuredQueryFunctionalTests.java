@@ -171,8 +171,8 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
     }
 
     @Test
-    @DisplayName("persists avgMetricEvalDurationMs and averages it via the DSL without any resolver changes")
-    void aggregatesAvgMetricEvalDurationMs() {
+    @DisplayName("persists metricEvalDurationMs and averages it via the DSL without any resolver changes")
+    void aggregatesMetricEvalDurationMs() {
         UUID suiteId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
@@ -183,7 +183,7 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                 .computationId(computationId)
                 .testCaseName("case-a")
                 .createdAtMs(1_000L)
-                .avgMetricEvalDurationMs(100L)
+                .metricEvalDurationMs(100L)
                 .build());
         analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
                 .suiteId(suiteId)
@@ -191,11 +191,11 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                 .computationId(computationId)
                 .testCaseName("case-b")
                 .createdAtMs(2_000L)
-                .avgMetricEvalDurationMs(300L)
+                .metricEvalDurationMs(300L)
                 .build());
 
         EvalSummary persisted = evalSummaryRepository.findById(idA).orElseThrow();
-        assertThat(persisted.getAvgMetricEvalDurationMs()).isEqualTo(100L);
+        assertThat(persisted.getMetricEvalDurationMs()).isEqualTo(100L);
 
         StructuredQuery query = new StructuredQuery(
                 "eval_summaries",
@@ -203,7 +203,7 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                 QueryMode.AGGREGATE,
                 false,
                 List.of(new OutputColumn(
-                        new FnExpr("avg", false, List.of(new FieldExpr("avg_metric_eval_duration_ms"))), "mean")),
+                        new FnExpr("avg", false, List.of(new FieldExpr("metric_eval_duration_ms"))), "mean")),
                 null,
                 null,
                 null,

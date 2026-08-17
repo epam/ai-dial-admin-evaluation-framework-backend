@@ -86,7 +86,7 @@ class EvalSummaryMapperTest {
                 .extractedColumns(extractedColumns)
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(1234L)
-                .avgMetricEvalDurationMs(150L)
+                .metricEvalDurationMs(150L)
                 .responseStatusCode(200)
                 .metricValues(metricValues)
                 .metricInfos(metricInfos)
@@ -107,7 +107,7 @@ class EvalSummaryMapperTest {
         assertThat(entity.getExtractedColumns()).contains("col1");
         assertThat(entity.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(entity.getExecDurationMs()).isEqualTo(1234L);
-        assertThat(entity.getAvgMetricEvalDurationMs()).isEqualTo(150L);
+        assertThat(entity.getMetricEvalDurationMs()).isEqualTo(150L);
         assertThat(entity.getResponseStatusCode()).isEqualTo(200);
         assertThat(entity.getMetricValues()).contains("Accuracy");
         assertThat(entity.getMetricInfos()).contains("version");
@@ -148,7 +148,7 @@ class EvalSummaryMapperTest {
                 .extractedColumns("{}")
                 .executionStatus(ExecutionStatus.FAILED)
                 .execDurationMs(500L)
-                .avgMetricEvalDurationMs(75L)
+                .metricEvalDurationMs(75L)
                 .responseStatusCode(500)
                 .metricValues("{\"Accuracy\":{\"score\":0.5}}")
                 .createdAtMs(3000L)
@@ -166,7 +166,7 @@ class EvalSummaryMapperTest {
         assertThat(dto.getRunIndex()).isEqualTo(1);
         assertThat(dto.getExecutionStatus()).isEqualTo("FAILED");
         assertThat(dto.getExecDurationMs()).isEqualTo(500L);
-        assertThat(dto.getAvgMetricEvalDurationMs()).isEqualTo(75L);
+        assertThat(dto.getMetricEvalDurationMs()).isEqualTo(75L);
         assertThat(dto.getResponseStatusCode()).isEqualTo(500);
         assertThat(dto.getCreatedAt()).isEqualTo(3000L);
         assertThat(dto.getComputedAt()).isEqualTo(4000L);
@@ -190,7 +190,7 @@ class EvalSummaryMapperTest {
                 .extractedColumns("{}")
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(100L)
-                .avgMetricEvalDurationMs(25L)
+                .metricEvalDurationMs(25L)
                 .metricValues("{\"Accuracy\":{\"score\":1.0}}")
                 .metricInfos("{\"Accuracy\":{\"version\":\"2.0\"}}")
                 .createdAtMs(5000L)
@@ -203,7 +203,7 @@ class EvalSummaryMapperTest {
         assertThat(dto.getTestCaseName()).isEqualTo("detail-case");
         assertThat(dto.getMetricInfos()).isNotNull();
         assertThat(dto.getMetricInfos().toString()).contains("version");
-        assertThat(dto.getAvgMetricEvalDurationMs()).isEqualTo(25L);
+        assertThat(dto.getMetricEvalDurationMs()).isEqualTo(25L);
         assertThat(dto.getCreatedAt()).isEqualTo(5000L);
         assertThat(dto.getComputedAt()).isEqualTo(6000L);
     }

@@ -148,7 +148,7 @@ class InProcessMetricEvaluationExecutorTest {
         assertThat(items).hasSize(1);
         assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(items.get(0).getMetricValues()).isNotNull();
-        assertThat(items.get(0).getAvgMetricEvalDurationMs()).isEqualTo(150L);
+        assertThat(items.get(0).getMetricEvalDurationMs()).isEqualTo(150L);
     }
 
     @Test
@@ -212,7 +212,7 @@ class InProcessMetricEvaluationExecutorTest {
         List<EvalSummaryBatchWriteItemDto> items = captor.getValue();
         assertThat(items).hasSize(1);
         assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
-        assertThat(items.get(0).getAvgMetricEvalDurationMs())
+        assertThat(items.get(0).getMetricEvalDurationMs())
                 .as("a timed-out TSMD still contributes its real elapsed time (dispatch to timeout detection)")
                 .isEqualTo(300L);
     }
@@ -355,14 +355,14 @@ class InProcessMetricEvaluationExecutorTest {
         List<EvalSummaryBatchWriteItemDto> items = captor.getValue();
         assertThat(items).hasSize(1);
         assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
-        assertThat(items.get(0).getAvgMetricEvalDurationMs())
+        assertThat(items.get(0).getMetricEvalDurationMs())
                 .as("a failed TSMD call still contributes its real elapsed time, same as a successful one")
                 .isEqualTo(500L);
     }
 
     @Test
-    @DisplayName("computeAvgMetricEvalDurationMs excludes ConditionError entries and defaults to 0")
-    void computeAvgMetricEvalDurationMs_excludesConditionErrorsAndDefaultsToZero() {
+    @DisplayName("computeMetricEvalDurationMs excludes ConditionError entries and defaults to 0")
+    void computeMetricEvalDurationMs_excludesConditionErrorsAndDefaultsToZero() {
         EvaluationResponseDto response = EvaluationResponseDto.builder().build();
 
         Map<String, TsmdEvaluationResult> mixed = Map.of(
@@ -370,11 +370,11 @@ class InProcessMetricEvaluationExecutorTest {
                 "failedMetric", new TsmdEvaluationResult.Failure(new RuntimeException("boom"), List.of(), 300L),
                 "conditionErrorMetric", new TsmdEvaluationResult.ConditionError("bad condition", List.of()));
 
-        assertThat(executor.computeAvgMetricEvalDurationMs(mixed))
-                .as("average must be over Success/Failure only: (100 + 300) / 2")
-                .isEqualTo(200L);
+        assertThat(executor.computeMetricEvalDurationMs(mixed))
+                .as("sum must be over Success/Failure only: 100 + 300")
+                .isEqualTo(400L);
 
-        assertThat(executor.computeAvgMetricEvalDurationMs(Map.of()))
+        assertThat(executor.computeMetricEvalDurationMs(Map.of()))
                 .as("no dispatched TSMDs defaults to 0")
                 .isEqualTo(0L);
     }

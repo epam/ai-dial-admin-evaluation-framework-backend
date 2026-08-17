@@ -39,10 +39,10 @@ public class EvalSummaryDetailResponseDto {
     private Long execDurationMs;
 
     @Schema(
-            description = "Average latency (ms) of the metric provider /evaluate calls dispatched for this row's "
+            description = "Sum of latency (ms) across the metric provider /evaluate calls dispatched for this row's "
                     + "computation.",
             example = "120")
-    private Long avgMetricEvalDurationMs;
+    private Long metricEvalDurationMs;
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer responseStatusCode;

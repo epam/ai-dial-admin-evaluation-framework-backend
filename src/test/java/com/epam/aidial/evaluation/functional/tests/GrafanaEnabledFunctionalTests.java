@@ -202,7 +202,7 @@ public abstract class GrafanaEnabledFunctionalTests extends AbstractGrafanaFunct
                 .testCaseData(testCaseData)
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(1234L)
-                .avgMetricEvalDurationMs(0L)
+                .metricEvalDurationMs(0L)
                 .responseStatusCode(200)
                 .metricValues(metricValues)
                 .build();

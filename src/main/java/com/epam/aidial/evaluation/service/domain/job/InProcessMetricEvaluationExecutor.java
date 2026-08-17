@@ -289,7 +289,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
 
         ObjectNode metricValues = outputMapper.buildMetricValues(tsmdResults);
         ObjectNode metricInfos = outputMapper.buildMetricInfos(tsmdResults);
-        long avgMetricEvalDurationMs = computeAvgMetricEvalDurationMs(tsmdResults);
+        long metricEvalDurationMs = computeMetricEvalDurationMs(tsmdResults);
 
         return buildItem(
                 result,
@@ -297,19 +297,18 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 hasError ? ExecutionStatus.FAILED : ExecutionStatus.SUCCESS,
                 metricValues,
                 metricInfos,
-                avgMetricEvalDurationMs);
+                metricEvalDurationMs);
     }
 
-    long computeAvgMetricEvalDurationMs(Map<String, TsmdEvaluationResult> tsmdResults) {
-        return (long) tsmdResults.values().stream()
+    long computeMetricEvalDurationMs(Map<String, TsmdEvaluationResult> tsmdResults) {
+        return tsmdResults.values().stream()
                 .mapToLong(r -> switch (r) {
                     case TsmdEvaluationResult.Success success -> success.durationMs();
                     case TsmdEvaluationResult.Failure failure -> failure.durationMs();
                     case TsmdEvaluationResult.ConditionError ignored -> -1L;
                 })
                 .filter(durationMs -> durationMs >= 0)
-                .average()
-                .orElse(0.0);
+                .sum();
     }
 
     private boolean checkForErrors(Map<String, TsmdEvaluationResult> tsmdResults) {
@@ -341,7 +340,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             ExecutionStatus executionStatus,
             ObjectNode metricValues,
             ObjectNode metricInfos,
-            long avgMetricEvalDurationMs) {
+            long metricEvalDurationMs) {
         return EvalSummaryBatchWriteItemDto.builder()
                 .testCaseRunResultId(result.getId())
                 .testCaseId(result.getTestCaseId())
@@ -353,7 +352,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .extractedColumns(parseJsonNode(result.getExtractedColumns()))
                 .executionStatus(executionStatus)
                 .execDurationMs(result.getExecDurationMs())
-                .avgMetricEvalDurationMs(avgMetricEvalDurationMs)
+                .metricEvalDurationMs(metricEvalDurationMs)
                 .responseStatusCode(result.getResponseStatusCode())
                 .metricValues(metricValues)
                 .metricInfos(metricInfos)

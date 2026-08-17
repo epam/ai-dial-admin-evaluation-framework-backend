@@ -885,6 +885,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                 .testCaseData(JsonNodeFactory.instance.objectNode())
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(100L)
+                .metricEvalDurationMs(0L)
                 .responseStatusCode(200)
                 .metricValues(metricValues)
                 .build();
@@ -968,6 +969,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                     .testCaseData(testCaseData)
                     .executionStatus(ExecutionStatus.SUCCESS)
                     .execDurationMs(123L)
+                    .metricEvalDurationMs(0L)
                     .responseStatusCode(200)
                     .metricValues(metricValues)
                     .build());
@@ -1010,6 +1012,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                 .testCaseData(testCaseData)
                 .executionStatus(ExecutionStatus.SUCCESS)
                 .execDurationMs(150L)
+                .metricEvalDurationMs(0L)
                 .responseStatusCode(200)
                 .metricValues(metricValues)
                 .build();
@@ -1074,6 +1077,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
                     .extractedColumns(extractedColumns)
                     .executionStatus(ExecutionStatus.SUCCESS)
                     .execDurationMs(200L)
+                    .metricEvalDurationMs(0L)
                     .responseStatusCode(200)
                     .metricValues(metricValues)
                     .build());

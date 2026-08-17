@@ -35,7 +35,7 @@ Status: **Implemented**
 - **THEN** `turn_index` (INTEGER, NOT NULL, DEFAULT 0) and `total_turns` (INTEGER, NOT NULL, DEFAULT 1) columns SHALL be added to `test_case_run_results`, and existing rows backfill to those defaults
 
 #### Scenario: Request columns added
-- **WHEN** the Flyway migration `V1.16__AddRequestColumnsToTestCaseRunResults.sql` is applied
+- **WHEN** the Flyway migration `V1.17__AddRequestColumnsToTestCaseRunResults.sql` is applied
 - **THEN** `request_index` (INTEGER, NOT NULL, DEFAULT 0) and `total_requests` (INTEGER, NOT NULL, DEFAULT 1) columns SHALL be added to `test_case_run_results`, and existing rows backfill to those defaults
 
 #### Scenario: Indexes

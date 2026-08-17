@@ -93,6 +93,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                                 TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
                                 s.getExecutionStatus().name())
                         .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, s.getExecDurationMs())
+                        .set(TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS, s.getMetricEvalDurationMs())
                         .set(TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE, s.getResponseStatusCode())
                         .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, toJsonb(s.getMetricValues()))
                         .set(TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS, toJsonb(s.getMetricInfos()))
@@ -150,6 +151,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
                         TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
                         TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
                         TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
@@ -394,6 +396,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
                         TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
                         TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
                         TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                         TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
@@ -421,6 +424,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
                         TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
                         TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
                         TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
@@ -450,6 +454,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
                         TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
                         TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
                         TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,

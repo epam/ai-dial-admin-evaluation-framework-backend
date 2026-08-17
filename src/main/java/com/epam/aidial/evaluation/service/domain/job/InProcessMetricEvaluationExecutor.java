@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
+import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
@@ -16,6 +17,7 @@ import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import io.opentelemetry.context.Context;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -59,6 +61,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private final ObjectMapper objectMapper;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
     private final ConditionExpressionEvaluator conditionExpressionEvaluator;
+    private final Clock clock;
 
     @Override
     public void execute(MetricEvaluationContext context) {
@@ -211,6 +214,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             dispatchedTsmds.add(tsmd);
         }
 
+        Map<String, Long> dispatchStartedAtMsByTsmd = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> tsmdFutures = new ArrayList<>();
         for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
             List<String> fieldNames = outputFieldNamesMap.get(tsmd.getName());
@@ -220,13 +224,16 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     context.getTestSuiteRunId(),
                     tsmd.getName(),
                     result.getId());
+            dispatchStartedAtMsByTsmd.put(tsmd.getName(), clock.millis());
             CompletableFuture<Void> tsmdFuture = CompletableFuture.runAsync(
                     () -> {
+                        long startedAtMs = clock.millis();
                         try {
+                            EvaluationResponseDto response = worker.evaluate(tsmd, result, semaphore, context);
                             tsmdResults.put(
                                     tsmd.getName(),
                                     new TsmdEvaluationResult.Success(
-                                            worker.evaluate(tsmd, result, semaphore, context), fieldNames));
+                                            response, fieldNames, clock.millis() - startedAtMs));
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                             log.warn(
@@ -234,7 +241,9 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                                     tsmd.getName(),
                                     result.getId(),
                                     e);
-                            tsmdResults.put(tsmd.getName(), new TsmdEvaluationResult.Failure(e, fieldNames));
+                            tsmdResults.put(
+                                    tsmd.getName(),
+                                    new TsmdEvaluationResult.Failure(e, fieldNames, clock.millis() - startedAtMs));
                         } catch (RuntimeException e) {
                             log.warn(
                                     "Metric evaluation failed for TSMD {} on result {}: {}",
@@ -242,7 +251,9 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                                     result.getId(),
                                     e.getMessage(),
                                     e);
-                            tsmdResults.put(tsmd.getName(), new TsmdEvaluationResult.Failure(e, fieldNames));
+                            tsmdResults.put(
+                                    tsmd.getName(),
+                                    new TsmdEvaluationResult.Failure(e, fieldNames, clock.millis() - startedAtMs));
                         }
                     },
                     executor);
@@ -274,20 +285,34 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     tsmd.getName(),
                     new TsmdEvaluationResult.Failure(
                             new RuntimeException("Metric evaluation timed out for TSMD " + tsmd.getName()),
-                            outputFieldNamesMap.get(tsmd.getName())));
+                            outputFieldNamesMap.get(tsmd.getName()),
+                            clock.millis() - dispatchStartedAtMsByTsmd.get(tsmd.getName())));
         }
 
         boolean hasError = checkForErrors(tsmdResults);
 
         ObjectNode metricValues = outputMapper.buildMetricValues(tsmdResults);
         ObjectNode metricInfos = outputMapper.buildMetricInfos(tsmdResults);
+        long metricEvalDurationMs = computeMetricEvalDurationMs(tsmdResults);
 
         return buildItem(
                 result,
                 context,
                 hasError ? ExecutionStatus.FAILED : ExecutionStatus.SUCCESS,
                 metricValues,
-                metricInfos);
+                metricInfos,
+                metricEvalDurationMs);
+    }
+
+    long computeMetricEvalDurationMs(Map<String, TsmdEvaluationResult> tsmdResults) {
+        return tsmdResults.values().stream()
+                .mapToLong(r -> switch (r) {
+                    case TsmdEvaluationResult.Success success -> success.durationMs();
+                    case TsmdEvaluationResult.Failure failure -> failure.durationMs();
+                    case TsmdEvaluationResult.ConditionError ignored -> -1L;
+                })
+                .filter(durationMs -> durationMs >= 0)
+                .sum();
     }
 
     private boolean checkForErrors(Map<String, TsmdEvaluationResult> tsmdResults) {
@@ -310,7 +335,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private EvalSummaryBatchWriteItemDto buildPropagatedItem(
             TestCaseRunResult result, MetricEvaluationContext context) {
         ObjectNode emptyValues = objectMapper.createObjectNode();
-        return buildItem(result, context, result.getExecutionStatus(), emptyValues, null);
+        return buildItem(result, context, result.getExecutionStatus(), emptyValues, null, 0L);
     }
 
     private EvalSummaryBatchWriteItemDto buildItem(
@@ -318,7 +343,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             MetricEvaluationContext context,
             ExecutionStatus executionStatus,
             ObjectNode metricValues,
-            ObjectNode metricInfos) {
+            ObjectNode metricInfos,
+            long metricEvalDurationMs) {
         return EvalSummaryBatchWriteItemDto.builder()
                 .testCaseRunResultId(result.getId())
                 .testCaseId(result.getTestCaseId())
@@ -332,6 +358,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .extractedColumns(parseJsonNode(result.getExtractedColumns()))
                 .executionStatus(executionStatus)
                 .execDurationMs(result.getExecDurationMs())
+                .metricEvalDurationMs(metricEvalDurationMs)
                 .responseStatusCode(result.getResponseStatusCode())
                 .metricValues(metricValues)
                 .metricInfos(metricInfos)

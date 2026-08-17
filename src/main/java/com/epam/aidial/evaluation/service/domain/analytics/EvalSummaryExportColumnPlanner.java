@@ -70,6 +70,7 @@ public class EvalSummaryExportColumnPlanner {
                     : s.getExecutionStatus().name();
         }));
         descriptors.add(plain("execDurationMs", row -> row.getSummary().getExecDurationMs()));
+        descriptors.add(plain("metricEvalDurationMs", row -> row.getSummary().getMetricEvalDurationMs()));
         descriptors.add(plain("responseStatusCode", row -> row.getSummary().getResponseStatusCode()));
 
         // 4. Inlined data:<fieldName> per snapshot testCaseSchema

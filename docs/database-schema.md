@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-08-04 (meta V1.29, analytics V1.17)
+> **Last sync**: 2026-08-17 (meta V1.29, analytics V1.18)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -648,8 +648,8 @@ Test case execution results stored in the analytics database. Each row represent
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Test case ID |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index (0-based) |
-| `request_index` | INTEGER | NOT NULL | 0 | 0-based position of this row's request within the suite's request chain (V1.16); 0 for a single-request suite |
-| `total_requests` | INTEGER | NOT NULL | 1 | Length of the suite's request chain (V1.16); 1 for a single-request suite |
+| `request_index` | INTEGER | NOT NULL | 0 | 0-based position of this row's request within the suite's request chain (V1.17); 0 for a single-request suite |
+| `total_requests` | INTEGER | NOT NULL | 1 | Length of the suite's request chain (V1.17); 1 for a single-request suite |
 | `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn test case (V1.13); 0 for single-turn |
 | `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the test case (V1.13); 1 for single-turn |
 | `test_case_data` | JSONB | NOT NULL | - | Test case input data (that turn's data for a multi-turn row) |
@@ -675,7 +675,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Extended with `turn_index` in V1.13 so each turn is uniquely keyed, and with `request_index` in V1.16 (inserted before `turn_index`, matching the request-then-turn nesting of the execution model) so each chain position is uniquely keyed. Includes `created_at_ms` for future partitioning. |
+| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Extended with `turn_index` in V1.13 so each turn is uniquely keyed, and with `request_index` in V1.17 (inserted before `turn_index`, matching the request-then-turn nesting of the execution model) so each chain position is uniquely keyed. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -758,8 +758,8 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Reference to test case (soft FK) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case name at execution time |
 | `run_index` | INTEGER | NOT NULL | - | Run iteration index |
-| `request_index` | INTEGER | NOT NULL | 0 | 0-based position of this row's request within the suite's request chain (V1.17); 0 for a single-request suite |
-| `total_requests` | INTEGER | NOT NULL | 1 | Length of the suite's request chain (V1.17); 1 for a single-request suite |
+| `request_index` | INTEGER | NOT NULL | 0 | 0-based position of this row's request within the suite's request chain (V1.18); 0 for a single-request suite |
+| `total_requests` | INTEGER | NOT NULL | 1 | Length of the suite's request chain (V1.18); 1 for a single-request suite |
 | `turn_index` | INTEGER | NOT NULL | 0 | 0-based turn position within a multi-turn test case (V1.14); 0 for single-turn |
 | `total_turns` | INTEGER | NOT NULL | 1 | Planned turn count of the test case (V1.14); 1 for single-turn |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
@@ -767,6 +767,7 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 | `extracted_columns` | JSONB | NOT NULL | `'{}'::jsonb` | Extracted column values (denormalized) |
 | `execution_status` | VARCHAR(20) | NOT NULL | - | Execution status (SUCCESS, FAILED, TIMEOUT, ERROR) |
 | `exec_duration_ms` | BIGINT | NOT NULL | - | Execution duration in milliseconds |
+| `metric_eval_duration_ms` | BIGINT | NOT NULL | 0 | Sum of latency (ms) across the TSMD provider `/evaluate` calls dispatched for this row's computation (V1.16); excludes TSMDs with a condition error (no call made) |
 | `response_status_code` | INTEGER | NULL | - | HTTP response status code |
 | `metric_values` | JSONB | NOT NULL | `'{}'::jsonb` | Compact metric output values (keyed by metric name, nested by output name) |
 | `metric_infos` | JSONB | NULL | - | Detailed metric output info/metadata (lazy-loaded) |
@@ -782,7 +783,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_eval_summaries_natural_key` | UNIQUE (INDEX) | `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` | Idempotent writes. Extended with `turn_index` in V1.14 so each turn's summary is uniquely keyed per computation, and with `request_index` in V1.17 (inserted before `turn_index`) so each chain position's summary is uniquely keyed. Includes `created_at_ms` for future partitioning. |
+| `uq_eval_summaries_natural_key` | UNIQUE (INDEX) | `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` | Idempotent writes. Extended with `turn_index` in V1.14 so each turn's summary is uniquely keyed per computation, and with `request_index` in V1.18 (inserted before `turn_index`) so each chain position's summary is uniquely keyed. Includes `created_at_ms` for future partitioning. |
 
 ### Indexes
 
@@ -977,8 +978,9 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.13 | `V1.13__AddTurnColumnsToTestCaseRunResults.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_run_results; extended `uq_results_run_case_index` with `turn_index` |
 | V1.14 | `V1.14__AddTurnColumnsToEvalSummaries.sql` | Added `turn_index`/`total_turns` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; extended `uq_eval_summaries_natural_key` with `turn_index` |
 | V1.15 | `V1.15__AddEvalSummariesRunComputedAtIndex.sql` | Added index `idx_eval_summaries_run_computed_at` on test_case_eval_summaries `(test_suite_run_id, computed_at_ms DESC, computation_id)` for latest-computation resolution off the fact table |
-| V1.16 | `V1.16__AddRequestColumnsToTestCaseRunResults.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_run_results; dropped and re-created `uq_results_run_case_index` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` |
-| V1.17 | `V1.17__AddRequestColumnsToEvalSummaries.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; dropped and re-created unique index `uq_eval_summaries_natural_key` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` |
+| V1.16 | `V1.16__AddMetricEvalDurationToEvalSummaries.sql` | Added `metric_eval_duration_ms` (BIGINT NOT NULL DEFAULT 0) to test_case_eval_summaries |
+| V1.17 | `V1.17__AddRequestColumnsToTestCaseRunResults.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_run_results; dropped and re-created `uq_results_run_case_index` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` |
+| V1.18 | `V1.18__AddRequestColumnsToEvalSummaries.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; dropped and re-created unique index `uq_eval_summaries_natural_key` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` |
 
 ---
 

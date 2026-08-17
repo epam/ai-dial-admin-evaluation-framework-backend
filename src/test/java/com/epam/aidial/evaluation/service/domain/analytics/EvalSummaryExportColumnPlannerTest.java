@@ -69,6 +69,7 @@ class EvalSummaryExportColumnPlannerTest {
                         "computedAt",
                         "executionStatus",
                         "execDurationMs",
+                        "metricEvalDurationMs",
                         "responseStatusCode");
     }
 

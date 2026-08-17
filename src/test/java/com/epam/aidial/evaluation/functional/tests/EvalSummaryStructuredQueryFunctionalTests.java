@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
+import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
+import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.experimental.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.experimental.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.experimental.query.model.ComparisonOp;
@@ -22,6 +24,7 @@ import com.epam.aidial.evaluation.experimental.query.model.ValueType;
 import com.epam.aidial.evaluation.experimental.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.experimental.query.service.repository.StructuredQueryExecutor;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
@@ -39,6 +42,9 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
 
     @Autowired
     private AnalyticsTestDataHelper analyticsTestDataHelper;
+
+    @Autowired
+    private EvalSummaryRepository evalSummaryRepository;
 
     private static StructuredQuery rowQuery(FilterNode filter, List<OutputColumn> select) {
         return new StructuredQuery(
@@ -162,6 +168,51 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         assertThat(((Number) row.get("fastest")).longValue()).isEqualTo(100L);
         assertThat(((Number) row.get("slowest")).longValue()).isEqualTo(300L);
         assertThat(((Number) row.get("mean")).doubleValue()).isEqualTo(200.0);
+    }
+
+    @Test
+    @DisplayName("persists metricEvalDurationMs and averages it via the DSL without any resolver changes")
+    void aggregatesMetricEvalDurationMs() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+
+        UUID idA = analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseName("case-a")
+                .createdAtMs(1_000L)
+                .metricEvalDurationMs(100L)
+                .build());
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseName("case-b")
+                .createdAtMs(2_000L)
+                .metricEvalDurationMs(300L)
+                .build());
+
+        EvalSummary persisted = evalSummaryRepository.findById(idA).orElseThrow();
+        assertThat(persisted.getMetricEvalDurationMs()).isEqualTo(100L);
+
+        StructuredQuery query = new StructuredQuery(
+                "eval_summaries",
+                runIdEq(runId),
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(
+                        new FnExpr("avg", false, List.of(new FieldExpr("metric_eval_duration_ms"))), "mean")),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        QueryResultPage page = queryRepository.execute(query);
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(((Number) page.rows().get(0).get("mean")).doubleValue()).isEqualTo(200.0);
     }
 
     @Test

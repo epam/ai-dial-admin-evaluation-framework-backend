@@ -13,10 +13,11 @@ public sealed interface TsmdEvaluationResult
     List<String> outputFieldNames();
 
     /** Successful evaluation — response contains the metric output. */
-    record Success(EvaluationResponseDto response, List<String> outputFieldNames) implements TsmdEvaluationResult {}
+    record Success(EvaluationResponseDto response, List<String> outputFieldNames, long durationMs)
+            implements TsmdEvaluationResult {}
 
-    /** Transport failure — evaluation call failed with an exception. */
-    record Failure(Exception error, List<String> outputFieldNames) implements TsmdEvaluationResult {}
+    /** Transport failure — evaluation call failed with an exception, or the TSMD timed out. */
+    record Failure(Exception error, List<String> outputFieldNames, long durationMs) implements TsmdEvaluationResult {}
 
     /**
      * The metric's {@code condition} did not cleanly evaluate to a boolean (threw / non-boolean / null).

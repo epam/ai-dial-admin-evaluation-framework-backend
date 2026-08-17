@@ -34,6 +34,7 @@ public abstract class EvalSummaryMapper {
     @Mapping(source = "item.extractedColumns", target = "extractedColumns")
     @Mapping(source = "item.executionStatus", target = "executionStatus")
     @Mapping(source = "item.execDurationMs", target = "execDurationMs")
+    @Mapping(source = "item.metricEvalDurationMs", target = "metricEvalDurationMs")
     @Mapping(source = "item.responseStatusCode", target = "responseStatusCode")
     @Mapping(source = "item.metricValues", target = "metricValues")
     @Mapping(source = "item.metricInfos", target = "metricInfos")

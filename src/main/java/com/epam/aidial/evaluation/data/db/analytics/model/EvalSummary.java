@@ -41,6 +41,7 @@ public class EvalSummary {
     private String extractedColumns;
     private ExecutionStatus executionStatus;
     private Long execDurationMs;
+    private Long metricEvalDurationMs;
     private Integer responseStatusCode;
     private String metricValues;
     private String metricInfos;

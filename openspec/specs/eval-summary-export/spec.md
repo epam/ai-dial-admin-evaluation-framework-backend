@@ -78,7 +78,7 @@ Status: **Implemented**
 ### Requirement: Column header family-separator convention
 Column names derived from the run's `suite_snapshot` testCaseSchema, the snapshot's responseColumns, or the resolved computation's `RunMetricSnapshot`s SHALL use the double-colon sequence `::` as the family-separator between the family name (`data`, `response`, `metric`, `metricInfo`, `metricError`) and the embedded identifier(s). The `::` sequence SHALL be the only family-separator emitted by the export; neither a single colon `:` nor the dot character SHALL be used for this role. The canonical separator constant SHALL be defined as `EvalSummaryExportColumnConstants.COLUMN_SEPARATOR = "::"` and used by all column-name composition sites.
 
-Identity/execution columns (`id`, `testSuiteId`, `testSuiteRunId`, `testCaseRunResultId`, `testCaseId`, `testCaseName`, `runIndex`, `requestIndex`, `turnIndex`, `computationId`, `createdAt`, `computedAt`, `executionStatus`, `execDurationMs`, `responseStatusCode`), the JSON-blob column (`extractionWarnings`), and the body columns (`requestBody`, `responseBody`) SHALL NOT embed a family-separator; they retain their camelCase names because they are not derived from snapshot/metric identifiers.
+Identity/execution columns (`id`, `testSuiteId`, `testSuiteRunId`, `testCaseRunResultId`, `testCaseId`, `testCaseName`, `runIndex`, `requestIndex`, `turnIndex`, `computationId`, `createdAt`, `computedAt`, `executionStatus`, `execDurationMs`, `metricEvalDurationMs`, `responseStatusCode`), the JSON-blob column (`extractionWarnings`), and the body columns (`requestBody`, `responseBody`) SHALL NOT embed a family-separator; they retain their camelCase names because they are not derived from snapshot/metric identifiers.
 Status: **Implemented**
 
 #### Scenario: Snapshot field names with embedded dots are preserved
@@ -223,7 +223,7 @@ Status: **Implemented**
 - **THEN** the header SHALL NOT contain a column named `metricInfos` (the JSON blob from earlier versions is replaced by the per-field `metricInfo::<m>::<f>` columns and the per-metric `metricError::<m>` columns)
 
 ### Requirement: Identity and execution columns
-The CSV SHALL include the following columns in this order before the inlined columns: `id`, `testSuiteId`, `testSuiteRunId`, `testCaseRunResultId`, `testCaseId`, `testCaseName`, `runIndex`, `requestIndex`, `turnIndex`, `computationId`, `createdAt`, `computedAt`, `executionStatus`, `execDurationMs`, `responseStatusCode`. These names use camelCase without a family-separator prefix — they are not derived from snapshot/metric data and therefore do not participate in the `<family>::<name>` convention.
+The CSV SHALL include the following columns in this order before the inlined columns: `id`, `testSuiteId`, `testSuiteRunId`, `testCaseRunResultId`, `testCaseId`, `testCaseName`, `runIndex`, `requestIndex`, `turnIndex`, `computationId`, `createdAt`, `computedAt`, `executionStatus`, `execDurationMs`, `metricEvalDurationMs`, `responseStatusCode`. These names use camelCase without a family-separator prefix — they are not derived from snapshot/metric data and therefore do not participate in the `<family>::<name>` convention.
 
 `requestIndex` and `turnIndex` SHALL be positioned immediately after `runIndex`, in that order, so the three row-identity dimensions read repetition → request → turn. `requestIndex` SHALL carry the row's 0-based position in the suite's request chain (`0` for every row of a single-request suite); `turnIndex` SHALL carry the row's 0-based turn within its request (`0` for every row of a single-turn execution). Together with `testCaseName` and `runIndex` they SHALL uniquely identify a row within a computation, so no two exported rows of one run are indistinguishable.
 Status: **Implemented**
@@ -251,6 +251,10 @@ Status: **Implemented**
 #### Scenario: Chained multi-turn rows are uniquely identified
 - **WHEN** a run of a 2-request chain whose second request is multi-turn with 2 turns is exported
 - **THEN** each repetition SHALL yield rows with `(requestIndex, turnIndex)` pairs `(0, 0)`, `(1, 0)` and `(1, 1)`, all distinct
+
+#### Scenario: Metric evaluation latency column present
+- **WHEN** any successful export is invoked
+- **THEN** the header row SHALL contain a `metricEvalDurationMs` column immediately after `execDurationMs`, with cell values taken from `EvalSummary.metricEvalDurationMs`
 
 ### Requirement: Request and response bodies via explicit columns
 `requestBody` and `responseBody` SHALL be excluded from the **default** column set (the set emitted when the request's `columns` array is empty or omitted). They SHALL be included in the CSV **only** when the caller explicitly names them in `columns`. When at least one body column is named, the repository projection SHALL be the LEFT JOIN to `test_case_run_results`; otherwise the projection SHALL be the non-JOIN list projection.

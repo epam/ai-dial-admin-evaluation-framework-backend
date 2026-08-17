@@ -15,12 +15,12 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Database schema for eval summaries
-The analytics database SHALL contain a `test_case_eval_summaries` table storing denormalized, append-only rows that combine test case context with metric computation outputs, including per-turn columns and per-request columns.
+The analytics database SHALL contain a `test_case_eval_summaries` table storing denormalized, append-only rows that combine test case context with metric computation outputs, including per-turn columns, per-request columns, and a summed metric-evaluation latency column.
 Status: **Implemented**
 
 #### Scenario: Table structure
-- **WHEN** the analytics Flyway migrations V1.5 and V1.7 are applied
-- **THEN** the `test_case_eval_summaries` table SHALL have columns: `id` (VARCHAR(36), NOT NULL), `test_suite_id` (VARCHAR(36), NOT NULL), `test_suite_run_id` (VARCHAR(36), NOT NULL), `test_case_run_result_id` (VARCHAR(36), NOT NULL), `test_case_id` (VARCHAR(36), NOT NULL), `test_case_name` (VARCHAR(255), NOT NULL), `run_index` (INTEGER, NOT NULL), `computation_id` (VARCHAR(36), NOT NULL), `test_case_data` (JSONB, NOT NULL), `extracted_columns` (JSONB, NOT NULL, DEFAULT '{}'), `extraction_warnings` (JSONB, NOT NULL, DEFAULT '[]'), `execution_status` (VARCHAR(20), NOT NULL), `exec_duration_ms` (BIGINT, NOT NULL), `response_status_code` (INTEGER, nullable), `metric_values` (JSONB, NOT NULL, DEFAULT '{}'), `metric_infos` (JSONB, nullable), `turn_index` (INTEGER, NOT NULL, DEFAULT 0), `total_turns` (INTEGER, NOT NULL, DEFAULT 1), `request_index` (INTEGER, NOT NULL, DEFAULT 0), `total_requests` (INTEGER, NOT NULL, DEFAULT 1), `created_at_ms` (BIGINT, NOT NULL), `computed_at_ms` (BIGINT, NOT NULL). Primary key: `(created_at_ms, id)`.
+- **WHEN** the analytics Flyway migrations V1.5, V1.7, V1.14, V1.16, and V1.18 are applied
+- **THEN** the `test_case_eval_summaries` table SHALL have columns: `id` (VARCHAR(36), NOT NULL), `test_suite_id` (VARCHAR(36), NOT NULL), `test_suite_run_id` (VARCHAR(36), NOT NULL), `test_case_run_result_id` (VARCHAR(36), NOT NULL), `test_case_id` (VARCHAR(36), NOT NULL), `test_case_name` (VARCHAR(255), NOT NULL), `run_index` (INTEGER, NOT NULL), `computation_id` (VARCHAR(36), NOT NULL), `test_case_data` (JSONB, NOT NULL), `extracted_columns` (JSONB, NOT NULL, DEFAULT '{}'), `extraction_warnings` (JSONB, NOT NULL, DEFAULT '[]'), `execution_status` (VARCHAR(20), NOT NULL), `exec_duration_ms` (BIGINT, NOT NULL), `metric_eval_duration_ms` (BIGINT, NOT NULL, DEFAULT 0), `response_status_code` (INTEGER, nullable), `metric_values` (JSONB, NOT NULL, DEFAULT '{}'), `metric_infos` (JSONB, nullable), `turn_index` (INTEGER, NOT NULL, DEFAULT 0), `total_turns` (INTEGER, NOT NULL, DEFAULT 1), `request_index` (INTEGER, NOT NULL, DEFAULT 0), `total_requests` (INTEGER, NOT NULL, DEFAULT 1), `created_at_ms` (BIGINT, NOT NULL), `computed_at_ms` (BIGINT, NOT NULL). Primary key: `(created_at_ms, id)`.
 
 #### Scenario: UNIQUE constraint for idempotent writes
 - **WHEN** the migration is applied
@@ -31,8 +31,12 @@ Status: **Implemented**
 - **THEN** `turn_index` (INTEGER, NOT NULL, DEFAULT 0) and `total_turns` (INTEGER, NOT NULL, DEFAULT 1) columns SHALL be added to `test_case_eval_summaries`, and existing rows backfill to those defaults
 
 #### Scenario: Request columns added
-- **WHEN** the analytics Flyway migration `V1.17__AddRequestColumnsToEvalSummaries.sql` is applied
+- **WHEN** the analytics Flyway migration `V1.18__AddRequestColumnsToEvalSummaries.sql` is applied
 - **THEN** `request_index` (INTEGER, NOT NULL, DEFAULT 0) and `total_requests` (INTEGER, NOT NULL, DEFAULT 1) columns SHALL be added to `test_case_eval_summaries`, and existing rows backfill to those defaults
+
+#### Scenario: Metric evaluation latency column added
+- **WHEN** the analytics Flyway migration `V1.16__AddMetricEvalDurationToEvalSummaries.sql` is applied
+- **THEN** a `metric_eval_duration_ms` (BIGINT, NOT NULL, DEFAULT 0) column SHALL be added to `test_case_eval_summaries`, and existing rows backfill to `0`. The column SHALL become filterable, sortable, and aggregatable (e.g. `avg`, `sum`) through the structured Query DSL on the `eval_summaries` entity automatically, with no changes to the entity resolver or function registry, because DSL field bindings are derived at runtime from the generated jOOQ table's columns
 
 #### Scenario: Indexes
 - **WHEN** the migration is applied
@@ -133,7 +137,7 @@ Status: **Implemented**
 - **THEN** system SHALL return HTTP 201 (duplicates silently skipped via ON CONFLICT DO NOTHING)
 
 #### Scenario: Required fields validation
-- **WHEN** required envelope fields are missing (`testSuiteId`, `testSuiteRunId`, `computationId`, `computedAtMs`) or required per-item fields are missing (`testCaseRunResultId`, `testCaseId`, `testCaseName`, `testCaseData`, `runIndex`, `executionStatus`, `execDurationMs`, `metricValues`)
+- **WHEN** required envelope fields are missing (`testSuiteId`, `testSuiteRunId`, `computationId`, `computedAtMs`) or required per-item fields are missing (`testCaseRunResultId`, `testCaseId`, `testCaseName`, `testCaseData`, `runIndex`, `executionStatus`, `execDurationMs`, `metricEvalDurationMs`, `metricValues`)
 - **THEN** system SHALL return HTTP 400 with error code `VALIDATION_ERROR`
 
 #### Scenario: metricValues structural validation
@@ -237,6 +241,18 @@ Status: **Implemented**
 #### Scenario: Missing run result row (LEFT JOIN)
 - **WHEN** the referenced `test_case_run_result_id` no longer exists in `test_case_run_results`
 - **THEN** the detail response returns the eval summary with `requestBody: null` and `responseBody: null` (LEFT JOIN behavior)
+
+### Requirement: Metric evaluation latency exposed in eval summary responses
+`EvalSummaryResponseDto` and `EvalSummaryDetailResponseDto` SHALL expose the persisted `metric_eval_duration_ms` value as `metricEvalDurationMs` (Long), alongside the existing `execDurationMs`.
+Status: **Implemented**
+
+#### Scenario: List response includes metric evaluation latency
+- **WHEN** a client calls the eval summaries list endpoint
+- **THEN** each returned item SHALL include `metricEvalDurationMs`, reflecting the value persisted at write time
+
+#### Scenario: Detail response includes metric evaluation latency
+- **WHEN** a client calls the get-single-eval-summary endpoint
+- **THEN** the response SHALL include `metricEvalDurationMs`
 
 ### Requirement: Count eval summaries
 `GET /api/v1/analytics/eval-summaries/count` SHALL return the count of eval summaries matching filters. Requires `runId` filter. Uses computation resolution (same as list).

@@ -116,8 +116,8 @@ test-suite-run:
   execution:
     default-concurrency-level: 1
     max-concurrency-level: 50
-    default-request-timeout-ms: 30000
-    max-request-timeout-ms: 600000
+    default-request-timeout-ms: ${TEST_SUITE_RUN_EXEC_DEFAULT_TIMEOUT:600000}
+    max-request-timeout-ms: ${TEST_SUITE_RUN_EXEC_MAX_TIMEOUT:1200000}
     result-batch-size: 100
     max-response-size-bytes: 5242880  # 5MB
     cancellation-grace-period-ms: 30000

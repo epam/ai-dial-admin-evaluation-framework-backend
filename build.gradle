@@ -15,7 +15,14 @@ buildscript {
             classpath ('org.apache.httpcomponents.core5:httpcore5-h2:5.4.3') {
                 because("CVE-2026-54428: HPackDecoder unlimited header list size before SETTINGS ACK")
             }
+            classpath ('org.apache.httpcomponents.client5:httpclient5:5.6.3') {
+                because("CVE-2026-64607: connection leak on Content-Encoding decode error exhausts the pool")
+            }
         }
+        // Jackson 3 is pulled in transitively by jOOQ codegen; 3.1.4 and earlier are vulnerable to
+        // CVE-2026-59889 (@JsonView bypass for @JsonUnwrapped containers). The BOM keeps the whole
+        // Jackson family on one version instead of bumping jackson-databind alone.
+        classpath platform('tools.jackson:jackson-bom:3.1.5')
         // Dependencies for the generateJooq task (Zonky + Flyway + jOOQ codegen)
         classpath "io.zonky.test:embedded-postgres:${embedded_postgres_version}"
         classpath "org.flywaydb:flyway-core:${flyway_version}"
@@ -106,6 +113,12 @@ repositories {
 
 dependencies {
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
+
+    // Jackson: Spring Boot 4.1.0's BOM manages 2.21.4 / 3.1.4, both vulnerable to CVE-2026-59889,
+    // GHSA-mhm7-754m-9p8w and CVE-2026-54515. Override with the BOMs so the whole Jackson family
+    // moves together rather than bumping jackson-databind in isolation.
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.21.5')
+    implementation platform('tools.jackson:jackson-bom:3.1.5')
 
     // Shared execution engine module
     implementation project(':evaluation-runner-core')

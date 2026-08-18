@@ -1,30 +1,27 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.data.db.model.TestCase;
-import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Selects the runnable test cases of a suite — those that are valid, not excluded by the suite's
- * {@code disabledTestCaseIds}, and (when set) matching the suite's {@code testCaseFilter} (a
- * Structured Query DSL filter subtree). This is a stable {@code service}-layer interface implemented
- * in the experimental query layer (interface inversion, mirroring {@code MetricScoreComputation}), so
- * the run pipeline can apply a DSL-authored filter without a compile-time dependency on
- * {@code experimental.query}. Signatures use only primitives and {@link TestCase} so no experimental
- * type leaks upward.
+ * Selects the runnable test cases of a suite — those that are valid and (when set) matching the
+ * suite's {@code testCaseFilter} (a Structured Query DSL filter subtree). This is a stable
+ * {@code service}-layer interface implemented in the experimental query layer (interface inversion,
+ * mirroring {@code MetricScoreComputation}), so the run pipeline can apply a DSL-authored filter
+ * without a compile-time dependency on {@code experimental.query}. Signatures use only primitives and
+ * {@link TestCase} so no experimental type leaks upward.
  *
  * <p>{@code filterJson} is the suite's stored filter JSON; {@code null}/blank means "no filter" and
- * selection falls back to validity + exclusion only.
+ * selection falls back to validity only.
  */
 public interface RunnableTestCaseSelector {
 
-    /** Counts the runnable test cases (validity + exclusion + optional filter). */
-    long countRunnable(UUID datasetId, String filterJson, Collection<UUID> excludedIds);
+    /** Counts the runnable test cases (validity + optional filter). */
+    long countRunnable(UUID datasetId, String filterJson);
 
     /** Returns a page of runnable test cases in deterministic snapshot order ({@code created_at_ms asc, id asc}). */
-    List<TestCase> loadRunnablePage(
-            UUID datasetId, String filterJson, Collection<UUID> excludedIds, int offset, int limit);
+    List<TestCase> loadRunnablePage(UUID datasetId, String filterJson, int offset, int limit);
 
     /**
      * Validates that {@code filterJson} translates against the dataset's test-case schema. Throws

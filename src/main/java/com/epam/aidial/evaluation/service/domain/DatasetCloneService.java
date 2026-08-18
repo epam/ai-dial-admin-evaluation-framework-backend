@@ -9,9 +9,7 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -73,13 +71,12 @@ public class DatasetCloneService {
      * caller-supplied arguments, copying schema and validation state verbatim — no re-validation) and
      * copies its test cases with freshly generated ids, repointed {@code datasetId}, and
      * {@code @ef/datasets/{source}/} → {@code @ef/datasets/{new}/} rewrites in each test case's
-     * {@code data}. Joins the caller's active meta transaction ({@code REQUIRED}).
-     *
-     * @return old → new test-case id map, used by the caller to remap the suite's
-     *     {@code disabledTestCaseIds}
+     * {@code data}. Joins the caller's active meta transaction ({@code REQUIRED}). Does not track an
+     * old → new test-case id correspondence — none of the three callers need it, and holding one
+     * would mean an unbounded in-memory map for the whole (paginated) copy.
      */
     @Transactional("metaTransactionManager")
-    public Map<UUID, UUID> cloneRowAndTestCases(
+    public void cloneRowAndTestCases(
             Dataset source,
             UUID newDatasetId,
             String name,
@@ -104,8 +101,8 @@ public class DatasetCloneService {
         String targetPrefix = "@ef/datasets/" + newDatasetId + "/";
         int batchSize = revalidationProperties.getBatchSize();
 
-        Map<UUID, UUID> idMap = new HashMap<>();
         int offset = 0;
+        int totalCloned = 0;
         while (true) {
             List<TestCase> sourceBatch = testCaseRepository.findBatchByDatasetId(source.getId(), offset, batchSize);
             if (sourceBatch.isEmpty()) {
@@ -113,10 +110,8 @@ public class DatasetCloneService {
             }
             List<TestCase> clonedCases = new ArrayList<>(sourceBatch.size());
             for (TestCase tc : sourceBatch) {
-                UUID newTestCaseId = UUID.randomUUID();
-                idMap.put(tc.getId(), newTestCaseId);
                 clonedCases.add(TestCase.builder()
-                        .id(newTestCaseId)
+                        .id(UUID.randomUUID())
                         .datasetId(newDatasetId)
                         .testCaseName(tc.getTestCaseName())
                         .data(rewriteRef(tc.getData(), sourcePrefix, targetPrefix))
@@ -127,9 +122,9 @@ public class DatasetCloneService {
             }
             testCaseRepository.batchInsert(clonedCases, timestamp);
             offset += sourceBatch.size();
+            totalCloned += sourceBatch.size();
         }
-        log.debug("Cloned dataset {} -> {} with {} test cases", source.getId(), newDatasetId, idMap.size());
-        return idMap;
+        log.debug("Cloned dataset {} -> {} with {} test cases", source.getId(), newDatasetId, totalCloned);
     }
 
     private static String buildCandidate(String sourceName, Integer counter) {

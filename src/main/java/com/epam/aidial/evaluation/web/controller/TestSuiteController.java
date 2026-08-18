@@ -188,10 +188,10 @@ public class TestSuiteController {
             description = """
                 Forks the suite's bound PUBLIC dataset into a new PRIVATE clone and rebinds the suite \
                 to the clone in a single atomic operation. The original PUBLIC dataset is left untouched. \
-                Test cases are copied with fresh IDs; the suite's disabledTestCaseIds are remapped \
-                to the new IDs. An optional `name` field sets the clone name; if omitted, the name is \
-                derived as "<source> (clone)". Returns 409 when the suite has no dataset bound, or when \
-                the bound dataset is already PRIVATE. Returns 200 with the updated TestSuiteResponseDto.""",
+                Test cases are copied with fresh IDs. An optional `name` field sets the clone name; if \
+                omitted, the name is derived as "<source> (clone)". Returns 409 when the suite has no \
+                dataset bound, or when the bound dataset is already PRIVATE. Returns 200 with the \
+                updated TestSuiteResponseDto.""",
             requestBody =
                     @RequestBody(
                             description = "Optional clone name; omit to derive automatically",

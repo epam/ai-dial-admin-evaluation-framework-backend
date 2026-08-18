@@ -25,7 +25,6 @@ import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
@@ -268,10 +267,9 @@ public class TestSuiteCloneService {
         }
         try {
             transactionTemplate.execute(status -> {
-                // 5pre: When auto-cloning, clone the dataset + its test cases first (joins this tx),
-                // then remap the inherited disabledTestCaseIds onto the new test-case ids.
+                // 5pre: When auto-cloning, clone the dataset + its test cases first (joins this tx).
                 if (datasetToClone != null) {
-                    Map<UUID, UUID> testCaseIdMap = datasetCloneService.cloneRowAndTestCases(
+                    datasetCloneService.cloneRowAndTestCases(
                             datasetToClone,
                             newDatasetId,
                             datasetCloneService.deriveCloneName(datasetToClone.getName()),
@@ -279,8 +277,6 @@ public class TestSuiteCloneService {
                             createdBy,
                             cloneTimestamp,
                             DatasetVisibility.PRIVATE);
-                    newSuiteEntity.setDisabledTestCaseIds(
-                            testSuiteMapper.remapDisabledIds(newSuiteEntity.getDisabledTestCaseIds(), testCaseIdMap));
                 }
 
                 // 5a: Insert new suite

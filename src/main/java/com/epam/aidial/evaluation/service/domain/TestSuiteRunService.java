@@ -29,6 +29,7 @@ import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViola
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
+import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
@@ -45,7 +46,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -57,7 +57,7 @@ public class TestSuiteRunService {
     private final TestSuiteRunRepository testSuiteRunRepository;
     private final TestSuiteRepository testSuiteRepository;
     private final TestCaseService testCaseService;
-    private final RunnableTestCaseCounter runnableTestCaseCounter;
+    private final RunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteRunProperties properties;
     private final TestSuiteEvaluationJob evaluationJob;
     private final ExecutionSettingsValidator executionSettingsValidator;
@@ -96,9 +96,8 @@ public class TestSuiteRunService {
             throw new InvalidOperationException("Cannot create a run: MCP suites do not support multi-turn test cases");
         }
 
-        List<UUID> disabledIds = deserializeDisabledIds(testSuite.getDisabledTestCaseIds());
-        long numberOfTestCases = runnableTestCaseCounter.countRunnable(
-                testSuite.getDatasetId(), testSuite.getTestCaseFilter(), disabledIds);
+        long numberOfTestCases =
+                runnableTestCaseSelector.countRunnable(testSuite.getDatasetId(), testSuite.getTestCaseFilter());
         if (numberOfTestCases == 0) {
             throw new InvalidOperationException("Suite has no valid and enabled test cases");
         }
@@ -391,34 +390,5 @@ public class TestSuiteRunService {
         }
 
         return mapper.toDto(testSuiteRunRepository.findById(runId).orElseThrow());
-    }
-
-    /**
-     * Deserialises a suite's {@code disabledTestCaseIds} JSONB column into a typed list.
-     * Returns an empty list on null/blank or malformed payloads so run creation does not
-     * brick on a single corrupt row.
-     */
-    private List<UUID> deserializeDisabledIds(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            List<String> raw = objectMapper.readValue(json, new TypeReference<>() {});
-            List<UUID> ids = new java.util.ArrayList<>(raw.size());
-            for (String s : raw) {
-                if (s == null || s.isBlank()) {
-                    continue;
-                }
-                try {
-                    ids.add(UUID.fromString(s));
-                } catch (IllegalArgumentException ex) {
-                    log.warn("Skipping malformed UUID in disabledTestCaseIds: {}", s, ex);
-                }
-            }
-            return ids;
-        } catch (JacksonException ex) {
-            log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
-            return List.of();
-        }
     }
 }

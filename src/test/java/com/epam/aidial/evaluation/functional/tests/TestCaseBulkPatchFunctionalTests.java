@@ -21,9 +21,9 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should apply composite bulk and item operations atomically")
     void shouldApplyCompositeAtomically() {
         TestSuiteResponseDto suite = createTestSuite();
-        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "TC 1", true);
-        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "TC 2", true);
-        TestCaseResponseDto tc3 = createTestCase(suite.getId(), "TC 3", true);
+        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "TC 1");
+        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "TC 2");
+        TestCaseResponseDto tc3 = createTestCase(suite.getId(), "TC 3");
 
         // Bulk: set data.tag = "x" on all rows in the dataset.
         // Item ops: rename tc1, override tc2's tag to "y" (last-writer-wins).
@@ -57,8 +57,8 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should accept bulk-only request")
     void shouldAcceptBulkOnly() {
         TestSuiteResponseDto suite = createTestSuite();
-        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "TC 1", true);
-        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "TC 2", true);
+        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "TC 1");
+        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "TC 2");
 
         Map<String, Object> body = Map.of(
                 "bulkOperations",
@@ -83,7 +83,7 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should accept item-only request")
     void shouldAcceptItemOnly() {
         TestSuiteResponseDto suite = createTestSuite();
-        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC 1", true);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC 1");
 
         Map<String, Object> body = Map.of(
                 "itemOperations",
@@ -152,7 +152,7 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should return 400 for non-whitelisted bulk patch field")
     void shouldReturn400ForNonWhitelistedField() {
         TestSuiteResponseDto suite = createTestSuite();
-        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC 1", true);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC 1");
 
         // Bulk-patch whitelist is currently {testCaseName, data}; any other field is rejected.
         // "valid" is a system-managed flag that cannot be patched via the bulk endpoint.
@@ -194,7 +194,7 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should return 400 for duplicate id within itemOperations")
     void shouldReturn400ForDuplicateItemIds() {
         TestSuiteResponseDto suite = createTestSuite();
-        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC 1", true);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC 1");
         String id = tc.getId().toString();
 
         Map<String, Object> body = Map.of(
@@ -214,7 +214,7 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     void shouldReturn404ForCrossDatasetId() {
         TestSuiteResponseDto suiteA = createTestSuite();
         TestSuiteResponseDto suiteB = createTestSuite();
-        TestCaseResponseDto tcInB = createTestCase(suiteB.getId(), "Other dataset", true);
+        TestCaseResponseDto tcInB = createTestCase(suiteB.getId(), "Other dataset");
 
         Map<String, Object> body = Map.of(
                 "bulkOperations",
@@ -232,7 +232,7 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should resolve empty filter selector to all rows in the dataset")
     void shouldResolveEmptyFilterToAllRowsInDataset() {
         TestSuiteResponseDto suite = createTestSuite();
-        seedManyTestCases(suite.getId(), 5, true);
+        seedManyTestCases(suite.getId(), 5);
         Map<String, Object> body = Map.of(
                 "bulkOperations",
                 List.of(Map.of(
@@ -277,7 +277,7 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should patch 10000 seeded rows in a single bulk op")
     void shouldPatchLargeDataset() {
         TestSuiteResponseDto suite = createTestSuite();
-        List<UUID> ids = seedManyTestCases(suite.getId(), 10000, true);
+        List<UUID> ids = seedManyTestCases(suite.getId(), 10000);
 
         Map<String, Object> body = Map.of(
                 "bulkOperations",
@@ -321,8 +321,8 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should roll back all changes when an item op causes name collision (409)")
     void shouldRollBackOnItemNameCollision() {
         TestSuiteResponseDto suite = createTestSuite();
-        TestCaseResponseDto blocker = createTestCase(suite.getId(), "Blocker", true);
-        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "TC 1", true);
+        TestCaseResponseDto blocker = createTestCase(suite.getId(), "Blocker");
+        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "TC 1");
 
         Map<String, Object> body = Map.of(
                 "bulkOperations",
@@ -349,7 +349,7 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should let item operation override field set by prior bulk operation (last-writer-wins)")
     void shouldApplyItemOverrideAfterBulk() {
         TestSuiteResponseDto suite = createTestSuite();
-        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC", true);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC");
 
         // Bulk sets data.tag="x" everywhere; item op overrides this single row's tag to "y".
         Map<String, Object> body = Map.of(
@@ -383,8 +383,8 @@ public abstract class TestCaseBulkPatchFunctionalTests extends BaseTestCaseBulkP
     @DisplayName("Should swap two test case names via composite bulk patch itemOperations")
     void shouldSwapNamesViaItemOperations() {
         TestSuiteResponseDto suite = createTestSuite();
-        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "A", true);
-        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "B", true);
+        TestCaseResponseDto tc1 = createTestCase(suite.getId(), "A");
+        TestCaseResponseDto tc2 = createTestCase(suite.getId(), "B");
 
         Map<String, Object> body = Map.of(
                 "itemOperations",

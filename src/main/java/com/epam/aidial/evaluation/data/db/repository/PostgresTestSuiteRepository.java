@@ -115,7 +115,6 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                         testSuite.getDatasetId() != null
                                 ? testSuite.getDatasetId().toString()
                                 : null)
-                .set(TEST_SUITES.DISABLED_TEST_CASE_IDS, toJsonb(testSuite.getDisabledTestCaseIds()))
                 .set(TEST_SUITES.DEPLOYMENT_REF, toJsonb(testSuite.getDeploymentRef()))
                 .set(TEST_SUITES.ENDPOINT_REF, toJsonb(testSuite.getEndpointRef()))
                 .set(TEST_SUITES.RESPONSE_COLUMNS, toJsonb(testSuite.getResponseColumns()))
@@ -153,7 +152,6 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                         testSuite.getDatasetId() != null
                                 ? testSuite.getDatasetId().toString()
                                 : null)
-                .set(TEST_SUITES.DISABLED_TEST_CASE_IDS, toJsonb(testSuite.getDisabledTestCaseIds()))
                 .set(TEST_SUITES.DEPLOYMENT_REF, toJsonb(testSuite.getDeploymentRef()))
                 .set(TEST_SUITES.ENDPOINT_REF, toJsonb(testSuite.getEndpointRef()))
                 .set(TEST_SUITES.RESPONSE_COLUMNS, toJsonb(testSuite.getResponseColumns()))
@@ -285,7 +283,6 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                         testSuite.getDatasetId() != null
                                 ? testSuite.getDatasetId().toString()
                                 : null)
-                .set(TEST_SUITES.DISABLED_TEST_CASE_IDS, toJsonb(testSuite.getDisabledTestCaseIds()))
                 .set(TEST_SUITES.DEPLOYMENT_REF, toJsonb(testSuite.getDeploymentRef()))
                 .set(TEST_SUITES.ENDPOINT_REF, toJsonb(testSuite.getEndpointRef()))
                 .set(TEST_SUITES.RESPONSE_COLUMNS, toJsonb(testSuite.getResponseColumns()))
@@ -309,10 +306,9 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
     }
 
     @Override
-    public void updateDatasetId(UUID suiteId, UUID newDatasetId, String disabledTestCaseIds, long updatedAt) {
+    public void updateDatasetId(UUID suiteId, UUID newDatasetId, long updatedAt) {
         dsl.update(TEST_SUITES)
                 .set(TEST_SUITES.DATASET_ID, newDatasetId.toString())
-                .set(TEST_SUITES.DISABLED_TEST_CASE_IDS, toJsonb(disabledTestCaseIds))
                 .set(TEST_SUITES.VERSION, TEST_SUITES.VERSION.add(1))
                 .set(TEST_SUITES.UPDATED_AT_MS, updatedAt)
                 .where(TEST_SUITES.ID.eq(suiteId.toString()))

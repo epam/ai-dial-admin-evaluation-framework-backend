@@ -12,7 +12,6 @@ import com.epam.aidial.evaluation.data.db.model.TestCase;
 import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -123,7 +122,7 @@ class DatasetCloneServiceTest {
                 .thenReturn(List.of());
 
         UUID newDatasetId = UUID.randomUUID();
-        Map<UUID, UUID> idMap = datasetCloneService.cloneRowAndTestCases(
+        datasetCloneService.cloneRowAndTestCases(
                 source,
                 newDatasetId,
                 "Src (clone)",
@@ -137,9 +136,8 @@ class DatasetCloneServiceTest {
         assertThat(inserted).hasSize(1);
         TestCase clonedCase = inserted.get(0);
 
-        // New id, recorded in the returned map
+        // New id, distinct from the source test case's id
         assertThat(clonedCase.getId()).isNotEqualTo(oldTcId);
-        assertThat(idMap).containsEntry(oldTcId, clonedCase.getId());
         // Repointed to the new dataset
         assertThat(clonedCase.getDatasetId()).isEqualTo(newDatasetId);
         assertThat(clonedCase.getTestCaseName()).isEqualTo("case-1");

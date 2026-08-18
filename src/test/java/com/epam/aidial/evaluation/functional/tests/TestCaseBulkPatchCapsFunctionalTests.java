@@ -27,7 +27,7 @@ public abstract class TestCaseBulkPatchCapsFunctionalTests extends BaseTestCaseB
         TestSuiteResponseDto suite = createTestSuite();
         // Lowered cap is 3 (see PostgresFunctionalTests nested wrapper); seed 4 rows so an
         // empty-filter selector resolves to a set strictly larger than the cap.
-        seedManyTestCases(suite.getId(), 4, true);
+        seedManyTestCases(suite.getId(), 4);
 
         Map<String, Object> body = Map.of(
                 "bulkOperations",
@@ -46,7 +46,7 @@ public abstract class TestCaseBulkPatchCapsFunctionalTests extends BaseTestCaseB
     @DisplayName("Should return 400 when combined op count exceeds max-operations")
     void shouldReturn400WhenCombinedOpCountExceedsMaxOperations() {
         TestSuiteResponseDto suite = createTestSuite();
-        seedManyTestCases(suite.getId(), 1, true);
+        seedManyTestCases(suite.getId(), 1);
 
         // Lowered cap is 3 (see PostgresFunctionalTests nested wrapper). Send 4 ops total to trip it.
         List<Map<String, Object>> bulkOps = new ArrayList<>();

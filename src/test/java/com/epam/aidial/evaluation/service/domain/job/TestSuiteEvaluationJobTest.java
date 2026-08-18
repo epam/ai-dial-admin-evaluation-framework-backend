@@ -216,7 +216,6 @@ class TestSuiteEvaluationJobTest {
                     .id(suiteId)
                     .suiteType(SuiteType.DEPLOYMENT)
                     .datasetId(datasetId)
-                    .disabledTestCaseIds("[]")
                     .deploymentRef("{}")
                     .endpointRef("{}")
                     .requestTemplate("{}")
@@ -278,7 +277,6 @@ class TestSuiteEvaluationJobTest {
                     .id(suiteId)
                     .suiteType(SuiteType.DEPLOYMENT)
                     .datasetId(datasetId)
-                    .disabledTestCaseIds("[]")
                     .build();
 
             when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(liveSuite));
@@ -320,7 +318,6 @@ class TestSuiteEvaluationJobTest {
                     .id(suiteId)
                     .suiteType(SuiteType.DEPLOYMENT)
                     .datasetId(datasetId)
-                    .disabledTestCaseIds("[]")
                     .build();
             liveDataset = Dataset.builder().id(datasetId).build();
         }
@@ -346,7 +343,7 @@ class TestSuiteEvaluationJobTest {
             verify(repository).updateToCompleted(eq(runId), anyLong(), anyLong());
             verify(repository).updateSuiteSnapshot(eq(runId), any(), anyLong());
             verify(testCaseRunInputRepository, never()).insertBatch(any());
-            verify(runnableTestCaseSelector, never()).loadRunnablePage(any(), any(), any(), anyInt(), anyInt());
+            verify(runnableTestCaseSelector, never()).loadRunnablePage(any(), any(), anyInt(), anyInt());
             verify(repository, never()).updateNumberOfTestCases(any(), anyInt(), anyLong());
         }
 

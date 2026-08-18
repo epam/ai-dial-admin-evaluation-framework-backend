@@ -242,40 +242,6 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("snapshot excludes test cases listed in the suite's disabledTestCaseIds")
-    void snapshotExcludesDisabledTestCases() {
-        TestSuiteResponseDto suite = createTestSuiteWithTestCase("Snapshot Disabled Exclusion Suite");
-        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
-
-        // Seed an additional test case in the dataset, then add it to the suite's disabledTestCaseIds
-        ResponseEntity<TestCaseResponseDto> extra = restTemplate.postForEntity(
-                apiUrl("/datasets/" + datasetId + "/test-cases"),
-                jsonEntity(TestCaseRequestDto.builder()
-                        .testCaseName("To Be Disabled")
-                        .data(Map.of("query", "to be excluded"))
-                        .build()),
-                TestCaseResponseDto.class);
-        assertThat(extra.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(extra.getBody()).isNotNull();
-        UUID disabledId = extra.getBody().getId();
-        metaTestDataHelper.appendDisabledTestCaseIds(suite.getId(), List.of(disabledId));
-
-        mockDeploymentSuccess();
-        UUID runId = createRun(suite.getId());
-        TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 15);
-        assertThat(terminal.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
-
-        // The snapshot phase seeds test_case_run_inputs from the suite's (valid - disabled) cases.
-        // Total dataset test cases = 2, disabled = 1 → input rows = 1
-        var inputs = testCaseRunInputRepository.findByRunId(runId, 0, 100);
-        assertThat(inputs).hasSize(1);
-        // Sanity check: the row that did make it is the non-disabled case ("test query"), not "to be excluded"
-        assertThat(inputs.get(0).getTestCaseData()).contains("test query");
-        assertThat(inputs.get(0).getTestCaseData()).doesNotContain("to be excluded");
-        assertThat(terminal.getNumberOfTestCases()).isEqualTo(1);
-    }
-
-    @Test
     @DisplayName("snapshot honors the suite's testCaseFilter — only matching test cases are materialized")
     void snapshotHonorsTestCaseFilter() {
         TestSuiteResponseDto suite = createTestSuiteWithTestCase("Snapshot Filter Suite");

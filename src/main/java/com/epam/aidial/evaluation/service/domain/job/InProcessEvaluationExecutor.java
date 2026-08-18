@@ -96,11 +96,9 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
         }
         // Legacy fallback: page from live dataset test cases, wrap as TestCaseRunInput.
         // datasetId is sourced from the snapshot's datasetRef (always populated by resolveSnapshot
-        // under the version-2 snapshot model). Disabled-ids exclusion is intentionally empty here
-        // because the live suite's disabledTestCaseIds was not captured at run start for legacy runs;
-        // override fields are left null since per-test-case overrides no longer exist on the model.
-        List<TestCase> cases = testCaseRepository.findValidByDatasetIdExcludingIds(
-                context.getDatasetId(), List.of(), offset, PAGE_SIZE);
+        // under the version-2 snapshot model). Override fields are left null since per-test-case
+        // overrides no longer exist on the model.
+        List<TestCase> cases = testCaseRepository.findValidByDatasetId(context.getDatasetId(), offset, PAGE_SIZE);
         List<TestCaseRunInput> inputs = new ArrayList<>(cases.size());
         for (TestCase tc : cases) {
             inputs.add(TestCaseRunInput.builder()

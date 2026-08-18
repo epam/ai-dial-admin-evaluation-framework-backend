@@ -15,28 +15,18 @@ import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
 
-@Slf4j
 @Component
 @LogExecution
 @RequiredArgsConstructor
 public class TestSuiteMapper {
 
-    private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
-
     private final JsonbMapper jsonbMapper;
     private final ValidationWarningsSerializer warningsSerializer;
-    private final ObjectMapper objectMapper;
 
     public TestSuiteResponseDto toDto(TestSuite entity) {
         if (entity == null) {
@@ -60,7 +50,6 @@ public class TestSuiteMapper {
                 .description(entity.getDescription())
                 .suiteType(suiteType)
                 .datasetId(entity.getDatasetId())
-                .disabledTestCaseIds(deserializeDisabledIds(entity.getDisabledTestCaseIds()))
                 .deploymentRef(jsonbMapper.map(entity.getDeploymentRef()))
                 .endpointRef(endpointRef)
                 .responseColumns(responseColumns)
@@ -91,7 +80,6 @@ public class TestSuiteMapper {
                 .description(dto.getDescription())
                 .suiteType(suiteType)
                 .datasetId(dto.getDatasetId())
-                .disabledTestCaseIds(serializeDisabledIds(dto.getDisabledTestCaseIds()))
                 .deploymentRef(jsonbMapper.map(dto.getDeploymentRef()))
                 .endpointRef(jsonbMapper.map(dto.getEndpointRef()))
                 .responseColumns(jsonbMapper.mapResponseColumns(dto.getResponseColumns()))
@@ -116,7 +104,6 @@ public class TestSuiteMapper {
         entity.setName(dto.getName());
         entity.setDescription(dto.getDescription());
         entity.setDatasetId(dto.getDatasetId());
-        entity.setDisabledTestCaseIds(serializeDisabledIds(dto.getDisabledTestCaseIds()));
         entity.setDeploymentRef(jsonbMapper.map(dto.getDeploymentRef()));
         entity.setEndpointRef(jsonbMapper.map(dto.getEndpointRef()));
         entity.setResponseColumns(jsonbMapper.mapResponseColumns(dto.getResponseColumns()));
@@ -136,7 +123,7 @@ public class TestSuiteMapper {
      * fields ({@code inputBindings}, {@code requestTemplate}, {@code argumentTemplate}) are rewritten
      * from the source suite path to the new suite path so that the cloned suite points to the files
      * copied by {@code FileService.copyFilesBetweenSuites}. The clone inherits {@code datasetId}
-     * (unless overridden via {@code dto.datasetId}) and {@code disabledTestCaseIds} from the source.
+     * (unless overridden via {@code dto.datasetId}) from the source.
      * Test case rows are NOT cloned — they remain owned by the dataset; any file references inside
      * test-case data are left untouched by the suite-clone path.
      * isValid and validationWarnings are NOT set here — they are set by the synchronous validation step.
@@ -188,7 +175,6 @@ public class TestSuiteMapper {
                 .description(dto.getDescription() != null ? dto.getDescription() : source.getDescription())
                 .suiteType(suiteType)
                 .datasetId(datasetId)
-                .disabledTestCaseIds(source.getDisabledTestCaseIds())
                 .deploymentRef(deploymentRef)
                 .endpointRef(endpointRef)
                 .responseColumns(responseColumns)
@@ -219,7 +205,6 @@ public class TestSuiteMapper {
                 .description(entity.getDescription())
                 .suiteType(suiteType)
                 .datasetId(entity.getDatasetId())
-                .disabledTestCaseIds(deserializeDisabledIds(entity.getDisabledTestCaseIds()))
                 .deploymentRef(jsonbMapper.map(entity.getDeploymentRef()))
                 .endpointRef(jsonbMapper.mapEndpointContract(entity.getEndpointRef()))
                 .responseColumns(
@@ -238,79 +223,5 @@ public class TestSuiteMapper {
                 .overallScoreThreshold(entity.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();
-    }
-
-    /**
-     * Deserialises the JSONB-encoded array of stringified UUIDs into a typed list.
-     * Returns null when the column is null/blank so callers can distinguish "not set" from "empty".
-     * Returns an empty list (logged) on a malformed payload so a single corrupt row cannot brick the read path.
-     */
-    private List<UUID> deserializeDisabledIds(String json) {
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-        try {
-            List<String> raw = objectMapper.readValue(json, STRING_LIST_TYPE);
-            List<UUID> ids = new ArrayList<>(raw.size());
-            for (String s : raw) {
-                if (s == null || s.isBlank()) {
-                    continue;
-                }
-                try {
-                    ids.add(UUID.fromString(s));
-                } catch (IllegalArgumentException ex) {
-                    log.warn("Skipping malformed UUID in disabledTestCaseIds: {}", s, ex);
-                }
-            }
-            return ids;
-        } catch (JacksonException ex) {
-            log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
-            return List.of();
-        }
-    }
-
-    /**
-     * Remaps the JSONB-encoded {@code disabledTestCaseIds} array through an old → new test-case id
-     * map, preserving the stored representation. Used by the suite-clone flow when the source's test
-     * cases are re-keyed into a cloned dataset. Reuses the existing
-     * {@link #deserializeDisabledIds(String)} / {@link #serializeDisabledIds(List)} round-trip — ids
-     * with no mapping are dropped defensively (a clone cannot disable a test case it does not own).
-     * Returns the input unchanged when there is nothing to remap (null/blank).
-     */
-    public String remapDisabledIds(String json, Map<UUID, UUID> idMap) {
-        List<UUID> oldIds = deserializeDisabledIds(json);
-        if (oldIds == null || oldIds.isEmpty()) {
-            return json;
-        }
-        List<UUID> newIds = new ArrayList<>(oldIds.size());
-        for (UUID oldId : oldIds) {
-            UUID newId = idMap.get(oldId);
-            if (newId != null) {
-                newIds.add(newId);
-            }
-        }
-        return serializeDisabledIds(newIds);
-    }
-
-    /**
-     * Serialises a typed list of UUIDs to a JSONB-ready JSON array of stringified UUIDs.
-     * Returns {@code "[]"} for null/empty input so the DB column is always non-null
-     * (matches the DEFAULT defined in the V1.22 migration).
-     */
-    private String serializeDisabledIds(List<UUID> ids) {
-        if (ids == null || ids.isEmpty()) {
-            return "[]";
-        }
-        try {
-            List<String> raw = new ArrayList<>(ids.size());
-            for (UUID id : ids) {
-                if (id != null) {
-                    raw.add(id.toString());
-                }
-            }
-            return objectMapper.writeValueAsString(raw);
-        } catch (JacksonException ex) {
-            throw new IllegalStateException("Failed to serialize disabledTestCaseIds", ex);
-        }
     }
 }

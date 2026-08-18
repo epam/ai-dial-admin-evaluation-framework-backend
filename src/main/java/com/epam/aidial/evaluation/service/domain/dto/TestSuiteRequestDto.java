@@ -51,15 +51,6 @@ public class TestSuiteRequestDto {
     private UUID datasetId;
 
     @Valid
-    @Size(
-            max = ValidationConstants.MAX_DISABLED_TC_IDS,
-            message = "disabledTestCaseIds must not exceed " + ValidationConstants.MAX_DISABLED_TC_IDS + " entries")
-    @Schema(
-            description = "Subset of the dataset's test cases that this suite skips during evaluation runs. "
-                    + "Capped at " + ValidationConstants.MAX_DISABLED_TC_IDS + " entries.")
-    private List<UUID> disabledTestCaseIds;
-
-    @Valid
     private DeploymentReferenceDto deploymentRef;
 
     @Valid
@@ -123,7 +114,7 @@ public class TestSuiteRequestDto {
             description =
                     "Optional per-suite test-case filter, as a Structured Query DSL filter subtree "
                             + "(the `filter` of a `test_cases` query). Selects which of the bound dataset's test cases run: "
-                            + "combined (AND) with `is_valid` and `disabledTestCaseIds` at run-creation count and snapshot. "
+                            + "combined (AND) with `is_valid` at run-creation count and snapshot. "
                             + "References base columns and flattened `data::<field>` fields. Validated at write time against "
                             + "the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). Null = no filter.",
             example =

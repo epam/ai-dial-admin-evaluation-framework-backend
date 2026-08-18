@@ -14,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
-import picocli.CommandLine.Option;
 
 /**
  * Runs all test cases for each selected suite against a CLI-specified target deployment, writing
@@ -38,11 +37,8 @@ public class RunCommand implements Runnable {
     @Mixin
     private SuitesOption suitesOption;
 
-    @Option(
-            names = {"--deployment-id"},
-            required = true,
-            description = "Target deployment ID to send requests to (overrides the suite's recorded ref).")
-    private String deploymentId;
+    @Mixin
+    private DeploymentIdOption deploymentIdOption;
 
     private final FetchService fetchService;
     private final RunOrchestrationService runOrchestrationService;
@@ -51,12 +47,9 @@ public class RunCommand implements Runnable {
     @Override
     public void run() {
         final List<UUID> suites = suitesOption.resolve();
-        final DeploymentReferenceDto targetRef = DeploymentReferenceDto.builder()
-                .id(deploymentId)
-                .name(deploymentId)
-                .build();
+        final DeploymentReferenceDto targetRef = deploymentIdOption.resolve();
 
-        log.info("Running {} selected suite(s) against deployment '{}'", suites.size(), deploymentId);
+        log.info("Running {} selected suite(s)", suites.size());
 
         for (UUID sourceSuiteId : suites) {
             final SuiteFetchBundle bundle = fetchService.load(sourceSuiteId);

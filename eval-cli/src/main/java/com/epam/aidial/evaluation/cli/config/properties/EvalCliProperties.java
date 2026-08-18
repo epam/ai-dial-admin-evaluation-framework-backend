@@ -17,7 +17,7 @@ import org.springframework.validation.annotation.Validated;
  * <p>All defaults are defined in {@code application.yml}; no Java field-initializer defaults are used
  * per AGENTS.md convention. Suite selection and the clone suffix are deliberately NOT here: they are
  * required CLI options only ({@code --suites}/{@code --clone-suffix}, see {@code SuitesOption}/
- * {@code CloneSuffixOption}), consistent with {@code --deployment-id} having no config fallback either.
+ * {@code CloneSuffixOption}), with no configuration fallback.
  */
 @Getter
 @Setter

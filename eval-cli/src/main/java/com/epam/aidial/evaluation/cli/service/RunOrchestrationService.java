@@ -5,6 +5,7 @@ import com.epam.aidial.evaluation.cli.model.SuiteFetchBundle;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
@@ -42,14 +43,20 @@ public class RunOrchestrationService {
      * a CSV file at {@code <workDir>/<sourceSuiteId>-results.csv}.
      *
      * @param bundle              the suite fetch bundle containing suite config and test cases
-     * @param targetDeploymentRef the deployment reference to override the suite's source-side ref
+     * @param targetDeploymentRef the deployment reference to override the suite's source-side ref;
+     *                             {@code null} to fall back to the fetched suite's own recorded
+     *                             {@code deploymentRef}
      * @param workDir             the working directory where the results CSV is written
      * @return the {@link File} pointing to the produced results CSV
      * @throws IllegalStateException if the fetched suite's {@code endpointRef}/{@code requestTemplate}
-     *                                fails {@link SuiteContractValidator}
+     *                                fails {@link SuiteContractValidator}, or if {@code
+     *                                targetDeploymentRef} is {@code null} and the suite has no recorded
+     *                                {@code deploymentRef} either
      */
     public File run(SuiteFetchBundle bundle, DeploymentReferenceDto targetDeploymentRef, String workDir) {
         suiteContractValidator.validate(bundle.getSuite());
+        final DeploymentReferenceDto resolvedDeploymentRef =
+                resolveTargetDeploymentRef(bundle.getSuite(), targetDeploymentRef);
 
         final List<TestCaseResponseDto> testCases = bundle.getTestCases();
         log.info(
@@ -57,10 +64,10 @@ public class RunOrchestrationService {
                 bundle.getSuite().getName(),
                 bundle.getSourceSuiteId(),
                 testCases.size(),
-                targetDeploymentRef.getId());
+                resolvedDeploymentRef.getId());
 
         final EvaluationContext context =
-                evaluationContextFactory.create(bundle.getSuite(), testCases.size(), targetDeploymentRef);
+                evaluationContextFactory.create(bundle.getSuite(), testCases.size(), resolvedDeploymentRef);
 
         final List<TestCaseRunInput> inputs = mapInputs(testCases, context.getRunId());
         final Path csvPath = csvPath(workDir, bundle.getSourceSuiteId());
@@ -86,6 +93,26 @@ public class RunOrchestrationService {
 
         log.info("Run complete for suite {} — results at {}", bundle.getSourceSuiteId(), csvPath.toAbsolutePath());
         return csvPath.toFile();
+    }
+
+    /**
+     * Resolves the deployment reference to run against: the CLI-provided {@code cliTargetDeploymentRef}
+     * takes precedence when present; otherwise falls back to the suite's own recorded {@code
+     * deploymentRef} from the source EF.
+     *
+     * @throws IllegalStateException if neither is available
+     */
+    private DeploymentReferenceDto resolveTargetDeploymentRef(
+            TestSuiteResponseDto suite, DeploymentReferenceDto cliTargetDeploymentRef) {
+        if (cliTargetDeploymentRef != null) {
+            return cliTargetDeploymentRef;
+        }
+        final DeploymentReferenceDto suiteDeploymentRef = suite.getDeploymentRef();
+        if (suiteDeploymentRef == null || suiteDeploymentRef.getId() == null) {
+            throw new IllegalStateException("Suite " + suite.getId() + " ('" + suite.getName()
+                    + "') has no recorded deploymentRef and --deployment-id was not provided");
+        }
+        return suiteDeploymentRef;
     }
 
     private List<TestCaseRunInput> mapInputs(List<TestCaseResponseDto> testCases, UUID runId) {

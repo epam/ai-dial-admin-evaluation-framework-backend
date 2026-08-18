@@ -17,7 +17,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
-import picocli.CommandLine.Option;
 
 /**
  * Runs the full evaluation for each selected suite in sequence:
@@ -49,11 +48,8 @@ public class EvaluateCommand implements Runnable {
     @Mixin
     private CloneSuffixOption cloneSuffixOption;
 
-    @Option(
-            names = {"--deployment-id"},
-            required = true,
-            description = "Target deployment ID to send requests to (overrides the suite's recorded ref).")
-    private String deploymentId;
+    @Mixin
+    private DeploymentIdOption deploymentIdOption;
 
     private final CloneService cloneService;
     private final FetchService fetchService;
@@ -65,12 +61,9 @@ public class EvaluateCommand implements Runnable {
     public void run() {
         final List<UUID> suites = suitesOption.resolve();
         final String cloneSuffix = cloneSuffixOption.resolve();
-        final DeploymentReferenceDto targetRef = DeploymentReferenceDto.builder()
-                .id(deploymentId)
-                .name(deploymentId)
-                .build();
+        final DeploymentReferenceDto targetRef = deploymentIdOption.resolve();
 
-        log.info("Starting evaluation for {} selected suite(s) against deployment '{}'", suites.size(), deploymentId);
+        log.info("Starting evaluation for {} selected suite(s)", suites.size());
 
         for (UUID sourceSuiteId : suites) {
             evaluate(sourceSuiteId, targetRef, cloneSuffix);

@@ -99,6 +99,13 @@ jsonata:
   evaluation-timeout-ms: ${JSONATA_EVALUATION_TIMEOUT_MS:10000}
   max-recursion-depth: ${JSONATA_MAX_RECURSION_DEPTH:1000}
 
+# OpenTelemetry SDK configuration — disabled by default so a CLI run doesn't try to export
+# traces/metrics/logs to a local OTLP collector (evaluation-runner-core's opentelemetry-spring-boot-starter
+# enables the SDK by default otherwise, unlike the main app which sets this same override)
+otel:
+  sdk:
+    disabled: ${OTEL_SDK_DISABLED:true}
+
 # Disable actuator endpoints (not needed for a CLI)
 management:
   health:

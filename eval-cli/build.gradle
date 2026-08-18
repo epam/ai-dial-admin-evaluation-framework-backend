@@ -103,6 +103,12 @@ dependencies {
     annotationProcessor "org.mapstruct:mapstruct-processor:1.6.3"
     annotationProcessor "org.projectlombok:lombok:1.18.46"
 
+    constraints {
+        checkstyle ('org.codehaus.plexus:plexus-utils:3.6.1') {
+            because("CVE-2025-67030: directory traversal vulnerability in extractFile method")
+        }
+    }
+
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'

@@ -13,10 +13,11 @@ import org.springframework.stereotype.Component;
  * Pre-flight validation of a fetched suite's {@code endpointRef}/{@code requestTemplate} before
  * running it against the target deployment.
  *
- * <p>eval-cli only ever receives the target deployment as a CLI parameter — the source suite's config
- * carries no reference to it — so there is no live target-deployment contract to cross-check against
- * (DIAL Core's {@code GET /v1/deployments} exposes only a coarse {@code interfaces} category, not an
- * HTTP method/path/schema). This validates internal consistency of the fetched suite config only,
+ * <p>The target deployment is either a CLI-provided override or a fallback to the fetched suite's own
+ * recorded {@code deploymentRef} (resolved in {@link RunOrchestrationService}, not here) — either way
+ * there is no live target-deployment contract to cross-check against (DIAL Core's {@code GET
+ * /v1/deployments} exposes only a coarse {@code interfaces} category, not an HTTP method/path/schema).
+ * This validates internal consistency of the fetched suite config only,
  * mirroring the checks the source EF's {@code SuiteValidationService.validateDeploymentSuite} performs
  * at suite save time — catching a suite left in an invalid state on the source EF, or drift between
  * fetch time and run time, before it results in a confusing failure mid-run (e.g. a null HTTP method).

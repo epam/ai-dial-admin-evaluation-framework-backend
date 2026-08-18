@@ -54,30 +54,17 @@ public abstract class BaseTestCaseBulkPatchFunctionalTests extends BaseFunctiona
     }
 
     protected TestCaseResponseDto createTestCase(UUID testSuiteId, String name) {
-        return createTestCase(testSuiteId, name, true);
-    }
-
-    /**
-     * Per-case {@code enabled} is gone (replaced by suite-level {@code disabledTestCaseIds}). When
-     * {@code enabled=false}, the caller wants the new case to appear in the suite's disabled list,
-     * so the helper appends the created id to {@code disabled_test_case_ids} after creation.
-     */
-    protected TestCaseResponseDto createTestCase(UUID testSuiteId, String name, boolean enabled) {
         UUID datasetId = metaTestDataHelper.getDatasetId(testSuiteId);
         TestCaseRequestDto req =
                 TestCaseRequestDto.builder().testCaseName(name).data(Map.of()).build();
         ResponseEntity<TestCaseResponseDto> r = restTemplate.postForEntity(
                 apiUrl("/datasets/" + datasetId + "/test-cases"), jsonEntity(req), TestCaseResponseDto.class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        TestCaseResponseDto created = r.getBody();
-        if (!enabled) {
-            metaTestDataHelper.appendDisabledTestCaseIds(testSuiteId, List.of(created.getId()));
-        }
-        return created;
+        return r.getBody();
     }
 
-    protected List<UUID> seedManyTestCases(UUID testSuiteId, int count, boolean enabled) {
-        return metaTestDataHelper.seedManyTestCases(testSuiteId, count, enabled);
+    protected List<UUID> seedManyTestCases(UUID testSuiteId, int count) {
+        return metaTestDataHelper.seedManyTestCases(testSuiteId, count);
     }
 
     protected String bulkUrl(UUID testSuiteId) {

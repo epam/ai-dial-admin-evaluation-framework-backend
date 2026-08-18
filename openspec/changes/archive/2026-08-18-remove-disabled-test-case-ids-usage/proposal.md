@@ -20,8 +20,9 @@ provably disagree.
 ### Goals
 
 - Run selection is defined by exactly one rule — `is_valid = TRUE AND testCaseFilter` — identical at the
-  run-creation zero-runnable guard, at snapshot materialization, and on the query-DSL preview surface the FE
-  counts against.
+  run-creation zero-runnable guard and at snapshot materialization, both reached through
+  `RunnableTestCaseSelector`. (The raw `test_cases` query-DSL surface the FE counts against still applies
+  neither `is_valid` nor the ALL-turns-match quantifier; narrowing that gap is a separate follow-up.)
 - Every code-level trace of `disabledTestCaseIds` is gone: model, mappers, request/response DTOs, selector
   and repository signatures, clone/detach remapping, validation constant, tests, docs.
 
@@ -156,8 +157,10 @@ None.
 ### Docs
 
 `docs/patterns/dataset-entity.md` (the field is one of its three headline concepts),
-`docs/database-schema.md` (mark the column as retained-but-unused by code, removal pending),
-`AGENTS.md` (the Unique Patterns row for `Dataset Entity` names `disabledTestCaseIds` in its "why it
+`docs/patterns/test-cases-query-entity.md` (describes run-time selection as `is_valid AND NOT excluded AND
+filter`), `docs/patterns/suite-validity-and-run-guards.md` (names the deleted `RunnableTestCaseCounter`),
+`docs/patterns/README.md`, `docs/database-schema.md` (mark the column as retained-but-unused by code,
+removal pending), `AGENTS.md` (the Unique Patterns row for `Dataset Entity` names `disabledTestCaseIds` in its "why it
 matters" cell), and `openspec/specs/README.md` (four capability summaries describe the field). Two
 non-requirement spec passages that delta specs cannot carry — the `test-suites` Key Terms bullet and the
 `test-cases` Purpose paragraph — are edited during `/opsx:sync`. No `docs/configuration.md` change (no
@@ -197,9 +200,10 @@ That change also removes the field from the public `test_suites` query entity sc
 ## Test plan
 
 1. New functional regression tests above fail on `development` and pass after the change.
-2. `./gradlew test --tests "*TestSuiteRunFunctionalTests*" --tests "*SuiteSnapshotFunctionalTests*"
-   --tests "*TestSuiteCloneFunctionalTests*" --tests "*DatasetDetachFunctionalTests*"
-   --tests "*TestSuiteDatasetFunctionalTests*"` — end-to-end run creation, snapshot, clone, detach.
+2. `./gradlew :test --tests "*TestSuiteRunTests*" --tests "*SuiteSnapshotTests*" --tests "*TestSuiteCloneTests*"
+   --tests "*DatasetDetachTests*" --tests "*TestSuiteDatasetTests*"` — end-to-end run creation, snapshot, clone, detach.
+   (Functional test classes are abstract and execute as `PostgresFunctionalTests$<Nested>`, so filters name the
+   nested class and the task is scoped to `:test`.)
 3. `./gradlew :evaluation-runner-core:test :eval-cli:test` — the response DTO lives in the runner module and
    is consumed by the CLI.
 4. `./gradlew clean build` — unit + Testcontainers suite, Checkstyle, Spotless, ArchUnit

@@ -6,7 +6,7 @@ This spec describes TestSuite authoring and management via the backend REST API.
 Status: **Planned** (dataset-rooted re-scoping). CRUD, deploymentRef, endpointRef, requestTemplate, inputBindings, cascade delete remain in place. `testCaseSchema` and TestCases are managed under `Dataset` (see `specs/datasets/spec.md` and `specs/test-cases/spec.md`).
 
 ## Key Terms
-- **TestSuite**: A named container for evaluation execution configuration. Has a `suiteType` discriminator (`DEPLOYMENT` or `MCP_TOOL`). DEPLOYMENT suites have `deploymentRef`, `endpointRef`, `requestTemplate`, and `inputBindings`. MCP_TOOL suites have `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, and `inputBindings`. Every suite references one `Dataset` via a mandatory `datasetId` (the dataset owns `testCaseSchema` and the test-case rows). Each suite may carry a `disabledTestCaseIds` list to opt out of specific test cases at run time.
+- **TestSuite**: A named container for evaluation execution configuration. Has a `suiteType` discriminator (`DEPLOYMENT` or `MCP_TOOL`). DEPLOYMENT suites have `deploymentRef`, `endpointRef`, `requestTemplate`, and `inputBindings`. MCP_TOOL suites have `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, and `inputBindings`. Every suite references one `Dataset` via a mandatory `datasetId` (the dataset owns `testCaseSchema` and the test-case rows). A suite narrows which of its dataset's test cases run through the optional `testCaseFilter` (see `suite-test-case-filter`); there is no per-suite exclude list.
 
 ## Requirements
 
@@ -122,34 +122,6 @@ Status: **Planned**
 - **WHEN** any step of the PRIVATE-cascade delete path fails (dataset delete, test-case cascade, or any suite-owned cascade)
 - **THEN** the entire transaction SHALL roll back; the suite, its bound PRIVATE dataset, and all cascaded children SHALL remain unchanged
 
-### Requirement: Per-suite `disabledTestCaseIds`
-TestSuite SHALL carry a `disabledTestCaseIds` field — a list of UUIDs (JSONB array in storage, list of strings on the wire) defaulting to `[]` — naming test cases owned by the suite's dataset that SHALL NOT participate in runs of this suite. The list is denormalized on the suite (no junction table at this stage). Stale IDs in the list (referring to deleted test cases) are tolerated: they are naturally ignored by set-membership semantics in the snapshot-phase query and do not cause errors. The list is read by the snapshot-phase query (`findValidByDatasetIdExcludingIds`) to exclude rows.
-Status: **Planned**
-
-#### Scenario: New suite starts with empty disable list
-- **WHEN** client creates a TestSuite without `disabledTestCaseIds`
-- **THEN** system SHALL persist `disabledTestCaseIds = []`
-
-#### Scenario: Suite create/update accepts disabledTestCaseIds
-- **WHEN** client creates or updates a TestSuite with `disabledTestCaseIds: ["uuid-1", "uuid-2"]`
-- **THEN** system SHALL persist the list verbatim; no referential check against the dataset's test cases is performed (stale ids are tolerated)
-
-#### Scenario: Disabled test cases excluded from runs
-- **WHEN** a run is started for a suite whose `disabledTestCaseIds` contains a test case present in the suite's dataset
-- **THEN** that test case SHALL NOT appear in `test_case_run_inputs` for the run; `numberOfTestCases` SHALL reflect only included cases (see `suite-run-snapshot` spec)
-
-#### Scenario: Disabled list size cap
-- **WHEN** client sends `disabledTestCaseIds` larger than `ValidationConstants.MAX_DISABLED_TC_IDS` (fixed at 10000)
-- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
-
-#### Scenario: Non-UUID entries rejected
-- **WHEN** client sends `disabledTestCaseIds` with an entry that is not a valid UUID string
-- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
-
-#### Scenario: Stale id silently tolerated
-- **WHEN** `disabledTestCaseIds` contains an id for a test case that was deleted from the dataset (or never existed)
-- **THEN** the run snapshot phase SHALL produce a coherent set of inputs ignoring the stale id; no error is raised
-
 ### Requirement: Get TestSuite by id
 The service SHALL allow retrieving a TestSuite by its id.
 Status: **Implemented**
@@ -163,12 +135,12 @@ Status: **Implemented**
 - **THEN** system SHALL respond with HTTP 404
 
 ### Requirement: Create a TestSuite
-The service SHALL allow creating a new TestSuite. The request body SHALL accept `suiteType` (optional, defaults to `DEPLOYMENT`), `datasetId` (required — FK to `datasets.id`), and `disabledTestCaseIds` (optional, default `[]`). For `DEPLOYMENT` suites: `requestTemplate`, `inputBindings`, `deploymentRef`, `endpointRef` (existing behavior — `deploymentRef` hard-required, `endpointRef`/`requestTemplate` soft-validated). For `MCP_TOOL` suites: `inputBindings`, `mcpDeploymentRef` (hard-required), `toolRef` (hard-required), `argumentTemplate` (soft-validated — null produces warning). `testCaseSchema` SHALL NOT appear on the suite request — it lives on the referenced dataset. The system SHALL perform type-specific validation and suite-level soft validation, sourcing the dataset's schema via `DatasetSchemaProvider` for binding cross-checks. Additionally, the system SHALL support cloning an existing suite via `POST /api/v1/test-suites/{sourceId}/clone` (see `test-suite-clone` spec).
+The service SHALL allow creating a new TestSuite. The request body SHALL accept `suiteType` (optional, defaults to `DEPLOYMENT`) and `datasetId` (required — FK to `datasets.id`). For `DEPLOYMENT` suites: `requestTemplate`, `inputBindings`, `deploymentRef`, `endpointRef` (existing behavior — `deploymentRef` hard-required, `endpointRef`/`requestTemplate` soft-validated). For `MCP_TOOL` suites: `inputBindings`, `mcpDeploymentRef` (hard-required), `toolRef` (hard-required), `argumentTemplate` (soft-validated — null produces warning). `testCaseSchema` SHALL NOT appear on the suite request — it lives on the referenced dataset. `disabledTestCaseIds` SHALL NOT appear on the suite request — the runnable subset is narrowed by `testCaseFilter` (see `suite-test-case-filter`). The system SHALL perform type-specific validation and suite-level soft validation, sourcing the dataset's schema via `DatasetSchemaProvider` for binding cross-checks. Additionally, the system SHALL support cloning an existing suite via `POST /api/v1/test-suites/{sourceId}/clone` (see `test-suite-clone` spec).
 Status: **Planned**
 
 #### Scenario: Valid DEPLOYMENT payload
 - **WHEN** client calls `POST /api/v1/test-suites` with a valid body including `datasetId`, `deploymentRef`, `requestTemplate`, and `inputBindings` (see "Type-specific field validation" requirement for `deploymentRef` hard-requirement and `endpointRef`/`requestTemplate` soft-validation rules)
-- **THEN** system SHALL create a new TestSuite with `suiteType = DEPLOYMENT`, perform suite-level soft validation against the dataset's schema, and return the created entity including `isValid`, `validationWarnings`, and `disabledTestCaseIds = []`
+- **THEN** system SHALL create a new TestSuite with `suiteType = DEPLOYMENT`, perform suite-level soft validation against the dataset's schema, and return the created entity including `isValid` and `validationWarnings`
 
 #### Scenario: Valid MCP_TOOL payload
 - **WHEN** client calls `POST /api/v1/test-suites` with `"suiteType": "MCP_TOOL"`, valid `datasetId`, `mcpDeploymentRef`, `toolRef`, and `inputBindings`
@@ -177,6 +149,10 @@ Status: **Planned**
 #### Scenario: testCaseSchema in body is rejected or ignored
 - **WHEN** client sends a create body containing a `testCaseSchema` field
 - **THEN** system SHALL ignore the field (per Jackson default) or respond with HTTP 400 if strict-binding is enabled; in either case the field SHALL NOT influence the persisted suite (schema is owned by the dataset)
+
+#### Scenario: disabledTestCaseIds in body is ignored
+- **WHEN** client sends a create or update body containing a `disabledTestCaseIds` field
+- **THEN** system SHALL ignore the unknown field (unknown-property failure is disabled) and SHALL respond with the normal success status; the field SHALL NOT appear in the response and SHALL NOT influence which test cases the suite runs
 
 #### Scenario: CreatedBy attribution
 - **WHEN** `config.rest.security.mode=oidc` and an authenticated client creates a TestSuite
@@ -341,7 +317,7 @@ Status: **Implemented**
 - **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a warning ("urlTemplate is required for request assembly") — same as when `requestTemplate` is non-null but `urlTemplate` is null
 
 #### Scenario: Bound suite with no test cases is still config-valid
-- **WHEN** a bound suite's configuration is valid but the referenced dataset has no test cases, or all are invalid, or all are excluded by `disabledTestCaseIds`
+- **WHEN** a bound suite's configuration is valid but the referenced dataset has no test cases, or all are invalid, or none match the suite's `testCaseFilter`
 - **THEN** `isValid` SHALL be `true` and `validationWarnings` SHALL be empty (test-case presence is not a suite-validity concern; the run path enforces it separately)
 
 #### Scenario: Unbound suite is not subject to the runnable-test-case rule
@@ -662,6 +638,7 @@ Status: **Implemented**
 - Modified mapper: `TestSuiteMapper` — map new fields
 - Modified repository: `PostgresTestSuiteRepository` — include new columns in SELECT/INSERT/UPDATE
 - Modified service: `TestSuiteService` — type-specific validation and field handling
+- Removed field: `disabledTestCaseIds` is gone from `TestSuiteRequestDto`, `runner/dto/TestSuiteResponseDto`, `data/db/model/TestSuite`, every mapping site in `TestSuiteMapper` (`serializeDisabledIds` / `deserializeDisabledIds` / `remapDisabledIds` deleted), and `ValidationConstants.MAX_DISABLED_TC_IDS`. The `test_suites.disabled_test_case_ids` column is intentionally retained but unread and unwritten — `TestSuiteRecordMapper` no longer maps it and `PostgresTestSuiteRepository` no longer sets it, so inserts fall back to the column's `DEFAULT '[]'::jsonb`. Dropping the column is a follow-up change.
 - FilterWhitelists: `TEST_SUITES` — `suiteType` (EQ, IN), `id` (EQ, IN), `description` (CO), `updatedAt` (GT, GTE, LT, LTE), plus existing `name`, `createdBy`, `createdAt`
 - `overallScore` (per-suite): DTO fields `TestSuiteRequestDto.overallScore` / `TestSuiteResponseDto.overallScore` (`Map<String, Object>`), per the JSONB-as-object convention. Conversion via `JsonbMapper.mapOverallScore(Map)` (write) / `mapOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` (clone already preserves it via `toCloneEntity`). Column pre-exists: `V1.23__AddOverallScoreToTestSuites.sql` (no new migration).
 - `testCaseFilter` (per-suite): DTO fields `TestSuiteRequestDto.testCaseFilter` / `TestSuiteResponseDto.testCaseFilter` (`Map<String, Object>`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseFilter`. Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` / `toRequestDto` / `toCloneEntity`. New column: `V1.24__AddTestCaseFilterToTestSuites.sql` (`test_case_filter JSONB`), then `./gradlew generateJooq`. Write-time validation delegates to `RunnableTestCaseSelector.validateFilter(datasetId, filterJson)` from `TestSuiteService` (see `suite-test-case-filter`).

@@ -323,15 +323,14 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     }
 
     @Override
-    public List<TestCase> findValidByDatasetIdExcludingIds(
-            UUID datasetId, Collection<UUID> excludedIds, int offset, int limit) {
-        return findValidByDatasetIdExcludingIdsMatching(datasetId, excludedIds, null, offset, limit);
+    public List<TestCase> findValidByDatasetId(UUID datasetId, int offset, int limit) {
+        return findValidByDatasetIdMatching(datasetId, null, offset, limit);
     }
 
     @Override
-    public List<TestCase> findValidByDatasetIdExcludingIdsMatching(
-            UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition, int offset, int limit) {
-        Condition combined = withExtra(validNotExcludedCondition(datasetId, excludedIds), extraCondition);
+    public List<TestCase> findValidByDatasetIdMatching(
+            UUID datasetId, Condition extraCondition, int offset, int limit) {
+        Condition combined = withExtra(validCondition(datasetId), extraCondition);
         return dsl.selectFrom(TEST_CASES)
                 .where(combined)
                 .orderBy(TEST_CASES.CREATED_AT_MS.asc(), TEST_CASES.ID.asc())
@@ -341,16 +340,15 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     }
 
     @Override
-    public long countValidByDatasetIdExcludingIds(UUID datasetId, Collection<UUID> excludedIds) {
-        return countValidByDatasetIdExcludingIdsMatching(datasetId, excludedIds, null);
+    public long countValidByDatasetId(UUID datasetId) {
+        return countValidByDatasetIdMatching(datasetId, null);
     }
 
     @Override
-    public long countValidByDatasetIdExcludingIdsMatching(
-            UUID datasetId, Collection<UUID> excludedIds, Condition extraCondition) {
+    public long countValidByDatasetIdMatching(UUID datasetId, Condition extraCondition) {
         Long count = dsl.selectCount()
                 .from(TEST_CASES)
-                .where(withExtra(validNotExcludedCondition(datasetId, excludedIds), extraCondition))
+                .where(withExtra(validCondition(datasetId), extraCondition))
                 .fetchOne(0, Long.class);
         return count != null ? count : 0L;
     }
@@ -359,21 +357,9 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
         return extraCondition == null ? base : base.and(extraCondition);
     }
 
-    /**
-     * Builds the snapshot-phase predicate {@code dataset_id = ? AND is_valid = TRUE AND NOT (id = ANY(?::text[]))}.
-     * The excluded-id collection is bound as a single Postgres text array parameter so the planner can
-     * keep using index seeks even when the suite's disabledTestCaseIds list approaches its cap; inlining
-     * a SQL {@code IN (...)} literal would blow past the statement-parameter limit and churn the plan
-     * cache. Skips the array predicate entirely when {@code excludedIds} is empty.
-     */
-    private static Condition validNotExcludedCondition(UUID datasetId, Collection<UUID> excludedIds) {
-        Condition base = TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.IS_VALID.eq(true));
-        if (excludedIds == null || excludedIds.isEmpty()) {
-            return base;
-        }
-        String[] excludedStrings = excludedIds.stream().map(UUID::toString).toArray(String[]::new);
-        Field<String[]> excludedArray = DSL.array(excludedStrings);
-        return base.and(DSL.condition("NOT (test_cases.id = ANY({0}::text[]))", excludedArray));
+    /** Builds the snapshot-phase predicate {@code dataset_id = ? AND is_valid = TRUE}. */
+    private static Condition validCondition(UUID datasetId) {
+        return TEST_CASES.DATASET_ID.eq(datasetId.toString()).and(TEST_CASES.IS_VALID.eq(true));
     }
 
     @Override

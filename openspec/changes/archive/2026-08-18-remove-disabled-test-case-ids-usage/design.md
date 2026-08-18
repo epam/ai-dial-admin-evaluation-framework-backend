@@ -23,7 +23,8 @@ See proposal.md — Why. The mechanics that shape this design:
 
 **Goals:**
 - One selection rule (`is_valid AND testCaseFilter`) reachable from one code path, so the run-creation
-  count, the snapshot phase, and the query-DSL preview surface cannot diverge again.
+  count and the snapshot phase cannot diverge from each other again. (The raw `test_cases` query-DSL surface
+  applies neither `is_valid` nor the ALL-turns-match quantifier and is out of scope here — see Risks.)
 - Remove the mechanism, not just its current caller — no dormant parameters or helpers that a future change
   could re-wire.
 - Keep the schema untouched so this ships without a migration, and keep the DB divergence (column present,
@@ -117,6 +118,11 @@ one test that would fail if someone reintroduced the read.
   `DEFAULT '[]'::jsonb`, suite inserts would fail `NOT NULL`. Mitigated: the column is `NOT NULL DEFAULT`
   today, functional create/clone tests exercise both insert paths, and the follow-up drops the column
   entirely.
+- **UI-count vs run-count divergence is narrowed, not closed** → this change makes the run-creation count
+  and the snapshot agree, but the FE's preview path (`POST /api/v1/queries/execute` on `test_cases`) applies
+  neither `is_valid` nor the ALL-turns-match quantifier, so an invalid or partially-matching case can still
+  be previewed and not run. Out of scope here (no code in this change touches that resolver); worth its own
+  issue alongside the column drop.
 - **Larger runs for affected suites** → intended correction; see proposal.md — Risks.
 - **Three deserialize helpers deleted at once** → any missed caller is a compile error, not a runtime
   surprise, because the model field disappears with them.

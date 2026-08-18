@@ -10,7 +10,6 @@ import com.epam.aidial.evaluation.experimental.query.service.translate.FilterTra
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,7 +32,7 @@ import tools.jackson.databind.node.ObjectNode;
  * ({@link FilterTranslator} + {@link TestCaseFieldBindingsBuilder}), then delegates the actual paged
  * SELECT / count to {@link TestCaseRepository} so all {@code test_cases} SQL stays in the data layer
  * and runs inside the caller's ambient transaction. A {@code null}/blank filter short-circuits to the
- * validity + exclusion predicate (behavior identical to the pre-filter snapshot).
+ * validity predicate (behavior identical to the pre-filter snapshot).
  */
 @Slf4j
 @Component
@@ -51,21 +50,19 @@ public class QueryDslRunnableTestCaseSelector implements RunnableTestCaseSelecto
     private final ObjectMapper objectMapper;
 
     @Override
-    public long countRunnable(UUID datasetId, String filterJson, Collection<UUID> excludedIds) {
+    public long countRunnable(UUID datasetId, String filterJson) {
         final Condition filter = compile(datasetId, filterJson);
         return filter == null
-                ? testCaseRepository.countValidByDatasetIdExcludingIds(datasetId, excludedIds)
-                : testCaseRepository.countValidByDatasetIdExcludingIdsMatching(datasetId, excludedIds, filter);
+                ? testCaseRepository.countValidByDatasetId(datasetId)
+                : testCaseRepository.countValidByDatasetIdMatching(datasetId, filter);
     }
 
     @Override
-    public List<TestCase> loadRunnablePage(
-            UUID datasetId, String filterJson, Collection<UUID> excludedIds, int offset, int limit) {
+    public List<TestCase> loadRunnablePage(UUID datasetId, String filterJson, int offset, int limit) {
         final Condition filter = compile(datasetId, filterJson);
         return filter == null
-                ? testCaseRepository.findValidByDatasetIdExcludingIds(datasetId, excludedIds, offset, limit)
-                : testCaseRepository.findValidByDatasetIdExcludingIdsMatching(
-                        datasetId, excludedIds, filter, offset, limit);
+                ? testCaseRepository.findValidByDatasetId(datasetId, offset, limit)
+                : testCaseRepository.findValidByDatasetIdMatching(datasetId, filter, offset, limit);
     }
 
     @Override

@@ -45,7 +45,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -260,15 +259,13 @@ public class TestSuiteEvaluationJob {
                 return null;
             }
 
-            List<UUID> disabledIds = deserializeDisabledIds(suite.getDisabledTestCaseIds());
-
             List<TestCaseRunInput> batch = new ArrayList<>();
             int position = 0;
             int offset = 0;
             List<TestCase> page;
             do {
                 page = runnableTestCaseSelector.loadRunnablePage(
-                        suite.getDatasetId(), suite.getTestCaseFilter(), disabledIds, offset, SNAPSHOT_PAGE_SIZE);
+                        suite.getDatasetId(), suite.getTestCaseFilter(), offset, SNAPSHOT_PAGE_SIZE);
                 for (TestCase tc : page) {
                     batch.add(TestCaseRunInput.builder()
                             .runId(runId)
@@ -291,35 +288,6 @@ public class TestSuiteEvaluationJob {
             log.info("Created suite snapshot for run {}: {} test case input(s)", runId, totalInputs);
             return null;
         });
-    }
-
-    /**
-     * Deserialises {@code TestSuite.disabledTestCaseIds} (JSONB array of stringified UUIDs) into
-     * a typed list. Returns an empty list on null/blank or malformed payloads so the snapshot
-     * still proceeds (a single corrupt row must not brick run start).
-     */
-    private List<UUID> deserializeDisabledIds(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            List<String> raw = objectMapper.readValue(json, new TypeReference<>() {});
-            List<UUID> ids = new ArrayList<>(raw.size());
-            for (String s : raw) {
-                if (s == null || s.isBlank()) {
-                    continue;
-                }
-                try {
-                    ids.add(UUID.fromString(s));
-                } catch (IllegalArgumentException ex) {
-                    log.warn("Skipping malformed UUID in disabledTestCaseIds: {}", s, ex);
-                }
-            }
-            return ids;
-        } catch (JacksonException ex) {
-            log.warn("Failed to deserialize disabledTestCaseIds JSON: {}", ex.getMessage(), ex);
-            return List.of();
-        }
     }
 
     private String resolveSnapshotErrorCode(Exception e) {

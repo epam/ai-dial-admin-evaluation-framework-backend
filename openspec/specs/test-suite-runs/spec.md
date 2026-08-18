@@ -15,7 +15,7 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Trigger a test suite run
-The service SHALL provide `POST /api/v1/test-suites/{testSuiteId}/runs` to create and trigger a new test suite run. The endpoint SHALL validate the request, verify the suite is bound to a dataset, persist a run record with status PENDING (including `testRunName` and `numberOfTestCases` snapshot), dispatch an async job, and return the run details immediately (without waiting for job completion). The unbound-suite guard (`datasetId IS NULL`) SHALL run before the `valid = false` check, so unbound suites SHALL surface as HTTP 409 with error code `SUITE_HAS_NO_DATASET` regardless of their validation state. An additional **run-time presence check** SHALL be performed after the `valid = false` guard: the service SHALL count the runnable test cases for the bound dataset — those that are valid, excluded neither by the suite's `disabledTestCaseIds` nor (when set) by the suite's `testCaseFilter` — and if the count is zero, SHALL respond with HTTP 409 `INVALID_OPERATION` with message "Suite has no valid and enabled test cases". No run record SHALL be persisted and no async job SHALL be dispatched when this check fails.
+The service SHALL provide `POST /api/v1/test-suites/{testSuiteId}/runs` to create and trigger a new test suite run. The endpoint SHALL validate the request, verify the suite is bound to a dataset, persist a run record with status PENDING (including `testRunName` and `numberOfTestCases` snapshot), dispatch an async job, and return the run details immediately (without waiting for job completion). The unbound-suite guard (`datasetId IS NULL`) SHALL run before the `valid = false` check, so unbound suites SHALL surface as HTTP 409 with error code `SUITE_HAS_NO_DATASET` regardless of their validation state. An additional **run-time presence check** SHALL be performed after the `valid = false` guard: the service SHALL count the runnable test cases for the bound dataset — those that are valid and (when the suite has a `testCaseFilter`) match that filter — and if the count is zero, SHALL respond with HTTP 409 `INVALID_OPERATION` with message "Suite has no valid and enabled test cases". No run record SHALL be persisted and no async job SHALL be dispatched when this check fails. The count SHALL NOT consider any other exclusion source; `test_suites.disabled_test_case_ids` is not read.
 
 Guard order:
 1. Suite not found → 404 `NOT_FOUND`
@@ -28,7 +28,7 @@ Status: **Implemented**
 
 #### Scenario: Successful run trigger
 - **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` with a valid `RunConfigDto` body and the test suite exists and is bound to a dataset
-- **THEN** system SHALL create a `test_suite_runs` record with status `PENDING`, populate `testRunName` (from config or auto-generated), snapshot `numberOfTestCases` from the bound dataset's runnable test case count (valid, not excluded by `disabledTestCaseIds`, and matching `testCaseFilter` when set), dispatch an async evaluation job on the dedicated executor, and return HTTP 202 Accepted with the `TestSuiteRunResponseDto`
+- **THEN** system SHALL create a `test_suite_runs` record with status `PENDING`, populate `testRunName` (from config or auto-generated), snapshot `numberOfTestCases` from the bound dataset's runnable test case count (valid, and matching `testCaseFilter` when set), dispatch an async evaluation job on the dedicated executor, and return HTTP 202 Accepted with the `TestSuiteRunResponseDto`
 
 #### Scenario: Test suite not found
 - **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` with a non-existent `testSuiteId`
@@ -55,11 +55,16 @@ Status: **Implemented**
 - **THEN** system SHALL respond with HTTP 409 Conflict and error code `INVALID_OPERATION` with a message indicating the test suite is not in a valid state (this check applies only to suites that pass the `SUITE_HAS_NO_DATASET` guard)
 
 #### Scenario: Bound suite with no runnable test cases rejected
-- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` for a config-valid, bound suite whose dataset has zero runnable test cases — because none are valid, all valid ones are in `disabledTestCaseIds`, or none match the suite's `testCaseFilter`
+- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` for a config-valid, bound suite whose dataset has zero runnable test cases — because none are valid, or none match the suite's `testCaseFilter`
 - **THEN** system SHALL respond with HTTP 409 Conflict and error code `INVALID_OPERATION` with message "Suite has no valid and enabled test cases"; no run record SHALL be persisted and no async job SHALL be dispatched
 
+#### Scenario: Runnable count ignores legacy stored exclusions
+- **WHEN** a config-valid, bound suite carries a non-empty `test_suites.disabled_test_case_ids` value stored by an earlier version of the product
+- **THEN** the runnable count and the persisted `numberOfTestCases` SHALL equal the number of valid, `testCaseFilter`-matching test cases in the dataset, as if the stored value were empty
+- **AND** a `testCaseFilter` matching only test cases named in that stored value SHALL still produce a successful run (no 409)
+
 #### Scenario: Runnable count honors testCaseFilter
-- **WHEN** a config-valid, bound suite has valid, non-excluded test cases but its `testCaseFilter` matches a non-empty subset of them
+- **WHEN** a config-valid, bound suite has valid test cases but its `testCaseFilter` matches a non-empty subset of them
 - **THEN** the zero-runnable guard SHALL pass and the persisted `numberOfTestCases` SHALL equal the count of the filter-matching subset
 
 #### Scenario: Executor rejects job submission
@@ -529,19 +534,19 @@ Status: **Implemented**
 - **THEN** system SHALL allow both (uniqueness is per test suite, not global)
 
 ### Requirement: Number of test cases snapshot
-When a run is created, the service sets a preliminary `numberOfTestCases` from the suite's enabled+valid count. This value is **finalized at the snapshot phase** (not immutable at creation): the snapshot phase counts inserted `test_case_run_inputs` rows and updates `number_of_test_cases` to that exact count before the run transitions to RUNNING.
+When a run is created, the service sets a preliminary `numberOfTestCases` from the suite's runnable count (valid, and matching `testCaseFilter` when set). This value is **finalized at the snapshot phase** (not immutable at creation): the snapshot phase counts inserted `test_case_run_inputs` rows and updates `number_of_test_cases` to that exact count before the run transitions to RUNNING.
 Status: **Implemented**
 
 #### Scenario: Snapshot on run creation
-- **WHEN** client triggers a run for a test suite that has 50 enabled and valid test cases (out of e.g. 60 total)
+- **WHEN** client triggers a run for a test suite whose bound dataset has 50 runnable test cases (out of e.g. 60 total)
 - **THEN** the created run SHALL have `numberOfTestCases: 50` (preliminary; finalized at snapshot phase to match exactly inserted input rows)
 
 #### Scenario: Suite changes after run creation
 - **WHEN** test cases are added or removed from the test suite after a run is created
 - **THEN** the run's `numberOfTestCases` SHALL reflect the count captured at snapshot phase (which runs before RUNNING state)
 
-#### Scenario: No enabled and valid test cases
-- **WHEN** client triggers a run for a test suite that has 0 enabled and valid test cases
+#### Scenario: No runnable test cases
+- **WHEN** client triggers a run for a test suite that has 0 runnable test cases
 - **THEN** the created run SHALL have `numberOfTestCases: 0`
 
 ### Requirement: Suite snapshot field
@@ -638,5 +643,8 @@ Status: **Implemented**
 - Async config: `com.epam.aidial.evaluation.configuration.AsyncConfiguration`
 - Flyway migration: `V1.6__CreateTestSuiteRunsTable.sql`
 - Execution engine: See `eval-execution-engine` spec for executor, worker, and related components
-- `RunnableTestCaseCounter.countRunnable` delegates to `RunnableTestCaseSelector.countRunnable`,
-  passing the suite's `testCaseFilter` (see `suite-test-case-filter`).
+- `TestSuiteRunService.createRun` calls `RunnableTestCaseSelector.countRunnable(datasetId, filterJson)`
+  directly, passing the suite's `testCaseFilter` (see `suite-test-case-filter`). The former
+  `RunnableTestCaseCounter` wrapper is deleted — its only remaining job was coalescing a null exclusion list.
+- The message text "Suite has no valid and enabled test cases" is retained verbatim for client
+  compatibility, even though "enabled" no longer refers to any stored per-suite exclusion list.

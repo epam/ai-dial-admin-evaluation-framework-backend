@@ -2,7 +2,7 @@
 
 ### Requirement: PRIVATE-dataset clone copies the dataset and its test cases
 When the source suite is bound to a dataset whose `visibility` is `PRIVATE` and the clone request supplies no `datasetId` override, the system SHALL create a new PRIVATE dataset that is an independent copy of the source dataset, copy all of the source dataset's test cases into it with new identifiers, copy dataset-scoped files, and bind the cloned suite to the new dataset. The dataset row, copied test cases, cloned suite, and cloned TSMDs SHALL all be persisted within a single transaction; DIAL file copies SHALL occur before the transaction and SHALL be cleaned up best-effort on failure. No suite-level state references individual test-case identifiers, so the clone SHALL NOT retain an old → new test-case id mapping and SHALL NOT rewrite any suite column other than `dataset_id`.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: New PRIVATE dataset is created and bound to the clone
 - **WHEN** client clones a suite bound to a PRIVATE dataset named "My Data" with no `datasetId` override
@@ -34,7 +34,7 @@ Status: **Planned**
 
 ### Requirement: Clone a TestSuite
 The system SHALL provide `POST /api/v1/test-suites/{sourceId}/clone` that creates a deep copy of the source suite. By default the cloned suite SHALL reference the **same `Dataset`** as the source suite (test cases are not copied; they are shared via the dataset reference). **Exception:** when the source suite is bound to a **PRIVATE** dataset AND the request supplies no `datasetId` override, the system SHALL clone the dataset (see "PRIVATE-dataset clone copies the dataset and its test cases") and bind the cloned suite to the new dataset. The request body SHALL accept a required `name` field and optional override fields. The response SHALL be HTTP 201 with `TestSuiteUpdateResultDto` containing the cloned suite.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Successful clone with name only (PUBLIC or unbound dataset)
 - **WHEN** client calls `POST /api/v1/test-suites/{sourceId}/clone` with `{"name": "My Clone"}` and the source's dataset is PUBLIC or the source is unbound
@@ -81,7 +81,7 @@ Status: **Planned**
 
 ### Requirement: Clone request DTO
 The system SHALL use a dedicated `TestSuiteCloneRequestDto` with `name` as `@NotBlank @Size(max = 255)` and all other suite-level fields as optional (nullable). Null fields SHALL mean "inherit from source." The DTO SHALL NOT include `suiteType` (always inherited), SHALL NOT include `testCaseSchema` (schema lives on the dataset; suite has no schema field), and SHALL NOT include any test-case exclusion list. The DTO SHALL include an optional `datasetId` field; when supplied, the cloned suite SHALL reference the supplied dataset; when null/absent, it SHALL inherit the source suite's `datasetId`.
-Status: **Planned**
+Status: **Implemented**
 
 Overridable fields: `description`, `datasetId`, `deploymentRef`, `endpointRef`, `responseColumns`, `requestTemplate`, `inputBindings`, `mcpDeploymentRef`, `toolRef`, `argumentTemplate`.
 

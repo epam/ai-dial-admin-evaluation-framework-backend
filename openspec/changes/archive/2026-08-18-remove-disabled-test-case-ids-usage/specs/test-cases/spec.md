@@ -2,7 +2,7 @@
 
 ### Requirement: Create and manage TestCases inside a Dataset
 The service SHALL manage TestCases as children of a Dataset with full CRUD operations. TestCases store a unified `data` map (Map<String, Object>). Per-case overrides of suite-level templates and bindings are no longer supported; test cases carry only their identity, the data map, and validity metadata. A test case carries no per-suite participation state: which of a dataset's test cases a given suite runs is decided solely by that suite's `testCaseFilter` (see `suite-test-case-filter`).
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Create a test case
 - **WHEN** client calls `POST /api/v1/datasets/{datasetId}/test-cases` with a valid body
@@ -54,7 +54,7 @@ Status: **Planned**
 
 ### Requirement: Mutable TestSuite fields
 The service SHALL allow updating mutable suite fields (e.g., `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `datasetId`, `testCaseFilter`). Suite PUTs SHALL trigger synchronous suite-level re-validation only; suite PUTs SHALL NOT spawn an async `RevalidationTask`. Async tasks are spawned only by dataset PUTs that mutate `testCaseSchema` — see the `datasets` and `test-suites` specs.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Update endpointRef triggers synchronous suite-level re-validation
 - **WHEN** client updates `endpointRef` schema on an existing suite

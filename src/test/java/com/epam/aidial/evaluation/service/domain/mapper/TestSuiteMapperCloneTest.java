@@ -32,7 +32,7 @@ class TestSuiteMapperCloneTest {
         ObjectMapper objectMapper = new ObjectMapper();
         JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
         ValidationWarningsSerializer warningsSerializer = new ValidationWarningsSerializer(objectMapper);
-        mapper = new TestSuiteMapper(jsonbMapper, warningsSerializer, objectMapper);
+        mapper = new TestSuiteMapper(jsonbMapper, warningsSerializer);
     }
 
     // -----------------------------------------------------------------------
@@ -53,7 +53,6 @@ class TestSuiteMapperCloneTest {
         assertThat(cloned.getDescription()).isEqualTo(source.getDescription());
         assertThat(cloned.getSuiteType()).isEqualTo(source.getSuiteType());
         assertThat(cloned.getDatasetId()).isEqualTo(source.getDatasetId());
-        assertThat(cloned.getDisabledTestCaseIds()).isEqualTo(source.getDisabledTestCaseIds());
         assertThat(cloned.getDeploymentRef()).isEqualTo(source.getDeploymentRef());
         assertThat(cloned.getEndpointRef()).isEqualTo(source.getEndpointRef());
         assertThat(cloned.getResponseColumns()).isEqualTo(source.getResponseColumns());
@@ -224,16 +223,14 @@ class TestSuiteMapperCloneTest {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("maps all fields from entity to request DTO including datasetId and disabledTestCaseIds")
+    @DisplayName("maps all fields from entity to request DTO including datasetId")
     void toRequestDto_mapsAllFields_fromEntity() {
         UUID datasetId = UUID.randomUUID();
-        UUID disabledId = UUID.randomUUID();
         TestSuite entity = TestSuite.builder()
                 .name("Suite A")
                 .description("Desc A")
                 .suiteType(SuiteType.DEPLOYMENT)
                 .datasetId(datasetId)
-                .disabledTestCaseIds("[\"" + disabledId + "\"]")
                 .deploymentRef("{\"id\":\"d1\",\"name\":\"D1\"}")
                 .endpointRef("{\"method\":\"POST\",\"relativeUrlPattern\":\"/v1/chat\"}")
                 .responseColumns("[]")
@@ -248,7 +245,6 @@ class TestSuiteMapperCloneTest {
         assertThat(dto.getDescription()).isEqualTo("Desc A");
         assertThat(dto.getSuiteType()).isEqualTo(SuiteType.DEPLOYMENT);
         assertThat(dto.getDatasetId()).isEqualTo(datasetId);
-        assertThat(dto.getDisabledTestCaseIds()).containsExactly(disabledId);
         assertThat(dto.getDeploymentRef()).isNotNull();
         assertThat(dto.getDeploymentRef().getId()).isEqualTo("d1");
         assertThat(dto.getEndpointRef()).isNotNull();
@@ -265,7 +261,6 @@ class TestSuiteMapperCloneTest {
                 .name("Minimal")
                 .suiteType(SuiteType.DEPLOYMENT)
                 .datasetId(UUID.randomUUID())
-                .disabledTestCaseIds(null)
                 .deploymentRef(null)
                 .endpointRef(null)
                 .responseColumns(null)
@@ -281,7 +276,6 @@ class TestSuiteMapperCloneTest {
 
         assertThat(dto.getDeploymentRef()).isNull();
         assertThat(dto.getEndpointRef()).isNull();
-        assertThat(dto.getDisabledTestCaseIds()).isNull();
         assertThat(dto.getResponseColumns()).isNull();
         assertThat(dto.getInputBindings()).isNull();
         assertThat(dto.getMcpDeploymentRef()).isNull();
@@ -318,7 +312,6 @@ class TestSuiteMapperCloneTest {
                 .description("Source description")
                 .suiteType(SuiteType.DEPLOYMENT)
                 .datasetId(sourceDatasetId)
-                .disabledTestCaseIds("[]")
                 .deploymentRef("{\"id\":\"source-deploy\",\"name\":\"Source Deployment\"}")
                 .endpointRef("{\"method\":\"POST\",\"relativeUrlPattern\":\"/v1/chat\"}")
                 .responseColumns("[]")

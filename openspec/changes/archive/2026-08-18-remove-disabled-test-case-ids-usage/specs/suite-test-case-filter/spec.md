@@ -37,8 +37,12 @@ Status: **Implemented**
 The same runnable definition (validity + `testCaseFilter`) SHALL be applied both by the run-creation
 zero-runnable guard and by the snapshot phase that materializes `test_case_run_inputs`, so that a run is
 only created when at least one test case is runnable and the snapshot contains exactly the runnable test
-cases. The same definition SHALL also be what clients observe when previewing the runnable subset through
-the `test_cases` query entity, so a preview count and an executed run cannot disagree. A suite whose filter
+cases. Both SHALL reach that definition through `RunnableTestCaseSelector`, so they cannot diverge. A client
+MAY preview the runnable subset through the `test_cases` query entity by AND-combining the suite's
+`testCaseFilter` with `valid = true`; for a single-turn dataset that preview count SHALL equal the executed
+run's count. The query entity SHALL NOT be assumed to reproduce the runnable definition on its own: it
+applies neither `is_valid` nor the ALL-turns-match quantifier, so for a multi-turn dataset a raw preview MAY
+over-count and parity is NOT guaranteed. A suite whose filter
 matches no runnable test case SHALL be rejected at run creation with HTTP 409 `INVALID_OPERATION` and
 message "Suite has no valid and enabled test cases"; no run record SHALL be persisted.
 Status: **Implemented**
@@ -54,12 +58,17 @@ Status: **Implemented**
 - **THEN** `test_case_run_inputs` SHALL contain rows for exactly the valid, filter-matching test cases,
   and `numberOfTestCases` SHALL equal that count
 
-#### Scenario: Preview count matches the executed run
+#### Scenario: Preview count matches the executed run for a single-turn dataset
 - **WHEN** a client counts the suite's runnable test cases by applying the suite's `testCaseFilter`
-  AND-combined with `valid = true` to the `test_cases` query entity for the bound dataset, then triggers a
-  run for that suite
+  AND-combined with `valid = true` to the `test_cases` query entity for a bound single-turn dataset, then
+  triggers a run for that suite
 - **THEN** the persisted `numberOfTestCases` and the number of materialized `test_case_run_inputs` rows
   SHALL equal the previewed count
+
+#### Scenario: Multi-turn preview is not guaranteed to match
+- **WHEN** the same preview is taken over a multi-turn dataset with a per-turn predicate
+- **THEN** the preview MAY include cases that the run excludes because at least one of their turns fails the
+  predicate, so clients SHALL NOT treat the raw preview count as the runnable count
 
 ## REMOVED Requirements
 

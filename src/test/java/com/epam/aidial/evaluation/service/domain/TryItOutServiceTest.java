@@ -206,7 +206,6 @@ class TryItOutServiceTest {
                 .id(SUITE_ID)
                 .name("Test Suite")
                 .datasetId(UUID.randomUUID())
-                .disabledTestCaseIds("[]")
                 .deploymentRef(deploymentRefJson)
                 .endpointRef(endpointRefJson)
                 .requestTemplate(requestTemplateJson)

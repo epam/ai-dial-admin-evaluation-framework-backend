@@ -12,7 +12,7 @@ The system SHALL provide `POST /api/v1/test-suites/{id}/detach-dataset` to fork 
 
 The request body is a JSON object with an optional `name` field (`String`, max `ValidationConstants.MAX_DATASET_NAME_LENGTH`). When `name` is omitted or null, the clone name SHALL be derived via `DatasetCloneService.deriveCloneName(source.getName())`. The response is `200 OK` with `TestSuiteResponseDto` reflecting the updated `datasetId`.
 
-The clone SHALL be PRIVATE, inherit the source dataset's `testCaseSchema`, `valid`, and `validationWarnings` verbatim (no re-validation), and have its test cases copied with fresh IDs and file-reference rewrites from `@ef/datasets/{sourceId}/` to `@ef/datasets/{newId}/`. The suite's `disabledTestCaseIds` SHALL be remapped to the new test-case IDs. DIAL files from the source dataset folder SHALL be copied to the new dataset folder before the DB transaction.
+The clone SHALL be PRIVATE, inherit the source dataset's `testCaseSchema`, `valid`, and `validationWarnings` verbatim (no re-validation), and have its test cases copied with fresh IDs and file-reference rewrites from `@ef/datasets/{sourceId}/` to `@ef/datasets/{newId}/`. Detach SHALL rebind `dataset_id` only — no suite-level state references individual test-case identifiers, so no id remapping is performed. DIAL files from the source dataset folder SHALL be copied to the new dataset folder before the DB transaction.
 
 #### Scenario: Detach from PUBLIC dataset with derived name
 - **WHEN** `POST /api/v1/test-suites/{id}/detach-dataset` is called with `{}` for a suite bound to a PUBLIC dataset
@@ -24,7 +24,11 @@ The clone SHALL be PRIVATE, inherit the source dataset's `testCaseSchema`, `vali
 
 #### Scenario: Test cases are copied with remapped IDs
 - **WHEN** the detach operation succeeds
-- **THEN** the new PRIVATE dataset contains a copy of every test case from the source, each with a new ID and file-refs rewritten to `@ef/datasets/{newId}/`; the suite's `disabledTestCaseIds` reflect the new test-case IDs
+- **THEN** the new PRIVATE dataset contains a copy of every test case from the source, each with a new ID and file-refs rewritten to `@ef/datasets/{newId}/`; the suite's `dataset_id` points at the new dataset and no other suite column is rewritten
+
+#### Scenario: Suite runnable subset after detach is filter-defined only
+- **WHEN** a suite whose `test_suites.disabled_test_case_ids` holds a legacy non-empty value is detached from its PUBLIC dataset
+- **THEN** the detached suite's runnable subset SHALL be the valid test cases of the new PRIVATE dataset matching its `testCaseFilter` when set, unaffected by the retained legacy value
 
 #### Scenario: Suite bound to PRIVATE dataset returns 409
 - **WHEN** `POST /api/v1/test-suites/{id}/detach-dataset` is called for a suite bound to a PRIVATE dataset
@@ -45,7 +49,7 @@ The clone SHALL be PRIVATE, inherit the source dataset's `testCaseSchema`, `vali
 ## Implementation Notes
 
 - Endpoint: `TestSuiteController.detachDataset` (`POST /api/v1/test-suites/{id}/detach-dataset`).
-- Orchestration: `TestSuiteService.detachDataset` — pre-TX `DatasetCloneService.copyDatasetFiles`, then a `TransactionTemplate` (`metaTransactionManager`) running `DatasetCloneService.cloneRowAndTestCases` + `TestSuiteRepository.updateDatasetId` (rebind `dataset_id` + remapped `disabled_test_case_ids`), with best-effort `FileService.deleteAllByDatasetId` cleanup on failure.
+- Orchestration: `TestSuiteService.detachDataset` — pre-TX `DatasetCloneService.copyDatasetFiles`, then a `TransactionTemplate` (`metaTransactionManager`) running `DatasetCloneService.cloneRowAndTestCases` (returns `void`) + `TestSuiteRepository.updateDatasetId(suiteId, newDatasetId, updatedAt)` (rebinds `dataset_id` only), with best-effort `FileService.deleteAllByDatasetId` cleanup on failure.
 - Source dataset read via `DatasetQueryService.findById` (cross-domain read facade, not `DatasetRepository`).
 - 409 codes via `DatasetVisibilityRuleException`: `SUITE_HAS_NO_DATASET` (unbound) and `PRIVATE_DATASET_REBIND_FORBIDDEN` (already PRIVATE).
 - The TX-failure cleanup scenario is covered by the unit test `TestSuiteServiceTest.shouldDeleteCopiedFilesWhenTransactionFails` (mocked); the success/409/404 scenarios are covered by `DatasetDetachFunctionalTests`.

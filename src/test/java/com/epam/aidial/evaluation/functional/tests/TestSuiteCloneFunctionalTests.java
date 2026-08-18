@@ -699,7 +699,7 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName(
             "15.8 cloning a PRIVATE-dataset suite clones the dataset (new PRIVATE dataset, test cases copied with new "
-                    + "ids across a pagination boundary, disabledTestCaseIds remapped, dataset file copied + ref rewritten); source untouched")
+                    + "ids across a pagination boundary, dataset file copied + ref rewritten); source untouched")
     void cloningPrivateDatasetSuiteClonesDataset() {
         Dataset privateDs = metaTestDataHelper.createDataset(
                 "Private Src " + UUID.randomUUID(), promptSchemaJson(), DatasetVisibility.PRIVATE);
@@ -707,11 +707,9 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
 
         // Seed 3 test cases (batch-size is 2 in tests → crosses a pagination boundary). One carries a
         // dataset-scoped file reference in its data.
-        List<UUID> plainIds = metaTestDataHelper.seedManyTestCasesInDataset(privateDs.getId(), 2, true);
+        metaTestDataHelper.seedManyTestCasesInDataset(privateDs.getId(), 2, true);
         metaTestDataHelper.seedTestCaseInDataset(
                 privateDs.getId(), "ref-case", "{\"file\":\"@ef/datasets/" + privateDs.getId() + "/data.csv\"}");
-        UUID disabledSourceId = plainIds.get(0);
-        metaTestDataHelper.appendDisabledTestCaseIds(source.getId(), List.of(disabledSourceId));
         uploadDatasetFile(privateDs.getId(), "data.csv", "col\n1");
 
         TestSuiteCloneRequestDto request = TestSuiteCloneRequestDto.builder()
@@ -750,21 +748,6 @@ public abstract class TestSuiteCloneFunctionalTests extends BaseFunctionalTest {
         assertThat(clonedRefCase.getData())
                 .contains("@ef/datasets/" + newDatasetId + "/data.csv")
                 .doesNotContain(privateDs.getId().toString());
-
-        // disabledTestCaseIds remapped onto the cloned test case id (old id dropped)
-        String disabledSourceName = sourceCases.stream()
-                .filter(c -> c.getId().equals(disabledSourceId))
-                .map(TestCase::getTestCaseName)
-                .findFirst()
-                .orElseThrow();
-        UUID expectedDisabledCloneId = clonedCases.stream()
-                .filter(c -> disabledSourceName.equals(c.getTestCaseName()))
-                .map(TestCase::getId)
-                .findFirst()
-                .orElseThrow();
-        assertThat(cloned.getDisabledTestCaseIds())
-                .containsExactly(expectedDisabledCloneId)
-                .doesNotContain(disabledSourceId);
 
         // Dataset-scoped file copied to the new dataset folder
         assertThat(listDatasetFilenames(newDatasetId)).contains("data.csv");

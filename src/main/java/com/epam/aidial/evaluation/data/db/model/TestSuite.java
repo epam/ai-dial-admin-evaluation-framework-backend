@@ -18,7 +18,6 @@ public class TestSuite {
     private String description;
     private SuiteType suiteType;
     private UUID datasetId;
-    private String disabledTestCaseIds;
     private String deploymentRef;
     private String endpointRef;
     private String responseColumns;

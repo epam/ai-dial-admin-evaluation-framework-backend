@@ -163,7 +163,7 @@ class InProcessEvaluationExecutorTest {
                 .extracting(TestCaseRunInput::getTestCaseId)
                 .containsExactly(input.getTestCaseId());
 
-        verify(testCaseRepository, never()).findValidByDatasetIdExcludingIds(any(), anyList(), anyInt(), anyInt());
+        verify(testCaseRepository, never()).findValidByDatasetId(any(), anyInt(), anyInt());
         verify(testCaseRunner).awaitCompletion();
         verify(writer).flush();
     }
@@ -177,7 +177,7 @@ class InProcessEvaluationExecutorTest {
         stubCreateRunner(context);
 
         when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(false);
-        when(testCaseRepository.findValidByDatasetIdExcludingIds(eq(DATASET_ID), eq(List.of()), eq(0), eq(100)))
+        when(testCaseRepository.findValidByDatasetId(eq(DATASET_ID), eq(0), eq(100)))
                 .thenReturn(List.of(testCase));
 
         executor.execute(context);

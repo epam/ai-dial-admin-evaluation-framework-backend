@@ -15,12 +15,6 @@ public final class ValidationConstants {
     public static final int MAX_DATASET_NAME_LENGTH = 263;
     /** Maximum number of columns in an EvalSummary CSV export request and in the planner's derived manifest. */
     public static final int MAX_EXPORT_COLUMNS = 512;
-    /**
-     * Maximum number of test-case ids that a single {@code TestSuite} can hold in {@code disabledTestCaseIds}.
-     * Non-configurable: the cap exists to bound the JSONB array payload and the snapshot-phase
-     * {@code NOT (id = ANY(?::text[]))} predicate.
-     */
-    public static final int MAX_DISABLED_TC_IDS = 10000;
 
     /**
      * Regex enforced on test-case schema field names ({@code FieldDefinitionDto}).

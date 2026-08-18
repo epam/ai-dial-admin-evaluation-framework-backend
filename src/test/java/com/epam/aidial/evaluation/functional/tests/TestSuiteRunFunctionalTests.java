@@ -53,11 +53,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.core.JacksonException;
@@ -270,37 +268,6 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         return response.getBody();
-    }
-
-    private TestSuiteResponseDto updateSuiteDisabledTestCaseIds(TestSuiteResponseDto suite, List<UUID> disabledIds) {
-        TestSuiteRequestDto request = suiteRequestFrom(suite, suite.getName(), suite.getDatasetId(), disabledIds);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set(HttpHeaders.IF_MATCH, String.valueOf(suite.getVersion()));
-        ResponseEntity<TestSuiteResponseDto> response = restTemplate.exchange(
-                apiUrl("/test-suites/" + suite.getId()),
-                HttpMethod.PUT,
-                new HttpEntity<>(request, headers),
-                TestSuiteResponseDto.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isNotNull();
-        return response.getBody();
-    }
-
-    private TestSuiteRequestDto suiteRequestFrom(
-            TestSuiteResponseDto template, String name, UUID datasetId, List<UUID> disabledIds) {
-        return TestSuiteRequestDto.builder()
-                .name(name)
-                .description(template.getDescription())
-                .suiteType(template.getSuiteType())
-                .datasetId(datasetId)
-                .disabledTestCaseIds(disabledIds)
-                .deploymentRef(template.getDeploymentRef())
-                .endpointRef(template.getEndpointRef())
-                .responseColumns(template.getResponseColumns())
-                .requestTemplate(template.getRequestTemplate())
-                .inputBindings(template.getInputBindings())
-                .build();
     }
 
     // --- Run CRUD Tests (Task 33) ---

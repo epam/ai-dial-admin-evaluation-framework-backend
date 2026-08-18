@@ -12,11 +12,8 @@ import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -150,44 +147,6 @@ public abstract class DatasetDetachFunctionalTests extends BaseFunctionalTest {
 
     @Test
     @DisplayName(
-            "POST /test-suites/{id}/detach-dataset remaps the suite's disabledTestCaseIds to the cloned test-case IDs")
-    void shouldRemapDisabledTestCaseIdsToClonedIds() {
-        Dataset publicDs = metaTestDataHelper.createDataset(
-                "Detach-Remap-Source-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
-        TestSuite suite =
-                metaTestDataHelper.createTestSuite("Detach-Remap-Suite-" + UUID.randomUUID(), publicDs.getId());
-        List<UUID> sourceIds = metaTestDataHelper.seedManyTestCasesInDataset(publicDs.getId(), 3, true);
-        List<UUID> disabledSourceIds = sourceIds.subList(0, 2);
-        metaTestDataHelper.appendDisabledTestCaseIds(suite.getId(), disabledSourceIds);
-
-        ResponseEntity<TestSuiteResponseDto> response = restTemplate.postForEntity(
-                apiUrl("/test-suites/" + suite.getId() + "/detach-dataset"),
-                jsonEntity(DatasetDetachRequestDto.builder().build()),
-                TestSuiteResponseDto.class);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        UUID newDatasetId = response.getBody().getDatasetId();
-
-        Set<UUID> clonedIds = testCaseRepository.findBatchByDatasetId(newDatasetId, 0, 100).stream()
-                .map(TestCase::getId)
-                .collect(Collectors.toSet());
-
-        TestSuite refreshedSuite = testSuiteRepository.findById(suite.getId()).orElseThrow();
-        List<UUID> remappedDisabledIds = parseUuidArray(refreshedSuite.getDisabledTestCaseIds());
-
-        assertThat(remappedDisabledIds)
-                .as("the same number of test cases stays disabled after detach")
-                .hasSize(disabledSourceIds.size());
-        assertThat(remappedDisabledIds)
-                .as("disabled IDs must point at the cloned test cases, not the originals")
-                .doesNotContainAnyElementsOf(disabledSourceIds);
-        assertThat(clonedIds)
-                .as("every remapped disabled ID must belong to the new PRIVATE dataset")
-                .containsAll(remappedDisabledIds);
-    }
-
-    @Test
-    @DisplayName(
             "POST /test-suites/{id}/detach-dataset preserves multi-turn test cases (2-turn and 3-turn) with their content and schema")
     void shouldPreserveMultiTurnTestCasesOnDetach() {
         String schemaJson = "[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true,\"perTurn\":true}]";
@@ -248,10 +207,5 @@ public abstract class DatasetDetachFunctionalTests extends BaseFunctionalTest {
                 .filter(tc -> tc.getTestCaseName().equals(name))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Test case not found: " + name));
-    }
-
-    private List<UUID> parseUuidArray(String json) {
-        String[] values = objectMapper.readValue(json, String[].class);
-        return Arrays.stream(values).map(UUID::fromString).collect(Collectors.toList());
     }
 }

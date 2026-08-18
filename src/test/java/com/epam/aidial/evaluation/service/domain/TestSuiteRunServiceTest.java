@@ -28,6 +28,7 @@ import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundExcepti
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
+import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
@@ -64,7 +65,7 @@ class TestSuiteRunServiceTest {
     private TestCaseService testCaseService;
 
     @Mock
-    private RunnableTestCaseCounter runnableTestCaseCounter;
+    private RunnableTestCaseSelector runnableTestCaseSelector;
 
     @Mock
     private TestSuiteEvaluationJob evaluationJob;
@@ -106,7 +107,7 @@ class TestSuiteRunServiceTest {
                 testSuiteRunRepository,
                 testSuiteRepository,
                 testCaseService,
-                runnableTestCaseCounter,
+                runnableTestCaseSelector,
                 properties,
                 evaluationJob,
                 executionSettingsValidator,

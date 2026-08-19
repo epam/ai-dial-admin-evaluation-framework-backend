@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.cli.csv;
 
 import com.epam.aidial.evaluation.runner.job.ResultBatchWriter;
+import com.epam.aidial.evaluation.runner.model.ResultCsvColumns;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import java.io.Closeable;
 import java.io.IOException;
@@ -61,27 +62,13 @@ public class CsvResultBatchWriter implements ResultBatchWriter, Closeable {
     private static final String EMPTY_JSON_OBJECT = "{}";
     private static final String EMPTY_JSON_ARRAY = "[]";
 
-    /** Exact import-contract header in the required column order. */
-    static final String[] HEADERS = {
-        "testCaseName",
-        "runIndex",
-        "testCaseData",
-        "requestBody",
-        "responseBody",
-        "responseStatusCode",
-        "executionStatus",
-        "startedAt",
-        "completedAt",
-        "traceId",
-        "retryCount",
-        "logDetails",
-        "extractedColumns",
-        "extractionWarnings",
-        "requestIndex",
-        "totalRequests",
-        "turnIndex",
-        "totalTurns"
-    };
+    /**
+     * Exact import-contract header in the required column order — the shared {@link
+     * ResultCsvColumns#CANONICAL_ORDER} with {@code testCaseId} dropped (see class javadoc).
+     */
+    static final String[] HEADERS = ResultCsvColumns.CANONICAL_ORDER.stream()
+            .filter(column -> !ResultCsvColumns.TEST_CASE_ID.equals(column))
+            .toArray(String[]::new);
 
     private final CSVPrinter printer;
 

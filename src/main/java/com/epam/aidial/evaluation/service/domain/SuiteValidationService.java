@@ -171,7 +171,7 @@ public class SuiteValidationService {
         if (endpoint == null) {
             warnings.add(warning(
                     null,
-                    pathPrefix.isEmpty() ? "$.endpointRef" : pathPrefix + ".endpointRef",
+                    warningPath(pathPrefix, "$.endpointRef", ".endpointRef"),
                     "endpointRef is required for request assembly",
                     ValidationWarningCode.REQUIRED));
         }
@@ -180,14 +180,14 @@ public class SuiteValidationService {
         if (template == null) {
             warnings.add(warning(
                     null,
-                    pathPrefix.isEmpty() ? "$" : pathPrefix + ".requestTemplate",
+                    warningPath(pathPrefix, "$", ".requestTemplate"),
                     "requestTemplate is required for request assembly",
                     ValidationWarningCode.REQUIRED));
         } else if (template.getUrlTemplate() == null
                 || template.getUrlTemplate().isBlank()) {
             warnings.add(warning(
                     null,
-                    pathPrefix.isEmpty() ? "$.urlTemplate" : pathPrefix + ".requestTemplate.urlTemplate",
+                    warningPath(pathPrefix, "$.urlTemplate", ".requestTemplate.urlTemplate"),
                     "urlTemplate is required for request assembly",
                     ValidationWarningCode.REQUIRED));
         }
@@ -201,7 +201,7 @@ public class SuiteValidationService {
         for (String typeHintWarning : extractionResult.getTypeHintWarnings()) {
             warnings.add(warning(
                     null,
-                    pathPrefix.isEmpty() ? "$.requestTemplate" : pathPrefix + ".requestTemplate",
+                    warningPath(pathPrefix, "$.requestTemplate", ".requestTemplate"),
                     typeHintWarning,
                     ValidationWarningCode.TYPE));
         }
@@ -226,14 +226,14 @@ public class SuiteValidationService {
                 for (String error : errors) {
                     warnings.add(warning(
                             part.getName(),
-                            pathPrefix.isEmpty() ? "$.requestTemplate.body" : pathPrefix + ".requestTemplate.body",
+                            warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
                             "FILE form part '" + part.getName() + "': " + error,
                             ValidationWarningCode.TYPE));
                 }
                 if (errors.isEmpty() && fileRefValidator.isDatasetShapedRef(refValue)) {
                     warnings.add(warning(
                             part.getName(),
-                            pathPrefix.isEmpty() ? "$.requestTemplate.body" : pathPrefix + ".requestTemplate.body",
+                            warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
                             "FILE form part '" + part.getName() + "' references dataset-scoped file '" + refValue
                                     + "'; suite-level fields must use @ef/suites/ refs",
                             ValidationWarningCode.TYPE));
@@ -251,7 +251,7 @@ public class SuiteValidationService {
             if (!body.getContentType().equals(schemaDto.getContentType())) {
                 warnings.add(warning(
                         null,
-                        pathPrefix.isEmpty() ? "$.requestTemplate.body" : pathPrefix + ".requestTemplate.body",
+                        warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
                         "Request template content type '" + body.getContentType()
                                 + "' does not match endpoint schema content type '" + schemaDto.getContentType()
                                 + "'",
@@ -271,9 +271,7 @@ public class SuiteValidationService {
                         && blacklistLower.contains(header.getKey().toLowerCase())) {
                     warnings.add(warning(
                             header.getKey(),
-                            pathPrefix.isEmpty()
-                                    ? "$.requestTemplate.headers"
-                                    : pathPrefix + ".requestTemplate.headers",
+                            warningPath(pathPrefix, "$.requestTemplate.headers", ".requestTemplate.headers"),
                             "Header '" + header.getKey() + "' is system-managed and cannot be set in request template",
                             ValidationWarningCode.ADDITIONAL));
                 }
@@ -281,6 +279,14 @@ public class SuiteValidationService {
         }
 
         return warnings;
+    }
+
+    /**
+     * Byte-identical to the pre-request-chain contract (design.md D13): request #0 ({@code pathPrefix == ""})
+     * yields {@code rootPath} verbatim; any other request yields {@code pathPrefix + suffix}.
+     */
+    private static String warningPath(String pathPrefix, String rootPath, String suffix) {
+        return pathPrefix.isEmpty() ? rootPath : pathPrefix + suffix;
     }
 
     private static ValidationWarningDto warning(

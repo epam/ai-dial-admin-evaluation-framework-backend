@@ -15,9 +15,10 @@ import org.springframework.stereotype.Component;
  * requestTemplate}/{@code responseColumns}/{@code inputBindings}, labelled by {@code snapshotRequestName})
  * followed by {@code snapshotAdditionalRequests} in order (Decision 1/8/10 of the {@code
  * add-multi-request-suite} change's {@code design.md}). Requests run strictly sequentially: one accumulated
- * frame is threaded from each request into the next via {@link RequestExecutionSpec#initialFrame()}/{@link
- * RequestExecutionResult#accumulatedFrame()}, every request's rows are concatenated in chain order, and the
- * chain stops at the first request whose {@link RequestExecutionResult#aborted()} is {@code true} — that
+ * frame is threaded from each request into the next via {@link TurnLoopExecutor#execute}'s {@code
+ * initialFrame} parameter and {@link RequestExecutionResult#accumulatedFrame()}, every request's rows are
+ * concatenated in chain order, and the chain stops at the first request whose {@link
+ * RequestExecutionResult#aborted()} is {@code true} — that
  * request's own rows (including its failing row, when one was issued) are still returned; no later request
  * is invoked. A single-request chain ({@code additionalRequests} empty) executes exactly one {@link
  * RequestExecutionSpec} with {@code totalRequests = 1}, so {@link TurnLoopExecutor} never stamps
@@ -42,10 +43,9 @@ public class RequestChainExecutor {
         final List<TestCaseRunResult> rows = new ArrayList<>();
         Map<String, Object> accumulatedFrame = Map.of();
 
-        for (RequestExecutionSpec baseSpec : specs) {
-            final RequestExecutionSpec spec = baseSpec.withInitialFrame(accumulatedFrame);
-            final RequestExecutionResult result =
-                    turnLoopExecutor.execute(input, context, runIndex, spec, traceId, execStartedAtMs);
+        for (RequestExecutionSpec spec : specs) {
+            final RequestExecutionResult result = turnLoopExecutor.execute(
+                    input, context, runIndex, spec, accumulatedFrame, traceId, execStartedAtMs);
             rows.addAll(result.rows());
             accumulatedFrame = result.accumulatedFrame();
             if (result.aborted()) {
@@ -58,8 +58,8 @@ public class RequestChainExecutor {
     /**
      * Builds the ordered chain of {@link RequestExecutionSpec}s from the run snapshot: spec 0 from the
      * context's singular {@code snapshot*} fields plus {@code snapshotRequestName}, specs 1..N from {@code
-     * snapshotAdditionalRequests} in order. {@code initialFrame} is left empty here — {@link #execute}
-     * seeds each spec's real initial frame just before invoking it.
+     * snapshotAdditionalRequests} in order. The accumulated frame each spec runs with is not part of the
+     * spec — {@link #execute} passes it separately, just before invoking each spec.
      */
     private List<RequestExecutionSpec> buildSpecs(EvaluationContext context) {
         final List<RequestDefinitionDto> additionalRequests = context.getSnapshotAdditionalRequests();
@@ -74,8 +74,7 @@ public class RequestChainExecutor {
                 context.getSnapshotEndpointRef(),
                 context.getSnapshotRequestTemplate(),
                 context.getSnapshotInputBindings(),
-                context.getSnapshotResponseColumns(),
-                Map.of()));
+                context.getSnapshotResponseColumns()));
 
         for (int i = 0; i < additionalCount; i++) {
             // Invariant: additionalRequests never contains a null element here. TestSuiteRequestValidator
@@ -90,8 +89,7 @@ public class RequestChainExecutor {
                     definition.getEndpointRef(),
                     definition.getRequestTemplate(),
                     definition.getInputBindings() != null ? definition.getInputBindings() : List.of(),
-                    definition.getResponseColumns() != null ? definition.getResponseColumns() : List.of(),
-                    Map.of()));
+                    definition.getResponseColumns() != null ? definition.getResponseColumns() : List.of()));
         }
         return specs;
     }

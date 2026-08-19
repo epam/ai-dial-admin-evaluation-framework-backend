@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -134,7 +135,7 @@ public class RunOrchestrationService {
 
     private List<TestCaseRunInput> mapInputs(List<TestCaseResponseDto> testCases, UUID runId) {
         int position = 0;
-        final java.util.List<TestCaseRunInput> inputs = new java.util.ArrayList<>(testCases.size());
+        final List<TestCaseRunInput> inputs = new ArrayList<>(testCases.size());
         for (TestCaseResponseDto tc : testCases) {
             final TestCaseRunInput input = testCaseRunInputMapper.toInput(tc);
             input.setRunId(runId);

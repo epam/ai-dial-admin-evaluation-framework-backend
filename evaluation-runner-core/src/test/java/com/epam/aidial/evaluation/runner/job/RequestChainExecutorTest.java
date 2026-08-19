@@ -94,17 +94,27 @@ class RequestChainExecutorTest {
         EvaluationContext context =
                 baseContextBuilder().snapshotAdditionalRequests(List.of()).build();
 
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
         List<TestCaseRunResult> rows = chainExecutor.execute(input, context, 0, "trace-1", 1000L);
 
         assertThat(rows).hasSize(1);
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
-        verify(turnLoopExecutor).execute(eq(input), eq(context), eq(0), specCaptor.capture(), eq("trace-1"), eq(1000L));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> frameCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(turnLoopExecutor)
+                .execute(
+                        eq(input),
+                        eq(context),
+                        eq(0),
+                        specCaptor.capture(),
+                        frameCaptor.capture(),
+                        eq("trace-1"),
+                        eq(1000L));
         assertThat(specCaptor.getValue().requestIndex()).isZero();
         assertThat(specCaptor.getValue().totalRequests()).isEqualTo(1);
-        assertThat(specCaptor.getValue().initialFrame()).isEmpty();
+        assertThat(frameCaptor.getValue()).isEmpty();
     }
 
     @Test
@@ -132,7 +142,7 @@ class RequestChainExecutorTest {
                 .build();
 
         Map<String, Object> request0Frame = Map.of("configId", "cfg-1");
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), request0Frame, false))
                 .thenReturn(new RequestExecutionResult(List.of(successRow(), successRow()), Map.of(), false));
 
@@ -140,15 +150,25 @@ class RequestChainExecutorTest {
 
         assertThat(rows).hasSize(3);
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> frameCaptor = ArgumentCaptor.forClass(Map.class);
         verify(turnLoopExecutor, times(2))
-                .execute(eq(input), eq(context), eq(0), specCaptor.capture(), eq("trace-2"), eq(1000L));
+                .execute(
+                        eq(input),
+                        eq(context),
+                        eq(0),
+                        specCaptor.capture(),
+                        frameCaptor.capture(),
+                        eq("trace-2"),
+                        eq(1000L));
         List<RequestExecutionSpec> specs = specCaptor.getAllValues();
+        List<Map<String, Object>> frames = frameCaptor.getAllValues();
 
         RequestExecutionSpec spec0 = specs.get(0);
         assertThat(spec0.requestIndex()).isZero();
         assertThat(spec0.totalRequests()).isEqualTo(2);
         assertThat(spec0.name()).isEqualTo("configure");
-        assertThat(spec0.initialFrame()).isEmpty();
+        assertThat(frames.get(0)).isEmpty();
 
         RequestExecutionSpec spec1 = specs.get(1);
         assertThat(spec1.requestIndex()).isEqualTo(1);
@@ -158,8 +178,8 @@ class RequestChainExecutorTest {
         assertThat(spec1.responseColumns())
                 .extracting(ResponseColumnDefinitionDto::getName)
                 .containsExactly("answer");
-        // Frame accumulation: request #0's returned frame seeds request #1's initialFrame verbatim.
-        assertThat(spec1.initialFrame()).isEqualTo(request0Frame);
+        // Frame accumulation: request #0's returned frame seeds request #1's initialFrame parameter verbatim.
+        assertThat(frames.get(1)).isEqualTo(request0Frame);
     }
 
     @Test
@@ -179,13 +199,13 @@ class RequestChainExecutorTest {
                 .id(UUID.randomUUID())
                 .executionStatus(ExecutionStatus.ERROR)
                 .build();
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(errorRow), Map.of(), true));
 
         List<TestCaseRunResult> rows = chainExecutor.execute(input, context, 0, "trace-3", 1000L);
 
         assertThat(rows).containsExactly(errorRow);
-        verify(turnLoopExecutor, times(1)).execute(any(), any(), eq(0), any(), anyString(), anyLong());
+        verify(turnLoopExecutor, times(1)).execute(any(), any(), eq(0), any(), any(), anyString(), anyLong());
     }
 
     @Test
@@ -194,13 +214,14 @@ class RequestChainExecutorTest {
         TestCaseRunInput input = baseInputBuilder().testCaseName("case-4").build();
         EvaluationContext context = baseContextBuilder().build();
 
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
         List<TestCaseRunResult> rows = chainExecutor.execute(input, context, 0, "trace-4", 1000L);
 
         assertThat(rows).hasSize(1);
-        verify(turnLoopExecutor, times(1)).execute(eq(input), eq(context), eq(0), any(), eq("trace-4"), eq(1000L));
+        verify(turnLoopExecutor, times(1))
+                .execute(eq(input), eq(context), eq(0), any(), any(), eq("trace-4"), eq(1000L));
     }
 
     @Test
@@ -216,7 +237,7 @@ class RequestChainExecutorTest {
                 .snapshotAdditionalRequests(List.of(additional))
                 .build();
 
-        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), anyString(), anyLong()))
+        when(turnLoopExecutor.execute(any(), any(), eq(0), any(), any(), anyString(), anyLong()))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false))
                 .thenReturn(new RequestExecutionResult(List.of(successRow()), Map.of(), false));
 
@@ -224,7 +245,7 @@ class RequestChainExecutorTest {
 
         ArgumentCaptor<RequestExecutionSpec> specCaptor = ArgumentCaptor.forClass(RequestExecutionSpec.class);
         verify(turnLoopExecutor, times(2))
-                .execute(eq(input), eq(context), eq(0), specCaptor.capture(), eq("trace-5"), eq(1000L));
+                .execute(eq(input), eq(context), eq(0), specCaptor.capture(), any(), eq("trace-5"), eq(1000L));
         RequestExecutionSpec spec1 = specCaptor.getAllValues().get(1);
         assertThat(spec1.inputBindings()).isEmpty();
         assertThat(spec1.responseColumns()).isEmpty();

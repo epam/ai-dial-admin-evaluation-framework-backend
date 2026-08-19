@@ -186,9 +186,10 @@ class TurnLoopExecutorTest {
     }
 
     /**
-     * Builds a single-request ({@code totalRequests = 1}, empty {@code initialFrame}) spec from the given
-     * context's request-#0 fields — the shape every pre-generalization test call used implicitly. {@code
-     * totalRequests = 1} keeps requestIndex/totalRequests unstamped, matching the pre-change baseline.
+     * Builds a single-request ({@code totalRequests = 1}) spec from the given context's request-#0 fields —
+     * the shape every pre-generalization test call used implicitly. {@code totalRequests = 1} keeps
+     * requestIndex/totalRequests unstamped, matching the pre-change baseline. Callers pass an empty {@code
+     * initialFrame} to {@link TurnLoopExecutor#execute} separately.
      */
     private RequestExecutionSpec singleRequestSpec(
             EvaluationContext context, List<ResponseColumnDefinitionDto> responseColumns) {
@@ -199,8 +200,7 @@ class TurnLoopExecutorTest {
                 context.getSnapshotEndpointRef(),
                 context.getSnapshotRequestTemplate(),
                 context.getSnapshotInputBindings(),
-                responseColumns,
-                Map.of());
+                responseColumns);
     }
 
     @Test
@@ -225,7 +225,13 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, List.of()), "trace-1", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-1",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).hasSize(1);
@@ -270,7 +276,13 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, List.of()), "trace-2", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-2",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).hasSize(1);
@@ -325,7 +337,13 @@ class TurnLoopExecutorTest {
                         null));
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, responseColumns), "trace-3", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, responseColumns),
+                        Map.of(),
+                        "trace-3",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).hasSize(2);
@@ -359,7 +377,13 @@ class TurnLoopExecutorTest {
                 .build();
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, List.of()), "trace-4", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-4",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).hasSize(1);
@@ -391,7 +415,13 @@ class TurnLoopExecutorTest {
                 .build();
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, List.of()), "trace-8", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-8",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).hasSize(1);
@@ -429,7 +459,13 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":\"boom\"}", 0, null));
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, List.of()), "trace-5", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-5",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).hasSize(2);
@@ -461,7 +497,13 @@ class TurnLoopExecutorTest {
                         new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":{\"message\":\"boom\"}}", 0, null));
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, responseColumns), "trace-7", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, responseColumns),
+                        Map.of(),
+                        "trace-7",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).hasSize(1);
@@ -484,7 +526,13 @@ class TurnLoopExecutorTest {
                 .build();
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, List.of()), "trace-6", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-6",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).isEmpty();
@@ -505,7 +553,13 @@ class TurnLoopExecutorTest {
                 .build();
 
         List<TestCaseRunResult> results = executor.execute(
-                        input, context, 0, singleRequestSpec(context, List.of()), "trace-7", FIXED_CLOCK.millis())
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-7",
+                        FIXED_CLOCK.millis())
                 .rows();
 
         assertThat(results).hasSize(1);
@@ -540,7 +594,7 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
         RequestExecutionResult result = executor.execute(
-                input, context, 0, singleRequestSpec(context, List.of()), "trace-9", FIXED_CLOCK.millis());
+                input, context, 0, singleRequestSpec(context, List.of()), Map.of(), "trace-9", FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isFalse();
         TestCaseRunResult row = result.rows().getFirst();
@@ -570,8 +624,8 @@ class TurnLoopExecutorTest {
                         .name("answer")
                         .expression("choices[0].message.content")
                         .type(SchemaFieldType.STRING)
-                        .build()),
-                Map.of("configId", "cfg-1"));
+                        .build()));
+        Map<String, Object> initialFrame = Map.of("configId", "cfg-1");
 
         when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
                 .thenReturn(new TurnOutcome(
@@ -581,7 +635,8 @@ class TurnLoopExecutorTest {
                         0,
                         null));
 
-        RequestExecutionResult result = executor.execute(input, context, 0, spec, "trace-10", FIXED_CLOCK.millis());
+        RequestExecutionResult result =
+                executor.execute(input, context, 0, spec, initialFrame, "trace-10", FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isFalse();
         TestCaseRunResult row = result.rows().getFirst();
@@ -624,7 +679,7 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":\"boom\"}", 0, null));
 
         RequestExecutionResult result = executor.execute(
-                input, context, 0, singleRequestSpec(context, List.of()), "trace-11", FIXED_CLOCK.millis());
+                input, context, 0, singleRequestSpec(context, List.of()), Map.of(), "trace-11", FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isTrue();
         assertThat(result.rows()).hasSize(2);

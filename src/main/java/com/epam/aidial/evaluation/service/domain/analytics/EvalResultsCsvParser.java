@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.properties.analytics.AnalyticsRe
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.ResultCsvColumns;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.DatasetSchemaProvider;
 import com.epam.aidial.evaluation.service.domain.SchemaValidationService;
@@ -73,27 +74,11 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class EvalResultsCsvParser {
 
-    /** Exact, case-sensitive reserved column names — mirrors DB columns in camelCase. */
-    static final Set<String> RESERVED_COLUMNS = Set.of(
-            "testCaseId",
-            "testCaseName",
-            "runIndex",
-            "testCaseData",
-            "requestBody",
-            "responseBody",
-            "responseStatusCode",
-            "executionStatus",
-            "startedAt",
-            "completedAt",
-            "traceId",
-            "retryCount",
-            "logDetails",
-            "extractedColumns",
-            "extractionWarnings",
-            "requestIndex",
-            "totalRequests",
-            "turnIndex",
-            "totalTurns");
+    /**
+     * Exact, case-sensitive reserved column names — mirrors DB columns in camelCase. Sourced from the
+     * shared import contract in {@link ResultCsvColumns} (also consumed by the eval-cli writer).
+     */
+    static final Set<String> RESERVED_COLUMNS = Set.copyOf(ResultCsvColumns.CANONICAL_ORDER);
 
     private final DatasetSchemaProvider datasetSchemaProvider;
     private final ObjectMapper objectMapper;

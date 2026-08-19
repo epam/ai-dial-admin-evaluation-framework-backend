@@ -1,5 +1,8 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateRowDto;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -16,8 +19,10 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
+import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorCategory;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
@@ -68,6 +73,8 @@ public class TestSuiteRunService {
     private final ObjectMapper objectMapper;
     private final EvalResultsImportService evalResultsImportService;
     private final EvalResultsCsvParser evalResultsCsvParser;
+    private final DialAdasClient dialAdasClient;
+    private final RunCostQueryBuilder runCostQueryBuilder;
 
     @Transactional("metaTransactionManager")
     public TestSuiteRunResponseDto createRun(UUID testSuiteId, RunConfigDto config) {
@@ -311,6 +318,33 @@ public class TestSuiteRunService {
                 .findById(runId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId));
         return mapper.toDto(run);
+    }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public RunCostsResponseDto getRunCosts(UUID runId) {
+        testSuiteRunRepository
+                .findById(runId)
+                .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId));
+
+        Double avgTestCaseCost = fetchAvgCost(runId, TracingConstants.PHASE_EXECUTION);
+        Double avgMetricEvalCost = fetchAvgCost(runId, TracingConstants.PHASE_METRIC_EVALUATION);
+        return RunCostsResponseDto.builder()
+                .avgTestCaseCost(avgTestCaseCost)
+                .avgMetricEvalCost(avgMetricEvalCost)
+                .build();
+    }
+
+    private Double fetchAvgCost(UUID runId, String phase) {
+        AdasAggregateResponseDto response =
+                dialAdasClient.executeAggregate(runCostQueryBuilder.buildAggregateQuery(runId, phase));
+        if (response == null || response.getRows() == null || response.getRows().isEmpty()) {
+            return null;
+        }
+        AdasAggregateRowDto row = response.getRows().get(0);
+        if (row.getCount() == null || row.getCount() == 0) {
+            return null;
+        }
+        return row.getAvgCost();
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)

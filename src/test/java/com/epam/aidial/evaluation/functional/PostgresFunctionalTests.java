@@ -43,7 +43,7 @@ import com.epam.aidial.evaluation.functional.tests.GrafanaDisabledFunctionalTest
 import com.epam.aidial.evaluation.functional.tests.GrafanaEnabledFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.HeaderBlacklistFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.JsonataRequestTemplateFunctionalTests;
-import com.epam.aidial.evaluation.functional.tests.LargeDatasetSnapshotFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.LegacyDisabledTestCaseIdsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MaxLimitsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpDeploymentFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpEvaluationRunFunctionalTests;
@@ -306,9 +306,6 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class DatasetMigrationTests extends DatasetMigrationFunctionalTests {}
 
     @Nested
-    class LargeDatasetSnapshotTests extends LargeDatasetSnapshotFunctionalTests {}
-
-    @Nested
     class DeploymentTests extends DeploymentFunctionalTests {}
 
     @Nested
@@ -353,6 +350,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestSuiteRunTests extends TestSuiteRunFunctionalTests {}
+
+    @Nested
+    class LegacyDisabledTestCaseIdsTests extends LegacyDisabledTestCaseIdsFunctionalTests {}
 
     @Nested
     class EvalResultsImportTests extends EvalResultsImportFunctionalTests {}

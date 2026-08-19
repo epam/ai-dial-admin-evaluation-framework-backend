@@ -28,8 +28,8 @@ import org.springframework.http.ResponseEntity;
 
 /**
  * Functional tests for TestSuite ↔ Dataset binding semantics post-{@code introduce-dataset-entity}:
- * suite create with {@code datasetId}, update rebinding to a different dataset, delete leaves dataset
- * intact, and {@code disabledTestCaseIds} round-trips through the REST API.
+ * suite create with {@code datasetId}, update rebinding to a different dataset, and delete leaves the
+ * dataset intact.
  */
 @DisplayName("TestSuite Dataset-Binding Functional Tests")
 public abstract class TestSuiteDatasetFunctionalTests extends BaseFunctionalTest {
@@ -53,7 +53,6 @@ public abstract class TestSuiteDatasetFunctionalTests extends BaseFunctionalTest
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getDatasetId()).isEqualTo(dataset.getId());
-        assertThat(response.getBody().getDisabledTestCaseIds()).isEmpty();
     }
 
     @Test
@@ -95,34 +94,6 @@ public abstract class TestSuiteDatasetFunctionalTests extends BaseFunctionalTest
 
         // Dataset still exists
         assertThat(datasetRepository.existsById(dataset.getId())).isTrue();
-    }
-
-    @Test
-    @DisplayName("disabledTestCaseIds round-trip: PUT writes, GET reads back the list")
-    void disabledTestCaseIdsRoundTrip() {
-        Dataset dataset = metaTestDataHelper.createDataset("Disabled-RoundTrip-" + UUID.randomUUID());
-        TestSuiteResponseDto suite = createSuite(dataset.getId());
-
-        UUID disabled1 = UUID.randomUUID();
-        UUID disabled2 = UUID.randomUUID();
-        TestSuiteRequestDto update = baseSuiteRequest(suite.getName(), dataset.getId());
-        update.setDisabledTestCaseIds(List.of(disabled1, disabled2));
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setIfMatch("\"" + suite.getVersion() + "\"");
-        ResponseEntity<TestSuiteResponseDto> updateResp = restTemplate.exchange(
-                apiUrl("/test-suites/" + suite.getId()),
-                HttpMethod.PUT,
-                new HttpEntity<>(update, headers),
-                TestSuiteResponseDto.class);
-        assertThat(updateResp.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        ResponseEntity<TestSuiteResponseDto> getResp =
-                restTemplate.getForEntity(apiUrl("/test-suites/" + suite.getId()), TestSuiteResponseDto.class);
-        assertThat(getResp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(getResp.getBody()).isNotNull();
-        assertThat(getResp.getBody().getDisabledTestCaseIds()).containsExactlyInAnyOrder(disabled1, disabled2);
     }
 
     @Test

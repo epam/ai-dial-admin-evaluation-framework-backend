@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -144,7 +145,6 @@ class TestSuiteServiceTest {
                 .id(suiteId)
                 .datasetId(sourceDatasetId)
                 .version(1L)
-                .disabledTestCaseIds("[]")
                 .build();
         Dataset source = Dataset.builder()
                 .id(sourceDatasetId)
@@ -156,8 +156,9 @@ class TestSuiteServiceTest {
         when(datasetQueryService.findById(sourceDatasetId)).thenReturn(Optional.of(source));
         // The in-transaction clone blows up, so the surrounding TransactionTemplate.execute(...)
         // rethrows, leaving txSucceeded=false and triggering the file-cleanup branch.
-        when(datasetCloneService.cloneRowAndTestCases(any(), any(), any(), any(), any(), anyLong(), any()))
-                .thenThrow(new RuntimeException("boom"));
+        doThrow(new RuntimeException("boom"))
+                .when(datasetCloneService)
+                .cloneRowAndTestCases(any(), any(), any(), any(), any(), anyLong(), any());
 
         assertThatThrownBy(() -> service.detachDataset(
                         suiteId, DatasetDetachRequestDto.builder().build(), null))

@@ -812,8 +812,9 @@ class DatasetServiceTest {
         when(authorResolver.getCreatedBy(any())).thenReturn("alice");
         when(datasetCloneService.deriveCloneName(any())).thenReturn("Src (clone)");
         when(transactionTimestampContext.getTimestamp()).thenReturn(1L);
-        when(datasetCloneService.cloneRowAndTestCases(any(), any(), anyString(), any(), anyString(), anyLong(), any()))
-                .thenThrow(new RuntimeException("write failed"));
+        doThrow(new RuntimeException("write failed"))
+                .when(datasetCloneService)
+                .cloneRowAndTestCases(any(), any(), anyString(), any(), anyString(), anyLong(), any());
 
         assertThatThrownBy(() -> service.clone(id, new DatasetCloneRequestDto(), null))
                 .isInstanceOf(RuntimeException.class)

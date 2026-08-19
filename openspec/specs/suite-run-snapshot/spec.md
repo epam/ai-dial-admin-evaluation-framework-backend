@@ -60,7 +60,7 @@ Status: **Implemented**
 - **THEN** the evaluation context's additional-requests list SHALL be empty and the executor SHALL build a 1-request chain
 
 ### Requirement: Snapshot phase execution
-The snapshot phase SHALL execute atomically before the run transitions to RUNNING, for every run regardless of `skipDeploymentPhase`. It always builds and persists `SuiteSnapshotDto` onto `test_suite_runs.suite_snapshot`. It additionally reads the live `Dataset` referenced by the suite and pages through the dataset's test cases — excluding those in the suite's `disabledTestCaseIds` and, when the suite has a `testCaseFilter`, keeping only the test cases that match it — to materialize `test_case_run_inputs` and set `number_of_test_cases`, but only when the run will execute Phase 1 (`skipDeploymentPhase = false`). When `skipDeploymentPhase = true` (imported runs), `test_case_run_inputs` are never written and `number_of_test_cases` is left as set at run creation.
+The snapshot phase SHALL execute atomically before the run transitions to RUNNING, for every run regardless of `skipDeploymentPhase`. It always builds and persists `SuiteSnapshotDto` onto `test_suite_runs.suite_snapshot`. It additionally reads the live `Dataset` referenced by the suite and pages through the dataset's valid test cases — keeping, when the suite has a `testCaseFilter`, only those that match it — to materialize `test_case_run_inputs` and set `number_of_test_cases`, but only when the run will execute Phase 1 (`skipDeploymentPhase = false`). Selection SHALL apply no other exclusion source; `test_suites.disabled_test_case_ids` is not read. When `skipDeploymentPhase = true` (imported runs), `test_case_run_inputs` are never written and `number_of_test_cases` is left as set at run creation.
 Status: **Implemented**
 
 #### Scenario: Snapshot phase sequence (deployment-phase run)
@@ -72,7 +72,7 @@ Status: **Implemented**
   4. Build `SuiteSnapshotDto` via `SuiteSnapshotBuilder.build(testSuite, dataset)`; the builder sources `testCaseSchema` from the dataset and populates `datasetRef = {id: dataset.id, version: dataset.version, name: dataset.name}`
   5. Serialize snapshot to JSON; throw `IllegalStateException` on serialization error
   6. Call `updateSuiteSnapshot(runId, snapshotJson)`
-  7. Page through the runnable test cases in the dataset — valid, excluded by `testSuite.disabledTestCaseIds`, and matching `testSuite.testCaseFilter` when set — and batch-insert into `test_case_run_inputs`
+  7. Page through the runnable test cases in the dataset — valid, and matching `testSuite.testCaseFilter` when set — and batch-insert into `test_case_run_inputs`
   8. Call `updateNumberOfTestCases(runId, totalInputs)`
 
 #### Scenario: Snapshot phase sequence (imported run, no deployment phase)
@@ -80,16 +80,16 @@ Status: **Implemented**
 - **THEN** it SHALL, in the same transaction shape, perform steps 1–6 above (delete leftover inputs, load suite, load dataset, build and serialize `SuiteSnapshotDto`, call `updateSuiteSnapshot`) but SHALL NOT page test cases into `test_case_run_inputs` and SHALL NOT call `updateNumberOfTestCases` — the run's `number_of_test_cases`, already set from the actual imported result count at run creation, is left unchanged
 
 #### Scenario: Snapshot excludes disabled test cases
-- **WHEN** the suite's `disabledTestCaseIds = [tc-2, tc-5]`, the dataset has test cases `[tc-1, tc-2, tc-3, tc-4, tc-5]`, and the run will execute Phase 1
-- **THEN** `test_case_run_inputs` for the run SHALL contain rows for `[tc-1, tc-3, tc-4]` only; `numberOfTestCases = 3`
+- **WHEN** the suite's `testCaseFilter` excludes `[tc-2, tc-5]`, the dataset has valid test cases `[tc-1, tc-2, tc-3, tc-4, tc-5]`, and the run will execute Phase 1
+- **THEN** `test_case_run_inputs` for the run SHALL contain rows for `[tc-1, tc-3, tc-4]` only; `numberOfTestCases = 3`; a suite excludes test cases from its runs only through `testCaseFilter`
 
 #### Scenario: Snapshot honors the suite testCaseFilter
-- **WHEN** the suite has `testCaseFilter` matching only `[tc-1, tc-4]` among the valid, non-excluded test cases `[tc-1, tc-3, tc-4]`, and the run will execute Phase 1
+- **WHEN** the suite has `testCaseFilter` matching only `[tc-1, tc-4]` among the valid test cases `[tc-1, tc-3, tc-4]`, and the run will execute Phase 1
 - **THEN** `test_case_run_inputs` SHALL contain rows for `[tc-1, tc-4]` only; `numberOfTestCases = 2`; a null `testCaseFilter` SHALL impose no additional restriction
 
 #### Scenario: Stale disabled ID is silently ignored
-- **WHEN** the suite's `disabledTestCaseIds = [tc-deleted]` and `tc-deleted` is no longer in the dataset
-- **THEN** the snapshot-phase query SHALL produce all valid test cases in the dataset; the stale id is naturally excluded by set-membership semantics and does NOT cause an error
+- **WHEN** the suite carries a non-empty `test_suites.disabled_test_case_ids` value stored by an earlier version of the product, the dataset has valid test cases `[tc-1, tc-2, tc-3]`, and the run will execute Phase 1
+- **THEN** the stored value SHALL be ignored entirely; `test_case_run_inputs` SHALL contain rows for all three test cases (subject to `testCaseFilter` when set), `numberOfTestCases = 3`, and no error is raised
 
 #### Scenario: Snapshot excludes invalid test cases
 - **WHEN** a test case in the dataset has `isValid = false`
@@ -201,7 +201,10 @@ Status: **Implemented**
 - **THEN** the backfill step SHALL leave it as NULL; the legacy-fallback synthesis path in `resolveSnapshot` (which builds a transient v2 snapshot from the live suite + dataset) continues to handle it
 
 ## Implementation Notes
-- `TestSuiteEvaluationJob.attemptSnapshot` selects via `RunnableTestCaseSelector.loadRunnablePage`
-  (translation-layer reuse), replacing the direct
-  `TestCaseRepository.findValidByDatasetIdExcludingIds` call; null `testCaseFilter` short-circuits to
-  the prior valid + excluded predicate. See `suite-test-case-filter`.
+- `TestSuiteEvaluationJob.attemptSnapshot` selects via
+  `RunnableTestCaseSelector.loadRunnablePage(datasetId, filterJson, offset, limit)` (translation-layer
+  reuse); a null `testCaseFilter` short-circuits to the plain valid predicate
+  (`TestCaseRepository.findValidByDatasetId`). `SuiteSnapshotDto` never carried an exclusion list, so the
+  persisted snapshot JSON shape is unchanged and no version bump is required. The legacy fallback in
+  `InProcessEvaluationExecutor` pages via `TestCaseRepository.findValidByDatasetId(datasetId, offset, limit)`.
+  See `suite-test-case-filter`.

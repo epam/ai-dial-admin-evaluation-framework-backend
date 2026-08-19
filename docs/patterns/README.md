@@ -13,7 +13,7 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [RequestBodySerializerRegistry](request-body-serializer-registry.md) | Strategy pattern for JSON / multipart / urlencoded body serialization |
 | [JSONB_NUMERIC Multi-Level Path Filtering](jsonb-numeric-filtering.md) | Two-level JSONB filtering with parameterized path components |
 | [Typed SQL DSL (jOOQ)](jooq-typed-sql-dsl.md) | Codegen pipeline, drift guard, DSLContext config, RecordMapper pattern |
-| [Dataset Entity](dataset-entity.md) | `DatasetSchemaProvider`, `disabledTestCaseIds`, `dataset.id` vs `suite.id`, visibility rules |
+| [Dataset Entity](dataset-entity.md) | `DatasetSchemaProvider`, `dataset.id` vs `suite.id`, visibility rules, exclusion via `testCaseFilter` |
 | [Suite Run Snapshot Phase](suite-run-snapshot.md) | Snapshot tx, `40001` retry, inconsistent-snapshot guard, version handling |
 | [Selective Column Projection (TOAST)](selective-column-projection.md) | Column-tier constants to avoid TOAST decompression on bulk queries |
 | [MCP Tool Invocation](mcp-tool-invocation.md) | Per-call `McpSyncClient` via DIAL Core MCP proxy |

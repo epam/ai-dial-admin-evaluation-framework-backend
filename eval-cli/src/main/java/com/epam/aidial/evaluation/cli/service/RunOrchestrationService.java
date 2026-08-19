@@ -45,11 +45,15 @@ public class RunOrchestrationService {
      * a CSV file at {@code <workDir>/<sourceSuiteId>-results.csv}.
      *
      * @param bundle              the suite fetch bundle containing suite config and test cases
-     * @param targetDeploymentRef the deployment reference to override the suite's source-side ref
+     * @param targetDeploymentRef the deployment reference to override the suite's source-side ref;
+     *                             {@code null} to fall back to the fetched suite's own recorded
+     *                             {@code deploymentRef}
      * @param workDir             the working directory where the results CSV is written
      * @return the {@link File} pointing to the produced results CSV
      * @throws IllegalStateException if the fetched suite's {@code endpointRef}/{@code requestTemplate}
-     *                                fails {@link SuiteContractValidator}; if the bundle's dataset
+     *                                fails {@link SuiteContractValidator}; if {@code
+     *                                targetDeploymentRef} is {@code null} and the suite has no recorded
+     *                                {@code deploymentRef} either; if the bundle's dataset
      *                                schema is absent and some fetched test case carries per-turn
      *                                data (stale bundle — re-run {@code fetch}); or if the suite is
      *                                an MCP tool suite and some fetched test case carries per-turn
@@ -57,6 +61,8 @@ public class RunOrchestrationService {
      */
     public File run(SuiteFetchBundle bundle, DeploymentReferenceDto targetDeploymentRef, String workDir) {
         suiteContractValidator.validate(bundle.getSuite());
+        final DeploymentReferenceDto resolvedDeploymentRef =
+                resolveTargetDeploymentRef(bundle.getSuite(), targetDeploymentRef);
 
         final List<TestCaseResponseDto> testCases = bundle.getTestCases();
         final boolean hasMultiTurnCase = testCases.stream().anyMatch(this::isMultiTurn);
@@ -69,10 +75,10 @@ public class RunOrchestrationService {
                 bundle.getSuite().getName(),
                 bundle.getSourceSuiteId(),
                 testCases.size(),
-                targetDeploymentRef.getId());
+                resolvedDeploymentRef.getId());
 
         final EvaluationContext context = evaluationContextFactory.create(
-                bundle.getSuite(), testCases.size(), targetDeploymentRef, bundle.getTestCaseSchema());
+                bundle.getSuite(), testCases.size(), resolvedDeploymentRef, bundle.getTestCaseSchema());
 
         final List<TestCaseRunInput> inputs = mapInputs(testCases, context.getRunId());
         final Path csvPath = csvPath(workDir, bundle.getSourceSuiteId());
@@ -131,6 +137,26 @@ public class RunOrchestrationService {
     private boolean isMultiTurn(TestCaseResponseDto testCase) {
         return testCase.getMultiTurnData() != null
                 && !testCase.getMultiTurnData().isEmpty();
+    }
+
+    /**
+     * Resolves the deployment reference to run against: the CLI-provided {@code cliTargetDeploymentRef}
+     * takes precedence when present; otherwise falls back to the suite's own recorded {@code
+     * deploymentRef} from the source EF.
+     *
+     * @throws IllegalStateException if neither is available
+     */
+    private DeploymentReferenceDto resolveTargetDeploymentRef(
+            TestSuiteResponseDto suite, DeploymentReferenceDto cliTargetDeploymentRef) {
+        if (cliTargetDeploymentRef != null) {
+            return cliTargetDeploymentRef;
+        }
+        final DeploymentReferenceDto suiteDeploymentRef = suite.getDeploymentRef();
+        if (suiteDeploymentRef == null || suiteDeploymentRef.getId() == null) {
+            throw new IllegalStateException("Suite " + suite.getId() + " ('" + suite.getName()
+                    + "') has no recorded deploymentRef and --deployment-id was not provided");
+        }
+        return suiteDeploymentRef;
     }
 
     private List<TestCaseRunInput> mapInputs(List<TestCaseResponseDto> testCases, UUID runId) {

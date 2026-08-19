@@ -8,9 +8,8 @@ import picocli.CommandLine.Option;
  * Picocli mixin for the {@code --suites} option shared by every command that processes a set of
  * source suites.
  *
- * <p>Required, with no configuration/env-var fallback — consistent with {@code --deployment-id}: which
- * suites to process is always a per-invocation, CI-log-visible choice, never a stable environment
- * default.
+ * <p>Required, with no configuration/env-var fallback: which suites to process is always a
+ * per-invocation, CI-log-visible choice, never a stable environment default.
  */
 public class SuitesOption {
 

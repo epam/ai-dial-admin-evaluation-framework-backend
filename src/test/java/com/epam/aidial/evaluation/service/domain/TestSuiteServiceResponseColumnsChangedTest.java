@@ -54,8 +54,7 @@ class TestSuiteServiceResponseColumnsChangedTest {
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
         JsonbMapper jsonbMapper = new JsonbMapper(objectMapper, new RunnerJsonbMapper(objectMapper));
-        TestSuiteMapper testSuiteMapper =
-                new TestSuiteMapper(jsonbMapper, mock(ValidationWarningsSerializer.class), objectMapper);
+        TestSuiteMapper testSuiteMapper = new TestSuiteMapper(jsonbMapper, mock(ValidationWarningsSerializer.class));
 
         testSuiteRepository = mock(TestSuiteRepository.class);
         testSuiteMetricDefinitionService = mock(TestSuiteMetricDefinitionService.class);
@@ -161,7 +160,6 @@ class TestSuiteServiceResponseColumnsChangedTest {
                 .name("Suite")
                 .suiteType(SuiteType.DEPLOYMENT)
                 .version(1L)
-                .disabledTestCaseIds("[]")
                 .responseColumns(jsonbMapper.mapResponseColumns(suiteColumns))
                 .additionalRequests(jsonbMapper.mapAdditionalRequests(additionalRequests))
                 .build();

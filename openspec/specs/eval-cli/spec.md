@@ -9,7 +9,7 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Suite Selection by Explicit ID
-The CLI SHALL operate only on source EF test suites whose UUIDs are explicitly given via the required `--suites` command-line option (no configuration or environment-variable fallback — consistent with `--deployment-id`); it SHALL NOT discover suites via a dynamic filter/search query.
+The CLI SHALL operate only on source EF test suites whose UUIDs are explicitly given via the required `--suites` command-line option (no configuration or environment-variable fallback); it SHALL NOT discover suites via a dynamic filter/search query.
 
 #### Scenario: Given suite ID is processed
 - **WHEN** a command is invoked with `--suites <uuid>`
@@ -50,11 +50,19 @@ The CLI SHALL retrieve a suite's execution-relevant configuration (deployment/en
 - **THEN** the CLI loads it without error and treats the schema as absent, deferring to the multi-turn guard rather than failing to parse
 
 ### Requirement: Test Case Execution Against a Configured Target Deployment
-The CLI SHALL execute each fetched test case against a deployment reference configured for the target environment, overriding the suite's own recorded deployment/endpoint reference so the same request/input template is sent to the target instead of wherever the source suite originally pointed.
+The CLI SHALL execute each fetched test case against a deployment reference for the target environment, using the suite's request template and input bindings unchanged. The `--deployment-id` command-line option is optional: when supplied, it overrides the suite's own recorded deployment reference so the same request/input template is sent to the target instead of wherever the source suite originally pointed; when omitted, the CLI SHALL fall back to the suite's own recorded `deploymentRef` fetched from the source EF. If `--deployment-id` is omitted and the fetched suite has no recorded `deploymentRef` either, the CLI SHALL fail fast with a clear error before executing any test case.
 
 #### Scenario: Target deployment override is applied
-- **WHEN** the `run` command executes a test case whose source suite recorded deployment reference points at an environment other than the configured target
+- **WHEN** the `run` command executes a test case with `--deployment-id` supplied, and the source suite's recorded deployment reference points at an environment other than the configured target
 - **THEN** the request is sent to the CLI-configured target deployment reference, using the suite's request template and input bindings unchanged
+
+#### Scenario: Falls back to the suite's own recorded deployment reference
+- **WHEN** the `run` command executes without `--deployment-id`, and the fetched suite has a recorded `deploymentRef`
+- **THEN** the request is sent to the suite's own recorded deployment reference, using the suite's request template and input bindings unchanged
+
+#### Scenario: Fails fast when no deployment reference is available
+- **WHEN** the `run` command executes without `--deployment-id`, and the fetched suite has no recorded `deploymentRef`
+- **THEN** the CLI SHALL raise an error identifying the suite before any test case is executed, rather than failing per test case
 
 #### Scenario: Execution result captured for every test case
 - **WHEN** the `run` command completes for a suite with N fetched test cases

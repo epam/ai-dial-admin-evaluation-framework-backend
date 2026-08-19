@@ -156,7 +156,6 @@ public class MetaTestDataHelper {
                 .name(name)
                 .createdBy("test-user")
                 .datasetId(datasetId)
-                .disabledTestCaseIds("[]")
                 .responseColumns("[]")
                 .inputBindings("[]")
                 .additionalRequests("[]")
@@ -179,7 +178,6 @@ public class MetaTestDataHelper {
                 .createdBy("test-user")
                 .datasetId(dataset.getId())
                 .deploymentRef(deploymentRefJson)
-                .disabledTestCaseIds("[]")
                 .responseColumns("[]")
                 .inputBindings("[]")
                 .additionalRequests("[]")
@@ -366,12 +364,12 @@ public class MetaTestDataHelper {
     }
 
     /**
-     * Appends the supplied ids to the suite's {@code disabled_test_case_ids} JSONB array via a
-     * concatenation update. Used by bulk-patch fixtures that need a created test case to start out
-     * disabled at the suite level (the pre-{@code introduce-dataset-entity} {@code enabled=false}
-     * semantics).
+     * Forces the supplied ids into the suite's legacy {@code disabled_test_case_ids} JSONB array via a
+     * raw concatenation UPDATE. No production code writes this column any more — it was superseded by
+     * {@code testCaseFilter} — so this back door exists solely to let GH #151 regression tests reproduce
+     * a suite carrying stale exclusions frozen from before run conditions existed.
      */
-    public void appendDisabledTestCaseIds(UUID testSuiteId, List<UUID> testCaseIds) {
+    public void forceLegacyDisabledTestCaseIds(UUID suiteId, List<UUID> testCaseIds) {
         if (testCaseIds == null || testCaseIds.isEmpty()) {
             return;
         }
@@ -388,7 +386,7 @@ public class MetaTestDataHelper {
                         + "COALESCE(disabled_test_case_ids, '[]'::jsonb) || ?::jsonb "
                         + "WHERE id = ?",
                 sb.toString(),
-                testSuiteId.toString());
+                suiteId.toString());
     }
 
     @Transactional("metaTransactionManager")
@@ -510,33 +508,12 @@ public class MetaTestDataHelper {
 
     /**
      * Seeds {@code count} test cases into the suite's dataset and returns their ids in insertion
-     * order. The {@code enabled} flag is preserved at the suite level: when {@code false}, the new
-     * ids are appended to the suite's {@code disabled_test_case_ids} JSONB array via a
-     * concatenation update, mirroring the pre-{@code introduce-dataset-entity} semantics where
-     * the {@code is_enabled} column was per-row.
+     * order.
      */
     @Transactional("metaTransactionManager")
-    public List<UUID> seedManyTestCases(UUID testSuiteId, int count, boolean enabled) {
+    public List<UUID> seedManyTestCases(UUID testSuiteId, int count) {
         TestSuite suite = testSuiteRepository.findById(testSuiteId).orElseThrow();
-        List<UUID> ids = seedManyTestCasesInDataset(suite.getDatasetId(), count, true);
-        if (!enabled && !ids.isEmpty()) {
-            StringBuilder sb = new StringBuilder("[");
-            for (int i = 0; i < ids.size(); i++) {
-                if (i > 0) {
-                    sb.append(',');
-                }
-                sb.append('"').append(ids.get(i)).append('"');
-            }
-            sb.append(']');
-            String additionsJson = sb.toString();
-            metaDsl.execute(
-                    "UPDATE test_suites SET disabled_test_case_ids = "
-                            + "COALESCE(disabled_test_case_ids, '[]'::jsonb) || ?::jsonb "
-                            + "WHERE id = ?",
-                    additionsJson,
-                    testSuiteId.toString());
-        }
-        return ids;
+        return seedManyTestCasesInDataset(suite.getDatasetId(), count, true);
     }
 
     /**

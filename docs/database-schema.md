@@ -93,7 +93,7 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `created_by` | VARCHAR(255) | NOT NULL | - | User who created the suite |
 | `suite_type` | VARCHAR(20) | NOT NULL | `'DEPLOYMENT'` | Suite type discriminator: `DEPLOYMENT` or `MCP_TOOL` |
 | `dataset_id` | VARCHAR(36) | NULL | - | Optional FK to `datasets.id` (RESTRICT on delete; PRIVATE-bound suites are cascade-deleted via service-layer logic, see `tg_test_suites_private_binding_guard` for binding-uniqueness). When NULL the suite is in the **unbound** state — editable but `POST /api/v1/test-suites/{id}/runs` returns HTTP 409 `SUITE_HAS_NO_DATASET`. The `tg_test_suites_private_binding_guard` BEFORE INSERT OR UPDATE OF `dataset_id` trigger rejects a second concurrent binding to any PRIVATE dataset (raises `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` → HTTP 409). |
-| `disabled_test_case_ids` | JSONB | NOT NULL | `'[]'::jsonb` | Per-suite exclude list (array of UUIDs); capped at `ValidationConstants.MAX_DISABLED_TC_IDS` (10000). Snapshot phase filters via `NOT (id = ANY(:ids::uuid[]))`. |
+| `disabled_test_case_ids` | JSONB | NOT NULL | `'[]'::jsonb` | Legacy per-suite exclude list (array of UUIDs). Retained in the schema for backward compatibility but **no longer read or written by application code** — the runnable set (run-creation count, snapshot materialization) is defined solely by `is_valid` and `test_case_filter`. Inserts omit the column and rely on the DDL default; existing rows keep whatever stale content they had. Column removal is a pending follow-up change. |
 | `deployment_ref` | JSONB | NULL | - | Deployment reference (DeploymentReferenceDto) — HTTP suites |
 | `endpoint_ref` | JSONB | NULL | - | Endpoint contract definition (EndpointContractDto) — HTTP suites |
 | `response_columns` | JSONB | NOT NULL | `'[]'::jsonb` | Response column definitions (List of ResponseColumnDefinitionDto) |
@@ -103,7 +103,7 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `tool_ref` | JSONB | NULL | - | MCP tool reference with schema (ToolReferenceDto) — MCP suites |
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
 | `overall_score` | JSONB | NULL | - | Per-suite `overall` metric-score definition — a serialized `StructuredQuery` expression. Settable and readable via the suite API (`overallScore` on `POST`/`PUT`/`GET /api/v1/test-suites`); references configured metric columns by their flattened name `metric::<metricName>::<outputField>`. NULL = system default (the single metric's average — `avg(:metricField)` — computed only when the run has exactly one numeric metric field). Captured verbatim into the suite snapshot per run; Phase 3 honors a non-null value for any metric count. See V1.23. |
-| `test_case_filter` | JSONB | NULL | - | Per-suite test-case selection filter — a serialized Structured Query DSL `filter` subtree authored over the dataset's test-case fields (base columns and flattened `data::<field>` fields). Settable and readable via the suite API (`testCaseFilter` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time against the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). NULL = no filter (run every valid, non-disabled test case). When set, it is AND-combined with `is_valid` and `disabled_test_case_ids` to select the runnable test cases at run-creation count and snapshot. Does not affect suite validity. See V1.24. |
+| `test_case_filter` | JSONB | NULL | - | Per-suite test-case selection filter — a serialized Structured Query DSL `filter` subtree authored over the dataset's test-case fields (base columns and flattened `data::<field>` fields). Settable and readable via the suite API (`testCaseFilter` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time against the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). NULL = no filter (run every valid test case). When set, it is AND-combined with `is_valid` to select the runnable test cases at run-creation count and snapshot. Does not affect suite validity. See V1.24. |
 | `overall_score_threshold` | DOUBLE PRECISION | NULL | - | Optional per-suite threshold, same numeric type as the computed run-level `overall` metric score result (`metric_score_result.value`). Settable and readable via the suite API (`overallScoreThreshold` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time to be within `[0.0, 1.0]` inclusive (HTTP 400 `VALIDATION_ERROR` otherwise). NULL = no threshold configured. Not compared server-side against a run's computed score — comparison is a client-side concern. Not captured in the suite snapshot. See V1.25. |
 | `additional_requests` | JSONB | NOT NULL | `'[]'::jsonb` | Ordered chain of requests 1..N executed after request #0 (the suite's own `endpoint_ref`/`request_template`/`response_columns`/`input_bindings`), against the same `deployment_ref` (List of RequestDefinitionDto). Response columns across request #0 and every additional request share one flat, globally-unique namespace capped at `RunnerValidationConstants.MAX_RESPONSE_COLUMNS` (50) in total; chain length capped at `RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS` (10). Rejected (400) when non-empty on an `MCP_TOOL` suite. Settable and readable via the suite API (`additionalRequests` on `POST`/`PUT`/`GET /api/v1/test-suites`); rewritten (`@ef/suites/{id}/` prefix) on clone. Captured into the suite snapshot per run. See V1.29. |
 | `request_name` | VARCHAR(255) | NULL | - | Optional user-facing label for request #0, mirroring `RequestDefinitionDto.name` on each additional request, so every request in the chain is labellable (e.g. for a metric `condition`'s `request.name`). NULL = request #0 unlabelled. Settable and readable via the suite API (`requestName` on `POST`/`PUT`/`GET /api/v1/test-suites`); captured into the suite snapshot per run. See V1.29. |
@@ -158,7 +158,7 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 }
 ```
 
-**`disabled_test_case_ids`** (array of UUIDs):
+**`disabled_test_case_ids`** (array of UUIDs; retained but unused by application code — see the `test_suites` table description above):
 ```json
 ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"]
 ```
@@ -317,7 +317,7 @@ Deliberately excludes `deploymentRef`, MCP fields, `testCaseFilter` and `overall
 
 ## Table: `test_cases`
 
-Individual test cases belonging to a dataset. Per-suite enablement is controlled by `test_suites.disabled_test_case_ids` rather than a column on this table.
+Individual test cases belonging to a dataset. Per-suite run selection is controlled by `test_suites.test_case_filter` (combined with `is_valid`) rather than a column on this table; `test_suites.disabled_test_case_ids` is a retained-but-unused legacy column (see the `test_suites` table).
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -465,7 +465,7 @@ Snapshot of test case data for a run; written at async phase start under a REPEA
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | `run_id` | VARCHAR(36) | NOT NULL | - | FK to `test_suite_runs.id` (CASCADE DELETE) |
-| `position` | INTEGER | NOT NULL | - | Zero-based order matching `findValidByDatasetIdExcludingIds` sort order |
+| `position` | INTEGER | NOT NULL | - | Zero-based order matching `findValidByDatasetId` sort order |
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Loose reference to the test case (no FK — snapshot is independent of live `test_cases`) |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case display name at snapshot time |
 | `test_case_data` | JSONB | NOT NULL | - | Unified test case data map at snapshot time (single-turn) |
@@ -953,7 +953,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.21 | `V1.21__AddCoercedCellCountToRevalidationTasks.sql` | Added coerced_cell_count column to revalidation_tasks |
 | V1.22 | `V1.22__IntroduceDataset.sql` | Introduced datasets table; rebound test_cases and revalidation_tasks FKs from test_suites to datasets; backfilled per-suite datasets; relaxed `test_suites.dataset_id` to nullable (unbound state); added `datasets.visibility` (`'PUBLIC'`/`'PRIVATE'`) with CHECK constraint; added `tg_test_suites_private_binding_guard` trigger raising `ERRCODE='P0001'` MESSAGE `'PRIVATE_DATASET_ALREADY_BOUND'` for concurrent PRIVATE-binding violations; backfilled `suite_snapshot` JSON to v2 (`snapshotVersion`, `datasetRef`) |
 | V1.23 | `V1.23__AddOverallScoreToTestSuites.sql` | Added nullable `overall_score` JSONB column to test_suites (per-suite `overall` metric-score definition; NULL = system default, computed only for single-metric runs) |
-| V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` and `disabled_test_case_ids` at run-creation count and snapshot) |
+| V1.24 | `V1.24__AddTestCaseFilterToTestSuites.sql` | Added nullable `test_case_filter` JSONB column to test_suites (per-suite Structured Query DSL filter selecting runnable test cases; NULL = no filter; validated at suite write time; AND-combined with `is_valid` at run-creation count and snapshot) |
 | V1.25 | `V1.25__AddOverallScoreThresholdToTestSuites.sql` | Added nullable `overall_score_threshold` DOUBLE PRECISION column to test_suites (per-suite threshold compared against the computed run-level `overall` metric score, same numeric type as the result; NULL = no threshold configured) |
 | V1.26 | `V1.26__AddConditionToTestSuiteMetricDefinitions.sql` | Added nullable `condition` VARCHAR(2000) to test_suite_metric_definitions (optional JSONata gating whether the metric runs per result row/turn; NULL ⇒ always run) |
 | V1.27 | `V1.27__AddMultiTurnDataToTestCases.sql` | Added nullable `multi_turn_data` JSONB to test_cases (ordered array of per-turn data maps). Coexists with `data` (shared vs per-turn fields, scoped in `test_case_schema`); no mutual-exclusivity CHECK constraint. |

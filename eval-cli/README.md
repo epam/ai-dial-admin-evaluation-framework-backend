@@ -16,17 +16,18 @@ source EF via its existing `runs/import` API.
 | `evaluate` | Runs all four steps in sequence for each selected suite (`clone` → `fetch` → `run` → `import`). |
 
 All five commands require `--suites` (comma-separated source EF suite UUIDs); `clone`, `fetch`, and
-`evaluate` also require `--clone-suffix`; `run` and `evaluate` also require `--deployment-id`. None of
-the three has a configuration or environment-variable fallback — like `--deployment-id`, they are
-always CLI-only, since which suites/suffix/deployment to use is inherently a per-invocation choice, not
-a stable environment default. Everything else (source/target auth, target host) is env-var-only — see
-[Configuration](#configuration).
+`evaluate` also require `--clone-suffix`. Neither has a configuration or environment-variable
+fallback — they are always CLI-only, since which suites/suffix to use is inherently a per-invocation
+choice, not a stable environment default. `run` and `evaluate` also accept `--deployment-id`, but it is
+**optional**: when omitted, execution falls back to the fetched suite's own recorded deployment
+reference instead of requiring an explicit override. Everything else (source/target auth, target host)
+is env-var-only — see [Configuration](#configuration).
 
 ## Quick start
 
 ```bash
 export EVAL_SOURCE_API_KEY=<source EF API key>
-export DIAL_CORE_URL=http://host.docker.internal:8080
+export DIAL_CORE_URL=http://localhost:8085
 export DIAL_CORE_API_KEY=<target DIAL Core API key>
 
 java -jar eval-cli.jar evaluate \
@@ -54,8 +55,9 @@ the container:
 
 ```bash
 docker run --rm \
+  -e EVAL_SOURCE_BASE_URL=http://host.docker.internal:8080 \
   -e EVAL_SOURCE_API_KEY=<source EF API key> \
-  -e DIAL_CORE_URL=http://host.docker.internal:8080 \
+  -e DIAL_CORE_URL=http://host.docker.internal:8085 \
   -e DIAL_CORE_API_KEY=<target DIAL Core API key> \
   -v $(pwd)/eval-cli-work:/app/eval-cli-work \
   eval-cli:<tag-or-commit> \
@@ -97,9 +99,9 @@ on-disk artifact to clean up.
 ### Suite selection (`--suites`), clone suffix (`--clone-suffix`), and run metadata (`cli.*`)
 
 Suite selection and the clone suffix are **CLI-flag-only**, with no configuration or environment-variable
-fallback — see the [Commands](#commands) table for which commands accept which flag. This is consistent
-with `--deployment-id`: which suites/suffix/deployment to use is always a per-invocation, CI-log-visible
-choice, never a stable environment default.
+fallback — see the [Commands](#commands) table for which commands accept which flag. Which suites/suffix
+to use is always a per-invocation, CI-log-visible choice, never a stable environment default. Unlike
+these two, `--deployment-id` (also CLI-flag-only) is optional — see the [Commands](#commands) table.
 
 | Property | Environment Variable | Default | Required | Description |
 |----------|---------------------|---------|----------|-------------|
@@ -165,6 +167,16 @@ request-build time (headers a test case cannot override, including the `Api-Key`
 | `test-suite-run.retry.max-retry-backoff-multiplier` | `TEST_SUITE_RUN_MAX_RETRY_BACKOFF_MULTIPLIER` | `10.0` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.run-inputs.retention-days` | `TEST_SUITE_RUN_RUN_INPUTS_RETENTION_DAYS` | `7` | Yes | Unused by eval-cli (no DB retention job runs here); must bind. |
 | `sse-event-processing.max-total-duration-ms` | `SSE_MAX_TOTAL_DURATION_MS` | `3600000` | Yes | Absolute cap on how long a single SSE stream may be parsed during a streaming deployment invocation. |
+
+### OpenTelemetry (`otel.*`)
+
+`evaluation-runner-core` pulls in `opentelemetry-spring-boot-starter`, which enables the OTel SDK by
+default and exports to `http://localhost:4318` unless overridden. Disabled by default here so a CLI
+run doesn't spam `Connection refused` errors when no local OTLP collector is running.
+
+| Property | Environment Variable | Default | Required | Description |
+|----------|---------------------|---------|----------|-------------|
+| `otel.sdk.disabled` | `OTEL_SDK_DISABLED` | `true` | Yes | Set to `false` (and optionally set `OTEL_EXPORTER_OTLP_ENDPOINT`) to export traces/metrics/logs to a real OTLP collector. |
 
 ## Notes
 

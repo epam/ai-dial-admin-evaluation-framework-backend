@@ -1,7 +1,7 @@
 # Test Cases
 
 ## Purpose
-This spec describes TestCase authoring and management as children of a `Dataset`: CRUD, schema validation, CSV export/import, and re-validation. TestCases store a unified `data` map. Per-test-case template/binding overrides are no longer supported — `requestTemplateOverride`, `inputBindingsOverride`, and `enabled` have been removed from the model. Exclusion of test cases from a specific suite's runs is handled by the suite's `disabledTestCaseIds` list (see `test-suites` spec).
+This spec describes TestCase authoring and management as children of a `Dataset`: CRUD, schema validation, CSV export/import, and re-validation. TestCases store a unified `data` map. Per-test-case template/binding overrides are no longer supported — `requestTemplateOverride`, `inputBindingsOverride`, and `enabled` have been removed from the model. A test case carries no per-suite participation state: which of a dataset's test cases a given suite runs is decided solely by that suite's `testCaseFilter` (see the `suite-test-case-filter` spec).
 
 Status: **Planned** (dataset-rooted re-scoping).
 
@@ -39,7 +39,7 @@ All timestamps in API responses use **epoch milliseconds (Long)**.
 ## Requirements
 
 ### Requirement: Create and manage TestCases inside a Dataset
-The service SHALL manage TestCases as children of a Dataset with full CRUD operations. TestCases store a unified `data` map (Map<String, Object>). Per-case overrides of suite-level templates and bindings are no longer supported; test cases carry only their identity, the data map, and validity metadata.
+The service SHALL manage TestCases as children of a Dataset with full CRUD operations. TestCases store a unified `data` map (Map<String, Object>). Per-case overrides of suite-level templates and bindings are no longer supported; test cases carry only their identity, the data map, and validity metadata. A test case carries no per-suite participation state: which of a dataset's test cases a given suite runs is decided solely by that suite's `testCaseFilter` (see `suite-test-case-filter`).
 Status: **Planned**
 
 #### Scenario: Create a test case
@@ -52,7 +52,7 @@ Status: **Planned**
 
 #### Scenario: Sort and filter test cases
 - **WHEN** client calls `GET .../test-cases?sort=...&filter=...`
-- **THEN** system SHALL apply sorting and filtering per entity-filtering spec; supported filter fields: `testCaseName`, `valid`, `createdAt`; supported sort fields: `testCaseName`, `createdAt`, `updatedAt`, `valid` (the `enabled` field is removed — see "Per-suite `disabledTestCaseIds`" in the `test-suites` spec for the replacement)
+- **THEN** system SHALL apply sorting and filtering per entity-filtering spec; supported filter fields: `testCaseName`, `valid`, `createdAt`; supported sort fields: `testCaseName`, `createdAt`, `updatedAt`, `valid` (the `enabled` field is removed — a suite narrows the test cases it runs via its `testCaseFilter`, see the `suite-test-case-filter` spec)
 
 #### Scenario: Pagination with optional total count
 - **WHEN** client calls `GET .../test-cases?page=0&size=50&includeTotalCount=true`
@@ -1112,7 +1112,7 @@ Status: **Planned**
 - **THEN** system SHALL respond with HTTP 409; the dataset and its test cases SHALL remain intact
 
 ### Requirement: Mutable TestSuite fields
-The service SHALL allow updating mutable suite fields (e.g., `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `datasetId`, `disabledTestCaseIds`). Suite PUTs SHALL trigger synchronous suite-level re-validation only; suite PUTs SHALL NOT spawn an async `RevalidationTask`. Async tasks are spawned only by dataset PUTs that mutate `testCaseSchema` — see the `datasets` and `test-suites` specs.
+The service SHALL allow updating mutable suite fields (e.g., `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `datasetId`, `testCaseFilter`). Suite PUTs SHALL trigger synchronous suite-level re-validation only; suite PUTs SHALL NOT spawn an async `RevalidationTask`. Async tasks are spawned only by dataset PUTs that mutate `testCaseSchema` — see the `datasets` and `test-suites` specs.
 Status: **Planned**
 
 #### Scenario: Update endpointRef triggers synchronous suite-level re-validation

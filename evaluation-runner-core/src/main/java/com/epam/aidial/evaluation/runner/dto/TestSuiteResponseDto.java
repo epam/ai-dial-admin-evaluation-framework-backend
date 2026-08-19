@@ -34,9 +34,6 @@ public class TestSuiteResponseDto {
             description = "Identifier of the Dataset that owns this suite's test cases and test-case schema")
     private UUID datasetId;
 
-    @Schema(description = "Subset of the dataset's test cases that this suite skips during evaluation runs")
-    private List<UUID> disabledTestCaseIds;
-
     private DeploymentReferenceDto deploymentRef;
     private EndpointContractDto endpointRef;
     private List<ResponseColumnDefinitionDto> responseColumns;
@@ -92,7 +89,7 @@ public class TestSuiteResponseDto {
 
     @Schema(
             description = "Per-suite test-case filter (a Structured Query DSL filter subtree), as a JSON object. "
-                    + "Selects which of the bound dataset's test cases run (combined with `disabledTestCaseIds` and "
-                    + "validity). Null when the suite applies no filter.")
+                    + "Selects which of the bound dataset's test cases run (combined with validity). "
+                    + "Null when the suite applies no filter.")
     private Map<String, Object> testCaseFilter;
 }

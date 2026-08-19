@@ -13,11 +13,11 @@ Status: **Implemented**
 
 ### Requirement: Clone a TestSuite
 The system SHALL provide `POST /api/v1/test-suites/{sourceId}/clone` that creates a deep copy of the source suite. By default the cloned suite SHALL reference the **same `Dataset`** as the source suite (test cases are not copied; they are shared via the dataset reference). **Exception:** when the source suite is bound to a **PRIVATE** dataset AND the request supplies no `datasetId` override, the system SHALL clone the dataset (see "Clone of a PRIVATE-dataset suite clones the dataset") and bind the cloned suite to the new dataset. The request body SHALL accept a required `name` field and optional override fields. The response SHALL be HTTP 201 with `TestSuiteUpdateResultDto` containing the cloned suite.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Successful clone with name only (PUBLIC or unbound dataset)
 - **WHEN** client calls `POST /api/v1/test-suites/{sourceId}/clone` with `{"name": "My Clone"}` and the source's dataset is PUBLIC or the source is unbound
-- **THEN** system SHALL create a new test suite with all suite-level configuration inherited from the source, `name` set to "My Clone", `datasetId` inherited from the source, `disabledTestCaseIds` inherited from the source, `version` set to 0, fresh `createdAt`/`updatedAt` timestamps, and `createdBy` from JWT (or "anonymous" in no-security mode)
+- **THEN** system SHALL create a new test suite with all suite-level configuration inherited from the source, `name` set to "My Clone", `datasetId` inherited from the source, `version` set to 0, fresh `createdAt`/`updatedAt` timestamps, and `createdBy` from JWT (or "anonymous" in no-security mode)
 - **AND** system SHALL NOT create a new dataset and SHALL NOT copy any test-case rows
 - **AND** system SHALL return HTTP 201 with the new suite
 
@@ -58,9 +58,9 @@ Status: **Planned**
 - **WHEN** security mode is `oidc` AND a clone request is made without a valid authentication token
 - **THEN** the system SHALL respond with HTTP 401
 
-### Requirement: Clone of a PRIVATE-dataset suite clones the dataset
-When the source suite is bound to a dataset whose `visibility` is `PRIVATE` and the clone request supplies no `datasetId` override, the system SHALL create a new PRIVATE dataset that is an independent copy of the source dataset, copy all of the source dataset's test cases into it with new identifiers, copy dataset-scoped files, and bind the cloned suite to the new dataset. The dataset row, copied test cases, cloned suite, and cloned TSMDs SHALL all be persisted within a single transaction; DIAL file copies SHALL occur before the transaction and SHALL be cleaned up best-effort on failure.
-Status: **Planned**
+### Requirement: PRIVATE-dataset clone copies the dataset and its test cases
+When the source suite is bound to a dataset whose `visibility` is `PRIVATE` and the clone request supplies no `datasetId` override, the system SHALL create a new PRIVATE dataset that is an independent copy of the source dataset, copy all of the source dataset's test cases into it with new identifiers, copy dataset-scoped files, and bind the cloned suite to the new dataset. The dataset row, copied test cases, cloned suite, and cloned TSMDs SHALL all be persisted within a single transaction; DIAL file copies SHALL occur before the transaction and SHALL be cleaned up best-effort on failure. No suite-level state references individual test-case identifiers, so the clone SHALL NOT retain an old → new test-case id mapping and SHALL NOT rewrite any suite column other than `dataset_id`.
+Status: **Implemented**
 
 #### Scenario: New PRIVATE dataset is created and bound to the clone
 - **WHEN** client clones a suite bound to a PRIVATE dataset named "My Data" with no `datasetId` override
@@ -73,10 +73,7 @@ Status: **Planned**
 - **WHEN** the source PRIVATE dataset has N test cases and the clone proceeds
 - **THEN** the new dataset SHALL contain N test cases, each with a new UUID, `datasetId` set to the new dataset, and `testCaseName`, `data`, `valid`, and `validationWarnings` copied from the corresponding source test case
 - **AND** test cases SHALL be read and inserted in paginated batches
-
-#### Scenario: disabledTestCaseIds are remapped to the new test-case identifiers
-- **WHEN** the source suite's `disabledTestCaseIds` references one or more source test cases and the dataset is cloned
-- **THEN** the cloned suite's `disabledTestCaseIds` SHALL reference the corresponding new test-case identifiers (not the source identifiers)
+- **AND** the copy SHALL NOT accumulate an in-memory id map across batches
 
 #### Scenario: Dataset-scoped file references are copied and rewritten
 - **WHEN** a source test case's `data` contains a dataset-scoped file reference `@ef/datasets/{sourceDatasetId}/file.csv`
@@ -92,10 +89,10 @@ Status: **Planned**
 - **AND** system SHALL attempt best-effort deletion of the files copied to the new dataset's folder
 
 ### Requirement: Clone request DTO
-The system SHALL use a dedicated `TestSuiteCloneRequestDto` with `name` as `@NotBlank @Size(max = 255)` and all other suite-level fields as optional (nullable). Null fields SHALL mean "inherit from source." The DTO SHALL NOT include `suiteType` (always inherited) and SHALL NOT include `testCaseSchema` (schema lives on the dataset; suite has no schema field). The DTO SHALL include an optional `datasetId` field; when supplied, the cloned suite SHALL reference the supplied dataset; when null/absent, it SHALL inherit the source suite's `datasetId`.
-Status: **Planned**
+The system SHALL use a dedicated `TestSuiteCloneRequestDto` with `name` as `@NotBlank @Size(max = 255)` and all other suite-level fields as optional (nullable). Null fields SHALL mean "inherit from source." The DTO SHALL NOT include `suiteType` (always inherited), SHALL NOT include `testCaseSchema` (schema lives on the dataset; suite has no schema field), and SHALL NOT include any test-case exclusion list. The DTO SHALL include an optional `datasetId` field; when supplied, the cloned suite SHALL reference the supplied dataset; when null/absent, it SHALL inherit the source suite's `datasetId`.
+Status: **Implemented**
 
-Overridable fields: `description`, `datasetId`, `deploymentRef`, `endpointRef`, `responseColumns`, `requestTemplate`, `inputBindings`, `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `disabledTestCaseIds`.
+Overridable fields: `description`, `datasetId`, `deploymentRef`, `endpointRef`, `responseColumns`, `requestTemplate`, `inputBindings`, `mcpDeploymentRef`, `toolRef`, `argumentTemplate`.
 
 **Note:** `suiteType` is always inherited from the source suite and is not user-overridable. `testCaseSchema` is no longer on the suite — it lives on the dataset; users who want to clone a suite onto a fresh schema should create a new dataset (via `POST /api/v1/datasets`) and pass its id as `datasetId` in the clone request.
 
@@ -122,6 +119,10 @@ Overridable fields: `description`, `datasetId`, `deploymentRef`, `endpointRef`, 
 #### Scenario: testCaseSchema field is rejected
 - **WHEN** client sends a clone request body containing a `testCaseSchema` field
 - **THEN** system SHALL ignore the unknown field (per Jackson default) OR respond with HTTP 400 if strict-binding validation is enabled; in either case the cloned suite SHALL NOT carry a `testCaseSchema` (the field does not exist on `TestSuite` after this change)
+
+#### Scenario: disabledTestCaseIds field is ignored
+- **WHEN** client sends a clone request body containing a `disabledTestCaseIds` field
+- **THEN** system SHALL ignore the unknown field and the cloned suite SHALL carry no exclusion state; narrowing the clone's runnable subset is done by setting its `testCaseFilter` through a subsequent suite update (see `suite-test-case-filter`)
 
 ### Requirement: TSMD cloning
 The system SHALL clone all test suite metric definitions from the source suite into the new suite. For each source TSMD, every field SHALL be copied verbatim into the cloned TSMD, **except**:
@@ -278,3 +279,12 @@ The clone endpoint SHALL have OpenAPI annotations including operation summary, r
 #### Scenario: Swagger UI shows clone endpoint
 - **WHEN** user opens Swagger UI
 - **THEN** the clone endpoint SHALL appear with description, request body schema, and response examples
+
+## Implementation Notes
+- Endpoint: `TestSuiteController.cloneTestSuite`; orchestration in `TestSuiteCloneService`; suite entity built
+  field-by-field by `TestSuiteMapper.toCloneEntity` (no `INSERT … SELECT`).
+- `DatasetCloneService.cloneRowAndTestCases` returns `void`: no suite-level state references individual
+  test-case identifiers, so the old → new id map it used to return is gone — which also removes an in-memory
+  map holding one entry per copied test case for the length of the clone transaction.
+- Cloned suites never inherit legacy exclusion data: both `test_suites` insert paths enumerate columns
+  explicitly, so the retained `disabled_test_case_ids` column of a cloned row takes its `DEFAULT '[]'::jsonb`.

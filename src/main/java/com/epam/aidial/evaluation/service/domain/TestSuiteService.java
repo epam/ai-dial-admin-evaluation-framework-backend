@@ -330,7 +330,7 @@ public class TestSuiteService {
     /**
      * Forks the suite's bound PUBLIC dataset into a new PRIVATE clone and rebinds the suite to it.
      * Pre-TX: copies DIAL files for the new dataset folder.
-     * In-TX: clones the dataset row + test cases, remaps {@code disabledTestCaseIds}, rebinds suite.
+     * In-TX: clones the dataset row + test cases, rebinds suite.
      * On failure: best-effort cleanup of any copied files.
      */
     public TestSuiteResponseDto detachDataset(UUID suiteId, DatasetDetachRequestDto dto, Jwt jwt) {
@@ -403,7 +403,7 @@ public class TestSuiteService {
         final String resolvedName =
                 dto.getName() != null ? dto.getName() : datasetCloneService.deriveCloneName(source.getName());
         final String createdBy = authorResolver.getCreatedBy(jwt);
-        Map<UUID, UUID> tcIdMap = datasetCloneService.cloneRowAndTestCases(
+        datasetCloneService.cloneRowAndTestCases(
                 source,
                 newDatasetId,
                 resolvedName,
@@ -411,10 +411,8 @@ public class TestSuiteService {
                 createdBy,
                 timestamp,
                 DatasetVisibility.PRIVATE);
-        String remappedDisabledIds = testSuiteMapper.remapDisabledIds(suite.getDisabledTestCaseIds(), tcIdMap);
-        testSuiteRepository.updateDatasetId(suiteId, newDatasetId, remappedDisabledIds, timestamp);
+        testSuiteRepository.updateDatasetId(suiteId, newDatasetId, timestamp);
         suite.setDatasetId(newDatasetId);
-        suite.setDisabledTestCaseIds(remappedDisabledIds);
         // Mirror the version/timestamp bump applied by updateDatasetId so the returned
         // DTO reflects the persisted row (the in-memory copy is what we map back).
         suite.setVersion(suite.getVersion() == null ? 1L : suite.getVersion() + 1L);

@@ -134,6 +134,95 @@ class RunOrchestrationServiceTest {
     }
 
     @Test
+    @DisplayName("falls back to the suite's own recorded deploymentRef when --deployment-id is omitted")
+    void fallsBackToSuiteDeploymentRefWhenTargetRefAbsent() throws Exception {
+        final UUID sourceSuiteId = UUID.randomUUID();
+        final TestCaseResponseDto tc = TestCaseResponseDto.builder()
+                .id(UUID.randomUUID())
+                .testCaseName("TC1")
+                .build();
+
+        final DeploymentReferenceDto suiteDeploymentRef = DeploymentReferenceDto.builder()
+                .id("suite-model")
+                .name("Suite Model")
+                .build();
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(sourceSuiteId)
+                .name("Suite")
+                .deploymentRef(suiteDeploymentRef)
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final SuiteFetchBundle bundle = SuiteFetchBundle.builder()
+                .sourceSuiteId(sourceSuiteId)
+                .destinationSuiteId(UUID.randomUUID())
+                .suite(suite)
+                .testCases(List.of(tc))
+                .build();
+
+        final EvaluationContext context = EvaluationContext.builder()
+                .runId(UUID.randomUUID())
+                .suiteId(sourceSuiteId)
+                .datasetId(UUID.randomUUID())
+                .numberOfRuns(1)
+                .numberOfTestCases(1)
+                .concurrencyLevel(4)
+                .requestTimeoutMs(60000L)
+                .maxRetries(0)
+                .retryDelayMs(0L)
+                .retryBackoffMultiplier(1.0)
+                .maxRetryDelayMs(0L)
+                .resultBatchSize(10)
+                .maxResponseSizeBytes(1048576L)
+                .cancellationGracePeriodMs(5000L)
+                .cancellationSignal(new AtomicBoolean(false))
+                .token("tok")
+                .createdAtMs(0L)
+                .snapshotDeploymentRef(suiteDeploymentRef)
+                .snapshotResponseColumns(List.of())
+                .snapshotInputBindings(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final TestCaseRunInput input = TestCaseRunInput.builder()
+                .testCaseId(tc.getId())
+                .testCaseName("TC1")
+                .build();
+
+        when(evaluationContextFactory.create(any(), eq(1), eq(suiteDeploymentRef), any()))
+                .thenReturn(context);
+        when(testCaseRunInputMapper.toInput(any())).thenReturn(input);
+        when(testCaseRunnerFactory.create(any(), any(), any())).thenReturn(testCaseRunner);
+
+        final File csvFile = service.run(bundle, null, tempDir.toString());
+
+        verify(evaluationContextFactory).create(suite, 1, suiteDeploymentRef, null);
+        assertThat(csvFile).exists();
+    }
+
+    @Test
+    @DisplayName("fails with a clear error when --deployment-id is omitted and the suite has no deploymentRef")
+    void failsWhenTargetRefAndSuiteDeploymentRefBothAbsent() {
+        final UUID sourceSuiteId = UUID.randomUUID();
+        final TestSuiteResponseDto suite =
+                TestSuiteResponseDto.builder().id(sourceSuiteId).name("Suite").build();
+        final SuiteFetchBundle bundle = SuiteFetchBundle.builder()
+                .sourceSuiteId(sourceSuiteId)
+                .destinationSuiteId(UUID.randomUUID())
+                .suite(suite)
+                .testCases(List.of())
+                .build();
+
+        assertThatThrownBy(() -> service.run(bundle, null, tempDir.toString()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no recorded deploymentRef")
+                .hasMessageContaining("--deployment-id was not provided");
+
+        verifyNoInteractions(evaluationContextFactory, testCaseRunnerFactory);
+    }
+
+    @Test
     @DisplayName("propagates SuiteContractValidator failures without invoking the runner")
     void propagatesContractValidationFailure() {
         final UUID sourceSuiteId = UUID.randomUUID();

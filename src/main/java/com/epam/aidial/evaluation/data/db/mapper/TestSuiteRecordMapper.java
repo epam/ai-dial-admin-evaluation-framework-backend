@@ -19,7 +19,6 @@ public class TestSuiteRecordMapper {
                 .description(r.getDescription())
                 .suiteType(SuiteType.fromValue(r.getSuiteType()))
                 .datasetId(r.getDatasetId() != null ? UUID.fromString(r.getDatasetId()) : null)
-                .disabledTestCaseIds(toJsonString(r.getDisabledTestCaseIds()))
                 .deploymentRef(toJsonString(r.getDeploymentRef()))
                 .endpointRef(toJsonString(r.getEndpointRef()))
                 .responseColumns(toJsonString(r.getResponseColumns()))

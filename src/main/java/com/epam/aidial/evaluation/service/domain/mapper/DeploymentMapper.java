@@ -132,17 +132,29 @@ public interface DeploymentMapper {
         };
     }
 
-    /**
-     * Fully maps a unified deployment entry from /v1/deployments to the matching info subtype:
-     * all base fields (version from displayVersion, owner, timestamps, descriptionKeywords,
-     * inputAttachmentTypes) plus subtype-specific ones (model capabilities/limits/pricing,
-     * application properties/schemaId/routes, toolset transport/allowedTools).
-     */
-    default DeploymentInfoDto toDeploymentInfoDto(DialCoreDeploymentDto source) {
+    default DeploymentInfoDto toDeploymentInfoShortDto(DialCoreDeploymentDto source) {
         return switch (source) {
-            case DialCoreModelDto model -> toDialModelInfoDto(model);
-            case DialCoreApplicationDto application -> toDialApplicationInfoDto(application);
-            case DialCoreToolsetDto toolset -> toToolsetInfoDto(toolset);
+            case DialCoreModelDto model ->
+                DialModelInfoDto.builder()
+                        .deploymentId(model.getId())
+                        .displayName(mapMultilingual(model.getDisplayName()))
+                        .description(mapMultilingual(model.getDescription()))
+                        .build();
+            //
+            case DialCoreApplicationDto app ->
+                DialApplicationInfoDto.builder()
+                        .deploymentId(app.getId())
+                        .displayName(mapMultilingual(app.getDisplayName()))
+                        .description(mapMultilingual(app.getDescription()))
+                        .build();
+            //
+            case DialCoreToolsetDto toolset ->
+                ToolsetInfoDto.builder()
+                        .deploymentId(toolset.getId())
+                        .displayName(mapMultilingual(toolset.getDisplayName()))
+                        .description(mapMultilingual(toolset.getDescription()))
+                        .transport(dialTransportToMcp(toolset.getTransport()))
+                        .build();
             // Unknown object type (or null entry) — return null so the caller can log and skip
             case null, default -> null;
         };

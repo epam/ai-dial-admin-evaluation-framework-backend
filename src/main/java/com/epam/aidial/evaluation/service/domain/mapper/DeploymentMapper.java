@@ -133,16 +133,33 @@ public interface DeploymentMapper {
     }
 
     /**
-     * Fully maps a unified deployment entry from /v1/deployments to the matching info subtype:
-     * all base fields (version from displayVersion, owner, timestamps, descriptionKeywords,
-     * inputAttachmentTypes) plus subtype-specific ones (model capabilities/limits/pricing,
-     * application properties/schemaId/routes, toolset transport/allowedTools).
+     * Maps a unified deployment entry from /v1/deployments to a short projection of the matching
+     * info subtype: only {@code deploymentId}, {@code displayName} and {@code description} (plus
+     * {@code transport} for toolsets). All other fields stay null and are dropped by the shared
+     * {@code NON_NULL} ObjectMapper, keeping the listing payload small; clients needing the full
+     * representation fetch the deployment individually.
      */
-    default DeploymentInfoDto toDeploymentInfoDto(DialCoreDeploymentDto source) {
+    default DeploymentInfoDto toDeploymentInfoShortDto(DialCoreDeploymentDto source) {
         return switch (source) {
-            case DialCoreModelDto model -> toDialModelInfoDto(model);
-            case DialCoreApplicationDto application -> toDialApplicationInfoDto(application);
-            case DialCoreToolsetDto toolset -> toToolsetInfoDto(toolset);
+            case DialCoreModelDto model ->
+                DialModelInfoDto.builder()
+                        .deploymentId(model.getId())
+                        .displayName(mapMultilingual(model.getDisplayName()))
+                        .description(mapMultilingual(model.getDescription()))
+                        .build();
+            case DialCoreApplicationDto app ->
+                DialApplicationInfoDto.builder()
+                        .deploymentId(app.getId())
+                        .displayName(mapMultilingual(app.getDisplayName()))
+                        .description(mapMultilingual(app.getDescription()))
+                        .build();
+            case DialCoreToolsetDto toolset ->
+                ToolsetInfoDto.builder()
+                        .deploymentId(toolset.getId())
+                        .displayName(mapMultilingual(toolset.getDisplayName()))
+                        .description(mapMultilingual(toolset.getDescription()))
+                        .transport(dialTransportToMcp(toolset.getTransport()))
+                        .build();
             // Unknown object type (or null entry) — return null so the caller can log and skip
             case null, default -> null;
         };

@@ -20,8 +20,13 @@ The system SHALL define `ToolsetInfoDto extends DeploymentInfoDto` with discrimi
 - **AND** SHALL contain toolset-specific fields: `transport` (String, nullable), `allowedTools` (List<String>, nullable)
 
 #### Scenario: Common deployment fields present on toolset
-- **WHEN** system returns a `ToolsetInfoDto`
+- **WHEN** system returns a `ToolsetInfoDto` from the single-deployment endpoint
 - **THEN** JSON SHALL contain common `DeploymentInfoDto` fields: `deploymentId`, `displayName`, `createdAt`, `updatedAt`, and nullable fields (`version`, `description`, `owner`, `descriptionKeywords`)
+
+#### Scenario: Toolset entry in the deployment listing
+- **WHEN** system returns a `ToolsetInfoDto` as an entry of `GET /api/v1/deployments`
+- **THEN** JSON SHALL contain only `$type`, `deploymentId`, `displayName`, `description`, and `transport`
+- **AND** `allowedTools` and the common detail fields SHALL be absent (see the short-projection rule in the [dial-core-client spec](../dial-core-client/spec.md))
 
 ### Requirement: Deployment listing `interface` query parameter
 

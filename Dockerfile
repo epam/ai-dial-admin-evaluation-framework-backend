@@ -1,5 +1,5 @@
 # Build stage
-FROM gradle:9.6.0-jdk25-alpine AS builder
+FROM gradle:9.7.1-jdk25-alpine AS builder
 WORKDIR /build-workspace
 
 COPY build.gradle .

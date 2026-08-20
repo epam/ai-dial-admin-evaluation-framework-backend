@@ -270,8 +270,8 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("GET /deployments maps application routes from the unified endpoint")
-    void getAllDeploymentsMapsApplicationRoutes() {
+    @DisplayName("GET /deployments omits application routes returned by the unified endpoint")
+    void getAllDeploymentsOmitsApplicationRoutes() {
         when(dialCoreClient.getDeployments(eq(null)))
                 .thenReturn(List.of(DialCoreApplicationDto.builder()
                         .id("app-with-routes")
@@ -295,10 +295,10 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).hasSize(1);
         DialApplicationInfoDto app = (DialApplicationInfoDto) response.getBody().get(0);
-        assertThat(app.getRoutes()).containsOnlyKeys("route1");
-        assertThat(app.getRoutes().get("route1").getPaths()).containsExactly("/route1/.*");
-        assertThat(app.getRoutes().get("route1").getUpstreams().get(0).getEndpoint())
-                .isEqualTo("http://route1-upstream");
+        assertThat(app.getDeploymentId()).isEqualTo("app-with-routes");
+        assertThat(app.getDisplayName()).isEqualTo("App With Routes");
+        // short projection: routes are a detail-endpoint concern, never returned in the listing
+        assertThat(app.getRoutes()).isNull();
     }
 
     @Test

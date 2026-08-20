@@ -596,7 +596,7 @@ Status: **Implemented**
 
 ## Implementation notes
 
-- Request object model: `com.epam.aidial.evaluation.experimental.query.model` — `StructuredQuery`,
+- Request object model: `com.epam.aidial.evaluation.query.model` — `StructuredQuery`,
   `FilterNode`/`LogicalNode`/`ComparisonNode`, `Expr`/`FieldExpr`/`ValueExpr`/`ParamExpr`/`FnExpr`/
   `ArrayExpr`, `AggregateCall`, `SortItem`, `PageSpec`/`OffsetPage`/`CursorPage`, and enums
   `QueryMode`/`LogicalOp`/`ComparisonOp`/`SortDir`/`ValueType`.
@@ -605,15 +605,14 @@ Status: **Implemented**
 - Null polarity: `ComparisonOp.negated()` declares which operators assert absence (`nc`, `ne`);
   `FilterTranslator` wraps those comparisons in `(<pred>) IS NOT FALSE` and the `not` node in
   `(<child>) IS NOT TRUE`, leaving positive comparisons unwrapped so they stay sargable. Rendered-SQL
-  proof: `experimental/query/service/translate/FilterTranslatorNullSemanticsTest`.
-- Wire contract: `docs/experimental/structured-query-model.md` (v7); design notes:
-  `docs/experimental/structured-query-object-model-notes.md`.
-- Binding proof: `experimental/query/model/StructuredQueryDeserializationTest` round-trips the spec
+  proof: `query/service/translate/FilterTranslatorNullSemanticsTest`.
+- Wire contract: `docs/query-dsl/structured-query-model-v8.html`.
+- Binding proof: `query/model/StructuredQueryDeserializationTest` round-trips the spec
   examples through the production `JsonMapper`.
 - Open decisions carried as `// TODO(Dn)` markers: D1 (mode explicit vs inferred), D5/D8 (tiebreaker
   / null ordering), D6 (aggregate response typing), D10 (param source/registry).
-- Execution endpoint + dispatch: `experimental.query.web.StructuredQueryController`,
-  `experimental.query.service.StructuredQueryService`,
+- Execution endpoint + dispatch: `query.web.StructuredQueryController`,
+  `query.service.StructuredQueryService`,
   `…service.repository.StructuredQueryEntityResolver` (SPI) + `…service.repository.StructuredQueryEntityRegistry`
   (+ `PostgresTestSuiteEntityResolver` on meta DSL, `PostgresEvalSummaryEntityResolver` on analytics DSL,
   `PostgresMetricScoreResultEntityResolver` on analytics DSL, `PostgresTestCaseEntityResolver` on meta
@@ -629,7 +628,7 @@ Status: **Implemented**
   cycle); `StructuredQueryBuilder.compileSubqueryMembership(SubqueryExpr)` builds and wraps a subquery's
   nested select, reached from `ExprTranslator` and (via `ExprTranslator`) from `FilterTranslator`'s `in`
   handling. Response: `…service.dto.StructuredQueryResultDto`; JSONB row parsing via
-  `experimental.query.web.JsonbRowConverter`.
+  `query.web.JsonbRowConverter`.
 - Execution error mapping: `ValidationException` → 400; `BadSqlGrammarException` /
   `DataIntegrityViolationException` caught in `StructuredQueryExecutor` and rethrown as
   `ValidationException` → 400.

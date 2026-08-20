@@ -1,6 +1,6 @@
 # Query DSL function catalog is registry-driven
 
-DSL functions are NOT a hardcoded switch. Each is a `QueryFunction` bean (SPI in `experimental.query.service.translate.function`) collected by `QueryFunctionRegistry`; `ExprTranslator` delegates to the registry. To add a function, drop in a new `@Component QueryFunction` (or a `@Bean` in `BuiltInQueryFunctions`) — no translator/registry edits. Built-ins live in `BuiltInQueryFunctions`. Duplicate names are rejected at startup; unknown names → `ValidationException` (400).
+DSL functions are NOT a hardcoded switch. Each is a `QueryFunction` bean (SPI in `query.service.translate.function`) collected by `QueryFunctionRegistry`; `ExprTranslator` delegates to the registry. To add a function, drop in a new `@Component QueryFunction` (or a `@Bean` in `BuiltInQueryFunctions`) — no translator/registry edits. Built-ins live in `BuiltInQueryFunctions`. Duplicate names are rejected at startup; unknown names → `ValidationException` (400).
 
 ## Delegating to a stored Postgres function
 

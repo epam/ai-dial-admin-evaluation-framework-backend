@@ -19,6 +19,8 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputationExecutor;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
@@ -56,7 +58,7 @@ class TestSuiteEvaluationJobTest {
     private DatasetRepository datasetRepository;
 
     @Mock
-    private RunnableTestCaseSelector runnableTestCaseSelector;
+    private QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
 
     @Mock
     private TestCaseRunInputRepository testCaseRunInputRepository;
@@ -83,7 +85,7 @@ class TestSuiteEvaluationJobTest {
     private MetricEvaluationExecutor metricEvaluationExecutor;
 
     @Mock
-    private MetricScoreComputation metricScoreComputation;
+    private MetricScoreComputationExecutor metricScoreComputation;
 
     @Mock
     private Clock clock;

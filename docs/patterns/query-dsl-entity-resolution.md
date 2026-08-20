@@ -1,6 +1,6 @@
 # Query DSL entity resolution
 
-`experimental.query.service.repository.StructuredQueryEntityResolver` is the single SPI every queryable entity implements: `entity()`, `dsl()`, `table()`, `bindings(StructuredQuery)`, `default rewrite(StructuredQuery)` (identity).
+`query.service.repository.StructuredQueryEntityResolver` is the single SPI every queryable entity implements: `entity()`, `dsl()`, `table()`, `bindings(StructuredQuery)`, `default rewrite(StructuredQuery)` (identity).
 
 `StructuredQueryEntityRegistry` collects all resolver beans at startup into a `Map<String, resolver>` (one per entity, gated by `@ConditionalOnProperty` on datasource vendor); `require(entity)` is the single unknown-entity 400 check, used by `StructuredQueryBuilder`/`StructuredQueryExecutor`/`StructuredQueryService` alike.
 

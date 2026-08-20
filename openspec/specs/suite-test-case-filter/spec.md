@@ -4,8 +4,8 @@
 This spec defines the per-suite `testCaseFilter`: an optional Structured Query DSL filter, authored
 over a suite's bound dataset's test-case fields, that narrows the set of test cases a suite run
 executes. It covers the runnable-subset semantics, its consistent application at run-creation count
-and snapshot time, and the interface-inversion wiring that lets the run pipeline reuse the Structured
-Query DSL translation layer without introducing a `service` → `experimental.query` dependency.
+and snapshot time, and the wiring that lets the run pipeline reuse the Structured Query DSL
+translation layer.
 
 Status: **Implemented**
 
@@ -143,9 +143,8 @@ Status: **Implemented**
 - **THEN** the compiled SQL evaluates the shared predicate against the outer row's `data` and the per-turn predicate per turn element, with the shared reference correlated correctly inside the `NOT EXISTS` lateral
 
 ## Implementation Notes
-- New `service`-layer interface `service.domain.job.RunnableTestCaseSelector`; implementation in
-  `experimental.query.service` (mirrors the `MetricScoreComputation` inversion), backed by
-  `QueryDslRunnableTestCaseSelector`.
+- `query.service.QueryDslRunnableTestCaseSelector`, injected directly into `TestSuiteService`,
+  `TestSuiteRunService`, and `TestSuiteEvaluationJob`.
 - Multi-turn ALL-turns-match: `TestCaseFieldBindingsBuilder` overload binds `data::<field>` against a
   per-turn JSONB element (`elem`); `QueryDslRunnableTestCaseSelector.compile()` compiles the filter
   against `elem` and wraps the `Condition` in the `NOT EXISTS` lateral over

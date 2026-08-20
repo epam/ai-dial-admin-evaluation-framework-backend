@@ -12,10 +12,10 @@ import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
-import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
@@ -69,7 +69,7 @@ class TestSuiteServiceTest {
     private DatasetSchemaProvider datasetSchemaProvider;
 
     @Mock
-    private RunnableTestCaseSelector runnableTestCaseSelector;
+    private QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
 
     @Mock
     private TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;

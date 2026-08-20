@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
@@ -29,7 +30,6 @@ import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViola
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
-import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
@@ -57,7 +57,7 @@ public class TestSuiteRunService {
     private final TestSuiteRunRepository testSuiteRunRepository;
     private final TestSuiteRepository testSuiteRepository;
     private final TestCaseService testCaseService;
-    private final RunnableTestCaseSelector runnableTestCaseSelector;
+    private final QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteRunProperties properties;
     private final TestSuiteEvaluationJob evaluationJob;
     private final ExecutionSettingsValidator executionSettingsValidator;

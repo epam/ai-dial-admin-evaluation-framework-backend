@@ -235,11 +235,11 @@ Status: **Implemented**
 
 ## Implementation notes
 
-- Endpoint: `web/controller/RunComparisonController` (stable `web` layer), depending on
-  `service/domain/analytics/RunComparisonProvider`.
-- Orchestration: `experimental/query/service/metricscore/RunComparisonService` — it must live in the
-  experimental package because it drives `StructuredQueryService`, and is reached from `web` through the
-  `service`-layer interface, so `LayeredArchitectureTest` needs no exception.
+- Endpoint: `web/controller/RunComparisonController` (stable `web` layer), depending directly on
+  `query/service/metricscore/RunComparisonService`.
+- Orchestration: `query/service/metricscore/RunComparisonService` — lives alongside the rest of the
+  Query DSL classes it drives (`StructuredQueryService`); `LayeredArchitectureTest` folds `query.*` into
+  the `service` layer, so this is an ordinary `web` → `service` edge.
 - Matching: `PostgresEvalSummaryRepository.countMatches` / `findUnmatchedIds` — a per-side left join against
   the other run's `DISTINCT` key set, carrying the three counts and the duration average as four aggregates
   on one statement. Measured plans: hash left join for the counts, merge anti join for the ids (see the

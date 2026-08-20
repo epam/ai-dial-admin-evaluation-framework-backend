@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
@@ -33,7 +34,6 @@ import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViola
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
-import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
@@ -72,7 +72,7 @@ public class TestSuiteService {
     private final EndpointSchemaRefResolver endpointSchemaRefResolver;
     private final SuiteValidationService suiteValidationService;
     private final DatasetSchemaProvider datasetSchemaProvider;
-    private final RunnableTestCaseSelector runnableTestCaseSelector;
+    private final QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final FileService fileService;
     private final Clock clock;
@@ -451,7 +451,7 @@ public class TestSuiteService {
      * Validates a suite's {@code testCaseFilter} at write time against the bound dataset's test-case
      * schema. A null filter is a no-op. A non-null filter on an unbound suite ({@code datasetId == null})
      * is rejected because it can be neither validated nor applied. Otherwise the filter is translated
-     * against the dataset's typed bindings via {@link RunnableTestCaseSelector#validateFilter}, which
+     * against the dataset's typed bindings via {@link QueryDslRunnableTestCaseSelector#validateFilter}, which
      * throws {@link ValidationException} (→ HTTP 400) on an unknown field, type error, or malformed filter.
      */
     private void validateTestCaseFilter(UUID datasetId, Map<String, Object> testCaseFilter) {

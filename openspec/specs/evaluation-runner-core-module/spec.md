@@ -134,7 +134,7 @@ The `evaluation-runner-core` module SHALL apply the same Spotless + palantir-jav
 3. `runner.client.*` classes SHALL NOT depend on `runner.job` classes.
 4. All `@RestController`, `@Controller`, `@Service`, `@Repository`, `@Component`, `@Configuration` classes SHALL have `@LogExecution` at the class level.
 
-The dual-datasource rules, experimental-layer rules, and DB-model rules from the EF backend's `LayeredArchitectureTest` SHALL NOT be replicated in the shared module.
+The dual-datasource rules and DB-model rules from the EF backend's `LayeredArchitectureTest` SHALL NOT be replicated in the shared module.
 
 #### Scenario: Checkstyle passes on shared module
 - **WHEN** `./gradlew :evaluation-runner-core:checkstyleMain` is run

@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.web.controller;
 
+import com.epam.aidial.evaluation.query.service.metricscore.RunComparisonService;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
-import com.epam.aidial.evaluation.service.domain.analytics.RunComparisonProvider;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunComparisonResponseDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -23,10 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Compares two runs of one suite over the eval-summary rows they have in common.
- *
- * <p>Depends on {@link RunComparisonProvider}, never on the implementation: the implementation lives in the
- * experimental query package, and this controller must stay in the stable web layer so it can raise the shared
- * exception types. See {@code LayeredArchitectureTest}.
  */
 @Slf4j
 @RestController
@@ -37,7 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Run Comparison", description = "Metric scores recomputed over two runs' shared test cases")
 public class RunComparisonController {
 
-    private final RunComparisonProvider runComparisonProvider;
+    private final RunComparisonService runComparisonService;
 
     @GetMapping(value = "/comparison", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
@@ -96,6 +92,6 @@ public class RunComparisonController {
                     @RequestParam
                     @Size(min = 2, max = 2)
                     List<UUID> runIds) {
-        return runComparisonProvider.compare(runIds);
+        return runComparisonService.compare(runIds);
     }
 }

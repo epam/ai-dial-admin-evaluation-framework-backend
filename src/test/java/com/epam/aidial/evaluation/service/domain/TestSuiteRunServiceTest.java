@@ -18,6 +18,7 @@ import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
@@ -28,7 +29,6 @@ import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundExcepti
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
-import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
@@ -65,7 +65,7 @@ class TestSuiteRunServiceTest {
     private TestCaseService testCaseService;
 
     @Mock
-    private RunnableTestCaseSelector runnableTestCaseSelector;
+    private QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
 
     @Mock
     private TestSuiteEvaluationJob evaluationJob;

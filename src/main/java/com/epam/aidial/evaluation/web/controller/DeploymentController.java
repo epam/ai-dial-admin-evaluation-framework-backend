@@ -44,11 +44,15 @@ public class DeploymentController {
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "List all deployments",
-            description = "Returns all deployments (models and applications) from DIAL Core. Requires authentication; "
-                    + "user's JWT is propagated to DIAL Core so only authorized deployments are returned.")
+            description = "Returns all deployments (models, applications, and toolsets) from DIAL Core. "
+                    + "Entries are a short projection: only deploymentId, displayName and description "
+                    + "(plus transport for toolsets) are populated — all other fields are omitted to keep the "
+                    + "payload small. Fetch a single deployment by type and ID for the full representation. "
+                    + "Requires authentication; user's JWT is propagated to DIAL Core so only authorized "
+                    + "deployments are returned.")
     @ApiResponse(
             responseCode = "200",
-            description = "Merged list of models and applications",
+            description = "Merged short-form list of models, applications and toolsets",
             content =
                     @Content(
                             mediaType = MediaType.APPLICATION_JSON_VALUE,

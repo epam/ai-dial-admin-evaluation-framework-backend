@@ -54,8 +54,8 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
     // --- 13.1 Deployment listing with type/interface filters ---
 
     @Test
-    @DisplayName("GET /deployments returns models, apps, and toolsets from unified endpoint, fully mapped")
-    void getAllDeploymentsReturnsAllTypes() {
+    @DisplayName("GET /deployments returns models, apps, and toolsets from unified endpoint as short projections")
+    void getAllDeploymentsReturnsAllTypesAsShortProjections() {
         when(dialCoreClient.getDeployments(eq(null)))
                 .thenReturn(List.of(
                         DialCoreModelDto.builder()
@@ -86,9 +86,11 @@ public abstract class McpDeploymentFunctionalTests extends BaseFunctionalTest {
                 .filter(d -> "t1".equals(d.getDeploymentId()))
                 .findFirst()
                 .orElseThrow();
-        assertThat(toolset.getVersion()).isEqualTo("v1");
+        assertThat(toolset.getDisplayName()).isEqualTo("Toolset 1");
         assertThat(toolset.getTransport()).isEqualTo(McpTransport.STREAMABLE_HTTP);
-        assertThat(toolset.getAllowedTools()).containsExactly("search");
+        // short projection: detail fields present upstream are omitted from the listing
+        assertThat(toolset.getVersion()).isNull();
+        assertThat(toolset.getAllowedTools()).isNull();
     }
 
     @Test

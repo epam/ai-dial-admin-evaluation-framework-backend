@@ -8,14 +8,26 @@ The DIAL Core Client provides integration with the DIAL Core API, allowing the s
 
 ### Requirement: List all deployments
 
-The system SHALL provide an endpoint to list all available deployments (models, applications, and toolsets) from DIAL Core. The system SHALL call DIAL Core's unified `GET /v1/deployments` endpoint (with optional `interface_type` parameter), transform responses to `DeploymentInfoDto` hierarchy, and return. When `type` query parameter is provided on EF's endpoint, the system SHALL filter the response client-side by deployment type. List entries SHALL be fully mapped to the `DeploymentInfoDto` hierarchy via the same per-type mappers used by the single-entity endpoints (all common fields — `version` from `display_version`, `owner`, timestamps, `descriptionKeywords`, `inputAttachmentTypes` — plus subtype-specific fields: model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, toolset `transport`/`allowedTools`). Application `routes` present in the unified payload pass through as-is; schema-route resolution via `SchemaRouteExtractor` remains exclusive to the single-application GET.
+The system SHALL provide an endpoint to list all available deployments (models, applications, and toolsets) from DIAL Core. The system SHALL call DIAL Core's unified `GET /v1/deployments` endpoint (with optional `interface_type` parameter), transform responses to `DeploymentInfoDto` hierarchy, and return. When `type` query parameter is provided on EF's endpoint, the system SHALL filter the response client-side by deployment type.
+
+List entries SHALL be mapped to a **short projection** of the `DeploymentInfoDto` hierarchy — deliberately *not* the full per-type mapping used by the single-entity endpoints — so that the listing payload stays small. `DeploymentMapper.toDeploymentInfoShortDto` SHALL populate only:
+
+- `deploymentId`, `displayName`, `description` — for every subtype (in addition to the `$type` discriminator);
+- `transport` — additionally for `ToolsetInfoDto`, because callers pick an MCP transport straight off the list.
+
+Every other field SHALL be left null and therefore SHALL be absent from the JSON (the shared `ObjectMapper` uses `NON_NULL` inclusion): `version`, `owner`, `createdAt`, `updatedAt`, `descriptionKeywords`, `inputAttachmentTypes`, model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, toolset `allowedTools`. Clients needing any of those SHALL fetch the deployment individually via `GET /api/v1/deployments/{deploymentType}/**`, which keeps the full per-type mapping. Schema-route resolution via `SchemaRouteExtractor` likewise remains exclusive to the single-application GET.
 
 #### Scenario: Successful deployment listing
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments`
 - **THEN** system calls DIAL Core `GET /v1/deployments` with user's JWT token
 - **AND** transforms responses to `DialModelInfoDto`, `DialApplicationInfoDto`, and `ToolsetInfoDto` based on entry type
-- **AND** fully maps each entry's common and subtype-specific fields via the same mappers used by the single-entity endpoints
+- **AND** maps each entry to the short projection (`deploymentId`, `displayName`, `description`, plus `transport` for toolsets)
 - **AND** returns merged list with HTTP 200
+
+#### Scenario: Detail fields omitted from the listing
+- **WHEN** DIAL Core returns entries carrying `display_version`, `owner`, timestamps, `descriptionKeywords`, `inputAttachmentTypes`, model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, or toolset `allowedTools`
+- **THEN** the listing response SHALL NOT contain those properties for any entry
+- **AND** the same deployment fetched via `GET /api/v1/deployments/{deploymentType}/**` SHALL still contain them
 
 #### Scenario: Deployment listing with interface filter
 - **WHEN** authenticated user sends `GET /api/v1/deployments?interface=mcp`
@@ -48,7 +60,7 @@ The system SHALL provide an endpoint to list all available deployments (models, 
 
 #### Scenario: Application with app-level routes in list
 - **WHEN** DIAL Core returns an application with non-null `routes` in the unified list
-- **THEN** the list endpoint SHALL return those routes mapped to `Map<String, ApplicationRouteDto>` as-is (no schema-route resolution in the list path)
+- **THEN** the list endpoint SHALL omit `routes` (routes are a detail-endpoint concern; neither pass-through nor schema-route resolution happens in the list path)
 
 ---
 
@@ -153,9 +165,14 @@ The system SHALL define a `DeploymentInfoDto` abstract base class with polymorph
 - **AND** contains toolset-specific fields: `transport`, `allowedTools` (all nullable)
 
 #### Scenario: Common fields present
-- **WHEN** system returns any `DeploymentInfoDto`
+- **WHEN** system returns any `DeploymentInfoDto` from a single-deployment endpoint
 - **THEN** JSON contains required fields: `deploymentId`, `displayName`, `createdAt`, `updatedAt`
 - **AND** nullable fields present if available: `version`, `description`, `owner`, `descriptionKeywords`, `inputAttachmentTypes`
+
+#### Scenario: Common fields on a listing entry
+- **WHEN** system returns a `DeploymentInfoDto` as an entry of `GET /api/v1/deployments`
+- **THEN** JSON contains only `$type`, `deploymentId`, `displayName`, `description` (and `transport` for `dial-toolset`)
+- **AND** `createdAt`/`updatedAt` are absent — they are not guaranteed on listing entries
 
 ---
 

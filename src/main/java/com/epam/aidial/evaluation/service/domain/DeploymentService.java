@@ -61,7 +61,7 @@ public class DeploymentService {
 
         return data.stream()
                 .map(deployment -> {
-                    DeploymentInfoDto dto = deploymentMapper.toDeploymentInfoDto(deployment);
+                    DeploymentInfoDto dto = deploymentMapper.toDeploymentInfoShortDto(deployment);
                     if (dto == null) {
                         log.warn(
                                 "Skipping deployment with unknown object type '{}': id='{}'",

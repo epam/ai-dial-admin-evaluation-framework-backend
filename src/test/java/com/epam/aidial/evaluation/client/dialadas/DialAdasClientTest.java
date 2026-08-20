@@ -89,8 +89,7 @@ class DialAdasClientTest {
     @Test
     @DisplayName("throws DialAdasClientException with 504 on connection timeout")
     void throwsClientExceptionOnTimeout() {
-        ClientHttpRequestInterceptor timeoutInterceptor =
-                (request, body, execution) -> throwSocketTimeout();
+        ClientHttpRequestInterceptor timeoutInterceptor = (request, body, execution) -> throwSocketTimeout();
         RestClient timeoutClient =
                 builder.requestInterceptor(timeoutInterceptor).build();
         DialAdasClient timeoutBoundClient = new DialAdasClient(timeoutClient);

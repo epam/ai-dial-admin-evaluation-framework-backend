@@ -49,8 +49,7 @@ public class DialAdasClient {
             }
             return response;
         } catch (RestClientResponseException e) {
-            throw new DialAdasClientException(
-                    e.getStatusCode().value(), e.getMessage(), e);
+            throw new DialAdasClientException(e.getStatusCode().value(), e.getMessage(), e);
         } catch (ResourceAccessException e) {
             throw mapResourceAccessException(e);
         }

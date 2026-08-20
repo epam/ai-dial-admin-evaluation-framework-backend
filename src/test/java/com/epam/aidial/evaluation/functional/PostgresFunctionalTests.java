@@ -8,8 +8,8 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
+import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
 import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsDescriptionDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsResponseDto;

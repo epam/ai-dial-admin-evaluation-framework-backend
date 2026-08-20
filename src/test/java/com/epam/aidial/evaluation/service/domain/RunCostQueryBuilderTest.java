@@ -27,8 +27,7 @@ class RunCostQueryBuilderTest {
         assertThat(query.getMode()).isEqualTo("aggregate");
         assertThat(query.getGroupBy()).isEmpty();
 
-        JsonNode expectedFilter = objectMapper.readTree(
-                """
+        JsonNode expectedFilter = objectMapper.readTree("""
                 {
                   "op": "and",
                   "args": [
@@ -57,8 +56,7 @@ class RunCostQueryBuilderTest {
                 """);
         assertThat(query.getFilter()).isEqualTo(expectedFilter);
 
-        JsonNode expectedSelect = objectMapper.readTree(
-                """
+        JsonNode expectedSelect = objectMapper.readTree("""
                 [
                   { "expr": { "type": "fn", "name": "count", "args": [] } },
                   { "expr": { "type": "fn", "name": "avg", "args": [ { "type": "field", "name": "total_price" } ] }, "as": "avg_cost" }

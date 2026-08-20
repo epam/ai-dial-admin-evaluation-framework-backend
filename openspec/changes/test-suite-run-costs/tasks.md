@@ -23,17 +23,17 @@
 
 - [x] 4.1 Add `GET /api/v1/test-suite-runs/{id}/costs` to `TestSuiteRunController`, with `@Operation`/`@ApiResponse` (200/404/502/504) matching the existing endpoints' documentation style.
 - [x] 4.2 Add `@ExceptionHandler(DialAdasClientException.class)` to `DefaultExceptionHandler`, mirroring `handleMcpInvocationException`: map to `ErrorCode.UPSTREAM_TIMEOUT` (504) or `ErrorCode.UPSTREAM_ERROR` (else).
-- [ ] 4.3 Functional test: add a `GET .../costs` case to the `TestSuiteRunController` functional test suite — 200 with a stubbed dial-adas response (e.g. `MockRestServiceServer` bound to the `dialAdasRestClient` bean, or WireMock), and 404 for an unknown run id.
+- [x] 4.3 Functional test: add a `GET .../costs` case to the `TestSuiteRunController` functional test suite — 200 with a stubbed dial-adas response (e.g. `MockRestServiceServer` bound to the `dialAdasRestClient` bean, or WireMock), and 404 for an unknown run id.
 
 ## 5. Docs and spec index
 
-- [ ] 5.1 Update `docs/configuration.md` with a new `### 5.5 DIAL ADAS Client` section (6-column table: Property | Environment Variable | Default | Required | Applied when | Description) and ToC entry, matching the format of 5.1/5.4.
-- [ ] 5.2 Update `openspec/specs/README.md` per the Spec Index Maintenance Policy to list the new `test-suite-run-costs` spec folder.
-- [ ] 5.3 Run `./gradlew spotlessApply checkstyleMain checkstyleTest` and fix any violations.
+- [x] 5.1 Update `docs/configuration.md` with a new `### 5.5 DIAL ADAS Client` section (6-column table: Property | Environment Variable | Default | Required | Applied when | Description) and ToC entry, matching the format of 5.1/5.4.
+- [x] 5.2 Update `openspec/specs/README.md` per the Spec Index Maintenance Policy to list the new `test-suite-run-costs` spec folder.
+- [x] 5.3 Run `./gradlew spotlessApply checkstyleMain checkstyleTest` and fix any violations.
 
 ## 6. Verification
 
-- [ ] 6.1 Run `./gradlew test --tests "com.epam.aidial.evaluation.client.dialadas.*"`.
-- [ ] 6.2 Run `./gradlew test --tests "com.epam.aidial.evaluation.service.domain.TestSuiteRunServiceTest"`.
-- [ ] 6.3 Run the relevant functional test suite (e.g. `./gradlew test --tests "com.epam.aidial.evaluation.functional.PostgresFunctionalTests\$TestSuiteRunTests"`) to confirm the new `DialAdasClientConfiguration` bean and `TestSuiteRunService`/`RunCostQueryBuilder` wiring boot correctly end-to-end.
+- [x] 6.1 Run `./gradlew test --tests "com.epam.aidial.evaluation.client.dialadas.*"`.
+- [x] 6.2 Run `./gradlew test --tests "com.epam.aidial.evaluation.service.domain.TestSuiteRunServiceTest"`.
+- [x] 6.3 Run the relevant functional test suite (e.g. `./gradlew test --tests "com.epam.aidial.evaluation.functional.PostgresFunctionalTests\$TestSuiteRunTests"`) to confirm the new `DialAdasClientConfiguration` bean and `TestSuiteRunService`/`RunCostQueryBuilder` wiring boot correctly end-to-end.
 - [ ] 6.4 Manually verify `GET /api/v1/test-suite-runs/{id}/costs` against a real run once dial-adas's run-id filtering behavior is confirmed fixed (tracked externally by the user).

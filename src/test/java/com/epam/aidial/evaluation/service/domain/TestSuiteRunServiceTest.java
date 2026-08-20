@@ -28,9 +28,9 @@ import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
+import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
-import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
@@ -304,10 +304,8 @@ class TestSuiteRunServiceTest {
         @DisplayName("returns both averages when both phases have usage-log rows")
         void returnsBothAveragesWhenBothPhasesHaveData() {
             stubExistingRunAndQueries();
-            when(dialAdasClient.executeAggregate(executionQuery))
-                    .thenReturn(aggregateResponse(120L, 0.0007125));
-            when(dialAdasClient.executeAggregate(metricEvalQuery))
-                    .thenReturn(aggregateResponse(60L, 0.000231));
+            when(dialAdasClient.executeAggregate(executionQuery)).thenReturn(aggregateResponse(120L, 0.0007125));
+            when(dialAdasClient.executeAggregate(metricEvalQuery)).thenReturn(aggregateResponse(60L, 0.000231));
 
             RunCostsResponseDto costs = service.getRunCosts(runId);
 
@@ -320,8 +318,7 @@ class TestSuiteRunServiceTest {
         void returnsNullForPhaseWithNoData() {
             stubExistingRunAndQueries();
             when(dialAdasClient.executeAggregate(executionQuery)).thenReturn(aggregateResponse(0L, null));
-            when(dialAdasClient.executeAggregate(metricEvalQuery))
-                    .thenReturn(aggregateResponse(60L, 0.000231));
+            when(dialAdasClient.executeAggregate(metricEvalQuery)).thenReturn(aggregateResponse(60L, 0.000231));
 
             RunCostsResponseDto costs = service.getRunCosts(runId);
 

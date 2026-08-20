@@ -328,8 +328,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("Should return 404 when getting costs for unknown run")
     void shouldReturn404WhenGettingCostsForUnknownRun() {
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                apiUrl("/test-suite-runs/" + UUID.randomUUID() + "/costs"), String.class);
+        ResponseEntity<String> response =
+                restTemplate.getForEntity(apiUrl("/test-suite-runs/" + UUID.randomUUID() + "/costs"), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }

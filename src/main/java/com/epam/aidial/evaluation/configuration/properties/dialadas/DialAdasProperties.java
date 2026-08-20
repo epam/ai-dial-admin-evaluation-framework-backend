@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.client.dialadas;
+package com.epam.aidial.evaluation.configuration.properties.dialadas;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import jakarta.validation.constraints.Min;

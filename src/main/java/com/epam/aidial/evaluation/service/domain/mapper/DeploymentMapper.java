@@ -132,6 +132,13 @@ public interface DeploymentMapper {
         };
     }
 
+    /**
+     * Maps a unified deployment entry from /v1/deployments to a short projection of the matching
+     * info subtype: only {@code deploymentId}, {@code displayName} and {@code description} (plus
+     * {@code transport} for toolsets). All other fields stay null and are dropped by the shared
+     * {@code NON_NULL} ObjectMapper, keeping the listing payload small; clients needing the full
+     * representation fetch the deployment individually.
+     */
     default DeploymentInfoDto toDeploymentInfoShortDto(DialCoreDeploymentDto source) {
         return switch (source) {
             case DialCoreModelDto model ->
@@ -140,14 +147,12 @@ public interface DeploymentMapper {
                         .displayName(mapMultilingual(model.getDisplayName()))
                         .description(mapMultilingual(model.getDescription()))
                         .build();
-            //
             case DialCoreApplicationDto app ->
                 DialApplicationInfoDto.builder()
                         .deploymentId(app.getId())
                         .displayName(mapMultilingual(app.getDisplayName()))
                         .description(mapMultilingual(app.getDescription()))
                         .build();
-            //
             case DialCoreToolsetDto toolset ->
                 ToolsetInfoDto.builder()
                         .deploymentId(toolset.getId())

@@ -104,6 +104,11 @@
   `no-spec-changes.md` decision (no `Requirement:`/`Scenario:` content changes). Those two passages now
   reference a package (`experimental.query`) that no longer exists, so the scenario is vacuously true
   rather than wrong, but the wording is stale — flagged for the user as a followup, not fixed here.
+  Post-review correction (M1): both passages have since been rewritten in a followup pass to describe the
+  actual post-graduation mechanism (a direct `service`-layer dependency on the concrete
+  `query.service.QueryDslRunnableTestCaseSelector`, permitted because `LayeredArchitectureTest` folds
+  `query.service`/`query.model` into the `service` layer), mirroring the equivalent passage already present
+  in `run-comparison-metric-scores/spec.md`.
 
 ## 6. Verify
 
@@ -123,7 +128,13 @@
   Testcontainers — all green. Re-ran `DslContextSmokeTest` (one of the 3 earlier failures) — passed,
   confirming those were purely the Docker outage. Final `./gradlew :build` (full suite, Testcontainers
   included) completed with exit code 0.
-- [x] 6.5 Grepped `src/`, `docs/`, `openspec/` for `experimental.query`/`experimental/query` — zero hits
-  outside archived changes (historical) and two deliberately-untouched `Requirement:`/`Scenario:`
-  passages in `suite-test-case-filter/spec.md` (flagged in task 5.5) and this change's own
-  proposal/design/tasks (which describe the move historically).
+- [x] 6.5 Grepped `src/`, `docs/`, `openspec/` for `experimental.query`/`experimental/query`. Original pass
+  found only the two deliberately-untouched `Requirement:`/`Scenario:` passages in
+  `suite-test-case-filter/spec.md` (flagged in task 5.5) and this change's own proposal/design/tasks (which
+  describe the move historically) — this was *not* actually "zero hits" as first recorded. Post-review
+  correction (M2): the grep had missed the not-yet-archived `fix-null-safe-negated-filter-operators` change
+  bundle, whose `proposal.md`, `tasks.md`, and `specs/structured-query-model/spec.md` /
+  `specs/suite-test-case-filter/spec.md` still referenced `experimental/query...` paths (including a test
+  command in its `tasks.md` naming a package that no longer resolved to any class after the move). Fixed all
+  of those references to the `query...` path in a followup pass, then re-grepped `src/`, `docs/`,
+  `openspec/` and confirmed zero remaining hits that treat the old package as if it still existed.

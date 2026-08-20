@@ -119,7 +119,11 @@ written/moved).
   `package-info.java`, a Javadoc `{@link}`, or a doc/spec cross-reference) compiles fine but leaves stale
   documentation.** → Mitigation: after the move, grep the full repo (`src/`, `docs/`, `openspec/`) for the
   literal string `experimental.query` / `experimental/query` and confirm zero hits outside intentionally
-  preserved historical references (e.g. archived changes), per the proposal's verification step.
+  preserved historical references (e.g. archived changes), per the proposal's verification step. This risk
+  materialized in practice: a post-completion review found stale `experimental/query` references in the
+  not-yet-archived `fix-null-safe-negated-filter-operators` change bundle (missed because task 6.5's grep
+  ran only once) and two now-stale `Requirement:`/`Scenario:` passages in `suite-test-case-filter/spec.md`;
+  both were corrected in a followup pass.
 - **[Risk] Widening the `web`/`service` layer package patterns could silently permit an unintended
   dependency edge that the old, narrower `experimentalWeb`/`experimentalService` layers would have
   caught.** → Mitigation: run `LayeredArchitectureTest` after the change; because `query.*` classes today

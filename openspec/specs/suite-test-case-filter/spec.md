@@ -86,9 +86,11 @@ predicate (via the Structured Query DSL translation layer) and running a purpose
 query returning full test-case rows in deterministic snapshot order
 (`created_at_ms ASC, id ASC`), inside the snapshot's `REPEATABLE READ` transaction. The run pipeline
 SHALL NOT route selection through the public `POST /api/v1/queries/execute` endpoint (which returns
-untyped rows and caps result size). To keep the run pipeline free of a dependency on the experimental
-query layer, this behavior SHALL be exposed to the run/suite services through a stable service-layer
-interface implemented in the query layer (interface inversion).
+untyped rows and caps result size). This behavior SHALL be exposed to the run/suite services through a
+direct dependency on the concrete `query.service.QueryDslRunnableTestCaseSelector` class, which lives
+alongside the rest of the Query DSL classes it drives; `LayeredArchitectureTest` folds `query.service`
+(and `query.web`/`query.model`) into the standard `web`/`service` architectural layers, so this is an
+ordinary `service` → `service` edge rather than a cross-layer dependency requiring interface inversion.
 Status: **Implemented**
 
 #### Scenario: Selection paginates in snapshot order
@@ -98,9 +100,10 @@ Status: **Implemented**
 
 #### Scenario: No layering violation is introduced
 - **WHEN** the project's architecture test runs
-- **THEN** there SHALL be no compile-time dependency from the `service` layer to the
-  `experimental.query` layer (the selector is a `service`-layer interface implemented in the query
-  layer)
+- **THEN** the direct compile-time dependency from `service`-layer classes (`TestSuiteService`,
+  `TestSuiteRunService`, `TestSuiteEvaluationJob`) to `query.service.QueryDslRunnableTestCaseSelector`
+  SHALL NOT be flagged as a layering violation, because `LayeredArchitectureTest` defines the `service`
+  layer as `SERVICE_PACKAGE` union `QUERY_SERVICE_PACKAGE`/`QUERY_MODEL_PACKAGE`
 
 ### Requirement: ALL-turns-match filtering for multi-turn cases
 When a suite `testCaseFilter` is applied to runnable-case selection, filtering SHALL be scope-aware. A predicate on a **shared** (`perTurn=false`) field SHALL bind to the case's shared `data` map (a row-level predicate, constant across turns). A predicate on a **per-turn** (`perTurn=true`) field SHALL bind to the individual turn element and be evaluated under a universal quantifier: a multi-turn case matches the per-turn predicate if and only if **every** turn satisfies it. A single-turn case is the trivial one-turn case (identical to current behavior). A turn whose per-turn predicate is not satisfied SHALL count as failing, and per-operator null semantics decide satisfaction for a missing or null field: a **positive** predicate (`co`, `eq`, `lt`, `gt`, `le`, `ge`, `in`) SHALL NOT be satisfied by a missing/null field, while a **negated** predicate (`nc`, `ne` with a non-null operand, `not(...)`) SHALL be satisfied by it. A filter MAY combine shared and per-turn predicates; the shared parts are evaluated once at row level and the per-turn parts under the all-turns quantifier.

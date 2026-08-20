@@ -8,8 +8,9 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateQueryDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
+import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
+import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.util.List;
@@ -23,8 +24,6 @@ import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ObjectNode;
 
 @DisplayName("DialAdasClient")
 class DialAdasClientTest {
@@ -43,15 +42,8 @@ class DialAdasClientTest {
     @Test
     @DisplayName("executeAggregate posts the query body and parses the aggregate response")
     void executeAggregatePostsQueryAndParsesResponse() {
-        ObjectNode filter = new ObjectMapper().createObjectNode();
-        filter.put("op", "and");
-        AdasAggregateQueryDto query = AdasAggregateQueryDto.builder()
-                .entity("dial_usage_log")
-                .mode("aggregate")
-                .filter(filter)
-                .groupBy(List.of())
-                .select(List.of())
-                .build();
+        StructuredQuery query = new StructuredQuery(
+                "dial_usage_log", null, QueryMode.AGGREGATE, false, List.of(), List.of(), null, null, null);
 
         server.expect(requestTo("http://dial-adas.local/v1/queries/execute"))
                 .andExpect(method(HttpMethod.POST))
@@ -73,10 +65,8 @@ class DialAdasClientTest {
     @Test
     @DisplayName("throws DialAdasClientException with 502 on 5xx response")
     void throwsClientExceptionOn5xx() {
-        AdasAggregateQueryDto query = AdasAggregateQueryDto.builder()
-                .entity("dial_usage_log")
-                .mode("aggregate")
-                .build();
+        StructuredQuery query =
+                new StructuredQuery("dial_usage_log", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
         server.expect(requestTo("http://dial-adas.local/v1/queries/execute")).andRespond(withServerError());
 
         assertThatThrownBy(() -> client.executeAggregate(query))
@@ -93,10 +83,8 @@ class DialAdasClientTest {
         RestClient timeoutClient =
                 builder.requestInterceptor(timeoutInterceptor).build();
         DialAdasClient timeoutBoundClient = new DialAdasClient(timeoutClient);
-        AdasAggregateQueryDto query = AdasAggregateQueryDto.builder()
-                .entity("dial_usage_log")
-                .mode("aggregate")
-                .build();
+        StructuredQuery query =
+                new StructuredQuery("dial_usage_log", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
 
         assertThatThrownBy(() -> timeoutBoundClient.executeAggregate(query))
                 .isInstanceOf(DialAdasClientException.class)

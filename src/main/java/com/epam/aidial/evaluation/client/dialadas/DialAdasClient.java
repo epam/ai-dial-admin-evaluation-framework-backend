@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.client.dialadas;
 
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateQueryDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
+import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.net.SocketTimeoutException;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +31,7 @@ public class DialAdasClient {
     @Qualifier("dialAdasRestClient")
     private final RestClient dialAdasRestClient;
 
-    public AdasAggregateResponseDto executeAggregate(AdasAggregateQueryDto query) {
+    public AdasAggregateResponseDto executeAggregate(StructuredQuery query) {
         if (log.isDebugEnabled()) {
             log.debug("dial-adas request: POST {} -> {}", QUERIES_EXECUTE_PATH, query);
         }

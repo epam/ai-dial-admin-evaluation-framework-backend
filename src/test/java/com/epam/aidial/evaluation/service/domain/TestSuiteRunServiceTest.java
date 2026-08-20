@@ -14,7 +14,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateQueryDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateRowDto;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
@@ -22,6 +21,8 @@ import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
+import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
@@ -291,10 +292,10 @@ class TestSuiteRunServiceTest {
     class GetRunCosts {
 
         private final UUID runId = UUID.randomUUID();
-        private final AdasAggregateQueryDto executionQuery =
-                AdasAggregateQueryDto.builder().entity("execution-query").build();
-        private final AdasAggregateQueryDto metricEvalQuery =
-                AdasAggregateQueryDto.builder().entity("metric-eval-query").build();
+        private final StructuredQuery executionQuery =
+                new StructuredQuery("execution-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
+        private final StructuredQuery metricEvalQuery = new StructuredQuery(
+                "metric-eval-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
 
         private void stubExistingRunAndQueries() {
             when(testSuiteRunRepository.findById(runId))

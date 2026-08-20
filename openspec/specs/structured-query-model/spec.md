@@ -600,6 +600,14 @@ Status: **Implemented**
   `FilterNode`/`LogicalNode`/`ComparisonNode`, `Expr`/`FieldExpr`/`ValueExpr`/`ParamExpr`/`FnExpr`/
   `ArrayExpr`, `AggregateCall`, `SortItem`, `PageSpec`/`OffsetPage`/`CursorPage`, and enums
   `QueryMode`/`LogicalOp`/`ComparisonOp`/`SortDir`/`ValueType`.
+- Outbound reuse: `experimental.query.model` is a pure-carrier package, not covered by the
+  `experimentalService`/`experimentalWeb` ArchUnit layer restriction (verified empirically — a
+  `service.domain` class importing it does not trip `LayeredArchitectureTest`), so it may be built and
+  serialized directly by code outside `experimental.query.*`. `service.domain.RunCostQueryBuilder`
+  (see `test-suite-run-costs`) is the first such consumer: dial-adas, an external analytics service,
+  runs the same query DSL, confirmed against a real deployment, so building a `StructuredQuery` and
+  posting it to dial-adas's `/v1/queries/execute` is the canonical shape for that call, not a
+  coincidentally similar one recreated by hand.
 - Custom routing: `FilterNodeDeserializer` (wired via `using`/`contentUsing` at each use site,
   never on the `FilterNode` interface, to avoid inheritance-driven recursion).
 - Null polarity: `ComparisonOp.negated()` declares which operators assert absence (`nc`, `ne`);

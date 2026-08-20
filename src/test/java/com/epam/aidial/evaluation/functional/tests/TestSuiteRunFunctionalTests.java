@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateQueryDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateRowDto;
 import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
@@ -17,6 +16,7 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
@@ -308,7 +308,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     void shouldGetRunCosts() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Costs");
         TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);
-        when(dialAdasClient.executeAggregate(any(AdasAggregateQueryDto.class)))
+        when(dialAdasClient.executeAggregate(any(StructuredQuery.class)))
                 .thenReturn(AdasAggregateResponseDto.builder()
                         .rows(List.of(AdasAggregateRowDto.builder()
                                 .count(1L)

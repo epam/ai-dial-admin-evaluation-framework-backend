@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Get average costs for a test suite run
-The system SHALL expose `GET /api/v1/test-suite-runs/{id}/costs`, returning the average per-call price of test-case execution calls and the average per-call price of metric-evaluation calls for the identified run, sourced from dial-adas usage-log data correlated by the run's id and execution phase. Status: Planned.
+The system SHALL expose `GET /api/v1/test-suite-runs/{id}/costs`, returning the average per-call price of test-case execution calls and the average per-call price of metric-evaluation calls for the identified run, sourced from dial-adas usage-log data correlated by the run's id and execution phase. Status: Implemented.
 
 #### Scenario: Run has both execution and metric-evaluation usage data
 - **WHEN** a client requests `GET /api/v1/test-suite-runs/{id}/costs` for a run that has completed test-case execution and metric evaluation
@@ -20,7 +20,7 @@ The system SHALL expose `GET /api/v1/test-suite-runs/{id}/costs`, returning the 
 - **THEN** the system returns 504 with `ErrorCode.UPSTREAM_TIMEOUT` for a timeout, or 502 with `ErrorCode.UPSTREAM_ERROR` for a connection/response failure, and does not partially compute an average from an incomplete response
 
 ### Requirement: dial-adas usage-log correlation by run id and phase
-The system SHALL query dial-adas's `dial_usage_log` entity via its query DSL (`POST {dial-adas-base-url}/v1/queries/execute`), filtering rows whose `request_tags.baggage` contains the run's own id as `eval.run.id=<runId>` and the relevant execution phase as `eval.phase=execution` or `eval.phase=metric-evaluation`, using the same OTel baggage phase values already emitted by the evaluation engine (`TracingConstants.PHASE_EXECUTION` / `PHASE_METRIC_EVALUATION`). Status: Planned.
+The system SHALL query dial-adas's `dial_usage_log` entity via its query DSL (`POST {dial-adas-base-url}/v1/queries/execute`), filtering rows whose `request_tags.baggage` contains the run's own id as `eval.run.id=<runId>` and the relevant execution phase as `eval.phase=execution` or `eval.phase=metric-evaluation`, using the same OTel baggage phase values already emitted by the evaluation engine (`TracingConstants.PHASE_EXECUTION` / `PHASE_METRIC_EVALUATION`). Status: Implemented.
 
 #### Scenario: Query is scoped to a single run and phase
 - **WHEN** the system computes the execution-phase average for run `R`

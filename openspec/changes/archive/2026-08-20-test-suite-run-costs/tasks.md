@@ -36,4 +36,4 @@
 - [x] 6.1 Run `./gradlew test --tests "com.epam.aidial.evaluation.client.dialadas.*"`.
 - [x] 6.2 Run `./gradlew test --tests "com.epam.aidial.evaluation.service.domain.TestSuiteRunServiceTest"`.
 - [x] 6.3 Run the relevant functional test suite (e.g. `./gradlew test --tests "com.epam.aidial.evaluation.functional.PostgresFunctionalTests\$TestSuiteRunTests"`) to confirm the new `DialAdasClientConfiguration` bean and `TestSuiteRunService`/`RunCostQueryBuilder` wiring boot correctly end-to-end.
-- [ ] 6.4 Manually verify `GET /api/v1/test-suite-runs/{id}/costs` against a real run once dial-adas's run-id filtering behavior is confirmed fixed (tracked externally by the user).
+- [x] 6.4 Manually verify `GET /api/v1/test-suite-runs/{id}/costs` against a real run once dial-adas's run-id filtering behavior is confirmed fixed (tracked externally by the user).

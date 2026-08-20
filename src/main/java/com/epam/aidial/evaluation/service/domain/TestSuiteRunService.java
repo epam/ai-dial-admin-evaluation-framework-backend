@@ -45,11 +45,14 @@ import java.util.UUID;
 import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -75,6 +78,9 @@ public class TestSuiteRunService {
     private final EvalResultsCsvParser evalResultsCsvParser;
     private final DialAdasClient dialAdasClient;
     private final RunCostQueryBuilder runCostQueryBuilder;
+
+    @Qualifier("metaTransactionManager")
+    private final PlatformTransactionManager metaTransactionManager;
 
     @Transactional("metaTransactionManager")
     public TestSuiteRunResponseDto createRun(UUID testSuiteId, RunConfigDto config) {
@@ -320,11 +326,8 @@ public class TestSuiteRunService {
         return mapper.toDto(run);
     }
 
-    @Transactional(value = "metaTransactionManager", readOnly = true)
     public RunCostsResponseDto getRunCosts(UUID runId) {
-        testSuiteRunRepository
-                .findById(runId)
-                .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId));
+        ensureRunExists(runId);
 
         Double avgTestCaseCost = fetchAvgCost(runId, TracingConstants.PHASE_EXECUTION);
         Double avgMetricEvalCost = fetchAvgCost(runId, TracingConstants.PHASE_METRIC_EVALUATION);
@@ -332,6 +335,18 @@ public class TestSuiteRunService {
                 .avgTestCaseCost(avgTestCaseCost)
                 .avgMetricEvalCost(avgMetricEvalCost)
                 .build();
+    }
+
+    /**
+     * Verifies the run exists, scoping the meta-DB transaction to just this lookup so the caller's
+     * subsequent external HTTP calls (to dial-adas) do not hold a pooled meta-DB connection open.
+     */
+    private void ensureRunExists(UUID runId) {
+        TransactionTemplate txTemplate = new TransactionTemplate(metaTransactionManager);
+        txTemplate.setReadOnly(true);
+        txTemplate.executeWithoutResult(status -> testSuiteRunRepository
+                .findById(runId)
+                .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId)));
     }
 
     private Double fetchAvgCost(UUID runId, String phase) {

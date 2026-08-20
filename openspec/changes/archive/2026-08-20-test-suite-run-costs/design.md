@@ -63,7 +63,7 @@ A small `@Component @LogExecution` class, `RunCostQueryBuilder.buildAggregateQue
 
 ### 3. Service method `TestSuiteRunService.getRunCosts(UUID runId)`
 
-- `@Transactional("metaTransactionManager", readOnly = true)` — only for `testSuiteRunRepository.findById(runId).orElseThrow(() -> new EntityNotFoundException(...))`, mirroring `getRun`. No other run field is needed (no time-range guard is used — see Risks).
+- The transaction is scoped to only `testSuiteRunRepository.findById(runId).orElseThrow(() -> new EntityNotFoundException(...))`, isolated in a private `ensureRunExists(UUID runId)` helper that wraps just that check in a `TransactionTemplate(metaTransactionManager)` (`readOnly = true`), matching the `TransactionTemplate`-scoped-lookup pattern already used by `TestSuiteService.delete()`/`detachFromDataset()`. A method-level `@Transactional` was deliberately avoided here — it would otherwise hold the meta-DB connection open across the two `dialAdasClient.executeAggregate(...)` HTTP calls below, and this endpoint is expected to be polled (see Risks). No other run field is needed (no time-range guard is used — see Risks).
 - Calls `dialAdasClient.executeAggregate(runCostQueryBuilder.buildAggregateQuery(runId, PHASE_EXECUTION))` then again with `PHASE_METRIC_EVALUATION` — two sequential HTTP calls (not parallelized in this change; both are fast aggregate queries against a single indexed-ish filter, and adding concurrency here would be premature given no evidence of latency issues).
 - Maps each response's single row (`rows.isEmpty()` or `count == 0` → `null` for that average) to `RunCostsResponseDto`.
 
@@ -107,4 +107,4 @@ dial:
 ## Open Questions
 
 - Exact final base path/port dial-adas will be reachable at in each deployed environment (dev/staging/prod) — to be filled into environment-specific config, not blocking this change (default + env var override is enough for now).
-- Whether dial-adas's run-id filtering issue is fixed before or after this change ships — tracked externally by the user, not gating this change's implementation.
+- ~~Whether dial-adas's run-id filtering issue is fixed before or after this change ships~~ — resolved: verified working end-to-end against a real deployment.

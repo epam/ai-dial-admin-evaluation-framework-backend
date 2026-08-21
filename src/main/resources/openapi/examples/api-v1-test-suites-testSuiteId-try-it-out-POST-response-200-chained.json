@@ -8,9 +8,10 @@
       "content": {
         "model": "gpt-4",
         "messages": [
-          { "role": "user", "content": "What is the capital of France?" },
-          { "role": "assistant", "content": "The capital of France is Paris." },
-          { "role": "user", "content": "What is its population?" }
+          {
+            "role": "user",
+            "content": "Grade this answer for correctness: AI, or Artificial Intelligence, is a branch of computer science..."
+          }
         ]
       }
     },
@@ -19,23 +20,20 @@
   "response": {
     "statusCode": 200,
     "body": {
-      "id": "chatcmpl-turn2",
+      "id": "chatcmpl-grade1",
       "object": "chat.completion",
-      "created": 1700000200,
+      "created": 1700000100,
       "model": "gpt-4",
       "choices": [
         {
           "index": 0,
-          "message": {
-            "role": "assistant",
-            "content": "As of the most recent estimates, Paris has a population of about 2.1 million people."
-          },
+          "message": { "role": "assistant", "content": "9/10 — accurate and well phrased." },
           "finish_reason": "stop"
         }
       ]
     }
   },
-  "durationMs": 612,
+  "durationMs": 1874,
   "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
   "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
   "history": [
@@ -49,7 +47,7 @@
           "content": {
             "model": "gpt-4",
             "messages": [
-              { "role": "user", "content": "What is the capital of France?" }
+              { "role": "user", "content": "Tell me about AI" }
             ]
           }
         },
@@ -58,26 +56,29 @@
       "response": {
         "statusCode": 200,
         "body": {
-          "id": "chatcmpl-turn0",
+          "id": "chatcmpl-abc123",
           "object": "chat.completion",
           "created": 1700000000,
           "model": "gpt-4",
           "choices": [
             {
               "index": 0,
-              "message": { "role": "assistant", "content": "The capital of France is Paris." },
+              "message": {
+                "role": "assistant",
+                "content": "AI, or Artificial Intelligence, is a branch of computer science..."
+              },
               "finish_reason": "stop"
             }
           ]
         }
       },
-      "durationMs": 588,
+      "durationMs": 2143,
       "traceId": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
       "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
-      "turnIndex": 0,
-      "totalTurns": 2,
+      "requestIndex": 0,
+      "totalRequests": 2,
       "extractedColumns": {
-        "assistantReply": "The capital of France is Paris."
+        "assistantReply": "AI, or Artificial Intelligence, is a branch of computer science..."
       },
       "extractionWarnings": []
     },
@@ -91,9 +92,10 @@
           "content": {
             "model": "gpt-4",
             "messages": [
-              { "role": "user", "content": "What is the capital of France?" },
-              { "role": "assistant", "content": "The capital of France is Paris." },
-              { "role": "user", "content": "What is its population?" }
+              {
+                "role": "user",
+                "content": "Grade this answer for correctness: AI, or Artificial Intelligence, is a branch of computer science..."
+              }
             ]
           }
         },
@@ -102,37 +104,36 @@
       "response": {
         "statusCode": 200,
         "body": {
-          "id": "chatcmpl-turn2",
+          "id": "chatcmpl-grade1",
           "object": "chat.completion",
-          "created": 1700000200,
+          "created": 1700000100,
           "model": "gpt-4",
           "choices": [
             {
               "index": 0,
-              "message": {
-                "role": "assistant",
-                "content": "As of the most recent estimates, Paris has a population of about 2.1 million people."
-              },
+              "message": { "role": "assistant", "content": "9/10 — accurate and well phrased." },
               "finish_reason": "stop"
             }
           ]
         }
       },
-      "durationMs": 612,
+      "durationMs": 1874,
       "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
       "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
-      "turnIndex": 1,
-      "totalTurns": 2,
+      "requestIndex": 1,
+      "totalRequests": 2,
+      "requestName": "grade",
       "extractedColumns": {
-        "assistantReply": "As of the most recent estimates, Paris has a population of about 2.1 million people."
+        "grade": "9/10 — accurate and well phrased."
       },
       "extractionWarnings": []
     }
   ],
-  "turnIndex": 1,
-  "totalTurns": 2,
+  "requestIndex": 1,
+  "totalRequests": 2,
+  "requestName": "grade",
   "extractedColumns": {
-    "assistantReply": "As of the most recent estimates, Paris has a population of about 2.1 million people."
+    "grade": "9/10 — accurate and well phrased."
   },
   "extractionWarnings": []
 }

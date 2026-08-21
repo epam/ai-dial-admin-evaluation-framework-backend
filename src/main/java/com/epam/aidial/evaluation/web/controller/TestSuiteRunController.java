@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
+import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -169,6 +170,20 @@ public class TestSuiteRunController {
     @ApiResponse(responseCode = "404", description = "Run not found")
     public TestSuiteRunResponseDto getRun(@Parameter(description = "Run ID") @PathVariable UUID id) {
         return testSuiteRunService.getRun(id);
+    }
+
+    @GetMapping("/api/v1/test-suite-runs/{id}/costs")
+    @Operation(
+            summary = "Get average test-case and metric-evaluation cost for a run",
+            description = "Queries dial-adas usage logs for the run and returns the average per-call price "
+                    + "for test-case execution calls and metric-evaluation (judge model) calls. A phase with "
+                    + "no matching usage-log rows returns null for that average.")
+    @ApiResponse(responseCode = "200", description = "Costs computed")
+    @ApiResponse(responseCode = "404", description = "Run not found")
+    @ApiResponse(responseCode = "502", description = "dial-adas unreachable or returned an error")
+    @ApiResponse(responseCode = "504", description = "dial-adas request timed out")
+    public RunCostsResponseDto getRunCosts(@Parameter(description = "Run ID") @PathVariable UUID id) {
+        return testSuiteRunService.getRunCosts(id);
     }
 
     @PatchMapping("/api/v1/test-suite-runs/{id}")

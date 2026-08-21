@@ -32,7 +32,7 @@ public class DialCoreClientConfiguration {
                 .build();
     }
 
-    static ClientHttpRequestInterceptor authorizationTokenInterceptor() {
+    public static ClientHttpRequestInterceptor authorizationTokenInterceptor() {
         return (HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {
             String token = AuthorizationTokenHolder.getToken();
             if (token != null) {

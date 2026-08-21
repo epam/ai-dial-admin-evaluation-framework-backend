@@ -6,6 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateRowDto;
 import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
@@ -13,6 +16,7 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
@@ -39,6 +43,7 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunReconciliation;
+import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
@@ -75,6 +80,9 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private MetricProviderClient metricProviderClient;
+
+    @Autowired
+    private DialAdasClient dialAdasClient;
 
     @Autowired
     private AnalyticsTestDataHelper analyticsTestDataHelper;
@@ -291,6 +299,37 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     void shouldReturn404WhenRunNotFound() {
         ResponseEntity<String> response =
                 restTemplate.getForEntity(apiUrl("/test-suite-runs/" + UUID.randomUUID()), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Should get run costs")
+    void shouldGetRunCosts() {
+        TestSuiteResponseDto suite = createTestSuite("Suite For Costs");
+        TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);
+        when(dialAdasClient.executeAggregate(any(StructuredQuery.class)))
+                .thenReturn(AdasAggregateResponseDto.builder()
+                        .rows(List.of(AdasAggregateRowDto.builder()
+                                .count(1L)
+                                .avgCost(0.0007125)
+                                .build()))
+                        .build());
+
+        ResponseEntity<RunCostsResponseDto> response = restTemplate.getForEntity(
+                apiUrl("/test-suite-runs/" + created.getId() + "/costs"), RunCostsResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getAvgTestCaseCost()).isEqualTo(0.0007125);
+        assertThat(response.getBody().getAvgMetricEvalCost()).isEqualTo(0.0007125);
+    }
+
+    @Test
+    @DisplayName("Should return 404 when getting costs for unknown run")
+    void shouldReturn404WhenGettingCostsForUnknownRun() {
+        ResponseEntity<String> response =
+                restTemplate.getForEntity(apiUrl("/test-suite-runs/" + UUID.randomUUID() + "/costs"), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }

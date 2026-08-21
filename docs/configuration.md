@@ -26,6 +26,7 @@ This document is the operator-facing reference for every configurable property o
    - [DIAL API Key](#52-dial-api-key)
    - [DIAL File Storage](#53-dial-file-storage)
    - [DIAL MCP Client](#54-dial-mcp-client)
+   - [DIAL ADAS Client](#55-dial-adas-client)
 6. [Evaluation Engine](#6-evaluation-engine)
    - [Test Suite Run — Executor](#61-test-suite-run--executor)
    - [Test Suite Run — SSE](#62-test-suite-run--sse)
@@ -338,6 +339,16 @@ Configuration for MCP (Model Context Protocol) tool invocations routed through D
 |---|---|---|---|---|---|
 | `dial.mcp.connect-timeout-ms` | `DIAL_MCP_CONNECT_TIMEOUT_MS` | `5000` | No | - | Connection timeout in milliseconds. |
 | `dial.mcp.read-timeout-ms` | `DIAL_MCP_READ_TIMEOUT_MS` | `120000` | No | - | Read timeout in milliseconds. Higher than the DIAL Core metadata client because MCP tool execution latency can be significant. |
+
+### 5.5 DIAL ADAS Client
+
+Configuration for dial-adas, an external analytics service queried for `GET /api/v1/test-suite-runs/{id}/costs` (average test-case execution cost and average metric-evaluation cost, computed from `dial_usage_log` aggregate queries correlated by the run's OTel baggage).
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `dial.adas.base-url` | `DIAL_ADAS_URL` | `http://localhost:8087` | No | - | Base URL for the dial-adas query-execute API. |
+| `dial.adas.connect-timeout-ms` | `DIAL_ADAS_CONNECT_TIMEOUT_MS` | `5000` | No | - | Connection timeout in milliseconds. |
+| `dial.adas.read-timeout-ms` | `DIAL_ADAS_READ_TIMEOUT_MS` | `30000` | No | - | Read timeout in milliseconds. |
 
 ---
 

@@ -32,20 +32,25 @@ public class BindingValidator {
     /**
      * Validates template-variable-to-binding and binding-to-template cross-references.
      *
-     * @param variables extracted template variables
-     * @param bindings  input bindings (may be null or empty)
-     * @param schema    test case schema field definitions (may be null or empty)
-     * @param suiteId   existing suite UUID for ownership validation; null on create
+     * @param variables  extracted template variables
+     * @param bindings   input bindings (may be null or empty)
+     * @param schema     test case schema field definitions (may be null or empty)
+     * @param suiteId    existing suite UUID for ownership validation; null on create
+     * @param pathPrefix warning-path prefix — {@code ""} for request #0 (preserves the pre-chain
+     *                   literal {@code "$.inputBindings"} byte-for-byte); {@code "$.additionalRequests[i]"}
+     *                   for an additional request, yielding {@code "$.additionalRequests[i].inputBindings"}
      * @return list of validation warnings
      */
     public List<ValidationWarningDto> validate(
             List<TemplateVariableExtractor.ExtractedVariable> variables,
             List<InputBindingDto> bindings,
             List<FieldDefinitionDto> schema,
-            UUID suiteId) {
+            UUID suiteId,
+            String pathPrefix) {
         List<ValidationWarningDto> warnings = new ArrayList<>();
         List<InputBindingDto> effectiveBindings = bindings != null ? bindings : List.of();
         List<FieldDefinitionDto> effectiveSchema = schema != null ? schema : List.of();
+        String path = pathPrefix.isEmpty() ? "$.inputBindings" : pathPrefix + ".inputBindings";
 
         // Build binding lookup
         Map<String, InputBindingDto> bindingByVar = effectiveBindings.stream()
@@ -69,7 +74,7 @@ public class BindingValidator {
             if (binding == null && !var.isHasDefault()) {
                 warnings.add(warning(
                         var.getName(),
-                        "$.inputBindings",
+                        path,
                         "Required variable '" + var.getName() + "' has no binding",
                         ValidationWarningCode.REQUIRED));
             }
@@ -79,7 +84,7 @@ public class BindingValidator {
                     && !schemaFieldNames.contains(binding.getDataField())) {
                 warnings.add(warning(
                         binding.getDataField(),
-                        "$.inputBindings",
+                        path,
                         "Binding maps variable '" + var.getName() + "' to unknown field '" + binding.getDataField()
                                 + "'",
                         ValidationWarningCode.UNKNOWN));
@@ -93,14 +98,14 @@ public class BindingValidator {
                 for (String error : errors) {
                     warnings.add(warning(
                             var.getName(),
-                            "$.inputBindings",
+                            path,
                             "Constant binding for '|file' variable '" + var.getName() + "': " + error,
                             ValidationWarningCode.TYPE));
                 }
                 if (errors.isEmpty() && fileRefValidator.isDatasetShapedRef(refValue)) {
                     warnings.add(warning(
                             var.getName(),
-                            "$.inputBindings",
+                            path,
                             "Constant binding for '|file' variable '" + var.getName()
                                     + "' references dataset-scoped file '" + refValue
                                     + "'; suite-level fields must use @ef/suites/ refs",
@@ -117,7 +122,7 @@ public class BindingValidator {
             if (!variableNames.contains(binding.getTemplateVariable())) {
                 warnings.add(warning(
                         binding.getTemplateVariable(),
-                        "$.inputBindings",
+                        path,
                         "Binding for '" + binding.getTemplateVariable() + "' but no ${{" + binding.getTemplateVariable()
                                 + "}} in template",
                         ValidationWarningCode.ADDITIONAL));

@@ -43,7 +43,7 @@ public class TestSuiteCloneRequestDto {
     private UUID datasetId;
 
     @Valid
-    @Size(max = 50)
+    @Size(max = RunnerValidationConstants.MAX_RESPONSE_COLUMNS)
     private List<ResponseColumnDefinitionDto> responseColumns;
 
     @Valid

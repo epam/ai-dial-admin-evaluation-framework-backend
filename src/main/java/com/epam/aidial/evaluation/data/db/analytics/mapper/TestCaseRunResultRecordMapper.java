@@ -20,6 +20,8 @@ public class TestCaseRunResultRecordMapper {
                 .testCaseId(UUID.fromString(r.getTestCaseId()))
                 .testCaseName(r.getTestCaseName())
                 .runIndex(r.getRunIndex())
+                .requestIndex(r.getRequestIndex())
+                .totalRequests(r.getTotalRequests())
                 .turnIndex(r.getTurnIndex())
                 .totalTurns(r.getTotalTurns())
                 .testCaseData(toJsonString(r.getTestCaseData()))

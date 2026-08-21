@@ -792,6 +792,105 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
         assertThat(metricColumnResponse.getBody()).contains("VALIDATION_ERROR", "metric::Accuracy::score");
     }
 
+    @Test
+    @DisplayName("Chained multi-turn run: CSV and preview headers carry runIndex, requestIndex, turnIndex "
+            + "as three consecutive columns, with distinct cell values per row; a legacy single-request "
+            + "single-turn run yields 0/0")
+    void exportChainedMultiTurnRunCarriesRequestAndTurnIndices() {
+        TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
+        UUID computationId = UUID.randomUUID();
+        insertRunMetricSnapshots(completedRun.getId(), computationId);
+
+        // Simulates a 2-request chain whose second request is multi-turn with 2 turns: rows
+        // (requestIndex, turnIndex) = (0, 0), (1, 0), (1, 1) — per design D16/R1 scenario.
+        List<EvalSummaryBatchWriteItemDto> items = new ArrayList<>();
+        items.add(chainRow("chain-case", 0, 0));
+        items.add(chainRow("chain-case", 1, 0));
+        items.add(chainRow("chain-case", 1, 1));
+        EvalSummaryBatchWriteRequestDto writeRequest = EvalSummaryBatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(completedRun.getId())
+                .computationId(computationId)
+                .computedAtMs(System.currentTimeMillis())
+                .items(items)
+                .build();
+        restTemplate.postForEntity(apiUrl("/analytics/eval-summaries"), jsonEntity(writeRequest), String.class);
+
+        // (a) CSV — explicit subset isolates the three identity columns for an exact row-set match.
+        EvalSummaryExportRequestDto request = EvalSummaryExportRequestDto.builder()
+                .runId(completedRun.getId())
+                .columns(List.of("runIndex", "requestIndex", "turnIndex"))
+                .build();
+        ResponseEntity<String> response = restTemplate.postForEntity(exportUrl(), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String[] lines = response.getBody().split("\\r?\\n");
+        assertThat(lines[0]).isEqualTo("runIndex,requestIndex,turnIndex");
+        assertThat(List.of(lines).subList(1, lines.length)).containsExactlyInAnyOrder("0,0,0", "0,1,0", "0,1,1");
+
+        // (b) Default CSV header — runIndex, requestIndex, turnIndex are three consecutive columns.
+        EvalSummaryExportRequestDto defaultRequest = EvalSummaryExportRequestDto.builder()
+                .runId(completedRun.getId())
+                .build();
+        ResponseEntity<String> defaultResponse =
+                restTemplate.postForEntity(exportUrl(), jsonEntity(defaultRequest), String.class);
+        List<String> defaultHeaderCols =
+                List.of(defaultResponse.getBody().split("\\r?\\n", 2)[0].split(","));
+        int runIndexPos = defaultHeaderCols.indexOf("runIndex");
+        assertThat(defaultHeaderCols.get(runIndexPos + 1)).isEqualTo("requestIndex");
+        assertThat(defaultHeaderCols.get(runIndexPos + 2)).isEqualTo("turnIndex");
+
+        // (c) Preview — same three consecutive columns, typed cells.
+        ResponseEntity<List<List<Object>>> previewResponse = restTemplate.exchange(
+                previewUrl(completedRun.getId(), computationId.toString()),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<List<List<Object>>>() {});
+        assertThat(previewResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Object> previewHeaders = previewResponse.getBody().get(0);
+        int previewRunIndexPos = previewHeaders.indexOf("runIndex");
+        assertThat(previewHeaders.get(previewRunIndexPos + 1)).isEqualTo("requestIndex");
+        assertThat(previewHeaders.get(previewRunIndexPos + 2)).isEqualTo("turnIndex");
+    }
+
+    @Test
+    @DisplayName("A legacy single-request single-turn run's rows carry requestIndex 0 and turnIndex 0")
+    void exportSingleRequestRunYieldsZeroForBothIndices() {
+        TestSuiteRun completedRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
+        UUID computationId = UUID.randomUUID();
+        insertRunMetricSnapshots(completedRun.getId(), computationId);
+        insertNamedEvalSummaries(testSuiteId, completedRun.getId(), computationId, List.of("legacy-case"));
+
+        EvalSummaryExportRequestDto request = EvalSummaryExportRequestDto.builder()
+                .runId(completedRun.getId())
+                .columns(List.of("requestIndex", "turnIndex"))
+                .build();
+        ResponseEntity<String> response = restTemplate.postForEntity(exportUrl(), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String[] lines = response.getBody().split("\\r?\\n");
+        assertThat(lines[1]).isEqualTo("0,0");
+    }
+
+    private EvalSummaryBatchWriteItemDto chainRow(String name, int requestIndex, int turnIndex) {
+        ObjectNode metricValues = JsonNodeFactory.instance.objectNode();
+        metricValues.putObject("Accuracy").put("score", 0.9);
+        return EvalSummaryBatchWriteItemDto.builder()
+                .testCaseRunResultId(UUID.randomUUID())
+                .testCaseId(UUID.randomUUID())
+                .testCaseName(name)
+                .runIndex(0)
+                .requestIndex(requestIndex)
+                .turnIndex(turnIndex)
+                .testCaseData(JsonNodeFactory.instance.objectNode())
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .execDurationMs(100L)
+                .metricEvalDurationMs(0L)
+                .responseStatusCode(200)
+                .metricValues(metricValues)
+                .build();
+    }
+
     private void insertMetricLessEvalSummaries(UUID runId, UUID computationId) {
         List<EvalSummaryBatchWriteItemDto> items = new ArrayList<>();
         for (int i = 0; i < 2; i++) {

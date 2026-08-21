@@ -337,6 +337,36 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
         return (Long) get(20);
     }
 
+    /**
+     * Setter for <code>analytics.test_case_eval_summaries.request_index</code>.
+     */
+    public void setRequestIndex(Integer value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_summaries.request_index</code>.
+     */
+    public Integer getRequestIndex() {
+        return (Integer) get(21);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.total_requests</code>.
+     */
+    public void setTotalRequests(Integer value) {
+        set(22, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.total_requests</code>.
+     */
+    public Integer getTotalRequests() {
+        return (Integer) get(22);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -360,7 +390,7 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
     /**
      * Create a detached, initialised TestCaseEvalSummariesRecord
      */
-    public TestCaseEvalSummariesRecord(String id, String testSuiteId, String testSuiteRunId, String testCaseRunResultId, String testCaseId, String testCaseName, Integer runIndex, String computationId, JSONB testCaseData, JSONB extractedColumns, String executionStatus, Long execDurationMs, Integer responseStatusCode, JSONB metricValues, JSONB metricInfos, Long createdAtMs, Long computedAtMs, JSONB extractionWarnings, Integer turnIndex, Integer totalTurns, Long metricEvalDurationMs) {
+    public TestCaseEvalSummariesRecord(String id, String testSuiteId, String testSuiteRunId, String testCaseRunResultId, String testCaseId, String testCaseName, Integer runIndex, String computationId, JSONB testCaseData, JSONB extractedColumns, String executionStatus, Long execDurationMs, Integer responseStatusCode, JSONB metricValues, JSONB metricInfos, Long createdAtMs, Long computedAtMs, JSONB extractionWarnings, Integer turnIndex, Integer totalTurns, Long metricEvalDurationMs, Integer requestIndex, Integer totalRequests) {
         super(TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES);
 
         setId(id);
@@ -384,6 +414,8 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
         setTurnIndex(turnIndex);
         setTotalTurns(totalTurns);
         setMetricEvalDurationMs(metricEvalDurationMs);
+        setRequestIndex(requestIndex);
+        setTotalRequests(totalRequests);
         resetTouchedOnNotNull();
     }
 }

@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
@@ -39,6 +40,8 @@ public class TestSuiteMapper {
         McpDeploymentReferenceDto mcpDeploymentRef = jsonbMapper.mapMcpDeploymentRef(entity.getMcpDeploymentRef());
         ToolReferenceDto toolRef = jsonbMapper.mapToolRef(entity.getToolRef());
         ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(entity.getArgumentTemplate());
+        List<RequestDefinitionDto> additionalRequests =
+                jsonbMapper.mapAdditionalRequests(entity.getAdditionalRequests());
         List<ValidationWarningDto> validationWarnings =
                 warningsSerializer.deserializeWarnings(entity.getValidationWarnings());
 
@@ -58,6 +61,8 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(mcpDeploymentRef)
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
+                .requestName(entity.getRequestName())
+                .additionalRequests(additionalRequests)
                 .valid(entity.isValid())
                 .validationWarnings(validationWarnings)
                 .version(entity.getVersion())
@@ -88,6 +93,8 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(dto.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()))
+                .requestName(dto.getRequestName())
+                .additionalRequests(jsonbMapper.mapAdditionalRequests(dto.getAdditionalRequests()))
                 .overallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()))
                 .overallScoreThreshold(dto.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()))
@@ -112,6 +119,8 @@ public class TestSuiteMapper {
         entity.setMcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(dto.getMcpDeploymentRef()));
         entity.setToolRef(jsonbMapper.mapToolRef(dto.getToolRef()));
         entity.setArgumentTemplate(jsonbMapper.mapArgumentTemplate(dto.getArgumentTemplate()));
+        entity.setRequestName(dto.getRequestName());
+        entity.setAdditionalRequests(jsonbMapper.mapAdditionalRequests(dto.getAdditionalRequests()));
         entity.setOverallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()));
         entity.setOverallScoreThreshold(dto.getOverallScoreThreshold());
         entity.setTestCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()));
@@ -120,10 +129,12 @@ public class TestSuiteMapper {
     /**
      * Builds a new {@link TestSuite} entity for cloning, applying overrides from the request DTO.
      * Null fields in the DTO inherit from {@code source}. Suite-scoped DIAL file references in JSONB
-     * fields ({@code inputBindings}, {@code requestTemplate}, {@code argumentTemplate}) are rewritten
-     * from the source suite path to the new suite path so that the cloned suite points to the files
-     * copied by {@code FileService.copyFilesBetweenSuites}. The clone inherits {@code datasetId}
-     * (unless overridden via {@code dto.datasetId}) from the source.
+     * fields ({@code inputBindings}, {@code requestTemplate}, {@code argumentTemplate},
+     * {@code additionalRequests}) are rewritten from the source suite path to the new suite path so that
+     * the cloned suite points to the files copied by {@code FileService.copyFilesBetweenSuites}. The
+     * request chain ({@code additionalRequests}, {@code requestName}) has no clone-request override field
+     * (see design R3) — it is always inherited from {@code source} verbatim, file-ref rewrite aside. The
+     * clone inherits {@code datasetId} (unless overridden via {@code dto.datasetId}) from the source.
      * Test case rows are NOT cloned — they remain owned by the dataset; any file references inside
      * test-case data are left untouched by the suite-clone path.
      * isValid and validationWarnings are NOT set here — they are set by the synchronous validation step.
@@ -167,6 +178,13 @@ public class TestSuiteMapper {
             argumentTemplate = argumentTemplate.replace(sourcePrefix, targetPrefix);
         }
 
+        // No clone-request override for the chain (see design R3) — always inherited from source, with
+        // suite-scoped file refs inside the additional_requests blob rewritten like the other JSONB fields.
+        String additionalRequests = source.getAdditionalRequests();
+        if (additionalRequests != null) {
+            additionalRequests = additionalRequests.replace(sourcePrefix, targetPrefix);
+        }
+
         UUID datasetId = dto.getDatasetId() != null ? dto.getDatasetId() : source.getDatasetId();
 
         return TestSuite.builder()
@@ -183,6 +201,8 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(mcpDeploymentRef)
                 .toolRef(toolRef)
                 .argumentTemplate(argumentTemplate)
+                .requestName(source.getRequestName())
+                .additionalRequests(additionalRequests)
                 .overallScore(source.getOverallScore())
                 .overallScoreThreshold(source.getOverallScoreThreshold())
                 .testCaseFilter(source.getTestCaseFilter())
@@ -219,6 +239,11 @@ public class TestSuiteMapper {
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(entity.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(entity.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(entity.getArgumentTemplate()))
+                .requestName(entity.getRequestName())
+                .additionalRequests(
+                        entity.getAdditionalRequests() != null
+                                ? jsonbMapper.mapAdditionalRequests(entity.getAdditionalRequests())
+                                : null)
                 .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
                 .overallScoreThreshold(entity.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))

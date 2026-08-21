@@ -26,6 +26,8 @@ public abstract class EvalSummaryMapper {
     @Mapping(source = "item.testCaseId", target = "testCaseId")
     @Mapping(source = "item.testCaseName", target = "testCaseName")
     @Mapping(source = "item.runIndex", target = "runIndex")
+    @Mapping(source = "item.requestIndex", target = "requestIndex", defaultValue = "0")
+    @Mapping(source = "item.totalRequests", target = "totalRequests", defaultValue = "1")
     @Mapping(source = "item.turnIndex", target = "turnIndex", defaultValue = "0")
     @Mapping(source = "item.totalTurns", target = "totalTurns", defaultValue = "1")
     @Mapping(source = "item.testCaseData", target = "testCaseData")

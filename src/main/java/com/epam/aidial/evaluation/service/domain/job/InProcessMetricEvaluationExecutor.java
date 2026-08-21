@@ -184,14 +184,18 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
 
         Map<String, TsmdEvaluationResult> tsmdResults = new ConcurrentHashMap<>();
 
-        // Evaluate each metric's condition synchronously (before async dispatch) over {data, response, turn}:
-        // RUN → dispatch; SKIP → omit the metric entirely; ERROR → record a metric-level ConditionError
-        // (row stays SUCCESS). Only dispatched metrics are reconciled for timeout/failure below.
+        // Evaluate each metric's condition synchronously (before async dispatch) over
+        // {data, response, turn, request}: RUN → dispatch; SKIP → omit the metric entirely; ERROR →
+        // record a metric-level ConditionError (row stays SUCCESS). Only dispatched metrics are
+        // reconciled for timeout/failure below.
         ConditionContext conditionContext = ConditionContext.builder()
                 .dataJson(result.getTestCaseData())
                 .responseJson(result.getExtractedColumns())
                 .turnIndex(result.getTurnIndex())
                 .totalTurns(result.getTotalTurns())
+                .requestIndex(result.getRequestIndex())
+                .totalRequests(result.getTotalRequests())
+                .requestName(context.requestLabelAt(result.getRequestIndex()))
                 .build();
 
         List<AggregatedMetricDefinition> dispatchedTsmds = new ArrayList<>();
@@ -346,6 +350,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .testCaseId(result.getTestCaseId())
                 .testCaseName(result.getTestCaseName())
                 .runIndex(result.getRunIndex())
+                .requestIndex(result.getRequestIndex())
+                .totalRequests(result.getTotalRequests())
                 .turnIndex(result.getTurnIndex())
                 .totalTurns(result.getTotalTurns())
                 .testCaseData(parseJsonNode(result.getTestCaseData()))

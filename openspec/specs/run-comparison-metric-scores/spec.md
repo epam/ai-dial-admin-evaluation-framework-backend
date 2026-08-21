@@ -35,10 +35,12 @@ Status: **Implemented**
 - **WHEN** the two runs' computations discovered different numeric metric fields
 - **THEN** each run's `scores` array reflects only its own discovered fields, and no mismatch indicator is returned
 
-### Requirement: Row matching by name, repetition index and turn index
-The system SHALL match eval-summary rows across the two runs on the composite key `lower(test_case_name)` + `run_index` + `turn_index`, scoped per run to that run's resolved `computation_id`.
+### Requirement: Row matching by name, repetition index, request index and turn index
+The system SHALL match eval-summary rows across the two runs on the composite key `lower(test_case_name)` + `run_index` + `request_index` + `turn_index`, scoped per run to that run's resolved `computation_id`.
 
 Matching SHALL be name-based rather than test-case-id-based, so that a test case deleted and later restored under the same name still matches.
+
+`request_index` SHALL participate in the key so that two runs of a multi-request suite compare like-for-like chain positions: a row produced by the chain's setup request SHALL never match a row produced by its test request. Because `request_index` defaults to `0` on every row of a single-request suite, adding it to the key SHALL NOT change matching for runs of suites without a chain, nor for a comparison between a run taken before the column existed and a run taken after.
 
 A row SHALL match if and only if its key occurs in the other run's population. Where a run contains more than one row for a single key, **all** of those rows SHALL match — no row SHALL be excluded from the matched population merely because another row shares its key. Consequently `matchedRowCount + size(unmatchedEvalSummaryIds)` SHALL equal `totalRowCount` for every run, and `unmatchedEvalSummaryIds` ordering SHALL be stable across identical requests.
 
@@ -50,7 +52,7 @@ A row SHALL be counted as successful only when its stored execution status is SU
 Status: **Implemented**
 
 #### Scenario: Names match case-insensitively
-- **WHEN** one run has a test case named `Foo` and the other has `foo`, with equal `run_index` and `turn_index`
+- **WHEN** one run has a test case named `Foo` and the other has `foo`, with equal `run_index`, `request_index` and `turn_index`
 - **THEN** the two rows match and are counted in `matchedRowCount`
 
 #### Scenario: Turn index participates in the key
@@ -61,8 +63,16 @@ Status: **Implemented**
 - **WHEN** a same-named test case was executed with `numberOfRuns` 3 in one run and 2 in the other
 - **THEN** exactly 2 rows match — one per shared repetition index
 
+#### Scenario: Request index participates in the key
+- **WHEN** a same-named test case ran a 3-request chain in one run and a 2-request chain in the other
+- **THEN** exactly 2 rows match — one per shared request index — and the third request's row is unmatched
+
+#### Scenario: Single-request runs are unaffected by the request index
+- **WHEN** two runs of a suite with no `additionalRequests` are compared
+- **THEN** every row carries `request_index = 0`, so the matched population is identical to the pre-change result
+
 #### Scenario: Duplicate keys within one run all match
-- **WHEN** one run contains two eval-summary rows sharing the same `lower(test_case_name)`, `run_index` and `turn_index`, and the other run contains one row with that key
+- **WHEN** one run contains two eval-summary rows sharing the same `lower(test_case_name)`, `run_index`, `request_index` and `turn_index`, and the other run contains one row with that key
 - **THEN** both rows match, that run's `matchedRowCount` exceeds the other run's, its `unmatchedEvalSummaryIds` is empty, and both rows contribute to its recomputed statistics
 
 #### Scenario: Identical requests return identical ordering

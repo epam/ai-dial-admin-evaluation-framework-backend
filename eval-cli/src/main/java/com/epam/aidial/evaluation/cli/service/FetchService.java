@@ -1,10 +1,12 @@
 package com.epam.aidial.evaluation.cli.service;
 
+import com.epam.aidial.evaluation.cli.client.source.DatasetApiClient;
 import com.epam.aidial.evaluation.cli.client.source.TestCaseApiClient;
 import com.epam.aidial.evaluation.cli.client.source.TestSuiteApiClient;
 import com.epam.aidial.evaluation.cli.config.properties.EvalCliProperties;
 import com.epam.aidial.evaluation.cli.model.SuiteFetchBundle;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import java.io.IOException;
@@ -31,12 +33,13 @@ public class FetchService {
 
     private final TestSuiteApiClient testSuiteApiClient;
     private final TestCaseApiClient testCaseApiClient;
+    private final DatasetApiClient datasetApiClient;
     private final EvalCliProperties cliProperties;
     private final ObjectMapper objectMapper;
 
     /**
-     * Fetches the suite config and all test cases for the given source suite, then persists the
-     * bundle to {@code <workDir>/<sourceSuiteId>.json}.
+     * Fetches the suite config, its bound dataset's test-case schema, and all test cases for the
+     * given source suite, then persists the bundle to {@code <workDir>/<sourceSuiteId>.json}.
      *
      * @param sourceSuiteId     the source suite UUID to fetch
      * @param destinationSuiteId the clone ID that will receive imported results (stored in the bundle)
@@ -50,6 +53,7 @@ public class FetchService {
                 .orElseThrow(() -> new IllegalStateException("Source suite not found: " + sourceSuiteId));
 
         final List<TestCaseResponseDto> testCases = testCaseApiClient.fetchAll(suite.getDatasetId());
+        final List<FieldDefinitionDto> testCaseSchema = datasetApiClient.fetchTestCaseSchema(suite.getDatasetId());
         log.info("Fetched suite '{}' ({}) with {} test case(s)", suite.getName(), sourceSuiteId, testCases.size());
 
         final SuiteFetchBundle bundle = SuiteFetchBundle.builder()
@@ -57,6 +61,7 @@ public class FetchService {
                 .destinationSuiteId(destinationSuiteId)
                 .suite(suite)
                 .testCases(testCases)
+                .testCaseSchema(testCaseSchema)
                 .build();
 
         persist(sourceSuiteId, bundle);
@@ -65,6 +70,11 @@ public class FetchService {
 
     /**
      * Loads a previously persisted bundle from {@code <workDir>/<sourceSuiteId>.json}.
+     *
+     * <p>A bundle written before {@code testCaseSchema} was added still loads successfully — the
+     * module's lenient {@link ObjectMapper} configuration leaves the field {@code null} rather than
+     * failing (see {@code cli-multi-turn-multi-request-parity} design.md Decision 7). Callers must
+     * treat a null {@code testCaseSchema} as "unknown, not confirmed absent".
      *
      * @param sourceSuiteId the suite UUID whose bundle to load
      * @return the deserialized bundle

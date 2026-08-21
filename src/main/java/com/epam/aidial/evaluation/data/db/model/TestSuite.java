@@ -26,6 +26,8 @@ public class TestSuite {
     private String mcpDeploymentRef;
     private String toolRef;
     private String argumentTemplate;
+    private String additionalRequests;
+    private String requestName;
     private String overallScore;
     private Double overallScoreThreshold;
     private String testCaseFilter;

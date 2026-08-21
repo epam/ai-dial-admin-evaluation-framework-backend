@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ParameterDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ParameterLocation;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
@@ -91,6 +92,59 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
         assertSuiteConfigValid(response.getBody());
         assertThat(response.getBody().getVersion()).isNotNull();
         assertThat(response.getBody().getCreatedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should persist and return requestName and additionalRequests (request chain)")
+    void shouldPersistAndReturnRequestChain() {
+        // Given: a suite carrying requestName plus a one-element additionalRequests chain
+        TestSuiteRequestDto request = buildTestSuiteRequest("Chained Suite", "Suite with a request chain");
+        request.setRequestName("configure");
+        request.setAdditionalRequests(List.of(RequestDefinitionDto.builder()
+                .name("ask")
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .build()));
+
+        // When
+        ResponseEntity<TestSuiteResponseDto> createResponse =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        // Then: create response carries the chain
+        assertThat(createResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(createResponse.getBody()).isNotNull();
+        assertThat(createResponse.getBody().getRequestName()).isEqualTo("configure");
+        assertThat(createResponse.getBody().getAdditionalRequests()).hasSize(1);
+        assertThat(createResponse.getBody().getAdditionalRequests().get(0).getName())
+                .isEqualTo("ask");
+
+        // And: GET by id returns the same chain (proves persistence through the new column)
+        ResponseEntity<TestSuiteResponseDto> getResponse = restTemplate.getForEntity(
+                apiUrl("/test-suites/" + createResponse.getBody().getId()), TestSuiteResponseDto.class);
+        assertThat(getResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getResponse.getBody()).isNotNull();
+        assertThat(getResponse.getBody().getRequestName()).isEqualTo("configure");
+        assertThat(getResponse.getBody().getAdditionalRequests()).hasSize(1);
+        assertThat(getResponse.getBody().getAdditionalRequests().get(0).getRequestTemplate())
+                .isNotNull();
+        assertThat(getResponse
+                        .getBody()
+                        .getAdditionalRequests()
+                        .get(0)
+                        .getRequestTemplate()
+                        .getUrlTemplate())
+                .isEqualTo("/v1/chat");
+    }
+
+    @Test
+    @DisplayName("Should default additionalRequests to empty and requestName to null when omitted")
+    void shouldDefaultRequestChainWhenOmitted() {
+        // Given / When: a suite created with no chain fields (legacy single-request shape)
+        TestSuiteResponseDto created = createTestSuite("Legacy Single-Request Suite");
+
+        // Then
+        assertThat(created.getRequestName()).isNull();
+        assertThat(created.getAdditionalRequests()).isEmpty();
     }
 
     @Test

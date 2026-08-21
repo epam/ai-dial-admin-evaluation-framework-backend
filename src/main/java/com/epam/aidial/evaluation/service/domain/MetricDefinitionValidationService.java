@@ -48,7 +48,12 @@ public class MetricDefinitionValidationService {
      * @param configSchemaJson     JSON text of config schema (JSONB from MetricDeclarationVersion)
      * @param inputSchemaJson      JSON text of input schema (JSONB from MetricDeclarationVersion)
      * @param testCaseSchemaJson   JSON text of test case schema (JSONB from TestSuite)
-     * @param responseColumnsJson  JSON text of response columns (JSONB from TestSuite)
+     * @param responseColumnsJson  JSON text of the suite-wide response-column <b>union</b> — request #0's
+     *                             {@code responseColumns} plus every {@code additionalRequests[i].responseColumns},
+     *                             in chain order. Callers MUST resolve this via
+     *                             {@link ResponseColumnUnionResolver} (not pass request #0's bare
+     *                             {@code responseColumns}), otherwise a binding to a column an additional
+     *                             request produces is misreported as {@code UNRESOLVED_REFERENCE}.
      * @param outputSchemaJson     JSON text of output schema (JSONB from MetricDeclarationVersion)
      * @return validation result with valid flag and list of warnings
      */
@@ -246,6 +251,12 @@ public class MetricDefinitionValidationService {
         }
     }
 
+    /**
+     * Parses the column names out of a JSONB array of {@code ResponseColumnDefinitionDto}-shaped
+     * objects. The caller MUST have already resolved {@code responseColumnsJson} to the suite-wide
+     * response-column union (see {@link ResponseColumnUnionResolver}) — this method itself is agnostic
+     * to whether the array came from a single request or a multi-request chain; it just extracts names.
+     */
     private Set<String> extractResponseColumnNames(String responseColumnsJson) {
         if (responseColumnsJson == null || responseColumnsJson.isBlank()) {
             return Collections.emptySet();

@@ -19,7 +19,7 @@ Explicitly **not** changing:
 - `GET …/resolved-request?requestIndex=N` keeps its empty-frame, no-invocation preview semantics.
 - MCP suites need no new guard — `MCP_TOOL` + non-empty `additionalRequests` is already rejected at write time.
 - The known transport-exception gap (a 502/504 during a turn after the first propagates uncaught instead of becoming a history entry) is kept consistent for chain entries > 0 and stays out of scope (documented in design).
-- No DB schema changes, no Flyway migrations, no configuration properties, no runner-core module changes.
+- No DB schema changes, no Flyway migrations, no configuration properties. One deliberate runner-core exception (added during code review): `StreamingResponseAccumulator.accumulate` was split to expose a DB-free `assemble(SseParseResult)` seam so try-out extraction sees the same assembled streaming document as a run without re-reading the drained stream; no new beans or dependencies.
 
 ## Capabilities
 
@@ -33,7 +33,7 @@ None.
 
 ## Impact
 
-- **Code** (main app only; no `evaluation-runner-core` changes expected):
+- **Code** (main app, plus the one runner-core seam noted above):
   - `service/domain/ResolvedRequestService.java` — new chain-aware plan method (list of per-request plans built from suite fields + `jsonbMapper.mapAdditionalRequests(...)` + `suite.getRequestName()`), reusing the `runner.job.RequestExecutionSpec` record as the per-request carrier; a DB-only chain loader for the variables path.
   - `service/domain/TryItOutService.java` — `runTurnSequence` generalized to a chain runner (outer request loop, inner turn loop, accumulated frame, per-request method + preconditions, identity stamping, extracted-column capture); `tryWithVariables` routed through the chain runner for multi-request suites.
   - `service/domain/dto/TryItOutResponseDto.java` — 7 additive `@JsonInclude(NON_NULL)` fields (`extractedColumns`/`extractionWarnings` typed as `JsonNode` — the shared mapper's NON_NULL content inclusion would strip explicit nulls from map fields).

@@ -21,7 +21,7 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [Suite validity = config only](suite-validity-and-run-guards.md) | `isValid` excludes test-case presence; the 5 ordered `createRun` guards |
 | [Computation Versioning (no `is_latest`)](computation-versioning.md) | "Latest" resolved at query time from eval summaries, not snapshots |
 | [Eval summaries = single read surface](eval-summaries-read-surface.md) | One summary per result row even at zero TSMDs; empty list ≠ "no metrics" |
-| [Query DSL `ParamExpr`](query-dsl-parameters.md) | Single pre-pass resolver; invert stable→experimental via a `service` interface |
+| [Query DSL `ParamExpr`](query-dsl-parameters.md) | Single pre-pass resolver rewrites `StructuredQuery` params before translation |
 | [Query DSL function catalog](query-dsl-function-catalog.md) | Registry-driven `QueryFunction` SPI; stored-function delegation; no `mean` fn |
 | [Typed `OverallScoreDefinition`](overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null |
 | [Query DSL entity resolution](query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check |

@@ -10,6 +10,8 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputationExecutor;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.dto.ExecutionSettingsDto;
@@ -62,7 +64,7 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteRunRepository repository;
     private final TestSuiteRepository testSuiteRepository;
     private final DatasetRepository datasetRepository;
-    private final RunnableTestCaseSelector runnableTestCaseSelector;
+    private final QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
     private final TestCaseRunInputRepository testCaseRunInputRepository;
     private final TestSuiteRunSseService sseService;
     private final EvaluationRunProperties evaluationRunProperties;
@@ -72,7 +74,7 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final MetricEvaluationProperties metricEvaluationProperties;
     private final MetricEvaluationExecutor metricEvaluationExecutor;
-    private final MetricScoreComputation metricScoreComputation;
+    private final MetricScoreComputationExecutor metricScoreComputation;
     private final Clock clock;
 
     @Qualifier("metaTransactionManager")

@@ -9,7 +9,7 @@ field names each one exposes — including JSONB-backed fields whose flattening 
 instance (e.g. an `eval_summaries` row's `data:`/`response:`/`metric:` columns are defined by the
 originating test suite run's snapshot).
 
-This capability defines the read-only discovery surface under the experimental `/api/v1/queries`
+This capability defines the read-only discovery surface under the `/api/v1/queries`
 namespace: an entity catalog, an instance-independent base schema (JSONB fields listed as-is), an
 instance-specific detailed schema for complex entities (per-instance JSONB flattening derived from a
 test suite run snapshot), and the discovery error contract. Entities contribute their schema through
@@ -192,9 +192,9 @@ providing a non-UUID value, SHALL be rejected with HTTP 400.
 
 ## Implementation notes
 
-- Controller: `experimental.query.web.QuerySchemaController` (`/api/v1/queries`).
-- Registry + SPI: `experimental.query.service.QueryEntityRegistry`, `QueryableEntitySchemaProvider`.
-- Base schema derivation: `experimental.query.service.JooqTableSchemaResolver` (+ `QueryFieldBinding`).
+- Controller: `query.web.QuerySchemaController` (`/api/v1/queries`).
+- Registry + SPI: `query.service.QueryEntityRegistry`, `QueryableEntitySchemaProvider`.
+- Base schema derivation: `query.service.JooqTableSchemaResolver` (+ `QueryFieldBinding`).
 - Providers: `TestSuitesSchemaProvider` (simple; appends 6 virtual `deployment_ref::*` and
   `mcp_deployment_ref::*` sub-field entries to the jOOQ-derived base schema), `EvalSummariesSchemaProvider` (complex, run-snapshot
   derived via `TestSuiteRunService` + `RunMetricSnapshotRepository`; families mirror the CSV export

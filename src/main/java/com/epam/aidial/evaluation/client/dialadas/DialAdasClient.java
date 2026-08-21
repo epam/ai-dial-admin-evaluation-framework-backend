@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.client.dialadas;
 
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
-import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.net.SocketTimeoutException;
 import lombok.RequiredArgsConstructor;

@@ -9,11 +9,11 @@ import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputationExecutor;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricScoreValueDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunComparisonResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunComparisonRunDto;
-import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputation;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
 import java.util.List;
 import java.util.UUID;
@@ -56,7 +56,7 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     private MetricScoreResultRepository metricScoreResultRepository;
 
     @Autowired
-    private MetricScoreComputation phaseThreeExecutor;
+    private MetricScoreComputationExecutor phaseThreeExecutor;
 
     private UUID suiteId;
     private UUID runA;

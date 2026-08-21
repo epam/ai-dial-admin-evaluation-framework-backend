@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
-import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntityDto;
-import com.epam.aidial.evaluation.experimental.query.service.dto.QueryEntitySchemaDto;
-import com.epam.aidial.evaluation.experimental.query.service.dto.QueryFieldType;
-import com.epam.aidial.evaluation.experimental.query.service.dto.QuerySchemaFieldDto;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.query.service.dto.QueryEntityDto;
+import com.epam.aidial.evaluation.query.service.dto.QueryEntitySchemaDto;
+import com.epam.aidial.evaluation.query.service.dto.QueryFieldType;
+import com.epam.aidial.evaluation.query.service.dto.QuerySchemaFieldDto;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;

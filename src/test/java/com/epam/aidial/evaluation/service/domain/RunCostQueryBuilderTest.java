@@ -2,17 +2,17 @@ package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.experimental.query.model.ComparisonNode;
-import com.epam.aidial.evaluation.experimental.query.model.ComparisonOp;
-import com.epam.aidial.evaluation.experimental.query.model.FieldExpr;
-import com.epam.aidial.evaluation.experimental.query.model.FnExpr;
-import com.epam.aidial.evaluation.experimental.query.model.LogicalNode;
-import com.epam.aidial.evaluation.experimental.query.model.LogicalOp;
-import com.epam.aidial.evaluation.experimental.query.model.OutputColumn;
-import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
-import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
-import com.epam.aidial.evaluation.experimental.query.model.ValueExpr;
-import com.epam.aidial.evaluation.experimental.query.model.ValueType;
+import com.epam.aidial.evaluation.query.model.ComparisonNode;
+import com.epam.aidial.evaluation.query.model.ComparisonOp;
+import com.epam.aidial.evaluation.query.model.FieldExpr;
+import com.epam.aidial.evaluation.query.model.FnExpr;
+import com.epam.aidial.evaluation.query.model.LogicalNode;
+import com.epam.aidial.evaluation.query.model.LogicalOp;
+import com.epam.aidial.evaluation.query.model.OutputColumn;
+import com.epam.aidial.evaluation.query.model.QueryMode;
+import com.epam.aidial.evaluation.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.query.model.ValueExpr;
+import com.epam.aidial.evaluation.query.model.ValueType;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;

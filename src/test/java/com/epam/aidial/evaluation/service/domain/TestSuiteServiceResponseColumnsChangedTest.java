@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
@@ -20,7 +21,6 @@ import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
-import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
@@ -77,7 +77,7 @@ class TestSuiteServiceResponseColumnsChangedTest {
                 mock(EndpointSchemaRefResolver.class),
                 suiteValidationService,
                 mock(DatasetSchemaProvider.class),
-                mock(RunnableTestCaseSelector.class),
+                mock(QueryDslRunnableTestCaseSelector.class),
                 testSuiteMetricDefinitionService,
                 mock(FileService.class),
                 mock(Clock.class),

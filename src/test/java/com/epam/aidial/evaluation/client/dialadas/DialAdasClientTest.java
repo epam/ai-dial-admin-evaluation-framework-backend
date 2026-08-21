@@ -9,8 +9,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
-import com.epam.aidial.evaluation.experimental.query.model.QueryMode;
-import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.query.model.QueryMode;
+import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.util.List;

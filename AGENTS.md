@@ -22,7 +22,7 @@ Strict layering, enforced by `LayeredArchitectureTest`. Dependencies point downw
 → `.data.db` (repository interfaces + Postgres impls, RecordMappers, models, pagination, transaction context)
 → PostgreSQL + Flyway.
 
-Never invert an edge to reach experimental code — declare an interface in `.service` and implement it in the experimental package (see [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md)). Package inventory: [docs/key-packages.md](docs/key-packages.md).
+Package inventory: [docs/key-packages.md](docs/key-packages.md).
 
 ## Do's and Don'ts
 
@@ -117,7 +117,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Suite validity = config only](docs/patterns/suite-validity-and-run-guards.md) | `isValid` excludes test-case presence; the 5 ordered `createRun` guards |
 | [Computation Versioning (no `is_latest`)](docs/patterns/computation-versioning.md) | "Latest" resolved at query time from eval summaries, not snapshots |
 | [Eval summaries = single read surface](docs/patterns/eval-summaries-read-surface.md) | One summary per result row even at zero TSMDs; empty list ≠ "no metrics" |
-| [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md) | Single pre-pass resolver; invert stable→experimental via a `service` interface |
+| [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md) | Single pre-pass resolver rewrites `StructuredQuery` params before translation |
 | [Query DSL function catalog](docs/patterns/query-dsl-function-catalog.md) | Registry-driven `QueryFunction` SPI; stored-function delegation; no `mean` fn |
 | [Typed `OverallScoreDefinition`](docs/patterns/overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null |
 | [Query DSL entity resolution](docs/patterns/query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check |

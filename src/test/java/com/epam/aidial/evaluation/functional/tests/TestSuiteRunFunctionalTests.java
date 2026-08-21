@@ -16,11 +16,11 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
-import com.epam.aidial.evaluation.experimental.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
 import com.epam.aidial.evaluation.functional.helper.MetricEvaluationTestHelper;
+import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;

@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
+import com.epam.aidial.evaluation.service.domain.ResponseColumnUnionResolver;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
@@ -38,7 +39,9 @@ import org.springframework.stereotype.Component;
  * <p>Resolution is keyed by run: callers pass {@code test_suite_run_id} (preferred) to target a run
  * directly, or {@code test_suite_id} to target the suite's latest run. The schema is then derived
  * from that run's {@link SuiteSnapshotDto} ({@code data::<field>} from the snapshot's test-case
- * schema, {@code response::<column>} from the snapshot's response columns) and the run's analytics
+ * schema, {@code response::<column>} from the suite-wide response-column union — the snapshot's own
+ * {@code responseColumns} followed by each {@code additionalRequests[i].responseColumns}, via
+ * {@link ResponseColumnUnionResolver}) and the run's analytics
  * {@link RunMetricSnapshot} rows for the latest computation ({@code metric::<name>::<field>}, always
  * numeric — metric values are numbers by nature; {@code metricInfo::<name>}, an opaque object holding
  * any non-numeric per-metric info/error, split by metric name only). These mirror the CSV export
@@ -69,6 +72,7 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
     private final SchemaFieldTypeMapper schemaFieldTypeMapper;
+    private final ResponseColumnUnionResolver responseColumnUnionResolver;
     private final List<QuerySchemaFieldDto> baseSchema;
 
     public EvalSummariesSchemaProvider(
@@ -76,11 +80,13 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
             RunMetricSnapshotRepository runMetricSnapshotRepository,
             OutputSchemaFieldExtractor outputSchemaFieldExtractor,
             SchemaFieldTypeMapper schemaFieldTypeMapper,
+            ResponseColumnUnionResolver responseColumnUnionResolver,
             JooqTableSchemaResolver schemaResolver) {
         this.testSuiteRunService = testSuiteRunService;
         this.runMetricSnapshotRepository = runMetricSnapshotRepository;
         this.outputSchemaFieldExtractor = outputSchemaFieldExtractor;
         this.schemaFieldTypeMapper = schemaFieldTypeMapper;
+        this.responseColumnUnionResolver = responseColumnUnionResolver;
         this.baseSchema = schemaResolver.resolve(TEST_CASE_EVAL_SUMMARIES);
     }
 
@@ -156,8 +162,8 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
     }
 
     private List<QuerySchemaFieldDto> responseFields(SuiteSnapshotDto snapshot) {
-        final List<ResponseColumnDefinitionDto> responseColumns = snapshot.getResponseColumns();
-        if (responseColumns == null) {
+        final List<ResponseColumnDefinitionDto> responseColumns = responseColumnUnionResolver.unionFrom(snapshot);
+        if (responseColumns.isEmpty()) {
             return List.of();
         }
         return responseColumns.stream()

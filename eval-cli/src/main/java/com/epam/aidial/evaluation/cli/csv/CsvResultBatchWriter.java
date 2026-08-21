@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.cli.csv;
 
 import com.epam.aidial.evaluation.runner.job.ResultBatchWriter;
+import com.epam.aidial.evaluation.runner.model.ResultCsvColumns;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import java.io.Closeable;
 import java.io.IOException;
@@ -17,16 +18,17 @@ import org.apache.commons.csv.CSVPrinter;
  *
  * <p>Column order: {@code testCaseName, runIndex, testCaseData, requestBody, responseBody,
  * responseStatusCode, executionStatus, startedAt, completedAt, traceId, retryCount, logDetails,
- * extractedColumns, extractionWarnings}.
+ * extractedColumns, extractionWarnings, requestIndex, totalRequests, turnIndex, totalTurns}.
  *
  * <p>{@code testCaseId} is deliberately omitted. The test case IDs eval-cli reads come from the
  * <em>source</em> suite's bound dataset; the destination clone's dataset is not guaranteed to be the
  * same one (a clone of a suite bound to a PRIVATE dataset gets a freshly cloned dataset with new test
  * case IDs) — those source-side IDs would not correspond to anything in the destination. This is safe
- * because {@code EvalResultsImportService.validateBatch}/{@code testCaseIdentity} never resolves
- * {@code testCaseId} against any dataset; it's used only for in-batch duplicate detection, falling
- * back to {@code testCaseName} (which this writer always supplies) when absent — the import contract
- * only requires <em>one</em> of the two, never both.
+ * because the import contract now derives one stable identifier per distinct {@code testCaseName} in
+ * the file ({@code EvalResultsCsvParser}, {@code cli-multi-turn-multi-request-parity} design.md
+ * Decision 4) — every row naming the same test case shares that generated id, so omitting {@code
+ * testCaseId} no longer fragments a repetition's rows across several identities; the import contract
+ * only requires <em>one</em> of {@code testCaseId}/{@code testCaseName}, never both.
  *
  * <p>{@code testCaseData} is a <strong>required</strong> JSON-object column on the import contract
  * (validated against the destination dataset's schema, if any) — a {@code null} value here is written
@@ -42,8 +44,14 @@ import org.apache.commons.csv.CSVPrinter;
  * the shared {@code TestCaseRunner}/{@code EvaluationWorker}), every {@link TestCaseRunResult} handed
  * to this writer already carries real extraction output; omitting it from the CSV would silently
  * throw away extraction for every imported run, breaking any metric whose binding reads an extracted
- * column. {@code turnIndex}/{@code totalTurns} remain omitted — they are not part of {@code
- * EvalResultsCsvParser.RESERVED_COLUMNS} at all.
+ * column.
+ *
+ * <p>{@code requestIndex}/{@code totalRequests}/{@code turnIndex}/{@code totalTurns} ARE included —
+ * they are now part of {@code EvalResultsCsvParser.RESERVED_COLUMNS} as optional, defaulted columns
+ * (design.md Decision 1). Without them every row of a multi-request or multi-turn suite's test-case
+ * repetition would import as an indistinguishable single-request, single-turn row. {@link
+ * TestCaseRunResult} already carries these four fields with the correct single-request/single-turn
+ * defaults ({@code 0}/{@code 1}/{@code 0}/{@code 1}), so this writer emits them verbatim.
  *
  * <p>{@link #addResults(List)} is {@code synchronized} to allow concurrent calls from multiple
  * virtual threads without interleaved/corrupted rows.
@@ -54,23 +62,13 @@ public class CsvResultBatchWriter implements ResultBatchWriter, Closeable {
     private static final String EMPTY_JSON_OBJECT = "{}";
     private static final String EMPTY_JSON_ARRAY = "[]";
 
-    /** Exact import-contract header in the required column order. */
-    static final String[] HEADERS = {
-        "testCaseName",
-        "runIndex",
-        "testCaseData",
-        "requestBody",
-        "responseBody",
-        "responseStatusCode",
-        "executionStatus",
-        "startedAt",
-        "completedAt",
-        "traceId",
-        "retryCount",
-        "logDetails",
-        "extractedColumns",
-        "extractionWarnings"
-    };
+    /**
+     * Exact import-contract header in the required column order — the shared {@link
+     * ResultCsvColumns#CANONICAL_ORDER} with {@code testCaseId} dropped (see class javadoc).
+     */
+    static final String[] HEADERS = ResultCsvColumns.CANONICAL_ORDER.stream()
+            .filter(column -> !ResultCsvColumns.TEST_CASE_ID.equals(column))
+            .toArray(String[]::new);
 
     private final CSVPrinter printer;
 
@@ -105,7 +103,11 @@ public class CsvResultBatchWriter implements ResultBatchWriter, Closeable {
                         result.getRetryCount(),
                         result.getLogDetails(),
                         result.getExtractedColumns() != null ? result.getExtractedColumns() : EMPTY_JSON_OBJECT,
-                        result.getExtractionWarnings() != null ? result.getExtractionWarnings() : EMPTY_JSON_ARRAY);
+                        result.getExtractionWarnings() != null ? result.getExtractionWarnings() : EMPTY_JSON_ARRAY,
+                        result.getRequestIndex(),
+                        result.getTotalRequests(),
+                        result.getTurnIndex(),
+                        result.getTotalTurns());
             } catch (IOException e) {
                 throw new RuntimeException(
                         "Failed to write CSV result row for test case " + result.getTestCaseId() + ": "

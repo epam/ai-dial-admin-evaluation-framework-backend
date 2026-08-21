@@ -9,12 +9,14 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -49,9 +51,13 @@ public class RunOrchestrationService {
      * @param workDir             the working directory where the results CSV is written
      * @return the {@link File} pointing to the produced results CSV
      * @throws IllegalStateException if the fetched suite's {@code endpointRef}/{@code requestTemplate}
-     *                                fails {@link SuiteContractValidator}, or if {@code
+     *                                fails {@link SuiteContractValidator}; if {@code
      *                                targetDeploymentRef} is {@code null} and the suite has no recorded
-     *                                {@code deploymentRef} either
+     *                                {@code deploymentRef} either; if the bundle's dataset
+     *                                schema is absent and some fetched test case carries per-turn
+     *                                data (stale bundle — re-run {@code fetch}); or if the suite is
+     *                                an MCP tool suite and some fetched test case carries per-turn
+     *                                data (unsupported combination, mirroring the EF backend's guard)
      */
     public File run(SuiteFetchBundle bundle, DeploymentReferenceDto targetDeploymentRef, String workDir) {
         suiteContractValidator.validate(bundle.getSuite());
@@ -59,6 +65,11 @@ public class RunOrchestrationService {
                 resolveTargetDeploymentRef(bundle.getSuite(), targetDeploymentRef);
 
         final List<TestCaseResponseDto> testCases = bundle.getTestCases();
+        final boolean hasMultiTurnCase = testCases.stream().anyMatch(this::isMultiTurn);
+
+        requireFreshSchemaForMultiTurn(bundle, hasMultiTurnCase);
+        rejectMcpSuiteWithMultiTurnCases(bundle.getSuite(), hasMultiTurnCase);
+
         log.info(
                 "Starting run for suite '{}' ({}) — {} test case(s) against deployment '{}'",
                 bundle.getSuite().getName(),
@@ -66,8 +77,8 @@ public class RunOrchestrationService {
                 testCases.size(),
                 resolvedDeploymentRef.getId());
 
-        final EvaluationContext context =
-                evaluationContextFactory.create(bundle.getSuite(), testCases.size(), resolvedDeploymentRef);
+        final EvaluationContext context = evaluationContextFactory.create(
+                bundle.getSuite(), testCases.size(), resolvedDeploymentRef, bundle.getTestCaseSchema());
 
         final List<TestCaseRunInput> inputs = mapInputs(testCases, context.getRunId());
         final Path csvPath = csvPath(workDir, bundle.getSourceSuiteId());
@@ -96,6 +107,39 @@ public class RunOrchestrationService {
     }
 
     /**
+     * Fails fast when the bundle's dataset schema is absent (fetched by an earlier CLI version)
+     * and at least one fetched test case carries per-turn data — running such a case without a
+     * schema would silently execute it single-turn instead of failing loudly (design.md Decision 7).
+     * A stale bundle with no multi-turn case is genuinely equivalent to a fresh one and is not
+     * rejected.
+     */
+    private void requireFreshSchemaForMultiTurn(SuiteFetchBundle bundle, boolean hasMultiTurnCase) {
+        if (bundle.getTestCaseSchema() == null && hasMultiTurnCase) {
+            throw new IllegalStateException(
+                    "Fetch bundle for suite " + bundle.getSourceSuiteId() + " has no dataset test-case schema, but"
+                            + " some fetched test case carries per-turn data. Re-run 'fetch' for this suite before"
+                            + " running it — an older bundle cannot be executed as multi-turn.");
+        }
+    }
+
+    /**
+     * Rejects an MCP tool suite that has any fetched test case carrying per-turn data, before any
+     * target invocation — mirroring the EF backend's own run-creation guard (design.md Decision 8).
+     */
+    private void rejectMcpSuiteWithMultiTurnCases(TestSuiteResponseDto suite, boolean hasMultiTurnCase) {
+        if (suite.getSuiteType() == SuiteType.MCP_TOOL && hasMultiTurnCase) {
+            throw new IllegalStateException("Suite " + suite.getId() + " ('" + suite.getName()
+                    + "') is an MCP tool suite with at least one multi-turn test case — MCP suites do not support"
+                    + " multi-turn test cases.");
+        }
+    }
+
+    private boolean isMultiTurn(TestCaseResponseDto testCase) {
+        return testCase.getMultiTurnData() != null
+                && !testCase.getMultiTurnData().isEmpty();
+    }
+
+    /**
      * Resolves the deployment reference to run against: the CLI-provided {@code cliTargetDeploymentRef}
      * takes precedence when present; otherwise falls back to the suite's own recorded {@code
      * deploymentRef} from the source EF.
@@ -117,7 +161,7 @@ public class RunOrchestrationService {
 
     private List<TestCaseRunInput> mapInputs(List<TestCaseResponseDto> testCases, UUID runId) {
         int position = 0;
-        final java.util.List<TestCaseRunInput> inputs = new java.util.ArrayList<>(testCases.size());
+        final List<TestCaseRunInput> inputs = new ArrayList<>(testCases.size());
         for (TestCaseResponseDto tc : testCases) {
             final TestCaseRunInput input = testCaseRunInputMapper.toInput(tc);
             input.setRunId(runId);

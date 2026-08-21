@@ -4,9 +4,11 @@ import com.epam.aidial.evaluation.configuration.properties.analytics.AnalyticsRe
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.ResultCsvColumns;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.DatasetSchemaProvider;
 import com.epam.aidial.evaluation.service.domain.SchemaValidationService;
+import com.epam.aidial.evaluation.service.domain.TestCaseFieldScopeResolver;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,6 +16,8 @@ import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,10 +42,23 @@ import tools.jackson.databind.ObjectMapper;
  * {@code runIndex}, {@code testCaseData}, {@code requestBody}, {@code responseBody},
  * {@code responseStatusCode}, {@code executionStatus}, {@code startedAt}, {@code completedAt},
  * {@code traceId}, {@code retryCount}, {@code logDetails}, {@code extractedColumns},
- * {@code extractionWarnings}.
+ * {@code extractionWarnings}, {@code requestIndex}, {@code totalRequests}, {@code turnIndex},
+ * {@code totalTurns}.
  *
  * <p>{@code testCaseData} is a required JSON object column. When the suite's bound dataset has a
- * schema configured, each row's {@code testCaseData} is validated against that schema inline.
+ * schema configured, each row's {@code testCaseData} is validated against that schema inline,
+ * scope-aware: a per-turn field (per {@link TestCaseFieldScopeResolver}) is type-checked when
+ * present but never required, since a row may legitimately carry shared-only data (see
+ * {@code design.md} Decision 6).
+ *
+ * <p>{@code requestIndex}/{@code totalRequests}/{@code turnIndex}/{@code totalTurns} are optional:
+ * an absent header or blank cell defaults to {@code 0}/{@code 1}/{@code 0}/{@code 1} — the values a
+ * single-request single-turn row already carries (see {@code design.md} Decision 1).
+ *
+ * <p>When a row supplies no {@code testCaseId}, its persisted identifier is derived from
+ * {@code testCaseName}: every row naming the same test case within one {@link #parse} call shares
+ * one generated id, so a multi-request/multi-turn repetition's rows group back together the same
+ * way a live run's do (see {@code design.md} Decision 4).
  *
  * <p>Validation is all-or-nothing: per-row JSON-parse errors, type errors, and field-level
  * constraint violations are collected across every row and surfaced together in a single
@@ -57,28 +74,17 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class EvalResultsCsvParser {
 
-    /** Exact, case-sensitive reserved column names — mirrors DB columns in camelCase. */
-    static final Set<String> RESERVED_COLUMNS = Set.of(
-            "testCaseId",
-            "testCaseName",
-            "runIndex",
-            "testCaseData",
-            "requestBody",
-            "responseBody",
-            "responseStatusCode",
-            "executionStatus",
-            "startedAt",
-            "completedAt",
-            "traceId",
-            "retryCount",
-            "logDetails",
-            "extractedColumns",
-            "extractionWarnings");
+    /**
+     * Exact, case-sensitive reserved column names — mirrors DB columns in camelCase. Sourced from the
+     * shared import contract in {@link ResultCsvColumns} (also consumed by the eval-cli writer).
+     */
+    static final Set<String> RESERVED_COLUMNS = Set.copyOf(ResultCsvColumns.CANONICAL_ORDER);
 
     private final DatasetSchemaProvider datasetSchemaProvider;
     private final ObjectMapper objectMapper;
     private final AnalyticsResultsProperties analyticsResultsProperties;
     private final SchemaValidationService schemaValidationService;
+    private final TestCaseFieldScopeResolver testCaseFieldScopeResolver;
 
     /**
      * Parses the uploaded CSV stream into a validated list of {@link TestCaseRunResult} stubs.
@@ -97,7 +103,7 @@ public class EvalResultsCsvParser {
         validateFileSize(contentLength);
 
         List<FieldDefinitionDto> schema = datasetSchemaProvider.getSchema(datasetId);
-        Map<String, Object> schemaMap = schema.isEmpty() ? null : SchemaValidationService.buildFieldSchema(schema);
+        Map<String, Object> schemaMap = schema.isEmpty() ? null : buildScopeAwareSchema(schema);
 
         CSVFormat format = CSVFormat.DEFAULT
                 .builder()
@@ -121,13 +127,16 @@ public class EvalResultsCsvParser {
 
             List<TestCaseRunResult> items = new ArrayList<>();
             List<String> rowErrors = new ArrayList<>();
+            // Parse-call-scoped: every id-less row naming the same test case shares one generated id,
+            // and ids never leak between separate parse/import requests (design.md Decision 4).
+            Map<String, UUID> nameToGeneratedId = new HashMap<>();
             int rowIndex = 0;
 
             for (CSVRecord record : parser) {
                 if (items.size() >= maxItems) {
                     throw new ValidationException("Item count exceeds the configured maximum of " + maxItems);
                 }
-                parseRecord(record, bindings, schemaMap, rowIndex, items, rowErrors);
+                parseRecord(record, bindings, schemaMap, rowIndex, items, rowErrors, nameToGeneratedId);
                 rowIndex++;
             }
 
@@ -161,7 +170,8 @@ public class EvalResultsCsvParser {
             Map<String, Object> schemaMap,
             int rowIndex,
             List<TestCaseRunResult> items,
-            List<String> rowErrors) {
+            List<String> rowErrors,
+            Map<String, UUID> nameToGeneratedId) {
         String testCaseIdRaw = null;
         String testCaseNameRaw = null;
         String runIndexRaw = null;
@@ -177,6 +187,10 @@ public class EvalResultsCsvParser {
         String logDetailsRaw = null;
         String extractedColumnsRaw = null;
         String extractionWarningsRaw = null;
+        String requestIndexRaw = null;
+        String totalRequestsRaw = null;
+        String turnIndexRaw = null;
+        String totalTurnsRaw = null;
 
         for (int i = 0; i < bindings.size() && i < record.size(); i++) {
             final String raw = record.get(i);
@@ -196,6 +210,10 @@ public class EvalResultsCsvParser {
                 case "logDetails" -> logDetailsRaw = raw;
                 case "extractedColumns" -> extractedColumnsRaw = raw;
                 case "extractionWarnings" -> extractionWarningsRaw = raw;
+                case "requestIndex" -> requestIndexRaw = raw;
+                case "totalRequests" -> totalRequestsRaw = raw;
+                case "turnIndex" -> turnIndexRaw = raw;
+                case "totalTurns" -> totalTurnsRaw = raw;
                 default -> {}
             }
         }
@@ -217,6 +235,10 @@ public class EvalResultsCsvParser {
                 parseOptionalJsonToString(extractedColumnsRaw, rowIndex, "extractedColumns", rowErrors);
         String extractionWarningsJson =
                 parseOptionalJsonToString(extractionWarningsRaw, rowIndex, "extractionWarnings", rowErrors);
+        Integer requestIndexParsed = parseOptionalInt(requestIndexRaw, rowIndex, "requestIndex", rowErrors);
+        Integer totalRequestsParsed = parseOptionalInt(totalRequestsRaw, rowIndex, "totalRequests", rowErrors);
+        Integer turnIndexParsed = parseOptionalInt(turnIndexRaw, rowIndex, "turnIndex", rowErrors);
+        Integer totalTurnsParsed = parseOptionalInt(totalTurnsRaw, rowIndex, "totalTurns", rowErrors);
 
         // Inline field-level constraint checks
         if (runIndex == null) {
@@ -240,6 +262,16 @@ public class EvalResultsCsvParser {
             rowErrors.add("row " + rowIndex + ": completedAt must not be null");
         }
 
+        // Effective identity values: an absent header or blank cell defaults to a single-request
+        // single-turn row's own values (design.md Decision 1), then range-checked against those
+        // defaulted effective values (design.md Decision 2) — no cross-row total* consistency check,
+        // since totalTurns legitimately differs per requestIndex within one chain.
+        final int requestIndex = requestIndexParsed != null ? requestIndexParsed : 0;
+        final int totalRequests = totalRequestsParsed != null ? totalRequestsParsed : 1;
+        final int turnIndex = turnIndexParsed != null ? turnIndexParsed : 0;
+        final int totalTurns = totalTurnsParsed != null ? totalTurnsParsed : 1;
+        validateIdentityColumns(requestIndex, totalRequests, turnIndex, totalTurns, rowIndex, rowErrors);
+
         // Dataset schema validation on testCaseData
         if (schemaMap != null && testCaseDataJson != null) {
             validateTestCaseDataInline(testCaseDataJson, schemaMap, rowIndex, rowErrors);
@@ -249,9 +281,13 @@ public class EvalResultsCsvParser {
 
         items.add(TestCaseRunResult.builder()
                 // run-context fields left null/0 — filled in by persistResults
-                .testCaseId(testCaseId != null ? testCaseId : UUID.randomUUID())
+                .testCaseId(resolveTestCaseId(testCaseId, testCaseName, nameToGeneratedId))
                 .testCaseName(testCaseName)
                 .runIndex(runIndex != null ? runIndex : 0)
+                .requestIndex(requestIndex)
+                .totalRequests(totalRequests)
+                .turnIndex(turnIndex)
+                .totalTurns(totalTurns)
                 .testCaseData(testCaseDataJson != null ? testCaseDataJson : "{}")
                 .requestBody(requestBodyJson)
                 .responseBody(responseBodyJson)
@@ -266,6 +302,55 @@ public class EvalResultsCsvParser {
                 .extractedColumns(extractedColumnsJson != null ? extractedColumnsJson : "{}")
                 .extractionWarnings(extractionWarningsJson != null ? extractionWarningsJson : "[]")
                 .build());
+    }
+
+    /**
+     * Range-checks the four identity columns' <b>effective</b> values (post-defaulting): a supplied
+     * index is checked against a defaulted total, so e.g. {@code requestIndex=2} with a blank
+     * {@code totalRequests} (defaulting to {@code 1}) is rejected. Deliberately does not check
+     * cross-row consistency of {@code totalRequests}/{@code totalTurns} for one test-case identity —
+     * {@code totalTurns} legitimately differs per {@code requestIndex} within one chain.
+     */
+    private void validateIdentityColumns(
+            int requestIndex, int totalRequests, int turnIndex, int totalTurns, int rowIndex, List<String> errors) {
+        if (requestIndex < 0) {
+            errors.add("row " + rowIndex + ": requestIndex must be >= 0, got: " + requestIndex);
+        }
+        if (turnIndex < 0) {
+            errors.add("row " + rowIndex + ": turnIndex must be >= 0, got: " + turnIndex);
+        }
+        if (totalRequests < 1) {
+            errors.add("row " + rowIndex + ": totalRequests must be >= 1, got: " + totalRequests);
+        }
+        if (totalTurns < 1) {
+            errors.add("row " + rowIndex + ": totalTurns must be >= 1, got: " + totalTurns);
+        }
+        if (requestIndex >= totalRequests) {
+            errors.add("row " + rowIndex + ": requestIndex (" + requestIndex + ") must be less than totalRequests ("
+                    + totalRequests + ")");
+        }
+        if (turnIndex >= totalTurns) {
+            errors.add("row " + rowIndex + ": turnIndex (" + turnIndex + ") must be less than totalTurns (" + totalTurns
+                    + ")");
+        }
+    }
+
+    /**
+     * Resolves the row's persisted {@code testCaseId}: a supplied id is used verbatim; otherwise one
+     * generated id is shared by every row naming the same {@code testCaseName} within this
+     * {@link #parse} call (via {@code nameToGeneratedId}), so a repetition's rows group back
+     * together the same way a live run's do (design.md Decision 4). A row with neither id nor name
+     * gets {@code null} — {@code EvalResultsImportService#testCaseIdentity}'s existing
+     * identity-required check rejects it with a clean 400 before any run is created.
+     */
+    private UUID resolveTestCaseId(UUID testCaseId, String testCaseName, Map<String, UUID> nameToGeneratedId) {
+        if (testCaseId != null) {
+            return testCaseId;
+        }
+        if (testCaseName != null) {
+            return nameToGeneratedId.computeIfAbsent(testCaseName, name -> UUID.randomUUID());
+        }
+        return null;
     }
 
     // -------------------------------------------------------------------------
@@ -296,6 +381,38 @@ public class EvalResultsCsvParser {
     // -------------------------------------------------------------------------
     // Schema validation (inline, adds to rowErrors)
     // -------------------------------------------------------------------------
+
+    /**
+     * Builds the {@code testCaseData} validation schema, aware of each field's scope (design.md
+     * Decision 6): shared fields keep {@link SchemaValidationService#buildFieldSchema}'s existing
+     * behavior (present in {@code properties}, and in {@code required} when declared required);
+     * per-turn fields stay in {@code properties} (type-checked when present) but are never added to
+     * {@code required} — a row's {@code testCaseData} is the effective view for one
+     * {@code (request, turn)} position, and a legitimate row may carry shared fields only.
+     */
+    private Map<String, Object> buildScopeAwareSchema(List<FieldDefinitionDto> schema) {
+        final TestCaseFieldScopeResolver.SchemaSplit split = testCaseFieldScopeResolver.splitSchema(schema);
+        final Map<String, Object> sharedSchema = SchemaValidationService.buildFieldSchema(split.shared());
+        final Map<String, Object> perTurnSchema = SchemaValidationService.buildFieldSchema(split.perTurn());
+
+        final Map<String, Object> properties = new LinkedHashMap<>();
+        properties.putAll(propertiesOf(sharedSchema));
+        properties.putAll(propertiesOf(perTurnSchema));
+
+        final Map<String, Object> merged = new LinkedHashMap<>();
+        merged.put("type", "object");
+        merged.put("properties", properties);
+        if (sharedSchema.containsKey("required")) {
+            merged.put("required", sharedSchema.get("required"));
+        }
+        return merged;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> propertiesOf(Map<String, Object> fieldSchema) {
+        final Object properties = fieldSchema.get("properties");
+        return properties instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
 
     private void validateTestCaseDataInline(
             String testCaseDataJson, Map<String, Object> schemaMap, int rowIndex, List<String> rowErrors) {

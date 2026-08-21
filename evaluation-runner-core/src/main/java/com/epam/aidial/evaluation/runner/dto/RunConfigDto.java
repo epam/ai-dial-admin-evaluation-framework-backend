@@ -22,7 +22,7 @@ public class RunConfigDto {
     @Schema(description = "Number of runs per test case", example = "1")
     private Integer numberOfRuns;
 
-    @Size(max = ValidationConstants.MAX_TEST_RUN_NAME_LENGTH)
+    @Size(max = RunnerValidationConstants.MAX_TEST_RUN_NAME_LENGTH)
     @Schema(description = "User-provided name for the run (auto-generated if omitted)")
     private String testRunName;
 

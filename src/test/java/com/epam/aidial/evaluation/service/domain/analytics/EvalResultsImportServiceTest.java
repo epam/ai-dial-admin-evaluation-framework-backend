@@ -147,11 +147,59 @@ class EvalResultsImportServiceTest {
         }
 
         @Test
-        @DisplayName("throws ValidationException on duplicate (testCaseName, runIndex) within the batch")
+        @DisplayName("throws ValidationException on duplicate (testCaseId, runIndex, requestIndex, turnIndex) "
+                + "within the batch")
         void throwsOnDuplicateWithinBatch() {
             TestCaseRunResult item = itemBuilder("tc1").build();
 
             assertThatThrownBy(() -> service.validateBatch(List.of(item, item)))
+                    .isInstanceOf(ValidationException.class);
+        }
+
+        @Test
+        @DisplayName("accepts rows for the same test case and runIndex that differ only in requestIndex "
+                + "(multi-request chain)")
+        void acceptsMultiRequestRows() {
+            TestCaseRunResult request0 =
+                    itemBuilder("tc1").requestIndex(0).totalRequests(2).build();
+            TestCaseRunResult request1 = request0.toBuilder().requestIndex(1).build();
+
+            service.validateBatch(List.of(request0, request1));
+        }
+
+        @Test
+        @DisplayName("accepts rows for the same test case, runIndex, and requestIndex that differ only in "
+                + "turnIndex (multi-turn case)")
+        void acceptsMultiTurnRows() {
+            TestCaseRunResult turn0 = itemBuilder("tc1")
+                    .requestIndex(0)
+                    .turnIndex(0)
+                    .totalTurns(2)
+                    .build();
+            TestCaseRunResult turn1 = turn0.toBuilder().turnIndex(1).build();
+
+            service.validateBatch(List.of(turn0, turn1));
+        }
+
+        @Test
+        @DisplayName("throws when two id-less rows share the same testCaseName, runIndex, and defaulted "
+                + "requestIndex/turnIndex (name-only duplicate)")
+        void throwsOnNameOnlyDuplicateWithDefaultedPositions() {
+            TestCaseRunResult item1 = itemBuilder("tc1").testCaseId(null).build();
+            TestCaseRunResult item2 = itemBuilder("tc1").testCaseId(null).build();
+
+            assertThatThrownBy(() -> service.validateBatch(List.of(item1, item2)))
+                    .isInstanceOf(ValidationException.class);
+        }
+
+        @Test
+        @DisplayName("still rejects an exact duplicate that also shares requestIndex and turnIndex")
+        void throwsOnExactDuplicateIncludingRequestAndTurnIndex() {
+            TestCaseRunResult item1 =
+                    itemBuilder("tc1").requestIndex(1).turnIndex(2).build();
+            TestCaseRunResult item2 = item1.toBuilder().build();
+
+            assertThatThrownBy(() -> service.validateBatch(List.of(item1, item2)))
                     .isInstanceOf(ValidationException.class);
         }
 

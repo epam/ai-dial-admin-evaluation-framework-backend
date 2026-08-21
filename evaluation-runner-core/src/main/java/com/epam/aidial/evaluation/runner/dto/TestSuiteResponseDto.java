@@ -40,6 +40,17 @@ public class TestSuiteResponseDto {
     private RequestTemplateDto requestTemplate;
     private List<InputBindingDto> inputBindings;
 
+    @Schema(
+            example = "configure",
+            description = "User-facing label for request #0. Null when request #0 is unlabelled.")
+    private String requestName;
+
+    @Schema(
+            description = "Ordered chain of requests 1..N executed after request #0 against the same "
+                    + "`deploymentRef`. Empty when the suite is a single-request suite.",
+            example = "[]")
+    private List<RequestDefinitionDto> additionalRequests;
+
     @Schema(description = "MCP deployment reference (MCP_TOOL suites only)")
     private McpDeploymentReferenceDto mcpDeploymentRef;
 

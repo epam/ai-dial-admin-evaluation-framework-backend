@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
@@ -242,6 +243,50 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("snapshot echoes the request chain: requestName and additionalRequests")
+    void snapshotEchoesRequestChain() {
+        TestSuiteResponseDto suite = createChainedTestSuiteWithTestCase("Snapshot Chain Suite");
+        mockDeploymentSuccess();
+
+        UUID runId = createRun(suite.getId());
+        TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 15);
+        assertThat(terminal.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        // Echoed over HTTP on the run detail
+        assertThat(terminal.getSuiteSnapshot()).isNotNull();
+        assertThat(terminal.getSuiteSnapshot().getRequestName()).isEqualTo("first");
+        assertThat(terminal.getSuiteSnapshot().getAdditionalRequests()).hasSize(1);
+        assertThat(terminal.getSuiteSnapshot().getAdditionalRequests().get(0).getName())
+                .isEqualTo("second");
+
+        // And present in the persisted snapshot JSON
+        String snapshotJson =
+                testSuiteRunRepository.findById(runId).orElseThrow().getSuiteSnapshot();
+        assertThat(snapshotJson).isNotNull();
+        JsonNode snapshotNode = objectMapper.readTree(snapshotJson);
+        assertThat(snapshotNode.path("requestName").asString()).isEqualTo("first");
+        assertThat(snapshotNode.path("additionalRequests").get(0).path("name").asString())
+                .isEqualTo("second");
+    }
+
+    @Test
+    @DisplayName("legacy suite with no chain fields still snapshots an empty chain")
+    void snapshotIsEmptyChainForLegacySuite() {
+        TestSuiteResponseDto suite = createTestSuiteWithTestCase("Snapshot Legacy Chain Suite");
+        mockDeploymentSuccess();
+
+        UUID runId = createRun(suite.getId());
+        TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 15);
+        assertThat(terminal.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        assertThat(terminal.getSuiteSnapshot()).isNotNull();
+        assertThat(terminal.getSuiteSnapshot().getRequestName()).isNull();
+        assertThat(terminal.getSuiteSnapshot().getAdditionalRequests())
+                .isNotNull()
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("snapshot honors the suite's testCaseFilter — only matching test cases are materialized")
     void snapshotHonorsTestCaseFilter() {
         TestSuiteResponseDto suite = createTestSuiteWithTestCase("Snapshot Filter Suite");
@@ -404,6 +449,57 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
                         .name("Deployment One")
                         .version("v1")
                         .type(deploymentType)
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("query")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto suite = response.getBody();
+        assertThat(suite).isNotNull();
+
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("Test Case 1")
+                        .data(Map.of("query", "test query"))
+                        .build()),
+                Object.class);
+
+        return suite;
+    }
+
+    private TestSuiteResponseDto createChainedTestSuiteWithTestCase(String name) {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name)
+                .description("Description for " + name)
+                .requestName("first")
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name("second")
+                        .endpointRef(EndpointContractDto.builder()
+                                .method(HttpMethod.POST)
+                                .relativeUrlPattern("/v1/chat")
+                                .build())
+                        .requestTemplate(RequestTemplateDto.builder()
+                                .urlTemplate("/v1/chat")
+                                .build())
+                        .build()))
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
                         .build())
                 .endpointRef(EndpointContractDto.builder()
                         .method(HttpMethod.POST)

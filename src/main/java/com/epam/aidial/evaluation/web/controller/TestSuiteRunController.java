@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
+import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
@@ -76,13 +77,39 @@ public class TestSuiteRunController {
                     + "computation against them — Phase 1 (deployment invocation) is never performed.\n\n"
                     + "**Request**: multipart/form-data with a `file` part (CSV), an optional `testRunName` part, "
                     + "and an optional `delimiter` part (single ASCII character, default comma).\n\n"
-                    + "**Reserved CSV columns** (exact, case-sensitive): `testCaseId`, `testCaseName`, `runIndex`, "
-                    + "`requestBody`, `responseBody`, `responseStatusCode`, `executionStatus`, `startedAt`, "
-                    + "`completedAt`, `traceId`, `retryCount`, `logDetails`. Every other header maps to a "
-                    + "`testCaseData` field of the same name, coerced against the dataset schema when configured.\n\n"
-                    + "**JSON columns**: `requestBody`, `responseBody`, and `logDetails` cells are parsed as JSON "
-                    + "when non-blank; a malformed cell is reported as a row-level validation error. "
-                    + "`executionStatus` must be one of `SUCCESS`, `FAILED`, `TIMEOUT`, `ERROR`.\n\n"
+                    + "**Reserved CSV columns** (exact, case-sensitive, 19 total): `testCaseId`, `testCaseName`, "
+                    + "`runIndex`, `testCaseData`, `requestBody`, `responseBody`, `responseStatusCode`, "
+                    + "`executionStatus`, `startedAt`, `completedAt`, `traceId`, `retryCount`, `logDetails`, "
+                    + "`extractedColumns`, `extractionWarnings`, `requestIndex`, `totalRequests`, `turnIndex`, "
+                    + "`totalTurns`. Every column is reserved — there is no mapping from an arbitrary header to a "
+                    + "`testCaseData` field; `testCaseData` is itself a required reserved column carrying the "
+                    + "row's test-case data as a JSON object, validated against the dataset schema when "
+                    + "configured (a per-turn field is type-checked when present but never required). Headers "
+                    + "that do not match a reserved column name are ignored.\n\n"
+                    + "**Identity columns** (`requestIndex`, `totalRequests`, `turnIndex`, `totalTurns`) are "
+                    + "optional: an absent header or blank cell defaults to `0`/`1`/`0`/`1` (a single-request, "
+                    + "single-turn row). When present, `requestIndex`/`turnIndex` must be non-negative, "
+                    + "`totalRequests`/`totalTurns` must be at least 1, and each index must be less than its "
+                    + "total.\n\n"
+                    + "**Name-derived identity**: when a row supplies no `testCaseId`, its persisted id is "
+                    + "derived from `testCaseName` — every row naming the same test case within one uploaded "
+                    + "file shares one generated id, so a multi-request or multi-turn repetition's rows group "
+                    + "together the same way a live run's do. A row with neither `testCaseId` nor `testCaseName` "
+                    + "is rejected with HTTP 400. A supplied `testCaseId` is always used verbatim.\n\n"
+                    + "**JSON columns**: `testCaseData` (required), `requestBody`, `responseBody`, "
+                    + "`logDetails`, `extractedColumns` (default `{}`), and `extractionWarnings` (default `[]`) "
+                    + "are parsed as JSON when non-blank; a malformed cell is reported as a row-level validation "
+                    + "error. `executionStatus` must be one of `SUCCESS`, `FAILED`, `TIMEOUT`, `ERROR`.\n\n"
+                    + "**Example** (a 2-request chain: `requestIndex=0` produces `configId`, `requestIndex=1` "
+                    + "produces `answer`; the identity columns are optional — omitting them here would default "
+                    + "every row to a single-request row):\n\n"
+                    + "```csv\n"
+                    + "testCaseName,runIndex,executionStatus,startedAt,completedAt,testCaseData,"
+                    + "extractedColumns,requestIndex,totalRequests\n"
+                    + "chain-case,0,SUCCESS,1000,1500,\"{\"\"prompt\"\":\"\"hi\"\"}\",\"{\"\"configId\"\":7}\",0,2\n"
+                    + "chain-case,0,SUCCESS,1500,2000,\"{\"\"prompt\"\":\"\"hi\"\"}\","
+                    + "\"{\"\"answer\"\":\"\"hello\"\"}\",1,2\n"
+                    + "```\n\n"
                     + "Same not-found/unbound-dataset/invalid-config/concurrency/name-uniqueness guards as creating a "
                     + "normal run. Validation is all-or-nothing: any row violation rejects the whole request and "
                     + "creates no run.")
@@ -143,6 +170,20 @@ public class TestSuiteRunController {
     @ApiResponse(responseCode = "404", description = "Run not found")
     public TestSuiteRunResponseDto getRun(@Parameter(description = "Run ID") @PathVariable UUID id) {
         return testSuiteRunService.getRun(id);
+    }
+
+    @GetMapping("/api/v1/test-suite-runs/{id}/costs")
+    @Operation(
+            summary = "Get average test-case and metric-evaluation cost for a run",
+            description = "Queries dial-adas usage logs for the run and returns the average per-call price "
+                    + "for test-case execution calls and metric-evaluation (judge model) calls. A phase with "
+                    + "no matching usage-log rows returns null for that average.")
+    @ApiResponse(responseCode = "200", description = "Costs computed")
+    @ApiResponse(responseCode = "404", description = "Run not found")
+    @ApiResponse(responseCode = "502", description = "dial-adas unreachable or returned an error")
+    @ApiResponse(responseCode = "504", description = "dial-adas request timed out")
+    public RunCostsResponseDto getRunCosts(@Parameter(description = "Run ID") @PathVariable UUID id) {
+        return testSuiteRunService.getRunCosts(id);
     }
 
     @PatchMapping("/api/v1/test-suite-runs/{id}")

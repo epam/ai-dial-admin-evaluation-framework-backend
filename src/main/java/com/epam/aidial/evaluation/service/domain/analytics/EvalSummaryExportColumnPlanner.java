@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
+import com.epam.aidial.evaluation.service.domain.ResponseColumnUnionResolver;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -39,11 +40,13 @@ import tools.jackson.databind.JsonNode;
 public class EvalSummaryExportColumnPlanner {
 
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
+    private final ResponseColumnUnionResolver responseColumnUnionResolver;
 
     public List<ColumnDescriptor> plan(SuiteSnapshotDto snapshot, List<RunMetricSnapshot> metricSnapshots) {
         List<ColumnDescriptor> descriptors = new ArrayList<>();
 
-        // 1. Identity columns
+        // 1. Identity columns — runIndex, requestIndex, turnIndex are three consecutive row-identity
+        // dimensions read as repetition -> request -> turn (design D16/R1).
         descriptors.add(plain("id", row -> row.getSummary().getId()));
         descriptors.add(plain("testSuiteId", row -> row.getSummary().getTestSuiteId()));
         descriptors.add(plain("testSuiteRunId", row -> row.getSummary().getTestSuiteRunId()));
@@ -51,6 +54,8 @@ public class EvalSummaryExportColumnPlanner {
         descriptors.add(plain("testCaseId", row -> row.getSummary().getTestCaseId()));
         descriptors.add(plain("testCaseName", row -> row.getSummary().getTestCaseName()));
         descriptors.add(plain("runIndex", row -> row.getSummary().getRunIndex()));
+        descriptors.add(plain("requestIndex", row -> row.getSummary().getRequestIndex()));
+        descriptors.add(plain("turnIndex", row -> row.getSummary().getTurnIndex()));
         descriptors.add(plain("computationId", row -> row.getSummary().getComputationId()));
 
         // 2. Timestamps (epoch ms — preserved as Long per AGENTS.md "API Timestamp Convention")
@@ -78,14 +83,13 @@ public class EvalSummaryExportColumnPlanner {
             }
         }
 
-        // 5. Inlined response:<columnName> per snapshot responseColumns
-        if (snapshot.getResponseColumns() != null) {
-            for (ResponseColumnDefinitionDto column : snapshot.getResponseColumns()) {
-                String columnName = column.getName();
-                descriptors.add(plain(
-                        EvalSummaryExportColumnConstants.RESPONSE_COLUMN_PREFIX + columnName,
-                        row -> jsonFieldValue(row.extractedColumns(), columnName)));
-            }
+        // 5. Inlined response:<columnName> per the suite-wide response-column union (request #0's
+        // responseColumns followed by each additionalRequests[i].responseColumns, in chain order)
+        for (ResponseColumnDefinitionDto column : responseColumnUnionResolver.unionFrom(snapshot)) {
+            String columnName = column.getName();
+            descriptors.add(plain(
+                    EvalSummaryExportColumnConstants.RESPONSE_COLUMN_PREFIX + columnName,
+                    row -> jsonFieldValue(row.extractedColumns(), columnName)));
         }
 
         // 6. Per-metric block: metric:<m>:<f> values, then metricInfo:<m>:<f> details,

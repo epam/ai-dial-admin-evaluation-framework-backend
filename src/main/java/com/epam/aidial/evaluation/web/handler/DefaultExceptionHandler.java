@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.web.handler;
 
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClientException;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreErrorCode;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreErrorMapper;
@@ -64,16 +65,29 @@ public class DefaultExceptionHandler {
         if (status == null) {
             status = HttpStatus.BAD_GATEWAY;
         }
-        ErrorCode code = mapMcpStatusToErrorCode(statusCode);
+        ErrorCode code = mapUpstreamStatusToErrorCode(statusCode);
         String message = ex.getMessage() != null ? ex.getMessage() : status.getReasonPhrase();
         return ResponseEntity.status(status).body(new ErrorView(req, status, code, message));
     }
 
-    private static ErrorCode mapMcpStatusToErrorCode(int statusCode) {
+    private static ErrorCode mapUpstreamStatusToErrorCode(int statusCode) {
         if (statusCode == HttpStatus.GATEWAY_TIMEOUT.value()) {
             return ErrorCode.UPSTREAM_TIMEOUT;
         }
         return ErrorCode.UPSTREAM_ERROR;
+    }
+
+    @ExceptionHandler(DialAdasClientException.class)
+    public ResponseEntity<ErrorView> handleDialAdasClientException(HttpServletRequest req, DialAdasClientException ex) {
+        logUncaught(ex);
+        int statusCode = ex.getStatusCode();
+        HttpStatus status = HttpStatus.resolve(statusCode);
+        if (status == null) {
+            status = HttpStatus.BAD_GATEWAY;
+        }
+        ErrorCode code = mapUpstreamStatusToErrorCode(statusCode);
+        String message = ex.getMessage() != null ? ex.getMessage() : status.getReasonPhrase();
+        return ResponseEntity.status(status).body(new ErrorView(req, status, code, message));
     }
 
     private static ErrorCode toErrorCode(DialCoreErrorCode dialCoreErrorCode) {

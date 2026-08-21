@@ -16,7 +16,6 @@ public class LayeredArchitectureTest {
     private static final String CONFIG_PACKAGE = "com.epam.aidial.evaluation.configuration..";
     private static final String QUERY_WEB_PACKAGE = "com.epam.aidial.evaluation.query.web..";
     private static final String QUERY_SERVICE_PACKAGE = "com.epam.aidial.evaluation.query.service..";
-    private static final String QUERY_MODEL_PACKAGE = "com.epam.aidial.evaluation.query.model..";
 
     private static final JavaClasses CLASSES = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())
@@ -24,16 +23,18 @@ public class LayeredArchitectureTest {
 
     @Test
     void testLayeredArchitecture() {
-        // The Query DSL (`query.web` / `query.*`) is folded into the standard web/service layers rather
-        // than modeled as its own layer: query.web classes are controllers (part of `web`), and
-        // query.service/query.model classes are called from both `web` and `service` and themselves call
+        // The Query DSL (`query.web` / `query.service`) is folded into the standard web/service layers
+        // rather than modeled as its own layer: query.web classes are controllers (part of `web`), and
+        // query.service classes are called from both `web` and `service` and themselves call
         // into `service`/`data` — the same access pattern `web`/`service` already have with each other.
+        // `query.model` is deliberately layer-neutral: it is a pure carrier package (the typed query AST)
+        // with no behaviour, reused as an outbound payload by clients such as `client.dialadas`.
         layeredArchitecture()
                 .consideringAllDependencies()
                 .layer("web")
                 .definedBy(WEB_PACKAGE, QUERY_WEB_PACKAGE)
                 .layer("service")
-                .definedBy(SERVICE_PACKAGE, QUERY_SERVICE_PACKAGE, QUERY_MODEL_PACKAGE)
+                .definedBy(SERVICE_PACKAGE, QUERY_SERVICE_PACKAGE)
                 .layer("data")
                 .definedBy(DATA_PACKAGE)
                 .layer("configuration")

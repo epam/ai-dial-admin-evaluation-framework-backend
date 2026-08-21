@@ -13,17 +13,24 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateRowDto;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
+import com.epam.aidial.evaluation.query.model.QueryMode;
+import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
+import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
@@ -47,6 +54,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
@@ -91,6 +99,15 @@ class TestSuiteRunServiceTest {
     @Mock
     private EvalResultsCsvParser evalResultsCsvParser;
 
+    @Mock
+    private DialAdasClient dialAdasClient;
+
+    @Mock
+    private RunCostQueryBuilder runCostQueryBuilder;
+
+    @Mock
+    private PlatformTransactionManager metaTransactionManager;
+
     private TestSuiteRunService service;
     private UUID testSuiteId;
     private UUID datasetId;
@@ -117,7 +134,10 @@ class TestSuiteRunServiceTest {
                 sortParser,
                 new ObjectMapper(),
                 evalResultsImportService,
-                evalResultsCsvParser);
+                evalResultsCsvParser,
+                dialAdasClient,
+                runCostQueryBuilder,
+                metaTransactionManager);
 
         testSuiteId = UUID.randomUUID();
         datasetId = UUID.randomUUID();
@@ -264,6 +284,70 @@ class TestSuiteRunServiceTest {
             verify(sseService).notifyStatusUpdate(any(TestSuiteRun.class));
             verify(evaluationJob, never()).executeRunAsync(any(), any(), anyBoolean());
             verify(evaluationJob, never()).registerCancellationSignal(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("getRunCosts")
+    class GetRunCosts {
+
+        private final UUID runId = UUID.randomUUID();
+        private final StructuredQuery executionQuery =
+                new StructuredQuery("execution-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
+        private final StructuredQuery metricEvalQuery = new StructuredQuery(
+                "metric-eval-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
+
+        private void stubExistingRunAndQueries() {
+            when(testSuiteRunRepository.findById(runId))
+                    .thenReturn(Optional.of(TestSuiteRun.builder().id(runId).build()));
+            when(runCostQueryBuilder.buildAggregateQuery(runId, TracingConstants.PHASE_EXECUTION))
+                    .thenReturn(executionQuery);
+            when(runCostQueryBuilder.buildAggregateQuery(runId, TracingConstants.PHASE_METRIC_EVALUATION))
+                    .thenReturn(metricEvalQuery);
+        }
+
+        @Test
+        @DisplayName("returns both averages when both phases have usage-log rows")
+        void returnsBothAveragesWhenBothPhasesHaveData() {
+            stubExistingRunAndQueries();
+            when(dialAdasClient.executeAggregate(executionQuery)).thenReturn(aggregateResponse(120L, 0.0007125));
+            when(dialAdasClient.executeAggregate(metricEvalQuery)).thenReturn(aggregateResponse(60L, 0.000231));
+
+            RunCostsResponseDto costs = service.getRunCosts(runId);
+
+            assertThat(costs.getAvgTestCaseCost()).isEqualTo(0.0007125);
+            assertThat(costs.getAvgMetricEvalCost()).isEqualTo(0.000231);
+        }
+
+        @Test
+        @DisplayName("returns null for a phase with zero matching usage-log rows")
+        void returnsNullForPhaseWithNoData() {
+            stubExistingRunAndQueries();
+            when(dialAdasClient.executeAggregate(executionQuery)).thenReturn(aggregateResponse(0L, null));
+            when(dialAdasClient.executeAggregate(metricEvalQuery)).thenReturn(aggregateResponse(60L, 0.000231));
+
+            RunCostsResponseDto costs = service.getRunCosts(runId);
+
+            assertThat(costs.getAvgTestCaseCost()).isNull();
+            assertThat(costs.getAvgMetricEvalCost()).isEqualTo(0.000231);
+        }
+
+        @Test
+        @DisplayName("throws EntityNotFoundException for an unknown run id")
+        void throwsWhenRunNotFound() {
+            UUID unknownRunId = UUID.randomUUID();
+            when(testSuiteRunRepository.findById(unknownRunId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getRunCosts(unknownRunId)).isInstanceOf(EntityNotFoundException.class);
+        }
+
+        private AdasAggregateResponseDto aggregateResponse(long count, Double avgCost) {
+            return AdasAggregateResponseDto.builder()
+                    .rows(List.of(AdasAggregateRowDto.builder()
+                            .count(count)
+                            .avgCost(avgCost)
+                            .build()))
+                    .build();
         }
     }
 }

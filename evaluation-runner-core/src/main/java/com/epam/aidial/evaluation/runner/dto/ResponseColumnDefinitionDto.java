@@ -17,8 +17,8 @@ public class ResponseColumnDefinitionDto {
     @NotBlank
     @Size(max = 255)
     @Pattern(
-            regexp = ValidationConstants.NAME_NO_TWO_COLON_PATTERN,
-            message = ValidationConstants.NAME_NO_TWO_COLON_MESSAGE)
+            regexp = RunnerValidationConstants.NAME_NO_TWO_COLON_PATTERN,
+            message = RunnerValidationConstants.NAME_NO_TWO_COLON_MESSAGE)
     private String name;
 
     @Size(max = 255)

@@ -273,6 +273,31 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should match per chain position, so a chained-vs-chained comparison matches per request index")
+    void shouldMatchOnRequestIndex() {
+        seedSnapshot(runA, computationA);
+        seedSnapshot(runB, computationB);
+        // The same case name ran as a 3-request chain in A and a 2-request chain in B.
+        seedRequest(runA, computationA, 0, 0.5);
+        seedRequest(runA, computationA, 1, 0.5);
+        seedRequest(runA, computationA, 2, 9.0);
+        seedRequest(runB, computationB, 0, 0.5);
+        seedRequest(runB, computationB, 1, 0.5);
+
+        final RunComparisonResponseDto response = compare(runA, runB);
+        final RunComparisonRunDto sideA = response.getRuns().get(0);
+        final RunComparisonRunDto sideB = response.getRuns().get(1);
+
+        // Exactly one pair per shared request index; A's third request has no counterpart.
+        assertThat(sideA.getMatchedRowCount()).isEqualTo(2L);
+        assertThat(sideA.getUnmatchedEvalSummaryIds()).hasSize(1);
+        assertThat(sideB.getMatchedRowCount()).isEqualTo(2L);
+        assertThat(sideB.getUnmatchedEvalSummaryIds()).isEmpty();
+        // The unmatched request's outlier value stays out of A's statistics.
+        assertThat(score(sideA, "MAX", METRIC_FIELD)).isEqualTo(0.5);
+    }
+
+    @Test
     @DisplayName("Should return full aggregates for a run whose scores were never persisted")
     void shouldAggregateWithoutAnyPersistedScores() {
         // No Phase 3 run at all: the comparison discovers fields from the run's metric snapshots, so it does
@@ -571,6 +596,13 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     private void seedRepetition(UUID runId, UUID computationId, int runIndex, double score) {
         analyticsTestDataHelper.createEvalSummary(fixture(runId, computationId, "Repeated", score)
                 .runIndex(runIndex)
+                .build());
+    }
+
+    /** Same case name at an explicit request index, so {@code request_index} participates in the key. */
+    private void seedRequest(UUID runId, UUID computationId, int requestIndex, double score) {
+        analyticsTestDataHelper.createEvalSummary(fixture(runId, computationId, "Chained", score)
+                .requestIndex(requestIndex)
                 .build());
     }
 

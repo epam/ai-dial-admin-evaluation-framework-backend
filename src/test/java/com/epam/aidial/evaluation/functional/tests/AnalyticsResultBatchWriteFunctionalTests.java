@@ -308,6 +308,77 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
         assertThat(((Number) rows.get(0).get("total_turns")).intValue()).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("requestIndex extends the natural key: a chained batch persists distinct (request_index, "
+            + "turn_index) rows")
+    void shouldPersistDistinctRequestAndTurnCombinationsInChainedBatch() {
+        UUID testCaseId = UUID.randomUUID();
+        // A 2-request chain, request #1 also multi-turn: (0,0), (1,0), (1,1).
+        List<TestCaseRunResultItemDto> items = List.of(
+                buildChainItem(testCaseId, "chained", 0, 0, 2, 0, 1),
+                buildChainItem(testCaseId, "chained", 0, 1, 2, 0, 2),
+                buildChainItem(testCaseId, "chained", 0, 1, 2, 1, 2));
+
+        BatchWriteRequestDto request = BatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .results(items)
+                .build();
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findResultsByRunId(testSuiteRunId);
+        assertThat(rows).hasSize(3);
+        assertThat(rows.stream()
+                        .map(r -> List.of(
+                                ((Number) r.get("request_index")).intValue(),
+                                ((Number) r.get("turn_index")).intValue())))
+                .containsExactlyInAnyOrder(List.of(0, 0), List.of(1, 0), List.of(1, 1));
+    }
+
+    @Test
+    @DisplayName("Re-writing the same chained batch inserts nothing and raises no constraint violation")
+    void shouldSkipDuplicatesOnIdempotentRewriteOfChainedBatch() {
+        UUID testCaseId = UUID.randomUUID();
+        List<TestCaseRunResultItemDto> items = List.of(
+                buildChainItem(testCaseId, "chained-retry", 0, 0, 2, 0, 1),
+                buildChainItem(testCaseId, "chained-retry", 0, 1, 2, 0, 1));
+
+        BatchWriteRequestDto request = BatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .results(items)
+                .build();
+
+        var response1 = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+        assertThat(response1.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        // Re-write of the identical chained batch must be a no-op: same natural key on every row.
+        var response2 = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+        assertThat(response2.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        assertThat(analyticsTestDataHelper.countAll()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("Single-request write omitting request fields defaults to requestIndex=0, totalRequests=1")
+    void shouldDefaultRequestFieldsForSingleRequestWrite() {
+        BatchWriteRequestDto request = buildBatchRequest(testSuiteId, testSuiteRunId, 1);
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/test-case-results"), jsonEntity(request), BatchWriteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findResultsByRunId(testSuiteRunId);
+        assertThat(rows).hasSize(1);
+        assertThat(((Number) rows.get(0).get("request_index")).intValue()).isEqualTo(0);
+        assertThat(((Number) rows.get(0).get("total_requests")).intValue()).isEqualTo(1);
+    }
+
     // --- helpers ---
 
     private BatchWriteRequestDto buildBatchRequest(UUID suiteId, UUID runId, int count) {
@@ -344,6 +415,22 @@ public abstract class AnalyticsResultBatchWriteFunctionalTests extends BaseFunct
     private TestCaseRunResultItemDto buildTurnItem(
             UUID testCaseId, String name, int runIndex, int turnIndex, int totalTurns) {
         TestCaseRunResultItemDto item = buildItem(testCaseId, name, runIndex);
+        item.setTurnIndex(turnIndex);
+        item.setTotalTurns(totalTurns);
+        return item;
+    }
+
+    private TestCaseRunResultItemDto buildChainItem(
+            UUID testCaseId,
+            String name,
+            int runIndex,
+            int requestIndex,
+            int totalRequests,
+            int turnIndex,
+            int totalTurns) {
+        TestCaseRunResultItemDto item = buildItem(testCaseId, name, runIndex);
+        item.setRequestIndex(requestIndex);
+        item.setTotalRequests(totalRequests);
         item.setTurnIndex(turnIndex);
         item.setTotalTurns(totalTurns);
         return item;

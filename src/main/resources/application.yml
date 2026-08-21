@@ -57,6 +57,10 @@ dial:
     max-files-per-dataset: ${DIAL_FILE_STORAGE_MAX_FILES_PER_DATASET:100}
     connect-timeout-ms: ${DIAL_FILE_STORAGE_CONNECT_TIMEOUT_MS:5000}
     read-timeout-ms: ${DIAL_FILE_STORAGE_READ_TIMEOUT_MS:30000}
+  adas:
+    base-url: ${DIAL_ADAS_URL:http://localhost:8087}
+    connect-timeout-ms: ${DIAL_ADAS_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${DIAL_ADAS_READ_TIMEOUT_MS:30000}
 
 # Validation configuration
 validation:

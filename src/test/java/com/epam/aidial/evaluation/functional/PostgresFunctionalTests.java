@@ -8,6 +8,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
 import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsDescriptionDto;
@@ -52,6 +53,8 @@ import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestChainRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestSuiteValidationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnCsvFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
@@ -161,6 +164,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @MockitoBean
     private MetricProviderClient metricProviderClient;
+
+    @MockitoBean
+    private DialAdasClient dialAdasClient;
 
     @MockitoBean
     private DialFileClient dialFileClient;
@@ -310,6 +316,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class TestSuiteTests extends TestSuiteFunctionalTests {}
 
     @Nested
+    class MultiRequestSuiteValidationTests extends MultiRequestSuiteValidationFunctionalTests {}
+
+    @Nested
     class TestCaseTests extends TestCaseFunctionalTests {}
 
     @Nested
@@ -385,6 +394,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class MultiTurnRunTests extends MultiTurnRunFunctionalTests {}
+
+    @Nested
+    class MultiRequestChainRunTests extends MultiRequestChainRunFunctionalTests {}
 
     @Nested
     class MultiTurnFilterTests extends MultiTurnFilterFunctionalTests {}

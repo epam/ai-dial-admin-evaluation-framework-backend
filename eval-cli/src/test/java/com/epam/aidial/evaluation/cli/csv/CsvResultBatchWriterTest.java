@@ -53,8 +53,80 @@ class CsvResultBatchWriterTest {
                             "retryCount",
                             "logDetails",
                             "extractedColumns",
-                            "extractionWarnings");
+                            "extractionWarnings",
+                            "requestIndex",
+                            "totalRequests",
+                            "turnIndex",
+                            "totalTurns");
         }
+    }
+
+    @Test
+    @DisplayName("header is the exact 18-column string in order")
+    void headerIsExactEighteenColumnString() throws Exception {
+        final StringWriter out = new StringWriter();
+        try (CsvResultBatchWriter writer = new CsvResultBatchWriter(out)) {
+            writer.flush();
+        }
+        final String headerLine = out.toString().split("\r\n|\n", 2)[0];
+        assertThat(headerLine)
+                .isEqualTo("testCaseName,runIndex,testCaseData,requestBody,responseBody,responseStatusCode,"
+                        + "executionStatus,startedAt,completedAt,traceId,retryCount,logDetails,"
+                        + "extractedColumns,extractionWarnings,requestIndex,totalRequests,turnIndex,"
+                        + "totalTurns");
+        assertThat(CsvResultBatchWriter.HEADERS).hasSize(18);
+    }
+
+    @Test
+    @DisplayName("a single-request single-turn result writes identity columns as 0,1,0,1")
+    void singleRequestSingleTurnResultWritesDefaultIdentity() throws Exception {
+        final StringWriter out = new StringWriter();
+        final TestCaseRunResult result = TestCaseRunResult.builder()
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("TC1")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .build();
+
+        try (CsvResultBatchWriter writer = new CsvResultBatchWriter(out)) {
+            writer.addResults(List.of(result));
+            writer.flush();
+        }
+
+        final List<CSVRecord> records = parseRecords(out.toString());
+        final CSVRecord row = records.get(0);
+        assertThat(row.get("requestIndex")).isEqualTo("0");
+        assertThat(row.get("totalRequests")).isEqualTo("1");
+        assertThat(row.get("turnIndex")).isEqualTo("0");
+        assertThat(row.get("totalTurns")).isEqualTo("1");
+    }
+
+    @Test
+    @DisplayName("a multi-request multi-turn result writes its own position values")
+    void multiRequestMultiTurnResultWritesOwnPositionValues() throws Exception {
+        final StringWriter out = new StringWriter();
+        final TestCaseRunResult result = TestCaseRunResult.builder()
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("TC1")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .requestIndex(1)
+                .totalRequests(3)
+                .turnIndex(2)
+                .totalTurns(4)
+                .build();
+
+        try (CsvResultBatchWriter writer = new CsvResultBatchWriter(out)) {
+            writer.addResults(List.of(result));
+            writer.flush();
+        }
+
+        final List<CSVRecord> records = parseRecords(out.toString());
+        final CSVRecord row = records.get(0);
+        assertThat(row.get("requestIndex")).isEqualTo("1");
+        assertThat(row.get("totalRequests")).isEqualTo("3");
+        assertThat(row.get("turnIndex")).isEqualTo("2");
+        assertThat(row.get("totalTurns")).isEqualTo("4");
     }
 
     @Test
@@ -149,15 +221,13 @@ class CsvResultBatchWriterTest {
     }
 
     @Test
-    @DisplayName("testCaseId, turnIndex, totalTurns are NOT written to the CSV")
-    void excludedFieldsNotWritten() throws Exception {
+    @DisplayName("testCaseId is NOT written to the CSV — identity is carried by testCaseName instead")
+    void testCaseIdNotWritten() throws Exception {
         final StringWriter out = new StringWriter();
         try (CsvResultBatchWriter writer = new CsvResultBatchWriter(out)) {
             writer.flush();
         }
         assertThat(out.toString()).doesNotContain("testCaseId");
-        assertThat(out.toString()).doesNotContain("turnIndex");
-        assertThat(out.toString()).doesNotContain("totalTurns");
     }
 
     @Test

@@ -54,6 +54,7 @@ public class RevalidationService {
     private final SchemaChangeCoercer schemaChangeCoercer;
     private final DurableWarningMerger durableWarningMerger;
     private final Clock clock;
+    private final ResponseColumnUnionResolver responseColumnUnionResolver;
 
     /**
      * Starts async re-validation rooted at the given dataset. Returns immediately with task descriptor.
@@ -377,7 +378,7 @@ public class RevalidationService {
             try {
                 ValidationResult validationResult = suiteValidationService.validateSuite(suite, datasetSchema);
                 testSuiteMetricDefinitionService.revalidateAllForSuite(
-                        suite.getId(), datasetSchemaJson, suite.getResponseColumns());
+                        suite.getId(), datasetSchemaJson, responseColumnUnionResolver.unionJson(suite));
                 testSuiteRepository.updateValidation(
                         suite.getId(),
                         validationResult.isValid(),

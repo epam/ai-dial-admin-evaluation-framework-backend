@@ -34,4 +34,10 @@ Chain execution is **fail-fast**: a failing call aborts its own request's remain
 
 `additionalRequests` non-empty on an `MCP_TOOL` suite is rejected at write time (400) — MCP chaining is model-ready but deferred to a follow-up change.
 
+## Try-out coverage
+
+Both try-out endpoints (`POST …/test-cases/{id}/try-it-out` and `POST …/try-it-out` variables mode) execute the full chain when a suite has `additionalRequests`: the accumulated frame and the identity stamps mirror run semantics. A history entry's `extractedColumns`, however, is **that one invocation's own extraction** — deliberately *not* the run row's accumulated `extracted_columns` (which folds in everything earlier requests/turns produced). The accumulated view lives only in the frame threaded to the next invocation. `GET …/resolved-request?requestIndex=N` remains resolution-only preview with an empty frame; it never invokes anything.
+
+For a streaming (SSE) request in a chain, try-out extracts from the same document a run assembles (`StreamingResponseAccumulator` — OpenAI-mode deltas folded into `choices[0].message`), not from the `{"events":[…]}` envelope the response DTO displays; a stream that times out or is truncated counts as a failed invocation and stops the chain.
+
 See [multi-request-suite spec](../../openspec/specs/multi-request-suite/spec.md).

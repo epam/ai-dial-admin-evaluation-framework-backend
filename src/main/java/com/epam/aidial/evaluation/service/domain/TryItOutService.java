@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
@@ -30,9 +31,11 @@ import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
 import com.epam.aidial.evaluation.runner.job.DeploymentInvocationSupport;
 import com.epam.aidial.evaluation.runner.job.ExecutionErrorCodes;
+import com.epam.aidial.evaluation.runner.job.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.job.SseEvent;
 import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
+import com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
@@ -58,6 +61,7 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Scope;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -134,92 +138,173 @@ public class TryItOutService {
             return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
         }
 
-        DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
-        EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
-        validateSuitePreconditions(deploymentRef, endpointRef, suite.getRequestTemplate());
+        final DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
+        final EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
+        // Deserialized once here and handed to the planner, so a single try-out never parses the suite's
+        // additionalRequests JSONB twice.
+        final List<RequestDefinitionDto> additionalRequests =
+                jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
+        // Preconditions (incl. per-chain-element) run on the already-loaded suite BEFORE planning, so a
+        // misconfigured suite combined with a nonexistent testCaseId still yields 400, not 404 (design D7).
+        validateChainPreconditions(deploymentRef, endpointRef, suite.getRequestTemplate(), additionalRequests);
 
-        ResolvedRequestService.TurnPlan plan = resolvedRequestService.planTurns(testSuiteId, testCaseId);
-        if (plan.turnDataList().size() <= 1) {
-            ResolvedRequestDto resolved = resolvedRequestService.resolveRequest(testSuiteId, testCaseId);
+        final ResolvedRequestService.ChainPlan plan =
+                resolvedRequestService.planChain(testSuiteId, testCaseId, additionalRequests);
+        if (plan.totalInvocations() <= 1) {
+            // Single-request single-turn fast path, unchanged except the additive extraction fields (D5/D6).
+            final ResolvedRequestDto resolved = resolvedRequestService.resolveRequest(testSuiteId, testCaseId);
             validateResolutionResult(resolved);
-            return invokeAndBuildResponse(resolved, deploymentRef, endpointRef.getMethod(), testSuiteId);
+            final List<ResponseColumnDefinitionDto> responseColumns =
+                    plan.requestPlans().getFirst().spec().responseColumns();
+            return invokeAndBuildResponse(
+                    resolved, deploymentRef, endpointRef.getMethod(), testSuiteId, responseColumns);
         }
 
-        return runTurnSequence(plan, deploymentRef, endpointRef.getMethod(), testSuiteId);
+        return runChain(plan, deploymentRef, testSuiteId, null);
     }
 
     /**
-     * Executes every turn of a multi-turn test case sequentially, fail-fast: a turn that resolves to a
-     * non-2xx status or a request-body JSONata evaluation failure stops the sequence, and that turn
-     * becomes the returned top-level result and the last entry of {@code history}. Each successful turn's
-     * extracted response columns are threaded to the next turn as {@code frameBindings}, mirroring
-     * {@code TurnLoopExecutor}'s history-accumulation contract so {@code $history}-style request templates
-     * behave identically to a real run.
+     * Executes every planned invocation of the suite's request chain sequentially — outer loop over the
+     * plan's requests, inner loop over each request's turns — fail-fast: the first invocation that
+     * resolves to a non-2xx status or a request-body JSONata evaluation failure stops the remaining turns
+     * of its request AND every later request, becoming the returned top-level result and the last entry
+     * of {@code history}. One frame accumulates monotonically across turns AND requests (later key wins),
+     * mirroring {@code TurnLoopExecutor.mergeAccumulated} / {@code RequestChainExecutor}'s threading: a
+     * request's first turn resolves against everything earlier requests extracted, and a turn whose
+     * extraction fails to re-produce a column does not erase the previous turn's value.
+     *
+     * <p>Each invocation uses its own spec's {@code endpointRef} HTTP method. When {@code
+     * bindingsOverride} is non-null (variables mode, design D8) it wholesale-replaces every request's own
+     * {@code inputBindings}.
      */
-    private TryItOutResponseDto runTurnSequence(
-            ResolvedRequestService.TurnPlan plan,
+    private TryItOutResponseDto runChain(
+            ResolvedRequestService.ChainPlan plan,
             DeploymentReferenceDto deploymentRef,
-            HttpMethod method,
-            UUID testSuiteId) {
-        int totalTurns = plan.turnDataList().size();
-        Map<String, Object> frameBindings = Map.of();
+            UUID testSuiteId,
+            List<InputBindingDto> bindingsOverride) {
+        Map<String, Object> frame = Map.of();
+        final List<TryItOutResponseDto> history = new ArrayList<>();
+
         TurnInvocationResult current = null;
-        List<TryItOutResponseDto> history = new ArrayList<>();
+        RequestExecutionSpec currentSpec = null;
+        int currentTurnIndex = 0;
+        int currentTotalTurns = 1;
+        ResponseColumnExtractor.ExtractionResult currentExtraction = null;
 
-        for (int turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
-            Map<String, Object> turnData = plan.turnDataList().get(turnIndex);
-            boolean turnFailed;
-            try {
-                ResolvedRequestDto resolved =
-                        requestResolver.resolveForRun(plan.template(), plan.bindings(), turnData, frameBindings);
-                validateResolutionResult(resolved);
-                current = invokeTurn(resolved, deploymentRef, method, testSuiteId);
-                turnFailed = DeploymentInvocationSupport.resolveExecutionStatus(
-                                current.response().getStatusCode())
-                        != ExecutionStatus.SUCCESS;
-            } catch (RequestBodyEvaluationException e) {
-                current = buildEvaluationFailureResult(e);
-                turnFailed = true;
-            }
+        chain:
+        for (ResolvedRequestService.RequestPlan requestPlan : plan.requestPlans()) {
+            final RequestExecutionSpec spec = requestPlan.spec();
+            final List<InputBindingDto> bindings = bindingsOverride != null ? bindingsOverride : spec.inputBindings();
+            final int totalTurns = requestPlan.turnDataList().size();
 
-            history.add(toHistoryEntry(current));
+            for (int turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
+                final Map<String, Object> turnData = requestPlan.turnDataList().get(turnIndex);
+                boolean failed;
+                try {
+                    final ResolvedRequestDto resolved =
+                            requestResolver.resolveForRun(spec.requestTemplate(), bindings, turnData, frame);
+                    validateResolutionResult(resolved);
+                    current = invokeTurn(
+                            resolved, deploymentRef, spec.endpointRef().getMethod(), testSuiteId);
+                    // Covers both the HTTP status and a streaming response whose SSE parse did not
+                    // complete (TIMEOUT/ERROR): extracting from a partial document would poison every
+                    // later request's frame.
+                    failed = current.status() != ExecutionStatus.SUCCESS;
+                } catch (RequestBodyEvaluationException e) {
+                    current = buildEvaluationFailureResult(e);
+                    failed = true;
+                }
 
-            if (turnFailed) {
-                break;
-            }
-            if (turnIndex < totalTurns - 1) {
-                frameBindings = extractFrameBindings(plan.responseColumns(), current);
+                currentSpec = spec;
+                currentTurnIndex = turnIndex;
+                currentTotalTurns = totalTurns;
+                currentExtraction = null;
+                if (!failed && hasResponseColumns(spec)) {
+                    // Deliberate divergence from the run path: extraction is skipped on the failing
+                    // invocation — a preview has no persisted row to reconcile (design D4).
+                    currentExtraction = extractColumns(spec.responseColumns(), current);
+                    frame = mergeAccumulated(frame, currentExtraction.values());
+                }
+                history.add(buildInvocationEntry(current, spec, turnIndex, totalTurns, currentExtraction));
+
+                if (failed) {
+                    break chain;
+                }
             }
         }
 
-        return TryItOutResponseDto.builder()
-                .resolvedRequest(current.resolvedRequest())
-                .response(current.response())
-                .durationMs(current.durationMs())
-                .traceId(current.traceId())
-                .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(current.traceId()))
-                .history(history)
-                .build();
+        final TryItOutResponseDto topLevel =
+                buildInvocationEntry(current, currentSpec, currentTurnIndex, currentTotalTurns, currentExtraction);
+        topLevel.setHistory(history);
+        return topLevel;
     }
 
-    private TryItOutResponseDto toHistoryEntry(TurnInvocationResult result) {
+    /**
+     * Builds one invocation's response envelope: base fields, identity stamps (request pair only when the
+     * chain has more than one request, {@code requestName} additionally only when labelled; turn pair only
+     * when this request planned more than one turn — mirroring {@code TurnLoopExecutor.stampIdentity}'s
+     * guards), and the invocation's own extraction parsed verbatim from the extractor's null-preserving
+     * JSON output into {@link JsonNode} fields (design D6).
+     */
+    private TryItOutResponseDto buildInvocationEntry(
+            TurnInvocationResult result,
+            RequestExecutionSpec spec,
+            int turnIndex,
+            int totalTurns,
+            ResponseColumnExtractor.ExtractionResult extraction) {
+        final boolean multiRequest = spec.totalRequests() > 1;
+        final boolean multiTurn = totalTurns > 1;
+        final boolean labelled = spec.name() != null && !spec.name().isBlank();
         return TryItOutResponseDto.builder()
                 .resolvedRequest(result.resolvedRequest())
                 .response(result.response())
                 .durationMs(result.durationMs())
                 .traceId(result.traceId())
                 .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(result.traceId()))
+                .requestIndex(multiRequest ? spec.requestIndex() : null)
+                .totalRequests(multiRequest ? spec.totalRequests() : null)
+                .requestName(multiRequest && labelled ? spec.name() : null)
+                .turnIndex(multiTurn ? turnIndex : null)
+                .totalTurns(multiTurn ? totalTurns : null)
+                .extractedColumns(extraction != null ? objectMapper.readTree(extraction.extractedColumns()) : null)
+                .extractionWarnings(extraction != null ? objectMapper.readTree(extraction.extractionWarnings()) : null)
                 .build();
     }
 
-    private Map<String, Object> extractFrameBindings(
+    private static boolean hasResponseColumns(RequestExecutionSpec spec) {
+        return spec.responseColumns() != null && !spec.responseColumns().isEmpty();
+    }
+
+    /**
+     * Folds one invocation's extracted values into the accumulated frame, later keys overwriting earlier
+     * ones — the same semantics as {@code TurnLoopExecutor.mergeAccumulated}. Returns {@code base}
+     * unchanged (no copy) when {@code values} is empty.
+     */
+    private static Map<String, Object> mergeAccumulated(Map<String, Object> base, Map<String, Object> values) {
+        if (values.isEmpty()) {
+            return base;
+        }
+        final Map<String, Object> merged = new LinkedHashMap<>(base);
+        merged.putAll(values);
+        return merged;
+    }
+
+    /**
+     * Extracts one invocation's response columns from the same document the run path would extract from:
+     * for a streaming invocation that is the accumulator-assembled document (an OpenAI-mode stream's
+     * concatenated deltas become a non-streaming {@code choices[0].message} document, so a column like
+     * {@code choices[0].message.content} resolves here exactly as in a run), NOT the {@code
+     * {"events":[…]}} envelope the response DTO displays. For a non-streaming invocation it is the parsed
+     * response body itself, serialized lazily so a zero-column suite never pays for it.
+     */
+    private ResponseColumnExtractor.ExtractionResult extractColumns(
             List<ResponseColumnDefinitionDto> responseColumns, TurnInvocationResult result) {
-        String responseBodyJson = writeOrNull(result.response().getBody());
-        String requestBodyJson =
+        final String responseBodyJson = result.extractionDocumentJson() != null
+                ? result.extractionDocumentJson()
+                : writeOrNull(result.response().getBody());
+        final String requestBodyJson =
                 writeOrNull(resolvedBodyContent(result.resolvedRequest().getBody()));
-        return responseColumnExtractor
-                .extract(responseColumns, responseBodyJson, requestBodyJson)
-                .values();
+        return responseColumnExtractor.extract(responseColumns, responseBodyJson, requestBodyJson);
     }
 
     private Object resolvedBodyContent(ResolvedBodyDto body) {
@@ -234,18 +319,32 @@ public class TryItOutService {
     }
 
     private TurnInvocationResult buildEvaluationFailureResult(RequestBodyEvaluationException e) {
-        String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+        final String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
                 ExecutionErrorCodes.REQUEST_BODY_EVALUATION_ERROR, e.getMessage(), objectMapper);
-        TryItOutCoreResponseDto response = TryItOutCoreResponseDto.builder()
+        final TryItOutCoreResponseDto response = TryItOutCoreResponseDto.builder()
                 .statusCode(0)
                 .body(objectMapper.readTree(errorBody))
                 .build();
-        return new TurnInvocationResult(null, response, 0L, null);
+        return new TurnInvocationResult(null, response, 0L, null, ExecutionStatus.ERROR, null);
     }
 
-    /** Carries one turn's invocation result before it becomes the returned top-level result. */
+    /**
+     * Carries one turn's invocation result before it becomes the returned top-level result.
+     *
+     * @param status the invocation's effective execution status — the HTTP status mapping, downgraded to
+     *     the SSE parse status when a streaming response did not complete; anything but {@code SUCCESS}
+     *     skips extraction and stops the chain
+     * @param extractionDocumentJson the run-equivalent document to extract response columns from when it
+     *     differs from the displayed {@code response.body} (streaming responses only); {@code null} means
+     *     "serialize {@code response.body} lazily instead"
+     */
     private record TurnInvocationResult(
-            ResolvedRequestDto resolvedRequest, TryItOutCoreResponseDto response, Long durationMs, String traceId) {}
+            ResolvedRequestDto resolvedRequest,
+            TryItOutCoreResponseDto response,
+            Long durationMs,
+            String traceId,
+            ExecutionStatus status,
+            String extractionDocumentJson) {}
 
     public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<String, Object> variables) {
         TestSuite suite = loadSuite(testSuiteId);
@@ -265,20 +364,68 @@ public class TryItOutService {
 
         DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
         EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
-        RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
-        validateSuitePreconditions(deploymentRef, endpointRef, suite.getRequestTemplate());
+        List<RequestDefinitionDto> additionalRequests =
+                jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
+        validateChainPreconditions(deploymentRef, endpointRef, suite.getRequestTemplate(), additionalRequests);
 
         List<InputBindingDto> bindings = convertVariablesToBindings(variables);
-        ResolvedRequestDto resolved = requestResolver.resolve(template, bindings, Map.of());
-        validateResolutionResult(resolved);
 
-        return invokeAndBuildResponse(resolved, deploymentRef, endpointRef.getMethod(), testSuiteId);
+        if (additionalRequests == null || additionalRequests.isEmpty()) {
+            // Single-request fast path keeps the pre-existing lenient resolution (design D8), plus the
+            // additive extraction fields (D6).
+            RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
+            ResolvedRequestDto resolved = requestResolver.resolve(template, bindings, Map.of());
+            validateResolutionResult(resolved);
+            return invokeAndBuildResponse(
+                    resolved,
+                    deploymentRef,
+                    endpointRef.getMethod(),
+                    testSuiteId,
+                    jsonbMapper.mapResponseColumns(suite.getResponseColumns()));
+        }
+
+        // Multi-request suite: run the chain with every request single-turn and the converted variables
+        // wholesale-replacing each request's own inputBindings (design D8). The additionalRequests list
+        // mapped above is reused, so the JSONB is deserialized once per try-out.
+        final ResolvedRequestService.ChainPlan plan =
+                resolvedRequestService.planChainForVariables(testSuiteId, additionalRequests);
+        return runChain(plan, deploymentRef, testSuiteId, bindings);
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {
         return testSuiteRepository
                 .findById(testSuiteId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found: " + testSuiteId));
+    }
+
+    /**
+     * Validates the whole chain's preconditions before anything is planned or invoked (design D7):
+     * {@code deploymentRef} once (suite-level), request #0 via the pre-existing suite-level checks (typed
+     * {@code endpointRef} + method, raw-JSON blank check on the template), then each chain element's own
+     * typed {@code endpointRef}/method and {@code requestTemplate} — per-element failures name the element
+     * with the {@code additionalRequests[i]} prefix, matching the write-time validator's convention. A
+     * misconfigured element therefore returns 400 with zero HTTP calls issued.
+     */
+    private void validateChainPreconditions(
+            DeploymentReferenceDto deploymentRef,
+            EndpointContractDto endpointRef,
+            String rawTemplateJson,
+            List<RequestDefinitionDto> additionalRequests) {
+        validateSuitePreconditions(deploymentRef, endpointRef, rawTemplateJson);
+        if (additionalRequests == null) {
+            return;
+        }
+        for (int i = 0; i < additionalRequests.size(); i++) {
+            RequestDefinitionDto element = additionalRequests.get(i);
+            if (element.getEndpointRef() == null || element.getEndpointRef().getMethod() == null) {
+                throw new ValidationException("additionalRequests[" + i
+                        + "]: endpoint reference with HTTP method is required for try-it-out");
+            }
+            if (element.getRequestTemplate() == null) {
+                throw new ValidationException(
+                        "additionalRequests[" + i + "]: request template is required for try-it-out");
+            }
+        }
     }
 
     private void validateSuitePreconditions(
@@ -439,15 +586,31 @@ public class TryItOutService {
         }
     }
 
+    /**
+     * Single-invocation fast path (HTTP only — the MCP path never extracts): invokes once and, when the
+     * suite defines response columns and the invocation succeeded, adds the additive {@code
+     * extractedColumns}/{@code extractionWarnings} fields. With no response columns the extractor is never
+     * called and both fields stay omitted, keeping such suites' responses byte-identical (design D6).
+     */
     private TryItOutResponseDto invokeAndBuildResponse(
-            ResolvedRequestDto resolved, DeploymentReferenceDto deploymentRef, HttpMethod method, UUID testSuiteId) {
-        TurnInvocationResult result = invokeTurn(resolved, deploymentRef, method, testSuiteId);
+            ResolvedRequestDto resolved,
+            DeploymentReferenceDto deploymentRef,
+            HttpMethod method,
+            UUID testSuiteId,
+            List<ResponseColumnDefinitionDto> responseColumns) {
+        final TurnInvocationResult result = invokeTurn(resolved, deploymentRef, method, testSuiteId);
+        ResponseColumnExtractor.ExtractionResult extraction = null;
+        if (responseColumns != null && !responseColumns.isEmpty() && result.status() == ExecutionStatus.SUCCESS) {
+            extraction = extractColumns(responseColumns, result);
+        }
         return TryItOutResponseDto.builder()
                 .resolvedRequest(result.resolvedRequest())
                 .response(result.response())
                 .durationMs(result.durationMs())
                 .traceId(result.traceId())
                 .grafanaTraceUrl(grafanaLinkBuilder.traceUrl(result.traceId()))
+                .extractedColumns(extraction != null ? objectMapper.readTree(extraction.extractedColumns()) : null)
+                .extractionWarnings(extraction != null ? objectMapper.readTree(extraction.extractionWarnings()) : null)
                 .build();
     }
 
@@ -479,19 +642,28 @@ public class TryItOutService {
             long startMs = clock.millis();
             try (DeploymentInvocationResult result =
                     deploymentInvoker.invokeWithStreaming(method, fullPath, headers, queryParams, serializedBody)) {
-                long durationMs = clock.millis() - startMs;
-                TryItOutCoreResponseDto responseDto;
+                final long durationMs = clock.millis() - startMs;
+                ExecutionStatus status = DeploymentInvocationSupport.resolveExecutionStatus(result.statusCode());
+                final TryItOutCoreResponseDto responseDto;
+                final String extractionDocumentJson;
 
                 if (result.streaming()) {
-                    responseDto = buildSseResponse(result);
+                    final StreamingInvocation streaming = readStream(result);
+                    responseDto = streaming.response();
+                    extractionDocumentJson = streaming.extractionDocumentJson();
+                    if (streaming.status() != ExecutionStatus.SUCCESS) {
+                        status = streaming.status();
+                    }
                 } else {
                     responseDto = TryItOutCoreResponseDto.builder()
                             .statusCode(result.statusCode())
                             .body(result.body())
                             .build();
+                    extractionDocumentJson = null;
                 }
 
-                return new TurnInvocationResult(resolved, responseDto, durationMs, traceId);
+                return new TurnInvocationResult(
+                        resolved, responseDto, durationMs, traceId, status, extractionDocumentJson);
             }
         } catch (RuntimeException e) {
             span.recordException(e);
@@ -506,29 +678,56 @@ public class TryItOutService {
         }
     }
 
-    private TryItOutCoreResponseDto buildSseResponse(DeploymentInvocationResult result) {
-        long maxBytes = evaluationRunProperties.getExecution().getMaxResponseSizeBytes();
+    /**
+     * Consumes a streaming response exactly once and produces both views of it: the display view (the
+     * {@code {"events":[…]}} envelope plus the verbatim event list the UI renders — an unchanged contract)
+     * and the extraction view (the run path's assembled document, so response-column JSONata sees what a
+     * real run would). The parse happens here and its result is handed to {@link
+     * StreamingResponseAccumulator#assemble(SseParseResult)} — the same accumulator {@code
+     * DeploymentTurnInvoker} uses — instead of re-reading the already-drained stream. A non-{@code
+     * SUCCESS} parse status is reported back so the caller treats the invocation as failed.
+     */
+    private StreamingInvocation readStream(DeploymentInvocationResult result) {
+        final long maxBytes = evaluationRunProperties.getExecution().getMaxResponseSizeBytes();
         // Idle timeout = per-path read timeout; absolute cap = global property.
-        SseParseResult parseResult = sseEventParser.parse(
-                result.eventStream(),
-                dialCoreProperties.getTryOut().getReadTimeoutMs(),
-                sseEventProcessingProperties.getMaxTotalDurationMs(),
-                maxBytes);
+        final long idleTimeoutMs = dialCoreProperties.getTryOut().getReadTimeoutMs();
+        final long maxTotalDurationMs = sseEventProcessingProperties.getMaxTotalDurationMs();
+        final SseParseResult parseResult =
+                sseEventParser.parse(result.eventStream(), idleTimeoutMs, maxTotalDurationMs, maxBytes);
 
-        List<SseEventDto> eventDtos = parseResult.events().stream()
+        final StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
+                sseEventParser, objectMapper, idleTimeoutMs, maxTotalDurationMs, maxBytes);
+        accumulator.assemble(parseResult);
+
+        final List<SseEventDto> eventDtos = parseResult.events().stream()
                 .map(e -> SseEventDto.builder().event(e.event()).data(e.data()).build())
                 .toList();
 
-        ObjectNode envelope = buildSseEnvelope(parseResult.events());
-
-        return TryItOutCoreResponseDto.builder()
+        final ExecutionStatus status = accumulator.getExecutionStatus();
+        final TryItOutCoreResponseDto responseDto = TryItOutCoreResponseDto.builder()
                 .statusCode(result.statusCode())
-                .body(envelope)
+                .body(buildSseEnvelope(parseResult.events()))
                 .streaming(true)
                 .events(eventDtos)
+                .streamingStatus(status != ExecutionStatus.SUCCESS ? status : null)
+                .truncationWarning(accumulator.getTruncationWarning())
                 .build();
+        return new StreamingInvocation(responseDto, status, accumulator.getResponseBody());
     }
 
+    /**
+     * One streaming invocation's two views: the response DTO shown to the client (events envelope + event
+     * list) and the run-equivalent assembled document used for response-column extraction, plus the
+     * stream's terminal status.
+     */
+    private record StreamingInvocation(
+            TryItOutCoreResponseDto response, ExecutionStatus status, String extractionDocumentJson) {}
+
+    /**
+     * The display envelope: every received event in order, regardless of the stream's mode. It is what the
+     * response DTO's {@code body} carries (and what the accumulator's structured-SSE mode also produces);
+     * extraction, however, runs against {@link StreamingInvocation#extractionDocumentJson()}.
+     */
     private ObjectNode buildSseEnvelope(List<SseEvent> events) {
         ObjectNode envelope = objectMapper.createObjectNode();
         ArrayNode eventsArray = objectMapper.createArrayNode();

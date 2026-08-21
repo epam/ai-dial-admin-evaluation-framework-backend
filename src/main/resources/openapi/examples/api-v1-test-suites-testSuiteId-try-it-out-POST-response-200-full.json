@@ -46,5 +46,9 @@
   },
   "durationMs": 4215,
   "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
-  "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=..."
+  "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
+  "extractedColumns": {
+    "assistantReply": "AI, or Artificial Intelligence, refers to the simulation of human intelligence..."
+  },
+  "extractionWarnings": []
 }

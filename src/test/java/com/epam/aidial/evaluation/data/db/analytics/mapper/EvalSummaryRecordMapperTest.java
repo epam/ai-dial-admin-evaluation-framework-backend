@@ -25,6 +25,8 @@ class EvalSummaryRecordMapperTest {
         record.setTestCaseId(UUID.randomUUID().toString());
         record.setTestCaseName("tc1");
         record.setRunIndex(0);
+        record.setRequestIndex(0);
+        record.setTotalRequests(1);
         record.setTurnIndex(0);
         record.setTotalTurns(1);
         record.setComputationId(UUID.randomUUID().toString());

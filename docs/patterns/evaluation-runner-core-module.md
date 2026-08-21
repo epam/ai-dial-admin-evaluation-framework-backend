@@ -16,7 +16,11 @@ The module contributes all its beans to the EF backend via Spring Boot autoconfi
 
 ## Deliberate duplication
 
-A handful of cross-boundary DTOs (`FieldDefinitionDto`, `SuiteType`, `ValidationConstants`, `ValidationException`) are deliberately duplicated — a full copy in `runner.dto`/`runner.model`/`runner.exception` for the module's own use, and the EF backend's own richer/validated copy (or, for `ValidationException`, a subclass of the module's) for everything else — rather than the module depending back on the EF backend.
+Of the cross-boundary types, only `ValidationException` is still deliberately duplicated — `runner.exception.ValidationException` for the module's own use, with the EF backend's `service.domain.exception.ValidationException` a subclass of it — rather than the module depending back on the EF backend.
+
+`FieldDefinitionDto` (`runner.dto`) and `SuiteType` (`runner.model`) are **no longer duplicated**: the module's copy is the only one and the EF backend imports it directly.
+
+Validation constants are **split, not duplicated**: `runner.dto.RunnerValidationConstants` is the sole home of the names the module needs (`IDENTIFIER_NAME_NO_COLON_*`, `NAME_NO_TWO_COLON_*`, `MAX_TEST_RUN_NAME_LENGTH`, `MAX_ADDITIONAL_REQUESTS`, `MAX_RESPONSE_COLUMNS`), while the EF backend's `constants.ValidationConstants` keeps the backend-only ones (`MAX_LIST_FILTER_PARAMS`/`MAX_LIST_SORT_PARAMS`, `MAX_FACT_FIELDS`, `MAX_DATASET_NAME_LENGTH`, `MAX_EXPORT_COLUMNS`, `MAX_DISABLED_TC_IDS`, the overall-score-threshold bounds) — the two sets are disjoint, so cite whichever class actually holds the constant you mean.
 
 ## Enforcement
 

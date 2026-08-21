@@ -52,6 +52,8 @@ import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestChainRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestSuiteValidationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnCsvFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
@@ -310,6 +312,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class TestSuiteTests extends TestSuiteFunctionalTests {}
 
     @Nested
+    class MultiRequestSuiteValidationTests extends MultiRequestSuiteValidationFunctionalTests {}
+
+    @Nested
     class TestCaseTests extends TestCaseFunctionalTests {}
 
     @Nested
@@ -385,6 +390,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class MultiTurnRunTests extends MultiTurnRunFunctionalTests {}
+
+    @Nested
+    class MultiRequestChainRunTests extends MultiRequestChainRunFunctionalTests {}
 
     @Nested
     class MultiTurnFilterTests extends MultiTurnFilterFunctionalTests {}

@@ -633,7 +633,7 @@ Status: **Implemented**
 - Reconciliation: `com.epam.aidial.evaluation.service.domain.TestSuiteRunReconciliation`
 - Job: `com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob`
 - Repository: `com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository`
-- RowMapper: `com.epam.aidial.evaluation.data.db.mapper.TestSuiteRunRowMapper`
+- RecordMapper: `com.epam.aidial.evaluation.data.db.mapper.TestSuiteRunRecordMapper`
 - Model: `com.epam.aidial.evaluation.data.db.model.TestSuiteRun`
 - Enum: `com.epam.aidial.evaluation.data.db.model.RunStatus`
 - DTOs: `TestSuiteRunRequestDto`, `TestSuiteRunResponseDto`, `TestSuiteRunUpdateDto`, `RunConfigDto`, `ExecutionSettingsDto`, `RetryPolicyDto`, `RunErrorDetailsDto`, `SseStatusEventDto` (all in `service.domain.dto`)

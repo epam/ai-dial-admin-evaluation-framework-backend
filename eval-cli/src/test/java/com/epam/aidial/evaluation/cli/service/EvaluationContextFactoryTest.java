@@ -7,6 +7,11 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.cli.config.properties.EvalCliProperties;
 import com.epam.aidial.evaluation.cli.config.properties.TargetProperties;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import java.time.Clock;
@@ -20,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpMethod;
 
 @ExtendWith(MockitoExtension.class)
 class EvaluationContextFactoryTest {
@@ -72,7 +78,7 @@ class EvaluationContextFactoryTest {
                 .name("Target Model")
                 .build();
 
-        final EvaluationContext context = factory.create(suite, 5, targetRef);
+        final EvaluationContext context = factory.create(suite, 5, targetRef, null);
 
         // Target deployment ref is applied, not the source suite's ref
         assertThat(context.getSnapshotDeploymentRef()).isEqualTo(targetRef);
@@ -92,7 +98,8 @@ class EvaluationContextFactoryTest {
         final EvaluationContext context = factory.create(
                 suite,
                 10,
-                DeploymentReferenceDto.builder().id("dep").name("dep").build());
+                DeploymentReferenceDto.builder().id("dep").name("dep").build(),
+                null);
 
         assertThat(context.getConcurrencyLevel()).isEqualTo(4);
         assertThat(context.getRequestTimeoutMs()).isEqualTo(3600000L);
@@ -101,6 +108,70 @@ class EvaluationContextFactoryTest {
         assertThat(context.getCreatedAtMs()).isEqualTo(1700000000000L);
         assertThat(context.getCancellationSignal()).isNotNull();
         assertThat(context.getCancellationSignal().get()).isFalse();
+    }
+
+    @Test
+    @DisplayName("propagates the suite's additionalRequests chain into the context")
+    void propagatesAdditionalRequestsChain() {
+        final RequestDefinitionDto second = RequestDefinitionDto.builder()
+                .name("second")
+                .endpointRef(
+                        EndpointContractDto.builder().method(HttpMethod.POST).build())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/second").build())
+                .build();
+        final RequestDefinitionDto third = RequestDefinitionDto.builder()
+                .name("third")
+                .endpointRef(
+                        EndpointContractDto.builder().method(HttpMethod.GET).build())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/third").build())
+                .build();
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .additionalRequests(List.of(second, third))
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
+
+        assertThat(context.getSnapshotAdditionalRequests()).containsExactly(second, third);
+    }
+
+    @Test
+    @DisplayName("carries the suite's requestName as request #0's label")
+    void carriesRequestName() {
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .requestName("primary")
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
+
+        assertThat(context.getSnapshotRequestName()).isEqualTo("primary");
+    }
+
+    @Test
+    @DisplayName("defaults a null additionalRequests to an empty list")
+    void defaultsNullAdditionalRequestsToEmptyList() {
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
+
+        assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
     }
 
     @Test
@@ -114,8 +185,53 @@ class EvaluationContextFactoryTest {
                 .build();
 
         factory.create(
-                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build());
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
 
         verify(targetProperties).getApiKey();
+    }
+
+    @Test
+    @DisplayName("carries the fetched dataset schema, including perTurn flags, as snapshotTestCaseSchema")
+    void carriesFetchedSchemaWithPerTurnFlags() {
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+        final FieldDefinitionDto sharedField = FieldDefinitionDto.builder()
+                .name("prompt")
+                .type(SchemaFieldType.STRING)
+                .build();
+        final FieldDefinitionDto perTurnField = FieldDefinitionDto.builder()
+                .name("turnPrompt")
+                .type(SchemaFieldType.STRING)
+                .perTurn(true)
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite,
+                1,
+                DeploymentReferenceDto.builder().id("d").name("d").build(),
+                List.of(sharedField, perTurnField));
+
+        assertThat(context.getSnapshotTestCaseSchema()).containsExactly(sharedField, perTurnField);
+        assertThat(context.getSnapshotTestCaseSchema().get(1).getPerTurn()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a null fetched schema (legacy bundle) yields a null snapshotTestCaseSchema")
+    void nullSchemaYieldsNullSnapshotTestCaseSchema() {
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final EvaluationContext context = factory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
+
+        assertThat(context.getSnapshotTestCaseSchema()).isNull();
     }
 }

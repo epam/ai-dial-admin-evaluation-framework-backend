@@ -172,6 +172,17 @@ public class TestCaseEvalSummaries extends TableImpl<TestCaseEvalSummariesRecord
      */
     public final TableField<TestCaseEvalSummariesRecord, Long> METRIC_EVAL_DURATION_MS = createField(DSL.name("metric_eval_duration_ms"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
 
+    /**
+     * The column <code>analytics.test_case_eval_summaries.request_index</code>.
+     */
+    public final TableField<TestCaseEvalSummariesRecord, Integer> REQUEST_INDEX = createField(DSL.name("request_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column
+     * <code>analytics.test_case_eval_summaries.total_requests</code>.
+     */
+    public final TableField<TestCaseEvalSummariesRecord, Integer> TOTAL_REQUESTS = createField(DSL.name("total_requests"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
+
     private TestCaseEvalSummaries(Name alias, Table<TestCaseEvalSummariesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

@@ -4,6 +4,8 @@
     "name": "My Test Suite",
     "description": "Suite for endpoint smoke tests",
     "suiteType": "DEPLOYMENT",
+    "requestName": null,
+    "additionalRequests": [],
     "valid": true,
     "validationWarnings": [],
     "version": 1,

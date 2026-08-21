@@ -20,7 +20,9 @@ import com.epam.aidial.evaluation.data.db.repository.TestCaseRunInputRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
@@ -29,8 +31,10 @@ import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissin
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
 import java.time.Clock;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -290,6 +294,138 @@ class TestSuiteEvaluationJobTest {
 
     private SuiteSnapshotDto invokeResolveSnapshot(TestSuiteRun run) {
         return (SuiteSnapshotDto) ReflectionTestUtils.invokeMethod(job, "resolveSnapshot", run);
+    }
+
+    @Nested
+    @DisplayName("buildContext / buildMetricEvaluationContext — request chain wiring")
+    class RequestChainWiring {
+
+        @Test
+        @DisplayName("buildContext exposes snapshotAdditionalRequests and snapshotRequestName from the snapshot")
+        void buildContextExposesChain() {
+            UUID suiteId = UUID.randomUUID();
+            UUID datasetId = UUID.randomUUID();
+            TestSuiteRun run = TestSuiteRun.builder()
+                    .id(UUID.randomUUID())
+                    .testSuiteId(suiteId)
+                    .numberOfTestCases(1)
+                    .createdAt(1000L)
+                    .suiteSnapshot(null)
+                    .build();
+
+            TestSuite liveSuite = TestSuite.builder()
+                    .id(suiteId)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .datasetId(datasetId)
+                    .build();
+            Dataset liveDataset = Dataset.builder().id(datasetId).build();
+
+            List<RequestDefinitionDto> additionalRequests =
+                    List.of(RequestDefinitionDto.builder().name("second").build());
+            SuiteSnapshotDto builtSnapshot = SuiteSnapshotDto.builder()
+                    .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                    .suiteType("DEPLOYMENT")
+                    .requestName("first")
+                    .additionalRequests(additionalRequests)
+                    .build();
+
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(liveSuite));
+            when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(liveDataset));
+            when(suiteSnapshotBuilder.build(liveSuite, liveDataset)).thenReturn(builtSnapshot);
+
+            EvaluationRunProperties.Execution execution = new EvaluationRunProperties.Execution();
+            execution.setDefaultConcurrencyLevel(1);
+            execution.setDefaultRequestTimeoutMs(1000L);
+            execution.setResultBatchSize(10);
+            execution.setMaxResponseSizeBytes(1000L);
+            execution.setCancellationGracePeriodMs(1000L);
+            EvaluationRunProperties.Retry retry = new EvaluationRunProperties.Retry();
+            retry.setDefaultMaxRetries(0);
+            retry.setDefaultRetryDelayMs(100L);
+            retry.setMaxRetryDelayMs(100L);
+            retry.setDefaultRetryBackoffMultiplier(1.0);
+            when(evaluationRunProperties.getExecution()).thenReturn(execution);
+            when(evaluationRunProperties.getRetry()).thenReturn(retry);
+
+            EvaluationContext context = (EvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token");
+
+            assertThat(context.getSnapshotRequestName()).isEqualTo("first");
+            assertThat(context.getSnapshotAdditionalRequests()).isEqualTo(additionalRequests);
+        }
+
+        @Test
+        @DisplayName("buildContext yields an empty chain and null requestName for a legacy snapshot")
+        void buildContextEmptyChainForLegacySnapshot() {
+            TestSuiteRun run = TestSuiteRun.builder()
+                    .id(UUID.randomUUID())
+                    .testSuiteId(UUID.randomUUID())
+                    .numberOfTestCases(1)
+                    .createdAt(1000L)
+                    .suiteSnapshot("{\"snapshotVersion\":\"2\",\"suiteType\":\"DEPLOYMENT\"}")
+                    .build();
+
+            EvaluationRunProperties.Execution execution = new EvaluationRunProperties.Execution();
+            execution.setDefaultConcurrencyLevel(1);
+            execution.setDefaultRequestTimeoutMs(1000L);
+            execution.setResultBatchSize(10);
+            execution.setMaxResponseSizeBytes(1000L);
+            execution.setCancellationGracePeriodMs(1000L);
+            EvaluationRunProperties.Retry retry = new EvaluationRunProperties.Retry();
+            retry.setDefaultMaxRetries(0);
+            retry.setDefaultRetryDelayMs(100L);
+            retry.setMaxRetryDelayMs(100L);
+            retry.setDefaultRetryBackoffMultiplier(1.0);
+            when(evaluationRunProperties.getExecution()).thenReturn(execution);
+            when(evaluationRunProperties.getRetry()).thenReturn(retry);
+
+            EvaluationContext context = (EvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token");
+
+            assertThat(context.getSnapshotRequestName()).isNull();
+            assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
+        }
+
+        @Test
+        @DisplayName("buildMetricEvaluationContext exposes ordered request labels; out-of-range resolves to null")
+        void buildMetricEvaluationContextExposesRequestLabels() throws Exception {
+            SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                    .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                    .suiteType("DEPLOYMENT")
+                    .requestName("first")
+                    .additionalRequests(List.of(
+                            RequestDefinitionDto.builder().name("second").build()))
+                    .build();
+            TestSuiteRun run = TestSuiteRun.builder()
+                    .id(UUID.randomUUID())
+                    .testSuiteId(UUID.randomUUID())
+                    .suiteSnapshot(objectMapper.writeValueAsString(snapshot))
+                    .build();
+
+            MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
+
+            assertThat(context.requestLabelAt(0)).isEqualTo("first");
+            assertThat(context.requestLabelAt(1)).isEqualTo("second");
+            assertThat(context.requestLabelAt(2)).isNull();
+            assertThat(context.requestLabelAt(-1)).isNull();
+        }
+
+        @Test
+        @DisplayName("buildMetricEvaluationContext resolves a null label for an unlabelled legacy chain")
+        void buildMetricEvaluationContextNullLabelForLegacyChain() {
+            TestSuiteRun run = TestSuiteRun.builder()
+                    .id(UUID.randomUUID())
+                    .testSuiteId(UUID.randomUUID())
+                    .suiteSnapshot("{\"snapshotVersion\":\"2\",\"suiteType\":\"DEPLOYMENT\"}")
+                    .build();
+
+            MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
+
+            assertThat(context.requestLabelAt(0)).isNull();
+            assertThat(context.requestLabelAt(1)).isNull();
+        }
     }
 
     @Nested

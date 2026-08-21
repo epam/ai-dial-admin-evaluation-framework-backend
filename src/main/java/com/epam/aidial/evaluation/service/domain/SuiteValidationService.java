@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestBodySchemaDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
@@ -80,6 +81,7 @@ public class SuiteValidationService {
                 .responseColumns(jsonbMapper.mapResponseColumns(suite.getResponseColumns()))
                 .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
                 .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()))
+                .additionalRequests(jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests()))
                 .mcpDeploymentRef(jsonbMapper.mapMcpDeploymentRef(suite.getMcpDeploymentRef()))
                 .toolRef(jsonbMapper.mapToolRef(suite.getToolRef()))
                 .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
@@ -108,9 +110,10 @@ public class SuiteValidationService {
                 warnings.add(warning(null, "$.argumentTemplate", typeHintWarning, ValidationWarningCode.TYPE));
             }
 
-            // Shared binding cross-validation
+            // Shared binding cross-validation. MCP_TOOL suites cannot carry additionalRequests
+            // (rejected at write time), so the chain is always length 1 — prefix is always "".
             List<InputBindingDto> bindings = dto.getInputBindings();
-            warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId));
+            warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId, ""));
         }
 
         return ValidationResult.builder()
@@ -121,29 +124,70 @@ public class SuiteValidationService {
 
     private ValidationResult validateDeploymentSuite(
             TestSuiteRequestDto dto, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
+        List<ValidationWarningDto> warnings = new ArrayList<>(validateRequest(
+                dto.getEndpointRef(), dto.getRequestTemplate(), dto.getInputBindings(), suiteId, testCaseSchema, ""));
+
+        List<RequestDefinitionDto> additionalRequests = dto.getAdditionalRequests();
+        if (additionalRequests != null) {
+            for (int i = 0; i < additionalRequests.size(); i++) {
+                RequestDefinitionDto request = additionalRequests.get(i);
+                if (request == null) {
+                    continue;
+                }
+                warnings.addAll(validateRequest(
+                        request.getEndpointRef(),
+                        request.getRequestTemplate(),
+                        request.getInputBindings(),
+                        suiteId,
+                        testCaseSchema,
+                        "$.additionalRequests[" + i + "]"));
+            }
+        }
+
+        return ValidationResult.builder()
+                .valid(warnings.isEmpty())
+                .warnings(warnings)
+                .build();
+    }
+
+    /**
+     * Validates one request of the chain (request #0 or an additional request). {@code pathPrefix}
+     * is {@code ""} for request #0, which keeps every one of its warning paths byte-identical to
+     * before request chains existed (design.md D13) — e.g. {@code "$.urlTemplate"},
+     * {@code "$.requestTemplate.body"}, {@code "$.requestTemplate.headers"}, {@code "$.endpointRef"}.
+     * An additional request passes {@code "$.additionalRequests[i]"}, yielding the indexed form
+     * {@code "$.additionalRequests[i].requestTemplate.urlTemplate"} etc.
+     */
+    private List<ValidationWarningDto> validateRequest(
+            EndpointContractDto endpoint,
+            RequestTemplateDto template,
+            List<InputBindingDto> bindings,
+            UUID suiteId,
+            List<FieldDefinitionDto> testCaseSchema,
+            String pathPrefix) {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
         // endpointRef is soft-validated: null → isValid=false with warning, not HTTP 400
-        if (dto.getEndpointRef() == null) {
+        if (endpoint == null) {
             warnings.add(warning(
                     null,
-                    "$.endpointRef",
+                    warningPath(pathPrefix, "$.endpointRef", ".endpointRef"),
                     "endpointRef is required for request assembly",
                     ValidationWarningCode.REQUIRED));
         }
 
-        RequestTemplateDto template = dto.getRequestTemplate();
-        List<InputBindingDto> bindings = dto.getInputBindings();
-
         // URL template validation
         if (template == null) {
             warnings.add(warning(
-                    null, "$", "requestTemplate is required for request assembly", ValidationWarningCode.REQUIRED));
+                    null,
+                    warningPath(pathPrefix, "$", ".requestTemplate"),
+                    "requestTemplate is required for request assembly",
+                    ValidationWarningCode.REQUIRED));
         } else if (template.getUrlTemplate() == null
                 || template.getUrlTemplate().isBlank()) {
             warnings.add(warning(
                     null,
-                    "$.urlTemplate",
+                    warningPath(pathPrefix, "$.urlTemplate", ".requestTemplate.urlTemplate"),
                     "urlTemplate is required for request assembly",
                     ValidationWarningCode.REQUIRED));
         }
@@ -155,11 +199,15 @@ public class SuiteValidationService {
 
         // Add warnings for unrecognised type hints
         for (String typeHintWarning : extractionResult.getTypeHintWarnings()) {
-            warnings.add(warning(null, "$.requestTemplate", typeHintWarning, ValidationWarningCode.TYPE));
+            warnings.add(warning(
+                    null,
+                    warningPath(pathPrefix, "$.requestTemplate", ".requestTemplate"),
+                    typeHintWarning,
+                    ValidationWarningCode.TYPE));
         }
 
         // Shared binding cross-validation
-        warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId));
+        warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId, pathPrefix));
 
         // Multipart FILE part constant value validation (deployment-specific)
         if (template != null
@@ -178,14 +226,14 @@ public class SuiteValidationService {
                 for (String error : errors) {
                     warnings.add(warning(
                             part.getName(),
-                            "$.requestTemplate.body",
+                            warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
                             "FILE form part '" + part.getName() + "': " + error,
                             ValidationWarningCode.TYPE));
                 }
                 if (errors.isEmpty() && fileRefValidator.isDatasetShapedRef(refValue)) {
                     warnings.add(warning(
                             part.getName(),
-                            "$.requestTemplate.body",
+                            warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
                             "FILE form part '" + part.getName() + "' references dataset-scoped file '" + refValue
                                     + "'; suite-level fields must use @ef/suites/ refs",
                             ValidationWarningCode.TYPE));
@@ -194,20 +242,20 @@ public class SuiteValidationService {
         }
 
         // Content-type mismatch: template body vs endpoint schema (deployment-specific)
-        if (template != null && template.getBody() != null) {
-            EndpointContractDto endpoint = dto.getEndpointRef();
-            if (endpoint != null && endpoint.getRequestBodySchema() != null) {
-                RequestBodyDto body = template.getBody();
-                RequestBodySchemaDto schemaDto = endpoint.getRequestBodySchema();
-                if (!body.getContentType().equals(schemaDto.getContentType())) {
-                    warnings.add(warning(
-                            null,
-                            "$.requestTemplate.body",
-                            "Request template content type '" + body.getContentType()
-                                    + "' does not match endpoint schema content type '"
-                                    + schemaDto.getContentType() + "'",
-                            ValidationWarningCode.TYPE));
-                }
+        if (template != null
+                && template.getBody() != null
+                && endpoint != null
+                && endpoint.getRequestBodySchema() != null) {
+            RequestBodyDto body = template.getBody();
+            RequestBodySchemaDto schemaDto = endpoint.getRequestBodySchema();
+            if (!body.getContentType().equals(schemaDto.getContentType())) {
+                warnings.add(warning(
+                        null,
+                        warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
+                        "Request template content type '" + body.getContentType()
+                                + "' does not match endpoint schema content type '" + schemaDto.getContentType()
+                                + "'",
+                        ValidationWarningCode.TYPE));
             }
         }
 
@@ -223,17 +271,22 @@ public class SuiteValidationService {
                         && blacklistLower.contains(header.getKey().toLowerCase())) {
                     warnings.add(warning(
                             header.getKey(),
-                            "$.requestTemplate.headers",
+                            warningPath(pathPrefix, "$.requestTemplate.headers", ".requestTemplate.headers"),
                             "Header '" + header.getKey() + "' is system-managed and cannot be set in request template",
                             ValidationWarningCode.ADDITIONAL));
                 }
             }
         }
 
-        return ValidationResult.builder()
-                .valid(warnings.isEmpty())
-                .warnings(warnings)
-                .build();
+        return warnings;
+    }
+
+    /**
+     * Byte-identical to the pre-request-chain contract (design.md D13): request #0 ({@code pathPrefix == ""})
+     * yields {@code rootPath} verbatim; any other request yields {@code pathPrefix + suffix}.
+     */
+    private static String warningPath(String pathPrefix, String rootPath, String suffix) {
+        return pathPrefix.isEmpty() ? rootPath : pathPrefix + suffix;
     }
 
     private static ValidationWarningDto warning(

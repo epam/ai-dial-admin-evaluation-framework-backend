@@ -34,6 +34,18 @@ class ConditionExpressionEvaluatorTest {
                 .build();
     }
 
+    private ConditionContext requestCtx(int requestIndex, int totalRequests, String requestName) {
+        return ConditionContext.builder()
+                .dataJson("{}")
+                .responseJson("{}")
+                .turnIndex(0)
+                .totalTurns(1)
+                .requestIndex(requestIndex)
+                .totalRequests(totalRequests)
+                .requestName(requestName)
+                .build();
+    }
+
     @Test
     @DisplayName("Blank condition always runs")
     void blankConditionRuns() {
@@ -96,5 +108,73 @@ class ConditionExpressionEvaluatorTest {
     @DisplayName("Malformed condition is rejected at validate time")
     void malformedRejected() {
         assertThatThrownBy(() -> evaluator.validate("this is (not valid")).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("request.index and request.total reflect the chain position")
+    void requestIndexAndTotalReflectChainPosition() {
+        assertThat(evaluator
+                        .evaluate("request.index = 0 and request.total = 2", requestCtx(0, 2, null))
+                        .isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate("request.index = 1 and request.total = 2", requestCtx(1, 2, null))
+                        .isRun())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("request.last is true only on the final request")
+    void requestLastSelectsFinalRequest() {
+        assertThat(evaluator.evaluate("request.last", requestCtx(1, 2, null)).isRun())
+                .isTrue();
+        assertThat(evaluator.evaluate("request.last", requestCtx(0, 2, null)).isSkip())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("Single-request result is its own last request")
+    void singleRequestIsLast() {
+        assertThat(evaluator.evaluate("request.last", requestCtx(0, 1, null)).isRun())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("request.name resolves to the chain-order label")
+    void requestNameResolvesLabel() {
+        assertThat(evaluator
+                        .evaluate("request.name = 'configure'", requestCtx(0, 2, "configure"))
+                        .isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate("request.name = 'ask'", requestCtx(1, 2, "ask"))
+                        .isRun())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("request.name survives serialization as an explicit JSON null when the request is unlabelled")
+    void requestNameNullSurvivesSerialization() {
+        // $exists() is true for both a labelled and an unlabelled request — a present-null value is
+        // still "present" (matches the existing response.answer:null precedent in presentNullPreserved()).
+        assertThat(evaluator
+                        .evaluate("$exists(request.name)", requestCtx(0, 1, "configure"))
+                        .isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate("$exists(request.name)", requestCtx(0, 1, null))
+                        .isRun())
+                .isTrue();
+        // The explicit null is a real JSONata null usable in a comparison — not an omitted key, which
+        // would make an equality comparison against it evaluate to undefined (a condition ERROR) rather
+        // than a clean boolean.
+        assertThat(evaluator
+                        .evaluate("request.name = null", requestCtx(0, 1, null))
+                        .isRun())
+                .isTrue();
+        assertThat(evaluator
+                        .evaluate("request.name = null", requestCtx(0, 1, "configure"))
+                        .isSkip())
+                .isTrue();
     }
 }

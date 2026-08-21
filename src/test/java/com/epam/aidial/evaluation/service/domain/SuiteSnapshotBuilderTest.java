@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
@@ -109,6 +110,45 @@ class SuiteSnapshotBuilderTest {
             assertThat(snapshot.getMcpDeploymentRef()).isNull();
             assertThat(snapshot.getToolRef()).isNull();
             assertThat(snapshot.getArgumentTemplate()).isNull();
+        }
+
+        @Test
+        @DisplayName("snapshots the request chain: additionalRequests and requestName")
+        void buildsSnapshotWithRequestChain() {
+            UUID datasetId = UUID.randomUUID();
+            TestSuite suite = TestSuite.builder()
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .datasetId(datasetId)
+                    .deploymentRef("{}")
+                    .endpointRef("{}")
+                    .requestTemplate("{}")
+                    .inputBindings("[]")
+                    .responseColumns("[]")
+                    .additionalRequests("[{\"name\":\"second\"}]")
+                    .requestName("first")
+                    .build();
+            Dataset dataset = Dataset.builder()
+                    .id(datasetId)
+                    .name("Dataset A")
+                    .version(1L)
+                    .testCaseSchema("[]")
+                    .build();
+            List<RequestDefinitionDto> additionalRequests =
+                    List.of(RequestDefinitionDto.builder().name("second").build());
+
+            when(jsonbMapper.map(suite.getDeploymentRef())).thenReturn(null);
+            when(jsonbMapper.mapEndpointContract(suite.getEndpointRef())).thenReturn(null);
+            when(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate())).thenReturn(null);
+            when(jsonbMapper.mapInputBindings(suite.getInputBindings())).thenReturn(List.of());
+            when(jsonbMapper.mapResponseColumns(suite.getResponseColumns())).thenReturn(List.of());
+            when(jsonbMapper.mapFieldDefinitions(dataset.getTestCaseSchema())).thenReturn(List.of());
+            when(jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests()))
+                    .thenReturn(additionalRequests);
+
+            SuiteSnapshotDto snapshot = builder.build(suite, dataset);
+
+            assertThat(snapshot.getRequestName()).isEqualTo("first");
+            assertThat(snapshot.getAdditionalRequests()).isEqualTo(additionalRequests);
         }
 
         @Test

@@ -55,5 +55,7 @@
   "inputBindings": [
     {"templateVariable": "messages", "dataField": "messages"},
     {"templateVariable": "model", "constantValue": "gpt-4"}
-  ]
+  ],
+  "requestName": null,
+  "additionalRequests": []
 }

@@ -20,7 +20,9 @@ RUN adduser -u 1001 --disabled-password --gecos "" appuser && \
     mkdir -p /app/data && \
     chown -R appuser:appuser /app
 
-RUN apk add --no-cache bash
+# Patch OS packages inherited from the base image (e.g. libssl3/libcrypto3 CVEs) before installing runtime deps
+RUN apk --no-cache upgrade && \
+    apk add --no-cache bash
 
 COPY --from=builder --chown=appuser:appuser /build-workspace/build/libs/ai-dial-admin-evaluation-framework-backend*.jar ./app.jar
 COPY --chown=appuser:appuser docker-entrypoint.sh /usr/local/bin/

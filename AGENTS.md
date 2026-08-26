@@ -6,7 +6,7 @@
 |--------|-------|
 | Language | Java 25 |
 | Framework | Spring Boot 4.1.0 |
-| Build | Gradle 9.6.1 |
+| Build | Gradle 9.7.1 |
 | Database | PostgreSQL (JDBC only, NO JPA) |
 | Security | OIDC/JWT multi-issuer |
 | Testing | JUnit 5 + Testcontainers |

@@ -45,13 +45,15 @@ model evaluations, including test suite authoring, execution tracking, and metri
 
 Following set of environment variables is required for a service startup:
 
-| Name                           | Example value                     | Comment                                                        |
-|--------------------------------|-----------------------------------|----------------------------------------------------------------|
-| CONFIG_REST_SECURITY_MODE      | none                              |                                                                |
-| METRIC_PROVIDERS_DIAL_BASE_URL | https://your-metrics-provider-url |                                                                |
-| METRIC_PROVIDERS_SYNC_ENABLED  | true                              | if you have metric service alongside to fetch metrics          |
-| METRIC_PROVIDERS_SYNC_CRON     | 0 */1 * * * *                     | defines how often metrics will be fetched from metircs service |
-| DIAL_EF_API_KEY                | secret-key                        |                                                                |
+| Name                            | Example value                     | Comment                                                                  |
+|---------------------------------|-----------------------------------|--------------------------------------------------------------------------|
+| CONFIG_REST_SECURITY_MODE       | none                              |                                                                          |
+| METRIC_PROVIDERS_DIAL_BASE_URL  | https://your-metrics-provider-url |                                                                          |
+| METRIC_PROVIDERS_EXTRA_ENABLED  | true                              | activates the second (stock `extra`) provider entry; disabled by default |
+| METRIC_PROVIDERS_EXTRA_BASE_URL | https://your-second-provider-url  | override the `http://localhost:8087` default before enabling `extra`     |
+| METRIC_PROVIDERS_SYNC_ENABLED   | true                              | if you have metric service alongside to fetch metrics                    |
+| METRIC_PROVIDERS_SYNC_CRON      | 0 */1 * * * *                     | defines how often metrics will be fetched from metircs service           |
+| DIAL_EF_API_KEY                 | secret-key                        |                                                                          |
 
 The Compose file lives under `local_env/`. It starts a single PostgreSQL container that
 initializes **both** databases — `evaluation_db` (meta) and `evaluation_analytics_db`

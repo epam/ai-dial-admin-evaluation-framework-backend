@@ -10,7 +10,7 @@ source EF via its existing `runs/import` API.
 | Command    | Description |
 |------------|-------------|
 | `clone`    | Ensures a `<name>_<suffix>` clone of each selected suite exists on the source EF (reuses if present). |
-| `fetch`    | Retrieves suite config and all test cases from the source EF; persists a JSON bundle under `cli.work-dir`. |
+| `fetch`    | Retrieves suite config, the bound dataset's test-case schema, and all test cases from the source EF; persists a JSON bundle under `cli.work-dir`. |
 | `run`      | Executes all test cases against the target deployment; writes results to CSV under `cli.work-dir`. |
 | `import`   | Imports a produced CSV into the cloned suite on the source EF; metric computation is triggered automatically. |
 | `evaluate` | Runs all four steps in sequence for each selected suite (`clone` → `fetch` → `run` → `import`). |
@@ -188,3 +188,28 @@ run doesn't spam `Connection refused` errors when no local OTLP collector is run
   import against the same clone.
 - **No DB dependency**: `eval-cli` is DB-free by design. It only communicates with the source EF
   over its public REST API and with the target deployment via DIAL Core.
+- **`fetch` also retrieves the bound dataset's test-case schema** (`GET /api/v1/datasets/{id}`),
+  including each field's per-turn scope declaration. This is what lets `run` execute a multi-turn test
+  case turn-by-turn instead of as a single request, matching the EF backend's own execution. The
+  persisted fetch bundle gained a `testCaseSchema` field to carry it — a bundle written by an older CLI
+  version still loads (the field is simply absent/null), but `run` refuses to execute a suite with a
+  multi-turn test case against such a bundle; re-run `fetch` first.
+- **The results CSV gained four columns** — `requestIndex`, `totalRequests`, `turnIndex`, `totalTurns` —
+  appended after `extractionWarnings`. They carry the position of each row within a test case's
+  repetition (chain position and turn), so a multi-request or multi-turn run's rows stay grouped and
+  correctly identified after import, instead of each importing as an indistinguishable single-request,
+  single-turn row.
+- **Minimum backend version and deployment order — hard requirement**: this CLI version requires an EF
+  backend that accepts the 19-column import contract (the four identity columns above, from the
+  `cli-multi-turn-multi-request-parity` change). **The backend MUST be upgraded before this CLI version
+  is deployed.** An older backend does not reject a 19-column CSV — it silently ignores the four unknown
+  headers and persists every row as `requestIndex=0`, `totalRequests=1`, `turnIndex=0`, `totalTurns=1`
+  under a random per-row identity. The import appears to succeed and the run looks complete; there is no
+  error to alert on. If you are unsure whether the target backend has been upgraded, downgrade this CLI
+  or hold off running `evaluate`/`run`/`import` against it.
+- **Row counts multiply for multi-request/multi-turn suites**: a suite with a chain of `R` requests over
+  `T` turns produces up to `R × T` rows per test-case repetition where a single-request, single-turn
+  suite produced one. A suite that previously fit under the destination's
+  `analytics.results.batch.max-items` (`ANALYTICS_RESULTS_BATCH_MAX_ITEMS`, default `10000`) import batch
+  cap can now exceed it and fail the `import` step with a 400. Raise that property on the target EF
+  deliberately before running a large multi-request/multi-turn suite through `evaluate`/`import`.

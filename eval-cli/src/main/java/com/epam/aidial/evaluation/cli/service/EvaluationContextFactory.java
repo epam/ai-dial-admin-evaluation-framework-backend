@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.cli.config.properties.EvalCliProperties;
 import com.epam.aidial.evaluation.cli.config.properties.TargetProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import java.time.Clock;
@@ -36,14 +37,25 @@ public class EvaluationContextFactory {
      * <em>target</em> deployment reference, <strong>not</strong> the suite's source-side ref —
      * this is what routes execution to the target environment.
      *
+     * <p>{@code testCaseSchema} is set as {@code snapshotTestCaseSchema} on the built context — the
+     * one input {@link com.epam.aidial.evaluation.runner.job.PerTurnBindingDetector} needs to decide,
+     * per request in the chain, whether a bound field is per-turn. A null or empty schema causes
+     * every case to execute single-turn (see {@code cli-multi-turn-multi-request-parity} design.md
+     * Decision 7 for the caller-side guard against silently downgrading a genuinely multi-turn run).
+     *
      * @param suite          the suite configuration fetched from the source EF
      * @param numberOfTestCases total runnable test-case count (used for progress tracking)
      * @param targetDeploymentRef the deployment reference for the target environment to invoke
+     * @param testCaseSchema the bound dataset's test-case schema fetched alongside the suite, or
+     *                       null when the fetch bundle predates the schema field
      * @return a fully wired {@link EvaluationContext} ready for use with {@link
      *     com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory}
      */
     public EvaluationContext create(
-            TestSuiteResponseDto suite, int numberOfTestCases, DeploymentReferenceDto targetDeploymentRef) {
+            TestSuiteResponseDto suite,
+            int numberOfTestCases,
+            DeploymentReferenceDto targetDeploymentRef,
+            List<FieldDefinitionDto> testCaseSchema) {
         final EvalCliProperties.Run run = cliProperties.getRun();
         return EvaluationContext.builder()
                 .runId(UUID.randomUUID())
@@ -81,6 +93,10 @@ public class EvaluationContextFactory {
                 .snapshotRequestTemplate(suite.getRequestTemplate())
                 .snapshotInputBindings(suite.getInputBindings() != null ? suite.getInputBindings() : List.of())
                 .snapshotResponseColumns(suite.getResponseColumns() != null ? suite.getResponseColumns() : List.of())
+                .snapshotAdditionalRequests(
+                        suite.getAdditionalRequests() != null ? suite.getAdditionalRequests() : List.of())
+                .snapshotRequestName(suite.getRequestName())
+                .snapshotTestCaseSchema(testCaseSchema)
                 // MCP fields (pass through from source suite if present)
                 .mcpDeploymentRefDto(suite.getMcpDeploymentRef() != null ? mapMcpDeploymentRef(suite) : null)
                 .toolRefDto(suite.getToolRef())

@@ -280,6 +280,90 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
         assertThat(((Number) rows.get(0).get("total_turns")).intValue()).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("requestIndex extends the natural key: a chained batch persists distinct (request_index, "
+            + "turn_index) summary rows")
+    void shouldPersistDistinctRequestAndTurnCombinationsInChainedSummaryBatch() {
+        UUID computationId = UUID.randomUUID();
+        insertRunMetricSnapshots(testSuiteRunId, computationId);
+
+        UUID testCaseId = UUID.randomUUID();
+        // A 2-request chain, request #1 also multi-turn: (0,0), (1,0), (1,1).
+        EvalSummaryBatchWriteItemDto request0Turn0 = buildChainSummaryItem(testCaseId, "chained", 0, 0, 2, 0, 1);
+        EvalSummaryBatchWriteItemDto request1Turn0 = buildChainSummaryItem(testCaseId, "chained", 0, 1, 2, 0, 2);
+        EvalSummaryBatchWriteItemDto request1Turn1 = buildChainSummaryItem(testCaseId, "chained", 0, 1, 2, 1, 2);
+
+        EvalSummaryBatchWriteRequestDto request = EvalSummaryBatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .computationId(computationId)
+                .computedAtMs(System.currentTimeMillis())
+                .items(List.of(request0Turn0, request1Turn0, request1Turn1))
+                .build();
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/eval-summaries"), jsonEntity(request), EvalSummaryBatchWriteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findEvalSummariesByRunId(testSuiteRunId);
+        assertThat(rows).hasSize(3);
+        assertThat(rows.stream()
+                        .map(r -> List.of(
+                                ((Number) r.get("request_index")).intValue(),
+                                ((Number) r.get("turn_index")).intValue())))
+                .containsExactlyInAnyOrder(List.of(0, 0), List.of(1, 0), List.of(1, 1));
+    }
+
+    @Test
+    @DisplayName("Re-writing the same chained summary batch inserts nothing and raises no constraint violation")
+    void shouldSkipDuplicatesOnIdempotentRewriteOfChainedSummaryBatch() {
+        UUID computationId = UUID.randomUUID();
+        insertRunMetricSnapshots(testSuiteRunId, computationId);
+
+        UUID testCaseId = UUID.randomUUID();
+        EvalSummaryBatchWriteItemDto request0 = buildChainSummaryItem(testCaseId, "chained-retry", 0, 0, 2, 0, 1);
+        EvalSummaryBatchWriteItemDto request1 = buildChainSummaryItem(testCaseId, "chained-retry", 0, 1, 2, 0, 1);
+
+        EvalSummaryBatchWriteRequestDto request = EvalSummaryBatchWriteRequestDto.builder()
+                .testSuiteId(testSuiteId)
+                .testSuiteRunId(testSuiteRunId)
+                .computationId(computationId)
+                .computedAtMs(System.currentTimeMillis())
+                .items(List.of(request0, request1))
+                .build();
+
+        var response1 = restTemplate.postForEntity(
+                apiUrl("/analytics/eval-summaries"), jsonEntity(request), EvalSummaryBatchWriteResponseDto.class);
+        assertThat(response1.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        // Re-write of the identical chained batch must be a no-op: same natural key on every row.
+        var response2 = restTemplate.postForEntity(
+                apiUrl("/analytics/eval-summaries"), jsonEntity(request), EvalSummaryBatchWriteResponseDto.class);
+        assertThat(response2.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        assertThat(analyticsTestDataHelper.countEvalSummaries()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName(
+            "Single-request summary write omitting request fields defaults to request_index=0, " + "total_requests=1")
+    void shouldDefaultRequestFieldsForSingleRequestSummary() {
+        UUID computationId = UUID.randomUUID();
+        insertRunMetricSnapshots(testSuiteRunId, computationId);
+
+        EvalSummaryBatchWriteRequestDto request =
+                buildEvalSummaryBatchRequest(testSuiteId, testSuiteRunId, computationId, 1);
+
+        var response = restTemplate.postForEntity(
+                apiUrl("/analytics/eval-summaries"), jsonEntity(request), EvalSummaryBatchWriteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findEvalSummariesByRunId(testSuiteRunId);
+        assertThat(rows).hasSize(1);
+        assertThat(((Number) rows.get(0).get("request_index")).intValue()).isEqualTo(0);
+        assertThat(((Number) rows.get(0).get("total_requests")).intValue()).isEqualTo(1);
+    }
+
     // --- List Tests ---
 
     @Test
@@ -908,6 +992,22 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
                 .responseStatusCode(200)
                 .metricValues(metricValues)
                 .build();
+    }
+
+    private EvalSummaryBatchWriteItemDto buildChainSummaryItem(
+            UUID testCaseId,
+            String name,
+            int runIndex,
+            int requestIndex,
+            int totalRequests,
+            int turnIndex,
+            int totalTurns) {
+        EvalSummaryBatchWriteItemDto item = buildEvalSummaryItem(testCaseId, name, runIndex);
+        item.setRequestIndex(requestIndex);
+        item.setTotalRequests(totalRequests);
+        item.setTurnIndex(turnIndex);
+        item.setTotalTurns(totalTurns);
+        return item;
     }
 
     private void insertRunMetricSnapshots(UUID runId, UUID computationId) {

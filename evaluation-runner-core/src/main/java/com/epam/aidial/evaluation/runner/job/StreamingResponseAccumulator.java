@@ -61,9 +61,16 @@ public class StreamingResponseAccumulator {
      * Returns when stream ends, the idle timeout or max-total cap is exceeded, or size limit is reached.
      */
     public void accumulate(InputStream eventStream) {
-        SseParseResult result =
-                sseEventParser.parse(eventStream, idleTimeoutMs, maxTotalDurationMs, maxResponseSizeBytes);
+        assemble(sseEventParser.parse(eventStream, idleTimeoutMs, maxTotalDurationMs, maxResponseSizeBytes));
+    }
 
+    /**
+     * Assembly seam: performs mode detection + document assembly over an <strong>already parsed</strong>
+     * stream, without touching the stream again. Callers that need the parsed {@link SseEvent} list for
+     * their own purposes (the try-out preview exposes it verbatim to the UI) parse once themselves and
+     * hand the result here, so their extraction input is the very same document a real run would see.
+     */
+    public void assemble(SseParseResult result) {
         if (result.status() != ExecutionStatus.SUCCESS) {
             this.executionStatus = result.status();
         }

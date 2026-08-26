@@ -32,7 +32,7 @@ public class OpenApiExampleCustomizer implements OpenApiCustomizer {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String MEDIA_TYPE_JSON = "application/json";
     private static final List<String> EXAMPLE_NAMES =
-            List.of("minimal", "full", "multi-turn", "mcp", "sse", "subset", "with-bodies", "jsonata-body");
+            List.of("minimal", "full", "multi-turn", "mcp", "sse", "subset", "with-bodies", "jsonata-body", "chained");
 
     @Override
     public void customise(io.swagger.v3.oas.models.OpenAPI openApi) {

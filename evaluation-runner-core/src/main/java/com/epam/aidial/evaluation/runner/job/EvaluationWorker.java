@@ -40,9 +40,11 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Dispatches a single test case to the right execution path: every DEPLOYMENT HTTP case (single-turn and
- * multi-turn alike) runs through {@link TurnLoopExecutor}; an MCP_TOOL case resolves arguments and calls
- * the tool directly here, with its own retry loop and response handling.
+ * Dispatches a single test case to the right execution path: every DEPLOYMENT HTTP case (single-request or
+ * multi-request chain, single-turn or multi-turn alike) runs through {@link RequestChainExecutor}; an
+ * MCP_TOOL case resolves arguments and calls the tool directly here, with its own retry loop and response
+ * handling. {@code responseColumns} is used only by the MCP branch — a DEPLOYMENT chain derives every
+ * request's own response columns from the run snapshot (see {@link RequestChainExecutor}).
  */
 @Slf4j
 @Component
@@ -58,7 +60,7 @@ public class EvaluationWorker {
     private final McpRequestResolver mcpRequestResolver;
     private final McpResponseSerializer mcpResponseSerializer;
     private final Clock clock;
-    private final TurnLoopExecutor turnLoopExecutor;
+    private final RequestChainExecutor requestChainExecutor;
 
     public List<TestCaseRunResult> execute(
             TestCaseRunInput input,
@@ -90,7 +92,7 @@ public class EvaluationWorker {
             }
 
             List<TestCaseRunResult> results =
-                    turnLoopExecutor.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs);
+                    requestChainExecutor.execute(input, context, runIndex, traceId, execStartedAtMs);
 
             results.stream()
                     .filter(row -> row.getExecutionStatus() == ExecutionStatus.ERROR)

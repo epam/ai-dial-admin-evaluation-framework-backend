@@ -50,7 +50,7 @@ Following set of environment variables is required for a service startup:
 | CONFIG_REST_SECURITY_MODE       | none                              |                                                                          |
 | METRIC_PROVIDERS_DIAL_BASE_URL  | https://your-metrics-provider-url |                                                                          |
 | METRIC_PROVIDERS_EXTRA_ENABLED  | true                              | activates the second (stock `extra`) provider entry; disabled by default |
-| METRIC_PROVIDERS_EXTRA_BASE_URL | https://your-second-provider-url  | required when `METRIC_PROVIDERS_EXTRA_ENABLED=true`                      |
+| METRIC_PROVIDERS_EXTRA_BASE_URL | https://your-second-provider-url  | override the `http://localhost:8087` default before enabling `extra`     |
 | METRIC_PROVIDERS_SYNC_ENABLED   | true                              | if you have metric service alongside to fetch metrics                    |
 | METRIC_PROVIDERS_SYNC_CRON      | 0 */1 * * * *                     | defines how often metrics will be fetched from metircs service           |
 | DIAL_EF_API_KEY                 | secret-key                        |                                                                          |

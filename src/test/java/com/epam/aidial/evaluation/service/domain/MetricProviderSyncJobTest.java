@@ -154,7 +154,7 @@ class MetricProviderSyncJobTest {
         }
 
         @Test
-        @DisplayName("syncs every enabled provider on the scheduled run as well as on startup")
+        @DisplayName("syncs every enabled provider and skips disabled ones on the scheduled run")
         void scheduledRun_syncsEnabledProviders() {
             givenProvider(DIAL, true);
             givenProvider(EXTRA, false);

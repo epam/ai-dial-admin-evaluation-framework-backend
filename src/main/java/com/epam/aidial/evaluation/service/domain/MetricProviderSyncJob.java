@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 /**
  * Runs metric provider sync after startup (async, does not block) and on a schedule when enabled.
  * Only runs when sync.enabled is true and providers map is non-empty.
+ * Within a run, a provider entry whose own enabled flag is false is logged and skipped.
  * One provider failure is logged and does not stop the job.
  */
 @Slf4j

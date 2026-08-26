@@ -23,6 +23,12 @@ public class EvalSummaryResponseDto {
     private String testCaseName;
     private int runIndex;
 
+    @Schema(description = "0-based position within a suite's request chain (0 for single-request).", example = "0")
+    private int requestIndex;
+
+    @Schema(description = "Chain length (request count; 1 for single-request).", example = "1")
+    private int totalRequests;
+
     @Schema(description = "0-based turn position within a multi-turn test case (0 for single-turn).", example = "0")
     private int turnIndex;
 

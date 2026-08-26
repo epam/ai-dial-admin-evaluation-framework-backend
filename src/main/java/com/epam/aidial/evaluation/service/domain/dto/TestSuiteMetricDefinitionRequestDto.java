@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto;
 
-import com.epam.aidial.evaluation.constants.ValidationConstants;
+import com.epam.aidial.evaluation.runner.dto.RunnerValidationConstants;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -36,8 +36,8 @@ public class TestSuiteMetricDefinitionRequestDto {
     @NotBlank(message = "Name is required")
     @Size(max = 255, message = "Name must be less than 255 characters")
     @Pattern(
-            regexp = ValidationConstants.NAME_NO_TWO_COLON_PATTERN,
-            message = ValidationConstants.NAME_NO_TWO_COLON_MESSAGE)
+            regexp = RunnerValidationConstants.NAME_NO_TWO_COLON_PATTERN,
+            message = RunnerValidationConstants.NAME_NO_TWO_COLON_MESSAGE)
     @Schema(description = "Display name for this metric application", example = "Accuracy Check")
     private String name;
 

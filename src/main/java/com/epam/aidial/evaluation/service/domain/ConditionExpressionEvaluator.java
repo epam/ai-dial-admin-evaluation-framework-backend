@@ -13,7 +13,8 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Single entry point for metric-execution conditions. A condition is a JSONata expression evaluated
- * against a {@code {"data", "response", "turn"}} dictionary (delegated to {@link JsonataEvaluationService}).
+ * against a {@code {"data", "response", "turn", "request"}} dictionary (delegated to
+ * {@link JsonataEvaluationService}).
  *
  * <p>{@link #validate} is used at write time (hard 400 on a malformed condition). {@link #evaluate}
  * is used at run time and never throws — it maps every outcome to a {@link ConditionDecision}.
@@ -26,10 +27,13 @@ public class ConditionExpressionEvaluator {
 
     private static final String DATA_NAMESPACE = "data";
     private static final String RESPONSE_NAMESPACE = "response";
+    private static final String REQUEST_NAMESPACE = "request";
     private static final String TURN_NAMESPACE = "turn";
-    private static final String TURN_INDEX = "index";
-    private static final String TURN_TOTAL = "total";
-    private static final String TURN_LAST = "last";
+
+    private static final String TOTAL = "total";
+    private static final String INDEX = "index";
+    private static final String LAST = "last";
+    private static final String NAME = "name";
 
     private final JsonataEvaluationService jsonataEvaluationService;
     private final ObjectMapper objectMapper;
@@ -68,15 +72,21 @@ public class ConditionExpressionEvaluator {
     }
 
     /**
-     * Serializes the context into {@code {"data": ..., "response": ..., "turn": {...}}}. Built from parsed
-     * {@code JsonNode} trees and serialized as an {@code ObjectNode} so explicit JSON nulls are preserved
-     * (the shared {@code NON_NULL} mapper would drop null-valued map entries, making a present-but-null
-     * column look absent — see AGENTS.md JSONB-null caveat).
+     * Serializes the context into {@code {"data": ..., "response": ..., "turn": {...}, "request": {...}}}.
+     * Built from parsed {@code JsonNode} trees and serialized as an {@code ObjectNode} so explicit JSON
+     * nulls are preserved (the shared {@code NON_NULL} mapper would drop null-valued map entries, making
+     * a present-but-null column look absent — see AGENTS.md JSONB-null caveat).
      *
      * <p>The {@code turn} namespace carries the current turn's position so conditions can gate on it, e.g.
      * {@code turn.last} to run only on the final turn, or {@code turn.index}/{@code turn.total}. Because a
      * test case's turns are contiguous {@code 0..N-1}, {@code turn.last} is {@code index == total - 1}.
      * A single-turn result is {@code index=0, total=1, last=true}.
+     *
+     * <p>The {@code request} namespace mirrors {@code turn} for the suite's request chain position:
+     * {@code request.index}/{@code request.total}/{@code request.last}, plus {@code request.name} — the
+     * chain-order request label, {@code putNull} (not omitted) when the request at this position is
+     * unlabelled so {@code $exists(request.name)} is honest. A single-request result is
+     * {@code index=0, total=1, last=true}.
      */
     private String buildDictionaryJson(ConditionContext context) {
         final ObjectNode root = objectMapper.createObjectNode();
@@ -84,10 +94,21 @@ public class ConditionExpressionEvaluator {
         root.set(RESPONSE_NAMESPACE, readTreeOrEmpty(context.responseJson()));
 
         final ObjectNode turn = objectMapper.createObjectNode();
-        turn.put(TURN_INDEX, context.turnIndex());
-        turn.put(TURN_TOTAL, context.totalTurns());
-        turn.put(TURN_LAST, context.turnIndex() == context.totalTurns() - 1);
+        turn.put(INDEX, context.turnIndex());
+        turn.put(TOTAL, context.totalTurns());
+        turn.put(LAST, context.turnIndex() == context.totalTurns() - 1);
         root.set(TURN_NAMESPACE, turn);
+
+        final ObjectNode request = objectMapper.createObjectNode();
+        request.put(INDEX, context.requestIndex());
+        request.put(TOTAL, context.totalRequests());
+        request.put(LAST, context.requestIndex() == context.totalRequests() - 1);
+        if (context.requestName() == null) {
+            request.putNull(NAME);
+        } else {
+            request.put(NAME, context.requestName());
+        }
+        root.set(REQUEST_NAMESPACE, request);
 
         return objectMapper.writeValueAsString(root);
     }

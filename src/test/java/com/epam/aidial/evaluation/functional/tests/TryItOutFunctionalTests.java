@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -14,8 +15,10 @@ import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
+import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
@@ -356,7 +359,293 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         assertThat(pathCaptor.getValue()).doesNotContain("%2520");
     }
 
+    // --- Multi-request chain try-out (add-multi-request-try-out) ---
+
+    @Test
+    @DisplayName("Should thread request #0's real extracted column into request #1's resolved body "
+            + "and stamp chain identity on every history entry")
+    void shouldThreadExtractedColumnAndStampChainIdentity() {
+        TestSuiteResponseDto suite = createTwoRequestChainSuite("Chain Thread", "followup", HttpMethod.POST, true);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("prompt", "hi"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(configureReply(7))
+                .thenReturn(chatReply("final answer"));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TryItOutResponseDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getHistory()).hasSize(2);
+
+        TryItOutResponseDto first = body.getHistory().get(0);
+        assertThat(first.getRequestIndex()).isZero();
+        assertThat(first.getTotalRequests()).isEqualTo(2);
+        assertThat(first.getRequestName()).isNull();
+        assertThat(first.getTurnIndex()).isNull();
+        assertThat(first.getTotalTurns()).isNull();
+        assertThat(first.getExtractedColumns().get("configId").asInt()).isEqualTo(7);
+
+        TryItOutResponseDto second = body.getHistory().get(1);
+        assertThat(second.getRequestIndex()).isEqualTo(1);
+        assertThat(second.getTotalRequests()).isEqualTo(2);
+        assertThat(second.getRequestName()).isEqualTo("followup");
+        assertThat(second.getTurnIndex()).isNull();
+        assertThat(second.getTotalTurns()).isNull();
+        assertThat(second.getExtractedColumns().get("answer").asString()).isEqualTo("final answer");
+
+        // Request #1's outgoing body was resolved with $configId bound to request #0's REAL extracted value.
+        String secondRequestBody =
+                objectMapper.writeValueAsString(second.getResolvedRequest().getBody());
+        assertThat(secondRequestBody).contains("7").contains("hi");
+
+        // Top level mirrors the last executed (second) history entry.
+        assertThat(body.getRequestIndex()).isEqualTo(second.getRequestIndex());
+        assertThat(body.getTotalRequests()).isEqualTo(second.getTotalRequests());
+        assertThat(body.getRequestName()).isEqualTo(second.getRequestName());
+        assertThat(body.getResponse()).isEqualTo(second.getResponse());
+        assertThat(body.getResolvedRequest()).isEqualTo(second.getResolvedRequest());
+    }
+
+    @Test
+    @DisplayName("Should stop the chain at the first failed request and never invoke request #1")
+    void shouldStopChainAtFirstFailedRequest() {
+        TestSuiteResponseDto suite = createTwoRequestChainSuite("Chain Fail", "followup", HttpMethod.POST, true);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("prompt", "hi"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new DeploymentInvocationResult(500, false, Map.of("error", "boom"), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TryItOutResponseDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getHistory()).hasSize(1);
+        assertThat(body.getResponse().getStatusCode()).isEqualTo(500);
+        assertThat(body.getHistory().getFirst().getResponse()).isEqualTo(body.getResponse());
+        verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should invoke each chain request with its own HTTP method")
+    void shouldInvokeEachChainRequestWithItsOwnHttpMethod() {
+        TestSuiteResponseDto suite = createTwoRequestChainSuite("Chain Method", "followup", HttpMethod.GET, false);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("prompt", "hi"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(configureReply(7))
+                .thenReturn(chatReply("final answer"));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ArgumentCaptor<HttpMethod> methodCaptor = ArgumentCaptor.forClass(HttpMethod.class);
+        verify(deploymentInvoker, times(2)).invokeWithStreaming(methodCaptor.capture(), any(), any(), any(), any());
+        assertThat(methodCaptor.getAllValues()).containsExactly(HttpMethod.POST, HttpMethod.GET);
+    }
+
+    @Test
+    @DisplayName("Should execute the chain for variables-mode try-out, threading extracted columns "
+            + "and stamping identity")
+    void shouldExecuteChainForVariablesMode() {
+        TestSuiteResponseDto suite = createTwoRequestChainSuite("Chain Vars", "followup", HttpMethod.POST, true);
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(configureReply(9))
+                .thenReturn(chatReply("var answer"));
+
+        TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
+                .variables(Map.of("prompt", "HelloVars"))
+                .build();
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"),
+                jsonEntity(request),
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TryItOutResponseDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getHistory()).hasSize(2);
+        assertThat(body.getHistory().get(0).getTotalRequests()).isEqualTo(2);
+        assertThat(body.getHistory().get(1).getRequestName()).isEqualTo("followup");
+
+        // Variables mode wholesale-replaces every chain element's own inputBindings: the additional
+        // request's body still sees $configId (the real prior response's extracted column) plus the
+        // user-supplied "prompt" variable.
+        String secondRequestBody = objectMapper.writeValueAsString(
+                body.getHistory().get(1).getResolvedRequest().getBody());
+        assertThat(secondRequestBody).contains("9").contains("HelloVars");
+    }
+
+    @Test
+    @DisplayName("Should stop a variables-mode chain at the first failed request")
+    void shouldStopVariablesChainAtFirstFailedRequest() {
+        TestSuiteResponseDto suite = createTwoRequestChainSuite("Chain Vars Fail", "followup", HttpMethod.POST, true);
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(
+                        new DeploymentInvocationResult(500, false, Map.of("error", "boom"), null, new HttpHeaders()));
+
+        TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
+                .variables(Map.of("prompt", "x"))
+                .build();
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"),
+                jsonEntity(request),
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TryItOutResponseDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getHistory()).hasSize(1);
+        verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should return 400 identifying the offending chain element when it lacks an endpoint "
+            + "reference, without invoking anything")
+    void shouldReturn400ForChainElementMissingEndpointRef() {
+        TestSuiteResponseDto suite = createSuiteWithChainElementMissingEndpointRef();
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("prompt", "hi"));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("additionalRequests[0]");
+        verifyNoInteractions(deploymentInvoker);
+    }
+
+    @Test
+    @DisplayName("Should return 400 naming the broken chain element (not 404) when the testCaseId does not exist")
+    void shouldReturn400BeforeNotFoundForBrokenChainElementAndMissingTestCase() {
+        TestSuiteResponseDto suite = createSuiteWithChainElementMissingEndpointRef();
+
+        // Chain-element preconditions run on the already-loaded suite BEFORE the test case is looked up,
+        // so a misconfigured chain wins over a nonexistent testCaseId (design D7).
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + UUID.randomUUID() + "/try-it-out"),
+                null,
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("additionalRequests[0]");
+        verifyNoInteractions(deploymentInvoker);
+    }
+
+    @Test
+    @DisplayName("Should keep single-request response unchanged apart from the additive "
+            + "extractedColumns/extractionWarnings fields")
+    void shouldKeepSingleRequestResponseUnchangedExceptExtractionFields() {
+        TestSuiteResponseDto suite = createSuiteWithTemplateAndResponseColumn();
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("promptField", "hi"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200, false, Map.of("id", "chatcmpl-99", "choices", List.of()), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TryItOutResponseDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getHistory()).isNull();
+        assertThat(body.getRequestIndex()).isNull();
+        assertThat(body.getTotalRequests()).isNull();
+        assertThat(body.getRequestName()).isNull();
+        assertThat(body.getTurnIndex()).isNull();
+        assertThat(body.getTotalTurns()).isNull();
+        assertThat(body.getExtractedColumns()).isNotNull();
+        assertThat(body.getExtractedColumns().get("responseId").asString()).isEqualTo("chatcmpl-99");
+        assertThat(body.getExtractionWarnings()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should omit extractedColumns/extractionWarnings entirely when the suite defines no "
+            + "response columns (byte-identical to the pre-existing response)")
+    void shouldOmitExtractionFieldsWhenSuiteHasNoResponseColumns() {
+        TestSuiteResponseDto suite = createSuiteWithTemplate();
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("promptField", "hi"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200, false, Map.of("id", "chatcmpl-1", "choices", List.of()), null, new HttpHeaders()));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody())
+                .doesNotContain("extractedColumns")
+                .doesNotContain("extractionWarnings")
+                .doesNotContain("history")
+                .doesNotContain("requestIndex")
+                .doesNotContain("requestName")
+                .doesNotContain("turnIndex")
+                .doesNotContain("totalTurns")
+                .doesNotContain("totalRequests");
+    }
+
     // --- Helpers ---
+
+    private TestSuiteResponseDto createSuiteWithChainElementMissingEndpointRef() {
+        TestSuiteRequestDto req = TestSuiteRequestDto.builder()
+                .name("Chain Missing Endpoint " + UUID.randomUUID())
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(buildEndpoint())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/chat/completions")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("op", "configure"))
+                                .build())
+                        .build())
+                .inputBindings(List.of())
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name("broken")
+                        .requestTemplate(RequestTemplateDto.builder()
+                                .urlTemplate("/v1/followup")
+                                .body(JsonRequestBodyDto.builder()
+                                        .content(Map.of("op", "ask"))
+                                        .build())
+                                .build())
+                        .inputBindings(List.of(InputBindingDto.builder()
+                                .templateVariable("prompt")
+                                .dataField("prompt")
+                                .build()))
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> suiteResponse =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
+        assertThat(suiteResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return suiteResponse.getBody();
+    }
 
     private TestSuiteResponseDto createSuiteWithTemplate() {
         RequestTemplateDto template = RequestTemplateDto.builder()
@@ -384,6 +673,114 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return res.getBody();
+    }
+
+    private TestSuiteResponseDto createSuiteWithTemplateAndResponseColumn() {
+        RequestTemplateDto template = RequestTemplateDto.builder()
+                .urlTemplate("/chat/completions")
+                .body(JsonRequestBodyDto.builder()
+                        .content(Map.of("prompt", "${{prompt}}", "temperature", "${{temperature:0.7}}"))
+                        .build())
+                .build();
+        TestSuiteRequestDto req = TestSuiteRequestDto.builder()
+                .name("Try It Out Extraction Suite " + UUID.randomUUID())
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(buildEndpoint())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("promptField")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(template)
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("promptField")
+                        .build()))
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("responseId")
+                        .expression("id")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+        ResponseEntity<TestSuiteResponseDto> res =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return res.getBody();
+    }
+
+    /**
+     * Two-request chain suite for try-out coverage: request #0 ("configure") is unlabelled, produces the
+     * {@code configId} response column; the additional request is named {@code secondRequestName} and,
+     * when {@code secondHasBody} is {@code true}, consumes {@code configId} from the accumulated frame via
+     * raw JSONata ({@code $configId} — the frame is exposed to JSONata expressions, never matched against
+     * {@code ${{...}}} placeholders) alongside a {@code ${{prompt}}} data-field binding, producing its own
+     * {@code answer} response column. When {@code secondHasBody} is {@code false} the second request has no
+     * body at all (used for the per-request-HTTP-method scenario, e.g. a bodyless GET).
+     */
+    private TestSuiteResponseDto createTwoRequestChainSuite(
+            String name, String secondRequestName, HttpMethod secondMethod, boolean secondHasBody) {
+        RequestTemplateDto secondTemplate = secondHasBody
+                ? RequestTemplateDto.builder()
+                        .urlTemplate("/v1/followup")
+                        .body(JsonRequestBodyDto.builder()
+                                .jsonataContent("{\"cfg\": $configId, \"prompt\": \"${{prompt}}\"}")
+                                .build())
+                        .build()
+                : RequestTemplateDto.builder().urlTemplate("/v1/followup").build();
+        TestSuiteRequestDto req = TestSuiteRequestDto.builder()
+                .name(name + " " + UUID.randomUUID())
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/configure")
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/configure")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("op", "configure"))
+                                .build())
+                        .build())
+                .inputBindings(List.of())
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("configId")
+                        .expression("usage.total_tokens")
+                        .type(SchemaFieldType.INTEGER)
+                        .build()))
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name(secondRequestName)
+                        .endpointRef(EndpointContractDto.builder()
+                                .method(secondMethod)
+                                .relativeUrlPattern("/v1/followup")
+                                .build())
+                        .requestTemplate(secondTemplate)
+                        .inputBindings(
+                                secondHasBody
+                                        ? List.of(InputBindingDto.builder()
+                                                .templateVariable("prompt")
+                                                .dataField("prompt")
+                                                .build())
+                                        : List.of())
+                        .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                                .name("answer")
+                                .expression("choices[0].message.content")
+                                .type(SchemaFieldType.STRING)
+                                .build()))
+                        .build()))
+                .build();
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    private DeploymentInvocationResult configureReply(int totalTokens) {
+        return new DeploymentInvocationResult(
+                200, false, Map.of("usage", Map.of("total_tokens", totalTokens)), null, new HttpHeaders());
     }
 
     private TestSuite createSuiteWithoutDeploymentRef() {

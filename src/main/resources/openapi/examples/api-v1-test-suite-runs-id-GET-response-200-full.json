@@ -50,6 +50,8 @@
       {"name": "answer", "displayName": "Model Answer", "expression": "choices[0].message.content", "type": "STRING"},
       {"name": "total_tokens", "displayName": "Total Tokens", "expression": "usage.total_tokens", "type": "NUMBER"}
     ],
+    "additionalRequests": [],
+    "requestName": null,
     "testCaseSchema": [
       {"name": "question", "displayName": "Question", "type": "STRING", "required": true}
     ],

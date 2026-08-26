@@ -1,0 +1,139 @@
+{
+  "resolvedRequest": {
+    "url": "/chat/completions",
+    "queryParams": [],
+    "headers": [],
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "model": "gpt-4",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Grade this answer for correctness: AI, or Artificial Intelligence, is a branch of computer science..."
+          }
+        ]
+      }
+    },
+    "warnings": []
+  },
+  "response": {
+    "statusCode": 200,
+    "body": {
+      "id": "chatcmpl-grade1",
+      "object": "chat.completion",
+      "created": 1700000100,
+      "model": "gpt-4",
+      "choices": [
+        {
+          "index": 0,
+          "message": { "role": "assistant", "content": "9/10 — accurate and well phrased." },
+          "finish_reason": "stop"
+        }
+      ]
+    }
+  },
+  "durationMs": 1874,
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
+  "history": [
+    {
+      "resolvedRequest": {
+        "url": "/chat/completions",
+        "queryParams": [],
+        "headers": [],
+        "body": {
+          "contentType": "application/json",
+          "content": {
+            "model": "gpt-4",
+            "messages": [
+              { "role": "user", "content": "Tell me about AI" }
+            ]
+          }
+        },
+        "warnings": []
+      },
+      "response": {
+        "statusCode": 200,
+        "body": {
+          "id": "chatcmpl-abc123",
+          "object": "chat.completion",
+          "created": 1700000000,
+          "model": "gpt-4",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "AI, or Artificial Intelligence, is a branch of computer science..."
+              },
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      "durationMs": 2143,
+      "traceId": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
+      "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
+      "requestIndex": 0,
+      "totalRequests": 2,
+      "extractedColumns": {
+        "assistantReply": "AI, or Artificial Intelligence, is a branch of computer science..."
+      },
+      "extractionWarnings": []
+    },
+    {
+      "resolvedRequest": {
+        "url": "/chat/completions",
+        "queryParams": [],
+        "headers": [],
+        "body": {
+          "contentType": "application/json",
+          "content": {
+            "model": "gpt-4",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Grade this answer for correctness: AI, or Artificial Intelligence, is a branch of computer science..."
+              }
+            ]
+          }
+        },
+        "warnings": []
+      },
+      "response": {
+        "statusCode": 200,
+        "body": {
+          "id": "chatcmpl-grade1",
+          "object": "chat.completion",
+          "created": 1700000100,
+          "model": "gpt-4",
+          "choices": [
+            {
+              "index": 0,
+              "message": { "role": "assistant", "content": "9/10 — accurate and well phrased." },
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      "durationMs": 1874,
+      "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
+      "requestIndex": 1,
+      "totalRequests": 2,
+      "requestName": "grade",
+      "extractedColumns": {
+        "grade": "9/10 — accurate and well phrased."
+      },
+      "extractionWarnings": []
+    }
+  ],
+  "requestIndex": 1,
+  "totalRequests": 2,
+  "requestName": "grade",
+  "extractedColumns": {
+    "grade": "9/10 — accurate and well phrased."
+  },
+  "extractionWarnings": []
+}

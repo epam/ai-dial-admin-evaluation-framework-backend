@@ -15,6 +15,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -40,9 +41,16 @@ public class ResolvedRequestController {
                             mediaType = "application/json",
                             schema = @Schema(implementation = ResolvedRequestDto.class)))
     @ApiResponse(responseCode = "404", description = "Test suite or test case not found")
+    @ApiResponse(responseCode = "400", description = "requestIndex is out of range for the suite's request chain")
     public ResolvedRequestDto getResolvedRequest(
             @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId,
-            @Parameter(description = "Test case ID") @PathVariable UUID testCaseId) {
-        return resolvedRequestService.resolveRequest(testSuiteId, testCaseId);
+            @Parameter(description = "Test case ID") @PathVariable UUID testCaseId,
+            @Parameter(
+                            description = "Which request of the suite's chain to preview: 0 selects the suite's "
+                                    + "own request, n > 0 selects additionalRequests[n - 1]",
+                            example = "0")
+                    @RequestParam(name = "requestIndex", required = false, defaultValue = "0")
+                    int requestIndex) {
+        return resolvedRequestService.resolveRequest(testSuiteId, testCaseId, requestIndex);
     }
 }

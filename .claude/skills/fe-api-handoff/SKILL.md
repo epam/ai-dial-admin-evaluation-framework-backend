@@ -35,7 +35,7 @@ The recipe below has no slot for UI/UX prose. If a sentence doesn't fit a slot, 
 ## Steps
 
 1. **Find the changes.** `git diff --stat development...HEAD` for the map, then `git diff development...HEAD` on the surfaces that define the contract:
-   - `web.controller` / `experimental.query.web` — routes, methods, params, status codes
+   - `web.controller` / `query.web` — routes, methods, params, status codes
    - `service.domain.dto`, `service.domain.dto.analytics` — request/response DTO fields, `@Schema`, validation annotations, nullability
    - `constants`, enums — exposed constant/enum values
    - `web.handler` + `service.domain.exception` — error `code` strings and their HTTP status

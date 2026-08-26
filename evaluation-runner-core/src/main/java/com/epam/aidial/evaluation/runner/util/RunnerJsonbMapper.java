@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.runner.util;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -11,10 +12,11 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Deserializes the two JSONB-backed fields the execution path reads at runtime: a test case's
- * request-template and input-binding overrides. Every other suite/dataset/metric JSONB field is owned by
- * the EF backend's own {@code service.domain.mapper.JsonbMapper}, which delegates here for these two
- * methods (see Decision 10 in the {@code evaluation-runner-core-module} change's {@code design.md}).
+ * Deserializes the JSONB-backed fields the execution path reads at runtime: a test case's
+ * request-template and input-binding overrides, and a suite's additional-request chain. Every other
+ * suite/dataset/metric JSONB field is owned by the EF backend's own
+ * {@code service.domain.mapper.JsonbMapper}, which delegates here for these methods (see Decision 10 in
+ * the {@code evaluation-runner-core-module} change's {@code design.md}).
  *
  * <p>Named {@code RunnerJsonbMapper} (bean name {@code "runnerJsonbMapper"}) rather than plain
  * {@code JsonbMapper} so the EF backend's own {@code service.domain.mapper.JsonbMapper} can inject this
@@ -26,6 +28,8 @@ import tools.jackson.databind.ObjectMapper;
 public class RunnerJsonbMapper {
 
     private static final TypeReference<List<InputBindingDto>> BINDING_LIST_TYPE = new TypeReference<>() {};
+    private static final TypeReference<List<RequestDefinitionDto>> ADDITIONAL_REQUEST_LIST_TYPE =
+            new TypeReference<>() {};
     private final ObjectMapper objectMapper;
 
     public RequestTemplateDto mapRequestTemplate(String json) {
@@ -34,6 +38,10 @@ public class RunnerJsonbMapper {
 
     public List<InputBindingDto> mapInputBindings(String json) {
         return readList(json, BINDING_LIST_TYPE, "inputBindings");
+    }
+
+    public List<RequestDefinitionDto> mapAdditionalRequests(String json) {
+        return readList(json, ADDITIONAL_REQUEST_LIST_TYPE, "additionalRequests");
     }
 
     private <T> T read(String json, Class<T> type, String label) {

@@ -46,8 +46,8 @@ None.
 
 ## Impact
 
-- Code: `experimental/query/service/translate/FilterTranslator.java` (the only production change),
-  plus a `negated()` accessor on `experimental/query/model/ComparisonOp.java` so each operator declares its
+- Code: `query/service/translate/FilterTranslator.java` (the only production change),
+  plus a `negated()` accessor on `query/model/ComparisonOp.java` so each operator declares its
   own null polarity instead of the translator rediscovering it.
 - Unchanged by design: `QueryDslRunnableTestCaseSelector`, `TestCaseFieldBindingsBuilder`,
   `PostgresTestCaseEntityResolver`, all repositories. The fix is at the leaves and composes upward into

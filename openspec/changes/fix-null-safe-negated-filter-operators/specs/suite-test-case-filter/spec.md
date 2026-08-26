@@ -30,7 +30,7 @@ Status: **Implemented**
 
 ## Implementation notes
 - Null polarity lives entirely in the DSL translation layer
-  (`experimental/query/service/translate/FilterTranslator.java`; see the `structured-query-model` spec's
+  (`query/service/translate/FilterTranslator.java`; see the `structured-query-model` spec's
   null-handling requirement), so `QueryDslRunnableTestCaseSelector`'s
   `NOT EXISTS (… WHERE (<pred>) IS NOT TRUE)` all-turns lateral and `TestCaseFieldBindingsBuilder`'s
   scope-aware bindings are unchanged: a total leaf predicate never reaches the quantifier as UNKNOWN.

@@ -26,6 +26,7 @@ This document is the operator-facing reference for every configurable property o
    - [DIAL API Key](#52-dial-api-key)
    - [DIAL File Storage](#53-dial-file-storage)
    - [DIAL MCP Client](#54-dial-mcp-client)
+   - [DIAL ADAS Client](#55-dial-adas-client)
 6. [Evaluation Engine](#6-evaluation-engine)
    - [Test Suite Run — Executor](#61-test-suite-run--executor)
    - [Test Suite Run — SSE](#62-test-suite-run--sse)
@@ -339,6 +340,16 @@ Configuration for MCP (Model Context Protocol) tool invocations routed through D
 | `dial.mcp.connect-timeout-ms` | `DIAL_MCP_CONNECT_TIMEOUT_MS` | `5000` | No | - | Connection timeout in milliseconds. |
 | `dial.mcp.read-timeout-ms` | `DIAL_MCP_READ_TIMEOUT_MS` | `120000` | No | - | Read timeout in milliseconds. Higher than the DIAL Core metadata client because MCP tool execution latency can be significant. |
 
+### 5.5 DIAL ADAS Client
+
+Configuration for dial-adas, an external analytics service queried for `GET /api/v1/test-suite-runs/{id}/costs` (average test-case execution cost and average metric-evaluation cost, computed from `dial_usage_log` aggregate queries correlated by the run's OTel baggage).
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `dial.adas.base-url` | `DIAL_ADAS_URL` | `http://localhost:8087` | No | - | Base URL for the dial-adas query-execute API. |
+| `dial.adas.connect-timeout-ms` | `DIAL_ADAS_CONNECT_TIMEOUT_MS` | `5000` | No | - | Connection timeout in milliseconds. |
+| `dial.adas.read-timeout-ms` | `DIAL_ADAS_READ_TIMEOUT_MS` | `30000` | No | - | Read timeout in milliseconds. |
+
 ---
 
 ## 6. Evaluation Engine
@@ -430,14 +441,17 @@ Metric declarations can be synced from one or more external metric provider serv
 
 #### Provider map
 
-Each entry under `metric-providers.providers.<id>` defines one provider. The map key is the provider id (recorded as `provider_id` on synced metric declarations). The default configuration ships with one entry id `dial`.
+Each entry under `metric-providers.providers.<id>` defines one provider. The map key is the provider id (recorded as `provider_id` on synced metric declarations). The default configuration ships with two entries: `dial` (enabled by default) and `extra` (disabled by default, a ready-to-use slot for a second provider service).
+
+Each entry carries its own `enabled` flag. Disabling an entry excludes it from the **sync job** only — metric declarations already synced from that provider stay in the catalog and are still evaluated via the provider's `/evaluate` endpoint during test suite runs. To stop all sync, use `metric-providers.sync.enabled=false`.
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
+| `metric-providers.providers.<id>.enabled` | `METRIC_PROVIDERS_<ID>_ENABLED` | - | Yes | - | Whether the sync job processes this provider entry. `@NotNull` — every entry present in configuration MUST define it (there is no Java-side default), so a provider added purely via environment variables MUST also set `METRIC_PROVIDERS_<ID>_ENABLED`. Stock defaults: `dial` = `true`, `extra` = `false`. `false` skips the entry during sync but leaves its already-synced declarations usable for metric evaluation. |
 | `metric-providers.providers.<id>.base-url` | `METRIC_PROVIDERS_<ID>_BASE_URL` | - | Conditional | `metric-providers.sync.enabled=true` | Base URL of the provider (e.g. `http://metric-service:8080`). `GET /metrics` is called against this. Validated via `@NotBlank` when a provider entry is present. The default configuration for id `dial` resolves from `METRIC_PROVIDERS_DIAL_BASE_URL` with yaml fallback `http://localhost:8086`. |
 | `metric-providers.providers.<id>.connect-timeout-ms` | `METRIC_PROVIDERS_<ID>_CONNECT_TIMEOUT_MS` | `5000` | No | `metric-providers.sync.enabled=true` | HTTP connection timeout in milliseconds. |
-| `metric-providers.providers.<id>.read-timeout-ms` | `METRIC_PROVIDERS_<ID>_READ_TIMEOUT_MS` | `150000` | No | `metric-providers.sync.enabled=true` | HTTP read timeout in milliseconds. |
-| `metric-providers.providers` | `-` | `{dial: {...}}` | No | - | Top-level provider map. An empty map disables sync for all providers. See the rows above for the fields each entry accepts. |
+| `metric-providers.providers.<id>.read-timeout-ms` | `METRIC_PROVIDERS_<ID>_READ_TIMEOUT_MS` | `150000` | No | `metric-providers.sync.enabled=true` | HTTP read timeout in milliseconds. `150000` is the value shipped in `application.yml` for the stock `dial` and `extra` entries; an entry declared only via environment variables falls back to the binding default of `30000`. |
+| `metric-providers.providers` | `-` | `{dial: {...}, extra: {...}}` | No | - | Top-level provider map. An empty map disables sync for all providers. See the rows above for the fields each entry accepts. |
 
 Example:
 
@@ -445,7 +459,13 @@ Example:
 metric-providers:
   providers:
     my-metrics:
+      enabled: true
       base-url: http://metric-provider:8080
+      connect-timeout-ms: 5000
+      read-timeout-ms: 150000
+    legacy-metrics:
+      enabled: false          # kept in config, skipped by the sync job
+      base-url: http://legacy-metric-provider:8080
       connect-timeout-ms: 5000
       read-timeout-ms: 150000
   sync:
@@ -459,11 +479,16 @@ Entries under the `providers` map are fully addressable via environment variable
 
 | Environment variable | Overrides | Notes |
 |---|---|---|
+| `METRIC_PROVIDERS_DIAL_ENABLED` | `metric-providers.providers.dial.enabled` | Default `true`. Set `false` to keep the entry configured but skip it during sync. |
 | `METRIC_PROVIDERS_DIAL_BASE_URL` | `metric-providers.providers.dial.base-url` | Required in yaml as `@NotBlank`. |
 | `METRIC_PROVIDERS_DIAL_CONNECT_TIMEOUT_MS` | `metric-providers.providers.dial.connect-timeout-ms` | - |
 | `METRIC_PROVIDERS_DIAL_READ_TIMEOUT_MS` | `metric-providers.providers.dial.read-timeout-ms` | - |
+| `METRIC_PROVIDERS_EXTRA_ENABLED` | `metric-providers.providers.extra.enabled` | Default `false`. Set `true` to activate the stock second provider slot. |
+| `METRIC_PROVIDERS_EXTRA_BASE_URL` | `metric-providers.providers.extra.base-url` | Yaml fallback `http://localhost:8087`. Override before enabling the entry. |
+| `METRIC_PROVIDERS_EXTRA_CONNECT_TIMEOUT_MS` | `metric-providers.providers.extra.connect-timeout-ms` | - |
+| `METRIC_PROVIDERS_EXTRA_READ_TIMEOUT_MS` | `metric-providers.providers.extra.read-timeout-ms` | - |
 
-To register additional providers without touching YAML, use env vars keyed by upper-cased provider id (e.g. `METRIC_PROVIDERS_CUSTOM_BASE_URL` for a provider keyed `custom`).
+To register a third or further provider without touching YAML, use env vars keyed by upper-cased provider id — both `METRIC_PROVIDERS_CUSTOM_BASE_URL` **and** `METRIC_PROVIDERS_CUSTOM_ENABLED` for a provider keyed `custom` (`enabled` is `@NotNull`, so omitting it fails startup validation).
 
 ### 6.11 Metric Evaluation
 
@@ -603,5 +628,6 @@ docker run -d \
 - **Always override** `postgres.meta.datasource.password`, `postgres.analytics.datasource.password`, `postgres.meta.datasource.url`, and `postgres.analytics.datasource.url` — the stock defaults are for local development only.
 - **Always set** `DIAL_EF_API_KEY`; the application refuses to boot without it.
 - **Enable metric provider sync** in every environment that needs metric declarations kept in sync with a metric provider service: set `METRIC_PROVIDERS_SYNC_ENABLED=true` and either a `METRIC_PROVIDERS_SYNC_CRON` expression or a `METRIC_PROVIDERS_SYNC_FIXED_DELAY_MS` value. The default (`false`) is intended for local development only.
+- **Point each enabled provider entry at a real service.** The stock `extra` entry is disabled (`METRIC_PROVIDERS_EXTRA_ENABLED=false`) and points at `http://localhost:8087`; set `METRIC_PROVIDERS_EXTRA_BASE_URL` before flipping it to `true`.
 - JDBC query parameters (`connection-params`) have sensible defaults in `application.yml`; override only when the database requires additional driver options (e.g. `sslmode=require`).
 - When enabling Azure AD authentication for PostgreSQL, verify the managed identity assigned to the pod has been granted the relevant database role before rolling the deployment.

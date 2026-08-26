@@ -14,9 +14,8 @@ public class LayeredArchitectureTest {
     private static final String SERVICE_PACKAGE = "com.epam.aidial.evaluation.service..";
     private static final String DATA_PACKAGE = "com.epam.aidial.evaluation.data..";
     private static final String CONFIG_PACKAGE = "com.epam.aidial.evaluation.configuration..";
-    private static final String EXPERIMENTAL_WEB_PACKAGE = "com.epam.aidial.evaluation.experimental.query.web..";
-    private static final String EXPERIMENTAL_SERVICE_PACKAGE =
-            "com.epam.aidial.evaluation.experimental.query.service..";
+    private static final String QUERY_WEB_PACKAGE = "com.epam.aidial.evaluation.query.web..";
+    private static final String QUERY_SERVICE_PACKAGE = "com.epam.aidial.evaluation.query.service..";
 
     private static final JavaClasses CLASSES = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())
@@ -24,33 +23,28 @@ public class LayeredArchitectureTest {
 
     @Test
     void testLayeredArchitecture() {
-        // The experimental query packages mirror the standard layering under `experimental.query`:
-        // experimentalWeb -> experimentalService -> (service, data). They may consume the stable
-        // service/data layers but nothing outside `experimental.query` may depend on them.
+        // The Query DSL (`query.web` / `query.service`) is folded into the standard web/service layers
+        // rather than modeled as its own layer: query.web classes are controllers (part of `web`), and
+        // query.service classes are called from both `web` and `service` and themselves call
+        // into `service`/`data` — the same access pattern `web`/`service` already have with each other.
+        // `query.model` is deliberately layer-neutral: it is a pure carrier package (the typed query AST)
+        // with no behaviour, reused as an outbound payload by clients such as `client.dialadas`.
         layeredArchitecture()
                 .consideringAllDependencies()
                 .layer("web")
-                .definedBy(WEB_PACKAGE)
+                .definedBy(WEB_PACKAGE, QUERY_WEB_PACKAGE)
                 .layer("service")
-                .definedBy(SERVICE_PACKAGE)
+                .definedBy(SERVICE_PACKAGE, QUERY_SERVICE_PACKAGE)
                 .layer("data")
                 .definedBy(DATA_PACKAGE)
                 .layer("configuration")
                 .definedBy(CONFIG_PACKAGE)
-                .layer("experimentalWeb")
-                .definedBy(EXPERIMENTAL_WEB_PACKAGE)
-                .layer("experimentalService")
-                .definedBy(EXPERIMENTAL_SERVICE_PACKAGE)
                 .whereLayer("web")
                 .mayOnlyBeAccessedByLayers("configuration")
                 .whereLayer("service")
-                .mayOnlyBeAccessedByLayers("web", "configuration", "experimentalService")
+                .mayOnlyBeAccessedByLayers("web", "configuration")
                 .whereLayer("data")
-                .mayOnlyBeAccessedByLayers("service", "configuration", "experimentalService")
-                .whereLayer("experimentalWeb")
-                .mayOnlyBeAccessedByLayers("configuration")
-                .whereLayer("experimentalService")
-                .mayOnlyBeAccessedByLayers("experimentalWeb", "configuration")
+                .mayOnlyBeAccessedByLayers("service", "configuration")
                 .check(CLASSES);
     }
 }

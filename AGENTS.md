@@ -22,7 +22,7 @@ Strict layering, enforced by `LayeredArchitectureTest`. Dependencies point downw
 → `.data.db` (repository interfaces + Postgres impls, RecordMappers, models, pagination, transaction context)
 → PostgreSQL + Flyway.
 
-Never invert an edge to reach experimental code — declare an interface in `.service` and implement it in the experimental package (see [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md)). Package inventory: [docs/key-packages.md](docs/key-packages.md).
+Package inventory: [docs/key-packages.md](docs/key-packages.md).
 
 ## Do's and Don'ts
 
@@ -117,7 +117,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Suite validity = config only](docs/patterns/suite-validity-and-run-guards.md) | `isValid` excludes test-case presence; the 5 ordered `createRun` guards |
 | [Computation Versioning (no `is_latest`)](docs/patterns/computation-versioning.md) | "Latest" resolved at query time from eval summaries, not snapshots |
 | [Eval summaries = single read surface](docs/patterns/eval-summaries-read-surface.md) | One summary per result row even at zero TSMDs; empty list ≠ "no metrics" |
-| [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md) | Single pre-pass resolver; invert stable→experimental via a `service` interface |
+| [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md) | Single pre-pass resolver rewrites `StructuredQuery` params before translation |
 | [Query DSL function catalog](docs/patterns/query-dsl-function-catalog.md) | Registry-driven `QueryFunction` SPI; stored-function delegation; no `mean` fn |
 | [Typed `OverallScoreDefinition`](docs/patterns/overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null |
 | [Query DSL entity resolution](docs/patterns/query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check |
@@ -125,6 +125,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Query DSL null polarity](docs/patterns/query-dsl-null-polarity.md) | `nc`/`ne`/`not` are total (null satisfies); positive ops stay unwrapped/sargable |
 | [`test_cases` query entity + `testCaseFilter`](docs/patterns/test-cases-query-entity.md) | Instance-aware bindings keyed by `dataset_id`; scope-aware ALL-turns-match |
 | [Multi-turn test cases](docs/patterns/multi-turn-test-cases.md) | Emergent from `multi_turn_data`, not a suite flag; `perTurn` scope; turn loop |
+| [Multi-request suites](docs/patterns/multi-request-suites.md) | `additionalRequests` chain; one flat response-column union; accumulated frame; `(request_index, turn_index)` |
 | [Request-template JSONata seam](docs/patterns/jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](docs/patterns/evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
 
@@ -135,7 +136,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 - **API Timestamp Convention** — all timestamps in REST APIs and DB models use **epoch milliseconds (Long)**. Do NOT convert to `Instant` or ISO 8601 strings in DTOs; MapStruct maps `Long → Long` automatically.
 - **ValidationWarningsSerializer** — injectable `@Component` for JSON ser/deser of validation warnings and maps. **Fail-fast** (throws) for serialization; **graceful degradation** (logs + empty) for deserialization. Inject instead of duplicating `ObjectMapper` logic.
 - **Exception Handling Pattern** — **fail-fast (throw)** for data integrity (serialization, writes); **graceful degradation (log + fallback)** only when data is regenerable. Document rationale in comment or log message. See also `config.yaml` global rules.
-- **Conditional metric execution (`condition` on TSMD)** — a TSMD's optional `condition` (JSONata, nullable ⇒ always run) decides per **result row (per turn)** whether the metric runs. `ConditionExpressionEvaluator` evaluates it over a namespaced dictionary `{data, response, turn:{index,total,last}}` (serialized **preserving explicit nulls**, never the shared `NON_NULL` mapper). Invalid JSONata → hard 400 at write time. At run time (only on SUCCESS rows): `true` → run; `false` → omit the metric; throws/non-boolean/null → `ConditionError` (no metric value + a `metricError::<name>` export column) while the row **stays SUCCESS**. See [conditional-metric-execution spec](openspec/specs/conditional-metric-execution/spec.md).
+- **Conditional metric execution (`condition` on TSMD)** — a TSMD's optional `condition` (JSONata, nullable ⇒ always run) decides per **result row (per turn)** whether the metric runs. `ConditionExpressionEvaluator` evaluates it over a namespaced dictionary `{data, response, turn:{index,total,last}, request:{index,total,last,name}}` (serialized **preserving explicit nulls**, never the shared `NON_NULL` mapper). Invalid JSONata → hard 400 at write time. At run time (only on SUCCESS rows): `true` → run; `false` → omit the metric; throws/non-boolean/null → `ConditionError` (no metric value + a `metricError::<name>` export column) while the row **stays SUCCESS**. See [conditional-metric-execution spec](openspec/specs/conditional-metric-execution/spec.md).
 
 ## Key Packages Reference
 

@@ -11,9 +11,11 @@ import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
@@ -33,11 +35,12 @@ import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViola
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
-import com.epam.aidial.evaluation.service.domain.job.RunnableTestCaseSelector;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -72,7 +75,7 @@ public class TestSuiteService {
     private final EndpointSchemaRefResolver endpointSchemaRefResolver;
     private final SuiteValidationService suiteValidationService;
     private final DatasetSchemaProvider datasetSchemaProvider;
-    private final RunnableTestCaseSelector runnableTestCaseSelector;
+    private final QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final FileService fileService;
     private final Clock clock;
@@ -85,6 +88,7 @@ public class TestSuiteService {
     private final ValidationWarningsSerializer warningsSerializer;
     private final ObjectMapper objectMapper;
     private final TestSuiteRequestValidator testSuiteRequestValidator;
+    private final ResponseColumnUnionResolver responseColumnUnionResolver;
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
     public PageResponseDto<TestSuiteResponseDto> getAll(
@@ -207,7 +211,7 @@ public class TestSuiteService {
             if (tsmdResponseColumnsChanged) {
                 String datasetSchemaJson = jsonbMapper.mapFieldDefinitions(datasetSchema);
                 testSuiteMetricDefinitionService.revalidateAllForSuite(
-                        id, datasetSchemaJson, updated.getResponseColumns());
+                        id, datasetSchemaJson, responseColumnUnionResolver.unionJson(updated));
             }
             return testSuiteMapper.toDto(updated);
         } catch (DataIntegrityViolationException ex) {
@@ -451,7 +455,7 @@ public class TestSuiteService {
      * Validates a suite's {@code testCaseFilter} at write time against the bound dataset's test-case
      * schema. A null filter is a no-op. A non-null filter on an unbound suite ({@code datasetId == null})
      * is rejected because it can be neither validated nor applied. Otherwise the filter is translated
-     * against the dataset's typed bindings via {@link RunnableTestCaseSelector#validateFilter}, which
+     * against the dataset's typed bindings via {@link QueryDslRunnableTestCaseSelector#validateFilter}, which
      * throws {@link ValidationException} (→ HTTP 400) on an unknown field, type error, or malformed filter.
      */
     private void validateTestCaseFilter(UUID datasetId, Map<String, Object> testCaseFilter) {
@@ -472,28 +476,87 @@ public class TestSuiteService {
         if (dto.getResponseColumns() == null) {
             dto.setResponseColumns(List.of());
         } else {
-            for (ResponseColumnDefinitionDto col : dto.getResponseColumns()) {
-                if (col != null && col.getType() == null) {
-                    col.setType(SchemaFieldType.STRING);
+            defaultColumnTypes(dto.getResponseColumns());
+        }
+        dto.setEndpointRef(endpointSchemaRefResolver.resolve(dto.getEndpointRef()));
+
+        if (dto.getAdditionalRequests() == null) {
+            dto.setAdditionalRequests(List.of());
+        } else {
+            for (RequestDefinitionDto request : dto.getAdditionalRequests()) {
+                if (request != null) {
+                    defaultColumnTypes(request.getResponseColumns());
+                    request.setEndpointRef(endpointSchemaRefResolver.resolve(request.getEndpointRef()));
                 }
             }
         }
-        dto.setEndpointRef(endpointSchemaRefResolver.resolve(dto.getEndpointRef()));
         return dto;
     }
 
     /**
-     * Detects whether the suite's responseColumns changed. TSMD bindings reference both the
-     * dataset-owned testCaseSchema and the suite-owned responseColumns; when only responseColumns
-     * change here at the suite level, the TSMD revalidation must be kicked off explicitly because
-     * the dataset-side revalidation flow only fires on testCaseSchema diffs.
-     * Compared semantically (ignores key order). Must be called BEFORE mapper.update() mutates existing.
+     * Defaults an omitted {@code type} to {@link SchemaFieldType#STRING} on every column of the given
+     * list. Shared by request #0's {@code responseColumns} and each additional request's, so the
+     * default applies uniformly across the whole chain.
+     */
+    private void defaultColumnTypes(List<ResponseColumnDefinitionDto> columns) {
+        if (columns == null) {
+            return;
+        }
+        for (ResponseColumnDefinitionDto col : columns) {
+            if (col != null && col.getType() == null) {
+                col.setType(SchemaFieldType.STRING);
+            }
+        }
+    }
+
+    /**
+     * Detects whether the suite's chain-wide response-column union changed. TSMD bindings reference
+     * both the dataset-owned testCaseSchema and the suite-owned response columns (request #0's
+     * {@code responseColumns} plus every additional request's); when only those change here at the
+     * suite level, TSMD revalidation must be kicked off explicitly because the dataset-side
+     * revalidation flow only fires on testCaseSchema diffs.
+     *
+     * <p>Compared as two independent diffs: request #0's {@code responseColumns} JSON (semantic,
+     * ignores key order) OR the ordered {@code (name, type)} projection of {@code additional_requests}
+     * — so a non-column edit to an additional request (e.g. its {@code urlTemplate}) does not trigger
+     * revalidation. Must be called BEFORE mapper.update() mutates existing.
      */
     private boolean isResponseColumnsChanged(TestSuite existing, TestSuiteRequestDto normalized) {
         TestSuite temp = new TestSuite();
         temp.setResponseColumns(existing.getResponseColumns());
+        temp.setAdditionalRequests(existing.getAdditionalRequests());
         testSuiteMapper.update(temp, normalized);
-        return !jsonEquals(existing.getResponseColumns(), temp.getResponseColumns());
+        if (!jsonEquals(existing.getResponseColumns(), temp.getResponseColumns())) {
+            return true;
+        }
+        return !projectAdditionalRequestColumns(existing.getAdditionalRequests())
+                .equals(projectAdditionalRequestColumns(temp.getAdditionalRequests()));
+    }
+
+    /**
+     * Extracts the ordered {@code (name, type)} pairs of every additional request's
+     * {@code responseColumns}, flattened across the chain in request order. Used by
+     * {@link #isResponseColumnsChanged} to ignore non-column edits (e.g. {@code urlTemplate}) to an
+     * additional request.
+     */
+    private List<Map<String, Object>> projectAdditionalRequestColumns(String additionalRequestsJson) {
+        List<RequestDefinitionDto> requests = jsonbMapper.mapAdditionalRequests(additionalRequestsJson);
+        List<Map<String, Object>> projection = new ArrayList<>();
+        for (RequestDefinitionDto request : requests) {
+            if (request == null || request.getResponseColumns() == null) {
+                continue;
+            }
+            for (ResponseColumnDefinitionDto col : request.getResponseColumns()) {
+                if (col == null) {
+                    continue;
+                }
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("name", col.getName());
+                entry.put("type", col.getType());
+                projection.add(entry);
+            }
+        }
+        return projection;
     }
 
     private boolean jsonEquals(String a, String b) {

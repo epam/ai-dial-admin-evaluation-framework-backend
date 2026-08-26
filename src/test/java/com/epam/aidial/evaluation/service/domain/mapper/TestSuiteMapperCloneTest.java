@@ -4,11 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -198,6 +202,49 @@ class TestSuiteMapperCloneTest {
         assertThat(cloned.getInputBindings()).isNull();
     }
 
+    @Test
+    @DisplayName("rewrites file refs in additionalRequests when inherited from source")
+    void toCloneEntity_rewritesFileRefsInAdditionalRequests_whenInherited() {
+        TestSuite source = sourceWithAllFields();
+        source.setAdditionalRequests(
+                "[{\"name\":\"configure\",\"requestTemplate\":{\"urlTemplate\":\"" + sourcePrefix + "chain.json\"}}]");
+        TestSuiteCloneRequestDto dto =
+                TestSuiteCloneRequestDto.builder().name("Clone").build();
+
+        TestSuite cloned = mapper.toCloneEntity(source, dto, newId, createdBy);
+
+        assertThat(cloned.getAdditionalRequests()).contains(targetPrefix);
+        assertThat(cloned.getAdditionalRequests()).doesNotContain(sourcePrefix);
+    }
+
+    @Test
+    @DisplayName("inherits requestName and additionalRequests from source — no clone-request override field")
+    void toCloneEntity_inheritsRequestNameAndAdditionalRequests() {
+        TestSuite source = sourceWithAllFields();
+        source.setRequestName("configure");
+        source.setAdditionalRequests("[{\"name\":\"ask\"}]");
+        TestSuiteCloneRequestDto dto =
+                TestSuiteCloneRequestDto.builder().name("Clone").build();
+
+        TestSuite cloned = mapper.toCloneEntity(source, dto, newId, createdBy);
+
+        assertThat(cloned.getRequestName()).isEqualTo("configure");
+        assertThat(cloned.getAdditionalRequests()).isEqualTo(source.getAdditionalRequests());
+    }
+
+    @Test
+    @DisplayName("leaves null additionalRequests as null after cloning")
+    void toCloneEntity_leavesNullAdditionalRequestsAsNull() {
+        TestSuite source = sourceWithAllFields();
+        source.setAdditionalRequests(null);
+        TestSuiteCloneRequestDto dto =
+                TestSuiteCloneRequestDto.builder().name("Clone").build();
+
+        TestSuite cloned = mapper.toCloneEntity(source, dto, newId, createdBy);
+
+        assertThat(cloned.getAdditionalRequests()).isNull();
+    }
+
     // -----------------------------------------------------------------------
     // toCloneEntity — isValid and validationWarnings are NOT set by mapper
     // -----------------------------------------------------------------------
@@ -299,6 +346,75 @@ class TestSuiteMapperCloneTest {
     @DisplayName("returns null when entity is null")
     void toRequestDto_returnsNull_whenEntityIsNull() {
         assertThat(mapper.toRequestDto(null)).isNull();
+    }
+
+    // -----------------------------------------------------------------------
+    // Request chain (additionalRequests / requestName) — toEntity / toDto / update round-trip
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("toEntity persists requestName and additionalRequests from the request DTO")
+    void toEntity_persistsRequestChain() {
+        TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                .name("Chained Suite")
+                .requestName("configure")
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name("ask")
+                        .requestTemplate(RequestTemplateDto.builder()
+                                .urlTemplate("/v1/chat")
+                                .build())
+                        .build()))
+                .build();
+
+        TestSuite entity = mapper.toEntity(dto, createdBy);
+
+        assertThat(entity.getRequestName()).isEqualTo("configure");
+        assertThat(entity.getAdditionalRequests()).contains("\"ask\"").contains("/v1/chat");
+    }
+
+    @Test
+    @DisplayName("toEntity defaults additionalRequests to '[]' when omitted")
+    void toEntity_defaultsAdditionalRequestsToEmptyArray() {
+        TestSuiteRequestDto dto = TestSuiteRequestDto.builder().name("No Chain").build();
+
+        TestSuite entity = mapper.toEntity(dto, createdBy);
+
+        assertThat(entity.getAdditionalRequests()).isEqualTo("[]");
+        assertThat(entity.getRequestName()).isNull();
+    }
+
+    @Test
+    @DisplayName("toDto round-trips requestName and additionalRequests from the entity")
+    void toDto_roundTripsRequestChain() {
+        TestSuite entity = sourceWithAllFields();
+        entity.setRequestName("configure");
+        entity.setAdditionalRequests("[{\"name\":\"ask\",\"requestTemplate\":{\"urlTemplate\":\"/v1/chat\"}}]");
+
+        TestSuiteResponseDto responseDto = mapper.toDto(entity);
+
+        assertThat(responseDto.getRequestName()).isEqualTo("configure");
+        assertThat(responseDto.getAdditionalRequests()).hasSize(1);
+        assertThat(responseDto.getAdditionalRequests().get(0).getName()).isEqualTo("ask");
+    }
+
+    @Test
+    @DisplayName("update overwrites requestName and additionalRequests on the existing entity")
+    void update_overwritesRequestChain() {
+        TestSuite entity = sourceWithAllFields();
+        entity.setRequestName("old-label");
+        entity.setAdditionalRequests("[]");
+
+        TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                .name("Updated")
+                .requestName("new-label")
+                .additionalRequests(
+                        List.of(RequestDefinitionDto.builder().name("ask").build()))
+                .build();
+
+        mapper.update(entity, dto);
+
+        assertThat(entity.getRequestName()).isEqualTo("new-label");
+        assertThat(entity.getAdditionalRequests()).contains("\"ask\"");
     }
 
     // -----------------------------------------------------------------------

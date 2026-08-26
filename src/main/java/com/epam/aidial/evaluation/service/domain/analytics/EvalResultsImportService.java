@@ -54,10 +54,15 @@ public class EvalResultsImportService {
 
     /**
      * Validates the eval-results import batch: non-empty, within the configured max batch size, no
-     * duplicate {@code (testCaseId-or-testCaseName, runIndex)} pair, and
+     * duplicate {@code (testCaseId-or-testCaseName, runIndex, requestIndex, turnIndex)} tuple, and
      * {@code completedAt >= startedAt} per item. Identity ({@code testCaseId}/{@code testCaseName})
      * is used only for this in-batch duplicate check — it is never resolved against any dataset
-     * (see {@code design.md} Decision 4).
+     * (see {@code design.md} Decision 4). The key's {@code requestIndex}/{@code turnIndex} components
+     * are the actual uniqueness invariant of a run's result set: they are orthogonal dimensions, so
+     * two rows sharing a test case and {@code runIndex} but differing in either are distinct rows of
+     * one repetition — not duplicates — matching what a live multi-request/multi-turn run produces
+     * (see {@code design.md} Decision 3). A legacy two-part key is the special case where both extra
+     * dimensions default to {@code 0}.
      *
      * <p>Per-row field constraints and dataset-schema validation are handled upstream by
      * {@link EvalResultsCsvParser#parse}, which guarantees {@code testCaseData} is always a
@@ -76,10 +81,11 @@ public class EvalResultsImportService {
         Set<String> seenKeys = new HashSet<>();
         for (TestCaseRunResult item : results) {
             String identity = testCaseIdentity(item);
-            String key = identity + "#" + item.getRunIndex();
+            String key = identity + "#" + item.getRunIndex() + "#" + item.getRequestIndex() + "#" + item.getTurnIndex();
             if (!seenKeys.add(key)) {
-                throw new ValidationException(
-                        "Duplicate result for test case '" + identity + "' and runIndex " + item.getRunIndex());
+                throw new ValidationException("Duplicate result for test case '" + identity + "', runIndex "
+                        + item.getRunIndex() + ", requestIndex " + item.getRequestIndex() + ", turnIndex "
+                        + item.getTurnIndex());
             }
             if (item.getExecCompletedAtMs() != null
                     && item.getExecStartedAtMs() != null

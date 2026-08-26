@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
@@ -67,6 +68,20 @@ public class EvaluationContext {
     private final RequestTemplateDto snapshotRequestTemplate;
     private final List<InputBindingDto> snapshotInputBindings;
     private final List<ResponseColumnDefinitionDto> snapshotResponseColumns;
+
+    /**
+     * The suite's request chain beyond request #0 (index 1..N), in execution order — sourced from
+     * {@code SuiteSnapshotDto.additionalRequests}. The singular {@code snapshot*} fields above remain
+     * request #0's definition; the chain executor assembles the ordered chain from them plus this
+     * list. Empty for a single-request suite.
+     */
+    private final List<RequestDefinitionDto> snapshotAdditionalRequests;
+
+    /**
+     * User-facing label for request #0, sourced from {@code SuiteSnapshotDto.requestName}. Null when
+     * unlabelled.
+     */
+    private final String snapshotRequestName;
 
     /**
      * Dataset test-case schema field definitions at snapshot time, sourced from {@code

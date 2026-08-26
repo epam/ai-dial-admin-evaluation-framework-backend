@@ -5,9 +5,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
 import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsDescriptionDto;
@@ -52,6 +55,8 @@ import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestChainRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestSuiteValidationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnCsvFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
@@ -161,6 +166,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @MockitoBean
     private MetricProviderClient metricProviderClient;
+
+    @MockitoBean
+    private DialAdasClient dialAdasClient;
 
     @MockitoBean
     private DialFileClient dialFileClient;
@@ -310,6 +318,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class TestSuiteTests extends TestSuiteFunctionalTests {}
 
     @Nested
+    class MultiRequestSuiteValidationTests extends MultiRequestSuiteValidationFunctionalTests {}
+
+    @Nested
     class TestCaseTests extends TestCaseFunctionalTests {}
 
     @Nested
@@ -385,6 +396,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class MultiTurnRunTests extends MultiTurnRunFunctionalTests {}
+
+    @Nested
+    class MultiRequestChainRunTests extends MultiRequestChainRunFunctionalTests {}
 
     @Nested
     class MultiTurnFilterTests extends MultiTurnFilterFunctionalTests {}
@@ -546,7 +560,10 @@ public class PostgresFunctionalTests extends FunctionalTests {
     @TestPropertySource(
             properties = {
                 "metric-providers.sync.enabled=true",
-                "metric-providers.providers.sync-test-provider.base-url=http://localhost:9999"
+                "metric-providers.providers.sync-test-provider.enabled=true",
+                "metric-providers.providers.sync-test-provider.base-url=http://localhost:9999",
+                "metric-providers.providers.disabled-test-provider.enabled=false",
+                "metric-providers.providers.disabled-test-provider.base-url=http://localhost:9998"
             })
     class MetricProviderSyncJobTests {
 
@@ -592,6 +609,18 @@ public class PostgresFunctionalTests extends FunctionalTests {
             assertThat(response.getBody().getContent().getFirst().getName()).isEqualTo("SyncedMetric");
             assertThat(response.getBody().getContent().getFirst().getProviderId())
                     .isEqualTo("sync-test-provider");
+        }
+
+        @Test
+        @DisplayName("skips a disabled provider entry while syncing the enabled ones")
+        void disabledProviderIsNotCalled() {
+            when(metricProviderClientFromContext.getMetrics(eq("sync-test-provider")))
+                    .thenReturn(MetricsResponseDto.builder().metrics(List.of()).build());
+
+            metricProviderSyncJob.runScheduledSync();
+
+            verify(metricProviderClientFromContext).getMetrics("sync-test-provider");
+            verify(metricProviderClientFromContext, never()).getMetrics("disabled-test-provider");
         }
     }
 }

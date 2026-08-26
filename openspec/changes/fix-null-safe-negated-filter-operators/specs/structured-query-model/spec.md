@@ -42,7 +42,7 @@ Status: **Implemented**
 - **THEN** the row SHALL match, consistent with `nc(field, "London")`
 
 ## Implementation notes
-- `experimental/query/service/translate/FilterTranslator.java` — negated comparisons are wrapped so an
+- `query/service/translate/FilterTranslator.java` — negated comparisons are wrapped so an
   UNKNOWN result is treated as satisfied; the `not` node is wrapped so an UNKNOWN child is treated as
   negatable. Positive comparisons are emitted unwrapped so they stay sargable on indexed columns.
-- `experimental/query/model/ComparisonOp.java` — each operator declares its own null polarity.
+- `query/model/ComparisonOp.java` — each operator declares its own null polarity.

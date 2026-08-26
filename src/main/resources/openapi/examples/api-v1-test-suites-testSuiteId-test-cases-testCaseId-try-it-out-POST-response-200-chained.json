@@ -1,0 +1,112 @@
+{
+  "resolvedRequest": {
+    "url": "/configs/cfg-42/questions",
+    "queryParams": [],
+    "headers": [],
+    "body": {
+      "contentType": "application/json",
+      "content": {
+        "configId": "cfg-42",
+        "question": "What is the capital of France?"
+      }
+    },
+    "warnings": []
+  },
+  "response": {
+    "statusCode": 200,
+    "body": {
+      "answer": "The capital of France is Paris.",
+      "confidence": 0.98
+    }
+  },
+  "durationMs": 734,
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
+  "history": [
+    {
+      "resolvedRequest": {
+        "url": "/configs",
+        "queryParams": [],
+        "headers": [],
+        "body": {
+          "contentType": "application/json",
+          "content": {
+            "name": "eval-config",
+            "model": "gpt-4"
+          }
+        },
+        "warnings": []
+      },
+      "response": {
+        "statusCode": 200,
+        "body": {
+          "id": "cfg-42",
+          "name": "eval-config",
+          "model": "gpt-4"
+        }
+      },
+      "durationMs": 512,
+      "traceId": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
+      "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
+      "requestIndex": 0,
+      "totalRequests": 2,
+      "extractedColumns": {
+        "configId": "cfg-42"
+      },
+      "extractionWarnings": []
+    },
+    {
+      "resolvedRequest": {
+        "url": "/configs/cfg-42/questions",
+        "queryParams": [],
+        "headers": [],
+        "body": {
+          "contentType": "application/json",
+          "content": {
+            "configId": "cfg-42",
+            "question": "What is the capital of France?"
+          }
+        },
+        "warnings": []
+      },
+      "response": {
+        "statusCode": 200,
+        "body": {
+          "answer": "The capital of France is Paris.",
+          "confidence": 0.98
+        }
+      },
+      "durationMs": 734,
+      "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "grafanaTraceUrl": "http://grafana:3000/explore?schemaVersion=1&panes=...",
+      "requestIndex": 1,
+      "totalRequests": 2,
+      "requestName": "followup",
+      "extractedColumns": {
+        "answer": "The capital of France is Paris.",
+        "summary": null
+      },
+      "extractionWarnings": [
+        {
+          "column": "summary",
+          "expression": "body.result.summary",
+          "error": "Expression matched nothing"
+        }
+      ]
+    }
+  ],
+  "requestIndex": 1,
+  "totalRequests": 2,
+  "requestName": "followup",
+  "extractedColumns": {
+    "answer": "The capital of France is Paris.",
+    "summary": null
+  },
+  "extractionWarnings": [
+    {
+      "column": "summary",
+      "expression": "body.result.summary",
+      "error": "Expression matched nothing"
+    }
+  ]
+}

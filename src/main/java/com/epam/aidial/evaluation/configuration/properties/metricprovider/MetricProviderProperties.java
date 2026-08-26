@@ -34,6 +34,8 @@ public class MetricProviderProperties {
     @Getter
     @Setter
     public static class ProviderEntry {
+        @NotNull
+        private Boolean enabled;
 
         @NotBlank(message = "Metric provider base-url is required")
         private String baseUrl;

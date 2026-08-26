@@ -49,14 +49,21 @@ public class MetricProviderSyncJob {
             log.debug("Metric provider sync skipped: sync disabled");
             return;
         }
-        Map<String, MetricProviderProperties.ProviderEntry> providers = metricProviderProperties.getProviders();
+        final Map<String, MetricProviderProperties.ProviderEntry> providers = metricProviderProperties.getProviders();
         if (providers == null || providers.isEmpty()) {
             log.debug("Metric provider sync skipped: no providers configured");
             return;
         }
         log.info("Starting metric provider sync for {} provider(s)", providers.size());
         for (var entry : providers.entrySet()) {
-            var providerId = entry.getKey();
+            final var providerId = entry.getKey();
+            final var provider = entry.getValue();
+
+            if (!provider.getEnabled()) {
+                log.info("Provider {} is disabled, skipping", providerId);
+                continue;
+            }
+
             try {
                 metricProviderSyncService.syncOne(providerId);
                 log.debug("Metric provider sync completed for provider {}", providerId);

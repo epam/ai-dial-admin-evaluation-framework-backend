@@ -14,7 +14,7 @@ This spec defines how the system configures multiple metric provider services, c
 
 ### Requirement: Configure metric providers
 
-The system SHALL support configuration of multiple metric provider services via a **map** keyed by provider id (e.g. `metric-providers.<provider-id>.base-url`). Each entry SHALL include base URL and optional connect/read timeouts. The provider id SHALL be the map key (not a field inside the entry). Sync SHALL be configurable (e.g. enabled flag and cron expression or fixed delay) under `metric-providers.sync`. Defaults SHALL be defined in application configuration, not in code.
+The system SHALL support configuration of multiple metric provider services via a **map** keyed by provider id (e.g. `metric-providers.<provider-id>.base-url`). Each entry SHALL include a required per-entry `enabled` flag, a base URL, and optional connect/read timeouts. The `enabled` field SHALL be validated as non-null so that every configured entry declares its state explicitly. The provider id SHALL be the map key (not a field inside the entry). Sync SHALL be configurable (e.g. enabled flag and cron expression or fixed delay) under `metric-providers.sync`. Defaults SHALL be defined in application configuration, not in code.
 
 #### Scenario: Multiple providers configured
 
@@ -25,6 +25,30 @@ The system SHALL support configuration of multiple metric provider services via 
 
 - **WHEN** sync is disabled via configuration
 - **THEN** system SHALL NOT run the metric provider sync job
+
+#### Scenario: Provider entry omits enabled flag
+
+- **WHEN** a provider map entry is present in configuration without an `enabled` value
+- **THEN** startup validation SHALL fail (the field is non-null-validated), so operators adding a provider — including via environment variables only — SHALL set both base URL and `enabled`
+
+### Requirement: Per-provider enable flag gates sync only
+
+Each provider map entry SHALL carry its own `enabled` flag. The sync job SHALL skip entries whose `enabled` is `false` and SHALL log the skip, continuing with the remaining entries. Disabling an entry SHALL NOT remove or invalidate metric declarations previously synced from that provider, and SHALL NOT prevent metric evaluation calls to that provider for existing declarations — the flag scopes sync only.
+
+#### Scenario: Disabled provider skipped during sync
+
+- **WHEN** sync runs with two provider entries configured and one has `enabled=false`
+- **THEN** system SHALL log that the entry is disabled, SHALL NOT call its `GET /metrics`, and SHALL run sync for the enabled entry
+
+#### Scenario: All providers disabled
+
+- **WHEN** sync runs and every configured provider entry has `enabled=false`
+- **THEN** system SHALL complete the job without calling any provider and without throwing
+
+#### Scenario: Declarations of a disabled provider remain usable
+
+- **WHEN** a provider entry is switched to `enabled=false` after its metrics were synced
+- **THEN** the existing MetricDeclarations and versions SHALL remain in the catalog and SHALL stay usable for metric evaluation
 
 ### Requirement: Metric provider HTTP client
 
@@ -108,7 +132,7 @@ The system SHALL NOT remove or delete a MetricDeclaration when a provider's GET 
 
 ### Requirement: Document environment variables for first provider and sync schedule
 
-The configuration documentation SHALL list the environment variable names that override metric provider entries using the **map-based pattern** `METRIC_PROVIDERS_<UPPER_ID>_<PROPERTY>`. For the default `dial` provider, the documented variables SHALL include at least: base URL, and optional connect and read timeouts (`METRIC_PROVIDERS_DIAL_BASE_URL`, `METRIC_PROVIDERS_DIAL_CONNECT_TIMEOUT_MS`, `METRIC_PROVIDERS_DIAL_READ_TIMEOUT_MS`). The provider id SHALL be the YAML map key (`dial`), not configurable via an environment variable. The `metric-providers.sync.enabled` property SHALL be sourced from an environment variable (e.g. `METRIC_PROVIDERS_SYNC_ENABLED`, default `false`) and the `metric-providers.sync.cron` property from an environment variable (e.g. `METRIC_PROVIDERS_SYNC_CRON`); both SHALL be documented in the configuration documentation.
+The configuration documentation SHALL list the environment variable names that override metric provider entries using the **map-based pattern** `METRIC_PROVIDERS_<UPPER_ID>_<PROPERTY>`. For the default `dial` provider, the documented variables SHALL include at least: enable flag, base URL, and optional connect and read timeouts (`METRIC_PROVIDERS_DIAL_ENABLED`, `METRIC_PROVIDERS_DIAL_BASE_URL`, `METRIC_PROVIDERS_DIAL_CONNECT_TIMEOUT_MS`, `METRIC_PROVIDERS_DIAL_READ_TIMEOUT_MS`). Any further stock provider entry shipped in the default configuration (e.g. a disabled-by-default `extra` slot) SHALL have its own env vars documented the same way, including its default enabled state. The provider id SHALL be the YAML map key (`dial`), not configurable via an environment variable. The `metric-providers.sync.enabled` property SHALL be sourced from an environment variable (e.g. `METRIC_PROVIDERS_SYNC_ENABLED`, default `false`) and the `metric-providers.sync.cron` property from an environment variable (e.g. `METRIC_PROVIDERS_SYNC_CRON`); both SHALL be documented in the configuration documentation.
 
 #### Scenario: Single provider configured via env vars
 
@@ -119,6 +143,11 @@ The configuration documentation SHALL list the environment variable names that o
 
 - **WHEN** an operator reads the configuration documentation for metric providers
 - **THEN** the documentation SHALL include the exact environment variable names using the map-based pattern (`METRIC_PROVIDERS_<UPPER_ID>_<PROPERTY>`) so they can override base-url and timeouts for any configured provider
+
+#### Scenario: Provider enable flag from environment
+
+- **WHEN** an operator sets `METRIC_PROVIDERS_<UPPER_ID>_ENABLED` for a configured provider entry
+- **THEN** the application SHALL use that value for that entry's `enabled` flag (no YAML edit required)
 
 #### Scenario: Sync cron from environment
 

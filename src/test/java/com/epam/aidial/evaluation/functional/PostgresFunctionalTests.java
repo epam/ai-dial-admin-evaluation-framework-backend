@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
@@ -558,7 +560,10 @@ public class PostgresFunctionalTests extends FunctionalTests {
     @TestPropertySource(
             properties = {
                 "metric-providers.sync.enabled=true",
-                "metric-providers.providers.sync-test-provider.base-url=http://localhost:9999"
+                "metric-providers.providers.sync-test-provider.enabled=true",
+                "metric-providers.providers.sync-test-provider.base-url=http://localhost:9999",
+                "metric-providers.providers.disabled-test-provider.enabled=false",
+                "metric-providers.providers.disabled-test-provider.base-url=http://localhost:9998"
             })
     class MetricProviderSyncJobTests {
 
@@ -604,6 +609,18 @@ public class PostgresFunctionalTests extends FunctionalTests {
             assertThat(response.getBody().getContent().getFirst().getName()).isEqualTo("SyncedMetric");
             assertThat(response.getBody().getContent().getFirst().getProviderId())
                     .isEqualTo("sync-test-provider");
+        }
+
+        @Test
+        @DisplayName("skips a disabled provider entry while syncing the enabled ones")
+        void disabledProviderIsNotCalled() {
+            when(metricProviderClientFromContext.getMetrics(eq("sync-test-provider")))
+                    .thenReturn(MetricsResponseDto.builder().metrics(List.of()).build());
+
+            metricProviderSyncJob.runScheduledSync();
+
+            verify(metricProviderClientFromContext).getMetrics("sync-test-provider");
+            verify(metricProviderClientFromContext, never()).getMetrics("disabled-test-provider");
         }
     }
 }

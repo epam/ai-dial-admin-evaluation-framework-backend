@@ -20,8 +20,9 @@ import org.springframework.validation.annotation.Validated;
 public class MetricProviderProperties {
 
     /**
-     * Map of metric provider entries keyed by provider id (base URL, timeouts).
-     * Empty by default; sync does not run until at least one provider is configured and sync is enabled.
+     * Map of metric provider entries keyed by provider id (enabled flag, base URL, timeouts).
+     * Empty by default. Sync runs for an entry only when sync is enabled globally and that entry's
+     * own enabled flag is true; a disabled entry stays configured but is skipped by the sync job.
      */
     @NotNull
     @Valid
@@ -34,6 +35,8 @@ public class MetricProviderProperties {
     @Getter
     @Setter
     public static class ProviderEntry {
+        @NotNull
+        private Boolean enabled;
 
         @NotBlank(message = "Metric provider base-url is required")
         private String baseUrl;

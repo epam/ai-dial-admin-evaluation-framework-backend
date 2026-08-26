@@ -148,7 +148,13 @@ test-suite-run:
 metric-providers:
   providers:
     dial:
+      enabled: ${METRIC_PROVIDERS_DIAL_ENABLED:true}
       base-url: ${METRIC_PROVIDERS_DIAL_BASE_URL:http://localhost:8086}
+      connect-timeout-ms: 5000
+      read-timeout-ms: 150000
+    extra:
+      enabled: ${METRIC_PROVIDERS_EXTRA_ENABLED:false}
+      base-url: ${METRIC_PROVIDERS_EXTRA_BASE_URL:http://localhost:8087}
       connect-timeout-ms: 5000
       read-timeout-ms: 150000
   sync:

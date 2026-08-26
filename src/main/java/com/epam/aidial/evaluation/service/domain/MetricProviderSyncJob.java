@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 /**
  * Runs metric provider sync after startup (async, does not block) and on a schedule when enabled.
  * Only runs when sync.enabled is true and providers map is non-empty.
+ * Within a run, a provider entry whose own enabled flag is false is logged and skipped.
  * One provider failure is logged and does not stop the job.
  */
 @Slf4j
@@ -49,14 +50,21 @@ public class MetricProviderSyncJob {
             log.debug("Metric provider sync skipped: sync disabled");
             return;
         }
-        Map<String, MetricProviderProperties.ProviderEntry> providers = metricProviderProperties.getProviders();
+        final Map<String, MetricProviderProperties.ProviderEntry> providers = metricProviderProperties.getProviders();
         if (providers == null || providers.isEmpty()) {
             log.debug("Metric provider sync skipped: no providers configured");
             return;
         }
         log.info("Starting metric provider sync for {} provider(s)", providers.size());
         for (var entry : providers.entrySet()) {
-            var providerId = entry.getKey();
+            final var providerId = entry.getKey();
+            final var provider = entry.getValue();
+
+            if (!provider.getEnabled()) {
+                log.info("Provider {} is disabled, skipping", providerId);
+                continue;
+            }
+
             try {
                 metricProviderSyncService.syncOne(providerId);
                 log.debug("Metric provider sync completed for provider {}", providerId);

@@ -175,8 +175,12 @@ Status: **Planned**
 - **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
 
 ### Requirement: Concurrent PRIVATE-binding prevention
-A PostgreSQL `BEFORE INSERT OR UPDATE OF dataset_id` constraint trigger on `test_suites` SHALL guarantee that no two suites can be concurrently bound to the same PRIVATE dataset. The trigger SHALL lock the referenced `datasets` row (`SELECT ... FOR UPDATE`), inspect `visibility`, count current bindings, and reject any second binding to a PRIVATE dataset by raising `ERRCODE='P0001'` with MESSAGE TEXT `'PRIVATE_DATASET_ALREADY_BOUND'`. The trigger SHALL early-return when `NEW.dataset_id IS NULL` so that unbind paths (rebind-to-null, PRIVATE-delete cascade) are not blocked. The global exception handler SHALL inspect `SQLException.getSQLState()` and map `'P0001'` to HTTP 409 with error code `PRIVATE_DATASET_ALREADY_BOUND`.
+A PostgreSQL `BEFORE INSERT OR UPDATE OF dataset_id` constraint trigger on `test_suites` SHALL guarantee that no two suites can be concurrently bound to the same PRIVATE dataset. The trigger SHALL lock the referenced `datasets` row (`SELECT ... FOR UPDATE`), inspect `visibility`, count current bindings, and reject any second binding to a PRIVATE dataset by raising `ERRCODE='P0001'` with MESSAGE TEXT `'PRIVATE_DATASET_ALREADY_BOUND'`. The trigger SHALL early-return when `NEW.dataset_id IS NULL` so that unbind paths (rebind-to-null, PRIVATE-delete cascade) are not blocked. Before reaching the trigger, suite create (`POST /api/v1/test-suites`) and suite update (`PUT /api/v1/test-suites/{id}`) SHALL apply an app-level pre-check with the same predicate and reject with HTTP 409 and error code `PRIVATE_DATASET_ALREADY_BOUND`. The global exception handler SHALL inspect `SQLException.getSQLState()` anywhere in the cause chain — including inside a non-Spring `org.jooq.exception.DataAccessException`, which Spring cannot translate for SQL state `P0001` — and map `'P0001'` to HTTP 409 with error code `PRIVATE_DATASET_ALREADY_BOUND` and a fixed user-facing message that SHALL NOT include the database message or the failing SQL statement.
 Status: **Planned**
+
+#### Scenario: Binding to a PRIVATE dataset already bound elsewhere
+- **WHEN** client calls `POST /api/v1/test-suites` or `PUT /api/v1/test-suites/{id}` with a `datasetId` referencing a PRIVATE dataset already bound to another suite
+- **THEN** system SHALL respond with HTTP 409 and error code `PRIVATE_DATASET_ALREADY_BOUND`, and the response message SHALL NOT contain SQL or database internals
 
 #### Scenario: Concurrent second PRIVATE binding rejected
 - **WHEN** two transactions concurrently set the same PRIVATE dataset's id as `dataset_id` on two different suites

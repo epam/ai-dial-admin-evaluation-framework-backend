@@ -170,8 +170,9 @@ public class TestSuiteController {
     @ApiResponse(responseCode = "404", description = "Source test suite or referenced dataset not found")
     @ApiResponse(
             responseCode = "409",
-            description = "Test suite name already exists, or datasetId redirects a PRIVATE-dataset clone to a "
-                    + "different dataset (PRIVATE_DATASET_REBIND_FORBIDDEN)")
+            description = "Test suite name already exists, datasetId redirects a PRIVATE-dataset clone to a "
+                    + "different dataset (PRIVATE_DATASET_REBIND_FORBIDDEN), or the datasetId override is a "
+                    + "PRIVATE dataset already bound to another suite (PRIVATE_DATASET_ALREADY_BOUND)")
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<TestSuiteUpdateResultDto> clone(
             @Parameter(description = "Source test suite ID") @PathVariable UUID id,

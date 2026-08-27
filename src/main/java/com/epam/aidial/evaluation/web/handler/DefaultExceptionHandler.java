@@ -23,8 +23,10 @@ import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVe
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.sql.SQLException;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -47,6 +49,15 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @Slf4j
 @LogExecution
 public class DefaultExceptionHandler {
+
+    /**
+     * PL/pgSQL {@code raise_exception} SQL state, raised by
+     * {@code tg_test_suites_private_binding_guard} with MESSAGE {@code PRIVATE_DATASET_ALREADY_BOUND}.
+     */
+    private static final String PRIVATE_BINDING_GUARD_SQL_STATE = "P0001";
+
+    /** Stable MESSAGE TEXT raised by that trigger; {@code P0001} alone is PL/pgSQL's default errcode. */
+    private static final String PRIVATE_BINDING_GUARD_MESSAGE_TOKEN = "PRIVATE_DATASET_ALREADY_BOUND";
 
     @ExceptionHandler(DialCoreClientException.class)
     public ResponseEntity<ErrorView> handleDialCoreClientException(HttpServletRequest req, DialCoreClientException ex) {
@@ -266,24 +277,48 @@ public class DefaultExceptionHandler {
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<ErrorView> handleDataAccessException(HttpServletRequest req, DataAccessException ex)
             throws DataAccessException {
-        java.sql.SQLException sqlEx = findSqlException(ex);
-        if (sqlEx != null && "P0001".equals(sqlEx.getSQLState())) {
-            logUncaught(ex);
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(new ErrorView(
-                            req,
-                            HttpStatus.CONFLICT,
-                            ErrorCode.PRIVATE_DATASET_ALREADY_BOUND,
-                            sqlEx.getMessage() != null ? sqlEx.getMessage() : "PRIVATE_DATASET_ALREADY_BOUND"));
+        ErrorView privateBindingConflict = privateBindingGuardView(req, ex);
+        if (privateBindingConflict != null) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(privateBindingConflict);
         }
         throw ex;
     }
 
-    private static java.sql.SQLException findSqlException(Throwable ex) {
+    /**
+     * Returns the 409 view for the {@code tg_test_suites_private_binding_guard} trigger's
+     * {@code P0001} + MESSAGE TEXT {@code PRIVATE_DATASET_ALREADY_BOUND}, or {@code null} when the
+     * exception is unrelated — {@code P0001} alone is PL/pgSQL's default {@code RAISE} errcode, so
+     * the message text is what identifies this trigger. The DB message is never echoed back to the
+     * client — it carries the failing SQL statement (GH #22). Not every jOOQ failure reaches
+     * {@link #handleDataAccessException}: Spring cannot translate SQL state {@code P0001}, so jOOQ
+     * keeps its own (non-Spring) {@code DataAccessException}, which lands in
+     * {@link #handleGeneralError}. Both entry points therefore consult this method.
+     */
+    private @Nullable ErrorView privateBindingGuardView(HttpServletRequest req, Exception ex) {
+        SQLException sqlEx = findSqlException(ex);
+        if (sqlEx == null
+                || !PRIVATE_BINDING_GUARD_SQL_STATE.equals(sqlEx.getSQLState())
+                || sqlEx.getMessage() == null
+                || !sqlEx.getMessage().contains(PRIVATE_BINDING_GUARD_MESSAGE_TOKEN)) {
+            return null;
+        }
+        log.warn(
+                "[{}] Request: {} rejected by the PRIVATE-dataset binding guard",
+                req.getMethod(),
+                req.getServletPath(),
+                ex);
+        return new ErrorView(
+                req,
+                HttpStatus.CONFLICT,
+                ErrorCode.PRIVATE_DATASET_ALREADY_BOUND,
+                DatasetVisibilityRuleException.PRIVATE_DATASET_ALREADY_BOUND_MESSAGE);
+    }
+
+    private static SQLException findSqlException(Throwable ex) {
         Throwable t = ex;
         int depth = 0;
         while (t != null && depth < 8) {
-            if (t instanceof java.sql.SQLException sql) {
+            if (t instanceof SQLException sql) {
                 return sql;
             }
             t = t.getCause();
@@ -301,8 +336,10 @@ public class DefaultExceptionHandler {
         return switch (code) {
             case PRIVATE_DATASET_REQUIRES_SUITE_BINDING, PUBLIC_DATASET_FORBIDS_SUITE_BINDING, VALIDATION_ERROR ->
                 HttpStatus.BAD_REQUEST;
-            case PRIVATE_DATASET_REBIND_FORBIDDEN, PRIVATE_TRANSITION_INVALID_BINDING_COUNT, SUITE_HAS_NO_DATASET ->
-                HttpStatus.CONFLICT;
+            case PRIVATE_DATASET_REBIND_FORBIDDEN,
+                    PRIVATE_DATASET_ALREADY_BOUND,
+                    PRIVATE_TRANSITION_INVALID_BINDING_COUNT,
+                    SUITE_HAS_NO_DATASET -> HttpStatus.CONFLICT;
         };
     }
 
@@ -312,6 +349,7 @@ public class DefaultExceptionHandler {
             case PUBLIC_DATASET_FORBIDS_SUITE_BINDING -> ErrorCode.PUBLIC_DATASET_FORBIDS_SUITE_BINDING;
             case VALIDATION_ERROR -> ErrorCode.VALIDATION_ERROR;
             case PRIVATE_DATASET_REBIND_FORBIDDEN -> ErrorCode.PRIVATE_DATASET_REBIND_FORBIDDEN;
+            case PRIVATE_DATASET_ALREADY_BOUND -> ErrorCode.PRIVATE_DATASET_ALREADY_BOUND;
             case PRIVATE_TRANSITION_INVALID_BINDING_COUNT -> ErrorCode.PRIVATE_TRANSITION_INVALID_BINDING_COUNT;
             case SUITE_HAS_NO_DATASET -> ErrorCode.SUITE_HAS_NO_DATASET;
         };
@@ -356,11 +394,15 @@ public class DefaultExceptionHandler {
         return new ErrorView(req, HttpStatus.CONFLICT, ErrorCode.UNIQUE_CONSTRAINT_VIOLATION, ex.getMessage());
     }
 
-    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     @ExceptionHandler(Exception.class)
-    public ErrorView handleGeneralError(HttpServletRequest req, Exception ex) {
+    public ResponseEntity<ErrorView> handleGeneralError(HttpServletRequest req, Exception ex) {
+        ErrorView privateBindingConflict = privateBindingGuardView(req, ex);
+        if (privateBindingConflict != null) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(privateBindingConflict);
+        }
         log.warn("[{}] Request: {} raised exception", req.getMethod(), req.getServletPath(), ex);
-        return new ErrorView(req, HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorView(req, HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR, ex.getMessage()));
     }
 
     @ResponseStatus(HttpStatus.BAD_REQUEST)

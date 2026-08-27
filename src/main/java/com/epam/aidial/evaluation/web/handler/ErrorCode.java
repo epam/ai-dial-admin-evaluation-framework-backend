@@ -27,7 +27,7 @@ public enum ErrorCode {
     PRIVATE_DATASET_REQUIRES_SUITE_BINDING,
     /** POST /datasets with visibility=PUBLIC but bindToSuiteId supplied. */
     PUBLIC_DATASET_FORBIDS_SUITE_BINDING,
-    /** Concurrent attempt to bind a second suite to a PRIVATE dataset (raised by the DB trigger via SQLSTATE P0001). */
+    /** Attempt to bind a second suite to a PRIVATE dataset (app-level pre-check, or the DB trigger on a race). */
     PRIVATE_DATASET_ALREADY_BOUND,
     /** PATCH /test-suites/{id} attempted to change datasetId (incl. to null) on a suite currently bound to a PRIVATE dataset. */
     PRIVATE_DATASET_REBIND_FORBIDDEN,

@@ -138,9 +138,9 @@ public class TestSuiteService {
         testSuiteRequestValidator.validateSuiteTypeFields(testSuiteRequestDto);
         testSuiteRequestValidator.validateTestSuiteSchemas(testSuiteRequestDto);
         testSuiteRequestValidator.validateTemplateLimits(testSuiteRequestDto);
+        validateTargetPrivateDatasetFree(null, testSuiteRequestDto.getDatasetId());
         // Suites may be created in the unbound state (datasetId == null); the schema is empty
-        // and the suite cannot run until a datasetId is set. The DB trigger handles PRIVATE
-        // uniqueness when a non-null datasetId is supplied.
+        // and the suite cannot run until a datasetId is set.
         List<FieldDefinitionDto> datasetSchema = testSuiteRequestDto.getDatasetId() != null
                 ? datasetSchemaProvider.getSchema(testSuiteRequestDto.getDatasetId())
                 : List.of();
@@ -181,6 +181,7 @@ public class TestSuiteService {
 
         validateSuiteTypeImmutability(existing, testSuiteRequestDto);
         validatePrivateRebindNotForbidden(existing.getDatasetId(), testSuiteRequestDto.getDatasetId());
+        validateTargetPrivateDatasetFree(existing.getDatasetId(), testSuiteRequestDto.getDatasetId());
         testSuiteRequestValidator.validateSuiteTypeFields(testSuiteRequestDto);
         testSuiteRequestValidator.validateTestSuiteSchemas(testSuiteRequestDto);
         testSuiteRequestValidator.validateTemplateLimits(testSuiteRequestDto);
@@ -264,9 +265,9 @@ public class TestSuiteService {
     /**
      * Sets the suite's {@code datasetId} to the supplied value, guarded by the PRIVATE-rebind rule.
      * Used by {@code DatasetService.create} to atomically bind a freshly-created PRIVATE dataset
-     * to its target suite within the same transaction. The DB trigger
-     * {@code tg_test_suites_private_binding_guard} still handles the
-     * "new PRIVATE dataset already bound elsewhere" case via {@link DataIntegrityViolationException}.
+     * to its target suite within the same transaction. A freshly created PRIVATE dataset has no
+     * other binding, so the {@code tg_test_suites_private_binding_guard} trigger cannot fire here;
+     * the app-level pre-check for "already bound elsewhere" lives on the create/update paths.
      */
     @Transactional("metaTransactionManager")
     public TestSuiteResponseDto bindDataset(UUID suiteId, UUID datasetId) {
@@ -417,6 +418,28 @@ public class TestSuiteService {
         // DTO reflects the persisted row (the in-memory copy is what we map back).
         suite.setVersion(suite.getVersion() == null ? 1L : suite.getVersion() + 1L);
         suite.setUpdatedAt(timestamp);
+    }
+
+    /**
+     * Rejects binding to a PRIVATE dataset that is already bound to another suite, mirroring the
+     * {@code tg_test_suites_private_binding_guard} DB trigger predicate. Without this app-level
+     * pre-check the trigger's {@code P0001} would surface as a raw SQL error (GH #22); the trigger
+     * remains the backstop for the concurrent-binding race.
+     */
+    private void validateTargetPrivateDatasetFree(UUID currentDatasetId, UUID requestedDatasetId) {
+        if (requestedDatasetId == null || Objects.equals(currentDatasetId, requestedDatasetId)) {
+            return;
+        }
+        DatasetVisibility requestedVisibility =
+                datasetQueryService.getVisibility(requestedDatasetId).orElse(null);
+        if (requestedVisibility != DatasetVisibility.PRIVATE) {
+            return;
+        }
+        if (testSuiteRepository.countByDatasetId(requestedDatasetId) > 0) {
+            throw new DatasetVisibilityRuleException(
+                    DatasetVisibilityErrorCode.PRIVATE_DATASET_ALREADY_BOUND,
+                    DatasetVisibilityRuleException.PRIVATE_DATASET_ALREADY_BOUND_MESSAGE);
+        }
     }
 
     /**

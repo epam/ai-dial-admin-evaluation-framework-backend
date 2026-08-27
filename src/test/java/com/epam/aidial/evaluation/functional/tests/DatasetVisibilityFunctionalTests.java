@@ -9,8 +9,12 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
+import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetPublishRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
@@ -18,6 +22,7 @@ import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetVisibilityTransitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -133,7 +138,7 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
 
     @Test
     @DisplayName(
-            "POST /datasets with visibility=PRIVATE targeting a suite already bound to another PRIVATE dataset returns 409 (PRIVATE_DATASET_ALREADY_BOUND)")
+            "POST /datasets with visibility=PRIVATE targeting a suite already bound to another PRIVATE dataset returns 409 (PRIVATE_DATASET_REBIND_FORBIDDEN)")
     void createPrivateForSuiteWithOtherPrivateReturns409() {
         TestSuite suite = metaTestDataHelper.createTestSuite("Visibility-AlreadyBound-" + UUID.randomUUID());
 
@@ -155,7 +160,7 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
                 restTemplate.postForEntity(apiUrl("/datasets"), jsonEntity(second), String.class);
 
         assertThat(secondResponse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(secondResponse.getBody()).contains("PRIVATE_DATASET");
+        assertThat(secondResponse.getBody()).contains("PRIVATE_DATASET_REBIND_FORBIDDEN");
     }
 
     // -----------------------------------------------------------------------
@@ -446,6 +451,132 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
     }
 
     // -----------------------------------------------------------------------
+    // Binding a PRIVATE dataset already owned by another suite (GH #22)
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "PUT /test-suites/{id} selecting a PRIVATE dataset already bound to another suite returns 409 PRIVATE_DATASET_ALREADY_BOUND without leaking SQL")
+    void bindAlreadyBoundPrivateDatasetViaUpdateReturns409() {
+        Dataset privateDs = metaTestDataHelper.createDataset(
+                "Visibility-AlreadyBound-Private-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+        metaTestDataHelper.createTestSuite("Suite-Owner-" + UUID.randomUUID(), privateDs.getId());
+        TestSuite otherSuite = metaTestDataHelper.createTestSuite("Suite-Other-" + UUID.randomUUID(), null);
+
+        ResponseEntity<String> response = putSuite(
+                otherSuite.getId(), otherSuite.getVersion(), suiteRequest(otherSuite.getName(), privateDs.getId()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("PRIVATE_DATASET_ALREADY_BOUND");
+        assertNoSqlLeak(response.getBody());
+
+        assertThat(testSuiteRepository
+                        .findById(otherSuite.getId())
+                        .orElseThrow()
+                        .getDatasetId())
+                .as("failed binding must not mutate the suite")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName(
+            "POST /test-suites with a PRIVATE dataset already bound to another suite returns 409 PRIVATE_DATASET_ALREADY_BOUND without leaking SQL")
+    void bindAlreadyBoundPrivateDatasetViaCreateReturns409() {
+        Dataset privateDs = metaTestDataHelper.createDataset(
+                "Visibility-AlreadyBound-Create-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+        metaTestDataHelper.createTestSuite("Suite-Owner-Create-" + UUID.randomUUID(), privateDs.getId());
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites"),
+                jsonEntity(suiteRequest("Suite-New-" + UUID.randomUUID(), privateDs.getId())),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("PRIVATE_DATASET_ALREADY_BOUND");
+        assertNoSqlLeak(response.getBody());
+    }
+
+    @Test
+    @DisplayName(
+            "POST /test-suites/{id}/clone with a datasetId override pointing at an already-bound PRIVATE dataset is rejected by the DB trigger as 409 without leaking SQL")
+    void cloneOverrideToAlreadyBoundPrivateDatasetReturns409() {
+        Dataset privateDs = metaTestDataHelper.createDataset(
+                "Visibility-AlreadyBound-Clone-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+        metaTestDataHelper.createTestSuite("Suite-Owner-Clone-" + UUID.randomUUID(), privateDs.getId());
+        // Source is unbound, so the clone is NOT redirected through the PRIVATE-clone path and the
+        // override is only existence-checked — the DB trigger is the sole guard on this path.
+        TestSuiteResponseDto source = postSuite(suiteRequest("Suite-Clone-Source-" + UUID.randomUUID(), null));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + source.getId() + "/clone"),
+                jsonEntity(TestSuiteCloneRequestDto.builder()
+                        .name("Suite-Clone-" + UUID.randomUUID())
+                        .datasetId(privateDs.getId())
+                        .build()),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("PRIVATE_DATASET_ALREADY_BOUND");
+        assertNoSqlLeak(response.getBody());
+    }
+
+    @Test
+    @DisplayName("PUT /test-suites/{id} keeping the suite's own PRIVATE dataset still succeeds (no false conflict)")
+    void updateKeepingOwnPrivateDatasetSucceeds() {
+        Dataset privateDs = metaTestDataHelper.createDataset(
+                "Visibility-KeepOwn-Private-" + UUID.randomUUID(), "[]", DatasetVisibility.PRIVATE);
+        TestSuite suite = metaTestDataHelper.createTestSuite("Suite-KeepOwn-" + UUID.randomUUID(), privateDs.getId());
+
+        ResponseEntity<String> response = putSuite(
+                suite.getId(), suite.getVersion(), suiteRequest(suite.getName() + "-renamed", privateDs.getId()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(testSuiteRepository.findById(suite.getId()).orElseThrow().getDatasetId())
+                .isEqualTo(privateDs.getId());
+    }
+
+    @Test
+    @DisplayName("PUT /test-suites/{id} binding a PUBLIC dataset already bound to another suite still succeeds")
+    void updateBindingSharedPublicDatasetSucceeds() {
+        Dataset publicDs = metaTestDataHelper.createDataset(
+                "Visibility-Shared-Public-" + UUID.randomUUID(), "[]", DatasetVisibility.PUBLIC);
+        metaTestDataHelper.createTestSuite("Suite-Shared-First-" + UUID.randomUUID(), publicDs.getId());
+        TestSuite second = metaTestDataHelper.createTestSuite("Suite-Shared-Second-" + UUID.randomUUID(), null);
+
+        ResponseEntity<String> response =
+                putSuite(second.getId(), second.getVersion(), suiteRequest(second.getName(), publicDs.getId()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(testSuiteRepository.findById(second.getId()).orElseThrow().getDatasetId())
+                .isEqualTo(publicDs.getId());
+    }
+
+    private static TestSuiteRequestDto suiteRequest(String name, UUID datasetId) {
+        return TestSuiteRequestDto.builder()
+                .name(name)
+                .datasetId(datasetId)
+                .deploymentRef(
+                        DeploymentReferenceDto.builder().id("d1").name("D1").build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .build();
+    }
+
+    private static void assertNoSqlLeak(String body) {
+        assertThat(body)
+                .as("error payload must not expose raw SQL or PostgreSQL internals")
+                .doesNotContain("SQL [")
+                .doesNotContainIgnoringCase("update \"test_suites\"")
+                .doesNotContainIgnoringCase("insert into \"test_suites\"")
+                .doesNotContainIgnoringCase("PL/pgSQL");
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
@@ -469,7 +600,6 @@ public abstract class DatasetVisibilityFunctionalTests extends BaseFunctionalTes
                 apiUrl("/test-suites/" + suiteId), HttpMethod.PUT, new HttpEntity<>(body, headers), String.class);
     }
 
-    @SuppressWarnings("unused")
     private TestSuiteResponseDto postSuite(TestSuiteRequestDto body) {
         ResponseEntity<TestSuiteResponseDto> response =
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(body), TestSuiteResponseDto.class);

@@ -4,7 +4,7 @@ plugins {
     id 'java'
     id 'checkstyle'
     id 'io.freefair.lombok' version '9.5.0'
-    id 'org.springframework.boot' version '4.1.0'
+    id 'org.springframework.boot' version '4.1.1'
     id 'com.diffplug.spotless' version '8.8.0'
 }
 
@@ -65,12 +65,6 @@ repositories {
 dependencies {
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
 
-    // Jackson: Spring Boot 4.1.0's BOM manages 2.21.4 / 3.1.4, both vulnerable to CVE-2026-59889,
-    // GHSA-mhm7-754m-9p8w and CVE-2026-54515. Override with the BOMs so the whole Jackson family
-    // moves together rather than bumping jackson-databind in isolation.
-    implementation platform('com.fasterxml.jackson:jackson-bom:2.21.5')
-    implementation platform('tools.jackson:jackson-bom:3.1.5')
-
     // Spring Boot core (auto-configuration, bean lifecycle, logging, validation)
     implementation 'org.springframework.boot:spring-boot-starter'
     // RestClient + spring-web (HTTP client, MediaType, interceptors, etc.)
@@ -124,7 +118,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     // Hibernate Validator's default message interpolator needs a jakarta.el impl on the classpath;
     // the EF backend gets one transitively via its web starter, this module does not.
-    testRuntimeOnly 'org.apache.tomcat.embed:tomcat-embed-el:11.0.22'
+    testRuntimeOnly 'org.apache.tomcat.embed:tomcat-embed-el'
 }
 
 bootJar {

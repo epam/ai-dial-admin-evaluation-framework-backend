@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
@@ -40,6 +41,7 @@ public class SuiteValidationService {
     private final EvaluationRunProperties evaluationRunProperties;
     private final FileRefValidator fileRefValidator;
     private final BindingValidator bindingValidator;
+    private final McpArgumentValidator mcpArgumentValidator;
     private final JsonbMapper jsonbMapper;
 
     /**
@@ -114,6 +116,13 @@ public class SuiteValidationService {
             // (rejected at write time), so the chain is always length 1 — prefix is always "".
             List<InputBindingDto> bindings = dto.getInputBindings();
             warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId, ""));
+
+            // Argument coverage against the selected tool's own JSON schema
+            ToolReferenceDto toolRef = dto.getToolRef();
+            warnings.addAll(mcpArgumentValidator.validate(
+                    toolRef != null ? toolRef.getInputSchema() : null,
+                    dto.getArgumentTemplate().getArguments(),
+                    bindings));
         }
 
         return ValidationResult.builder()

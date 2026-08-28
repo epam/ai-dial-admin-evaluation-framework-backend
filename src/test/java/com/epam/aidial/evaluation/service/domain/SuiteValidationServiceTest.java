@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpMethod;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class SuiteValidationServiceTest {
@@ -61,7 +63,13 @@ class SuiteValidationServiceTest {
         templateVariableExtractor = new TemplateVariableExtractor();
         bindingValidator = new BindingValidator(fileRefValidator);
         service = new SuiteValidationService(
-                templateVariableExtractor, evaluationRunProperties, fileRefValidator, bindingValidator, jsonbMapper);
+                templateVariableExtractor,
+                evaluationRunProperties,
+                fileRefValidator,
+                bindingValidator,
+                new McpArgumentValidator(
+                        templateVariableExtractor, new JsonSchemaPropertyExtractor(new ObjectMapper())),
+                jsonbMapper);
         lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
         lenient().when(execution.getHeaderBlacklist()).thenReturn(List.of());
     }
@@ -376,6 +384,61 @@ class SuiteValidationServiceTest {
 
         private FieldDefinitionDto field(String name, SchemaFieldType type) {
             return FieldDefinitionDto.builder().name(name).type(type).build();
+        }
+    }
+
+    @Nested
+    @DisplayName("MCP tool schema validation")
+    class McpToolSchemaValidation {
+
+        private static final UUID SUITE_ID = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
+
+        @Test
+        @DisplayName("Required tool argument saved with an empty constant makes the suite invalid")
+        void shouldInvalidateSuite_whenRequiredArgumentIsEmpty() {
+            TestSuiteRequestDto dto = buildMcpSuiteWithTool(Map.of("repoName", ""), List.of());
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUIRED
+                            && "repoName".equals(w.getFieldName())
+                            && "$.argumentTemplate.arguments".equals(w.getPath()));
+        }
+
+        @Test
+        @DisplayName("Unbound placeholder for a required argument is reported once, not twice")
+        void shouldNotDoubleWarn_whenPlaceholderHasNoBinding() {
+            TestSuiteRequestDto dto = buildMcpSuiteWithTool(Map.of("repoName", "${{repo}}"), List.of());
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.getWarnings())
+                    .filteredOn(w -> w.getCode() == ValidationWarningCode.REQUIRED)
+                    .singleElement()
+                    .satisfies(w -> assertThat(w.getFieldName()).isEqualTo("repo"));
+        }
+
+        private TestSuiteRequestDto buildMcpSuiteWithTool(
+                Map<String, Object> arguments, List<InputBindingDto> bindings) {
+            return TestSuiteRequestDto.builder()
+                    .name("MCP Suite")
+                    .suiteType(SuiteType.MCP_TOOL)
+                    .toolRef(ToolReferenceDto.builder()
+                            .name("github_search")
+                            .inputSchema(Map.of(
+                                    "type",
+                                    "object",
+                                    "properties",
+                                    Map.of("repoName", Map.of("type", "string"), "branch", Map.of("type", "string")),
+                                    "required",
+                                    List.of("repoName")))
+                            .build())
+                    .argumentTemplate(
+                            ArgumentTemplateDto.builder().arguments(arguments).build())
+                    .inputBindings(bindings)
+                    .build();
         }
     }
 

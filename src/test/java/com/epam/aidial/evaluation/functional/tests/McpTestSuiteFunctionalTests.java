@@ -2,6 +2,8 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
+import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -11,6 +13,7 @@ import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
+import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import java.util.List;
@@ -18,6 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -31,6 +35,9 @@ import org.springframework.http.ResponseEntity;
  */
 @DisplayName("MCP TestSuite CRUD Functional Tests")
 public abstract class McpTestSuiteFunctionalTests extends AbstractMcpFunctionalTest {
+
+    @Autowired
+    private TestSuiteRepository testSuiteRepository;
 
     @Test
     @DisplayName("Should create MCP_TOOL suite with toolset deployment ref")
@@ -67,6 +74,73 @@ public abstract class McpTestSuiteFunctionalTests extends AbstractMcpFunctionalT
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getSuiteType()).isEqualTo(SuiteType.MCP_TOOL);
         assertThat(response.getBody().getMcpDeploymentRef().getType()).isEqualTo("dial-application");
+    }
+
+    @Test
+    @DisplayName("Should mark MCP suite invalid when a required tool argument is saved empty")
+    void shouldInvalidateMcpSuite_whenRequiredToolArgumentIsEmpty() {
+        TestSuiteRequestDto request = buildSuiteWithRequiredRepoNameArgument("dial-eval");
+        ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody()).isNotNull();
+        assertThat(created.getBody().isValid()).isTrue();
+
+        TestSuiteRequestDto cleared = request;
+        cleared.setName(created.getBody().getName());
+        cleared.setArgumentTemplate(
+                ArgumentTemplateDto.builder().arguments(Map.of("repoName", "")).build());
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch("\"" + created.getBody().getVersion() + "\"");
+
+        ResponseEntity<TestSuiteResponseDto> updated = restTemplate.exchange(
+                apiUrl("/test-suites/" + created.getBody().getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(cleared, headers),
+                TestSuiteResponseDto.class);
+
+        assertThat(updated.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(updated.getBody()).isNotNull();
+        assertThat(updated.getBody().isValid()).isFalse();
+        assertThat(updated.getBody().getValidationWarnings()).anySatisfy(w -> {
+            assertThat(w.getCode()).isEqualTo(ValidationWarningCode.REQUIRED);
+            assertThat(w.getFieldName()).isEqualTo("repoName");
+            assertThat(w.getPath()).isEqualTo("$.argumentTemplate.arguments");
+        });
+
+        assertThat(testSuiteRepository.findById(created.getBody().getId()))
+                .get()
+                .satisfies(persisted -> assertThat(persisted.isValid()).isFalse());
+    }
+
+    private TestSuiteRequestDto buildSuiteWithRequiredRepoNameArgument(String repoName) {
+        return TestSuiteRequestDto.builder()
+                .name("MCP Suite Required Arg " + UUID.randomUUID())
+                .suiteType(SuiteType.MCP_TOOL)
+                .mcpDeploymentRef(McpDeploymentReferenceDto.builder()
+                        .id("my-toolset")
+                        .type("dial-toolset")
+                        .build())
+                .toolRef(ToolReferenceDto.builder()
+                        .name("github_search")
+                        .inputSchema(Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of("repoName", Map.of("type", "string")),
+                                "required",
+                                List.of("repoName")))
+                        .build())
+                .argumentTemplate(ArgumentTemplateDto.builder()
+                        .arguments(Map.of("repoName", repoName))
+                        .build())
+                .inputBindings(List.of())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("userQuery")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .build();
     }
 
     @Test

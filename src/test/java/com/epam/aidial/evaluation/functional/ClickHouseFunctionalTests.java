@@ -1,8 +1,21 @@
 package com.epam.aidial.evaluation.functional;
 
 import com.epam.aidial.evaluation.functional.config.ClickHouseFunctionalTestConfiguration;
+import com.epam.aidial.evaluation.functional.tests.AnalyticsResultBatchWriteFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.AnalyticsResultCountFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.AnalyticsResultGetByIdFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.AnalyticsResultListFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalResultsImportFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalSummaryAggregationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalSummaryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalSummaryStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunComparisonFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunComparisonRepositoryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import java.time.Duration;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Nested;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -90,10 +103,44 @@ public class ClickHouseFunctionalTests extends DialClientMockingFunctionalTests 
         return POSTGRES;
     }
 
-    @Test
-    void contextBoots() {
-        // Placeholder while the suites are wired incrementally.
-    }
+    @Nested
+    class AnalyticsResultBatchWriteTests extends AnalyticsResultBatchWriteFunctionalTests {}
+
+    @Nested
+    class AnalyticsResultListTests extends AnalyticsResultListFunctionalTests {}
+
+    @Nested
+    class AnalyticsResultGetByIdTests extends AnalyticsResultGetByIdFunctionalTests {}
+
+    @Nested
+    class AnalyticsResultCountTests extends AnalyticsResultCountFunctionalTests {}
+
+    @Nested
+    class EvalSummaryTests extends EvalSummaryFunctionalTests {}
+
+    @Nested
+    class EvalSummaryAggregationTests extends EvalSummaryAggregationFunctionalTests {}
+
+    @Nested
+    class EvalSummaryStructuredQueryTests extends EvalSummaryStructuredQueryFunctionalTests {}
+
+    @Nested
+    class RunMetricSnapshotTests extends RunMetricSnapshotFunctionalTests {}
+
+    @Nested
+    class MetricScoreComputationTests extends MetricScoreComputationFunctionalTests {}
+
+    @Nested
+    class StructuredQueryExecuteTests extends StructuredQueryExecuteFunctionalTests {}
+
+    @Nested
+    class RunComparisonTests extends RunComparisonFunctionalTests {}
+
+    @Nested
+    class RunComparisonRepositoryTests extends RunComparisonRepositoryFunctionalTests {}
+
+    @Nested
+    class EvalResultsImportTests extends EvalResultsImportFunctionalTests {}
 
     /** Self-typed GenericContainer subclass so the builder calls stay type-safe without raw types. */
     private static final class ClickHouseContainer extends GenericContainer<ClickHouseContainer> {

@@ -30,6 +30,7 @@ import com.epam.aidial.evaluation.functional.tests.EvalSummaryAggregationFunctio
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportPageSizeFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalSummaryIndexFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvaluationExecutorFailureModesFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvaluationMultipartFunctionalTests;
@@ -372,6 +373,9 @@ public class PostgresFunctionalTests extends DialClientMockingFunctionalTests {
 
     @Nested
     class EvalSummaryTests extends EvalSummaryFunctionalTests {}
+
+    @Nested
+    class EvalSummaryIndexTests extends EvalSummaryIndexFunctionalTests {}
 
     @Nested
     class EvalSummaryAggregationTests extends EvalSummaryAggregationFunctionalTests {}

@@ -58,6 +58,15 @@ public class BuiltInQueryFunctions {
         return QueryFunction.of("abs", (fn, ctx) -> DSL.abs((Field) ctx.singleArg(fn)));
     }
 
+    /**
+     * {@code width_bucket(operand, low, high, count)} → the histogram bucket index of {@code operand}.
+     *
+     * <p>ClickHouse names the same function {@code widthBucket} and accepts {@code width_bucket} as an
+     * alias, so jOOQ's rendering is syntactically valid there — but ClickHouse requires the bucket
+     * <em>count</em> to be an <b>unsigned</b> integer and rejects the {@code Int32} that jOOQ's
+     * {@code cast(… as integer)} produces with {@code ILLEGAL_TYPE_OF_ARGUMENT} (verified against a live
+     * server). The ClickHouse branch therefore wraps the count in {@code toUInt32}.
+     */
     @Bean
     @SuppressWarnings({"unchecked", "rawtypes"})
     public QueryFunction widthBucketFunction() {
@@ -71,7 +80,14 @@ public class BuiltInQueryFunctions {
             final Field low = ctx.toField(args.get(1));
             final Field high = ctx.toField(args.get(2));
             final Field<Integer> count = ctx.toField(args.get(3)).cast(Integer.class);
-            return DSL.widthBucket(operand, low, high, count);
+            return DialectAwareSql.field(
+                    "width_bucket",
+                    SQLDataType.INTEGER,
+                    family -> family == SQLDialect.CLICKHOUSE
+                            ? DSL.field(
+                                    "widthBucket({0}, {1}, {2}, toUInt32({3}))",
+                                    SQLDataType.INTEGER, operand, low, high, count)
+                            : DSL.widthBucket(operand, low, high, count));
         });
     }
 
@@ -155,8 +171,8 @@ public class BuiltInQueryFunctions {
             if (args.size() != 2) {
                 throw new ValidationException("function 'coalesce' expects exactly two arguments");
             }
-            final Field<BigDecimal> value = ctx.toField(args.get(0)).cast(BigDecimal.class);
-            final Field<BigDecimal> fallback = ctx.toField(args.get(1)).cast(BigDecimal.class);
+            final Field<BigDecimal> value = DialectAwareSql.numericCast(ctx.toField(args.get(0)));
+            final Field<BigDecimal> fallback = DialectAwareSql.numericCast(ctx.toField(args.get(1)));
             return DSL.coalesce(value, fallback);
         });
     }
@@ -170,7 +186,7 @@ public class BuiltInQueryFunctions {
         }
         Field<BigDecimal> result = null;
         for (final Expr arg : args) {
-            final Field<BigDecimal> term = ctx.toField(arg).cast(BigDecimal.class);
+            final Field<BigDecimal> term = DialectAwareSql.numericCast(ctx.toField(arg));
             result = result == null ? term : combiner.apply(result, term);
         }
         return result;
@@ -183,8 +199,8 @@ public class BuiltInQueryFunctions {
         if (args.size() != 2) {
             throw new ValidationException("function '" + name + "' expects exactly two arguments");
         }
-        final Field<BigDecimal> left = ctx.toField(args.get(0)).cast(BigDecimal.class);
-        final Field<BigDecimal> right = ctx.toField(args.get(1)).cast(BigDecimal.class);
+        final Field<BigDecimal> left = DialectAwareSql.numericCast(ctx.toField(args.get(0)));
+        final Field<BigDecimal> right = DialectAwareSql.numericCast(ctx.toField(args.get(1)));
         return combiner.apply(left, right);
     }
 

@@ -917,17 +917,6 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getBody().getCount()).isEqualTo(30);
     }
 
-    @Test
-    @DisplayName("The latest-computation resolution index exists on test_case_eval_summaries")
-    void resolutionIndexExists() {
-        var indexDefinition = analyticsTestDataHelper.findIndexDefinition(
-                "test_case_eval_summaries", "idx_eval_summaries_run_computed_at");
-
-        assertThat(indexDefinition).isPresent();
-        // Contains, not equals: Postgres renders indexdef schema-qualified and with USING btree.
-        assertThat(indexDefinition.get()).contains("(test_suite_run_id, computed_at_ms DESC, computation_id)");
-    }
-
     // --- Helpers ---
 
     private void insertMetricLessSummaries(UUID computationId, long createdAtMs, List<String> testCaseNames) {

@@ -107,8 +107,10 @@ public class ClickHouseFunctionalTests extends DialClientMockingFunctionalTests 
         // Analytics datasource - the ClickHouse container's CLICKHOUSE_DB database
         registry.add(
                 "clickhouse.analytics.datasource.url",
+                // flyway-database-clickhouse only recognizes the "jdbc:clickhouse:" prefix, not the
+                // driver's shorter "jdbc:ch:" alias (see AnalyticsClickHouseConfiguration's Javadoc).
                 () -> String.format(
-                        "jdbc:ch://%s:%d/%s",
+                        "jdbc:clickhouse://%s:%d/%s",
                         CLICKHOUSE.getHost(), CLICKHOUSE.getMappedPort(CLICKHOUSE_HTTP_PORT), CLICKHOUSE_DATABASE));
         registry.add("clickhouse.analytics.datasource.connection-params", () -> "");
         registry.add("clickhouse.analytics.datasource.driver-class-name", () -> "com.clickhouse.jdbc.ClickHouseDriver");

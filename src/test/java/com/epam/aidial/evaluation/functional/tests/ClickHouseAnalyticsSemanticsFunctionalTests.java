@@ -9,13 +9,17 @@ import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.util.List;
 import java.util.UUID;
+import org.jooq.DSLContext;
+import org.jooq.Record;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 /**
  * ClickHouse-only invariants that have no Postgres counterpart, because on Postgres the same guarantees
- * come from a unique constraint plus {@code ON CONFLICT DO NOTHING} rather than from vendor settings:
+ * come from a unique constraint plus {@code ON CONFLICT DO NOTHING} rather than from vendor settings, plus
+ * one regression guard specific to this vendor's schema-management history:
  *
  * <ul>
  *   <li><b>Dedup-exact reads.</b> ClickHouse writes are plain {@code INSERT}s and duplicates are collapsed
@@ -25,6 +29,11 @@ import org.springframework.beans.factory.annotation.Autowired;
  *   <li><b>Float64 write fidelity.</b> jOOQ's batch inlines a {@code Double} in scientific notation and
  *       ClickHouse's textual {@code Float64} parser is one ULP off for that form, so persisted metric scores
  *       have to be written as an explicit plain decimal.
+ *   <li><b>Flyway schema ownership.</b> An earlier revision of this vendor applied its schema with a
+ *       hand-rolled initializer (no history table, every script re-run on every boot) because the Flyway
+ *       ClickHouse plugin couldn't run on clickhouse-jdbc 0.9.0. Now that the driver is bumped, this guards
+ *       against a regression back to that path by asserting Flyway's own bookkeeping table exists and
+ *       recorded a successful migration.
  * </ul>
  */
 @DisplayName("ClickHouse Analytics Semantics Functional Tests")
@@ -40,6 +49,23 @@ public abstract class ClickHouseAnalyticsSemanticsFunctionalTests extends BaseFu
 
     @Autowired
     private MetricScoreResultRepository metricScoreResultRepository;
+
+    @Autowired
+    @Qualifier("analyticsDsl")
+    private DSLContext analyticsDsl;
+
+    @Test
+    @DisplayName("The analytics schema is owned by Flyway, not a hand-rolled initializer: "
+            + "flyway_schema_history records a successful V1.1")
+    void flywayOwnsTheAnalyticsSchema() {
+        Record row =
+                analyticsDsl.fetch("select version, success from flyway_schema_history where version = '1.1'").stream()
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("No flyway_schema_history row for version 1.1"));
+
+        assertThat(row.get("version", String.class)).isEqualTo("1.1");
+        assertThat(row.get("success", Boolean.class)).isTrue();
+    }
 
     @Test
     @DisplayName("Two inserts sharing an eval-summary natural key are read back as a single row")

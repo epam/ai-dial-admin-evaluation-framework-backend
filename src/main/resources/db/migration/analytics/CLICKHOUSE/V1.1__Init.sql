@@ -23,11 +23,13 @@
 --
 -- ClickHouse DDL statements auto-commit individually; each CREATE TABLE below is one statement.
 --
--- This script is applied by ClickHouseSchemaInitializer, NOT by Flyway (the ClickHouse Flyway plugin
--- cannot run on the V2 JDBC driver -- see that class's Javadoc). There is therefore no schema-history
--- table and the script is re-executed on every startup, so every statement MUST be idempotent: use
--- CREATE TABLE IF NOT EXISTS / ALTER TABLE ... ADD COLUMN IF NOT EXISTS. Files in this directory are
--- applied in filename order.
+-- This script is applied by Flyway (flyway-database-clickhouse, requires clickhouse-jdbc >= 0.10.0
+-- and a jdbc:clickhouse:// URL -- see AnalyticsClickHouseConfiguration), the same as every Postgres
+-- migration: Flyway owns versioning and the flyway_schema_history table, and each script runs exactly
+-- once. CREATE TABLE IF NOT EXISTS is kept here only for transition safety: environments that ran the
+-- old hand-rolled ClickHouseSchemaInitializer already have these tables but no flyway_schema_history
+-- row, and baselineOnMigrate(true) may still execute this script there on first boot. New migrations
+-- (V1.2+) do not need this pattern -- write them as ordinary, non-idempotent Flyway scripts.
 
 CREATE TABLE IF NOT EXISTS test_case_run_results
 (

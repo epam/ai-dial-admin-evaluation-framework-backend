@@ -80,17 +80,39 @@ exception: its `ORDER BY` leads with `test_suite_id`, a **superset** of the PG u
 keys partition identically today only because `test_suite_id` is functionally dependent on
 `test_suite_run_id` — a future feature that reassigns a run's suite must revisit that `ORDER BY`.
 
-## `ClickHouseSchemaInitializer` instead of Flyway
+## Schema management: Flyway (`flyway-database-clickhouse`)
 
-The only ClickHouse Flyway plugin (`flyway-database-clickhouse`) probes schema existence with a bare
-`SELECT COUNT() FROM system.databases WHERE name = ?`; the ClickHouse V2 driver's ANTLR statement
-parser can't parse that bare column reference, so the bind fails before any SQL reaches the server —
-no Flyway configuration works around it. `ClickHouseSchemaInitializer` runs
-`db/migration/analytics/CLICKHOUSE/*.sql` directly via `ResourceDatabasePopulator`, in filename order,
-on every startup. **There is no schema-history table** — every statement re-executes every time, so
-every future CH migration file must be idempotent (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD
-COLUMN IF NOT EXISTS`); ClickHouse DDL auto-commits per statement and analytics tables carry no
-data the application can't recompute, so a re-run is safe by construction.
+`AnalyticsClickHouseConfiguration#analyticsFlywayMigration` runs a `flyway-database-clickhouse` Flyway
+bean shaped exactly like `AnalyticsFlywayConfiguration`'s Postgres bean — same `baselineOnMigrate(true)`,
+`validateMigrationNaming(true)`, `flyway.migrate()` call, and dependency on
+`DatasourceValidationResult` for bean ordering. Migrations live under
+`db/migration/analytics/CLICKHOUSE`, tracked in a real `flyway_schema_history` table, each script
+running exactly once — the same story as Postgres.
+
+Two things are required for this to work, both verified against a live ClickHouse 25.8:
+
+- **clickhouse-jdbc &ge; 0.10.0.** On 0.9.0, the plugin's schema-existence probe
+  (`SELECT COUNT() FROM system.databases WHERE name = ?`) failed: the driver's ANTLR statement parser
+  couldn't parse the bare `name` column reference, reported zero bind parameters, and `setString()`
+  threw `ArrayIndexOutOfBoundsException` before any SQL reached the server. 0.10.0 fixed the parser;
+  the probe and a full `flyway.migrate()` both succeed now.
+- **A `jdbc:clickhouse://` URL, not `jdbc:ch://`.** The plugin's `ClickHouseDatabaseType.handlesJDBCUrl`
+  only claims the `jdbc:clickhouse:` prefix, so it never recognizes the database type on the driver's
+  shorter `jdbc:ch:` alias — Flyway would silently fail to find a matching `DatabaseType`. The
+  application itself still accepts both prefixes (`DatasourceValidationConfiguration#parseJdbcUrl`);
+  only the Flyway-facing defaults (`application.yml`, docker-compose, test fixtures, docs) standardize
+  on the long form.
+
+`V1.1__Init.sql` still uses `CREATE TABLE IF NOT EXISTS` — not because scripts re-run on every startup
+(they don't, any more), but for transition safety: an environment that ran the old
+hand-rolled schema initializer (see history below) already has the tables but no
+`flyway_schema_history` row, and `baselineOnMigrate` may still execute `V1.1` there on first boot. New
+migrations (V1.2+) are written as ordinary, non-idempotent Flyway scripts.
+
+**History.** Between the initial ClickHouse vendor implementation and this fix, schema management was a
+hand-rolled `ClickHouseSchemaInitializer` (`ResourceDatabasePopulator` re-running every script on every
+startup, no history table) — a workaround for the 0.9.0 driver bug above. It has been removed now that
+the driver bump makes Flyway work.
 
 ## Known engine semantics
 

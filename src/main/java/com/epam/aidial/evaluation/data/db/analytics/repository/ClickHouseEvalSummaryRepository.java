@@ -11,7 +11,6 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -24,7 +23,7 @@ import org.springframework.stereotype.Repository;
 
 /**
  * ClickHouse twin of {@link PostgresEvalSummaryRepository}. Reads are inherited unchanged except for
- * three spots where the inherited jOOQ construction does not translate to ClickHouse:
+ * two spots where the inherited jOOQ construction does not translate to ClickHouse:
  *
  * <ul>
  *   <li>{@link #saveAll} — no {@code ON CONFLICT}; deduplication is delegated to the {@code
@@ -39,12 +38,14 @@ import org.springframework.stereotype.Repository;
  *       not support the standard SQL {@code FILTER} clause (confirmed by a render probe: jOOQ emits it
  *       verbatim on {@code SQLDialect.CLICKHOUSE}, which ClickHouse then rejects); replaced with {@code
  *       CASE WHEN} aggregates, which are equivalent and supported everywhere.
- *   <li>{@link #existsByRunIdAndComputationId} — the inherited {@code fetchExists} sends
- *       {@code select exists (select 1 … where … = ?)}, and the ClickHouse V2 JDBC driver's ANTLR
- *       statement parser cannot parse a {@code SELECT} nested inside a scalar expression. It then reports
- *       zero bind parameters, and the bind fails before any SQL reaches the server. Replaced with a
- *       {@code select 1 … limit 1} probe.
  * </ul>
+ *
+ * <p>{@code existsByRunIdAndComputationId} is deliberately <b>not</b> overridden any more: the
+ * inherited {@code fetchExists} sends {@code select exists (select 1 … where … = ?)}, which the
+ * ClickHouse V2 driver's ANTLR statement parser could not parse on clickhouse-jdbc 0.9.0 (a {@code
+ * SELECT} nested inside a scalar expression reported zero bind parameters and the bind failed before
+ * any SQL reached the server). Verified fixed on 0.10.0 — {@code EvalSummaryExportFunctionalTests}
+ * (which exercises this path) is green against a live server without an override.
  */
 @Slf4j
 @Repository
@@ -57,21 +58,6 @@ public class ClickHouseEvalSummaryRepository extends PostgresEvalSummaryReposito
             EvalSummaryRecordMapper recordMapper,
             WhereBuilder whereBuilder) {
         super(dsl, recordMapper, whereBuilder);
-    }
-
-    /**
-     * ClickHouse cannot take the inherited {@code select exists (subquery)} form — see the class Javadoc.
-     * A {@code select 1 … limit 1} probe answers the same question with a statement shape the driver parses.
-     */
-    @Override
-    public boolean existsByRunIdAndComputationId(UUID runId, UUID computationId) {
-        return dsl.select(DSL.inline(1))
-                        .from(TEST_CASE_EVAL_SUMMARIES)
-                        .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                        .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()))
-                        .limit(1)
-                        .fetchOne()
-                != null;
     }
 
     @Override

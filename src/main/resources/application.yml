@@ -220,7 +220,7 @@ postgres:
 clickhouse:
   analytics:
     datasource:
-      url: jdbc:ch://localhost:8123/evaluation_analytics
+      url: jdbc:clickhouse://localhost:8123/evaluation_analytics
       connection-params: ""
       driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
       username: clickhouse

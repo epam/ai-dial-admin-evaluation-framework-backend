@@ -128,7 +128,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Multi-request suites](docs/patterns/multi-request-suites.md) | `additionalRequests` chain; one flat response-column union; accumulated frame; `(request_index, turn_index)` |
 | [Request-template JSONata seam](docs/patterns/jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](docs/patterns/evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
-| [ClickHouse analytics vendor](docs/patterns/clickhouse-analytics.md) | Render-time dialect switching; CH vendor twins; ReplacingMergeTree-as-ON-CONFLICT; no Flyway |
+| [ClickHouse analytics vendor](docs/patterns/clickhouse-analytics.md) | Render-time dialect switching; CH vendor twins; ReplacingMergeTree-as-ON-CONFLICT; Flyway (requires clickhouse-jdbc >= 0.10.0 + `jdbc:clickhouse://`) |
 
 ### Inline conventions
 

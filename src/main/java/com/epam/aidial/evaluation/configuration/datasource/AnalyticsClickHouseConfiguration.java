@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import lombok.extern.slf4j.Slf4j;
+import org.flywaydb.core.Flyway;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.conf.Settings;
@@ -26,8 +27,9 @@ import org.springframework.transaction.PlatformTransactionManager;
  * Analytics datasource wiring for {@code datasource.analytics.vendor=CLICKHOUSE}. Mirrors the bean
  * names/shapes of {@link AnalyticsJdbcConfiguration} and {@link AnalyticsPostgresConfiguration} /
  * {@link AnalyticsFlywayConfiguration} so the rest of the analytics stack (repositories, services,
- * health indicators) binds identically regardless of vendor. The one shape that differs is schema
- * management: {@link ClickHouseSchemaInitializer} replaces the Flyway bean.
+ * health indicators) binds identically regardless of vendor, including schema management: this class
+ * runs a {@code flyway-database-clickhouse} {@link Flyway} bean shaped exactly like
+ * {@link AnalyticsFlywayConfiguration}'s.
  */
 @Configuration
 @Slf4j
@@ -107,18 +109,36 @@ public class AnalyticsClickHouseConfiguration {
     }
 
     /**
-     * Applies the analytics schema. Deliberately not Flyway — see {@link ClickHouseSchemaInitializer} for
-     * why the ClickHouse Flyway plugin cannot run on the V2 JDBC driver. The unused
-     * {@link DatasourceValidationResult} parameter preserves the bean-ordering contract of
-     * {@link AnalyticsFlywayConfiguration}: schema work never starts before datasource validation passes.
+     * Applies the analytics schema via Flyway, mirroring {@link AnalyticsFlywayConfiguration}'s shape.
+     * The unused {@link DatasourceValidationResult} parameter preserves the same bean-ordering contract:
+     * schema work never starts before datasource validation passes.
+     *
+     * <p>Requires clickhouse-jdbc &ge; 0.10.0 (0.9.0's ANTLR statement parser could not parse the
+     * plugin's schema-existence probe, which forced a hand-rolled {@code ClickHouseSchemaInitializer}
+     * workaround for a while — since removed) <b>and</b> a {@code jdbc:clickhouse://} URL:
+     * {@code flyway-database-clickhouse}'s {@code ClickHouseDatabaseType.handlesJDBCUrl} only claims the
+     * {@code jdbc:clickhouse:} prefix, not the driver's shorter {@code jdbc:ch:} alias — the plugin never
+     * recognizes the database type on a {@code jdbc:ch://} URL, so every documented default and test
+     * fixture here uses the long prefix. The application itself still accepts both prefixes
+     * ({@link DatasourceValidationConfiguration#parseJdbcUrl}).
      */
     @Bean
-    public ClickHouseSchemaInitializer analyticsSchemaInitializer(
+    public Flyway analyticsFlywayMigration(
             @Qualifier("analyticsDataSource") DataSource analyticsDataSource,
+            @Value("${clickhouse.analytics.datasource.database:evaluation_analytics}") String analyticsDatabase,
             DatasourceValidationResult validationResult) {
-        ClickHouseSchemaInitializer initializer = new ClickHouseSchemaInitializer(analyticsDataSource);
-        initializer.initialize();
-        return initializer;
+        String location = "classpath:db/migration/analytics/CLICKHOUSE";
+        log.info("Configuring analytics Flyway migration at location: {}, schema: {}", location, analyticsDatabase);
+
+        Flyway flyway = Flyway.configure()
+                .dataSource(analyticsDataSource)
+                .locations(location)
+                .defaultSchema(analyticsDatabase)
+                .baselineOnMigrate(true)
+                .validateMigrationNaming(true)
+                .load();
+        flyway.migrate();
+        return flyway;
     }
 
     private static String withRequiredServerSettings(String connectionParams) {

@@ -29,7 +29,7 @@ datasource:
     auth:
       type: basic
   analytics:
-    vendor: POSTGRES
+    vendor: CLICKHOUSE
     auth:
       type: basic
 

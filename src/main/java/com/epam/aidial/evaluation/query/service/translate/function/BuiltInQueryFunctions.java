@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.query.service.translate.function;
 
+import com.epam.aidial.evaluation.data.db.repository.sql.DialectAwareSql;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FnExpr;
 import com.epam.aidial.evaluation.query.model.ValueExpr;
@@ -10,7 +11,9 @@ import java.util.List;
 import java.util.function.BinaryOperator;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Field;
+import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
+import org.jooq.impl.SQLDataType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -188,6 +191,18 @@ public class BuiltInQueryFunctions {
     /**
      * {@code percentile_(cont|disc)(fraction, column)} → ordered-set aggregate with {@code WITHIN
      * GROUP (ORDER BY column)}. {@code fraction} must be a numeric literal in {@code [0, 1]}.
+     *
+     * <p>On {@link SQLDialect#CLICKHOUSE}, jOOQ's {@code DSL.percentileCont}/{@code percentileDisc}
+     * render as ClickHouse's {@code quantile}/{@code quantileExactLow} parametric aggregate functions.
+     * {@code quantile} is an <em>approximate</em>, sampling-based estimate — not the exact linear
+     * interpolation Postgres' {@code percentile_cont} computes — so metric statistics (e.g. P90/P99)
+     * would become nondeterministic and diverge semantically from Postgres. This dialect-switches to
+     * the exact ClickHouse equivalents instead: {@code quantileExactInclusive(fraction)(column)} for
+     * {@code percentile_cont}, {@code quantileExactLow(fraction)(column)} for {@code percentile_disc}
+     * (both exact, matching jOOQ's already-exact rendering for {@code percentile_disc} — only {@code
+     * percentile_cont} needed correcting). The fraction is inlined rather than bound: it is already
+     * validated as a numeric literal in {@code [0, 1]} by {@link #percentileFraction}, never
+     * user-controlled SQL text.
      */
     private Field<?> percentile(FnExpr fn, FunctionContext ctx, boolean continuous) {
         final List<Expr> args = ctx.args(fn);
@@ -195,11 +210,21 @@ public class BuiltInQueryFunctions {
             throw new ValidationException(
                     "function '" + fn.name() + "' expects exactly two arguments (fraction, column)");
         }
-        final Field<BigDecimal> fraction = DSL.val(percentileFraction(fn, args.getFirst()));
+        final BigDecimal fractionValue = percentileFraction(fn, args.getFirst());
+        final Field<BigDecimal> fraction = DSL.val(fractionValue);
         final Field<?> orderField = ctx.toField(args.get(1));
-        return continuous
-                ? DSL.percentileCont(fraction).withinGroupOrderBy(orderField)
-                : DSL.percentileDisc(fraction).withinGroupOrderBy(orderField);
+        return DialectAwareSql.field(
+                continuous ? "percentile_cont" : "percentile_disc",
+                SQLDataType.NUMERIC,
+                family -> family == SQLDialect.CLICKHOUSE
+                        ? DSL.field(
+                                (continuous ? "quantileExactInclusive({0})({1})" : "quantileExactLow({0})({1})"),
+                                SQLDataType.NUMERIC,
+                                DSL.inline(fractionValue),
+                                orderField)
+                        : (continuous
+                                ? DSL.percentileCont(fraction).withinGroupOrderBy(orderField)
+                                : DSL.percentileDisc(fraction).withinGroupOrderBy(orderField)));
     }
 
     private BigDecimal percentileFraction(FnExpr fn, Expr arg) {

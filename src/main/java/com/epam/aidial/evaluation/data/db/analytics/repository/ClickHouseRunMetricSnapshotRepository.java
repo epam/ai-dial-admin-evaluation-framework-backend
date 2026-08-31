@@ -6,28 +6,29 @@ import com.epam.aidial.evaluation.data.db.analytics.mapper.RunMetricSnapshotReco
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
-import org.jooq.JSONB;
 import org.jooq.Query;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
+/**
+ * ClickHouse twin of {@link PostgresRunMetricSnapshotRepository}. Reads are inherited unchanged. Only
+ * {@link #saveAll} differs: ClickHouse has no {@code ON CONFLICT}; deduplication is delegated to the
+ * {@code ReplacingMergeTree} table engine (ordered by the same natural key used for the Postgres
+ * {@code onConflict}), made visible to readers via session-wide {@code FINAL}.
+ */
 @Slf4j
 @Repository
 @LogExecution
-@RequiredArgsConstructor
-@ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES")
-public class PostgresRunMetricSnapshotRepository implements RunMetricSnapshotRepository {
+@ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "CLICKHOUSE")
+public class ClickHouseRunMetricSnapshotRepository extends PostgresRunMetricSnapshotRepository {
 
-    @Qualifier("analyticsDsl")
-    protected final DSLContext dsl;
-
-    private final RunMetricSnapshotRecordMapper recordMapper;
+    public ClickHouseRunMetricSnapshotRepository(
+            @Qualifier("analyticsDsl") DSLContext dsl, RunMetricSnapshotRecordMapper recordMapper) {
+        super(dsl, recordMapper);
+    }
 
     @Override
     public void saveAll(List<RunMetricSnapshot> snapshots) {
@@ -54,42 +55,9 @@ public class PostgresRunMetricSnapshotRepository implements RunMetricSnapshotRep
                         .set(RUN_METRIC_SNAPSHOTS.CONFIG_BINDINGS, toJsonb(s.getConfigBindings()))
                         .set(RUN_METRIC_SNAPSHOTS.INPUT_BINDINGS, toJsonb(s.getInputBindings()))
                         .set(RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA, toJsonb(s.getOutputSchema()))
-                        .set(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS, s.getComputedAtMs())
-                        .onConflict(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID, RUN_METRIC_SNAPSHOTS.TSMD_ID)
-                        .doNothing())
+                        .set(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS, s.getComputedAtMs()))
                 .toList();
         dsl.batch(queries).execute();
         log.debug("Batch inserted {} run metric snapshots", snapshots.size());
-    }
-
-    @Override
-    public List<RunMetricSnapshot> findByRunId(UUID runId) {
-        return dsl.selectFrom(RUN_METRIC_SNAPSHOTS)
-                .where(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .orderBy(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS.desc())
-                .fetch(recordMapper::map);
-    }
-
-    @Override
-    public List<RunMetricSnapshot> findByRunIdAndComputationId(UUID runId, UUID computationId) {
-        return dsl.selectFrom(RUN_METRIC_SNAPSHOTS)
-                .where(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .and(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID.eq(computationId.toString()))
-                .orderBy(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS.desc())
-                .fetch(recordMapper::map);
-    }
-
-    @Override
-    public Optional<UUID> findLatestComputationId(UUID runId) {
-        return dsl.select(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID)
-                .from(RUN_METRIC_SNAPSHOTS)
-                .where(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .orderBy(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS.desc())
-                .limit(1)
-                .fetchOptional(r -> UUID.fromString(r.getValue(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID)));
-    }
-
-    protected static JSONB toJsonb(String json) {
-        return json != null ? JSONB.valueOf(json) : null;
     }
 }

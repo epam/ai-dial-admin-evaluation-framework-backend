@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analytics on ClickHouse</title>
+<style>
+  :root {
+    --bg: #FBFAF6;
+    --surface: #F3F1E9;
+    --surface2: #ECE9DF;
+    --ink: #22252A;
+    --muted: #6A6E76;
+    --line: #DDD9CC;
+    --gold: #96700F;
+    --gold-bright: #E9B937;
+    --gold-wash: #F6ECD2;
+    --pg: #33678F;
+    --pg-wash: #E3ECF3;
+    --ok: #2E7D4F;
+    --warn: #A05A1C;
+    --danger: #A3352F;
+    --code-bg: #F0EDE3;
+    --code-ink: #3A3D33;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17181B;
+      --surface: #1F2125;
+      --surface2: #26282D;
+      --ink: #E9E7E0;
+      --muted: #9A9EA6;
+      --line: #35373D;
+      --gold: #E0B44A;
+      --gold-bright: #E9B937;
+      --gold-wash: #2C2717;
+      --pg: #7FB0D8;
+      --pg-wash: #1C2833;
+      --ok: #6FBF8F;
+      --warn: #D89154;
+      --danger: #D97C76;
+      --code-bg: #212226;
+      --code-ink: #CFCDC2;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17181B;
+    --surface: #1F2125;
+    --surface2: #26282D;
+    --ink: #E9E7E0;
+    --muted: #9A9EA6;
+    --line: #35373D;
+    --gold: #E0B44A;
+    --gold-bright: #E9B937;
+    --gold-wash: #2C2717;
+    --pg: #7FB0D8;
+    --pg-wash: #1C2833;
+    --ok: #6FBF8F;
+    --warn: #D89154;
+    --danger: #D97C76;
+    --code-bg: #212226;
+    --code-ink: #CFCDC2;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", "Segoe UI", -apple-system, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.62;
+    margin: 0;
+  }
+  .page { max-width: 1020px; margin: 0 auto; padding: 48px 32px 96px; }
+  .prose { max-width: 76ch; }
+
+  h1, h2, h3, h4 { font-family: "IBM Plex Sans", sans-serif; text-wrap: balance; line-height: 1.2; }
+  h1 { font-size: 2.5rem; font-weight: 650; letter-spacing: -0.02em; margin: 8px 0 12px; }
+  h2 { font-size: 1.5rem; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 16px; }
+  h3 { font-size: 1.12rem; font-weight: 600; margin: 36px 0 10px; }
+  h4 { font-size: 0.98rem; font-weight: 600; margin: 24px 0 8px; }
+  p { margin: 0 0 14px; }
+  section { margin-top: 64px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--gold);
+    font-weight: 600;
+  }
+  .part-head {
+    border-top: 2px solid var(--ink);
+    padding-top: 14px;
+    display: flex; flex-direction: column; gap: 4px;
+    margin-bottom: 24px;
+  }
+  .sub { color: var(--muted); font-size: 1.05rem; max-width: 72ch; }
+
+  code, pre, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  code {
+    background: var(--code-bg); color: var(--code-ink);
+    padding: 1px 5px; border-radius: 4px; font-size: 0.85em;
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    margin: 12px 0 20px;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .cmt { color: var(--muted); }
+
+  table {
+    border-collapse: collapse; width: 100%;
+    font-size: 0.88rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .tablewrap { overflow-x: auto; margin: 12px 0 24px; border: 1px solid var(--line); border-radius: 8px; }
+  th {
+    text-align: left; font-weight: 600;
+    background: var(--surface);
+    padding: 9px 12px;
+    border-bottom: 1.5px solid var(--line);
+    white-space: nowrap;
+  }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td code { white-space: nowrap; }
+  td.wrapcode code { white-space: normal; }
+
+  .chip {
+    display: inline-block; font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip.ch { background: var(--gold-wash); color: var(--gold); }
+  .chip.pg { background: var(--pg-wash); color: var(--pg); }
+  .chip.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .chip.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+  .chip.danger { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--gold-bright);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 28px 0 8px;
+  }
+  .verdict p:last-child { margin-bottom: 0; }
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 16px 0 20px;
+    font-size: 0.92rem;
+  }
+  .callout.warn { border-left: 4px solid var(--warn); }
+  .callout.ok { border-left: 4px solid var(--ok); }
+  .callout .lbl {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.7rem;
+    letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600;
+    display: block; margin-bottom: 4px;
+  }
+  .callout.warn .lbl { color: var(--warn); }
+  .callout.ok .lbl { color: var(--ok); }
+
+  .toc {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 18px 22px; margin-top: 32px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 28px;
+    font-size: 0.9rem;
+  }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc a:hover { color: var(--gold); }
+  .toc .n { color: var(--gold); font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; margin-right: 8px; }
+
+  .paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 20px 0; }
+  .path {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+    padding: 18px 20px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .path.rec { border-color: var(--gold-bright); border-width: 1.5px; }
+  .path h3 { margin: 0; font-size: 1.02rem; }
+  .path .tag { font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .path.rec .tag { color: var(--gold); }
+  .path p { font-size: 0.88rem; margin: 0; color: var(--muted); }
+  .path ul { font-size: 0.86rem; margin: 4px 0 0; padding-left: 18px; }
+  .path li { margin-bottom: 4px; }
+
+  ul.tight { margin: 8px 0 16px; padding-left: 22px; }
+  ul.tight li { margin-bottom: 6px; }
+  ol.steps { margin: 8px 0 16px; padding-left: 22px; }
+  ol.steps li { margin-bottom: 8px; }
+
+  .step {
+    display: flex; gap: 16px; margin-top: 40px;
+    border-top: 1px solid var(--line); padding-top: 24px;
+  }
+  .step-num {
+    flex: 0 0 auto;
+    font-family: "IBM Plex Mono", monospace; font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--gold);
+    background: var(--gold-wash);
+    border-radius: 6px;
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-body { min-width: 0; flex: 1; }
+  .step-body h3 { margin-top: 6px; }
+
+  a { color: var(--pg); }
+  .foot { margin-top: 72px; border-top: 1px solid var(--line); padding-top: 20px; color: var(--muted); font-size: 0.82rem; }
+  .foot a { color: var(--muted); }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  html { scroll-behavior: smooth; }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;650&amp;family=IBM+Plex+Mono:wght@400;600&amp;display=swap">
+
+<div class="page">
+  <header>
+    <div class="eyebrow">ai-dial-admin-evaluation-framework-backend · analytics datasource</div>
+    <h1>Analytics on ClickHouse</h1>
+    <p class="sub">A research-backed migration guide: what the analytics Postgres actually does today, the three ways to move it to ClickHouse, and a step-by-step plan for the recommended path — including the data backfill and rollback.</p>
+
+    <div class="verdict">
+      <span class="eyebrow">Verdict</span>
+      <p style="margin-top:6px"><strong>The analytics store is almost ideally ClickHouse-shaped, and the codebase already has the seam to swap it.</strong> All four tables are strictly append-only (batched <code>INSERT … ON CONFLICT DO NOTHING</code>, zero runtime <code>UPDATE</code>/<code>DELETE</code>, no locks, no cross-table transactions), versioned by <code>computation_id</code> instead of mutation, and read mostly through aggregates and per-run scans. Every analytics repository and query-DSL resolver is already gated on <code>datasource.analytics.vendor=POSTGRES</code>, and Flyway already resolves <code>db/migration/analytics/${vendor}</code>.</p>
+      <p><strong>Recommended path: full cutover behind the existing vendor seam</strong> (Path A below), executed with a parity-verification phase in staging and a one-time backfill via ClickHouse's <code>postgresql()</code> table function. CDC replication (Path B) is ruled out as a target architecture because the evaluation pipeline itself reads Phase-1 rows immediately after writing them — replication lag would sit inside the job pipeline, not just behind dashboards.</p>
+    </div>
+
+    <nav class="toc" aria-label="Contents">
+      <a href="#part1"><span class="n">I</span>Current state: how analytics storage works</a>
+      <a href="#part2"><span class="n">II</span>The fork: three paths, trade-offs</a>
+      <a href="#part3"><span class="n">III</span>How-to: the cutover, step by step</a>
+      <a href="#s3-0"><span class="n">0</span>Prerequisites &amp; versions</a>
+      <a href="#s3-1"><span class="n">1</span>Wiring: datasource, tx manager, Flyway</a>
+      <a href="#s3-2"><span class="n">2</span>ClickHouse schema (DDL)</a>
+      <a href="#s3-3"><span class="n">3</span>Repositories &amp; the write path</a>
+      <a href="#s3-4"><span class="n">4</span>JSON access seam</a>
+      <a href="#s3-5"><span class="n">5</span>Query DSL &amp; function catalog</a>
+      <a href="#s3-6"><span class="n">6</span>Semantics that change</a>
+      <a href="#s3-7"><span class="n">7</span>Testing strategy</a>
+      <a href="#s3-8"><span class="n">8</span>Data migration runbook</a>
+      <a href="#s3-9"><span class="n">9</span>Rollback &amp; post-cutover wins</a>
+      <a href="#appendix"><span class="n">A</span>File-by-file change map</a>
+    </nav>
+  </header>
+
+  <!-- ============================ PART I ============================ -->
+  <section id="part1">
+    <div class="part-head">
+      <span class="eyebrow">Part I</span>
+      <h2>Current state: how analytics storage actually works</h2>
+    </div>
+
+    <h3>1.1 The four tables</h3>
+    <p class="prose">Migrations live in <code>src/main/resources/db/migration/analytics/POSTGRES/</code> (V1.1–V1.18, V1.9 never existed). No foreign keys, no triggers, no sequences, no CHECK constraints, no partitions — the schema was deliberately kept vendor-neutral: UUIDs as <code>VARCHAR(36)</code>, all timestamps as epoch-ms <code>BIGINT</code>.</p>
+
+    <div class="tablewrap"><table>
+      <tr><th>Table</th><th>Role</th><th>Grain / cardinality</th><th>JSONB columns</th><th>Natural unique key (the <code>ON CONFLICT</code> target)</th></tr>
+      <tr>
+        <td><code>test_case_run_results</code></td>
+        <td>Phase-1 raw execution facts (largest table)</td>
+        <td>≈ cases × repetitions × requests × turns per run</td>
+        <td><code>test_case_data</code>, <code>request_body</code>, <code>response_body</code>, <code>extracted_columns</code>, <code>extraction_warnings</code>, <code>log_details</code></td>
+        <td class="wrapcode"><code>(run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)</code></td>
+      </tr>
+      <tr>
+        <td><code>test_case_eval_summaries</code></td>
+        <td>Phase-2 denormalized read surface — 1 row per result row <em>per computation</em>, even at zero metrics</td>
+        <td>result rows × computations</td>
+        <td><code>test_case_data</code>, <code>extracted_columns</code>, <code>metric_values</code>, <code>metric_infos</code>, <code>extraction_warnings</code></td>
+        <td class="wrapcode">same + <code>computation_id</code></td>
+      </tr>
+      <tr>
+        <td><code>run_metric_snapshots</code></td>
+        <td>TSMD definition freeze per computation</td>
+        <td>single digits per computation</td>
+        <td><code>config_bindings</code>, <code>input_bindings</code>, <code>output_schema</code></td>
+        <td><code>(computation_id, tsmd_id)</code></td>
+      </tr>
+      <tr>
+        <td><code>metric_score_result</code></td>
+        <td>Phase-3 aggregated scores (AVG/P10/P90/MIN/MAX/overall); documented as regenerable</td>
+        <td>statistics × metric fields per (run, computation)</td>
+        <td>—</td>
+        <td class="wrapcode"><code>(run_id, computation_id, metric_score_name, metric_name)</code></td>
+      </tr>
+    </table></div>
+
+    <p class="prose">The two big tables share the composite PK <code>(created_at_ms, id)</code> — <code>created_at_ms</code> is the <em>run's</em> creation timestamp (identical for every row of a run), chosen explicitly as a future partition key. That design decision transfers 1:1 to a ClickHouse partition key.</p>
+
+    <h3>1.2 The write path — everything is an idempotent batched insert</h3>
+    <ul class="tight prose">
+      <li><strong>No runtime <code>UPDATE</code>, <code>DELETE</code>, upsert, <code>MERGE</code>, <code>FOR UPDATE</code>, or advisory lock exists anywhere on the analytics side</strong> (verified by grep across <code>data/db/analytics</code> and <code>query/</code>). The only non-INSERT DML ever executed is one-off migration backfill (V1.8, V1.12).</li>
+      <li>All four repositories write via per-row <code>dsl.insertInto(…).onConflict(&lt;natural key&gt;).doNothing()</code> collected into one <code>dsl.batch(queries).execute()</code> — one JDBC round trip per flush, boosted by <code>reWriteBatchedInserts=true</code> on the analytics JDBC URL only.</li>
+      <li>Phase 1: <code>PostgresResultBatchWriter</code> flushes every 100 rows (<code>test-suite-run.execution.result-batch-size</code>), one <code>TransactionTemplate</code> tx per flush. Phase 2: eval summaries chunked at ≤10,000 (<code>analytics.eval-summaries.batch.max-items</code>), one tx per chunk. CSV import: one long tx over 1,000-row chunks (≤100k rows).</li>
+      <li><strong>Recomputation never updates.</strong> Each re-evaluation mints a new <code>computation_id</code>; "latest" is resolved at query time by <code>ORDER BY computed_at_ms DESC LIMIT 1</code> over eval summaries (covering index <code>idx_eval_summaries_run_computed_at</code>). No <code>is_latest</code> flag, no <code>DISTINCT ON</code>, no window functions.</li>
+      <li>Everything runs at READ COMMITTED with no isolation overrides. The famous REPEATABLE READ + SQLSTATE 40001 retry (suite-run snapshot phase) is entirely <strong>meta-DB</strong>-side and is untouched by this migration.</li>
+      <li><strong>No cross-DB atomicity exists or is expected.</strong> Meta commits first, then an <code>afterCommit</code> hook writes analytics with <code>markRunFailed</code> compensation. Orphaned analytics rows after a run delete are accepted by design (nothing deletes analytics rows).</li>
+      <li>Analytics writes ignore <code>TransactionTimestampContext</code> (the aspect skips the analytics tx manager) — all timestamps are passed explicitly. Nothing time-context-magical to port.</li>
+    </ul>
+
+    <h3>1.3 The read paths — two independent stacks</h3>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Stack A — REST list/count/aggregate/export</th><th>Stack B — Structured Query DSL</th></tr>
+      <tr><td>Entry</td><td><code>/api/v1/analytics/**</code></td><td><code>POST /api/v1/queries/execute</code> + internal Phase-3 / comparison consumers</td></tr>
+      <tr><td>Filtering</td><td><code>WhereBuilder</code> + <code>FilterWhitelists</code> (incl. <code>JSONB_NUMERIC</code> two-level metric paths)</td><td><code>FilterTranslator</code>/<code>ExprTranslator</code>; jOOQ-reflected bindings map is the allowlist</td></tr>
+      <tr><td>Paging</td><td>Keyset: <code>(created_at_ms, id) &lt; (?, ?)</code> row-value compare, <code>ORDER BY … DESC</code>, <code>LIMIT size+1</code>, opaque Base64 cursor</td><td>Offset only, max 1,000; cursor rejected</td></tr>
+      <tr><td>Notable SQL</td><td>4 projection tiers (TOAST avoidance); <code>LEFT JOIN</code> to results for bodies; run comparison = <code>SELECT DISTINCT</code> probe + <code>LEFT JOIN</code> + <code>FILTER (WHERE …)</code> aggregates; <code>ILIKE</code></td><td>aggregates + <code>GROUP BY</code>/<code>HAVING</code>, <code>percentile_cont … WITHIN GROUP</code>, <code>width_bucket</code>, uncorrelated <code>IN</code>/scalar subqueries, <code>roc_auc_score()</code> stored function over <code>array_agg</code>, null-polarity wrappers <code>(…) IS NOT FALSE/TRUE</code></td></tr>
+    </table></div>
+    <p class="prose">Notably absent from application-generated SQL: window functions, CTEs, <code>DISTINCT ON</code>, explicit <code>LATERAL</code>. All the window/CTE machinery lives inside the single stored function <code>roc_auc_score</code> (V1.11).</p>
+
+    <h3>1.4 Postgres-specific inventory, ranked by port cost</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Cost</th><th>Feature</th><th>Where</th><th>ClickHouse answer (detail in Part III)</th></tr>
+      <tr><td><span class="chip danger">redesign</span></td><td><code>roc_auc_score(float8[], float8[])</code> stored function</td><td>V1.11 + <code>RocAucFunction.java</code></td><td>Built-in <code>arrayAUC()</code> — delete the function entirely</td></tr>
+      <tr><td><span class="chip danger">redesign</span></td><td><code>ON CONFLICT DO NOTHING</code> idempotency</td><td>all 4 repositories</td><td><code>ReplacingMergeTree</code> keyed on the natural key + <code>FINAL</code> reads</td></tr>
+      <tr><td><span class="chip warn">moderate</span></td><td>JSONB <code>-&gt;</code>/<code>-&gt;&gt;</code>/<code>::numeric</code> paths</td><td><code>JsonPathAccessor</code> seam, <code>WhereBuilder</code>, <code>JsonbFieldResolver</code>, aggregate endpoint</td><td><code>JSONExtract(col, k1, k2, 'Nullable(Float64)')</code> family</td></tr>
+      <tr><td><span class="chip warn">moderate</span></td><td><code>percentile_cont/disc … WITHIN GROUP</code></td><td><code>BuiltInQueryFunctions</code></td><td><code>quantileExactInclusive(f)(x)</code> / <code>quantileExactLow</code></td></tr>
+      <tr><td><span class="chip warn">moderate</span></td><td><code>FILTER (WHERE …)</code> aggregates</td><td>run-comparison queries</td><td><code>countIf</code>/<code>avgIf</code>, or jOOQ's CASE emulation</td></tr>
+      <tr><td><span class="chip warn">moderate</span></td><td><code>(…) IS NOT FALSE</code> / <code>IS NOT TRUE</code> raw templates</td><td><code>FilterTranslator</code> null polarity</td><td><code>ifNull(cond, true)</code> / <code>NOT ifNull(cond, false)</code> behind a vendor seam</td></tr>
+      <tr><td><span class="chip ok">free</span></td><td><code>ILIKE</code>, row-value keyset <code>(a,b)&lt;(?,?)</code>, <code>width_bucket</code>, uncorrelated subqueries, <code>SELECT DISTINCT</code>, <code>LEFT JOIN</code></td><td>—</td><td>Supported natively (tuple comparison, <code>widthBucket</code>, <code>ILIKE</code>)</td></tr>
+      <tr><td><span class="chip ok">n/a</span></td><td><code>jsonb_array_elements</code> selectors, <code>?</code>/<code>@&gt;</code> containment, multi-turn ALL-turns-match</td><td><code>QueryDslRunnableTestCaseSelector</code>, <code>test_cases</code> entity</td><td><strong>Meta-DB (stays Postgres) — out of scope</strong></td></tr>
+    </table></div>
+
+    <h3>1.5 Seams that already exist</h3>
+    <ul class="tight prose">
+      <li><code>@ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES")</code> on all 4 analytics repositories and both analytics query-DSL entity resolvers — the swap point is designed in.</li>
+      <li>Flyway location is already vendor-keyed: <code>classpath:db/migration/analytics/${datasource.analytics.vendor}</code>.</li>
+      <li><code>JsonPathAccessor</code> is an interface with a single Postgres impl — the intended JSON porting seam. (Gap: <code>PostgresJsonPathAccessor</code> is an unguarded <code>@Component</code>; it needs the vendor condition added.)</li>
+      <li>Repositories are interfaces (<code>TestCaseRunResultRepository</code> etc.); services depend on the interface, not the Postgres class.</li>
+      <li><code>DatasourceValidationConfiguration</code> currently hard-rejects any non-POSTGRES analytics vendor — the one guard to relax.</li>
+    </ul>
+  </section>
+
+  <!-- ============================ PART II ============================ -->
+  <section id="part2">
+    <div class="part-head">
+      <span class="eyebrow">Part II</span>
+      <h2>The fork: three paths</h2>
+    </div>
+
+    <div class="paths">
+      <div class="path rec">
+        <span class="tag">Path A · Recommended</span>
+        <h3>Full cutover behind the vendor seam</h3>
+        <p>Implement <code>vendor=CLICKHOUSE</code>: CH repositories, JSON accessor, entity resolvers, no-op tx manager, CH Flyway dir. One-time backfill, flip the property, keep Postgres warm for rollback.</p>
+        <ul>
+          <li><span class="chip ok">＋</span> One storage engine long-term; no sync machinery; smallest steady-state ops surface</li>
+          <li><span class="chip ok">＋</span> Uses seams the codebase already has; work is additive, not invasive</li>
+          <li><span class="chip warn">－</span> Whole read+write surface must be ported and verified before the flip</li>
+          <li><span class="chip warn">－</span> Needs a write-quiesce window for the backfill (natural: analytics is only written during active runs/imports)</li>
+        </ul>
+      </div>
+      <div class="path">
+        <span class="tag">Path B</span>
+        <h3>CDC sidecar (PeerDB), Postgres stays source of truth</h3>
+        <p>Keep all writes on Postgres; replicate to ClickHouse via PeerDB/ClickPipes; route expensive client reads (aggregate, DSL, export, comparison) to CH.</p>
+        <ul>
+          <li><span class="chip ok">＋</span> Zero write-path change; Postgres <code>ON CONFLICT</code> dedup preserved; instant rollback (stop routing)</li>
+          <li><span class="chip danger">－</span> <strong>Killer:</strong> Phase 2 pages <code>test_case_run_results</code> seconds after Phase 1 writes them, and Phase 3 reads Phase-2 rows — replication lag sits inside the job pipeline, so internal reads must stay on PG. You only offload client reads, yet still pay the full CH read-port cost.</li>
+          <li><span class="chip warn">－</span> Permanent dual infra + lag monitoring + two schemas to migrate forever</li>
+        </ul>
+      </div>
+      <div class="path">
+        <span class="tag">Path C</span>
+        <h3>Dual-write bridge, then decommission</h3>
+        <p>Application writes both stores for a verification window; reads flip to CH once parity checks pass; then drop the PG leg.</p>
+        <ul>
+          <li><span class="chip ok">＋</span> Best production-data verification; no bulk backfill for new rows (old rows still need one)</li>
+          <li><span class="chip warn">－</span> Longest project; a temporary dual-writer component you'll throw away; failure-mode matrix (one leg fails) needs design even though writes are idempotent</li>
+          <li><span class="chip warn">－</span> Converges to Path A anyway — it's Path A plus a costlier verification phase</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout ok prose">
+      <span class="lbl">Why Path A wins here</span>
+      The workload has none of the properties that usually force B or C: no in-place mutation (append-only + <code>computation_id</code> versioning), no transactional invariants on analytics (idempotent batches, compensation already in place, orphans tolerated), and a hard read-your-writes requirement <em>inside</em> the pipeline that async replication can't meet. Verification value of C can be captured cheaply by replaying real production runs against a CH staging instance (§7) instead of running dual writes in prod. If zero write downtime ever becomes a hard requirement, use PeerDB once, as a <strong>backfill tool</strong> for Path A's cutover — not as an architecture.
+    </div>
+  </section>
+
+  <!-- ============================ PART III ============================ -->
+  <section id="part3">
+    <div class="part-head">
+      <span class="eyebrow">Part III</span>
+      <h2>How-to: the cutover, step by step</h2>
+    </div>
+    <p class="prose sub">Everything below is additive until step 8 — Postgres remains the default vendor throughout development, and each step is testable in isolation. The meta database is untouched.</p>
+
+    <div class="step" id="s3-0">
+      <div class="step-num">0</div>
+      <div class="step-body">
+        <h3>Prerequisites &amp; versions</h3>
+        <ul class="tight prose">
+          <li><strong>ClickHouse ≥ 25.3</strong> (native <code>JSON</code> type GA; lightweight <code>UPDATE</code> exists from 25.7 but this workload never needs it). Prefer the current LTS.</li>
+          <li><strong>jOOQ ≥ 3.20</strong> — the <code>CLICKHOUSE</code> dialect ships in the open-source edition (experimental). The project's codegen classpath already pins <code>jooq-codegen:3.21.6</code> (<code>build.gradle:30</code>); confirm the Spring Boot 4.1.1-managed runtime <code>org.jooq:jooq</code> resolves to ≥ 3.20 (<code>./gradlew dependencies --configuration runtimeClasspath | grep org.jooq</code>).</li>
+          <li><strong>Dependencies to add:</strong> <code>com.clickhouse:clickhouse-jdbc</code> (current V2 driver) and <code>org.flywaydb:flyway-database-clickhouse</code> (community plugin).</li>
+          <li>Treat the jOOQ CH dialect as experimental: every ported query shape gets a functional test (§7); anything the dialect renders wrong drops to <code>DSL.field(sql, …)</code>/plain SQL inside the CH repository — which is exactly what the repository layer exists for.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step" id="s3-1">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h3>Wiring: datasource, transaction manager, Flyway, validation</h3>
+        <p class="prose">Mirror <code>AnalyticsPostgresConfiguration</code> with a CH twin; everything keeps the same bean names so no consumer changes.</p>
+        <ul class="tight prose">
+          <li><strong><code>DatasourceValidationConfiguration</code></strong> — allow <code>CLICKHOUSE</code> for analytics (meta stays POSTGRES-only). The same-host/same-db collision check becomes a no-op across engines.</li>
+          <li><strong><code>AnalyticsClickHouseConfiguration</code></strong> (<code>@ConditionalOnProperty("datasource.analytics.vendor")="CLICKHOUSE"</code>): HikariCP over the CH JDBC driver, URL like <code>jdbc:ch://host:8123/evaluation_analytics?compress=1</code>. Note the Azure AD token path (<code>DynamicPasswordHikariDataSource</code>) is Postgres-flexible-server-specific — CH auth is its own config block.</li>
+          <li><strong><code>analyticsTransactionManager</code></strong> — ClickHouse has no usable transactions, and the existing <code>DataSourceTransactionManager</code> would call <code>setAutoCommit(false)</code> and fail. Provide a <em>resourceless no-op <code>PlatformTransactionManager</code></em> under the same bean name so every existing <code>@Transactional("analyticsTransactionManager")</code> and <code>TransactionTemplate</code> still binds and simply demarcates nothing. (Semantics implications in §6 — they're all acceptable for this workload.)</li>
+          <li><strong><code>analyticsDsl</code></strong> — same shape, <code>SQLDialect.CLICKHOUSE</code>. Keep <code>TransactionAwareDataSourceProxy</code> (harmless with a no-op manager) or drop it; keep the exception-translator listener.</li>
+          <li><strong>Flyway</strong> — <code>AnalyticsFlywayConfiguration</code> already resolves <code>db/migration/analytics/CLICKHOUSE</code> from the vendor property; it just needs the CH plugin on the classpath. Remember CH DDL auto-commits statement-by-statement: keep migrations single-purpose, and know a failed migration does not roll back (repair = fix forward).</li>
+          <li><strong>Health</strong> — <code>AnalyticsDatabaseHealthIndicator</code> runs a plain probe over <code>analyticsRawJdbcTemplate</code>; <code>SELECT 1</code> works on CH unchanged.</li>
+          <li><strong>Config &amp; docs</strong> — new <code>clickhouse.analytics.datasource.*</code> properties (URL, user, password, database), rows in <code>docs/configuration.md</code> (all six columns, per project rule), and <code>reWriteBatchedInserts</code> documented as Postgres-only.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step" id="s3-2">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h3>ClickHouse schema — one consolidated init migration</h3>
+        <p class="prose">Do not port 17 incremental migrations; write <code>V1.1__Init.sql</code> expressing the current schema. Three deliberate mappings:</p>
+        <ul class="tight prose">
+          <li><strong>Engine = <code>ReplacingMergeTree</code>, <code>ORDER BY</code> = the natural unique key.</strong> This is the <code>ON CONFLICT DO NOTHING</code> replacement: duplicate deliveries (double flush, retried import) collapse to one row at merge time, and reads that must be exact use <code>FINAL</code> (§3). Rows are immutable, so "replace" and "do nothing" are equivalent outcomes.</li>
+          <li><strong><code>PARTITION BY</code> month of <code>created_at_ms</code></strong> — the PG schema was already designed around <code>created_at_ms</code> as the pruning key (composite PK, equality pin on every read). Same idea, now enforced by the engine, and it makes retention (<code>TTL</code> or <code>DROP PARTITION</code>) free later.</li>
+          <li><strong>JSONB → <code>String</code> first, native <code>JSON</code> as a follow-up.</strong> Conservative default: JSON payloads round-trip byte-exactly (the codebase is explicit about preserving <code>{"key": null}</code> entries in <code>metric_values</code> — see the <code>NON_NULL</code> serializer rule in AGENTS.md), and every filter/aggregate works via <code>JSONExtract</code> over String at excellent speed. Once cut over, A/B the native <code>JSON</code> type on <code>metric_values</code>/<code>extracted_columns</code>/<code>test_case_data</code> for columnar subcolumn reads — but verify explicit-null round-tripping before switching, and note <code>Nullable(JSON)</code> is not supported (relevant to <code>request_body</code>/<code>response_body</code>/<code>metric_infos</code>/<code>log_details</code>, which are nullable and projection-only — keep those <code>Nullable(String)</code> permanently).</li>
+        </ul>
+<pre><code><span class="cmt">-- V1.1__Init.sql (excerpt: the two big tables; snapshots + scores follow the same pattern)</span>
+CREATE TABLE test_case_run_results (
+    id                    String,
+    test_suite_run_id     String,
+    test_suite_id         String,
+    test_case_id          String,
+    test_case_name        String,
+    run_index             Int32,
+    request_index         Int32 DEFAULT 0,
+    total_requests        Int32 DEFAULT 1,
+    turn_index            Int32 DEFAULT 0,
+    total_turns           Int32 DEFAULT 1,
+    test_case_data        String,               <span class="cmt">-- JSON text (NOT NULL in PG)</span>
+    request_body          Nullable(String),
+    response_body         Nullable(String),
+    response_status_code  Nullable(Int32),
+    execution_status      LowCardinality(String),
+    exec_started_at_ms    Int64,
+    exec_completed_at_ms  Int64,
+    exec_duration_ms      Int64,
+    retry_count           Int32 DEFAULT 0,
+    log_details           Nullable(String),
+    trace_id              Nullable(String),
+    extracted_columns     String DEFAULT '{}',
+    extraction_warnings   String DEFAULT '[]',
+    created_at_ms         Int64,
+    INDEX idx_id id TYPE bloom_filter GRANULARITY 4   <span class="cmt">-- findById without full-scan</span>
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYYYYMM(fromUnixTimestamp64Milli(created_at_ms))
+ORDER BY (test_suite_id, test_suite_run_id, test_case_id,
+          run_index, request_index, turn_index, created_at_ms);
+
+CREATE TABLE test_case_eval_summaries (
+    <span class="cmt">-- … same denormalized columns, plus:</span>
+    computation_id          String,
+    metric_values           String DEFAULT '{}',
+    metric_infos            Nullable(String),
+    metric_eval_duration_ms Int64 DEFAULT 0,
+    computed_at_ms          Int64,
+    INDEX idx_id id TYPE bloom_filter GRANULARITY 4
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYYYYMM(fromUnixTimestamp64Milli(created_at_ms))
+ORDER BY (test_suite_run_id, computation_id, test_case_id,
+          run_index, request_index, turn_index, created_at_ms);</code></pre>
+        <ul class="tight prose">
+          <li><strong>Sorting-key choices:</strong> results lead with <code>test_suite_id</code> because Stack A allows suite-scoped listing without a run id; summaries lead with <code>(test_suite_run_id, computation_id)</code> because <em>every</em> summary read pins both. Both keys are supersets of the PG natural unique keys, and the extra leading columns are functionally dependent on <code>test_suite_run_id</code>, so dedup semantics are preserved exactly.</li>
+          <li><strong>Latest-computation query</strong> (<code>ORDER BY computed_at_ms DESC LIMIT 1</code> per run) needs no index — at per-run row counts it's a trivial scan of one run's key range; or rewrite to <code>argMax(computation_id, computed_at_ms)</code> in the CH repo.</li>
+          <li><code>run_metric_snapshots</code>: <code>ORDER BY (computation_id, tsmd_id)</code>; <code>metric_score_result</code>: <code>ORDER BY (test_suite_run_id, computation_id, metric_score_name, metric_name)</code> — both tiny, unpartitioned is fine.</li>
+          <li><strong>IDs stay <code>String</code>(36)</strong>, not CH <code>UUID</code>, mirroring the PG <code>VARCHAR(36)</code> decision — but see the type-inference gotcha in §5.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step" id="s3-3">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h3>Repositories &amp; the write path</h3>
+        <p class="prose">Add <code>ClickHouse*Repository</code> implementations of the four existing interfaces, gated on <code>vendor=CLICKHOUSE</code>. The <code>*RecordMapper</code> components are reusable as-is if you run a second jOOQ codegen pass against the CH schema (a <code>generateJooqClickhouse</code> task using Testcontainers + <code>org.jooq.meta.clickhouse.ClickHouseDatabase</code>, output to a sibling package); alternatively hand-map with <code>Record</code>-by-name access — the tables are only four.</p>
+        <h4>Writes</h4>
+        <ul class="tight prose">
+          <li>Drop <code>onConflict(…).doNothing()</code> — plain <code>INSERT</code>; the engine dedups. Prefer <strong>bind-value batching of a single statement</strong> (one <code>INSERT … VALUES</code> with <code>addBatch</code>, which the CH driver turns into one efficient insert) over jOOQ's multi-statement <code>dsl.batch(queries)</code>.</li>
+          <li>All rows of one flush share <code>created_at_ms</code> ⇒ one partition ⇒ <strong>each batch is atomic</strong> (single-part insert), preserving today's per-flush atomicity without transactions.</li>
+          <li>ClickHouse prefers fewer, larger inserts: raise <code>test-suite-run.execution.result-batch-size</code> (100 → 1,000–5,000) and/or set <code>async_insert=1&amp;wait_for_async_insert=1</code> on the JDBC URL so small flushes coalesce server-side. Keep <code>wait_for_async_insert=1</code> — the pipeline's read-your-writes depends on the ack.</li>
+          <li>On a replicated/SharedMergeTree deployment, exact retried batches are additionally dropped by insert-block dedup; <code>ReplacingMergeTree</code> covers partial overlaps either way.</li>
+        </ul>
+        <h4>Reads</h4>
+        <ul class="tight prose">
+          <li>Duplicates exist only until parts merge, and only after a retry — but counts/aggregates must be exact, so run reads with <code>FINAL</code>. Simplest global switch: set <code>final = 1</code> (plus <code>do_not_merge_across_partitions_select_final = 1</code>) in the CH <strong>user profile</strong> of the app's read user — zero query changes, applies query-level FINAL to every MergeTree read. Per-run data volumes make FINAL cost negligible.</li>
+          <li>Keyset pagination ports verbatim: CH compares tuples lexicographically, so <code>(created_at_ms, id) &lt; (?, ?)</code> + <code>ORDER BY created_at_ms DESC, id DESC LIMIT size+1</code> works unchanged (no B-tree behind it, but every such read is already pinned to one run's key range).</li>
+          <li>The projection tiers (list/export/export+bodies/detail) port as-is and matter <em>more</em> on CH: selecting fewer columns is the columnar win. The <code>LEFT JOIN</code> to results for bodies is a per-run join — fine.</li>
+          <li>Run comparison: keep the <code>DISTINCT</code>-probe + <code>LEFT JOIN</code> shape; replace <code>FILTER (WHERE …)</code> with <code>countIf</code>/<code>avgIf</code> if jOOQ's CASE emulation proves awkward.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step" id="s3-4">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h3>JSON access seam</h3>
+        <p class="prose">Implement <code>ClickHouseJsonPathAccessor</code> next to the Postgres one (and add the missing <code>@ConditionalOnProperty</code> guard to <code>PostgresJsonPathAccessor</code> — it's currently an unguarded <code>@Component</code>):</p>
+<pre><code><span class="cmt">-- Postgres today                          → ClickHouse (String columns + JSONExtract)</span>
+col -&gt;&gt; :key                                JSONExtract(col, {key}, 'Nullable(String)')
+col -&gt; :key                                 JSONExtractRaw(col, {key})
+(col -&gt; :k1 -&gt;&gt; :k2)::numeric               JSONExtract(col, {k1}, {k2}, 'Nullable(Float64)')</code></pre>
+        <ul class="tight prose">
+          <li>Use the <code>'Nullable(T)'</code> return-type form, not <code>JSONExtractString</code>/<code>JSONExtractFloat</code> — the latter return <code>''</code>/<code>0</code> for missing keys, which would silently corrupt <em>null vs absent</em> semantics that the aggregate endpoint's <code>count()</code> depends on.</li>
+          <li>Render path components as <strong>inlined, escaped string literals</strong> (<code>DSL.inline(...)</code>) rather than bind params — sidesteps any constant-argument requirements in the JSON functions, and CH gains nothing from bind-parameter plan reuse. Path components are already validated upstream; inlining via jOOQ's escaping keeps this injection-safe.</li>
+          <li>Numbers become <code>Float64</code> instead of PG <code>numeric</code>/BigDecimal. Metric values are doubles end-to-end in Java, so this is faithful — but expect last-ulp differences in aggregates; comparison tests should assert with an epsilon.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step" id="s3-5">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <h3>Query DSL &amp; function catalog</h3>
+        <p class="prose">The DSL emits single-table selects — no joins — so the port is confined to the function catalog, the null-polarity wrappers, and the two analytics entity resolvers.</p>
+        <div class="tablewrap"><table>
+          <tr><th>DSL construct</th><th>Postgres today</th><th>ClickHouse</th><th>How</th></tr>
+          <tr><td><code>count/sum/avg/min/max</code> (+distinct)</td><td>standard</td><td>same</td><td><span class="chip ok">dialect</span></td></tr>
+          <tr><td><code>percentile_cont(f)</code></td><td><code>WITHIN GROUP</code></td><td><code>quantileExactInclusive(f)(x)</code></td><td>vendor function bean</td></tr>
+          <tr><td><code>percentile_disc(f)</code></td><td><code>WITHIN GROUP</code></td><td><code>quantileExactLow(f)(x)</code></td><td>vendor function bean; verify against PG fixtures</td></tr>
+          <tr><td><code>roc_auc(y, p)</code></td><td><code>roc_auc_score(array_agg(y), array_agg(p))</code> stored fn</td><td><code>arrayAUC(groupArray(p), groupArray(y))</code></td><td>vendor <code>RocAucFunction</code>; <strong>note swapped arg order</strong> (scores first); verify tie/NULL handling vs V1.11 with a fixture</td></tr>
+          <tr><td><code>width_bucket</code></td><td>native</td><td><code>widthBucket()</code></td><td><span class="chip ok">rename</span></td></tr>
+          <tr><td><code>add/subtract/multiply/divide/coalesce</code></td><td><code>cast(… as numeric)</code></td><td>casts to <code>Float64</code>/<code>Decimal</code></td><td>check what the dialect renders for BigDecimal casts; force Float64 if needed</td></tr>
+          <tr><td>null polarity <code>nc/ne/not</code></td><td><code>(c) IS NOT FALSE</code> / <code>IS NOT TRUE</code></td><td><code>ifNull(c, true)</code> / <code>NOT ifNull(c, false)</code></td><td>extract a vendor-aware polarity helper in <code>FilterTranslator</code> (new seam, same pattern as <code>JsonPathAccessor</code>)</td></tr>
+          <tr><td><code>co/nc</code> contains</td><td><code>ILIKE '%…%' ESCAPE '\'</code></td><td><code>ILIKE</code> supported</td><td><span class="chip ok">dialect</span>; verify non-ASCII case folding matches expectations</td></tr>
+          <tr><td><code>in</code> subquery / scalar subquery</td><td>derived table</td><td>uncorrelated — supported</td><td><span class="chip ok">dialect</span></td></tr>
+          <tr><td><code>GROUP BY</code> output-column refs, <code>HAVING</code>, <code>ORDER BY</code> alias, offset paging</td><td>—</td><td>supported (CH even allows alias refs natively)</td><td><span class="chip ok">dialect</span></td></tr>
+        </table></div>
+        <ul class="tight prose">
+          <li><strong>Entity resolvers:</strong> add <code>ClickHouseEvalSummaryEntityResolver</code> and <code>ClickHouseMetricScoreResultEntityResolver</code> (CH-generated table + <code>analyticsDsl</code>); <code>MetricScoreLatestComputationDefaulter</code> logic carries over unchanged. Meta resolvers (<code>test_suites</code>, <code>test_cases</code>) untouched.</li>
+          <li><strong>Type-inference gotcha:</strong> <code>JooqTableSchemaResolver</code> classifies a field as UUID when <code>length() == 36</code>. CH <code>String</code> reports no length, so every id column would silently degrade to STRING typing in the bindings map. Fix the resolver to be vendor-aware (explicit id-column set or a naming convention) rather than bending the schema (e.g. <code>FixedString(36)</code>) around a reflection heuristic.</li>
+          <li><strong>Pre-existing caveat now worth enforcing:</strong> DSL subqueries have no same-datasource check — an <code>in</code>-subquery mixing a meta entity into an analytics query already breaks across the two PG databases and will break more confusingly across engines. Add an explicit 400 in <code>StructuredQueryBuilder.compileSubqueryMembership</code> as part of this work.</li>
+          <li><strong>Ordering/collation:</strong> CH string <code>ORDER BY</code> is byte order, PG's is collation-aware — sort of <code>test_case_name</code>-like fields may differ in case handling. Nothing user-controllable sorts analytics strings in Stack A (no <code>SortWhitelists</code> entry), so exposure is limited to DSL client sorts; document it.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step" id="s3-6">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <h3>Semantics that change — and why each is acceptable</h3>
+        <div class="tablewrap"><table>
+          <tr><th>Postgres semantics today</th><th>On ClickHouse</th><th>Why it's fine (or what to do)</th></tr>
+          <tr><td>One tx per 100-row Phase-1 flush; per-chunk tx Phase 2</td><td>No transactions; each insert atomic per partition-part</td><td>Same-partition batches keep per-flush atomicity; failures already abort/fail the run, and re-runs are idempotent via the engine's dedup key</td></tr>
+          <tr><td>CSV import: one tx spanning all chunks (all-or-nothing)</td><td>Chunks commit independently; a mid-import failure leaves a prefix</td><td>Failure already marks the run FAILED (compensation path); orphan/partial rows are tolerated by design and invisible (reads pin run + computation). A re-import creates a new run id — no collision. Optionally delete the prefix with an async <code>DELETE WHERE test_suite_run_id = …</code> mutation for hygiene.</td></tr>
+          <tr><td><code>RunComparisonService</code> wraps aggregates in one read-only tx "for a consistent snapshot"</td><td>No snapshot across statements</td><td>Comparison requires terminal-status runs; the data is immutable, so consistency holds without a snapshot</td></tr>
+          <tr><td>Export pages each in its own read-only tx</td><td>Same, minus the tx</td><td>Already non-snapshot by design (terminal-status gate)</td></tr>
+          <tr><td><code>ON CONFLICT DO NOTHING</code> — dup rows never visible, ever</td><td>Dups visible <em>between</em> a retry and the merge, unless <code>FINAL</code></td><td>Profile-level <code>final=1</code> (§3) restores exactness at query time</td></tr>
+          <tr><td>Read-your-writes via commit visibility</td><td>Insert ack ⇒ visible on that node; replicas may lag</td><td>Single-node or single-shard keeps the pipeline correct as-is; on a replicated cluster pin the app to one replica or set <code>select_sequential_consistency=1</code> for the internal pipeline reads</td></tr>
+          <tr><td><code>numeric</code>/BigDecimal aggregate arithmetic</td><td><code>Float64</code></td><td>Values are Java doubles anyway; assert with epsilon in parity tests</td></tr>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="step" id="s3-7">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <h3>Testing strategy</h3>
+        <ul class="tight prose">
+          <li><strong><code>@ClickHouseFunctionalTests</code></strong> mirroring <code>@PostgresFunctionalTests</code>: Testcontainers <code>clickhouse</code> module for analytics + the existing PG container for meta (the dual-datasource split makes this trivial). Run the analytics-touching functional suites (results, eval summaries, snapshots, scores, export, comparison, query DSL) against <em>both</em> vendors in the CI matrix.</li>
+          <li><strong>Fixture helpers:</strong> extend <code>AnalyticsTestDataHelper</code> with a CH-backed implementation behind the same interface — test classes stay unchanged.</li>
+          <li><strong>Function-parity fixtures:</strong> golden-value tests for <code>quantileExactInclusive</code> vs <code>percentile_cont</code>, <code>arrayAUC</code> vs <code>roc_auc_score</code> (including ties and single-class inputs — the PG function returns NULL when a class is absent; confirm CH matches or wrap with <code>nullIf</code>), and the null-polarity rewrites (build a truth table: null/true/false operand × <code>nc/ne/not</code>).</li>
+          <li><strong>Production-replay parity (the cheap version of Path C):</strong> stand up CH in staging, backfill a copy of prod analytics (§8 mechanics), and diff REST/DSL responses (list, aggregate, export CSV, comparison, metric scores) between vendors for a sample of real runs. This is the gate for cutover.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step" id="s3-8">
+      <div class="step-num">8</div>
+      <div class="step-body">
+        <h3>Data migration runbook</h3>
+        <p class="prose">Analytics is only written while a run/import is active — draining runs is a natural quiesce, so the backfill needs no CDC. Use ClickHouse's built-in <code>postgresql()</code> table function, pulling from the CH side:</p>
+        <ol class="steps prose">
+          <li><strong>Provision</strong> ClickHouse; deploy the app with <code>vendor=CLICKHOUSE</code> in staging first so Flyway creates the schema and the full test gate (§7) passes.</li>
+          <li><strong>Quiesce prod writes:</strong> block new suite runs and CSV imports (maintenance flag), wait for RUNNING runs to reach a terminal state. Reads can stay up.</li>
+          <li><strong>Backfill</strong> each table (no FK ordering constraints exist):
+<pre><code>INSERT INTO test_case_run_results
+SELECT id, test_suite_run_id, test_suite_id, test_case_id, test_case_name,
+       run_index, request_index, total_requests, turn_index, total_turns,
+       test_case_data, request_body, response_body, response_status_code,
+       execution_status, exec_started_at_ms, exec_completed_at_ms,
+       exec_duration_ms, retry_count, log_details, trace_id,
+       extracted_columns, extraction_warnings, created_at_ms
+FROM postgresql('pg-host:5432', 'evaluation_analytics_db',
+                'test_case_run_results', 'user', 'pass', 'public');
+<span class="cmt">-- JSONB arrives as String — no cast needed with the String-column schema.
+-- For very large tables, chunk with WHERE created_at_ms ranges.</span></code></pre>
+          For terabyte-scale or a strict zero-write-downtime requirement, swap this step for a one-shot PeerDB mirror (open source, self-hostable; parallel snapshotting) — same target schema, same verification.</li>
+          <li><strong>Verify:</strong> per-table <code>count()</code>; per-run counts (<code>GROUP BY test_suite_run_id</code>) diffed between engines; checksum-style probes (<code>sum(exec_duration_ms)</code>, <code>sum(cityHash64(id))</code> vs a PG equivalent); API-level parity on sampled runs (§7's harness).</li>
+          <li><strong>Cut over:</strong> flip <code>datasource.analytics.vendor=CLICKHOUSE</code> + the CH datasource properties, deploy, re-enable runs. Execute one real suite run end-to-end (Phase 1→2→3, export, comparison) as the smoke test.</li>
+          <li><strong>Keep Postgres analytics up, read-only,</strong> for the rollback window (2–4 weeks).</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="step" id="s3-9">
+      <div class="step-num">9</div>
+      <div class="step-body">
+        <h3>Rollback &amp; post-cutover wins</h3>
+        <h4>Rollback</h4>
+        <p class="prose">Append-only data makes rollback mechanical: flip the vendor property back, then copy rows created during the CH period back to PG — they're exactly the rows whose <code>test_suite_run_id</code> is absent in PG (or filter on <code>created_at_ms &gt; cutover</code>, since it's the run-creation timestamp). Postgres <code>ON CONFLICT DO NOTHING</code> makes the reverse copy idempotent too.</p>
+        <h4>What you gain once stable</h4>
+        <ul class="tight prose">
+          <li><strong>Retention for free:</strong> today nothing ever deletes analytics rows (orphans accumulate by design). Add <code>TTL fromUnixTimestamp64Milli(created_at_ms) + INTERVAL N MONTH</code> or scheduled <code>DROP PARTITION</code> — the retention story PG never had without painful bulk deletes.</li>
+          <li><strong>Compression:</strong> the JSON-heavy payloads (request/response bodies, metric maps) typically compress an order of magnitude better in columnar parts than in TOAST.</li>
+          <li><strong>Aggregate headroom:</strong> the aggregate endpoint, Phase-3 statistics, and run comparison move from row-store JSONB scans to columnar scans; cross-run/suite-level dashboards (currently absent, likely requested next) become cheap.</li>
+          <li><strong>No more index-swap migrations:</strong> the V1.13/V1.17-style unique-index rebuilds with exclusive-lock warnings disappear; widening the dedup key is an <code>ORDER BY</code> change on a new table + <code>INSERT SELECT</code>.</li>
+          <li><strong>Native JSON follow-up:</strong> once round-trip fidelity (explicit nulls) is verified on your payloads, migrate <code>metric_values</code>/<code>extracted_columns</code>/<code>test_case_data</code> to the GA <code>JSON</code> type for typed subcolumn pruning on metric filters.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ APPENDIX ============================ -->
+  <section id="appendix">
+    <div class="part-head">
+      <span class="eyebrow">Appendix A</span>
+      <h2>File-by-file change map</h2>
+    </div>
+    <div class="tablewrap"><table>
+      <tr><th>Area</th><th>Change</th></tr>
+      <tr><td><code>build.gradle</code></td><td>Add <code>clickhouse-jdbc</code>, <code>flyway-database-clickhouse</code>; new <code>generateJooqClickhouse</code> task (Testcontainers CH + Flyway CLICKHOUSE dir + <code>ClickHouseDatabase</code> codegen → sibling generated package)</td></tr>
+      <tr><td><code>configuration/datasource/</code></td><td>New <code>AnalyticsClickHouseConfiguration</code> (Hikari + CH driver, <code>analyticsDsl</code> with <code>SQLDialect.CLICKHOUSE</code>, no-op <code>analyticsTransactionManager</code>); relax <code>DatasourceValidationConfiguration</code>; <code>AnalyticsFlywayConfiguration</code> unchanged (vendor-keyed path already)</td></tr>
+      <tr><td><code>resources/db/migration/analytics/CLICKHOUSE/</code></td><td><code>V1.1__Init.sql</code> — consolidated schema (§2)</td></tr>
+      <tr><td><code>data/db/analytics/repository/</code></td><td>4 × <code>ClickHouse*Repository</code> (plain batched inserts, <code>FINAL</code>-exact reads, <code>argMax</code> latest-computation); <code>@ConditionalOnProperty</code> vendor gates mirror the Postgres ones</td></tr>
+      <tr><td><code>data/db/repository/sql/json/</code></td><td>New <code>ClickHouseJsonPathAccessor</code>; add missing vendor guard to <code>PostgresJsonPathAccessor</code></td></tr>
+      <tr><td><code>query/service/repository/</code></td><td>2 × ClickHouse entity resolvers (<code>eval_summaries</code>, <code>metric_score_results</code>)</td></tr>
+      <tr><td><code>query/service/translate/</code></td><td>Vendor-aware null-polarity helper in <code>FilterTranslator</code>; vendor function beans: <code>percentile_cont/disc</code> → <code>quantileExact*</code>, <code>roc_auc</code> → <code>arrayAUC</code>, <code>width_bucket</code> → <code>widthBucket</code>; datasource-mismatch 400 for subqueries</td></tr>
+      <tr><td><code>query/service/JooqTableSchemaResolver</code></td><td>Vendor-aware UUID typing (the <code>length()==36</code> heuristic fails on CH String)</td></tr>
+      <tr><td><code>service/domain/job/</code></td><td><code>PostgresResultBatchWriterFactory</code>/<code>Writer</code>: rename or add a CH variant (the tx template becomes a no-op pass-through); consider raising <code>result-batch-size</code></td></tr>
+      <tr><td>Tests</td><td><code>@ClickHouseFunctionalTests</code> + CH <code>AnalyticsTestDataHelper</code>; vendor matrix in CI; function-parity fixtures; prod-replay diff harness</td></tr>
+      <tr><td>Docs</td><td><code>docs/configuration.md</code> rows; <code>docs/database-schema.md</code> CH section; new <code>docs/patterns/clickhouse-analytics.md</code>; AGENTS.md quick-reference row</td></tr>
+    </table></div>
+
+    <div class="callout warn prose">
+      <span class="lbl">Explicit non-goals</span>
+      The meta database, its REPEATABLE READ snapshot phase and 40001 retry, the <code>test_cases</code> DSL entity with its <code>jsonb_array_elements</code> multi-turn selector and array-containment operators, <code>TransactionTimestampContext</code>, and all Flyway meta migrations are untouched — they never leave Postgres.
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>Findings sourced from the repository (migrations V1.1–V1.18, the four analytics repositories, the query DSL under <code>query/</code>, <code>docs/patterns/</code>). ClickHouse-ecosystem facts verified Aug 2026:
+    <a href="https://blog.jooq.org/jooq-3-20-released-with-clickhouse-databricks-and-much-more-duckdb-support-new-modules-oracle-type-hierarchies-more-spatial-support-decfloat-and-synonym-support-hidden-columns-scala-3-kotlin/">jOOQ 3.20 ClickHouse dialect (all editions, experimental)</a> ·
+    <a href="https://documentation.red-gate.com/flyway/reference/database-driver-reference/clickhouse-database">Flyway community ClickHouse plugin</a> ·
+    <a href="https://clickhouse.com/docs/reference/data-types/newjson">JSON type (GA 25.3)</a> ·
+    <a href="https://clickhouse.com/docs/reference/statements/update">lightweight UPDATE (25.7+, unused here)</a> ·
+    <a href="https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-ga">PeerDB / ClickPipes Postgres CDC</a>.</p>
+  </footer>
+</div>

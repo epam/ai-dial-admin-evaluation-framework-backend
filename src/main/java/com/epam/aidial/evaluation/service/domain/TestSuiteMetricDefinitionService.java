@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.AggregatedMetricDefinitionResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.ExpressionBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionResponseDto;
@@ -76,6 +77,8 @@ public class TestSuiteMetricDefinitionService {
         checkNoDuplicateProperties(dto.getConfigBindings(), "configBindings");
         checkNoDuplicateProperties(dto.getInputBindings(), "inputBindings");
         conditionExpressionEvaluator.validate(dto.getCondition());
+        validateExpressionBindingSyntax(dto.getConfigBindings());
+        validateExpressionBindingSyntax(dto.getInputBindings());
 
         String testCaseSchema = loadDatasetSchema(suite);
         ValidationResult result = metricDefinitionValidationService.validate(
@@ -166,6 +169,8 @@ public class TestSuiteMetricDefinitionService {
         checkNoDuplicateProperties(dto.getConfigBindings(), "configBindings");
         checkNoDuplicateProperties(dto.getInputBindings(), "inputBindings");
         conditionExpressionEvaluator.validate(dto.getCondition());
+        validateExpressionBindingSyntax(dto.getConfigBindings());
+        validateExpressionBindingSyntax(dto.getInputBindings());
 
         String testCaseSchema = loadDatasetSchema(suite);
         ValidationResult result = metricDefinitionValidationService.validate(
@@ -249,6 +254,23 @@ public class TestSuiteMetricDefinitionService {
         for (MetricParameterBindingDto binding : bindings) {
             if (binding != null && binding.getProperty() != null && !seen.add(binding.getProperty())) {
                 throw new ValidationException("Duplicate property '" + binding.getProperty() + "' in " + fieldName);
+            }
+        }
+    }
+
+    /**
+     * Syntax-checks every {@code Expression}-typed binding source's {@code expression} at write time,
+     * mirroring the {@code condition} check above ({@link ConditionExpressionEvaluator#validate}): a
+     * malformed JSONata expression is rejected with HTTP 400. No cross-TSMD reference validation is
+     * performed — a syntactically valid expression referencing a not-yet-producing TSMD name is accepted.
+     */
+    private void validateExpressionBindingSyntax(List<MetricParameterBindingDto> bindings) {
+        if (bindings == null) {
+            return;
+        }
+        for (MetricParameterBindingDto binding : bindings) {
+            if (binding != null && binding.getSource() instanceof ExpressionBindingSourceDto expressionSource) {
+                conditionExpressionEvaluator.validate(expressionSource.getExpression());
             }
         }
     }

@@ -6,6 +6,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -90,5 +91,45 @@ class TestSuiteMetricDefinitionRequestDtoValidationTest {
         Set<ConstraintViolation<TestSuiteMetricDefinitionRequestDto>> violations = validator.validate(dto);
         assertThat(violations).extracting(v -> v.getPropertyPath().toString()).containsOnly("name");
         assertThat(violations).extracting(ConstraintViolation::getMessage).noneMatch(msg -> msg.contains("'::'"));
+    }
+
+    @Test
+    @DisplayName("blank expression in an Expression binding source fails NotBlank via cascaded @Valid")
+    void blankExpressionBindingSource_failsValidation() {
+        var dto = TestSuiteMetricDefinitionRequestDto.builder()
+                .name("Accuracy")
+                .metricDeclarationId(UUID.randomUUID())
+                .metricDeclarationVersionId(UUID.randomUUID())
+                .configBindings(List.of(MetricParameterBindingDto.builder()
+                        .property("threshold")
+                        .source(ExpressionBindingSourceDto.builder()
+                                .expression("")
+                                .build())
+                        .build()))
+                .build();
+
+        Set<ConstraintViolation<TestSuiteMetricDefinitionRequestDto>> violations = validator.validate(dto);
+        assertThat(violations)
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("configBindings[0].source.expression");
+        assertThat(violations).extracting(ConstraintViolation::getMessage).contains("Expression is required");
+    }
+
+    @Test
+    @DisplayName("non-blank expression in an Expression binding source passes validation")
+    void nonBlankExpressionBindingSource_passesValidation() {
+        var dto = TestSuiteMetricDefinitionRequestDto.builder()
+                .name("Accuracy")
+                .metricDeclarationId(UUID.randomUUID())
+                .metricDeclarationVersionId(UUID.randomUUID())
+                .configBindings(List.of(MetricParameterBindingDto.builder()
+                        .property("threshold")
+                        .source(ExpressionBindingSourceDto.builder()
+                                .expression("$_metrics.`judge`.score.value")
+                                .build())
+                        .build()))
+                .build();
+
+        assertThat(validator.validate(dto)).isEmpty();
     }
 }

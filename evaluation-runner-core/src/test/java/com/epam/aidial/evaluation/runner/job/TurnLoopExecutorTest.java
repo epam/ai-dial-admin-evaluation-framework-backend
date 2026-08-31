@@ -37,6 +37,7 @@ import com.epam.aidial.evaluation.runner.service.TemplateVariableResolver;
 import com.epam.aidial.evaluation.runner.util.QuietJsonService;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -53,6 +54,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Covers the unified turn loop's turn-count matrix (single-turn / multi-turn x no-per-turn-binding /
@@ -140,6 +143,57 @@ class TurnLoopExecutorTest {
         });
     }
 
+    /**
+     * Builds a second {@link TurnLoopExecutor} instance wired the same way as {@link #setUp()}, but with an
+     * {@code ObjectMapper} configured with the same {@code NON_NULL} property/content inclusion the
+     * production {@code JsonMapperConfiguration} bean uses — reproducing, for the transmission-caveat test
+     * only, the exact serialization behavior that silently drops a null-valued {@code Map} entry when a
+     * resolved request body is serialized for persistence (see {@code TurnLoopExecutor#serializeAccumulated}'s
+     * javadoc and design.md Decision 2). The shared {@code executor}/{@code objectMapper} fields used by
+     * every other test in this class stay untouched (a plain, non-NON_NULL mapper), so this method is used
+     * only where the caveat itself is under test.
+     */
+    private TurnLoopExecutor buildExecutorWithNonNullMapper() {
+        ObjectMapper nonNullMapper = JsonMapper.builder()
+                .changeDefaultPropertyInclusion(
+                        v -> JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.NON_NULL))
+                .build();
+        TemplateVariableResolver templateVariableResolver = new TemplateVariableResolver();
+        DialFileRefResolver dialFileRefResolver = mock(DialFileRefResolver.class);
+        TemplateContentResolver templateContentResolver =
+                new TemplateContentResolver(templateVariableResolver, dialFileRefResolver);
+        JsonataProperties jsonataProperties = new JsonataProperties();
+        jsonataProperties.setEvaluationTimeoutMs(5000L);
+        jsonataProperties.setMaxRecursionDepth(500);
+        JsonataEvaluationService jsonataEvaluationService =
+                new DashjoinJsonataEvaluationService(nonNullMapper, jsonataProperties);
+        JsonataSourcePreprocessor jsonataSourcePreprocessor =
+                new JsonataSourcePreprocessor(templateVariableResolver, dialFileRefResolver, nonNullMapper);
+        RequestBodyEvaluator requestBodyEvaluator = new RequestBodyEvaluator(
+                templateContentResolver, jsonataSourcePreprocessor, jsonataEvaluationService, nonNullMapper);
+        RequestResolver requestResolver = new RequestResolver(templateContentResolver, requestBodyEvaluator);
+        ResponseColumnExtractor responseColumnExtractor = new ResponseColumnExtractor(
+                jsonataEvaluationService,
+                new ResponseColumnTypeReconciler(),
+                new ValidationWarningsSerializer(nonNullMapper),
+                nonNullMapper);
+        QuietJsonService jsonService = new QuietJsonService(nonNullMapper);
+        PerTurnBindingDetector perTurnBindingDetector = new PerTurnBindingDetector();
+
+        return new TurnLoopExecutor(
+                requestResolver,
+                urlBuilder,
+                serializerRegistry,
+                responseColumnExtractor,
+                evaluationRunProperties,
+                jsonbMapper,
+                jsonService,
+                deploymentTurnInvoker,
+                perTurnBindingDetector,
+                nonNullMapper,
+                FIXED_CLOCK);
+    }
+
     private RequestTemplateDto jsonBodyTemplate(Map<String, Object> content) {
         return RequestTemplateDto.builder()
                 .urlTemplate("/v1/chat")
@@ -204,6 +258,123 @@ class TurnLoopExecutorTest {
     }
 
     @Test
+    @DisplayName("$_metrics binds a present-null nested value when inline: $exists is true, the bare reference is null")
+    void metricsFrameBindsPresentNullNestedValueWhenInline() {
+        stubCommonInfra();
+        // Mirrors the ObjectNode-putNull-then-serialize/rebind pattern InlineMetricEvaluatorImpl will use
+        // to build a real $_metrics frame entry (design.md Decision 2): the resulting Map carries a
+        // genuine present null at judge.score.value, not an absent key.
+        ObjectNode metricsNode = objectMapper.createObjectNode();
+        metricsNode.putObject("judge").putObject("score").putNull("value");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> initialMetrics = (Map<String, Object>)
+                objectMapper.readValue(objectMapper.writeValueAsString(metricsNode), Object.class);
+
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("metrics-frame")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonataBodyTemplate("{\"existsCheck\": $exists($_metrics.judge.score.value),"
+                        + " \"rawValue\": $_metrics.judge.score.value}"))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .inlineMetricEvaluator(request -> new InlineMetricResult(Map.of(), false))
+                .build();
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        initialMetrics,
+                        "trace-metrics-1",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(1);
+        TestCaseRunResult row = results.getFirst();
+        assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(row.getRequestBody()).contains("\"existsCheck\":true");
+        assertThat(row.getRequestBody()).contains("\"rawValue\":null");
+    }
+
+    @Test
+    @DisplayName("Non-inline run (no evaluator, empty initialMetrics): rows and extracted_columns are"
+            + " byte-identical to pre-change output — no $_metrics key leaks into the frame or the persisted"
+            + " columns")
+    void noEvaluatorAndEmptyInitialMetrics_producesByteIdenticalRowsAndExtractedColumns() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("regression-baseline")
+                .testCaseData(null)
+                .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"}]")
+                .build();
+        // context never calls .inlineMetricEvaluator(...) — the field stays null (non-inline), exactly
+        // the state every pre-existing run was in before this change.
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("turn", "${{prompt}}")))
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .perTurn(true)
+                        .build()))
+                .build();
+        List<ResponseColumnDefinitionDto> responseColumns = List.of(ResponseColumnDefinitionDto.builder()
+                .name("answer")
+                .expression("choices[0].message.content")
+                .type(SchemaFieldType.STRING)
+                .build());
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(
+                        ExecutionStatus.SUCCESS,
+                        200,
+                        "{\"choices\":[{\"message\":{\"content\":\"reply-0\"}}]}",
+                        0,
+                        null))
+                .thenReturn(new TurnOutcome(
+                        ExecutionStatus.SUCCESS,
+                        200,
+                        "{\"choices\":[{\"message\":{\"content\":\"reply-1\"}}]}",
+                        0,
+                        null));
+
+        RequestExecutionResult result = executor.execute(
+                input,
+                context,
+                0,
+                singleRequestSpec(context, responseColumns),
+                Map.of(),
+                Map.of(),
+                "trace-baseline",
+                FIXED_CLOCK.millis());
+
+        assertThat(result.aborted()).isFalse();
+        assertThat(result.rows()).hasSize(2);
+        // accumulatedMetrics threads through unchanged — no seam has folded anything into it (that wiring
+        // is added by the inline-metric-evaluation change's total-seam task).
+        assertThat(result.accumulatedMetrics()).isEmpty();
+
+        TestCaseRunResult turn0 = result.rows().get(0);
+        TestCaseRunResult turn1 = result.rows().get(1);
+        // extracted_columns carries exactly the response columns the suite defines — no _metrics entry,
+        // byte-identical to the pre-accumulator-plumbing shape.
+        assertThat(turn0.getExtractedColumns()).isEqualTo("{\"answer\":\"reply-0\"}");
+        assertThat(turn1.getExtractedColumns()).isEqualTo("{\"answer\":\"reply-1\"}");
+        assertThat(turn0.getRequestBody()).doesNotContain("_metrics");
+        assertThat(turn1.getRequestBody()).doesNotContain("_metrics");
+    }
+
+    @Test
     @DisplayName("Single-turn case: N=1, testCaseData persisted verbatim, turnIndex/totalTurns stay at defaults")
     void singleTurnCase_runsOnceWithDefaultTurnIndices() {
         stubCommonInfra();
@@ -229,6 +400,7 @@ class TurnLoopExecutorTest {
                         context,
                         0,
                         singleRequestSpec(context, List.of()),
+                        Map.of(),
                         Map.of(),
                         "trace-1",
                         FIXED_CLOCK.millis())
@@ -280,6 +452,7 @@ class TurnLoopExecutorTest {
                         context,
                         0,
                         singleRequestSpec(context, List.of()),
+                        Map.of(),
                         Map.of(),
                         "trace-2",
                         FIXED_CLOCK.millis())
@@ -342,6 +515,7 @@ class TurnLoopExecutorTest {
                         0,
                         singleRequestSpec(context, responseColumns),
                         Map.of(),
+                        Map.of(),
                         "trace-3",
                         FIXED_CLOCK.millis())
                 .rows();
@@ -382,6 +556,7 @@ class TurnLoopExecutorTest {
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
+                        Map.of(),
                         "trace-4",
                         FIXED_CLOCK.millis())
                 .rows();
@@ -419,6 +594,7 @@ class TurnLoopExecutorTest {
                         context,
                         0,
                         singleRequestSpec(context, List.of()),
+                        Map.of(),
                         Map.of(),
                         "trace-8",
                         FIXED_CLOCK.millis())
@@ -464,6 +640,7 @@ class TurnLoopExecutorTest {
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
+                        Map.of(),
                         "trace-5",
                         FIXED_CLOCK.millis())
                 .rows();
@@ -502,6 +679,7 @@ class TurnLoopExecutorTest {
                         0,
                         singleRequestSpec(context, responseColumns),
                         Map.of(),
+                        Map.of(),
                         "trace-7",
                         FIXED_CLOCK.millis())
                 .rows();
@@ -531,6 +709,7 @@ class TurnLoopExecutorTest {
                         0,
                         singleRequestSpec(context, List.of()),
                         Map.of(),
+                        Map.of(),
                         "trace-6",
                         FIXED_CLOCK.millis())
                 .rows();
@@ -557,6 +736,7 @@ class TurnLoopExecutorTest {
                         context,
                         0,
                         singleRequestSpec(context, List.of()),
+                        Map.of(),
                         Map.of(),
                         "trace-7",
                         FIXED_CLOCK.millis())
@@ -594,7 +774,14 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
 
         RequestExecutionResult result = executor.execute(
-                input, context, 0, singleRequestSpec(context, List.of()), Map.of(), "trace-9", FIXED_CLOCK.millis());
+                input,
+                context,
+                0,
+                singleRequestSpec(context, List.of()),
+                Map.of(),
+                Map.of(),
+                "trace-9",
+                FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isFalse();
         TestCaseRunResult row = result.rows().getFirst();
@@ -636,7 +823,7 @@ class TurnLoopExecutorTest {
                         null));
 
         RequestExecutionResult result =
-                executor.execute(input, context, 0, spec, initialFrame, "trace-10", FIXED_CLOCK.millis());
+                executor.execute(input, context, 0, spec, initialFrame, Map.of(), "trace-10", FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isFalse();
         TestCaseRunResult row = result.rows().getFirst();
@@ -679,9 +866,336 @@ class TurnLoopExecutorTest {
                 .thenReturn(new TurnOutcome(ExecutionStatus.FAILED, 500, "{\"error\":\"boom\"}", 0, null));
 
         RequestExecutionResult result = executor.execute(
-                input, context, 0, singleRequestSpec(context, List.of()), Map.of(), "trace-11", FIXED_CLOCK.millis());
+                input,
+                context,
+                0,
+                singleRequestSpec(context, List.of()),
+                Map.of(),
+                Map.of(),
+                "trace-11",
+                FIXED_CLOCK.millis());
 
         assertThat(result.aborted()).isTrue();
         assertThat(result.rows()).hasSize(2);
+    }
+
+    // ------------------------------------------------------------------
+    // The total seam: InlineMetricEvaluator wiring (inline-metric-evaluation, section 2)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("A throwing InlineMetricEvaluator does not replace the real SUCCESS row with a synthetic"
+            + " ERROR row — the seam is total")
+    void throwingInlineMetricEvaluator_doesNotReplaceSuccessRowWithErrorRow() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("throwing-evaluator")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .inlineMetricEvaluator(request -> {
+                    throw new IllegalStateException("evaluator bug");
+                })
+                .build();
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        RequestExecutionResult result = executor.execute(
+                input,
+                context,
+                0,
+                singleRequestSpec(context, List.of()),
+                Map.of(),
+                Map.of(),
+                "trace-seam-1",
+                FIXED_CLOCK.millis());
+
+        assertThat(result.rows()).hasSize(1);
+        TestCaseRunResult row = result.rows().getFirst();
+        // The real SUCCESS row is untouched by the evaluator's bug — never replaced by a synthesized
+        // REQUEST_RESOLUTION_ERROR row from the outer try/catch.
+        assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(row.getResponseBody()).doesNotContain("REQUEST_RESOLUTION_ERROR");
+        // The failed (thrown) metric evaluation still aborts the chain (Decision 6) — the row stays
+        // SUCCESS, but no later turn/request runs.
+        assertThat(result.aborted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("A fake evaluator's frame entry is visible to the next turn's $_metrics binding")
+    void metricsFrameEntry_visibleToNextTurnWithinSameRequest() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("metrics-next-turn")
+                .testCaseData(null)
+                .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"}]")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonataBodyTemplate(
+                        "{\"prompt\": \"${{prompt}}\", \"priorScore\": $_metrics.judge.score.value}"))
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .perTurn(true)
+                        .build()))
+                .inlineMetricEvaluator(request ->
+                        new InlineMetricResult(Map.of("judge", Map.of("score", Map.of("value", 0.9))), false))
+                .build();
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        Map.of(),
+                        "trace-seam-2",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(2);
+        // Turn 0 evaluates with an empty $_metrics (no prior turn has produced anything yet): JSONata
+        // assigning `undefined` to an object field omits that field entirely, so "priorScore" is absent.
+        assertThat(results.get(0).getRequestBody()).doesNotContain("priorScore");
+        // Turn 1 sees turn 0's evaluated frame entry via $_metrics.
+        assertThat(results.get(1).getRequestBody()).contains("\"priorScore\":0.9");
+    }
+
+    @Test
+    @DisplayName("A condition-skipped metric (clean false) contributes no entry — a later turn's $_metrics"
+            + " reference to that TSMD is absent from the frame, not present-with-null")
+    void conditionSkippedMetric_absentFromLaterFrameNotPresentWithNull() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("metrics-condition-skip")
+                .testCaseData(null)
+                .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"}]")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonataBodyTemplate(
+                        "{\"prompt\": \"${{prompt}}\", \"judgePresent\": $exists($_metrics.judge)}"))
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .perTurn(true)
+                        .build()))
+                // Simulates a condition-skipped TSMD: no failure, but also no frame entry (empty map, not
+                // a present-null entry) — "clean false" contributes nothing to accumulatedMetrics.
+                .inlineMetricEvaluator(request -> new InlineMetricResult(Map.of(), false))
+                .build();
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        Map.of(),
+                        "trace-seam-3",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(2);
+        assertThat(results.get(1).getRequestBody()).contains("\"judgePresent\":false");
+    }
+
+    @Test
+    @DisplayName("A failed metric result aborts remaining turns; earlier rows persist and stay SUCCESS (the"
+            + " chain-level 'later requests never invoked' behavior is RequestChainExecutor's pre-existing"
+            + " aborted() gate, exercised generically by RequestChainExecutorTest)")
+    void failedMetricResult_abortsRemainingTurnsRowsStaySuccess() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("metrics-failure")
+                .testCaseData(null)
+                .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"},{\"prompt\":\"q2\"}]")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("prompt", "${{prompt}}")))
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .perTurn(true)
+                        .build()))
+                .inlineMetricEvaluator(request -> new InlineMetricResult(Map.of(), true))
+                .build();
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        RequestExecutionResult result = executor.execute(
+                input,
+                context,
+                0,
+                singleRequestSpec(context, List.of()),
+                Map.of(),
+                Map.of(),
+                "trace-seam-4",
+                FIXED_CLOCK.millis());
+
+        // Only turn 0 ran: the metric failure aborts before turns 1/2 are ever attempted.
+        assertThat(result.rows()).hasSize(1);
+        assertThat(result.rows().getFirst().getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(result.rows().getFirst().getTurnIndex()).isZero();
+        assertThat(result.aborted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Transmission caveat: a present-null $_metrics field is available via $exists in a later"
+            + " request's body, but the shared NON_NULL mapper drops the null-valued key itself from the"
+            + " persisted requestBody")
+    void transmissionCaveat_presentNullMetricsFieldExistsButIsDroppedFromPersistedBody() {
+        stubCommonInfra();
+        TurnLoopExecutor nonNullExecutor = buildExecutorWithNonNullMapper();
+        ObjectNode metricsEntryNode = objectMapper.createObjectNode();
+        metricsEntryNode.putObject("judge").putObject("score").putNull("value");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> frameEntry = (Map<String, Object>)
+                objectMapper.readValue(objectMapper.writeValueAsString(metricsEntryNode), Object.class);
+        InlineMetricEvaluator fakeEvaluator = request -> new InlineMetricResult(frameEntry, false);
+
+        // Request #0: produces the metric (a fake evaluator standing in for a real judge TSMD).
+        TestCaseRunInput input0 = baseInputBuilder()
+                .testCaseName("caveat-request-0")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context0 = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", "hi")))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .inlineMetricEvaluator(fakeEvaluator)
+                .build();
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        RequestExecutionResult result0 = nonNullExecutor.execute(
+                input0,
+                context0,
+                0,
+                singleRequestSpec(context0, List.of()),
+                Map.of(),
+                Map.of(),
+                "trace-caveat-0",
+                FIXED_CLOCK.millis());
+        assertThat(result0.accumulatedMetrics()).isNotEmpty();
+
+        // Request #1 (a later request in the chain): its JSON body references the present-null field both
+        // via $exists (should be true) and directly (the raw value itself).
+        TestCaseRunInput input1 = baseInputBuilder()
+                .testCaseName("caveat-request-1")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context1 = baseContextBuilder()
+                .snapshotRequestTemplate(jsonataBodyTemplate("{\"existsCheck\": $exists($_metrics.judge.score.value),"
+                        + " \"value\": $_metrics.judge.score.value}"))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .inlineMetricEvaluator(fakeEvaluator)
+                .build();
+
+        RequestExecutionResult result1 = nonNullExecutor.execute(
+                input1,
+                context1,
+                0,
+                singleRequestSpec(context1, List.of()),
+                Map.of(),
+                result0.accumulatedMetrics(),
+                "trace-caveat-1",
+                FIXED_CLOCK.millis());
+
+        TestCaseRunResult row1 = result1.rows().getFirst();
+        // $exists saw the present null during body evaluation (true)...
+        assertThat(row1.getRequestBody()).contains("\"existsCheck\":true");
+        // ...but the "value" key itself is gone from the persisted body: the shared NON_NULL ObjectMapper
+        // silently drops a null-valued Map entry on the way out (design.md Decision 2's caveat).
+        assertThat(row1.getRequestBody()).doesNotContain("\"value\"");
+    }
+
+    @Test
+    @DisplayName("Byte-identical confirmation: a populated EvaluationContext that simply omits"
+            + " inlineMetricEvaluator behaves exactly like the sparse baseline context (evaluator is null)")
+    void populatedContextOmittingEvaluator_isStillNonInline() {
+        // Reuses the exact fixture from noEvaluatorAndEmptyInitialMetrics_producesByteIdenticalRowsAndExtractedColumns
+        // (task 1.6's baseline), extended per task 2.3 with a direct assertion of the precondition: the
+        // context is fully populated with every other snapshot field, yet never calls
+        // .inlineMetricEvaluator(...), so the field is null and TurnLoopExecutor takes the non-inline path.
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("regression-baseline-2")
+                .testCaseData(null)
+                .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"}]")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("turn", "${{prompt}}")))
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .perTurn(true)
+                        .build()))
+                .build();
+        assertThat(context.getInlineMetricEvaluator()).isNull();
+        List<ResponseColumnDefinitionDto> responseColumns = List.of(ResponseColumnDefinitionDto.builder()
+                .name("answer")
+                .expression("choices[0].message.content")
+                .type(SchemaFieldType.STRING)
+                .build());
+
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(
+                        ExecutionStatus.SUCCESS,
+                        200,
+                        "{\"choices\":[{\"message\":{\"content\":\"reply-0\"}}]}",
+                        0,
+                        null))
+                .thenReturn(new TurnOutcome(
+                        ExecutionStatus.SUCCESS,
+                        200,
+                        "{\"choices\":[{\"message\":{\"content\":\"reply-1\"}}]}",
+                        0,
+                        null));
+
+        RequestExecutionResult result = executor.execute(
+                input,
+                context,
+                0,
+                singleRequestSpec(context, responseColumns),
+                Map.of(),
+                Map.of(),
+                "trace-baseline-2",
+                FIXED_CLOCK.millis());
+
+        assertThat(result.aborted()).isFalse();
+        assertThat(result.rows()).hasSize(2);
+        assertThat(result.accumulatedMetrics()).isEmpty();
+        assertThat(result.rows().get(0).getExtractedColumns()).isEqualTo("{\"answer\":\"reply-0\"}");
+        assertThat(result.rows().get(1).getExtractedColumns()).isEqualTo("{\"answer\":\"reply-1\"}");
     }
 }

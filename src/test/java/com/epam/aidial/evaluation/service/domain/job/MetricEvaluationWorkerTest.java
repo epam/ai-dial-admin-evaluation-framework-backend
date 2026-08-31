@@ -16,7 +16,10 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDt
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
+import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.SpanBuilder;
 import java.math.BigDecimal;
@@ -51,8 +54,17 @@ class MetricEvaluationWorkerTest {
 
     @BeforeEach
     void setUp() {
-        BindingResolver bindingResolver = new BindingResolver(new ObjectMapper());
-        worker = new MetricEvaluationWorker(metricProviderClient, bindingResolver, OpenTelemetry.noop());
+        worker = new MetricEvaluationWorker(metricProviderClient, buildBindingResolver(), OpenTelemetry.noop());
+    }
+
+    private static BindingResolver buildBindingResolver() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonataProperties jsonataProperties = new JsonataProperties();
+        jsonataProperties.setEvaluationTimeoutMs(5000L);
+        jsonataProperties.setMaxRecursionDepth(500);
+        JsonataEvaluationService jsonataEvaluationService =
+                new DashjoinJsonataEvaluationService(objectMapper, jsonataProperties);
+        return new BindingResolver(objectMapper, jsonataEvaluationService);
     }
 
     @Test
@@ -62,7 +74,8 @@ class MetricEvaluationWorkerTest {
         when(metricProviderClient.evaluate(eq(PROVIDER_ID), any(EvaluationRequestDto.class)))
                 .thenReturn(expectedResponse);
 
-        EvaluationResponseDto result = worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(0));
+        EvaluationResponseDto result =
+                worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(0), Map.of());
 
         assertThat(result.getMetricName()).isEqualTo(METRIC_NAME);
         verify(metricProviderClient, times(1)).evaluate(eq(PROVIDER_ID), any());
@@ -76,7 +89,8 @@ class MetricEvaluationWorkerTest {
                 .thenThrow(new HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
                 .thenReturn(expectedResponse);
 
-        EvaluationResponseDto result = worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(1));
+        EvaluationResponseDto result =
+                worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(1), Map.of());
 
         assertThat(result.getMetricName()).isEqualTo(METRIC_NAME);
         verify(metricProviderClient, times(2)).evaluate(eq(PROVIDER_ID), any());
@@ -88,7 +102,8 @@ class MetricEvaluationWorkerTest {
         when(metricProviderClient.evaluate(eq(PROVIDER_ID), any(EvaluationRequestDto.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.BAD_REQUEST));
 
-        assertThatThrownBy(() -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(2)))
+        assertThatThrownBy(
+                        () -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(2), Map.of()))
                 .isInstanceOf(HttpClientErrorException.class);
 
         verify(metricProviderClient, times(1)).evaluate(eq(PROVIDER_ID), any());
@@ -100,7 +115,8 @@ class MetricEvaluationWorkerTest {
         when(metricProviderClient.evaluate(eq(PROVIDER_ID), any(EvaluationRequestDto.class)))
                 .thenThrow(new HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR));
 
-        assertThatThrownBy(() -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(1)))
+        assertThatThrownBy(
+                        () -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(1), Map.of()))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("after 2 attempts");
 
@@ -113,7 +129,7 @@ class MetricEvaluationWorkerTest {
         AtomicBoolean cancellation = new AtomicBoolean(true);
         MetricEvaluationContext context = buildContextWithCancellation(1, cancellation);
 
-        assertThatThrownBy(() -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), context))
+        assertThatThrownBy(() -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), context, Map.of()))
                 .isInstanceOf(InterruptedException.class)
                 .hasMessageContaining("cancelled");
     }
@@ -193,9 +209,8 @@ class MetricEvaluationWorkerTest {
             UUID testSuiteId = UUID.fromString("33333333-3333-3333-3333-333333333333");
             UUID resultId = UUID.fromString("44444444-4444-4444-4444-444444444444");
 
-            BindingResolver bindingResolver = new BindingResolver(new ObjectMapper());
             MetricEvaluationWorker spanWorker =
-                    new MetricEvaluationWorker(mockMetricProviderClient, bindingResolver, mockOpenTelemetry);
+                    new MetricEvaluationWorker(mockMetricProviderClient, buildBindingResolver(), mockOpenTelemetry);
 
             AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
                     .id(UUID.randomUUID())
@@ -244,7 +259,7 @@ class MetricEvaluationWorkerTest {
                             .build());
 
             // when
-            spanWorker.evaluate(tsmd, result, new Semaphore(5), context);
+            spanWorker.evaluate(tsmd, result, new Semaphore(5), context, Map.of());
 
             // then — verify all 9 setAttribute calls on the span builder
             var inOrderVerifier = inOrder(spanBuilder);

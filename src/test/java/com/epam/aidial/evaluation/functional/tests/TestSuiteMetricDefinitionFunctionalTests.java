@@ -30,6 +30,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.service.domain.dto.AggregatedMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
+import com.epam.aidial.evaluation.service.domain.dto.ExpressionBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
@@ -840,6 +841,87 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).contains("VALIDATION_ERROR");
+    }
+
+    @Test
+    @DisplayName("Should return 400 VALIDATION_ERROR when an Expression binding's expression is malformed on create")
+    void shouldReturn400_whenExpressionBindingMalformedOnCreate() {
+        String requestJson = """
+                {
+                    "name": "Malformed Expression Binding",
+                    "metricDeclarationId": "%s",
+                    "metricDeclarationVersionId": "%s",
+                    "configBindings": [
+                        {"property": "threshold", "source": {"$type": "Expression", "expression": "this is (not valid"}}
+                    ],
+                    "inputBindings": []
+                }
+                """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(tsmdUrl(), jsonEntity(requestJson), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("VALIDATION_ERROR");
+    }
+
+    @Test
+    @DisplayName("Should return 400 VALIDATION_ERROR when an Expression binding's expression is malformed on update")
+    void shouldReturn400_whenExpressionBindingMalformedOnUpdate() {
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> createResponse = restTemplate.postForEntity(
+                tsmdUrl(),
+                jsonEntity(validRequest("To Update With Expression")),
+                TestSuiteMetricDefinitionResponseDto.class);
+        UUID createdId = createResponse.getBody().getId();
+
+        String updateJson = """
+                {
+                    "name": "To Update With Expression",
+                    "metricDeclarationId": "%s",
+                    "metricDeclarationVersionId": "%s",
+                    "configBindings": [
+                        {"property": "threshold", "source": {"$type": "Expression", "expression": "this is (not valid"}}
+                    ],
+                    "inputBindings": []
+                }
+                """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
+
+        ResponseEntity<String> response =
+                restTemplate.exchange(tsmdUrl(createdId), HttpMethod.PUT, jsonEntity(updateJson), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("VALIDATION_ERROR");
+    }
+
+    @Test
+    @DisplayName("Should accept a syntactically valid Expression binding referencing a not-yet-producing TSMD name")
+    void shouldAccept_whenExpressionBindingReferencesNotYetProducingTsmdName() {
+        String requestJson = """
+                {
+                    "name": "Valid Expression Binding",
+                    "metricDeclarationId": "%s",
+                    "metricDeclarationVersionId": "%s",
+                    "configBindings": [
+                        {
+                            "property": "threshold",
+                            "source": {"$type": "Expression", "expression": "$_metrics.`not_yet_run`.score.value"}
+                        }
+                    ],
+                    "inputBindings": []
+                }
+                """.formatted(SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID);
+
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> response = restTemplate.postForEntity(
+                tsmdUrl(), jsonEntity(requestJson), TestSuiteMetricDefinitionResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getConfigBindings()).hasSize(1);
+        assertThat(response.getBody().getConfigBindings().get(0).getSource())
+                .isInstanceOf(ExpressionBindingSourceDto.class);
+        assertThat(((ExpressionBindingSourceDto)
+                                response.getBody().getConfigBindings().get(0).getSource())
+                        .getExpression())
+                .isEqualTo("$_metrics.`not_yet_run`.score.value");
     }
 
     @Test

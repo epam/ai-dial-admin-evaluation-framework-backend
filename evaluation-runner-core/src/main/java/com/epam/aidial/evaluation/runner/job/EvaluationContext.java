@@ -16,6 +16,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Builder;
 import lombok.Getter;
+import org.jspecify.annotations.Nullable;
 
 @Getter
 @Builder
@@ -95,4 +96,15 @@ public class EvaluationContext {
     private final ToolReferenceDto toolRefDto;
     private final ArgumentTemplateDto argumentTemplateDto;
     private final List<InputBindingDto> inputBindings;
+
+    /**
+     * Backend-supplied strategy for inline metric evaluation (see the {@code inline-metric-evaluation}
+     * change's {@code design.md} Decision 4), or {@code null} for a non-inline run. {@link
+     * TurnLoopExecutor} binds the {@code $_metrics} frame key only when this field is non-null — a
+     * non-inline run's frame carries no {@code _metrics} key at all. {@code eval-cli}'s {@code
+     * EvaluationContextFactory} never sets this field, leaving it {@code null} — the correct "non-inline"
+     * default for a CLI run.
+     */
+    @Nullable
+    private final InlineMetricEvaluator inlineMetricEvaluator;
 }

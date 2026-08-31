@@ -243,6 +243,64 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
+    @DisplayName("An import-path run's suite referencing $_metrics in its request body is never treated as"
+            + " inline — Phase 2 still evaluates every SUCCESS row exactly as for any other imported run")
+    void importedRun_suiteReferencesMetricsFrame_staysNonInline() {
+        TestSuiteResponseDto suite = createSuiteReferencingMetricsFrameWithMetric("Suite Referencing Metrics Frame");
+
+        when(metricProviderClient.evaluate(anyString(), any(EvaluationRequestDto.class)))
+                .thenReturn(EvaluationResponseDto.builder()
+                        .metricName("Accuracy")
+                        .output(Map.of(
+                                "Accuracy",
+                                MetricOutputFieldDto.builder()
+                                        .type("value")
+                                        .value(BigDecimal.ONE)
+                                        .build()))
+                        .build());
+
+        String csv = buildCsv(
+                List.of(
+                        "testCaseName",
+                        "runIndex",
+                        "responseBody",
+                        "responseStatusCode",
+                        "executionStatus",
+                        "startedAt",
+                        "completedAt",
+                        "testCaseData",
+                        "extractedColumns"),
+                List.of(List.of(
+                        "tc-1",
+                        "0",
+                        "{\"choices\":[{\"message\":{\"content\":\"Mocked answer 1.\"}}]}",
+                        "200",
+                        "SUCCESS",
+                        "1000",
+                        "1500",
+                        "{\"expected\":\"answer1\"}",
+                        "{\"answer\":\"Mocked answer 1.\"}")));
+
+        ResponseEntity<TestSuiteRunResponseDto> importResponse =
+                postImportCsv(suite.getId(), csv, TestSuiteRunResponseDto.class);
+        assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(importResponse.getBody()).isNotNull();
+
+        UUID runId = importResponse.getBody().getId();
+        TestSuiteRunResponseDto completed = awaitRunTerminal(runId, 15);
+        assertThat(completed.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        // No Phase 1 ever runs for an import, so the request body's own $_metrics reference is never
+        // evaluated — the assertion here is purely that the detector-bypass rule (skipDeploymentPhase =>
+        // non-inline, detector never invoked) still lets Phase 2 dispatch the provider normally.
+        verify(metricProviderClient).evaluate(anyString(), any(EvaluationRequestDto.class));
+
+        List<Map<String, Object>> evalSummaries = analyticsTestDataHelper.findEvalSummariesByRunId(runId);
+        assertThat(evalSummaries).hasSize(1);
+        assertThat((String) evalSummaries.get(0).get("metric_values")).contains("Accuracy");
+    }
+
+    @Test
     @DisplayName("Should import results for a metric-less suite and expose them through the eval-summary list")
     void shouldImportResultsForMetricLessSuite() {
         UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
@@ -923,6 +981,66 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
 
     private TestSuiteResponseDto createSuiteWithResponseColumnAndMetric(String name, UUID datasetId) {
         TestSuiteResponseDto suite = createSuiteWithResponseColumn(name, datasetId);
+
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        metricDeclarationTestDataProvider.insertSeedVersionForAccuracy();
+        UUID declarationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID versionId = UUID.fromString("770e8400-e29b-41d4-a716-446655440001");
+        String inputBindings = """
+                [{"property": "actual", "source": {"$type": "Response", "columnName": "answer"}}]
+                """;
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                suite.getId(), declarationId, versionId, "Accuracy", "[]", inputBindings.trim());
+
+        return suite;
+    }
+
+    /**
+     * Suite whose request-template body literally contains {@code $_metrics} — the substring {@link
+     * com.epam.aidial.evaluation.service.domain.job.InlineModeDetector} would flag as inline if it ran.
+     * Used only to prove that an import-path run (which never invokes the detector) is unaffected.
+     */
+    private TestSuiteResponseDto createSuiteReferencingMetricsFrameWithMetric(String name) {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("expected")
+                .type(SchemaFieldType.STRING)
+                .required(true)
+                .build()));
+
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name)
+                .description("Description for " + name)
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/chat")
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .datasetId(datasetId)
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/chat")
+                        .body(JsonRequestBodyDto.builder()
+                                .jsonataContent("{\"metricsProbe\": $_metrics}")
+                                .build())
+                        .build())
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("answer")
+                        .expression("choices[0].message.content")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto suite = response.getBody();
+        assertThat(suite).isNotNull();
 
         metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
         metricDeclarationTestDataProvider.insertSeedVersionForAccuracy();

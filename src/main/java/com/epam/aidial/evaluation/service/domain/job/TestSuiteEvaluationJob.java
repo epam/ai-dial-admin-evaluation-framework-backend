@@ -21,12 +21,14 @@ import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.RunErrorDetailsDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.job.InlineMetricEvaluator;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorCategory;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotDatasetMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
@@ -49,6 +51,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -74,7 +77,10 @@ public class TestSuiteEvaluationJob {
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final MetricEvaluationProperties metricEvaluationProperties;
     private final MetricEvaluationExecutor metricEvaluationExecutor;
+    private final RunMetricSnapshotBatchWriteClient runMetricSnapshotBatchWriteClient;
     private final MetricScoreComputationExecutor metricScoreComputation;
+    private final InlineModeDetector inlineModeDetector;
+    private final InlineMetricEvaluatorFactory inlineMetricEvaluatorFactory;
     private final Clock clock;
 
     @Qualifier("metaTransactionManager")
@@ -109,6 +115,10 @@ public class TestSuiteEvaluationJob {
     public void executeRunAsync(UUID runId, String token, boolean skipDeploymentPhase) {
         final AtomicBoolean cancellationSignal =
                 activeCancellationSignals.computeIfAbsent(runId, _ -> new AtomicBoolean(false));
+        // Non-null only for an inline run's normal branch — kept at method scope so the existing
+        // `finally` below can call close() as a no-op safety net regardless of how this method exits
+        // (design.md Decision 5's "Flush timing").
+        InlineMetricEvaluatorImpl inlineEvaluator = null;
         try {
             log.info("Starting test suite run {}", runId);
             long now = clock.millis();
@@ -131,6 +141,7 @@ public class TestSuiteEvaluationJob {
                     repository.findById(runId).orElseThrow(() -> new IllegalStateException("Run not found: " + runId));
             Supplier<SuiteSnapshotDto> snapshot = lazySnapshot(run);
 
+            MetricEvaluationContext metricContext;
             if (!skipDeploymentPhase) {
                 // Inconsistent snapshot guard
                 boolean hasSnapshot = run.getSuiteSnapshot() != null;
@@ -152,15 +163,37 @@ public class TestSuiteEvaluationJob {
                     return;
                 }
 
+                // Metric context + snapshot must be built here, still inside the guard: a run that
+                // fails the guard above returns before this point and writes no run_metric_snapshots row.
+                // Only this branch ever runs the InlineModeDetector (detectInline = true) — the
+                // skipDeploymentPhase branch below always forces inlineMode = false.
+                metricContext = buildMetricContextAndWriteSnapshot(run, snapshot, cancellationSignal, true);
+
+                if (metricContext.isInlineMode()) {
+                    inlineEvaluator = inlineMetricEvaluatorFactory.create(metricContext);
+                }
+
                 // Phase 1: Deployment evaluation
-                EvaluationContext context = buildContext(run, snapshot.get(), cancellationSignal, token);
+                EvaluationContext context =
+                        buildContext(run, snapshot.get(), cancellationSignal, token, inlineEvaluator);
                 evaluationExecutor.execute(context);
+
+                // The inline evaluator's buffered EvalSummary writes must be flushed before Phase 2/3
+                // reads test_case_eval_summaries — otherwise Phase 3's score aggregation would see a
+                // truncated set for any inline run whose last batch had not yet been flushed
+                // (design.md Decision 5's "Flush timing").
+                if (inlineEvaluator != null) {
+                    inlineEvaluator.flush();
+                }
+            } else {
+                // No inconsistency guard and no Phase 1 to run on the import path: build the metric
+                // context and write its snapshot unconditionally, once, right here. detectInline = false
+                // — the detector is never invoked for this path, so the context is always non-inline.
+                metricContext = buildMetricContextAndWriteSnapshot(run, snapshot, cancellationSignal, false);
             }
 
             // Phase 2: Metric evaluation
             if (!cancellationSignal.get()) {
-                MetricEvaluationContext metricContext =
-                        buildMetricEvaluationContext(run, snapshot.get(), cancellationSignal);
                 metricEvaluationExecutor.execute(metricContext);
 
                 // Phase 3: Metric score statistics — reuses Phase 2's computationId. Non-fatal: a
@@ -191,6 +224,11 @@ public class TestSuiteEvaluationJob {
             repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now);
             notifySse(runId);
         } finally {
+            // Safety net: normally a no-op, since the inline evaluator (if any) already flushed above.
+            // Also releases its dedicated virtual-thread executor on every exit path.
+            if (inlineEvaluator != null) {
+                inlineEvaluator.close();
+            }
             activeCancellationSignals.remove(runId);
         }
     }
@@ -317,10 +355,37 @@ public class TestSuiteEvaluationJob {
         return null;
     }
 
+    /**
+     * Builds the {@link MetricEvaluationContext} (TSMD load + fresh {@code computationId}/
+     * {@code computedAtMs}) and immediately writes its {@code run_metric_snapshots} row — the two are
+     * always done together so every computation that gets a snapshot row also gets a matching context,
+     * and vice versa. Called from both branches of {@link #executeRunAsync}, on the normal branch only
+     * after the inconsistent-snapshot guard passes (see the call site), so a run failing that guard
+     * writes no {@code run_metric_snapshots} row.
+     *
+     * @param detectInline whether {@link InlineModeDetector} should run at all — {@code true} only on
+     *                      the normal ({@code !skipDeploymentPhase}) branch; the {@code
+     *                      skipDeploymentPhase} branch passes {@code false} so the resulting context's
+     *                      {@code inlineMode} is always {@code false}, without the detector ever being
+     *                      invoked (per the "Inline metric evaluation mode is derived per run"
+     *                      requirement's {@code skipDeploymentPhase ⇒ non-inline} rule).
+     */
+    private MetricEvaluationContext buildMetricContextAndWriteSnapshot(
+            TestSuiteRun run,
+            Supplier<SuiteSnapshotDto> snapshot,
+            AtomicBoolean cancellationSignal,
+            boolean detectInline) {
+        MetricEvaluationContext metricContext =
+                buildMetricEvaluationContext(run, snapshot.get(), cancellationSignal, detectInline);
+        writeRunMetricSnapshots(metricContext);
+        return metricContext;
+    }
+
     private MetricEvaluationContext buildMetricEvaluationContext(
-            TestSuiteRun run, SuiteSnapshotDto snapshot, AtomicBoolean cancellationSignal) {
+            TestSuiteRun run, SuiteSnapshotDto snapshot, AtomicBoolean cancellationSignal, boolean detectInline) {
         List<AggregatedMetricDefinition> tsmds =
                 testSuiteMetricDefinitionService.findAllEnabledAndValidAggregatedByTestSuiteId(run.getTestSuiteId());
+        boolean inlineMode = detectInline && inlineModeDetector.isInline(snapshot, tsmds);
 
         return MetricEvaluationContext.builder()
                 .computationId(UUID.randomUUID())
@@ -335,7 +400,53 @@ public class TestSuiteEvaluationJob {
                 .batchSize(metricEvaluationProperties.getBatchSize())
                 .perResultTimeoutMs(metricEvaluationProperties.getPerResultTimeoutMs())
                 .requestLabels(buildRequestLabels(snapshot))
+                .inlineMode(inlineMode)
                 .build();
+    }
+
+    /**
+     * Writes one {@code run_metric_snapshots} row per aggregated TSMD, capturing each TSMD's bindings
+     * and output schema as of this computation. Moved here from
+     * {@code InProcessMetricEvaluationExecutor.execute()} so the snapshot is written once, before Phase
+     * 1, rather than at the start of Phase 2 — see {@link #buildMetricContextAndWriteSnapshot}.
+     */
+    private void writeRunMetricSnapshots(MetricEvaluationContext context) {
+        List<RunMetricSnapshotBatchWriteItemDto> snapshots = context.getAggregatedTsmds().stream()
+                .map(this::buildSnapshotItem)
+                .toList();
+
+        runMetricSnapshotBatchWriteClient.batchWrite(
+                context.getTestSuiteRunId(), context.getComputationId(), context.getComputedAtMs(), snapshots);
+
+        log.debug(
+                "Wrote {} RunMetricSnapshots for run {}, computationId={}",
+                snapshots.size(),
+                context.getTestSuiteRunId(),
+                context.getComputationId());
+    }
+
+    private RunMetricSnapshotBatchWriteItemDto buildSnapshotItem(AggregatedMetricDefinition tsmd) {
+        return RunMetricSnapshotBatchWriteItemDto.builder()
+                .tsmdId(tsmd.getId())
+                .tsmdName(tsmd.getName())
+                .metricDeclarationId(tsmd.getMetricDeclarationId())
+                .metricDeclarationVersionId(tsmd.getMetricDeclarationVersionId())
+                .configBindings(parseJsonNode(tsmd.getConfigBindings()))
+                .inputBindings(parseJsonNode(tsmd.getInputBindings()))
+                .outputSchema(parseJsonNode(tsmd.getVersionOutputSchema()))
+                .build();
+    }
+
+    private JsonNode parseJsonNode(String json) {
+        if (json == null || json.isBlank()) {
+            return objectMapper.createObjectNode();
+        }
+        try {
+            return objectMapper.readTree(json);
+        } catch (JacksonException e) {
+            log.warn("Failed to parse JSON: {}", e.getMessage(), e);
+            return objectMapper.createObjectNode();
+        }
     }
 
     /**
@@ -386,7 +497,11 @@ public class TestSuiteEvaluationJob {
     }
 
     private EvaluationContext buildContext(
-            TestSuiteRun run, SuiteSnapshotDto snapshot, AtomicBoolean cancellationSignal, String token) {
+            TestSuiteRun run,
+            SuiteSnapshotDto snapshot,
+            AtomicBoolean cancellationSignal,
+            String token,
+            InlineMetricEvaluator inlineMetricEvaluator) {
         RunConfigDto config = parseRunConfig(run.getRunConfig(), run.getId());
         EvaluationRunProperties.Execution execProps = evaluationRunProperties.getExecution();
         EvaluationRunProperties.Retry retryProps = evaluationRunProperties.getRetry();
@@ -438,6 +553,7 @@ public class TestSuiteEvaluationJob {
                 .toolRefDto(snapshot.getToolRef())
                 .argumentTemplateDto(snapshot.getArgumentTemplate())
                 .inputBindings(snapshot.getInputBindings())
+                .inlineMetricEvaluator(inlineMetricEvaluator)
                 .build();
     }
 

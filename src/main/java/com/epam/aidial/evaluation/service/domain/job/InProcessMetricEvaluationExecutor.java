@@ -1,48 +1,29 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
-import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
-import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
-import com.epam.aidial.evaluation.service.domain.ConditionContext;
-import com.epam.aidial.evaluation.service.domain.ConditionDecision;
-import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
-import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import io.opentelemetry.context.Context;
-import java.time.Clock;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ObjectNode;
 
 /**
  * In-process metric evaluation executor using virtual threads bounded by provider semaphores.
- * Iterates results sequentially via cursor pagination, dispatches TSMD evaluations in parallel
- * on a shared executor, captures RunMetricSnapshots, and buffers EvalSummary records
+ * Iterates results sequentially via cursor pagination, delegates per-row evaluation (and, for
+ * non-SUCCESS rows, status propagation) to {@link MetricRowEvaluator}, and buffers EvalSummary records
  * for batch writing.
  */
 @Slf4j
@@ -54,14 +35,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private static final int RESULT_PAGE_SIZE = 100;
 
     private final TestCaseRunResultRepository resultRepository;
-    private final MetricEvaluationWorker worker;
-    private final MetricOutputMapper outputMapper;
+    private final MetricRowEvaluator metricRowEvaluator;
     private final EvalSummaryBatchWriteClient evalSummaryBatchWriteClient;
-    private final RunMetricSnapshotBatchWriteClient runMetricSnapshotBatchWriteClient;
-    private final ObjectMapper objectMapper;
-    private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
-    private final ConditionExpressionEvaluator conditionExpressionEvaluator;
-    private final Clock clock;
 
     @Override
     public void execute(MetricEvaluationContext context) {
@@ -78,9 +53,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 context.getTestSuiteRunId(),
                 context.getAggregatedTsmds().size());
 
-        writeRunMetricSnapshots(context);
-
-        Map<String, Semaphore> providerSemaphores = buildProviderSemaphores(context);
+        Map<String, Semaphore> providerSemaphores = metricRowEvaluator.buildProviderSemaphores(context);
         List<FilterCondition> filters = buildRunIdFilters(context);
         List<EvalSummaryBatchWriteItemDto> buffer = new ArrayList<>();
         Cursor cursor = null;
@@ -101,6 +74,13 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                         break;
                     }
 
+                    if (context.isInlineMode() && result.getExecutionStatus() == ExecutionStatus.SUCCESS) {
+                        // Already scored inline during Phase 1 (InlineMetricEvaluatorImpl) — Phase 2
+                        // is propagate-only for an inline run, so SUCCESS rows are skipped entirely
+                        // (zero provider calls), leaving only non-SUCCESS rows below.
+                        continue;
+                    }
+
                     log.debug(
                             "Run {}: evaluating metrics for result {} (testCaseId={}, status={})",
                             context.getTestSuiteRunId(),
@@ -108,11 +88,11 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                             result.getTestCaseId(),
                             result.getExecutionStatus());
 
-                    if (result.getExecutionStatus() != ExecutionStatus.SUCCESS) {
-                        buffer.add(buildPropagatedItem(result, context));
-                    } else {
-                        buffer.add(evaluateAndBuild(result, context, providerSemaphores, executor));
-                    }
+                    MetricRowEvaluationResult rowResult = result.getExecutionStatus() != ExecutionStatus.SUCCESS
+                            ? metricRowEvaluator.buildPropagatedItem(result, context)
+                            : metricRowEvaluator.evaluateAndBuild(
+                                    result, context, providerSemaphores, executor, Map.of());
+                    buffer.add(rowResult.item());
                 }
 
                 flushIfNeeded(buffer, context);
@@ -133,249 +113,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 .rawValue(context.getTestSuiteRunId().toString())
                 .build();
         return List.of(runIdFilter);
-    }
-
-    private void writeRunMetricSnapshots(MetricEvaluationContext context) {
-        List<RunMetricSnapshotBatchWriteItemDto> snapshots = context.getAggregatedTsmds().stream()
-                .map(this::buildSnapshotItem)
-                .toList();
-
-        runMetricSnapshotBatchWriteClient.batchWrite(
-                context.getTestSuiteRunId(), context.getComputationId(), context.getComputedAtMs(), snapshots);
-
-        log.debug(
-                "Wrote {} RunMetricSnapshots for run {}, computationId={}",
-                snapshots.size(),
-                context.getTestSuiteRunId(),
-                context.getComputationId());
-    }
-
-    private Map<String, Semaphore> buildProviderSemaphores(MetricEvaluationContext context) {
-        Map<String, Semaphore> semaphores = new HashMap<>();
-        for (AggregatedMetricDefinition tsmd : context.getAggregatedTsmds()) {
-            semaphores.computeIfAbsent(
-                    tsmd.getDeclarationProviderId(), k -> new Semaphore(context.getDefaultConcurrencyPerProvider()));
-        }
-        return semaphores;
-    }
-
-    private RunMetricSnapshotBatchWriteItemDto buildSnapshotItem(AggregatedMetricDefinition tsmd) {
-        return RunMetricSnapshotBatchWriteItemDto.builder()
-                .tsmdId(tsmd.getId())
-                .tsmdName(tsmd.getName())
-                .metricDeclarationId(tsmd.getMetricDeclarationId())
-                .metricDeclarationVersionId(tsmd.getMetricDeclarationVersionId())
-                .configBindings(parseJsonNode(tsmd.getConfigBindings()))
-                .inputBindings(parseJsonNode(tsmd.getInputBindings()))
-                .outputSchema(parseJsonNode(tsmd.getVersionOutputSchema()))
-                .build();
-    }
-
-    private EvalSummaryBatchWriteItemDto evaluateAndBuild(
-            TestCaseRunResult result,
-            MetricEvaluationContext context,
-            Map<String, Semaphore> providerSemaphores,
-            ExecutorService executor) {
-        // Pre-extract output field names before async dispatch so they are available in Failure results
-        Map<String, List<String>> outputFieldNamesMap = context.getAggregatedTsmds().stream()
-                .collect(Collectors.toMap(
-                        AggregatedMetricDefinition::getName,
-                        tsmd -> outputSchemaFieldExtractor.extractFieldNames(tsmd.getVersionOutputSchema())));
-
-        Map<String, TsmdEvaluationResult> tsmdResults = new ConcurrentHashMap<>();
-
-        // Evaluate each metric's condition synchronously (before async dispatch) over
-        // {data, response, turn, request}: RUN → dispatch; SKIP → omit the metric entirely; ERROR →
-        // record a metric-level ConditionError (row stays SUCCESS). Only dispatched metrics are
-        // reconciled for timeout/failure below.
-        ConditionContext conditionContext = ConditionContext.builder()
-                .dataJson(result.getTestCaseData())
-                .responseJson(result.getExtractedColumns())
-                .turnIndex(result.getTurnIndex())
-                .totalTurns(result.getTotalTurns())
-                .requestIndex(result.getRequestIndex())
-                .totalRequests(result.getTotalRequests())
-                .requestName(context.requestLabelAt(result.getRequestIndex()))
-                .build();
-
-        List<AggregatedMetricDefinition> dispatchedTsmds = new ArrayList<>();
-        for (AggregatedMetricDefinition tsmd : context.getAggregatedTsmds()) {
-            ConditionDecision decision = conditionExpressionEvaluator.evaluate(tsmd.getCondition(), conditionContext);
-            if (decision.isSkip()) {
-                continue;
-            }
-            if (decision.isError()) {
-                tsmdResults.put(
-                        tsmd.getName(),
-                        new TsmdEvaluationResult.ConditionError(
-                                decision.errorMessage(), outputFieldNamesMap.get(tsmd.getName())));
-                continue;
-            }
-            dispatchedTsmds.add(tsmd);
-        }
-
-        Map<String, Long> dispatchStartedAtMsByTsmd = new ConcurrentHashMap<>();
-        List<CompletableFuture<Void>> tsmdFutures = new ArrayList<>();
-        for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
-            List<String> fieldNames = outputFieldNamesMap.get(tsmd.getName());
-            Semaphore semaphore = providerSemaphores.get(tsmd.getDeclarationProviderId());
-            log.debug(
-                    "Run {}: dispatching metric '{}' for result {}",
-                    context.getTestSuiteRunId(),
-                    tsmd.getName(),
-                    result.getId());
-            dispatchStartedAtMsByTsmd.put(tsmd.getName(), clock.millis());
-            CompletableFuture<Void> tsmdFuture = CompletableFuture.runAsync(
-                    () -> {
-                        long startedAtMs = clock.millis();
-                        try {
-                            EvaluationResponseDto response = worker.evaluate(tsmd, result, semaphore, context);
-                            tsmdResults.put(
-                                    tsmd.getName(),
-                                    new TsmdEvaluationResult.Success(
-                                            response, fieldNames, clock.millis() - startedAtMs));
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            log.warn(
-                                    "Metric evaluation interrupted for TSMD {} on result {}",
-                                    tsmd.getName(),
-                                    result.getId(),
-                                    e);
-                            tsmdResults.put(
-                                    tsmd.getName(),
-                                    new TsmdEvaluationResult.Failure(e, fieldNames, clock.millis() - startedAtMs));
-                        } catch (RuntimeException e) {
-                            log.warn(
-                                    "Metric evaluation failed for TSMD {} on result {}: {}",
-                                    tsmd.getName(),
-                                    result.getId(),
-                                    e.getMessage(),
-                                    e);
-                            tsmdResults.put(
-                                    tsmd.getName(),
-                                    new TsmdEvaluationResult.Failure(e, fieldNames, clock.millis() - startedAtMs));
-                        }
-                    },
-                    executor);
-
-            tsmdFutures.add(tsmdFuture);
-        }
-
-        try {
-            CompletableFuture.allOf(tsmdFutures.toArray(new CompletableFuture[0]))
-                    .get(context.getPerResultTimeoutMs(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            log.warn(
-                    "Metric evaluation timed out for result {} after {}ms",
-                    result.getId(),
-                    context.getPerResultTimeoutMs(),
-                    e);
-            tsmdFutures.forEach(f -> f.cancel(true));
-        } catch (ExecutionException e) {
-            log.warn("Metric evaluation execution error for result {}: {}", result.getId(), e.getMessage(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Metric evaluation interrupted while waiting for result {}", result.getId(), e);
-        }
-
-        // Record timeout/missing TSMDs as Failure so the summary reflects incomplete evaluation.
-        // Only dispatched metrics are reconciled — skipped/condition-error metrics are intentionally absent.
-        for (AggregatedMetricDefinition tsmd : dispatchedTsmds) {
-            tsmdResults.putIfAbsent(
-                    tsmd.getName(),
-                    new TsmdEvaluationResult.Failure(
-                            new RuntimeException("Metric evaluation timed out for TSMD " + tsmd.getName()),
-                            outputFieldNamesMap.get(tsmd.getName()),
-                            clock.millis() - dispatchStartedAtMsByTsmd.get(tsmd.getName())));
-        }
-
-        boolean hasError = checkForErrors(tsmdResults);
-
-        ObjectNode metricValues = outputMapper.buildMetricValues(tsmdResults);
-        ObjectNode metricInfos = outputMapper.buildMetricInfos(tsmdResults);
-        long metricEvalDurationMs = computeMetricEvalDurationMs(tsmdResults);
-
-        return buildItem(
-                result,
-                context,
-                hasError ? ExecutionStatus.FAILED : ExecutionStatus.SUCCESS,
-                metricValues,
-                metricInfos,
-                metricEvalDurationMs);
-    }
-
-    long computeMetricEvalDurationMs(Map<String, TsmdEvaluationResult> tsmdResults) {
-        return tsmdResults.values().stream()
-                .mapToLong(r -> switch (r) {
-                    case TsmdEvaluationResult.Success success -> success.durationMs();
-                    case TsmdEvaluationResult.Failure failure -> failure.durationMs();
-                    case TsmdEvaluationResult.ConditionError ignored -> -1L;
-                })
-                .filter(durationMs -> durationMs >= 0)
-                .sum();
-    }
-
-    private boolean checkForErrors(Map<String, TsmdEvaluationResult> tsmdResults) {
-        for (TsmdEvaluationResult value : tsmdResults.values()) {
-            if (value instanceof TsmdEvaluationResult.Failure) {
-                return true;
-            }
-            if (value instanceof TsmdEvaluationResult.Success success
-                    && success.response().getOutput() != null) {
-                boolean hasMetricError =
-                        success.response().getOutput().values().stream().anyMatch(o -> "error".equals(o.getType()));
-                if (hasMetricError) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private EvalSummaryBatchWriteItemDto buildPropagatedItem(
-            TestCaseRunResult result, MetricEvaluationContext context) {
-        ObjectNode emptyValues = objectMapper.createObjectNode();
-        return buildItem(result, context, result.getExecutionStatus(), emptyValues, null, 0L);
-    }
-
-    private EvalSummaryBatchWriteItemDto buildItem(
-            TestCaseRunResult result,
-            MetricEvaluationContext context,
-            ExecutionStatus executionStatus,
-            ObjectNode metricValues,
-            ObjectNode metricInfos,
-            long metricEvalDurationMs) {
-        return EvalSummaryBatchWriteItemDto.builder()
-                .testCaseRunResultId(result.getId())
-                .testCaseId(result.getTestCaseId())
-                .testCaseName(result.getTestCaseName())
-                .runIndex(result.getRunIndex())
-                .requestIndex(result.getRequestIndex())
-                .totalRequests(result.getTotalRequests())
-                .turnIndex(result.getTurnIndex())
-                .totalTurns(result.getTotalTurns())
-                .testCaseData(parseJsonNode(result.getTestCaseData()))
-                .extractedColumns(parseJsonNode(result.getExtractedColumns()))
-                .executionStatus(executionStatus)
-                .execDurationMs(result.getExecDurationMs())
-                .metricEvalDurationMs(metricEvalDurationMs)
-                .responseStatusCode(result.getResponseStatusCode())
-                .metricValues(metricValues)
-                .metricInfos(metricInfos)
-                .extractionWarnings(parseJsonNode(result.getExtractionWarnings()))
-                .build();
-    }
-
-    private JsonNode parseJsonNode(String json) {
-        if (json == null || json.isBlank()) {
-            return objectMapper.createObjectNode();
-        }
-        try {
-            return objectMapper.readTree(json);
-        } catch (JacksonException e) {
-            log.warn("Failed to parse JSON: {}", e.getMessage(), e);
-            return objectMapper.createObjectNode();
-        }
     }
 
     private void flushIfNeeded(List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context) {

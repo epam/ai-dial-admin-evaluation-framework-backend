@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.constants.JsonataReservedNames;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import lombok.RequiredArgsConstructor;
@@ -25,8 +26,8 @@ import tools.jackson.databind.node.ObjectNode;
 @RequiredArgsConstructor
 public class ConditionExpressionEvaluator {
 
-    private static final String DATA_NAMESPACE = "data";
-    private static final String RESPONSE_NAMESPACE = "response";
+    private static final String DATA_NAMESPACE = JsonataReservedNames.DATA_FRAME_BINDING;
+    private static final String RESPONSE_NAMESPACE = JsonataReservedNames.RESPONSE_COLUMNS_FRAME_BINDING;
     private static final String REQUEST_NAMESPACE = "request";
     private static final String TURN_NAMESPACE = "turn";
 

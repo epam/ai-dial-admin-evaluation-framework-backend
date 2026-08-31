@@ -25,6 +25,7 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvok
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
@@ -45,7 +46,9 @@ import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
+import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
@@ -779,6 +782,51 @@ class TryItOutServiceTest {
 
             verify(requestResolver).resolveForRun(template1, bindings, Map.of(), frameAfterRequestZero);
             assertThat(result.getHistory()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("frame handed to request #1 never carries _metrics (try-it-out never wires an"
+                + " InlineMetricEvaluator), so a $_metrics reference in the previewed request body would"
+                + " resolve to undefined rather than throw")
+        void frameNeverCarriesMetricsSoExpressionReferenceResolvesUndefined() {
+            setUpDeploymentSuite();
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+                    .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, columns0, List.of()));
+
+            when(requestResolver.resolveForRun(eq(template0), eq(bindings), eq(Map.of()), eq(Map.of())))
+                    .thenReturn(buildResolvedRequest());
+            Map<String, Object> frameAfterRequestZero = Map.of("configId", "cfg-42");
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Map<String, Object>> frameCaptor = ArgumentCaptor.forClass(Map.class);
+            when(requestResolver.resolveForRun(eq(template1), eq(bindings), eq(Map.of()), frameCaptor.capture()))
+                    .thenReturn(buildResolvedRequest());
+
+            when(urlBuilder.buildUrl(any(), any())).thenReturn("/openai/deployments/gpt-4/req");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("configId", "cfg-42")))
+                    .thenReturn(nonStreamingResult(200, Map.of("done", true)));
+            when(responseColumnExtractor.extract(eq(columns0), anyString(), anyString()))
+                    .thenReturn(new ResponseColumnExtractor.ExtractionResult(
+                            "{\"configId\":\"cfg-42\"}", "[]", frameAfterRequestZero));
+
+            service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            Map<String, Object> frameSeenByRequestOne = frameCaptor.getValue();
+            assertThat(frameSeenByRequestOne)
+                    .as("try-it-out never accumulates a $_metrics entry — only extracted response columns")
+                    .doesNotContainKey("_metrics");
+
+            // Wire the same JSONata engine production code uses and prove that, over the exact frame
+            // try-it-out hands to RequestResolver, a $_metrics reference resolves to undefined rather
+            // than throwing — try-it-out simply never binds it, unlike an inline-mode real run.
+            JsonataProperties jsonataProperties = new JsonataProperties();
+            jsonataProperties.setEvaluationTimeoutMs(5000L);
+            jsonataProperties.setMaxRecursionDepth(500);
+            JsonataEvaluationService realJsonataService =
+                    new DashjoinJsonataEvaluationService(realObjectMapper, jsonataProperties);
+
+            assertThat(realJsonataService.evaluate("$_metrics.judge.score.value", "{}", frameSeenByRequestOne))
+                    .isNull();
         }
 
         @Test

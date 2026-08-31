@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.runner.job;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.constants.JsonataReservedNames;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
@@ -97,11 +98,16 @@ public class TurnLoopExecutor {
     /**
      * Runs this request's turn loop, returning one {@link TestCaseRunResult} per executed turn (fewer than
      * planned {@code N} on early abort; exactly one for the {@code N = 1} case), the accumulated frame this
-     * request ended with, and whether this request aborted (Decision 8/9/11 of the {@code
-     * add-multi-request-suite} change's {@code design.md}). {@code spec} carries this request's own
-     * template/bindings/columns/endpoint; {@code initialFrame} is the frame accumulated by earlier requests
-     * in the chain (empty for request #0); {@code traceId} is the test-case-run span's id (shared by every
-     * row of every request).
+     * request ended with, the accumulated {@code $_metrics} frame entries this request ended with, and
+     * whether this request aborted (Decision 8/9/11 of the {@code add-multi-request-suite} change's
+     * {@code design.md}; Decision 2/3 of the {@code inline-metric-evaluation} change's {@code design.md}).
+     * {@code spec} carries this request's own template/bindings/columns/endpoint; {@code initialFrame} is
+     * the frame accumulated by earlier requests in the chain (empty for request #0); {@code
+     * initialMetrics} is the {@code $_metrics} frame accumulated by earlier requests in the chain (empty
+     * for request #0) — bound into the per-turn request-body resolution frame as {@code $_metrics} only
+     * when {@code context.getInlineMetricEvaluator() != null}; a non-inline run's frame carries no {@code
+     * _metrics} key at all, not an empty map. {@code traceId} is the test-case-run span's id (shared by
+     * every row of every request).
      */
     public RequestExecutionResult execute(
             TestCaseRunInput input,
@@ -109,6 +115,7 @@ public class TurnLoopExecutor {
             int runIndex,
             RequestExecutionSpec spec,
             Map<String, Object> initialFrame,
+            Map<String, Object> initialMetrics,
             String traceId,
             long execStartedAtMs) {
 
@@ -135,11 +142,12 @@ public class TurnLoopExecutor {
         if (plan == null) {
             log.warn("Multi-turn test case {} has no readable turns", input.getTestCaseId());
             final Map<String, Object> accumulated = new LinkedHashMap<>(initialFrame);
+            final Map<String, Object> accumulatedMetrics = new LinkedHashMap<>(initialMetrics);
             final RowIdentity emptyTurnsIdentity =
                     new RowIdentity(null, null, persistedRequestIndex, persistedTotalRequests);
             final TestCaseRunResult row = buildEmptyTurnsErrorRow(
                     input, context, runIndex, traceId, execStartedAtMs, emptyTurnsIdentity, accumulated);
-            return new RequestExecutionResult(List.of(row), accumulated, true);
+            return new RequestExecutionResult(List.of(row), accumulated, accumulatedMetrics, true);
         }
 
         final List<Map<String, Object>> turnDataList = plan.turnDataList();
@@ -150,6 +158,11 @@ public class TurnLoopExecutor {
         // request this reduces to the pre-existing "previous turn's extraction" behavior, because every
         // turn re-extracts the full column set defined for this request.
         Map<String, Object> accumulated = new LinkedHashMap<>(initialFrame);
+        // Threaded the same way as accumulated, but never persisted as extracted_columns — see
+        // buildRequestFrame. Folding a turn's own metric-evaluation output in is added by the total-seam
+        // wiring (inline-metric-evaluation change's design.md Decision 3); this method only threads and
+        // binds it for now.
+        Map<String, Object> accumulatedMetrics = new LinkedHashMap<>(initialMetrics);
         boolean aborted = false;
         int turnIndex = 0;
         try {
@@ -171,7 +184,7 @@ public class TurnLoopExecutor {
                         deploymentId,
                         method,
                         responseColumns,
-                        accumulated,
+                        buildRequestFrame(accumulated, accumulatedMetrics, context),
                         input.getTestCaseId(),
                         turnIndex,
                         context);
@@ -179,7 +192,9 @@ public class TurnLoopExecutor {
 
                 if (step.control() == TurnControl.CONTINUE) {
                     accumulated = mergeAccumulated(accumulated, step.extractedValues());
-                    results.add(buildTurnRow(
+                    // The row is built first (id minted, all columns/identity populated) so the seam below
+                    // evaluates against the real, final row — never a partial one (design.md Decision 3).
+                    final TestCaseRunResult row = buildTurnRow(
                             input,
                             context,
                             runIndex,
@@ -192,7 +207,20 @@ public class TurnLoopExecutor {
                             step.requestBodyJson(),
                             serializeAccumulated(accumulated),
                             step.extractionWarningsJson(),
-                            persistedDataJson));
+                            persistedDataJson);
+                    boolean metricsFailed = false;
+                    if (context.getInlineMetricEvaluator() != null) {
+                        final InlineMetricResult metricResult = evaluateInlineMetrics(row, accumulatedMetrics, context);
+                        accumulatedMetrics = mergeAccumulated(accumulatedMetrics, metricResult.frameEntry());
+                        metricsFailed = metricResult.failed();
+                    }
+                    // The row is appended unconditionally — a metric failure never replaces or drops the
+                    // real SUCCESS row (Decision 6); it only stops later turns/requests from running.
+                    results.add(row);
+                    if (metricsFailed) {
+                        aborted = true;
+                        break;
+                    }
                 } else {
                     final boolean requestIssued = step.outcome() != null;
                     if (requestIssued || !context.getCancellationSignal().get()) {
@@ -258,14 +286,63 @@ public class TurnLoopExecutor {
                             : plan.verbatimDataJson()));
             aborted = true;
         }
-        return new RequestExecutionResult(results, accumulated, aborted);
+        return new RequestExecutionResult(results, accumulated, accumulatedMetrics, aborted);
+    }
+
+    /**
+     * Returns the frame to bind for one turn's request-body resolution: {@code accumulated} (the
+     * response-column accumulator) unchanged when this run is non-inline — so {@code $exists($_metrics)}
+     * evaluates to {@code false} and this method is a byte-identical no-op for a suite that never
+     * references {@code $_metrics} — or a copy with an additional {@code $_metrics} entry when {@code
+     * context.getInlineMetricEvaluator() != null} (inline-metric-evaluation change's design.md Decision
+     * 2/3). {@code accumulated} itself is never mutated here — it is also what gets persisted as {@code
+     * extracted_columns}, which {@code $_metrics} must never become part of.
+     */
+    private Map<String, Object> buildRequestFrame(
+            Map<String, Object> accumulated, Map<String, Object> accumulatedMetrics, EvaluationContext context) {
+        if (context.getInlineMetricEvaluator() == null) {
+            return accumulated;
+        }
+        final Map<String, Object> frame = new LinkedHashMap<>(accumulated);
+        frame.put(JsonataReservedNames.METRICS_FRAME_BINDING, accumulatedMetrics);
+        return frame;
+    }
+
+    /**
+     * Invokes {@code context.getInlineMetricEvaluator()} against {@code row}, guaranteeing the seam is
+     * <b>total</b> (design.md Decision 3): the SPI contract already states {@code evaluate()} MUST NOT
+     * throw, but this call site is the last line of defense against a contract violation — any {@link
+     * RuntimeException} escaping the evaluator is caught here and folded into a failed {@link
+     * InlineMetricResult} instead of being allowed to reach the outer {@code catch (RuntimeException)} that
+     * would otherwise synthesize a {@code REQUEST_RESOLUTION_ERROR} row in place of the real SUCCESS row.
+     * A caught exception whose cause is an {@link InterruptedException} re-sets the thread's interrupt flag
+     * before returning, so the interruption is not silently swallowed.
+     */
+    private InlineMetricResult evaluateInlineMetrics(
+            TestCaseRunResult row, Map<String, Object> accumulatedMetrics, EvaluationContext context) {
+        try {
+            return context.getInlineMetricEvaluator().evaluate(new InlineMetricRequest(row, accumulatedMetrics));
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Inline metric evaluator threw for test case {} row {}: {}",
+                    row.getTestCaseId(),
+                    row.getId(),
+                    e.getMessage(),
+                    e);
+            if (e.getCause() instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return new InlineMetricResult(Map.of(), true);
+        }
     }
 
     /**
      * Folds {@code turnValues} into {@code base}, later keys overwriting earlier ones. Returns {@code base}
      * unchanged (no copy) when {@code turnValues} is empty — the common case for an abort that never issued
      * a request. Names never collide across requests (suite-wide response-column uniqueness is enforced at
-     * write time), so this is purely the within-request "later turn wins" rule (Decision 4).
+     * write time), so this is purely the within-request "later turn wins" rule (Decision 4). Reused for the
+     * {@code $_metrics} accumulator's own last-writer-wins-per-{@code tsmdName} fold (inline-metric-evaluation
+     * change's design.md Decision 2/3) — the merge semantics are identical, only the map's contents differ.
      */
     private Map<String, Object> mergeAccumulated(Map<String, Object> base, Map<String, Object> turnValues) {
         if (turnValues.isEmpty()) {

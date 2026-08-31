@@ -177,4 +177,23 @@ class ConditionExpressionEvaluatorTest {
                         .isSkip())
                 .isTrue();
     }
+
+    @Test
+    @DisplayName("Bare $_metrics reference resolves undefined and triggers the broken-condition outcome"
+            + " — $_metrics is not part of the condition's {data, response, turn, request} dictionary")
+    void bareMetricsReference_resolvesUndefined_isError() {
+        assertThat(evaluator
+                        .evaluate("$_metrics.judge.score.value", ctx("{}", "{}", 0, 1))
+                        .isError())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("$exists-wrapped $_metrics reference resolves a clean false rather than a condition error")
+    void existsWrappedMetricsReference_resolvesCleanFalse() {
+        assertThat(evaluator
+                        .evaluate("$exists($_metrics.judge.score.value)", ctx("{}", "{}", 0, 1))
+                        .isSkip())
+                .isTrue();
+    }
 }

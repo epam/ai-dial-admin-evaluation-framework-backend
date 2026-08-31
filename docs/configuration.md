@@ -496,9 +496,9 @@ Configuration for the in-process metric evaluation phase of test suite runs. Aft
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
-| `metric-evaluation.default-concurrency-per-provider` | `METRIC_EVALUATION_DEFAULT_CONCURRENCY_PER_PROVIDER` | `5` | No | - | Maximum concurrent `/evaluate` calls per metric provider (semaphore permits). |
+| `metric-evaluation.default-concurrency-per-provider` | `METRIC_EVALUATION_DEFAULT_CONCURRENCY_PER_PROVIDER` | `5` | No | Phase 2 (always); also Phase 1 for an inline-mode run — sizes the same per-provider semaphores `InlineMetricEvaluatorImpl` reuses to gate concurrent `/evaluate` calls made mid-run | Maximum concurrent `/evaluate` calls per metric provider (semaphore permits). |
 | `metric-evaluation.batch-size` | `METRIC_EVALUATION_BATCH_SIZE` | `100` | No | - | Number of EvalSummary records buffered before flushing to the analytics DB. |
-| `metric-evaluation.per-result-timeout-ms` | `METRIC_EVAL_PER_RESULT_TIMEOUT_MS` | `150000` | No | - | Max wall time in milliseconds to wait for all metric futures on a single TestCaseRunResult before cancelling remaining futures and marking timed-out metric definitions as FAILED. |
+| `metric-evaluation.per-result-timeout-ms` | `METRIC_EVAL_PER_RESULT_TIMEOUT_MS` | `150000` | No | Phase 2 (always); also Phase 1 for an inline-mode run — bounds one row's dispatched TSMD futures at inline-evaluation time instead of at Phase-2 batch time | Max wall time in milliseconds to wait for all metric futures on a single TestCaseRunResult before cancelling remaining futures and marking timed-out metric definitions as FAILED. |
 | `metric-evaluation.retry.max-retries` | `METRIC_EVALUATION_RETRY_MAX_RETRIES` | `0` | No | - | Maximum retries per `/evaluate` call. `0` disables retry. |
 | `metric-evaluation.retry.retry-delay-ms` | `METRIC_EVALUATION_RETRY_RETRY_DELAY_MS` | `1000` | No | - | Initial retry delay in milliseconds. |
 | `metric-evaluation.retry.retry-backoff-multiplier` | `METRIC_EVALUATION_RETRY_RETRY_BACKOFF_MULTIPLIER` | `2.0` | No | - | Exponential backoff multiplier. Must be ≥ 1.0. |

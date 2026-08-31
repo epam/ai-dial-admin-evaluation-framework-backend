@@ -1,7 +1,10 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.exception.ValidationException;
+import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.service.domain.dto.ConstantBindingSourceDto;
+import com.epam.aidial.evaluation.service.domain.dto.ExpressionBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricBindingSourceDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricParameterBindingDto;
 import com.epam.aidial.evaluation.service.domain.dto.ResponseBindingSourceDto;
@@ -30,6 +33,7 @@ public class BindingResolver {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final ObjectMapper objectMapper;
+    private final JsonataEvaluationService jsonataEvaluationService;
 
     /**
      * Parses a JSON string of metric parameter bindings.
@@ -71,25 +75,32 @@ public class BindingResolver {
      * @param bindings         list of parameter bindings (from TSMD configBindings or inputBindings)
      * @param testCaseData     parsed test case data map (from TestCaseRunResult.testCaseData)
      * @param extractedColumns parsed extracted columns map (from TestCaseRunResult.extractedColumns)
+     * @param frame            the {@code {_metrics, data, response}} JSONata evaluation frame for an
+     *                         {@code Expression} binding source (see the {@code inline-metric-evaluation}
+     *                         change's {@code design.md} D7)
      * @return map of property name → resolved value (null if column is missing)
      */
     public Map<String, Object> resolveBindings(
             List<MetricParameterBindingDto> bindings,
             Map<String, Object> testCaseData,
-            Map<String, Object> extractedColumns) {
+            Map<String, Object> extractedColumns,
+            Map<String, Object> frame) {
         if (bindings == null || bindings.isEmpty()) {
             return Collections.emptyMap();
         }
         Map<String, Object> resolved = new LinkedHashMap<>();
         for (MetricParameterBindingDto binding : bindings) {
-            Object value = resolveSource(binding.getSource(), testCaseData, extractedColumns);
+            Object value = resolveSource(binding.getSource(), testCaseData, extractedColumns, frame);
             resolved.put(binding.getProperty(), value);
         }
         return resolved;
     }
 
     private Object resolveSource(
-            MetricBindingSourceDto source, Map<String, Object> testCaseData, Map<String, Object> extractedColumns) {
+            MetricBindingSourceDto source,
+            Map<String, Object> testCaseData,
+            Map<String, Object> extractedColumns,
+            Map<String, Object> frame) {
         if (source instanceof TestCaseBindingSourceDto testCaseSource) {
             String columnName = testCaseSource.getColumnName();
             if (!testCaseData.containsKey(columnName)) {
@@ -106,8 +117,36 @@ public class BindingResolver {
             return extractedColumns.get(columnName);
         } else if (source instanceof ConstantBindingSourceDto constantSource) {
             return constantSource.getValue();
+        } else if (source instanceof ExpressionBindingSourceDto expressionSource) {
+            return resolveExpression(expressionSource.getExpression(), frame);
         }
         throw new IllegalArgumentException(
                 "Unknown binding source type: " + source.getClass().getSimpleName());
+    }
+
+    /**
+     * Evaluates an {@code Expression} binding's JSONata source against the {@code {_metrics, data,
+     * response}} frame. An {@code undefined} result (the reference is unbound, e.g. a not-yet-produced
+     * TSMD name), an explicit JSON {@code null} (indistinguishable from {@code undefined} once
+     * {@link com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService} maps the
+     * engine's {@code NULL_VALUE} to Java {@code null}), or a thrown evaluation error all throw
+     * {@link IllegalArgumentException} — the same failure mode the {@code TestCase}/{@code Response}
+     * branches already use for a missing reference. A metric field whose value may legitimately be
+     * {@code null} must be guarded in the expression itself (e.g. {@code $exists(...)} or a conditional)
+     * if the binding should succeed instead of failing here.
+     */
+    private Object resolveExpression(String expression, Map<String, Object> frame) {
+        Object value;
+        try {
+            value = jsonataEvaluationService.evaluate(expression, "{}", frame);
+        } catch (ValidationException | IllegalStateException e) {
+            throw new IllegalArgumentException(
+                    "Expression binding failed to evaluate '" + expression + "': " + e.getMessage(), e);
+        }
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Expression binding '" + expression + "' evaluated to undefined or null");
+        }
+        return value;
     }
 }

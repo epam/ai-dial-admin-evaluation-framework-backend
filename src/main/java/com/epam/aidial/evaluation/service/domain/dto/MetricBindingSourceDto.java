@@ -8,10 +8,16 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @JsonSubTypes({
     @JsonSubTypes.Type(value = TestCaseBindingSourceDto.class, name = "TestCase"),
     @JsonSubTypes.Type(value = ResponseBindingSourceDto.class, name = "Response"),
-    @JsonSubTypes.Type(value = ConstantBindingSourceDto.class, name = "Constant")
+    @JsonSubTypes.Type(value = ConstantBindingSourceDto.class, name = "Constant"),
+    @JsonSubTypes.Type(value = ExpressionBindingSourceDto.class, name = "Expression")
 })
 @Schema(
         description = "Polymorphic binding source. Discriminated by $type.",
         discriminatorProperty = "$type",
-        subTypes = {TestCaseBindingSourceDto.class, ResponseBindingSourceDto.class, ConstantBindingSourceDto.class})
+        subTypes = {
+            TestCaseBindingSourceDto.class,
+            ResponseBindingSourceDto.class,
+            ConstantBindingSourceDto.class,
+            ExpressionBindingSourceDto.class
+        })
 public abstract class MetricBindingSourceDto {}

@@ -31,6 +31,13 @@
         "$type": "Response",
         "columnName": "model_answer"
       }
+    },
+    {
+      "property": "priorJudgeScore",
+      "source": {
+        "$type": "Expression",
+        "expression": "$_metrics.`judge`.score.value"
+      }
     }
   ],
   "createdAt": 1704067200000,

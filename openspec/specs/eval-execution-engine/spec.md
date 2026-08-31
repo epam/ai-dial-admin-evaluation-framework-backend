@@ -15,7 +15,7 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Evaluation executor interface
-The system SHALL define an `EvaluationExecutor` interface with a single `execute(EvaluationContext)` method. The `EvaluationContext` SHALL carry: `runId`, `testSuiteId`, execution settings (concurrency, timeout, retry, rate limit), a cancellation signal, a progress callback, and a result sink. This interface enables swapping in-process execution with K8s Job submission without changing orchestration code.
+The system SHALL define an `EvaluationExecutor` interface with a single `execute(EvaluationContext)` method. The `EvaluationContext` SHALL carry: `runId`, `testSuiteId`, execution settings (concurrency, timeout, retry, rate limit), a cancellation signal, a progress callback, a result sink, and a nullable `InlineMetricEvaluator` (non-null only when `TestSuiteEvaluationJob` has determined the run is inline-mode; see `metric-evaluation`). This interface enables swapping in-process execution with K8s Job submission without changing orchestration code.
 Status: **Implemented**
 
 #### Scenario: In-process executor is the default
@@ -25,6 +25,18 @@ Status: **Implemented**
 #### Scenario: Executor receives fully populated context
 - **WHEN** `TestSuiteEvaluationJob` dispatches a run
 - **THEN** it SHALL construct an `EvaluationContext` from the run's `RunConfigDto` (with system defaults for omitted fields) and pass it to the executor. Context construction and cancellation signal registration SHALL occur before async dispatch to prevent race conditions.
+
+#### Scenario: Non-inline run carries a null InlineMetricEvaluator
+- **WHEN** `TestSuiteEvaluationJob` determines a run is not inline-mode
+- **THEN** the `EvaluationContext` it constructs SHALL carry `inlineMetricEvaluator = null`, and `TurnLoopExecutor`'s execution path SHALL be byte-for-byte identical to its behavior before this change
+
+#### Scenario: Inline run carries a non-null InlineMetricEvaluator
+- **WHEN** `TestSuiteEvaluationJob` determines a run is inline-mode
+- **THEN** the `EvaluationContext` it constructs SHALL carry a non-null `InlineMetricEvaluator` supplied by the EF backend's per-run factory
+
+#### Scenario: An evaluator that throws does not replace the SUCCESS row
+- **WHEN** the `InlineMetricEvaluator` supplied on the context throws or otherwise fails to honor the "must not throw" SPI contract (see `evaluation-runner-core-module`) while `TurnLoopExecutor` evaluates a turn's row inline
+- **THEN** that failure SHALL NOT cause the turn's real SUCCESS row to be replaced by a synthetic `REQUEST_RESOLUTION_ERROR` row — the seam is designed so `TurnLoopExecutor`'s existing exception handling, which synthesizes such a row for genuine request-resolution failures, is never reached by an inline-evaluation defect
 
 ### Requirement: In-process evaluation execution
 The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (one per test case per run index) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. For legacy runs without a snapshot (no `test_case_run_inputs` rows), it SHALL fall back to reading live test cases from the suite.

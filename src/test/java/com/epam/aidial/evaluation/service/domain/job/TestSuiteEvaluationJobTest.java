@@ -5,10 +5,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
@@ -42,7 +45,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -89,7 +95,16 @@ class TestSuiteEvaluationJobTest {
     private MetricEvaluationExecutor metricEvaluationExecutor;
 
     @Mock
+    private RunMetricSnapshotBatchWriteClient runMetricSnapshotBatchWriteClient;
+
+    @Mock
     private MetricScoreComputationExecutor metricScoreComputation;
+
+    @Mock
+    private InlineModeDetector inlineModeDetector;
+
+    @Mock
+    private InlineMetricEvaluatorFactory inlineMetricEvaluatorFactory;
 
     @Mock
     private Clock clock;
@@ -117,7 +132,10 @@ class TestSuiteEvaluationJobTest {
                 testSuiteMetricDefinitionService,
                 metricEvaluationProperties,
                 metricEvaluationExecutor,
+                runMetricSnapshotBatchWriteClient,
                 metricScoreComputation,
+                inlineModeDetector,
+                inlineMetricEvaluatorFactory,
                 clock,
                 metaTransactionManager);
     }
@@ -350,7 +368,7 @@ class TestSuiteEvaluationJobTest {
             when(evaluationRunProperties.getRetry()).thenReturn(retry);
 
             EvaluationContext context = (EvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token");
+                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token", null);
 
             assertThat(context.getSnapshotRequestName()).isEqualTo("first");
             assertThat(context.getSnapshotAdditionalRequests()).isEqualTo(additionalRequests);
@@ -382,7 +400,7 @@ class TestSuiteEvaluationJobTest {
             when(evaluationRunProperties.getRetry()).thenReturn(retry);
 
             EvaluationContext context = (EvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token");
+                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token", null);
 
             assertThat(context.getSnapshotRequestName()).isNull();
             assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
@@ -405,7 +423,12 @@ class TestSuiteEvaluationJobTest {
                     .build();
 
             MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
+                    job,
+                    "buildMetricEvaluationContext",
+                    run,
+                    invokeResolveSnapshot(run),
+                    new AtomicBoolean(false),
+                    false);
 
             assertThat(context.requestLabelAt(0)).isEqualTo("first");
             assertThat(context.requestLabelAt(1)).isEqualTo("second");
@@ -423,7 +446,12 @@ class TestSuiteEvaluationJobTest {
                     .build();
 
             MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
+                    job,
+                    "buildMetricEvaluationContext",
+                    run,
+                    invokeResolveSnapshot(run),
+                    new AtomicBoolean(false),
+                    false);
 
             assertThat(context.requestLabelAt(0)).isNull();
             assertThat(context.requestLabelAt(1)).isNull();
@@ -458,6 +486,13 @@ class TestSuiteEvaluationJobTest {
                     .datasetId(datasetId)
                     .build();
             liveDataset = Dataset.builder().id(datasetId).build();
+
+            // Used by buildMetricEvaluationContext (via buildMetricContextAndWriteSnapshot), which now
+            // runs for real as part of the job itself rather than inside a mocked executor. Not every
+            // test in this class reaches that code path, hence lenient.
+            lenient()
+                    .when(testSuiteMetricDefinitionService.findAllEnabledAndValidAggregatedByTestSuiteId(any()))
+                    .thenReturn(List.of());
         }
 
         @Test
@@ -483,6 +518,18 @@ class TestSuiteEvaluationJobTest {
             verify(testCaseRunInputRepository, never()).insertBatch(any());
             verify(runnableTestCaseSelector, never()).loadRunnablePage(any(), any(), anyInt(), anyInt());
             verify(repository, never()).updateNumberOfTestCases(any(), anyInt(), anyLong());
+            // Metric context is built and its run_metric_snapshots row written before Phase 2 runs, not
+            // by the (mocked) metricEvaluationExecutor itself — an empty TSMD list still writes the
+            // (empty) batch, same as InProcessMetricEvaluationExecutor did before the hoist.
+            verify(runMetricSnapshotBatchWriteClient).batchWrite(eq(runId), any(), any(), argThat(List::isEmpty));
+            // skipDeploymentPhase = true forces inlineMode = false unconditionally, without ever
+            // invoking InlineModeDetector (per the "Inline metric evaluation mode is derived per run"
+            // requirement's skipDeploymentPhase ⇒ non-inline rule).
+            verifyNoInteractions(inlineModeDetector, inlineMetricEvaluatorFactory);
+            ArgumentCaptor<MetricEvaluationContext> metricContextCaptor =
+                    ArgumentCaptor.forClass(MetricEvaluationContext.class);
+            verify(metricEvaluationExecutor).execute(metricContextCaptor.capture());
+            assertThat(metricContextCaptor.getValue().isInlineMode()).isFalse();
         }
 
         @Test
@@ -522,6 +569,144 @@ class TestSuiteEvaluationJobTest {
             verify(metricEvaluationExecutor).execute(any());
             verify(metricScoreComputation, never()).execute(any());
             verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
+        }
+    }
+
+    @Nested
+    @DisplayName("executeRunAsync(skipDeploymentPhase=false) — inline mode wiring")
+    class InlineModeWiring {
+
+        private UUID runId;
+        private TestSuiteRun run;
+
+        @BeforeEach
+        void setUp() {
+            runId = UUID.randomUUID();
+            UUID suiteId = UUID.randomUUID();
+            UUID datasetId = UUID.randomUUID();
+            run = TestSuiteRun.builder()
+                    .id(runId)
+                    .testSuiteId(suiteId)
+                    .numberOfTestCases(0)
+                    .createdAt(1000L)
+                    .suiteSnapshot("{\"snapshotVersion\":\"2\",\"suiteType\":\"DEPLOYMENT\"}")
+                    .build();
+
+            // executeRunAsync's snapshot phase always re-captures a fresh snapshot from the live
+            // (suite, dataset) pair before checking the inconsistent-snapshot guard, regardless of
+            // whether `run` already carries a suite_snapshot.
+            TestSuite liveSuite = TestSuite.builder()
+                    .id(suiteId)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .datasetId(datasetId)
+                    .build();
+            Dataset liveDataset = Dataset.builder().id(datasetId).build();
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(liveSuite));
+            when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(liveDataset));
+            when(suiteSnapshotBuilder.build(liveSuite, liveDataset))
+                    .thenReturn(SuiteSnapshotDto.builder()
+                            .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                            .suiteType("DEPLOYMENT")
+                            .build());
+
+            when(repository.findById(runId)).thenReturn(Optional.of(run));
+            when(testCaseRunInputRepository.existsByRunId(runId)).thenReturn(true);
+            lenient()
+                    .when(testSuiteMetricDefinitionService.findAllEnabledAndValidAggregatedByTestSuiteId(any()))
+                    .thenReturn(List.of());
+
+            EvaluationRunProperties.Execution execution = new EvaluationRunProperties.Execution();
+            execution.setDefaultConcurrencyLevel(1);
+            execution.setDefaultRequestTimeoutMs(1000L);
+            execution.setResultBatchSize(10);
+            execution.setMaxResponseSizeBytes(1000L);
+            execution.setCancellationGracePeriodMs(1000L);
+            EvaluationRunProperties.Retry retry = new EvaluationRunProperties.Retry();
+            retry.setDefaultMaxRetries(0);
+            retry.setDefaultRetryDelayMs(100L);
+            retry.setMaxRetryDelayMs(100L);
+            retry.setDefaultRetryBackoffMultiplier(1.0);
+            lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
+            lenient().when(evaluationRunProperties.getRetry()).thenReturn(retry);
+        }
+
+        @Test
+        @DisplayName("inline run: factory-built evaluator is wired into EvaluationContext, flushed"
+                + " immediately after Phase 1 returns (before Phase 2), and closed in the job's finally block")
+        void inlineRun_wiresEvaluatorAndFlushesBeforePhase2() {
+            when(inlineModeDetector.isInline(any(), any())).thenReturn(true);
+            InlineMetricEvaluatorImpl inlineEvaluator = Mockito.mock(InlineMetricEvaluatorImpl.class);
+            when(inlineMetricEvaluatorFactory.create(any())).thenReturn(inlineEvaluator);
+
+            job.executeRunAsync(runId, "token", false);
+
+            ArgumentCaptor<EvaluationContext> contextCaptor = ArgumentCaptor.forClass(EvaluationContext.class);
+            verify(evaluationExecutor).execute(contextCaptor.capture());
+            assertThat(contextCaptor.getValue().getInlineMetricEvaluator()).isSameAs(inlineEvaluator);
+
+            InOrder order = Mockito.inOrder(evaluationExecutor, inlineEvaluator, metricEvaluationExecutor);
+            order.verify(evaluationExecutor).execute(any());
+            order.verify(inlineEvaluator).flush();
+            order.verify(metricEvaluationExecutor).execute(any());
+            verify(inlineEvaluator).close();
+        }
+
+        @Test
+        @DisplayName("non-inline run: the factory is never invoked and EvaluationContext carries a null evaluator")
+        void nonInlineRun_neverInvokesFactory() {
+            when(inlineModeDetector.isInline(any(), any())).thenReturn(false);
+
+            job.executeRunAsync(runId, "token", false);
+
+            verify(inlineMetricEvaluatorFactory, never()).create(any());
+            ArgumentCaptor<EvaluationContext> contextCaptor = ArgumentCaptor.forClass(EvaluationContext.class);
+            verify(evaluationExecutor).execute(contextCaptor.capture());
+            assertThat(contextCaptor.getValue().getInlineMetricEvaluator()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("executeRunAsync(skipDeploymentPhase=false) — inconsistent-snapshot guard")
+    class InconsistentSnapshotGuard {
+
+        @Test
+        @DisplayName("run failing the inconsistent-snapshot guard writes no run_metric_snapshots row")
+        void guardFailureWritesNoSnapshot() {
+            UUID runId = UUID.randomUUID();
+            UUID suiteId = UUID.randomUUID();
+            UUID datasetId = UUID.randomUUID();
+
+            // suite_snapshot present but no test_case_run_inputs — the inconsistent combination.
+            TestSuiteRun run = TestSuiteRun.builder()
+                    .id(runId)
+                    .testSuiteId(suiteId)
+                    .suiteSnapshot("{\"snapshotVersion\":\"2\",\"suiteType\":\"DEPLOYMENT\"}")
+                    .build();
+            TestSuite liveSuite = TestSuite.builder()
+                    .id(suiteId)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .datasetId(datasetId)
+                    .build();
+            Dataset liveDataset = Dataset.builder().id(datasetId).build();
+
+            when(repository.findById(runId)).thenReturn(Optional.of(run));
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(liveSuite));
+            when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(liveDataset));
+            when(suiteSnapshotBuilder.build(liveSuite, liveDataset))
+                    .thenReturn(SuiteSnapshotDto.builder()
+                            .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                            .suiteType("DEPLOYMENT")
+                            .build());
+            when(testCaseRunInputRepository.existsByRunId(runId)).thenReturn(false);
+
+            job.executeRunAsync(runId, "token", false);
+
+            verify(repository).updateToFailed(eq(runId), any(), any(), anyLong(), anyLong());
+            verify(evaluationExecutor, never()).execute(any());
+            verify(metricEvaluationExecutor, never()).execute(any());
+            verify(metricScoreComputation, never()).execute(any());
+            verify(runMetricSnapshotBatchWriteClient, never()).batchWrite(any(), any(), any(), any());
+            verify(testSuiteMetricDefinitionService, never()).findAllEnabledAndValidAggregatedByTestSuiteId(any());
         }
     }
 }

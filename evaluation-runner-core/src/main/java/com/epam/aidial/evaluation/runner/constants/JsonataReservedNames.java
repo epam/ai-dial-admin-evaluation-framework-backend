@@ -24,6 +24,24 @@ public final class JsonataReservedNames {
 
     public static final String RESPONSE_FRAME_BINDING = "_response";
     public static final String REQUEST_FRAME_BINDING = "_request";
+    public static final String METRICS_FRAME_BINDING = "_metrics";
+
+    /**
+     * Dictionary key for the test case's field data inside a condition/metric-binding evaluation
+     * dictionary (e.g. {@code {data, response, ...}}) — distinct from {@link #REQUEST_FRAME_BINDING}/
+     * {@link #RESPONSE_FRAME_BINDING} above, which name the framework's request/response correlation
+     * frame variables ({@code $_request}/{@code $_response}), not a dictionary key. Not a reserved
+     * column name — do not add to {@link #FRAME_RESERVED_NAMES}.
+     */
+    public static final String DATA_FRAME_BINDING = "data";
+
+    /**
+     * Dictionary key for the row's extracted response columns inside a condition/metric-binding
+     * evaluation dictionary. See {@link #DATA_FRAME_BINDING} for why this is named differently from
+     * {@link #RESPONSE_FRAME_BINDING}. Not a reserved column name — do not add to
+     * {@link #FRAME_RESERVED_NAMES}.
+     */
+    public static final String RESPONSE_COLUMNS_FRAME_BINDING = "response";
 
     /** JSONata 1.8 built-in function names (without the leading {@code $}). */
     public static final Set<String> BUILT_IN_FUNCTION_NAMES = Collections.unmodifiableSet(new HashSet<>(Set.of(
@@ -98,7 +116,8 @@ public final class JsonataReservedNames {
      * (see {@code response-columns} spec, "Request/response frame for response column
      * extraction").
      */
-    public static final Set<String> FRAME_RESERVED_NAMES = Set.of(REQUEST_FRAME_BINDING, RESPONSE_FRAME_BINDING);
+    public static final Set<String> FRAME_RESERVED_NAMES =
+            Set.of(REQUEST_FRAME_BINDING, RESPONSE_FRAME_BINDING, METRICS_FRAME_BINDING);
 
     /**
      * Combined set of names a response column's {@code name} must not collide with: JSONata

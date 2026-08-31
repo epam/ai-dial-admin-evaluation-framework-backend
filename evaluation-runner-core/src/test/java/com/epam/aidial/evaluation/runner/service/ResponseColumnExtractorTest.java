@@ -239,4 +239,29 @@ class ResponseColumnExtractorTest {
                 .isEqualTo(result.values().get("content"));
         assertThat(extracted.get("missing").isNull()).isTrue();
     }
+
+    @Test
+    @DisplayName("$_metrics is never bound in the response-column extraction frame — referencing it resolves"
+            + " to undefined, stored as null with no warning, regardless of run mode")
+    void metricsBindingNeverBoundInExtractionFrame() throws Exception {
+        // ResponseColumnExtractor.buildFrameBindings binds only $_request/$_response/prior columns
+        // (inline-metric-evaluation change's design.md Decision 7): response columns are extracted before
+        // any metric on this row has run, so $_metrics would always be empty here even for an inline run —
+        // it is simply never bound, same as any other unbound frame name.
+        ResponseColumnExtractor extractor =
+                new ResponseColumnExtractor(realJsonata(), realReconciler, warningsSerializer, objectMapper);
+
+        ResponseColumnExtractor.ExtractionResult result = extractor.extract(
+                List.of(column("metricValue", "$_metrics.judge.score.value", SchemaFieldType.STRING)),
+                "{\"choices\":[]}",
+                "{\"messages\":[]}");
+
+        assertThat(objectMapper
+                        .readTree(result.extractedColumns())
+                        .get("metricValue")
+                        .isNull())
+                .isTrue();
+        assertThat(warningsSerializer.deserializeExtractionWarnings(result.extractionWarnings()))
+                .isEmpty();
+    }
 }

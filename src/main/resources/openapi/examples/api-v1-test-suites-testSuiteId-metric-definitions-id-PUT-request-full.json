@@ -26,6 +26,13 @@
         "$type": "Response",
         "columnName": "model_answer"
       }
+    },
+    {
+      "property": "priorJudgeScore",
+      "source": {
+        "$type": "Expression",
+        "expression": "$_metrics.`judge`.score.value"
+      }
     }
   ],
   "condition": "turn.last"

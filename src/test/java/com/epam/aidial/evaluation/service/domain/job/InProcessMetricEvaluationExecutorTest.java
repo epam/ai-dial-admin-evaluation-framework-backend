@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -39,7 +38,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -67,9 +65,6 @@ class InProcessMetricEvaluationExecutorTest {
     @Mock
     private EvalSummaryBatchWriteClient evalSummaryBatchWriteClient;
 
-    @Mock
-    private RunMetricSnapshotBatchWriteClient runMetricSnapshotBatchWriteClient;
-
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -82,12 +77,21 @@ class InProcessMetricEvaluationExecutorTest {
     @Mock
     private Clock clock;
 
-    @InjectMocks
+    // A real MetricRowEvaluator wired from the same mocks/spies above, not a mock itself: the
+    // per-row dispatch/condition/timeout/status-mapping behavior this test class exercises now lives in
+    // MetricRowEvaluator (extracted from this class), so the executor under test must delegate to a real
+    // instance for these assertions to still mean anything.
+    private MetricRowEvaluator metricRowEvaluator;
+
     private InProcessMetricEvaluationExecutor executor;
 
     @BeforeEach
     void stubConditions() {
         lenient().when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.run());
+        metricRowEvaluator = new MetricRowEvaluator(
+                worker, outputMapper, objectMapper, outputSchemaFieldExtractor, conditionExpressionEvaluator, clock);
+        executor = new InProcessMetricEvaluationExecutor(
+                resultRepository, metricRowEvaluator, evalSummaryBatchWriteClient);
     }
 
     @Test
@@ -130,7 +134,7 @@ class InProcessMetricEvaluationExecutorTest {
                                 .value(BigDecimal.ONE)
                                 .build()))
                 .build();
-        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context)))
+        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context), any()))
                 .thenReturn(response);
         when(clock.millis()).thenReturn(1_000L, 1_000L, 1_150L);
 
@@ -190,7 +194,7 @@ class InProcessMetricEvaluationExecutorTest {
                     return null;
                 })
                 .when(worker)
-                .evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context));
+                .evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context), any());
         when(clock.millis()).thenReturn(5_000L, 5_000L, 5_300L);
 
         // After timeout, the executor records the TSMD as a TsmdEvaluationResult.Failure via putIfAbsent
@@ -254,7 +258,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(worker, never()).evaluate(any(), any(), any(Semaphore.class), any());
+        verify(worker, never()).evaluate(any(), any(), any(Semaphore.class), any(), any());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
@@ -300,7 +304,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(worker, never()).evaluate(any(), any(), any(Semaphore.class), any());
+        verify(worker, never()).evaluate(any(), any(), any(Semaphore.class), any(), any());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
@@ -404,7 +408,7 @@ class InProcessMetricEvaluationExecutorTest {
         when(resultRepository.findAll(any(), any(), any(), eq(100)))
                 .thenReturn(new CursorPage<>(List.of(result), null, false));
 
-        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context)))
+        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context), any()))
                 .thenThrow(new RuntimeException("transport failure"));
         when(clock.millis()).thenReturn(2_000L, 2_000L, 2_500L);
 
@@ -425,25 +429,6 @@ class InProcessMetricEvaluationExecutorTest {
         assertThat(items.get(0).getMetricEvalDurationMs())
                 .as("a failed TSMD call still contributes its real elapsed time, same as a successful one")
                 .isEqualTo(500L);
-    }
-
-    @Test
-    @DisplayName("computeMetricEvalDurationMs excludes ConditionError entries and defaults to 0")
-    void computeMetricEvalDurationMs_excludesConditionErrorsAndDefaultsToZero() {
-        EvaluationResponseDto response = EvaluationResponseDto.builder().build();
-
-        Map<String, TsmdEvaluationResult> mixed = Map.of(
-                "successMetric", new TsmdEvaluationResult.Success(response, List.of(), 100L),
-                "failedMetric", new TsmdEvaluationResult.Failure(new RuntimeException("boom"), List.of(), 300L),
-                "conditionErrorMetric", new TsmdEvaluationResult.ConditionError("bad condition", List.of()));
-
-        assertThat(executor.computeMetricEvalDurationMs(mixed))
-                .as("sum must be over Success/Failure only: 100 + 300")
-                .isEqualTo(400L);
-
-        assertThat(executor.computeMetricEvalDurationMs(Map.of()))
-                .as("no dispatched TSMDs defaults to 0")
-                .isEqualTo(0L);
     }
 
     @Test
@@ -473,8 +458,6 @@ class InProcessMetricEvaluationExecutorTest {
             assertThat(item.getMetricInfos()).isNull();
         });
 
-        // No snapshot rows: the client is still called, with an empty list it discards.
-        verify(runMetricSnapshotBatchWriteClient).batchWrite(eq(runId), any(), any(), argThat(List::isEmpty));
         verifyNoInteractions(worker);
         verifyNoInteractions(conditionExpressionEvaluator);
     }
@@ -543,6 +526,78 @@ class InProcessMetricEvaluationExecutorTest {
         EvalSummaryBatchWriteItemDto failedItem = items.get(1);
         assertThat(failedItem.getExecDurationMs()).isEqualTo(7L);
         assertThat(failedItem.getResponseStatusCode()).isEqualTo(500);
+    }
+
+    @Test
+    @DisplayName("Inline mode: SUCCESS rows are skipped entirely, with zero provider calls and no eval summary"
+            + " written for them")
+    void inlineMode_skipsSuccessRows_zeroProviderCalls() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L).toBuilder()
+                .inlineMode(true)
+                .build();
+
+        TestCaseRunResult success = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(success), null, false));
+
+        executor.execute(context);
+
+        verifyNoInteractions(worker);
+        verifyNoInteractions(conditionExpressionEvaluator);
+        verify(evalSummaryBatchWriteClient, never()).batchWrite(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Inline mode: non-SUCCESS rows are still propagated through the existing propagate-only path")
+    void inlineMode_propagatesNonSuccessRows() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L).toBuilder()
+                .inlineMode(true)
+                .build();
+
+        TestCaseRunResult success = successResult(runId, suiteId, "tc-success");
+        TestCaseRunResult failed = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc-failed")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.FAILED)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(success, failed), null, false));
+
+        executor.execute(context);
+
+        verifyNoInteractions(worker);
+        verifyNoInteractions(conditionExpressionEvaluator);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryBatchWriteItemDto>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryBatchWriteClient).batchWrite(eq(suiteId), eq(runId), any(), any(), captor.capture());
+        List<EvalSummaryBatchWriteItemDto> items = captor.getValue();
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
     }
 
     private static TestCaseRunResult successResult(UUID runId, UUID suiteId, String testCaseName) {

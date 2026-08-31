@@ -42,12 +42,16 @@ public class RequestChainExecutor {
         final List<RequestExecutionSpec> specs = buildSpecs(context);
         final List<TestCaseRunResult> rows = new ArrayList<>();
         Map<String, Object> accumulatedFrame = Map.of();
+        // Threaded alongside accumulatedFrame, into the next request's initialMetrics argument
+        // (inline-metric-evaluation change's design.md Decision 2).
+        Map<String, Object> accumulatedMetrics = Map.of();
 
         for (RequestExecutionSpec spec : specs) {
             final RequestExecutionResult result = turnLoopExecutor.execute(
-                    input, context, runIndex, spec, accumulatedFrame, traceId, execStartedAtMs);
+                    input, context, runIndex, spec, accumulatedFrame, accumulatedMetrics, traceId, execStartedAtMs);
             rows.addAll(result.rows());
             accumulatedFrame = result.accumulatedFrame();
+            accumulatedMetrics = result.accumulatedMetrics();
             if (result.aborted()) {
                 break;
             }

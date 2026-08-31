@@ -55,7 +55,8 @@ context: |
 
   8. runner (com.epam.aidial.evaluation.runner, separate `evaluation-runner-core` Gradle subproject) —
      shared Phase 1 execution engine (EvaluationWorker, TurnLoopExecutor, RequestResolver, DIAL Core/MCP
-     clients, SSE parsing, response column extraction)
+     clients, SSE parsing, response column extraction, the `InlineMetricEvaluator` SPI letting a
+     backend-supplied strategy score a row's metrics before the next turn/request runs)
      - DB-free: no JDBC/jOOQ/Flyway dependency (enforced by RunnerModuleConstraintsTest)
      - One-way dependency: the EF backend (root project) depends on this module; this module must never
        depend back on com.epam.aidial.evaluation.* outside its own runner.* subtree
@@ -154,6 +155,10 @@ context: |
   - request index: 0-based position of a request within the chain; persisted as `request_index` on analytics rows and exposed as `request.index` to a TSMD `condition` (`request.last` = index == total - 1). Orthogonal to `turn_index` — a row's identity within one repetition is the pair `(request_index, turn_index)`
   - bucket alias: Constant client-facing identifier (e.g., @ef) that maps to a real DIAL Core bucket at runtime for cross-environment portability
   - file reference: Short DIAL path format (e.g., @ef/suites/{suiteId}/filename, no files/ prefix) identifying a file location with prefix-based access control; DialFileRefResolver.resolveToRealPath() strips the alias for DialFileClient calls, resolveToDialRef() prepends files/ for embedding in DIAL request payloads
+  - inline metric evaluation: Scoring a row's TSMDs during Phase 1 (inside `TurnLoopExecutor`'s turn loop), immediately after that row is built, instead of waiting for Phase 2's post-hoc pass; derived per run from suite content (no author-facing toggle) — see the `metric-evaluation` and `evaluation-runner-core-module` specs
+  - `_metrics` frame: The per-turn JSONata frame binding `$_metrics.<tsmdName>.<outputField>` → `{value, details}` (or `{error}`), accumulated monotonically (last-writer-wins) across earlier turns/requests in the same run; bound only when a run is inline, absent (not empty) otherwise
+  - `InlineMetricEvaluator` SPI: The `evaluation-runner-core` interface (`runner.job`) + `InlineMetricRequest`/`InlineMetricResult` carrier types that let a backend-supplied, per-run strategy score a just-built SUCCESS row's metrics inside `TurnLoopExecutor`'s total seam; `evaluate()` MUST NOT throw
+  - `Expression` binding source: The fourth TSMD parameter-binding `$type` (alongside TestCase/Response/Constant) that resolves its value via a JSONata expression evaluated over `{_metrics, data, response}`; syntax-checked at write time, no cross-TSMD reference validation
 
   # Tooling
   - Checkstyle: `./gradlew checkstyleMain checkstyleTest` (config: checkstyle/checkstyle.xml)

@@ -14,7 +14,7 @@ import lombok.Getter;
  * concerns (e.g. semaphores) are built by the executor implementation.
  */
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class MetricEvaluationContext {
 
     private final UUID computationId;
@@ -28,6 +28,16 @@ public class MetricEvaluationContext {
     private final int defaultConcurrencyPerProvider;
     private final int batchSize;
     private final long perResultTimeoutMs;
+
+    /**
+     * Whether this run is inline (see {@code InlineModeDetector} and the {@code
+     * inline-metric-evaluation} change's {@code design.md} Decision 1). {@code false} by default
+     * (the correct value for every run predating this change, and for a run dispatched with {@code
+     * skipDeploymentPhase = true}, which never invokes the detector). When {@code true}, {@code
+     * InProcessMetricEvaluationExecutor}'s row loop skips SUCCESS rows (already scored inline during
+     * Phase 1) and only propagates non-SUCCESS rows.
+     */
+    private final boolean inlineMode;
 
     /**
      * The chain's request labels in index order: element 0 is request #0's {@code requestName},

@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDt
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.constants.JsonataReservedNames;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.util.EvalBaggage;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
@@ -16,6 +17,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
@@ -44,10 +46,13 @@ public class MetricEvaluationWorker {
     /**
      * Evaluates a single TSMD against a test case result.
      *
-     * @param tsmd              the aggregated metric definition
-     * @param result            the test case run result providing data for binding resolution
-     * @param providerSemaphore semaphore controlling concurrency for this provider
-     * @param context           metric evaluation context with retry config and cancellation signal
+     * @param tsmd               the aggregated metric definition
+     * @param result             the test case run result providing data for binding resolution
+     * @param providerSemaphore  semaphore controlling concurrency for this provider
+     * @param context            metric evaluation context with retry config and cancellation signal
+     * @param accumulatedMetrics {@code $_metrics} frame entries accumulated so far by earlier
+     *                           turns/requests in this test-case run (empty for Phase 2's propagate-only
+     *                           pass and for any non-inline evaluation)
      * @return evaluation response from the metric provider
      * @throws RuntimeException on transport failure after retries exhausted
      * @throws InterruptedException if cancelled during backoff sleep
@@ -56,7 +61,8 @@ public class MetricEvaluationWorker {
             AggregatedMetricDefinition tsmd,
             TestCaseRunResult result,
             Semaphore providerSemaphore,
-            MetricEvaluationContext context)
+            MetricEvaluationContext context,
+            Map<String, Object> accumulatedMetrics)
             throws InterruptedException {
         Span span = openTelemetry
                 .getTracer(TracingConstants.INSTRUMENTATION_SCOPE_NAME)
@@ -87,7 +93,7 @@ public class MetricEvaluationWorker {
         try (Scope scope = traceContext.makeCurrent()) {
             providerSemaphore.acquire();
             try {
-                return invokeWithRetries(tsmd, result, context);
+                return invokeWithRetries(tsmd, result, context, accumulatedMetrics);
             } finally {
                 providerSemaphore.release();
             }
@@ -101,9 +107,12 @@ public class MetricEvaluationWorker {
     }
 
     private EvaluationResponseDto invokeWithRetries(
-            AggregatedMetricDefinition tsmd, TestCaseRunResult result, MetricEvaluationContext context)
+            AggregatedMetricDefinition tsmd,
+            TestCaseRunResult result,
+            MetricEvaluationContext context,
+            Map<String, Object> accumulatedMetrics)
             throws InterruptedException {
-        EvaluationRequestDto request = buildRequest(tsmd, result);
+        EvaluationRequestDto request = buildRequest(tsmd, result, accumulatedMetrics);
         String providerId = tsmd.getDeclarationProviderId();
         MetricEvaluationProperties.Retry retryConfig = context.getRetryConfig();
         int maxRetries = retryConfig.getMaxRetries();
@@ -165,15 +174,24 @@ public class MetricEvaluationWorker {
                 lastException);
     }
 
-    private EvaluationRequestDto buildRequest(AggregatedMetricDefinition tsmd, TestCaseRunResult result) {
+    private EvaluationRequestDto buildRequest(
+            AggregatedMetricDefinition tsmd, TestCaseRunResult result, Map<String, Object> accumulatedMetrics) {
         Map<String, Object> testCaseData = bindingResolver.parseJsonMap(result.getTestCaseData());
         Map<String, Object> extractedColumns = bindingResolver.parseJsonMap(result.getExtractedColumns());
+
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put(
+                JsonataReservedNames.METRICS_FRAME_BINDING, accumulatedMetrics != null ? accumulatedMetrics : Map.of());
+        frame.put(JsonataReservedNames.DATA_FRAME_BINDING, testCaseData);
+        frame.put(JsonataReservedNames.RESPONSE_COLUMNS_FRAME_BINDING, extractedColumns);
 
         List<MetricParameterBindingDto> configBindings = bindingResolver.parseBindings(tsmd.getConfigBindings());
         List<MetricParameterBindingDto> inputBindings = bindingResolver.parseBindings(tsmd.getInputBindings());
 
-        Map<String, Object> config = bindingResolver.resolveBindings(configBindings, testCaseData, extractedColumns);
-        Map<String, Object> input = bindingResolver.resolveBindings(inputBindings, testCaseData, extractedColumns);
+        Map<String, Object> config =
+                bindingResolver.resolveBindings(configBindings, testCaseData, extractedColumns, frame);
+        Map<String, Object> input =
+                bindingResolver.resolveBindings(inputBindings, testCaseData, extractedColumns, frame);
 
         return EvaluationRequestDto.builder()
                 .metricName(tsmd.getMetricDeclarationName())

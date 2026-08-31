@@ -142,13 +142,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
-    // Community-maintained ClickHouse plugin. Latest release (10.24.0) targets flyway-core 10.x;
-    // no 11.x/12.x-aligned release exists yet (verified against Maven Central, Aug 2026). Forcing
-    // flyway-core to this project's 12.10.0 alongside it is a known compile-time-safe but
-    // runtime-risky combination — see P1 report "concerns" for the mitigation plan (P4 verifies
-    // against a live ClickHouse Testcontainer; if the SPI has drifted, migration will need to move
-    // to a hand-rolled DatabaseType or a raw-SQL bootstrap instead of Flyway auto-discovery).
-    implementation "org.flywaydb:flyway-database-clickhouse:${flyway_clickhouse_version}"
+    // NOTE: no ClickHouse Flyway plugin. org.flywaydb:flyway-database-clickhouse probes schema
+    // existence with "SELECT COUNT() FROM system.databases WHERE name = ?", which the ClickHouse V2
+    // JDBC driver's ANTLR statement parser cannot parse (bare `name` column reference) — it then
+    // reports zero bind parameters and setString() throws ArrayIndexOutOfBoundsException before any
+    // SQL is sent. Verified against a live ClickHouse 25.8. The analytics schema is applied by
+    // ClickHouseSchemaInitializer instead.
 
     implementation 'org.springframework.boot:spring-boot-jooq'
     implementation 'org.jooq:jooq'
@@ -212,11 +211,11 @@ dependencies {
     testImplementation "org.testcontainers:testcontainers-junit-jupiter"
     testImplementation "org.testcontainers:testcontainers-jdbc"
     testImplementation "org.testcontainers:testcontainers-postgresql"
-    // ClickHouse Testcontainers module has not yet been re-published under the "testcontainers-"
-    // prefix used by the 2.x line the Boot BOM manages (verified against Maven Central, Aug 2026:
-    // latest under the old "org.testcontainers:clickhouse" coordinate is 1.21.3). Pin it explicitly;
-    // Gradle aligns its transitive org.testcontainers:testcontainers to the BOM-managed 2.0.5.
-    testImplementation "org.testcontainers:clickhouse:${testcontainers_clickhouse_version}"
+    // NOTE: there is deliberately no "org.testcontainers:clickhouse" module here. That coordinate
+    // only exists on the legacy 1.x line (latest 1.21.3) and would drag 1.x copies of
+    // testcontainers-jdbc / database-commons onto the classpath next to the Boot-BOM-managed 2.0.5
+    // prefixed modules (different GA coordinates, so Gradle cannot align them). ClickHouse is
+    // started from a plain GenericContainer in ClickHouseFunctionalTests instead.
     testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation "io.zonky.test:embedded-postgres:${embedded_postgres_version}"

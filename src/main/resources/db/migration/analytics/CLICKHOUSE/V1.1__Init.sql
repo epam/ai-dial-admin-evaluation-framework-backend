@@ -21,8 +21,14 @@
 --      ClickHouse's JSON type re-serializing (and thus mutating) payloads on read.
 --
 -- ClickHouse DDL statements auto-commit individually; each CREATE TABLE below is one statement.
+--
+-- This script is applied by ClickHouseSchemaInitializer, NOT by Flyway (the ClickHouse Flyway plugin
+-- cannot run on the V2 JDBC driver -- see that class's Javadoc). There is therefore no schema-history
+-- table and the script is re-executed on every startup, so every statement MUST be idempotent: use
+-- CREATE TABLE IF NOT EXISTS / ALTER TABLE ... ADD COLUMN IF NOT EXISTS. Files in this directory are
+-- applied in filename order.
 
-CREATE TABLE test_case_run_results
+CREATE TABLE IF NOT EXISTS test_case_run_results
 (
     id                     String,
     test_suite_run_id      String,
@@ -54,7 +60,7 @@ ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(fromUnixTimestamp64Milli(created_at_ms))
 ORDER BY (test_suite_id, test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms);
 
-CREATE TABLE test_case_eval_summaries
+CREATE TABLE IF NOT EXISTS test_case_eval_summaries
 (
     id                      String,
     test_suite_id           String,
@@ -85,7 +91,7 @@ ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(fromUnixTimestamp64Milli(created_at_ms))
 ORDER BY (test_suite_run_id, computation_id, test_case_id, run_index, request_index, turn_index, created_at_ms);
 
-CREATE TABLE run_metric_snapshots
+CREATE TABLE IF NOT EXISTS run_metric_snapshots
 (
     id                             String,
     computation_id                 String,
@@ -102,7 +108,7 @@ CREATE TABLE run_metric_snapshots
 ENGINE = ReplacingMergeTree
 ORDER BY (computation_id, tsmd_id);
 
-CREATE TABLE metric_score_result
+CREATE TABLE IF NOT EXISTS metric_score_result
 (
     id                  String,
     test_suite_run_id   String,

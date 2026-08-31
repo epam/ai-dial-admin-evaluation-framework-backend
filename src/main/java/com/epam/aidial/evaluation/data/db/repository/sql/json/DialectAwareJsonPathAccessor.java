@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.data.db.repository.sql.json;
 
+import com.epam.aidial.evaluation.data.db.repository.sql.ClickHouseTypeNames;
 import com.epam.aidial.evaluation.data.db.repository.sql.DialectAwareSql;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.math.BigDecimal;
@@ -38,12 +39,6 @@ import org.springframework.stereotype.Component;
 @LogExecution
 public class DialectAwareJsonPathAccessor implements JsonPathAccessor {
 
-    /** ClickHouse {@code JSONExtract}/{@code JSONExtractRaw} return-type literal for text extraction. */
-    private static final String NULLABLE_STRING = "Nullable(String)";
-
-    /** ClickHouse {@code JSONExtract} return-type literal for numeric extraction. */
-    private static final String NULLABLE_FLOAT64 = "Nullable(Float64)";
-
     @Override
     public Field<JSONB> jsonbAt(Field<JSONB> column, Field<String> key) {
         return DialectAwareSql.field(
@@ -60,7 +55,12 @@ public class DialectAwareJsonPathAccessor implements JsonPathAccessor {
                 "jsonb_at_as_text",
                 SQLDataType.VARCHAR,
                 family -> family == SQLDialect.CLICKHOUSE
-                        ? DSL.function("JSONExtract", SQLDataType.VARCHAR, column, key, DSL.inline(NULLABLE_STRING))
+                        ? DSL.function(
+                                "JSONExtract",
+                                SQLDataType.VARCHAR,
+                                column,
+                                key,
+                                DSL.inline(ClickHouseTypeNames.NULLABLE_STRING))
                         : DSL.jsonbGetAttributeAsText(column, key));
     }
 
@@ -71,7 +71,12 @@ public class DialectAwareJsonPathAccessor implements JsonPathAccessor {
                 SQLDataType.NUMERIC,
                 family -> family == SQLDialect.CLICKHOUSE
                         ? DSL.function(
-                                "JSONExtract", SQLDataType.NUMERIC, column, key1, key2, DSL.inline(NULLABLE_FLOAT64))
+                                "JSONExtract",
+                                SQLDataType.NUMERIC,
+                                column,
+                                key1,
+                                key2,
+                                DSL.inline(ClickHouseTypeNames.NULLABLE_FLOAT64))
                         : DSL.jsonbGetAttributeAsText(DSL.jsonbGetAttribute(column, key1), key2)
                                 .cast(SQLDataType.NUMERIC));
     }

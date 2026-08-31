@@ -21,8 +21,11 @@ import org.springframework.stereotype.Repository;
  * ClickHouse twin of {@link PostgresMetricScoreResultRepository}. Reads are inherited unchanged. Only
  * {@link #saveAll} differs: ClickHouse has no {@code ON CONFLICT}; deduplication is delegated to the
  * {@code ReplacingMergeTree} table engine (ordered by the same natural key used for the Postgres
- * {@code onConflict}), made visible to readers via session-wide {@code FINAL}, and the {@code value}
- * column is written through {@link #exactFloat64} rather than as a plain bind.
+ * {@code onConflict}), made visible to readers via the {@code clickhouse_setting_final=1} connection
+ * property (not a session-wide {@code SET}, which does not persist across statements on the
+ * ClickHouse V2 HTTP driver — see {@code AnalyticsClickHouseConfiguration}'s Javadoc for the verified
+ * mechanism, the single source of truth), and the {@code value} column is written through
+ * {@link #exactFloat64} rather than as a plain bind.
  */
 @Slf4j
 @Repository

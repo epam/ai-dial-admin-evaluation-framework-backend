@@ -18,9 +18,19 @@ import org.springframework.stereotype.Repository;
  * ClickHouse twin of {@link PostgresTestCaseRunResultRepository}. Reads are inherited unchanged — the
  * jOOQ query surface is rendered by the injected {@code analyticsDsl} (CLICKHOUSE dialect at runtime).
  * Only {@link #saveAll} differs: ClickHouse has no {@code ON CONFLICT}; deduplication is delegated to
- * the {@code ReplacingMergeTree} table engine (ordered by the same natural key used for the Postgres
- * {@code onConflict}), made visible to readers via session-wide {@code FINAL} (see the {@code
- * analyticsDsl} datasource connection-init SQL).
+ * the {@code ReplacingMergeTree} table engine, made visible to readers via the {@code
+ * clickhouse_setting_final=1} connection property (not a session-wide {@code SET}, which does not
+ * persist across statements on the ClickHouse V2 HTTP driver — see {@code
+ * AnalyticsClickHouseConfiguration}'s Javadoc for the verified mechanism, the single source of truth).
+ *
+ * <p>The engine's {@code ORDER BY} is {@code (test_suite_id, test_suite_run_id, test_case_id,
+ * run_index, request_index, turn_index, created_at_ms)} — a <b>superset</b> of the Postgres unique key
+ * {@code (test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)}, not
+ * the same key: {@code test_suite_id} has no counterpart in the PG constraint. Today the two keys
+ * partition the table into identical dedup groups only because {@code test_suite_id} is functionally
+ * dependent on {@code test_suite_run_id} (a run always belongs to exactly one suite); a future feature
+ * that reassigns a run's {@code test_suite_id} would break that dependency and must revisit this
+ * {@code ORDER BY}.
  */
 @Slf4j
 @Repository

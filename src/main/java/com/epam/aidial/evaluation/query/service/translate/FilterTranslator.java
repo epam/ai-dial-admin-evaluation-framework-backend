@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.query.service.translate;
 
+import com.epam.aidial.evaluation.data.db.repository.sql.ClickHouseTypeNames;
 import com.epam.aidial.evaluation.data.db.repository.sql.DialectAwareSql;
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
@@ -267,10 +268,10 @@ public class FilterTranslator {
                     ? arrayContainsIgnoreCase(column, value.value(), negated)
                     : arrayContainsStringElement(column, value.value(), negated);
         }
-        if (!(right instanceof ValueExpr)) {
+        if (!(right instanceof ValueExpr value)) {
             throw new ValidationException("'co'/'nc' on an array field require a scalar literal right operand");
         }
-        return arrayContainsScalarElement(column, exprTranslator.toField(right, bindings), negated);
+        return arrayContainsScalarElement(column, value.valueType(), exprTranslator.toField(right, bindings), negated);
     }
 
     /**
@@ -282,7 +283,10 @@ public class FilterTranslator {
     private static Condition arrayContainsStringElement(Field<JSONB> column, String value, boolean negated) {
         return DialectAwareSql.condition(family -> {
             final Condition raw = family == SQLDialect.CLICKHOUSE
-                    ? DSL.condition("has(JSONExtract({0}, 'Array(Nullable(String))'), {1})", column, DSL.val(value))
+                    ? DSL.condition(
+                            "has(JSONExtract({0}, '" + ClickHouseTypeNames.ARRAY_NULLABLE_STRING + "'), {1})",
+                            column,
+                            DSL.val(value))
                     : DSL.condition("{0} ?? {1}", column, DSL.val(value));
             return negated ? nullSatisfiesRaw(family, DSL.not(raw)) : raw;
         });
@@ -290,22 +294,54 @@ public class FilterTranslator {
 
     /**
      * Element-existence containment for a non-string scalar operand: Postgres' {@code @>} JSONB
-     * containment against the operand promoted via {@code to_jsonb}. The ClickHouse branch is a
-     * best-effort, documented generic form: it compares every decoded array element as {@code
-     * Nullable(Float64)}, so it is correct for a numeric operand but not necessarily for a boolean,
-     * date, timestamp, or UUID literal — P4's functional suite against a real ClickHouse container
-     * adjudicates whether narrower per-type handling is needed.
+     * containment against the operand promoted via {@code to_jsonb} — unchanged for every literal
+     * type. The ClickHouse branch dispatches on the literal's {@link ValueType}, known at translate
+     * time: a {@code number} type ({@code integer}/{@code long}/{@code decimal}/{@code timestamp}, the
+     * last stored as epoch milliseconds) compares every decoded array element as {@code
+     * Nullable(Float64)}; {@code boolean} compares as {@code Nullable(Bool)}. Any other type ({@code
+     * date}, {@code uuid}) has no faithful ClickHouse rendering — {@code JSONExtract} cannot recover a
+     * date/UUID's original textual form from a JSON-text array element the way Postgres' {@code @>}
+     * can via native JSONB equality — so the ClickHouse branch rejects it with a {@link
+     * ValidationException} (surfaced as HTTP 400 by {@code DefaultExceptionHandler}) rather than
+     * silently rendering a comparison that can never match. The type check runs inside the {@code
+     * byFamily} closure, gated on {@code family == CLICKHOUSE}, so the same query still executes
+     * unchanged on Postgres.
      */
-    private static Condition arrayContainsScalarElement(Field<JSONB> column, Field<?> value, boolean negated) {
+    private static Condition arrayContainsScalarElement(
+            Field<JSONB> column, ValueType valueType, Field<?> value, boolean negated) {
         return DialectAwareSql.condition(family -> {
             final Condition raw = family == SQLDialect.CLICKHOUSE
-                    ? DSL.condition(
-                            "arrayExists(x -> JSONExtract(x, 'Nullable(Float64)') = {1}, "
-                                    + "JSONExtractArrayRaw({0}))",
-                            column, value)
+                    ? clickHouseScalarContains(valueType, column, value)
                     : DSL.condition("{0} @> to_jsonb({1})", column, value);
             return negated ? nullSatisfiesRaw(family, DSL.not(raw)) : raw;
         });
+    }
+
+    private static Condition clickHouseScalarContains(ValueType valueType, Field<JSONB> column, Field<?> value) {
+        if (isNumericContainmentLiteral(valueType)) {
+            return DSL.condition(
+                    "arrayExists(x -> JSONExtract(x, '" + ClickHouseTypeNames.NULLABLE_FLOAT64 + "') = {1}, "
+                            + "JSONExtractArrayRaw({0}))",
+                    column,
+                    value);
+        }
+        if (valueType == ValueType.BOOLEAN) {
+            return DSL.condition(
+                    "arrayExists(x -> JSONExtract(x, '" + ClickHouseTypeNames.NULLABLE_BOOL + "') = {1}, "
+                            + "JSONExtractArrayRaw({0}))",
+                    column,
+                    value);
+        }
+        throw new ValidationException("array containment with " + valueType.code()
+                + " literal is not supported on the ClickHouse analytics vendor");
+    }
+
+    /** {@code timestamp} is included: {@link ValueExprToObjectMapper} maps it to epoch-millisecond {@code Long}. */
+    private static boolean isNumericContainmentLiteral(ValueType valueType) {
+        return valueType == ValueType.INTEGER
+                || valueType == ValueType.LONG
+                || valueType == ValueType.DECIMAL
+                || valueType == ValueType.TIMESTAMP;
     }
 
     /**
@@ -333,9 +369,10 @@ public class FilterTranslator {
         return DialectAwareSql.condition(family -> {
             final Condition raw = family == SQLDialect.CLICKHOUSE
                     ? DSL.condition(
-                            "arrayExists(x -> lowerUTF8(x) = lowerUTF8({1}), "
-                                    + "JSONExtract({0}, 'Array(Nullable(String))'))",
-                            column, DSL.val(operand))
+                            "arrayExists(x -> lowerUTF8(x) = lowerUTF8({1}), " + "JSONExtract({0}, '"
+                                    + ClickHouseTypeNames.ARRAY_NULLABLE_STRING + "'))",
+                            column,
+                            DSL.val(operand))
                     : DSL.condition(
                             "exists (select 1 from jsonb_array_elements_text("
                                     + "case when jsonb_typeof({0}) = 'array' then {0} else '[]'::jsonb end) as e(v) "

@@ -5,6 +5,7 @@ import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE
 import com.epam.aidial.evaluation.data.db.analytics.mapper.EvalSummaryRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
+import com.epam.aidial.evaluation.data.db.repository.sql.ClickHouseTypeNames;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
@@ -27,7 +28,11 @@ import org.springframework.stereotype.Repository;
  *
  * <ul>
  *   <li>{@link #saveAll} — no {@code ON CONFLICT}; deduplication is delegated to the {@code
- *       ReplacingMergeTree} table engine, made visible to readers via session-wide {@code FINAL}.
+ *       ReplacingMergeTree} table engine (ordered by the same natural key used for the Postgres
+ *       {@code onConflict}), made visible to readers via the {@code clickhouse_setting_final=1}
+ *       connection property (not a session-wide {@code SET}, which does not persist across statements
+ *       on the ClickHouse V2 HTTP driver — see {@code AnalyticsClickHouseConfiguration}'s Javadoc for
+ *       the verified mechanism, the single source of truth).
  *   <li>the metric accessor used by {@link #aggregate} — Postgres' {@code ->}/{@code ->>} JSONB path
  *       operators do not exist on ClickHouse; replaced with {@code JSONExtract}.
  *   <li>the two {@code FILTER (WHERE ...)} aggregates used by {@link #countMatches} — ClickHouse does
@@ -121,7 +126,7 @@ public class ClickHouseEvalSummaryRepository extends PostgresEvalSummaryReposito
         // JSONExtract(metric_values, :metricName, :outputName, 'Nullable(String)') — keys stay bound
         // params (not inlined); only the type-name literal is a constant.
         return DSL.field(
-                "JSONExtract({0}, {1}, {2}, 'Nullable(String)')",
+                "JSONExtract({0}, {1}, {2}, '" + ClickHouseTypeNames.NULLABLE_STRING + "')",
                 String.class,
                 TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                 DSL.val(metric.metricName()),
@@ -131,7 +136,7 @@ public class ClickHouseEvalSummaryRepository extends PostgresEvalSummaryReposito
     @Override
     protected Field<BigDecimal> buildNumericMetricAccessor(MetricPath metric) {
         return DSL.field(
-                "JSONExtract({0}, {1}, {2}, 'Nullable(Float64)')",
+                "JSONExtract({0}, {1}, {2}, '" + ClickHouseTypeNames.NULLABLE_FLOAT64 + "')",
                 BigDecimal.class,
                 TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                 DSL.val(metric.metricName()),

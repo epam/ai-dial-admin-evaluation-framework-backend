@@ -10,9 +10,10 @@
 --      table's implicit last ordinary column (none declared here, so the physically-last-inserted
 --      row for a key wins after a background merge). Analytics repositories therefore do a plain
 --      INSERT for every write (never an upsert), and reads rely on the analytics datasource's
---      session-wide "SET final = 1" (see AnalyticsClickHouseConfiguration) to collapse duplicates
---      deterministically before merges run, rather than the PG unique-constraint + ON CONFLICT
---      idiom.
+--      "clickhouse_setting_final=1" connection property (see AnalyticsClickHouseConfiguration --
+--      NOT a session-wide "SET final = 1", which does not persist across statements on the
+--      ClickHouse V2 HTTP driver) to collapse duplicates deterministically before merges run,
+--      rather than the PG unique-constraint + ON CONFLICT idiom.
 --   2. String, not JSON: JSONB payload columns (test_case_data, request_body, response_body,
 --      extracted_columns, extraction_warnings, metric_values, metric_infos, config_bindings,
 --      input_bindings, output_schema, log_details) are declared as String/Nullable(String), not

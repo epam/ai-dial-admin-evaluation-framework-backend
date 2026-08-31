@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.query.service.translate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import com.epam.aidial.evaluation.data.db.repository.sql.json.DialectAwareJsonPathAccessor;
@@ -9,12 +10,15 @@ import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.FilterNode;
+import com.epam.aidial.evaluation.query.model.FnExpr;
 import com.epam.aidial.evaluation.query.model.LogicalNode;
 import com.epam.aidial.evaluation.query.model.LogicalOp;
 import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.model.ValueType;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.query.service.dto.QueryFieldType;
+import com.epam.aidial.evaluation.query.service.translate.function.QueryFunctionNames;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -146,5 +150,93 @@ class FilterTranslatorClickHouseRenderTest {
                 SQLDialect.DEFAULT,
                 cmp(ComparisonOp.CO, new FieldExpr("data::tags"), new ValueExpr(ValueType.INTEGER, "5")));
         assertThat(scalarSql).contains("@>").contains("to_jsonb").doesNotContain("arrayexists");
+    }
+
+    @Test
+    @DisplayName("'nc' on an array field with a string element stays null-satisfying on ClickHouse")
+    void arrayContainsStringElementNegatedOnClickHouse() {
+        String sql = render(SQLDialect.CLICKHOUSE, cmp(ComparisonOp.NC, new FieldExpr("data::tags"), string("text")));
+        assertThat(sql)
+                .contains("ifnull((not (has(jsonextract(")
+                .contains("array(nullable(string))")
+                .contains("'text'")
+                .doesNotContain("is not false")
+                .doesNotContain("@>")
+                .doesNotContain("to_jsonb");
+    }
+
+    @Test
+    @DisplayName("'nc' on an array field with a numeric element stays null-satisfying on ClickHouse")
+    void arrayContainsScalarElementNegatedOnClickHouse() {
+        String sql = render(
+                SQLDialect.CLICKHOUSE,
+                cmp(ComparisonOp.NC, new FieldExpr("data::tags"), new ValueExpr(ValueType.INTEGER, "5")));
+        assertThat(sql)
+                .contains("ifnull((not (arrayexists(x -> jsonextract(x, 'nullable(float64)') = 5")
+                .contains("jsonextractarrayraw(")
+                .doesNotContain("@>")
+                .doesNotContain("to_jsonb");
+    }
+
+    @Test
+    @DisplayName("'nc' on an array field under a lower()/upper() ignore-case wrapper stays null-satisfying "
+            + "on ClickHouse")
+    void arrayContainsIgnoreCaseNegatedOnClickHouse() {
+        FnExpr wrapper = new FnExpr(QueryFunctionNames.LOWER, false, List.of(new FieldExpr("data::tags")));
+        String sql = render(SQLDialect.CLICKHOUSE, cmp(ComparisonOp.NC, wrapper, string("Text")));
+        assertThat(sql)
+                .contains("ifnull((not (arrayexists(x -> lowerutf8(x) = lowerutf8(")
+                .contains("array(nullable(string))")
+                .doesNotContain("jsonb_array_elements_text")
+                .doesNotContain("lower(e.v)");
+    }
+
+    @Test
+    @DisplayName("'not' wrapping a 'co' array-element containment stays null-satisfying on ClickHouse too")
+    void notWrappingArrayContainsOnClickHouse() {
+        FilterNode not = new LogicalNode(
+                LogicalOp.NOT, List.of(cmp(ComparisonOp.CO, new FieldExpr("data::tags"), string("text"))));
+        String sql = render(SQLDialect.CLICKHOUSE, not);
+        // The extra parenthesis before "has(" (vs. the two-paren "not(ifnull((" shape seen when negate()
+        // wraps a plain jOOQ-native condition, e.g. negateOnClickHouse above) is jOOQ's documented
+        // defensive extra paren around a nested CustomCondition substituted into a plain-SQL template
+        // (see the class Javadoc on FilterTranslator#negate) — harmless, and pinned here deliberately so
+        // a future refactor that changes the nesting shape is forced to re-verify this render.
+        assertThat(sql)
+                .contains("not(ifnull(((has(jsonextract(")
+                .contains("array(nullable(string))")
+                .contains("false)))")
+                .doesNotContain("arrayexists")
+                .doesNotContain("is not true");
+    }
+
+    @Test
+    @DisplayName("'co' on an array field with a boolean element renders ClickHouse Nullable(Bool) comparison")
+    void arrayContainsBooleanElementOnClickHouse() {
+        String sql = render(
+                SQLDialect.CLICKHOUSE,
+                cmp(ComparisonOp.CO, new FieldExpr("data::tags"), new ValueExpr(ValueType.BOOLEAN, "true")));
+        assertThat(sql)
+                .contains("arrayexists(x -> jsonextract(x, 'nullable(bool)') = ")
+                .contains("jsonextractarrayraw(")
+                .doesNotContain("@>")
+                .doesNotContain("to_jsonb")
+                .doesNotContain("nullable(float64)");
+    }
+
+    @Test
+    @DisplayName("'co' on an array field with a date literal is rejected on ClickHouse, but still works on the "
+            + "default family")
+    void arrayContainsDateElementRejectedOnClickHouse() {
+        ComparisonNode node =
+                cmp(ComparisonOp.CO, new FieldExpr("data::tags"), new ValueExpr(ValueType.DATE, "2024-01-01"));
+
+        assertThatThrownBy(() -> render(SQLDialect.CLICKHOUSE, node))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("date")
+                .hasMessageContaining("ClickHouse");
+
+        String pgSql = render(SQLDialect.DEFAULT, node);
+        assertThat(pgSql).contains("@>").contains("to_jsonb");
     }
 }

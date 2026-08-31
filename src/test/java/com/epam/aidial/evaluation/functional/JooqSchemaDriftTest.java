@@ -23,6 +23,17 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Postgres-side drift guard between the live Flyway-migrated schemas and the committed jOOQ
+ * sources.
+ *
+ * <p>The two generated models have different sources of truth. The meta model is generated from the
+ * Postgres meta migrations ({@code ./gradlew generateJooq}), so for meta this test is the usual
+ * "regenerate after a migration" guard. The analytics model is generated from the CLICKHOUSE
+ * migrations ({@code ./gradlew generateClickHouseJooq}) — see {@link ClickHouseSchemaDriftTest} —
+ * and the Postgres analytics migrations are the derived twin, so here the analytics assertions
+ * verify that the twin has kept up with the ClickHouse-sourced model.
+ */
 class JooqSchemaDriftTest {
 
     private static EmbeddedPostgres embeddedPostgres;
@@ -79,7 +90,7 @@ class JooqSchemaDriftTest {
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITES,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS);
 
-        verifyTablesExistInDb(dsl, jooqTables, dbMeta);
+        verifyTablesExistInDb(dsl, jooqTables, dbMeta, "Run './gradlew generateJooq' to regenerate sources.");
     }
 
     @Test
@@ -87,13 +98,22 @@ class JooqSchemaDriftTest {
         DSLContext dsl = DSL.using(analyticsDataSource, SQLDialect.POSTGRES);
         Meta dbMeta = dsl.meta();
 
-        List<Table<?>> jooqTables =
-                List.of(Tables.TEST_CASE_EVAL_SUMMARIES, Tables.TEST_CASE_RUN_RESULTS, Tables.RUN_METRIC_SNAPSHOTS);
+        List<Table<?>> jooqTables = List.of(
+                Tables.TEST_CASE_EVAL_SUMMARIES,
+                Tables.TEST_CASE_RUN_RESULTS,
+                Tables.RUN_METRIC_SNAPSHOTS,
+                Tables.METRIC_SCORE_RESULT);
 
-        verifyTablesExistInDb(dsl, jooqTables, dbMeta);
+        verifyTablesExistInDb(
+                dsl,
+                jooqTables,
+                dbMeta,
+                "The analytics model is generated from the CLICKHOUSE migrations; bring the POSTGRES "
+                        + "analytics migrations back in line with it (and rerun "
+                        + "'./gradlew generateClickHouseJooq' if the ClickHouse schema changed too).");
     }
 
-    private void verifyTablesExistInDb(DSLContext dsl, List<Table<?>> jooqTables, Meta dbMeta) {
+    private void verifyTablesExistInDb(DSLContext dsl, List<Table<?>> jooqTables, Meta dbMeta, String regenerateHint) {
         // Get all DB tables
         Set<String> dbTableNames = dbMeta.getTables().stream()
                 .map(t -> t.getName().toLowerCase())
@@ -104,9 +124,7 @@ class JooqSchemaDriftTest {
             String tableName = jooqTable.getName().toLowerCase();
 
             assertThat(dbTableNames)
-                    .as(
-                            "jOOQ table '%s' not found in DB. Run './gradlew generateJooq' to regenerate sources.",
-                            tableName)
+                    .as("jOOQ table '%s' not found in DB. %s", tableName, regenerateHint)
                     .contains(tableName);
 
             // Get actual DB columns for this table
@@ -126,9 +144,8 @@ class JooqSchemaDriftTest {
             for (String colName : jooqColumns) {
                 if (!dbColumns.contains(colName)) {
                     fail(
-                            "Schema drift detected: jOOQ defines column '%s.%s' but it is missing in the DB. "
-                                    + "Run './gradlew generateJooq' to regenerate sources.",
-                            tableName, colName);
+                            "Schema drift detected: jOOQ defines column '%s.%s' but it is missing in the DB. %s",
+                            tableName, colName, regenerateHint);
                 }
             }
 
@@ -137,9 +154,8 @@ class JooqSchemaDriftTest {
             for (String dbColumn : dbColumns) {
                 if (!jooqColumns.contains(dbColumn)) {
                     fail(
-                            "Schema drift detected: DB column '%s.%s' is missing from jOOQ metadata. "
-                                    + "Run './gradlew generateJooq' to regenerate sources.",
-                            tableName, dbColumn);
+                            "Schema drift detected: DB column '%s.%s' is missing from jOOQ metadata. %s",
+                            tableName, dbColumn, regenerateHint);
                 }
             }
         }

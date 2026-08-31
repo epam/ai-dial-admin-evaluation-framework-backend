@@ -114,6 +114,15 @@ hand-rolled `ClickHouseSchemaInitializer` (`ResourceDatabasePopulator` re-runnin
 startup, no history table) — a workaround for the 0.9.0 driver bug above. It has been removed now that
 the driver bump makes Flyway work.
 
+## Generated model: ClickHouse is the source of truth
+
+Both vendors share one generated jOOQ model (`…data.db.jooq.analytics`), and that model is generated
+**from the CLICKHOUSE migrations** by `./gradlew generateClickHouseJooq` — not from the Postgres
+analytics migrations, which are the derived twin. So analytics schema evolution starts in
+`db/migration/analytics/CLICKHOUSE`; the POSTGRES script is written to match, and `JooqSchemaDriftTest`
+fails if it does not. `ClickHouseSchemaDriftTest` guards the other direction (migration edited, codegen
+not rerun). Details and the forced-type configuration: [Typed SQL DSL](jooq-typed-sql-dsl.md).
+
 ## Known engine semantics
 
 - **Float64, not `numeric`.** A bare ClickHouse `decimal` means `Decimal(10, 0)` — scale zero — so

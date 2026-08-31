@@ -984,6 +984,15 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 
 ---
 
+## ClickHouse analytics schema (vendor=CLICKHOUSE)
+
+When `datasource.analytics.vendor=CLICKHOUSE`, the analytics database is ClickHouse instead of PostgreSQL. The four analytics tables above (`test_case_run_results`, `test_case_eval_summaries`, `run_metric_snapshots`, `metric_score_result`) exist with **identical column names and semantics**; only the physical column types, engine, and dedup strategy differ. Full DDL: [`db/migration/analytics/CLICKHOUSE/V1.1__Init.sql`](../src/main/resources/db/migration/analytics/CLICKHOUSE/V1.1__Init.sql).
+
+- **Engine**: all four tables use `ReplacingMergeTree`, which is ClickHouse's stand-in for PostgreSQL's `UNIQUE` constraint + `ON CONFLICT DO NOTHING`. There is no upsert primitive — repositories always `INSERT`, and duplicate rows sharing an `ORDER BY` key are collapsed at read time rather than at write time (background merges are eventual; the analytics connection pool sets `SET final = 1` so every read behaves as if `FINAL` were specified, forcing deterministic dedup even before a merge runs).
+- **ORDER BY** (ClickHouse's primary/sorting key, standing in for PostgreSQL's unique-constraint columns): `test_case_run_results` and `test_case_eval_summaries` use `(test_suite_id or test_suite_run_id, ..., created_at_ms)` composite keys matching the PG unique constraints; both are additionally `PARTITION BY toYYYYMM(fromUnixTimestamp64Milli(created_at_ms))`. `run_metric_snapshots` orders by `(computation_id, tsmd_id)`; `metric_score_result` orders by `(test_suite_run_id, computation_id, metric_score_name, metric_name)` — both matching their PG natural-key unique constraints.
+- **String, not JSON**: every JSONB column on PostgreSQL (`test_case_data`, `request_body`, `response_body`, `extracted_columns`, `extraction_warnings`, `metric_values`, `metric_infos`, `config_bindings`, `input_bindings`, `output_schema`, `log_details`) is a plain `String`/`Nullable(String)` column here, not ClickHouse's native `JSON` type — the application's serialized payload is stored byte-for-byte rather than being re-parsed and re-serialized by the database.
+- **No `roc_auc_score` function**: ClickHouse's built-in `arrayAUC` covers the same need at the query layer; this is out of scope for the schema migration itself.
+
 ## Conventions
 
 - **UUIDs**: Stored as `VARCHAR(36)` strings

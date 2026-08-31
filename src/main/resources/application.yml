@@ -217,6 +217,16 @@ postgres:
       password: postgres  # Example value for local development. Override via environment variable in production.
       schema: public
 
+clickhouse:
+  analytics:
+    datasource:
+      url: jdbc:ch://localhost:8123/evaluation_analytics
+      connection-params: ""
+      driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
+      username: clickhouse
+      password: clickhouse  # Example value for local development. Override via environment variable in production.
+      database: evaluation_analytics
+
 # Security configuration
 config:
   rest:

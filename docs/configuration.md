@@ -236,7 +236,7 @@ The application uses a **dual datasource architecture**: a **meta** database for
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
-| `datasource.analytics.vendor` | `DATASOURCE_ANALYTICS_VENDOR` | `POSTGRES` | No | - | Analytics database vendor. Only `POSTGRES` is currently supported. |
+| `datasource.analytics.vendor` | `DATASOURCE_ANALYTICS_VENDOR` | `POSTGRES` | No | - | Analytics database vendor. `POSTGRES` or `CLICKHOUSE`. |
 | `datasource.analytics.auth.type` | `DATASOURCE_ANALYTICS_AUTH_TYPE` | `basic` | No | - | Analytics authentication strategy. Same semantics as `datasource.meta.auth.type`. |
 | `postgres.analytics.datasource.url` | `POSTGRES_ANALYTICS_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/evaluation_analytics_db` | Recommended | - | Analytics JDBC base URL without query parameters. Override in every non-local environment. |
 | `postgres.analytics.datasource.connection-params` | `POSTGRES_ANALYTICS_DATASOURCE_CONNECTION_PARAMS` | `reWriteBatchedInserts=true` | No | - | JDBC query parameters appended to the URL. The default enables batched-insert rewriting for the analytics write path. |
@@ -244,6 +244,21 @@ The application uses a **dual datasource architecture**: a **meta** database for
 | `postgres.analytics.datasource.username` | `POSTGRES_ANALYTICS_DATASOURCE_USERNAME` | `postgres` | Conditional | `datasource.analytics.auth.type=azure` | Database username. For `azure` auth this MUST be the Azure AD identity username. |
 | `postgres.analytics.datasource.password` | `POSTGRES_ANALYTICS_DATASOURCE_PASSWORD` | `postgres` | Recommended | `datasource.analytics.auth.type=basic` | Database password. The default is intended for local development only. Unused when `datasource.analytics.auth.type=azure`. |
 | `postgres.analytics.datasource.schema` | `POSTGRES_ANALYTICS_DATASOURCE_SCHEMA` | `public` | No | - | Database schema for analytics entities and Flyway migrations. |
+
+#### 4.2.1 ClickHouse Analytics Datasource
+
+Applies only when `datasource.analytics.vendor=CLICKHOUSE`. ClickHouse has no schemas in the PostgreSQL sense; `clickhouse.analytics.datasource.database` plays the equivalent role (it is Flyway's `defaultSchema` for this vendor) and must match the database segment of `clickhouse.analytics.datasource.url`. `datasource.analytics.auth.type=azure` is not supported for this vendor.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `clickhouse.analytics.datasource.url` | `CLICKHOUSE_ANALYTICS_DATASOURCE_URL` | `jdbc:ch://localhost:8123/evaluation_analytics` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Analytics JDBC base URL without query parameters. Accepts `jdbc:ch://` or `jdbc:clickhouse://`. Override in every non-local environment. |
+| `clickhouse.analytics.datasource.connection-params` | `CLICKHOUSE_ANALYTICS_DATASOURCE_CONNECTION_PARAMS` | `-` | No | `datasource.analytics.vendor=CLICKHOUSE` | JDBC query parameters appended to the URL. Empty by default. |
+| `clickhouse.analytics.datasource.driver-class-name` | `CLICKHOUSE_ANALYTICS_DATASOURCE_DRIVER_CLASS_NAME` | `com.clickhouse.jdbc.ClickHouseDriver` | No | `datasource.analytics.vendor=CLICKHOUSE` | JDBC driver class (ClickHouse V2 JDBC driver). |
+| `clickhouse.analytics.datasource.username` | `CLICKHOUSE_ANALYTICS_DATASOURCE_USERNAME` | `clickhouse` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Database username. |
+| `clickhouse.analytics.datasource.password` | `CLICKHOUSE_ANALYTICS_DATASOURCE_PASSWORD` | `clickhouse` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Database password. The default is intended for local development only. Override via environment variable in every non-local environment. |
+| `clickhouse.analytics.datasource.database` | `CLICKHOUSE_ANALYTICS_DATASOURCE_DATABASE` | `evaluation_analytics` | No | `datasource.analytics.vendor=CLICKHOUSE` | ClickHouse database name; used as Flyway's `defaultSchema` and as the migration location's vendor segment (`db/migration/analytics/CLICKHOUSE`). |
+
+On this vendor, `analyticsTransactionManager` is a no-op (`ClickHouseNoOpTransactionManager`) — ClickHouse has no transactions, and analytics writes are idempotent append-only batches deduplicated at read time by `ReplacingMergeTree` (session-wide `SET final = 1`, configured on the connection pool). See [Database Schema Reference — ClickHouse analytics schema](database-schema.md#clickhouse-analytics-schema-vendorclickhouse).
 
 ### 4.3 Azure AD Authentication
 

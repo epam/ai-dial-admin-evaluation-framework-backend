@@ -8,6 +8,7 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.DefaultConfiguration;
 import org.jooq.impl.DefaultExecuteListenerProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.jooq.autoconfigure.ExceptionTranslatorExecuteListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,6 +19,7 @@ import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
+@ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES", matchIfMissing = true)
 public class AnalyticsJdbcConfiguration {
 
     @Bean

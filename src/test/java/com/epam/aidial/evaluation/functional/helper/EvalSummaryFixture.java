@@ -28,6 +28,13 @@ public class EvalSummaryFixture {
     private final long createdAtMs;
 
     /**
+     * Nullable, and read through {@link #getTestCaseId()}: {@code test_case_id} is part of the row's natural
+     * key, so a test about duplicate-key behaviour must be able to pin it, while every other test wants a
+     * fresh id per row — a value {@code @Builder.Default} cannot express.
+     */
+    private final UUID testCaseId;
+
+    /**
      * Nullable, and read through {@link #getComputedAtMs()} rather than the generated getter: latest-computation
      * resolution orders by {@code computed_at_ms}, so a test seeding two computations must separate them
      * explicitly, while every other test wants it to mirror {@code createdAtMs} — a value {@code @Builder.Default}
@@ -64,5 +71,9 @@ public class EvalSummaryFixture {
 
     public long getComputedAtMs() {
         return computedAtMs != null ? computedAtMs : createdAtMs;
+    }
+
+    public UUID getTestCaseId() {
+        return testCaseId != null ? testCaseId : UUID.randomUUID();
     }
 }

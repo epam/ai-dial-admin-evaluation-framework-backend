@@ -5,15 +5,33 @@ import com.epam.aidial.evaluation.functional.tests.AnalyticsResultBatchWriteFunc
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultCountFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultGetByIdFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultListFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.AnalyticsRetryFieldsFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.ClickHouseAnalyticsSemanticsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalResultsImportFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryAggregationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportPageSizeFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.EvaluationExecutorFailureModesFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.GrafanaDisabledFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.GrafanaEnabledFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.JsonataRequestTemplateFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpEvaluationRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricScoreComputationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MetricScoreResultStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiRequestChainRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiTurnFilterFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.MultiTurnSharedDataFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.QuerySchemaDiscoveryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.ResponseColumnFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
 import java.time.Duration;
 import org.junit.jupiter.api.Nested;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
@@ -148,4 +166,68 @@ public class ClickHouseFunctionalTests extends DialClientMockingFunctionalTests 
             super(CLICKHOUSE_IMAGE);
         }
     }
+
+    @Nested
+    class TestSuiteRunTests extends TestSuiteRunFunctionalTests {}
+
+    @Nested
+    class MultiTurnRunTests extends MultiTurnRunFunctionalTests {}
+
+    @Nested
+    class MultiTurnFilterTests extends MultiTurnFilterFunctionalTests {}
+
+    @Nested
+    class MultiTurnSharedDataTests extends MultiTurnSharedDataFunctionalTests {}
+
+    @Nested
+    class MultiRequestChainRunTests extends MultiRequestChainRunFunctionalTests {}
+
+    @Nested
+    class ResponseColumnTests extends ResponseColumnFunctionalTests {}
+
+    @Nested
+    class JsonataRequestTemplateTests extends JsonataRequestTemplateFunctionalTests {}
+
+    @Nested
+    class McpEvaluationRunTests extends McpEvaluationRunFunctionalTests {}
+
+    @Nested
+    class QuerySchemaDiscoveryTests extends QuerySchemaDiscoveryFunctionalTests {}
+
+    @Nested
+    class TestSuiteMetricDefinitionTests extends TestSuiteMetricDefinitionFunctionalTests {}
+
+    @Nested
+    class AnalyticsRetryFieldsTests extends AnalyticsRetryFieldsFunctionalTests {}
+
+    @Nested
+    class EvalSummaryExportTests extends EvalSummaryExportFunctionalTests {}
+
+    @Nested
+    class MetricScoreResultStructuredQueryTests extends MetricScoreResultStructuredQueryFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(properties = {"csv.export.page-size=2"})
+    class EvalSummaryExportPageSizeTests extends EvalSummaryExportPageSizeFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(properties = {"test-suite-run.execution.cancellation-grace-period-ms=1000"})
+    class EvaluationExecutorFailureModesTests extends EvaluationExecutorFailureModesFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "app.grafana.base-url=http://grafana:3000",
+                "otel.sdk.disabled=false",
+                "otel.traces.exporter=none",
+                "otel.metrics.exporter=none",
+                "otel.logs.exporter=none"
+            })
+    class GrafanaEnabledTests extends GrafanaEnabledFunctionalTests {}
+
+    @Nested
+    class GrafanaDisabledTests extends GrafanaDisabledFunctionalTests {}
+
+    @Nested
+    class ClickHouseAnalyticsSemanticsTests extends ClickHouseAnalyticsSemanticsFunctionalTests {}
 }

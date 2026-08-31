@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -33,6 +34,11 @@ import org.springframework.stereotype.Repository;
  *       not support the standard SQL {@code FILTER} clause (confirmed by a render probe: jOOQ emits it
  *       verbatim on {@code SQLDialect.CLICKHOUSE}, which ClickHouse then rejects); replaced with {@code
  *       CASE WHEN} aggregates, which are equivalent and supported everywhere.
+ *   <li>{@link #existsByRunIdAndComputationId} — the inherited {@code fetchExists} sends
+ *       {@code select exists (select 1 … where … = ?)}, and the ClickHouse V2 JDBC driver's ANTLR
+ *       statement parser cannot parse a {@code SELECT} nested inside a scalar expression. It then reports
+ *       zero bind parameters, and the bind fails before any SQL reaches the server. Replaced with a
+ *       {@code select 1 … limit 1} probe.
  * </ul>
  */
 @Slf4j
@@ -46,6 +52,21 @@ public class ClickHouseEvalSummaryRepository extends PostgresEvalSummaryReposito
             EvalSummaryRecordMapper recordMapper,
             WhereBuilder whereBuilder) {
         super(dsl, recordMapper, whereBuilder);
+    }
+
+    /**
+     * ClickHouse cannot take the inherited {@code select exists (subquery)} form — see the class Javadoc.
+     * A {@code select 1 … limit 1} probe answers the same question with a statement shape the driver parses.
+     */
+    @Override
+    public boolean existsByRunIdAndComputationId(UUID runId, UUID computationId) {
+        return dsl.select(DSL.inline(1))
+                        .from(TEST_CASE_EVAL_SUMMARIES)
+                        .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                        .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()))
+                        .limit(1)
+                        .fetchOne()
+                != null;
     }
 
     @Override

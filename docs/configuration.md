@@ -247,18 +247,22 @@ The application uses a **dual datasource architecture**: a **meta** database for
 
 #### 4.2.1 ClickHouse Analytics Datasource
 
-Applies only when `datasource.analytics.vendor=CLICKHOUSE`. ClickHouse has no schemas in the PostgreSQL sense; `clickhouse.analytics.datasource.database` plays the equivalent role (it is Flyway's `defaultSchema` for this vendor) and must match the database segment of `clickhouse.analytics.datasource.url`. `datasource.analytics.auth.type=azure` is not supported for this vendor.
+Applies only when `datasource.analytics.vendor=CLICKHOUSE`. ClickHouse has no schemas in the PostgreSQL sense; `clickhouse.analytics.datasource.database` plays the equivalent role and must match the database segment of `clickhouse.analytics.datasource.url`. `datasource.analytics.auth.type=azure` is not supported for this vendor.
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `clickhouse.analytics.datasource.url` | `CLICKHOUSE_ANALYTICS_DATASOURCE_URL` | `jdbc:ch://localhost:8123/evaluation_analytics` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Analytics JDBC base URL without query parameters. Accepts `jdbc:ch://` or `jdbc:clickhouse://`. Override in every non-local environment. |
-| `clickhouse.analytics.datasource.connection-params` | `CLICKHOUSE_ANALYTICS_DATASOURCE_CONNECTION_PARAMS` | `-` | No | `datasource.analytics.vendor=CLICKHOUSE` | JDBC query parameters appended to the URL. Empty by default. |
+| `clickhouse.analytics.datasource.connection-params` | `CLICKHOUSE_ANALYTICS_DATASOURCE_CONNECTION_PARAMS` | `-` | No | `datasource.analytics.vendor=CLICKHOUSE` | JDBC query parameters appended to the URL. Empty by default. The application always appends `clickhouse_setting_final=1` and `clickhouse_setting_join_use_nulls=1` on top of whatever is set here; do not override those two. |
 | `clickhouse.analytics.datasource.driver-class-name` | `CLICKHOUSE_ANALYTICS_DATASOURCE_DRIVER_CLASS_NAME` | `com.clickhouse.jdbc.ClickHouseDriver` | No | `datasource.analytics.vendor=CLICKHOUSE` | JDBC driver class (ClickHouse V2 JDBC driver). |
 | `clickhouse.analytics.datasource.username` | `CLICKHOUSE_ANALYTICS_DATASOURCE_USERNAME` | `clickhouse` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Database username. |
 | `clickhouse.analytics.datasource.password` | `CLICKHOUSE_ANALYTICS_DATASOURCE_PASSWORD` | `clickhouse` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Database password. The default is intended for local development only. Override via environment variable in every non-local environment. |
-| `clickhouse.analytics.datasource.database` | `CLICKHOUSE_ANALYTICS_DATASOURCE_DATABASE` | `evaluation_analytics` | No | `datasource.analytics.vendor=CLICKHOUSE` | ClickHouse database name; used as Flyway's `defaultSchema` and as the migration location's vendor segment (`db/migration/analytics/CLICKHOUSE`). |
+| `clickhouse.analytics.datasource.database` | `CLICKHOUSE_ANALYTICS_DATASOURCE_DATABASE` | `evaluation_analytics` | No | `datasource.analytics.vendor=CLICKHOUSE` | ClickHouse database name. The database must already exist (the schema initializer creates tables, not databases); it is not created by the application. |
 
-On this vendor, `analyticsTransactionManager` is a no-op (`ClickHouseNoOpTransactionManager`) — ClickHouse has no transactions, and analytics writes are idempotent append-only batches deduplicated at read time by `ReplacingMergeTree` (session-wide `SET final = 1`, configured on the connection pool). See [Database Schema Reference — ClickHouse analytics schema](database-schema.md#clickhouse-analytics-schema-vendorclickhouse).
+On this vendor:
+
+- `analyticsTransactionManager` is a no-op (`ClickHouseNoOpTransactionManager`) — ClickHouse has no transactions, and analytics writes are idempotent append-only batches deduplicated at read time by `ReplacingMergeTree`.
+- Schema management is **not** Flyway. `ClickHouseSchemaInitializer` executes every `*.sql` under `db/migration/analytics/CLICKHOUSE` in filename order at startup; there is no schema-history table, so every statement in those files must be idempotent (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`). The ClickHouse Flyway plugin cannot run on the V2 JDBC driver (its schema-existence probe uses SQL the driver's statement parser rejects).
+- Two ClickHouse server settings are pinned as connection properties and are load-bearing: `final=1` (dedup-exact reads over `ReplacingMergeTree`) and `join_use_nulls=1` (SQL-standard `LEFT JOIN` nullability, without which run-comparison anti-match predicates are silently always-true). They are connection properties rather than a `connectionInitSql` `SET` because the V2 driver sends every statement as an independent stateless HTTP request. See [Database Schema Reference — ClickHouse analytics schema](database-schema.md#clickhouse-analytics-schema-vendorclickhouse).
 
 ### 4.3 Azure AD Authentication
 

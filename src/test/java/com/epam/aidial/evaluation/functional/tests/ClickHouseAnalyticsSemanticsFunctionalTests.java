@@ -1,0 +1,113 @@
+package com.epam.aidial.evaluation.functional.tests;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
+import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
+import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+
+/**
+ * ClickHouse-only invariants that have no Postgres counterpart, because on Postgres the same guarantees
+ * come from a unique constraint plus {@code ON CONFLICT DO NOTHING} rather than from vendor settings:
+ *
+ * <ul>
+ *   <li><b>Dedup-exact reads.</b> ClickHouse writes are plain {@code INSERT}s and duplicates are collapsed
+ *       by the {@code ReplacingMergeTree} engine, which merges in the background — so a reader sees one row
+ *       per natural key only because the analytics datasource pins the server setting {@code final=1}. If
+ *       that setting ever stops reaching the server, this test sees two rows.
+ *   <li><b>Float64 write fidelity.</b> jOOQ's batch inlines a {@code Double} in scientific notation and
+ *       ClickHouse's textual {@code Float64} parser is one ULP off for that form, so persisted metric scores
+ *       have to be written as an explicit plain decimal.
+ * </ul>
+ */
+@DisplayName("ClickHouse Analytics Semantics Functional Tests")
+public abstract class ClickHouseAnalyticsSemanticsFunctionalTests extends BaseFunctionalTest {
+
+    private static final long CREATED_AT_MS = 1_700_000_000_000L;
+
+    /** A double whose shortest decimal form ({@code 0.8500000000000001}) needs 17 significant digits. */
+    private static final double ULP_SENSITIVE_SCORE = 0.8500000000000001d;
+
+    @Autowired
+    private AnalyticsTestDataHelper analyticsTestDataHelper;
+
+    @Autowired
+    private MetricScoreResultRepository metricScoreResultRepository;
+
+    @Test
+    @DisplayName("Two inserts sharing an eval-summary natural key are read back as a single row")
+    void duplicateNaturalKeyReadsAsOneRow() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        UUID testCaseId = UUID.randomUUID();
+
+        // Same (run, computation, test case, run/request/turn index, created_at) key, different row ids —
+        // the exact shape a retried batch write produces.
+        analyticsTestDataHelper.createEvalSummary(fixture(suiteId, runId, computationId, testCaseId));
+        analyticsTestDataHelper.createEvalSummary(fixture(suiteId, runId, computationId, testCaseId));
+
+        assertThat(analyticsTestDataHelper.findEvalSummariesByRunId(runId)).hasSize(1);
+        assertThat(analyticsTestDataHelper.countEvalSummaries()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("A 17-significant-digit metric score survives the write/read round trip bit-for-bit")
+    void metricScoreRoundTripsExactly() {
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+
+        metricScoreResultRepository.saveAll(List.of(
+                metricScore(runId, computationId, "P90", ULP_SENSITIVE_SCORE),
+                metricScore(runId, computationId, "AVG", null)));
+
+        List<MetricScoreResult> persisted = metricScoreResultRepository.findByRunAndComputation(runId, computationId);
+
+        assertThat(persisted).hasSize(2);
+        assertThat(persisted)
+                .filteredOn(r -> "P90".equals(r.getMetricScoreName()))
+                .singleElement()
+                .extracting(MetricScoreResult::getValue)
+                .isEqualTo(ULP_SENSITIVE_SCORE);
+        assertThat(persisted)
+                .filteredOn(r -> "AVG".equals(r.getMetricScoreName()))
+                .singleElement()
+                .extracting(MetricScoreResult::getValue)
+                .isNull();
+    }
+
+    private static EvalSummaryFixture fixture(UUID suiteId, UUID runId, UUID computationId, UUID testCaseId) {
+        return EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseId)
+                .testCaseName("duplicated-case")
+                .executionStatus(ExecutionStatus.SUCCESS.name())
+                .execDurationMs(100L)
+                .createdAtMs(CREATED_AT_MS)
+                .testCaseDataJson("{}")
+                .metricValuesJson("{}")
+                .build();
+    }
+
+    private static MetricScoreResult metricScore(UUID runId, UUID computationId, String scoreName, Double value) {
+        return MetricScoreResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteId(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .computationId(computationId)
+                .metricScoreName(scoreName)
+                .metricName("Relevancy.score")
+                .value(value)
+                .computedAtMs(CREATED_AT_MS)
+                .build();
+    }
+}

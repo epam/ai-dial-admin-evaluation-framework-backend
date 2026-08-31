@@ -12,6 +12,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
+import com.epam.aidial.evaluation.data.db.repository.sql.DialectAwareSql;
 import com.epam.aidial.evaluation.data.db.repository.sql.FilterWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -30,9 +31,11 @@ import org.jooq.Field;
 import org.jooq.JSONB;
 import org.jooq.Query;
 import org.jooq.Record;
+import org.jooq.SQLDialect;
 import org.jooq.SelectLimitStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
+import org.jooq.impl.SQLDataType;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -282,7 +285,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .on(matchCondition(probe))
                 .where(runScope(runId, computationId).and(probeKey(probe).isNull()))
                 .orderBy(
-                        DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME),
+                        lowerName(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME),
                         TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
@@ -302,7 +305,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         // same table — without it the inner predicates read as if they might be correlated.
         TestCaseEvalSummaries other = TEST_CASE_EVAL_SUMMARIES.as(OTHER_RUN_ALIAS);
         return dsl.selectDistinct(
-                        DSL.lower(other.TEST_CASE_NAME).as(PROBE_NAME_LOWER),
+                        lowerName(other.TEST_CASE_NAME).as(PROBE_NAME_LOWER),
                         other.RUN_INDEX,
                         other.REQUEST_INDEX,
                         other.TURN_INDEX)
@@ -311,6 +314,24 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         .eq(otherRunId.toString())
                         .and(other.COMPUTATION_ID.eq(otherComputationId.toString())))
                 .asTable(PROBE_TABLE);
+    }
+
+    /**
+     * Case-folds a test case name for the run-comparison match key.
+     *
+     * <p>Dialect-switched rather than a plain {@code DSL.lower}: ClickHouse's {@code lower} only folds
+     * ASCII, so two names differing solely in the case of a non-ASCII letter would fail to match each other
+     * (and sort inconsistently) where Postgres' locale-aware {@code lower} matches them. {@code lowerUTF8}
+     * is ClickHouse's Unicode-aware equivalent. Non-ClickHouse families render today's {@code lower(...)}
+     * byte-identically.
+     */
+    private static Field<String> lowerName(Field<String> name) {
+        return DialectAwareSql.field(
+                "lower_name",
+                SQLDataType.VARCHAR,
+                family -> family == SQLDialect.CLICKHOUSE
+                        ? DSL.function("lowerUTF8", SQLDataType.VARCHAR, name)
+                        : DSL.lower(name));
     }
 
     /**
@@ -324,7 +345,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
 
     private Condition matchCondition(Table<?> probe) {
         return probeKey(probe)
-                .eq(DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME))
+                .eq(lowerName(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME))
                 .and(probe.field(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX))
                 .and(probe.field(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX))
                 .and(probe.field(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX));

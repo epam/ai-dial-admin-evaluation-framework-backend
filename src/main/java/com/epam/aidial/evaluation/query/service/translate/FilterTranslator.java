@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.query.service.translate;
 
+import com.epam.aidial.evaluation.data.db.repository.sql.DialectAwareSql;
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
@@ -23,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.JSONB;
+import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.springframework.stereotype.Component;
 
@@ -104,8 +106,7 @@ public class FilterTranslator {
             final ArrayOperand arrayOperand = resolveArrayOperand(leftExpr, bindings);
             if (arrayOperand != null && !isNullLiteral(right)) {
                 final Field<JSONB> column = (Field<JSONB>) exprTranslator.toField(arrayOperand.field(), bindings);
-                final Condition contains = arrayContains(column, right, bindings, arrayOperand.ignoreCase());
-                return op.negated() ? nullSatisfies(DSL.not(contains)) : contains;
+                return arrayContains(column, right, bindings, arrayOperand.ignoreCase(), op.negated());
             }
         }
 
@@ -150,7 +151,22 @@ public class FilterTranslator {
      * otherwise sargable predicates on indexed columns.
      */
     private static Condition nullSatisfies(Condition condition) {
-        return DSL.condition("({0}) is not false", condition);
+        return DialectAwareSql.condition(family -> nullSatisfiesRaw(family, condition));
+    }
+
+    /**
+     * The family-specific SQL {@link #nullSatisfies} renders, without the {@link DialectAwareSql}
+     * wrapper — factored out so callers that already sit inside a {@code byFamily} closure (e.g. the
+     * negated array-containment forms below) can fold it in without nesting a second
+     * {@code CustomCondition}: jOOQ's {@code NOT} combinator adds a defensive extra parenthesis around
+     * a {@code CustomCondition} operand that a plain, jOOQ-native condition does not get, so every
+     * negated form here is built as ONE flat family-specific expression rather than composing multiple
+     * dialect-aware conditions through {@code DSL.not(...)}.
+     */
+    private static Condition nullSatisfiesRaw(SQLDialect family, Condition condition) {
+        return family == SQLDialect.CLICKHOUSE
+                ? DSL.condition("ifNull(({0}), true)", condition)
+                : DSL.condition("({0}) is not false", condition);
     }
 
     /**
@@ -159,7 +175,9 @@ public class FilterTranslator {
      * propagate UNKNOWN and drop the row instead.
      */
     private static Condition negate(Condition condition) {
-        return DSL.condition("({0}) is not true", condition);
+        return DialectAwareSql.condition(family -> family == SQLDialect.CLICKHOUSE
+                ? DSL.condition("not(ifNull(({0}), false))", condition)
+                : DSL.condition("({0}) is not true", condition));
     }
 
     private List<Object> inValues(Expr right, Map<String, QueryFieldBinding> bindings) {
@@ -223,24 +241,71 @@ public class FilterTranslator {
     }
 
     /**
-     * Builds a JSONB array-element containment condition over {@code column}. A string element uses
-     * the {@code ?} element-existence operator ({@code ??} escapes the jOOQ bind placeholder), or —
-     * when {@code ignoreCase} holds — case-folded whole-element comparison over the expanded array;
-     * any other scalar literal uses {@code @>} against the element promoted to JSONB via
-     * {@code to_jsonb} (case folding is meaningless for a non-string literal, so the wrapper is simply
-     * dropped). The operand is always a bound parameter — never concatenated into SQL.
+     * Builds a JSONB array-element containment condition over {@code column}, negated (and made total
+     * via {@link #nullSatisfiesRaw}) when {@code negated} holds. A string element uses the {@code ?}
+     * element-existence operator ({@code ??} escapes the jOOQ bind placeholder), or — when {@code
+     * ignoreCase} holds — case-folded whole-element comparison over the expanded array; any other
+     * scalar literal uses {@code @>} against the element promoted to JSONB via {@code to_jsonb} (case
+     * folding is meaningless for a non-string literal, so the wrapper is simply dropped). The operand
+     * is always a bound parameter — never concatenated into SQL.
+     *
+     * <p>The {@code negated} branch is applied via {@code DSL.not(...)} to the plain, family-specific
+     * condition <em>inside</em> the same {@link DialectAwareSql} closure that picks the family, rather
+     * than by wrapping an already-built dialect-aware {@link Condition} from the outside: jOOQ's
+     * {@code NOT} combinator adds a defensive extra parenthesis around a {@code CustomCondition}
+     * operand that a plain, jOOQ-native condition does not get, so composing {@code NOT} externally
+     * would silently add a parenthesis layer to the rendered SQL.
      */
     private Condition arrayContains(
-            Field<JSONB> column, Expr right, Map<String, QueryFieldBinding> bindings, boolean ignoreCase) {
+            Field<JSONB> column,
+            Expr right,
+            Map<String, QueryFieldBinding> bindings,
+            boolean ignoreCase,
+            boolean negated) {
         if (right instanceof ValueExpr value && value.valueType() == ValueType.STRING && value.value() != null) {
             return ignoreCase
-                    ? arrayContainsIgnoreCase(column, value.value())
-                    : DSL.condition("{0} ?? {1}", column, DSL.val(value.value()));
+                    ? arrayContainsIgnoreCase(column, value.value(), negated)
+                    : arrayContainsStringElement(column, value.value(), negated);
         }
         if (!(right instanceof ValueExpr)) {
             throw new ValidationException("'co'/'nc' on an array field require a scalar literal right operand");
         }
-        return DSL.condition("{0} @> to_jsonb({1})", column, exprTranslator.toField(right, bindings));
+        return arrayContainsScalarElement(column, exprTranslator.toField(right, bindings), negated);
+    }
+
+    /**
+     * Element-existence containment for a string operand: Postgres' {@code ?} JSONB key/element
+     * existence operator ({@code ??} escapes the jOOQ bind placeholder). On ClickHouse — where the
+     * JSONB-typed field is backed by a JSON-text {@code String} column — the array is decoded via
+     * {@code JSONExtract(col, 'Array(Nullable(String))')} and tested with {@code has}.
+     */
+    private static Condition arrayContainsStringElement(Field<JSONB> column, String value, boolean negated) {
+        return DialectAwareSql.condition(family -> {
+            final Condition raw = family == SQLDialect.CLICKHOUSE
+                    ? DSL.condition("has(JSONExtract({0}, 'Array(Nullable(String))'), {1})", column, DSL.val(value))
+                    : DSL.condition("{0} ?? {1}", column, DSL.val(value));
+            return negated ? nullSatisfiesRaw(family, DSL.not(raw)) : raw;
+        });
+    }
+
+    /**
+     * Element-existence containment for a non-string scalar operand: Postgres' {@code @>} JSONB
+     * containment against the operand promoted via {@code to_jsonb}. The ClickHouse branch is a
+     * best-effort, documented generic form: it compares every decoded array element as {@code
+     * Nullable(Float64)}, so it is correct for a numeric operand but not necessarily for a boolean,
+     * date, timestamp, or UUID literal — P4's functional suite against a real ClickHouse container
+     * adjudicates whether narrower per-type handling is needed.
+     */
+    private static Condition arrayContainsScalarElement(Field<JSONB> column, Field<?> value, boolean negated) {
+        return DialectAwareSql.condition(family -> {
+            final Condition raw = family == SQLDialect.CLICKHOUSE
+                    ? DSL.condition(
+                            "arrayExists(x -> JSONExtract(x, 'Nullable(Float64)') = {1}, "
+                                    + "JSONExtractArrayRaw({0}))",
+                            column, value)
+                    : DSL.condition("{0} @> to_jsonb({1})", column, value);
+            return negated ? nullSatisfiesRaw(family, DSL.not(raw)) : raw;
+        });
     }
 
     /**
@@ -256,16 +321,28 @@ public class FilterTranslator {
      * planner is free to cost-order top-level conjuncts, so only {@code CASE} — which evaluates just the
      * selected branch — guarantees the guard holds under any plan. That guard is also what makes
      * {@code nc} total here: a null, absent, or non-array value yields the empty array, so {@code EXISTS}
-     * is {@code false} (never UNKNOWN) and its negation is {@code true} on its own. {@link #nullSatisfies}
+     * is {@code false} (never UNKNOWN) and its negation is {@code true} on its own. {@link #nullSatisfiesRaw}
      * still wraps the negation for uniformity with the {@code ?}/{@code @>} forms, where the operand
      * genuinely can be null — here it is inert.
+     *
+     * <p>The ClickHouse branch decodes the array via {@code JSONExtract(col, 'Array(Nullable(String))')}
+     * and folds case with {@code lowerUTF8} inside {@code arrayExists}, the ClickHouse equivalent of the
+     * Postgres {@code EXISTS}-over-expanded-array shape above.
      */
-    private static Condition arrayContainsIgnoreCase(Field<JSONB> column, String operand) {
-        return DSL.condition(
-                "exists (select 1 from jsonb_array_elements_text("
-                        + "case when jsonb_typeof({0}) = 'array' then {0} else '[]'::jsonb end) as e(v) "
-                        + "where lower(e.v) = lower({1}))",
-                column, DSL.val(operand));
+    private static Condition arrayContainsIgnoreCase(Field<JSONB> column, String operand, boolean negated) {
+        return DialectAwareSql.condition(family -> {
+            final Condition raw = family == SQLDialect.CLICKHOUSE
+                    ? DSL.condition(
+                            "arrayExists(x -> lowerUTF8(x) = lowerUTF8({1}), "
+                                    + "JSONExtract({0}, 'Array(Nullable(String))'))",
+                            column, DSL.val(operand))
+                    : DSL.condition(
+                            "exists (select 1 from jsonb_array_elements_text("
+                                    + "case when jsonb_typeof({0}) = 'array' then {0} else '[]'::jsonb end) as e(v) "
+                                    + "where lower(e.v) = lower({1}))",
+                            column, DSL.val(operand));
+            return negated ? nullSatisfiesRaw(family, DSL.not(raw)) : raw;
+        });
     }
 
     private static boolean isNullLiteral(Expr expr) {

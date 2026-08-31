@@ -3,7 +3,7 @@ package com.epam.aidial.evaluation.query.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
+import com.epam.aidial.evaluation.data.db.repository.sql.json.DialectAwareJsonPathAccessor;
 import com.epam.aidial.evaluation.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
@@ -35,7 +35,7 @@ class TestCaseFieldBindingsBuilderTest {
     private Map<String, QueryFieldBinding> buildFor(List<FieldDefinitionDto> schema) {
         builder = new TestCaseFieldBindingsBuilder(
                 new JooqTableSchemaResolver(),
-                new PostgresJsonPathAccessor(),
+                new DialectAwareJsonPathAccessor(),
                 datasetSchemaProvider,
                 new SchemaFieldTypeMapper());
         when(datasetSchemaProvider.getSchema(datasetId)).thenReturn(schema);

@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.epam.aidial.evaluation.data.db.exception.InvalidFilterException;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
-import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
+import com.epam.aidial.evaluation.data.db.repository.sql.json.DialectAwareJsonPathAccessor;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +22,7 @@ class WhereBuilderJsonbTest {
 
     private static final DSLContext DSL_CTX = DSL.using(SQLDialect.POSTGRES);
 
-    private final WhereBuilder builder = new WhereBuilder(new PostgresJsonPathAccessor());
+    private final WhereBuilder builder = new WhereBuilder(new DialectAwareJsonPathAccessor());
 
     private static final FilterSpec SPEC = FilterSpec.of(Map.of(
             "testCaseData",

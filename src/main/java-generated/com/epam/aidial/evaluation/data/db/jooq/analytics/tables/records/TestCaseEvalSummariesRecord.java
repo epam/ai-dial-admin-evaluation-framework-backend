@@ -7,7 +7,7 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 
 import org.jooq.JSONB;
-import org.jooq.Record2;
+import org.jooq.Record7;
 import org.jooq.impl.UpdatableRecordImpl;
 
 
@@ -124,231 +124,17 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
     }
 
     /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.computation_id</code>.
-     */
-    public void setComputationId(String value) {
-        set(7, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.computation_id</code>.
-     */
-    public String getComputationId() {
-        return (String) get(7);
-    }
-
-    /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.test_case_data</code>.
-     */
-    public void setTestCaseData(JSONB value) {
-        set(8, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.test_case_data</code>.
-     */
-    public JSONB getTestCaseData() {
-        return (JSONB) get(8);
-    }
-
-    /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.extracted_columns</code>.
-     */
-    public void setExtractedColumns(JSONB value) {
-        set(9, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.extracted_columns</code>.
-     */
-    public JSONB getExtractedColumns() {
-        return (JSONB) get(9);
-    }
-
-    /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.execution_status</code>.
-     */
-    public void setExecutionStatus(String value) {
-        set(10, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.execution_status</code>.
-     */
-    public String getExecutionStatus() {
-        return (String) get(10);
-    }
-
-    /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.exec_duration_ms</code>.
-     */
-    public void setExecDurationMs(Long value) {
-        set(11, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.exec_duration_ms</code>.
-     */
-    public Long getExecDurationMs() {
-        return (Long) get(11);
-    }
-
-    /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.response_status_code</code>.
-     */
-    public void setResponseStatusCode(Integer value) {
-        set(12, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.response_status_code</code>.
-     */
-    public Integer getResponseStatusCode() {
-        return (Integer) get(12);
-    }
-
-    /**
-     * Setter for <code>analytics.test_case_eval_summaries.metric_values</code>.
-     */
-    public void setMetricValues(JSONB value) {
-        set(13, value);
-    }
-
-    /**
-     * Getter for <code>analytics.test_case_eval_summaries.metric_values</code>.
-     */
-    public JSONB getMetricValues() {
-        return (JSONB) get(13);
-    }
-
-    /**
-     * Setter for <code>analytics.test_case_eval_summaries.metric_infos</code>.
-     */
-    public void setMetricInfos(JSONB value) {
-        set(14, value);
-    }
-
-    /**
-     * Getter for <code>analytics.test_case_eval_summaries.metric_infos</code>.
-     */
-    public JSONB getMetricInfos() {
-        return (JSONB) get(14);
-    }
-
-    /**
-     * Setter for <code>analytics.test_case_eval_summaries.created_at_ms</code>.
-     */
-    public void setCreatedAtMs(Long value) {
-        set(15, value);
-    }
-
-    /**
-     * Getter for <code>analytics.test_case_eval_summaries.created_at_ms</code>.
-     */
-    public Long getCreatedAtMs() {
-        return (Long) get(15);
-    }
-
-    /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.computed_at_ms</code>.
-     */
-    public void setComputedAtMs(Long value) {
-        set(16, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.computed_at_ms</code>.
-     */
-    public Long getComputedAtMs() {
-        return (Long) get(16);
-    }
-
-    /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.extraction_warnings</code>.
-     */
-    public void setExtractionWarnings(JSONB value) {
-        set(17, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.extraction_warnings</code>.
-     */
-    public JSONB getExtractionWarnings() {
-        return (JSONB) get(17);
-    }
-
-    /**
-     * Setter for <code>analytics.test_case_eval_summaries.turn_index</code>.
-     */
-    public void setTurnIndex(Integer value) {
-        set(18, value);
-    }
-
-    /**
-     * Getter for <code>analytics.test_case_eval_summaries.turn_index</code>.
-     */
-    public Integer getTurnIndex() {
-        return (Integer) get(18);
-    }
-
-    /**
-     * Setter for <code>analytics.test_case_eval_summaries.total_turns</code>.
-     */
-    public void setTotalTurns(Integer value) {
-        set(19, value);
-    }
-
-    /**
-     * Getter for <code>analytics.test_case_eval_summaries.total_turns</code>.
-     */
-    public Integer getTotalTurns() {
-        return (Integer) get(19);
-    }
-
-    /**
-     * Setter for
-     * <code>analytics.test_case_eval_summaries.metric_eval_duration_ms</code>.
-     */
-    public void setMetricEvalDurationMs(Long value) {
-        set(20, value);
-    }
-
-    /**
-     * Getter for
-     * <code>analytics.test_case_eval_summaries.metric_eval_duration_ms</code>.
-     */
-    public Long getMetricEvalDurationMs() {
-        return (Long) get(20);
-    }
-
-    /**
      * Setter for <code>analytics.test_case_eval_summaries.request_index</code>.
      */
     public void setRequestIndex(Integer value) {
-        set(21, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>analytics.test_case_eval_summaries.request_index</code>.
      */
     public Integer getRequestIndex() {
-        return (Integer) get(21);
+        return (Integer) get(7);
     }
 
     /**
@@ -356,7 +142,7 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
      * <code>analytics.test_case_eval_summaries.total_requests</code>.
      */
     public void setTotalRequests(Integer value) {
-        set(22, value);
+        set(8, value);
     }
 
     /**
@@ -364,7 +150,221 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
      * <code>analytics.test_case_eval_summaries.total_requests</code>.
      */
     public Integer getTotalRequests() {
-        return (Integer) get(22);
+        return (Integer) get(8);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_summaries.turn_index</code>.
+     */
+    public void setTurnIndex(Integer value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_summaries.turn_index</code>.
+     */
+    public Integer getTurnIndex() {
+        return (Integer) get(9);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_summaries.total_turns</code>.
+     */
+    public void setTotalTurns(Integer value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_summaries.total_turns</code>.
+     */
+    public Integer getTotalTurns() {
+        return (Integer) get(10);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.computation_id</code>.
+     */
+    public void setComputationId(String value) {
+        set(11, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.computation_id</code>.
+     */
+    public String getComputationId() {
+        return (String) get(11);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.test_case_data</code>.
+     */
+    public void setTestCaseData(JSONB value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.test_case_data</code>.
+     */
+    public JSONB getTestCaseData() {
+        return (JSONB) get(12);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.extracted_columns</code>.
+     */
+    public void setExtractedColumns(JSONB value) {
+        set(13, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.extracted_columns</code>.
+     */
+    public JSONB getExtractedColumns() {
+        return (JSONB) get(13);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.execution_status</code>.
+     */
+    public void setExecutionStatus(String value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.execution_status</code>.
+     */
+    public String getExecutionStatus() {
+        return (String) get(14);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.exec_duration_ms</code>.
+     */
+    public void setExecDurationMs(Long value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.exec_duration_ms</code>.
+     */
+    public Long getExecDurationMs() {
+        return (Long) get(15);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.metric_eval_duration_ms</code>.
+     */
+    public void setMetricEvalDurationMs(Long value) {
+        set(16, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.metric_eval_duration_ms</code>.
+     */
+    public Long getMetricEvalDurationMs() {
+        return (Long) get(16);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.response_status_code</code>.
+     */
+    public void setResponseStatusCode(Integer value) {
+        set(17, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.response_status_code</code>.
+     */
+    public Integer getResponseStatusCode() {
+        return (Integer) get(17);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_summaries.metric_values</code>.
+     */
+    public void setMetricValues(JSONB value) {
+        set(18, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_summaries.metric_values</code>.
+     */
+    public JSONB getMetricValues() {
+        return (JSONB) get(18);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_summaries.metric_infos</code>.
+     */
+    public void setMetricInfos(JSONB value) {
+        set(19, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_summaries.metric_infos</code>.
+     */
+    public JSONB getMetricInfos() {
+        return (JSONB) get(19);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.extraction_warnings</code>.
+     */
+    public void setExtractionWarnings(JSONB value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.extraction_warnings</code>.
+     */
+    public JSONB getExtractionWarnings() {
+        return (JSONB) get(20);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_summaries.created_at_ms</code>.
+     */
+    public void setCreatedAtMs(Long value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_summaries.created_at_ms</code>.
+     */
+    public Long getCreatedAtMs() {
+        return (Long) get(21);
+    }
+
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_summaries.computed_at_ms</code>.
+     */
+    public void setComputedAtMs(Long value) {
+        set(22, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_summaries.computed_at_ms</code>.
+     */
+    public Long getComputedAtMs() {
+        return (Long) get(22);
     }
 
     // -------------------------------------------------------------------------
@@ -372,8 +372,8 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
     // -------------------------------------------------------------------------
 
     @Override
-    public Record2<Long, String> key() {
-        return (Record2) super.key();
+    public Record7<String, String, String, Integer, Integer, Integer, Long> key() {
+        return (Record7) super.key();
     }
 
     // -------------------------------------------------------------------------
@@ -390,7 +390,7 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
     /**
      * Create a detached, initialised TestCaseEvalSummariesRecord
      */
-    public TestCaseEvalSummariesRecord(String id, String testSuiteId, String testSuiteRunId, String testCaseRunResultId, String testCaseId, String testCaseName, Integer runIndex, String computationId, JSONB testCaseData, JSONB extractedColumns, String executionStatus, Long execDurationMs, Integer responseStatusCode, JSONB metricValues, JSONB metricInfos, Long createdAtMs, Long computedAtMs, JSONB extractionWarnings, Integer turnIndex, Integer totalTurns, Long metricEvalDurationMs, Integer requestIndex, Integer totalRequests) {
+    public TestCaseEvalSummariesRecord(String id, String testSuiteId, String testSuiteRunId, String testCaseRunResultId, String testCaseId, String testCaseName, Integer runIndex, Integer requestIndex, Integer totalRequests, Integer turnIndex, Integer totalTurns, String computationId, JSONB testCaseData, JSONB extractedColumns, String executionStatus, Long execDurationMs, Long metricEvalDurationMs, Integer responseStatusCode, JSONB metricValues, JSONB metricInfos, JSONB extractionWarnings, Long createdAtMs, Long computedAtMs) {
         super(TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES);
 
         setId(id);
@@ -400,22 +400,22 @@ public class TestCaseEvalSummariesRecord extends UpdatableRecordImpl<TestCaseEva
         setTestCaseId(testCaseId);
         setTestCaseName(testCaseName);
         setRunIndex(runIndex);
+        setRequestIndex(requestIndex);
+        setTotalRequests(totalRequests);
+        setTurnIndex(turnIndex);
+        setTotalTurns(totalTurns);
         setComputationId(computationId);
         setTestCaseData(testCaseData);
         setExtractedColumns(extractedColumns);
         setExecutionStatus(executionStatus);
         setExecDurationMs(execDurationMs);
+        setMetricEvalDurationMs(metricEvalDurationMs);
         setResponseStatusCode(responseStatusCode);
         setMetricValues(metricValues);
         setMetricInfos(metricInfos);
+        setExtractionWarnings(extractionWarnings);
         setCreatedAtMs(createdAtMs);
         setComputedAtMs(computedAtMs);
-        setExtractionWarnings(extractionWarnings);
-        setTurnIndex(turnIndex);
-        setTotalTurns(totalTurns);
-        setMetricEvalDurationMs(metricEvalDurationMs);
-        setRequestIndex(requestIndex);
-        setTotalRequests(totalRequests);
         resetTouchedOnNotNull();
     }
 }

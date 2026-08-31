@@ -29,6 +29,10 @@ buildscript {
         classpath "org.flywaydb:flyway-database-postgresql:${flyway_version}"
         classpath 'org.jooq:jooq-codegen:3.21.6'
         classpath "org.postgresql:postgresql:${pg_version}"
+        // Dependencies for the generateClickHouseJooq task (Testcontainers + Flyway CH + CH driver)
+        classpath "org.testcontainers:testcontainers:${testcontainers_version}"
+        classpath "org.flywaydb:flyway-database-clickhouse:${flyway_clickhouse_version}"
+        classpath "com.clickhouse:clickhouse-jdbc:${clickhouse_jdbc_version}"
     }
 }
 
@@ -252,19 +256,58 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs += "-Werror"
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// jOOQ code generation
+//
+// The two generated model packages have DIFFERENT sources of truth, on purpose:
+//
+//   * meta      (com.epam.aidial.evaluation.data.db.jooq.meta)      <- Postgres meta migrations
+//   * analytics (com.epam.aidial.evaluation.data.db.jooq.analytics) <- ClickHouse analytics migrations
+//
+// The analytics data model must be vendor-independent: analytics schema evolution happens in
+// src/main/resources/db/migration/analytics/CLICKHOUSE first, and the Postgres analytics
+// migrations are the derived twin. Generating the analytics model from ClickHouse makes that
+// direction structural rather than a convention. Both vendors are then protected by drift guards:
+//   * JooqSchemaDriftTest       - live Postgres analytics schema  vs the generated model (PG twin)
+//   * ClickHouseSchemaDriftTest - live ClickHouse analytics schema vs the generated model (source)
+//
+// Each task pre-cleans only its own subtree of src/main/java-generated, so running one never
+// deletes the other's output.
+// ---------------------------------------------------------------------------------------------
+
 /**
- * Boots an embedded Postgres (Zonky, no Docker required), applies Flyway migrations for both
- * meta and analytics schemas, then runs jOOQ codegen to produce type-safe DSL sources.
- * Output is written to src/main/java-generated/ and must be committed to version control.
- * CI compiles the committed sources directly — this task is developer-only.
+ * The jOOQ Generate flags shared by both codegen tasks. Index constants are generated for meta
+ * only: ClickHouse data-skipping indexes are table-scoped, so the analytics schema legitimately
+ * declares the same index name (idx_id) on two tables, which jOOQ would render as two clashing
+ * constants in Indexes.java. Nothing reads the generated analytics Indexes/Keys constants.
+ */
+static org.jooq.meta.jaxb.Generate jooqGenerateFlags(boolean indexes) {
+    new org.jooq.meta.jaxb.Generate()
+            .withPojos(false)
+            .withDaos(false)
+            .withInterfaces(false)
+            .withTables(true)
+            .withKeys(true)
+            .withIndexes(indexes)
+            .withRecords(true)
+}
+
+/**
+ * Boots an embedded Postgres (Zonky, no Docker required), applies the Flyway meta migrations,
+ * then runs jOOQ codegen to produce the type-safe DSL sources for the meta schema.
+ * Output is written to src/main/java-generated/.../jooq/meta and must be committed to version
+ * control. CI compiles the committed sources directly — this task is developer-only.
+ *
+ * <p>The analytics model is NOT generated here — see generateClickHouseJooq.
  */
 tasks.register('generateJooq') {
     group = 'build'
-    description = 'Generate jOOQ type-safe DSL classes from live Flyway-migrated schemas (Zonky; no Docker).'
-    outputs.dir(file("${projectDir}/src/main/java-generated"))
+    description = 'Generate jOOQ DSL classes for the META schema from live Flyway-migrated Postgres (Zonky; no Docker).'
+    outputs.dir(file("${projectDir}/src/main/java-generated/com/epam/aidial/evaluation/data/db/jooq/meta"))
 
     doLast {
-        def outputDir = file("${projectDir}/src/main/java-generated")
+        def outputDir = file("${projectDir}/src/main/java-generated/com/epam/aidial/evaluation/data/db/jooq/meta")
         if (outputDir.exists()) {
             outputDir.deleteDir()
         }
@@ -285,10 +328,86 @@ tasks.register('generateJooq') {
                     .load()
                     .migrate()
 
+            org.jooq.codegen.GenerationTool.generate(
+                    new org.jooq.meta.jaxb.Configuration()
+                            .withLogging(org.jooq.meta.jaxb.Logging.WARN)
+                            .withJdbc(new org.jooq.meta.jaxb.Jdbc()
+                                    .withUrl(jdbcUrl)
+                                    .withUser(user)
+                                    .withPassword(password))
+                            .withGenerator(new org.jooq.meta.jaxb.Generator()
+                                    .withDatabase(new org.jooq.meta.jaxb.Database()
+                                            .withName("org.jooq.meta.postgres.PostgresDatabase")
+                                            .withInputSchema("meta")
+                                            .withExcludes("flyway_schema_history")
+                                            .withIncludes(".*"))
+                                    .withGenerate(jooqGenerateFlags(true))
+                                    .withTarget(new org.jooq.meta.jaxb.Target()
+                                            .withPackageName("com.epam.aidial.evaluation.data.db.jooq.meta")
+                                            .withDirectory("${projectDir}/src/main/java-generated"))))
+        } finally {
+            pg.close()
+        }
+    }
+}
+
+/**
+ * Starts a ClickHouse container (Docker required), applies the Flyway CLICKHOUSE analytics
+ * migrations, then runs jOOQ codegen against the live ClickHouse schema to produce the analytics
+ * model. Output is written to src/main/java-generated/.../jooq/analytics and must be committed.
+ *
+ * <p>The generated Java surface has to stay identical to what the two runtime vendors expect, so
+ * codegen configuration bridges the gaps between ClickHouse's type system and the model:
+ * <ul>
+ *   <li>outputSchema "analytics" — the generated schema class name is imported across the code
+ *       base; all runtime DSLContexts use withRenderSchema(false), so it never reaches SQL.</li>
+ *   <li>forcedTypes — ClickHouse String columns carry no length and no JSON marker, so id columns
+ *       are forced to VARCHAR(36) (JooqTableSchemaResolver infers "uuid" from length 36), JSON
+ *       payload columns to JSONB (Field&lt;JSONB&gt; consumers + object/array inference), and the
+ *       remaining bounded strings to their Postgres-twin lengths.</li>
+ *   <li>keys — ClickHouse reports each table's ORDER BY key as its PRIMARY key, which is enough to
+ *       keep the generated records on UpdatableRecordImpl (no synthetic keys needed). The key
+ *       columns differ from the Postgres twin's, which is harmless: no production or test code
+ *       reads the generated analytics Keys constants, and every upsert lists conflict columns
+ *       explicitly.</li>
+ * </ul>
+ */
+tasks.register('generateClickHouseJooq') {
+    group = 'build'
+    description = 'Generate jOOQ DSL classes for the ANALYTICS schema from live Flyway-migrated ClickHouse (Docker).'
+    outputs.dir(file("${projectDir}/src/main/java-generated/com/epam/aidial/evaluation/data/db/jooq/analytics"))
+
+    doLast {
+        def outputDir = file("${projectDir}/src/main/java-generated/com/epam/aidial/evaluation/data/db/jooq/analytics")
+        if (outputDir.exists()) {
+            outputDir.deleteDir()
+        }
+        outputDir.mkdirs()
+
+        def database = "evaluation_analytics"
+        def user = "clickhouse"
+        def password = "clickhouse"
+        def httpPort = 8123
+
+        def clickhouse = new org.testcontainers.containers.GenericContainer("clickhouse/clickhouse-server:25.8")
+                .withEnv("CLICKHOUSE_DB", database)
+                .withEnv("CLICKHOUSE_USER", user)
+                .withEnv("CLICKHOUSE_PASSWORD", password)
+                .withExposedPorts(httpPort)
+                .waitingFor(org.testcontainers.containers.wait.strategy.Wait.forHttp("/ping")
+                        .forPort(httpPort)
+                        .forStatusCode(200))
+                .withStartupTimeout(java.time.Duration.ofMinutes(3))
+        clickhouse.start()
+        try {
+            // flyway-database-clickhouse only recognises the "jdbc:clickhouse:" prefix, not the
+            // driver's shorter "jdbc:ch:" alias (see AnalyticsClickHouseConfiguration).
+            def jdbcUrl = "jdbc:clickhouse://${clickhouse.host}:${clickhouse.getMappedPort(httpPort)}/${database}"
+
             org.flywaydb.core.Flyway.configure()
                     .dataSource(jdbcUrl, user, password)
-                    .locations("filesystem:${projectDir}/src/main/resources/db/migration/analytics/POSTGRES")
-                    .defaultSchema("analytics")
+                    .locations("filesystem:${projectDir}/src/main/resources/db/migration/analytics/CLICKHOUSE")
+                    .defaultSchema(database)
                     .createSchemas(true)
                     .validateMigrationNaming(true)
                     .load()
@@ -303,48 +422,59 @@ tasks.register('generateJooq') {
                                     .withPassword(password))
                             .withGenerator(new org.jooq.meta.jaxb.Generator()
                                     .withDatabase(new org.jooq.meta.jaxb.Database()
-                                            .withName("org.jooq.meta.postgres.PostgresDatabase")
-                                            .withInputSchema("meta")
+                                            .withName("org.jooq.meta.clickhouse.ClickHouseDatabase")
+                                            .withInputSchema(database)
+                                            .withOutputSchema("analytics")
                                             .withExcludes("flyway_schema_history")
-                                            .withIncludes(".*"))
-                                    .withGenerate(new org.jooq.meta.jaxb.Generate()
-                                            .withPojos(false)
-                                            .withDaos(false)
-                                            .withInterfaces(false)
-                                            .withTables(true)
-                                            .withKeys(true)
-                                            .withIndexes(true)
-                                            .withRecords(true))
-                                    .withTarget(new org.jooq.meta.jaxb.Target()
-                                            .withPackageName("com.epam.aidial.evaluation.data.db.jooq.meta")
-                                            .withDirectory("${projectDir}/src/main/java-generated"))))
-
-            org.jooq.codegen.GenerationTool.generate(
-                    new org.jooq.meta.jaxb.Configuration()
-                            .withLogging(org.jooq.meta.jaxb.Logging.WARN)
-                            .withJdbc(new org.jooq.meta.jaxb.Jdbc()
-                                    .withUrl(jdbcUrl)
-                                    .withUser(user)
-                                    .withPassword(password))
-                            .withGenerator(new org.jooq.meta.jaxb.Generator()
-                                    .withDatabase(new org.jooq.meta.jaxb.Database()
-                                            .withName("org.jooq.meta.postgres.PostgresDatabase")
-                                            .withInputSchema("analytics")
-                                            .withExcludes("flyway_schema_history")
-                                            .withIncludes(".*"))
-                                    .withGenerate(new org.jooq.meta.jaxb.Generate()
-                                            .withPojos(false)
-                                            .withDaos(false)
-                                            .withInterfaces(false)
-                                            .withTables(true)
-                                            .withKeys(true)
-                                            .withIndexes(true)
-                                            .withRecords(true))
+                                            .withIncludes(".*")
+                                            .withForcedTypes(analyticsForcedTypes()))
+                                    .withGenerate(jooqGenerateFlags(false))
                                     .withTarget(new org.jooq.meta.jaxb.Target()
                                             .withPackageName("com.epam.aidial.evaluation.data.db.jooq.analytics")
                                             .withDirectory("${projectDir}/src/main/java-generated"))))
         } finally {
-            pg.close()
+            clickhouse.stop()
         }
     }
+}
+
+/**
+ * Forced types that reproduce the analytics model's Java/jOOQ surface on top of ClickHouse's
+ * type metadata. Each entry lists fully-qualified column names (schema.table.column) as a regex.
+ */
+static List<org.jooq.meta.jaxb.ForcedType> analyticsForcedTypes() {
+    def forced = { String type, String... columns ->
+        new org.jooq.meta.jaxb.ForcedType()
+                .withName(type)
+                .withIncludeExpression(".*\\.(" + columns.join("|") + ")")
+                .withIncludeTypes(".*")
+    }
+
+    [
+            // VARCHAR(36): every id-ish column. The length is load-bearing —
+            // JooqTableSchemaResolver infers the "uuid" query-schema type from length() == 36.
+            forced("VARCHAR(36)",
+                    "test_case_run_results\\.(id|test_suite_run_id|test_suite_id|test_case_id)",
+                    "test_case_eval_summaries\\.(id|test_suite_id|test_suite_run_id|test_case_run_result_id|test_case_id|computation_id)",
+                    "run_metric_snapshots\\.(id|computation_id|test_suite_run_id|tsmd_id|metric_declaration_id|metric_declaration_version_id)",
+                    "metric_score_result\\.(id|test_suite_run_id|computation_id|test_suite_id)"),
+            // JSONB: JSON payload columns, stored as ClickHouse String (see the CLICKHOUSE
+            // migration's header for why the native JSON type is deliberately not used).
+            // Field<JSONB> is what FilterWhitelists / JsonPathAccessor and the object/array
+            // inference in JooqTableSchemaResolver consume.
+            forced("JSONB",
+                    "test_case_run_results\\.(test_case_data|request_body|response_body|log_details|extracted_columns|extraction_warnings)",
+                    "test_case_eval_summaries\\.(test_case_data|extracted_columns|metric_values|metric_infos|extraction_warnings)",
+                    "run_metric_snapshots\\.(config_bindings|input_bindings|output_schema)"),
+            // Bounded strings, matching the Postgres twin's column widths.
+            forced("VARCHAR(255)",
+                    "test_case_run_results\\.test_case_name",
+                    "test_case_eval_summaries\\.test_case_name",
+                    "run_metric_snapshots\\.tsmd_name",
+                    "metric_score_result\\.(metric_score_name|metric_name)"),
+            forced("VARCHAR(20)",
+                    "test_case_run_results\\.execution_status",
+                    "test_case_eval_summaries\\.execution_status"),
+            forced("VARCHAR(128)", "test_case_run_results\\.trace_id"),
+    ]
 }

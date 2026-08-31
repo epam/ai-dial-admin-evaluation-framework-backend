@@ -5,17 +5,13 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics.tables;
 
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Analytics;
-import com.epam.aidial.evaluation.data.db.jooq.analytics.Indexes;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Keys;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseRunResultsRecord;
 
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Index;
 import org.jooq.JSONB;
 import org.jooq.Name;
 import org.jooq.PlainSQL;
@@ -87,6 +83,26 @@ public class TestCaseRunResults extends TableImpl<TestCaseRunResultsRecord> {
     public final TableField<TestCaseRunResultsRecord, Integer> RUN_INDEX = createField(DSL.name("run_index"), SQLDataType.INTEGER.nullable(false), this, "");
 
     /**
+     * The column <code>analytics.test_case_run_results.request_index</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, Integer> REQUEST_INDEX = createField(DSL.name("request_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>analytics.test_case_run_results.total_requests</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, Integer> TOTAL_REQUESTS = createField(DSL.name("total_requests"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>analytics.test_case_run_results.turn_index</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, Integer> TURN_INDEX = createField(DSL.name("turn_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+
+    /**
+     * The column <code>analytics.test_case_run_results.total_turns</code>.
+     */
+    public final TableField<TestCaseRunResultsRecord, Integer> TOTAL_TURNS = createField(DSL.name("total_turns"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
+
+    /**
      * The column <code>analytics.test_case_run_results.test_case_data</code>.
      */
     public final TableField<TestCaseRunResultsRecord, JSONB> TEST_CASE_DATA = createField(DSL.name("test_case_data"), SQLDataType.JSONB.nullable(false), this, "");
@@ -130,28 +146,6 @@ public class TestCaseRunResults extends TableImpl<TestCaseRunResultsRecord> {
     public final TableField<TestCaseRunResultsRecord, Long> EXEC_DURATION_MS = createField(DSL.name("exec_duration_ms"), SQLDataType.BIGINT.nullable(false), this, "");
 
     /**
-     * The column <code>analytics.test_case_run_results.trace_id</code>.
-     */
-    public final TableField<TestCaseRunResultsRecord, String> TRACE_ID = createField(DSL.name("trace_id"), SQLDataType.VARCHAR(128), this, "");
-
-    /**
-     * The column <code>analytics.test_case_run_results.created_at_ms</code>.
-     */
-    public final TableField<TestCaseRunResultsRecord, Long> CREATED_AT_MS = createField(DSL.name("created_at_ms"), SQLDataType.BIGINT.nullable(false), this, "");
-
-    /**
-     * The column
-     * <code>analytics.test_case_run_results.extracted_columns</code>.
-     */
-    public final TableField<TestCaseRunResultsRecord, JSONB> EXTRACTED_COLUMNS = createField(DSL.name("extracted_columns"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'{}'::jsonb"), SQLDataType.JSONB)), this, "");
-
-    /**
-     * The column
-     * <code>analytics.test_case_run_results.extraction_warnings</code>.
-     */
-    public final TableField<TestCaseRunResultsRecord, JSONB> EXTRACTION_WARNINGS = createField(DSL.name("extraction_warnings"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'::jsonb"), SQLDataType.JSONB)), this, "");
-
-    /**
      * The column <code>analytics.test_case_run_results.retry_count</code>.
      */
     public final TableField<TestCaseRunResultsRecord, Integer> RETRY_COUNT = createField(DSL.name("retry_count"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
@@ -162,24 +156,26 @@ public class TestCaseRunResults extends TableImpl<TestCaseRunResultsRecord> {
     public final TableField<TestCaseRunResultsRecord, JSONB> LOG_DETAILS = createField(DSL.name("log_details"), SQLDataType.JSONB, this, "");
 
     /**
-     * The column <code>analytics.test_case_run_results.turn_index</code>.
+     * The column <code>analytics.test_case_run_results.trace_id</code>.
      */
-    public final TableField<TestCaseRunResultsRecord, Integer> TURN_INDEX = createField(DSL.name("turn_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+    public final TableField<TestCaseRunResultsRecord, String> TRACE_ID = createField(DSL.name("trace_id"), SQLDataType.VARCHAR(128), this, "");
 
     /**
-     * The column <code>analytics.test_case_run_results.total_turns</code>.
+     * The column
+     * <code>analytics.test_case_run_results.extracted_columns</code>.
      */
-    public final TableField<TestCaseRunResultsRecord, Integer> TOTAL_TURNS = createField(DSL.name("total_turns"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
+    public final TableField<TestCaseRunResultsRecord, JSONB> EXTRACTED_COLUMNS = createField(DSL.name("extracted_columns"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'{}'"), SQLDataType.JSONB)), this, "");
 
     /**
-     * The column <code>analytics.test_case_run_results.request_index</code>.
+     * The column
+     * <code>analytics.test_case_run_results.extraction_warnings</code>.
      */
-    public final TableField<TestCaseRunResultsRecord, Integer> REQUEST_INDEX = createField(DSL.name("request_index"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER)), this, "");
+    public final TableField<TestCaseRunResultsRecord, JSONB> EXTRACTION_WARNINGS = createField(DSL.name("extraction_warnings"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'"), SQLDataType.JSONB)), this, "");
 
     /**
-     * The column <code>analytics.test_case_run_results.total_requests</code>.
+     * The column <code>analytics.test_case_run_results.created_at_ms</code>.
      */
-    public final TableField<TestCaseRunResultsRecord, Integer> TOTAL_REQUESTS = createField(DSL.name("total_requests"), SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.INTEGER)), this, "");
+    public final TableField<TestCaseRunResultsRecord, Long> CREATED_AT_MS = createField(DSL.name("created_at_ms"), SQLDataType.BIGINT.nullable(false), this, "");
 
     private TestCaseRunResults(Name alias, Table<TestCaseRunResultsRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -218,18 +214,8 @@ public class TestCaseRunResults extends TableImpl<TestCaseRunResultsRecord> {
     }
 
     @Override
-    public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_RESULTS_ID, Indexes.IDX_RESULTS_SUITE_RUN_CASE);
-    }
-
-    @Override
     public UniqueKey<TestCaseRunResultsRecord> getPrimaryKey() {
-        return Keys.TEST_CASE_RUN_RESULTS_PKEY;
-    }
-
-    @Override
-    public List<UniqueKey<TestCaseRunResultsRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.UQ_RESULTS_RUN_CASE_INDEX);
+        return Keys.KEY_TEST_CASE_RUN_RESULTS_PRIMARY;
     }
 
     @Override

@@ -5,17 +5,13 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics.tables;
 
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Analytics;
-import com.epam.aidial.evaluation.data.db.jooq.analytics.Indexes;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Keys;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.RunMetricSnapshotsRecord;
 
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Index;
 import org.jooq.JSONB;
 import org.jooq.Name;
 import org.jooq.PlainSQL;
@@ -95,17 +91,17 @@ public class RunMetricSnapshots extends TableImpl<RunMetricSnapshotsRecord> {
     /**
      * The column <code>analytics.run_metric_snapshots.config_bindings</code>.
      */
-    public final TableField<RunMetricSnapshotsRecord, JSONB> CONFIG_BINDINGS = createField(DSL.name("config_bindings"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'::jsonb"), SQLDataType.JSONB)), this, "");
+    public final TableField<RunMetricSnapshotsRecord, JSONB> CONFIG_BINDINGS = createField(DSL.name("config_bindings"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'"), SQLDataType.JSONB)), this, "");
 
     /**
      * The column <code>analytics.run_metric_snapshots.input_bindings</code>.
      */
-    public final TableField<RunMetricSnapshotsRecord, JSONB> INPUT_BINDINGS = createField(DSL.name("input_bindings"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'::jsonb"), SQLDataType.JSONB)), this, "");
+    public final TableField<RunMetricSnapshotsRecord, JSONB> INPUT_BINDINGS = createField(DSL.name("input_bindings"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'[]'"), SQLDataType.JSONB)), this, "");
 
     /**
      * The column <code>analytics.run_metric_snapshots.output_schema</code>.
      */
-    public final TableField<RunMetricSnapshotsRecord, JSONB> OUTPUT_SCHEMA = createField(DSL.name("output_schema"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'{}'::jsonb"), SQLDataType.JSONB)), this, "");
+    public final TableField<RunMetricSnapshotsRecord, JSONB> OUTPUT_SCHEMA = createField(DSL.name("output_schema"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'{}'"), SQLDataType.JSONB)), this, "");
 
     /**
      * The column <code>analytics.run_metric_snapshots.computed_at_ms</code>.
@@ -149,13 +145,8 @@ public class RunMetricSnapshots extends TableImpl<RunMetricSnapshotsRecord> {
     }
 
     @Override
-    public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_RUN_METRIC_SNAPSHOTS_RUN, Indexes.UQ_RUN_METRIC_SNAPSHOTS_COMPUTATION_TSMD);
-    }
-
-    @Override
     public UniqueKey<RunMetricSnapshotsRecord> getPrimaryKey() {
-        return Keys.RUN_METRIC_SNAPSHOTS_PKEY;
+        return Keys.KEY_RUN_METRIC_SNAPSHOTS_PRIMARY;
     }
 
     @Override

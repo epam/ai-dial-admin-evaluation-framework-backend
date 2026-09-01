@@ -17,13 +17,14 @@ import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Query;
 import org.jooq.impl.DSL;
+import org.jooq.impl.SQLDataType;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 /**
  * ClickHouse twin of {@link PostgresEvalSummaryRepository}. Reads are inherited unchanged except for
- * two spots where the inherited jOOQ construction does not translate to ClickHouse:
+ * the spots where the inherited jOOQ construction does not translate to ClickHouse:
  *
  * <ul>
  *   <li>{@link #saveAll} — no {@code ON CONFLICT}; deduplication is delegated to the {@code
@@ -38,6 +39,10 @@ import org.springframework.stereotype.Repository;
  *       not support the standard SQL {@code FILTER} clause (confirmed by a render probe: jOOQ emits it
  *       verbatim on {@code SQLDialect.CLICKHOUSE}, which ClickHouse then rejects); replaced with {@code
  *       CASE WHEN} aggregates, which are equivalent and supported everywhere.
+ *   <li>the case-folding of the run-comparison match key — ClickHouse's {@code lower} only folds ASCII,
+ *       so two names differing solely in the case of a non-ASCII letter would fail to match each other
+ *       (and sort inconsistently) where Postgres' locale-aware {@code lower} matches them; replaced with
+ *       {@code lowerUTF8}, ClickHouse's Unicode-aware equivalent.
  * </ul>
  *
  * <p>{@code existsByRunIdAndComputationId} is deliberately <b>not</b> overridden any more: the
@@ -127,6 +132,11 @@ public class ClickHouseEvalSummaryRepository extends PostgresEvalSummaryReposito
                 TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                 DSL.val(metric.metricName()),
                 DSL.val(metric.outputName()));
+    }
+
+    @Override
+    protected Field<String> lowerName(Field<String> name) {
+        return DSL.function("lowerUTF8", SQLDataType.VARCHAR, name);
     }
 
     @Override

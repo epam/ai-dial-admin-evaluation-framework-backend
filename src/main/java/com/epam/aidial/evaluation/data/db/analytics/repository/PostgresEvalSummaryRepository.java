@@ -12,7 +12,6 @@ import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
-import com.epam.aidial.evaluation.data.db.repository.sql.DialectAwareSql;
 import com.epam.aidial.evaluation.data.db.repository.sql.FilterWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -31,11 +30,9 @@ import org.jooq.Field;
 import org.jooq.JSONB;
 import org.jooq.Query;
 import org.jooq.Record;
-import org.jooq.SQLDialect;
 import org.jooq.SelectLimitStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
-import org.jooq.impl.SQLDataType;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -317,21 +314,11 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     }
 
     /**
-     * Case-folds a test case name for the run-comparison match key.
-     *
-     * <p>Dialect-switched rather than a plain {@code DSL.lower}: ClickHouse's {@code lower} only folds
-     * ASCII, so two names differing solely in the case of a non-ASCII letter would fail to match each other
-     * (and sort inconsistently) where Postgres' locale-aware {@code lower} matches them. {@code lowerUTF8}
-     * is ClickHouse's Unicode-aware equivalent. Non-ClickHouse families render today's {@code lower(...)}
-     * byte-identically.
+     * Case-folds a test case name for the run-comparison match key. Postgres' {@code lower} is
+     * locale-aware; overridden for ClickHouse, whose {@code lower} only folds ASCII.
      */
-    private static Field<String> lowerName(Field<String> name) {
-        return DialectAwareSql.field(
-                "lower_name",
-                SQLDataType.VARCHAR,
-                family -> family == SQLDialect.CLICKHOUSE
-                        ? DSL.function("lowerUTF8", SQLDataType.VARCHAR, name)
-                        : DSL.lower(name));
+    protected Field<String> lowerName(Field<String> name) {
+        return DSL.lower(name);
     }
 
     /**

@@ -114,14 +114,30 @@ hand-rolled `ClickHouseSchemaInitializer` (`ResourceDatabasePopulator` re-runnin
 startup, no history table) — a workaround for the 0.9.0 driver bug above. It has been removed now that
 the driver bump makes Flyway work.
 
-## Generated model: ClickHouse is the source of truth
+## Generated model: one twin per vendor
 
-Both vendors share one generated jOOQ model (`…data.db.jooq.analytics`), and that model is generated
-**from the CLICKHOUSE migrations** by `./gradlew generateClickHouseJooq` — not from the Postgres
-analytics migrations, which are the derived twin. So analytics schema evolution starts in
-`db/migration/analytics/CLICKHOUSE`; the POSTGRES script is written to match, and `JooqSchemaDriftTest`
-fails if it does not. `ClickHouseSchemaDriftTest` guards the other direction (migration edited, codegen
-not rerun). Details and the forced-type configuration: [Typed SQL DSL](jooq-typed-sql-dsl.md).
+The analytics schema has **two** generated jOOQ models, each produced from its own vendor's
+migrations:
+
+| Package | Generated from | By |
+|---------|----------------|----|
+| `…data.db.jooq.analytics` | `db/migration/analytics/POSTGRES` | `./gradlew generateJooq` |
+| `…data.db.jooq.clickhouse` | `db/migration/analytics/CLICKHOUSE` | `./gradlew generateClickHouseJooq` (Docker) |
+
+`…jooq.analytics` is the canonical model — shared query code, the record mappers, the schema
+providers, `FilterWhitelists` and the Postgres repositories use it, and it fixes the column order the
+API publishes. `…jooq.clickhouse` is used only by the code this vendor owns outright: the four
+`ClickHouse*Repository` overrides (batch inserts, the `JSONExtract` metric accessors, the `CASE WHEN`
+aggregates) and the two `ClickHouse*EntityResolver`s (`table()` + `bindings`). Inherited read paths
+keep whatever model the Postgres parent used — that is fine, because jOOQ fields render by name and
+every `DSLContext` sets `withRenderSchema(false)`, so the originating package never reaches SQL.
+
+Evolving the analytics schema is therefore **dual-authored**: write the CLICKHOUSE migration *and* its
+POSTGRES twin, rerun **both** codegen tasks, commit both diffs. `AnalyticsModelParityTest` (a plain
+unit test — no Docker) holds the two models column-for-column identical and fails when only one side
+was updated; `ClickHouseSchemaDriftTest` and `JooqSchemaDriftTest` each guard their own vendor's model
+against its live schema. Details and the forced-type configuration:
+[Typed SQL DSL](jooq-typed-sql-dsl.md).
 
 ## Known engine semantics
 

@@ -79,7 +79,7 @@ Package inventory: [docs/key-packages.md](docs/key-packages.md).
 - Don't add test-only methods to production repository interfaces unless the operation is a legitimate data concern owned by that repository
 - Don't inject a foreign domain's repository into a service. A domain service may only depend on its own domain's repository; cross-domain access goes through that domain's service (e.g., `DatasetService` calls `testSuiteService.bindDataset(...)`, not `testSuiteRepository.save(...)`). If the owning service does not yet expose the needed method, add it there first. See [best-practices spec](openspec/specs/best-practices/spec.md).
 - Don't serialize `Map<String, Object>` with Java `null` values using the shared `ObjectMapper` — the global `NON_NULL` serialization inclusion will silently drop null-valued entries, producing `{}` instead of `{"key":null}`. For JSONB fields that must preserve explicit JSON nulls (e.g. `extracted_columns`), use `ObjectNode` with `putNull(key)` for null entries and `node.set(key, objectMapper.convertValue(value, JsonNode.class))` for non-null values, then serialize the `ObjectNode`.
-- Don't edit files under `src/main/java-generated/` — they are auto-generated and will be overwritten on the next regeneration. To reflect a schema change, add a Flyway migration and run the task that owns that model — `./gradlew generateJooq` for meta (from the POSTGRES meta migrations), `./gradlew generateClickHouseJooq` for analytics (from the CLICKHOUSE analytics migrations) — then commit the diff.
+- Don't edit files under `src/main/java-generated/` — they are auto-generated and will be overwritten on the next regeneration. To reflect a schema change, add a Flyway migration and run the task that owns that model — `./gradlew generateJooq` for `…jooq.meta` + `…jooq.analytics` (from the POSTGRES migrations), `./gradlew generateClickHouseJooq` for `…jooq.clickhouse` (from the CLICKHOUSE analytics migrations) — then commit the diff. An **analytics** schema change is dual-authored: update both vendors' migrations and run both tasks, or `AnalyticsModelParityTest` fails.
 
 ### Best practices
 Code-quality practices (imports over FQNs, config defaults in YAML only, constants per bounded context, no duplicated logic) are defined in [openspec/specs/best-practices/spec.md](openspec/specs/best-practices/spec.md). New code MUST follow that spec.
@@ -108,7 +108,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [DIAL Core File Storage](docs/patterns/dial-file-storage.md) | `DialFileClient` + `DialFileRefResolver`; suite-scoped `@ef/suites/{suiteId}/{filename}` and dataset-scoped `@ef/datasets/{datasetId}/{filename}` references |
 | [RequestBodySerializerRegistry](docs/patterns/request-body-serializer-registry.md) | Strategy pattern for JSON / multipart / urlencoded request bodies |
 | [JSONB_NUMERIC Multi-Level Path Filtering](docs/patterns/jsonb-numeric-filtering.md) | Two-level JSONB filtering with parameterized path components |
-| [Typed SQL DSL (jOOQ)](docs/patterns/jooq-typed-sql-dsl.md) | Two codegen tasks (meta from PG, analytics from CH), per-vendor drift guards, DSLContext config, RecordMapper convention |
+| [Typed SQL DSL (jOOQ)](docs/patterns/jooq-typed-sql-dsl.md) | Three generated packages, each from its own vendor's migrations; parity + drift guards; DSLContext config; RecordMapper convention |
 | [Dataset Entity](docs/patterns/dataset-entity.md) | `DatasetSchemaProvider`, `dataset.id` vs `suite.id`, visibility rules, exclusion via `testCaseFilter` |
 | [Suite Run Snapshot Phase](docs/patterns/suite-run-snapshot.md) | Snapshot tx, `40001` retry, inconsistent-snapshot guard, version handling |
 | [Selective Column Projection (TOAST)](docs/patterns/selective-column-projection.md) | Column-tier constants to avoid TOAST decompression on bulk queries |
@@ -128,7 +128,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Multi-request suites](docs/patterns/multi-request-suites.md) | `additionalRequests` chain; one flat response-column union; accumulated frame; `(request_index, turn_index)` |
 | [Request-template JSONata seam](docs/patterns/jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](docs/patterns/evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
-| [ClickHouse analytics vendor](docs/patterns/clickhouse-analytics.md) | Render-time dialect switching; CH vendor twins; ReplacingMergeTree-as-ON-CONFLICT; Flyway (requires clickhouse-jdbc >= 0.10.0 + `jdbc:clickhouse://`); analytics jOOQ model generated FROM the CH migrations |
+| [ClickHouse analytics vendor](docs/patterns/clickhouse-analytics.md) | Render-time dialect switching; CH vendor twins; ReplacingMergeTree-as-ON-CONFLICT; Flyway (requires clickhouse-jdbc >= 0.10.0 + `jdbc:clickhouse://`); own generated `…jooq.clickhouse` model, dual-authored with the PG twin |
 
 ### Inline conventions
 
@@ -147,7 +147,7 @@ Full package-by-package map of all three modules (main app, `evaluation-runner-c
 
 1. **Check security mode**: Set `config.rest.security.mode=none` for local testing
 2. **Enable SQL logging**: Set `logging.level.org.jooq.impl=DEBUG` (jOOQ) or `logging.level.org.springframework.jdbc=DEBUG` (Spring JDBC, health indicators)
-3. **Regenerate jOOQ sources**: after schema changes run `./gradlew generateJooq` (meta, from POSTGRES migrations) or `./gradlew generateClickHouseJooq` (analytics, from CLICKHOUSE migrations — Docker required); commit the result
+3. **Regenerate jOOQ sources**: after schema changes run `./gradlew generateJooq` (meta + analytics, from the POSTGRES migrations, Zonky) and/or `./gradlew generateClickHouseJooq` (ClickHouse analytics twin, from the CLICKHOUSE migrations — Docker required); commit the result
 4. **Check Flyway**: Meta migrations in `resources/db/migration/meta/POSTGRES/`; analytics migrations in `resources/db/migration/analytics/POSTGRES/`
 4. **Correlation ID**: Look for `X-Correlation-Id` header in requests/responses
 5. **Swagger UI**: Available at `http://localhost:8080/swagger-ui.html`

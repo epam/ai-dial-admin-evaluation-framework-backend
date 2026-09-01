@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.configuration.datasource;
 
+import com.epam.aidial.evaluation.configuration.properties.clickhouse.ClickHouseBackfillProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
@@ -121,11 +122,18 @@ public class AnalyticsClickHouseConfiguration {
      * recognizes the database type on a {@code jdbc:ch://} URL, so every documented default and test
      * fixture here uses the long prefix. The application itself still accepts both prefixes
      * ({@link DatasourceValidationConfiguration#parseJdbcUrl}).
+     *
+     * <p>Besides the SQL scripts, this Flyway always registers
+     * {@link ClickHouseAnalyticsBackfillMigration} — the repeatable Java migration that copies the old
+     * analytics Postgres data into ClickHouse. It is registered unconditionally (so
+     * {@code flyway_schema_history} stays consistent across environments) and records a no-op unless
+     * {@code clickhouse.analytics.backfill.enabled=true}; see its Javadoc for the re-run semantics.
      */
     @Bean
     public Flyway analyticsFlywayMigration(
             @Qualifier("analyticsDataSource") DataSource analyticsDataSource,
             @Value("${clickhouse.analytics.datasource.database:evaluation_analytics}") String analyticsDatabase,
+            ClickHouseBackfillProperties backfillProperties,
             DatasourceValidationResult validationResult) {
         String location = "classpath:db/migration/analytics/CLICKHOUSE";
         log.info("Configuring analytics Flyway migration at location: {}, schema: {}", location, analyticsDatabase);
@@ -136,6 +144,7 @@ public class AnalyticsClickHouseConfiguration {
                 .defaultSchema(analyticsDatabase)
                 .baselineOnMigrate(true)
                 .validateMigrationNaming(true)
+                .javaMigrations(new ClickHouseAnalyticsBackfillMigration(backfillProperties))
                 .load();
         flyway.migrate();
         return flyway;

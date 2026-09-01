@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.functional.tests.AnalyticsResultGetByIdFunctio
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultListFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsRetryFieldsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ClickHouseAnalyticsSemanticsFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.ClickHouseBackfillFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalResultsImportFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryAggregationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportFunctionalTests;
@@ -232,4 +233,7 @@ public class ClickHouseFunctionalTests extends DialClientMockingFunctionalTests 
 
     @Nested
     class ClickHouseAnalyticsSemanticsTests extends ClickHouseAnalyticsSemanticsFunctionalTests {}
+
+    @Nested
+    class ClickHouseBackfillTests extends ClickHouseBackfillFunctionalTests {}
 }

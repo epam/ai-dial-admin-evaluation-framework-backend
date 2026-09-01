@@ -264,6 +264,20 @@ On this vendor:
 - Schema management is Flyway (`flyway-database-clickhouse`), the same as Postgres — see `AnalyticsClickHouseConfiguration`. This requires clickhouse-jdbc >= 0.10.0 (0.9.0's driver could not parse the plugin's schema-existence probe) and a `jdbc:clickhouse://` URL (the plugin does not recognize `jdbc:ch://`). Migrations live under `db/migration/analytics/CLICKHOUSE` and are tracked in `flyway_schema_history` exactly like the Postgres migrations.
 - Two ClickHouse server settings are pinned as connection properties and are load-bearing: `final=1` (dedup-exact reads over `ReplacingMergeTree`) and `join_use_nulls=1` (SQL-standard `LEFT JOIN` nullability, without which run-comparison anti-match predicates are silently always-true). They are connection properties rather than a `connectionInitSql` `SET` because the V2 driver sends every statement as an independent stateless HTTP request. See [Database Schema Reference — ClickHouse analytics schema](database-schema.md#clickhouse-analytics-schema-vendorclickhouse).
 
+#### 4.2.2 ClickHouse Analytics Backfill (one-time data migration from Postgres)
+
+Applies only when `datasource.analytics.vendor=CLICKHOUSE`. A repeatable Flyway Java migration (`ClickHouseAnalyticsBackfillMigration`) copies the four analytics tables from the previous analytics Postgres database into ClickHouse via ClickHouse's `postgresql()` table function — the copy runs server-side inside ClickHouse, so `postgres.host` must be reachable **from the ClickHouse server**, not from this application. Enable only for the cutover deploy (quiesce analytics writes first); the migration re-runs whenever this configuration changes (checksum-keyed; the password is excluded from the checksum), and re-runs are idempotent thanks to `ReplacingMergeTree` deduplication. Use a dedicated **read-only** Postgres user: the credentials travel inside the SQL text sent to ClickHouse (ClickHouse masks table-function credentials in `system.query_log`).
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `clickhouse.analytics.backfill.enabled` | `CLICKHOUSE_ANALYTICS_BACKFILL_ENABLED` | `false` | No | `datasource.analytics.vendor=CLICKHOUSE` | Whether the backfill runs on the next startup. When `false` the migration records a no-op. |
+| `clickhouse.analytics.backfill.postgres.host` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_HOST` | `-` | Conditional | `clickhouse.analytics.backfill.enabled=true` | Source analytics Postgres host, as reachable from the ClickHouse server. |
+| `clickhouse.analytics.backfill.postgres.port` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PORT` | `5432` | No | `clickhouse.analytics.backfill.enabled=true` | Source Postgres port. |
+| `clickhouse.analytics.backfill.postgres.database` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_DATABASE` | `-` | Conditional | `clickhouse.analytics.backfill.enabled=true` | Source analytics Postgres database name. |
+| `clickhouse.analytics.backfill.postgres.schema` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_SCHEMA` | `public` | No | `clickhouse.analytics.backfill.enabled=true` | Source Postgres schema holding the analytics tables. |
+| `clickhouse.analytics.backfill.postgres.username` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_USERNAME` | `-` | Conditional | `clickhouse.analytics.backfill.enabled=true` | Source Postgres username; use a dedicated read-only user. |
+| `clickhouse.analytics.backfill.postgres.password` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PASSWORD` | `-` | Conditional | `clickhouse.analytics.backfill.enabled=true` | Source Postgres password. Changing only the password does not re-trigger the backfill. |
+
 ### 4.3 Azure AD Authentication
 
 For Azure-managed PostgreSQL, set `datasource.meta.auth.type=azure` and/or `datasource.analytics.auth.type=azure` and configure Azure credential resolution.

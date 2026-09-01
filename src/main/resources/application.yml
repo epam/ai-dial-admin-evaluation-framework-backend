@@ -226,6 +226,19 @@ clickhouse:
       username: clickhouse
       password: clickhouse  # Example value for local development. Override via environment variable in production.
       database: evaluation_analytics
+    # One-time data backfill from the previous analytics Postgres database, executed by a repeatable
+    # Flyway Java migration on startup. Enable only for the cutover deploy; the postgres coordinates
+    # must be reachable from the ClickHouse SERVER (it runs the copy via its postgresql() table
+    # function). Use a read-only Postgres user.
+    backfill:
+      enabled: false
+      postgres:
+        host: ""
+        port: 5432
+        database: ""
+        schema: public
+        username: ""
+        password: ""
 
 # Security configuration
 config:

@@ -613,7 +613,9 @@ FROM postgresql('pg-host:5432', 'evaluation_analytics_db',
                 'test_case_run_results', 'user', 'pass', 'public');
 <span class="cmt">-- JSONB arrives as String — no cast needed with the String-column schema.
 -- For very large tables, chunk with WHERE created_at_ms ranges.</span></code></pre>
-          For terabyte-scale or a strict zero-write-downtime requirement, swap this step for a one-shot PeerDB mirror (open source, self-hostable; parallel snapshotting) — same target schema, same verification.</li>
+          For terabyte-scale or a strict zero-write-downtime requirement, swap this step for a one-shot PeerDB mirror (open source, self-hostable; parallel snapshotting) — same target schema, same verification.
+          <div class="callout ok"><span class="lbl">Implemented in-app</span>
+          This step (and the count verification below) now ships as <code>ClickHouseAnalyticsBackfillMigration</code> — a repeatable Flyway <em>Java</em> migration, so the Postgres credentials come from application properties (<code>clickhouse.analytics.backfill.*</code>) instead of being hardcoded in a SQL script. Set <code>clickhouse.analytics.backfill.enabled=true</code> for the cutover deploy; re-runs are idempotent (ReplacingMergeTree dedup). See <code>docs/patterns/clickhouse-analytics.md</code> § "Data backfill from Postgres".</div></li></li>
           <li><strong>Verify:</strong> per-table <code>count()</code>; per-run counts (<code>GROUP BY test_suite_run_id</code>) diffed between engines; checksum-style probes (<code>sum(exec_duration_ms)</code>, <code>sum(cityHash64(id))</code> vs a PG equivalent); API-level parity on sampled runs (§7's harness).</li>
           <li><strong>Cut over:</strong> flip <code>datasource.analytics.vendor=CLICKHOUSE</code> + the CH datasource properties, deploy, re-enable runs. Execute one real suite run end-to-end (Phase 1→2→3, export, comparison) as the smoke test.</li>
           <li><strong>Keep Postgres analytics up, read-only,</strong> for the rollback window (2–4 weeks).</li>

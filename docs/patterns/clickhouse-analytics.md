@@ -120,6 +120,49 @@ hand-rolled `ClickHouseSchemaInitializer` (`ResourceDatabasePopulator` re-runnin
 startup, no history table) — a workaround for the 0.9.0 driver bug above. It has been removed now that
 the driver bump makes Flyway work.
 
+## Data backfill from Postgres: repeatable Java migration
+
+The one-time cutover copy of existing analytics data is `ClickHouseAnalyticsBackfillMigration`, a
+**repeatable Flyway Java migration** registered unconditionally on the ClickHouse Flyway bean via
+`.javaMigrations(...)`. The copy runs **server-side in ClickHouse** — `INSERT INTO <table> (cols)
+SELECT cols FROM postgresql('host:port', db, table, user, password, schema)` per table — so the
+application never streams rows, and the source Postgres must be reachable *from the ClickHouse
+server*, not from the app.
+
+Design decisions worth knowing before touching it:
+
+- **Java, not SQL, because of credentials.** The `postgresql()` call needs the source DB's
+  credentials inline in the SQL text; a checked-in `.sql` script would hardcode them (or need Flyway
+  placeholder splicing). The Java migration takes them from `ClickHouseBackfillProperties`
+  (`clickhouse.analytics.backfill.*`, see `docs/configuration.md` §4.2.2) at runtime. They still
+  appear in the statement sent to ClickHouse (masked in `system.query_log`); use a read-only
+  Postgres user.
+- **Repeatable, checksum-keyed on the config.** A versioned migration would be recorded as an
+  applied no-op on any environment that boots the vendor before backfill is configured (every fresh
+  install) and could then never run. `getChecksum()` is derived from the backfill config, so flipping
+  `enabled=true` (or re-pointing the source) is exactly what makes Flyway re-apply it. The password
+  is excluded from the checksum: rotating a credential must not replay the backfill.
+- **Idempotent re-runs.** Every target table is a `ReplacingMergeTree` ordered by the natural key
+  and reads run with `final=1`, so a repeated copy collapses to the same rows — verified by
+  `ClickHouseBackfillFunctionalTests`, which runs the migration twice against a scratch Postgres
+  carrying the real analytics POSTGRES schema (applied via the production Flyway migrations).
+- **Fail-fast verification.** After each table the migration compares `count(*)` on the source (via
+  `postgresql()`) with `count()` on the target and aborts startup on a shortfall. Target > source is
+  tolerated (rows written after cutover, or a re-run over live data).
+- **JSONB canonicalization.** Source columns are Postgres JSONB, which stores canonicalized JSON
+  (key order, spacing) — the backfill copies what Postgres serves, which is what the PG-vendor app
+  was already reading. Byte-exactness vs. the original client payload is not a goal; semantic JSON
+  equality is (asserted with `readTree` in the functional test). Values transfer over the Postgres
+  wire protocol typed (no string-literal parsing), so escape-heavy payloads and 17-significant-digit
+  doubles arrive intact.
+
+Operationally: quiesce analytics writes (drain running suites/imports), deploy with
+`clickhouse.analytics.backfill.enabled=true` + source coordinates, watch the per-table
+`Backfilled …: source rows=…, target rows=…` log lines, then disable the flag in the next deploy.
+For very large tables note the copy is one statement per table — raise driver/server timeouts or
+chunk manually (e.g. `WHERE created_at_ms` ranges via a temporary ClickHouse view) if a table
+exceeds what one statement can move comfortably.
+
 ## Generated model: one twin per vendor
 
 The analytics schema has **two** generated jOOQ models, each produced from its own vendor's

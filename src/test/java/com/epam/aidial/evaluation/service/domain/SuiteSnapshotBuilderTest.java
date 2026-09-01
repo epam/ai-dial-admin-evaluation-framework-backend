@@ -30,6 +30,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpMethod;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 @DisplayName("SuiteSnapshotBuilder")
 @ExtendWith(MockitoExtension.class)
@@ -183,6 +185,83 @@ class SuiteSnapshotBuilderTest {
 
             assertThat(snapshot.getSnapshotVersion()).isEqualTo(SuiteSnapshotDto.CURRENT_VERSION);
             assertThat(SuiteSnapshotDto.CURRENT_VERSION).isEqualTo("2");
+        }
+
+        @Test
+        @DisplayName("snapshots overallScoreThreshold from the suite")
+        void buildsSnapshotWithOverallScoreThreshold() {
+            UUID datasetId = UUID.randomUUID();
+            TestSuite suite = TestSuite.builder()
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .datasetId(datasetId)
+                    .deploymentRef("{}")
+                    .endpointRef("{}")
+                    .requestTemplate("{}")
+                    .inputBindings("[]")
+                    .responseColumns("[]")
+                    .overallScoreThreshold(0.8)
+                    .build();
+            Dataset dataset = Dataset.builder()
+                    .id(datasetId)
+                    .name("Dataset A")
+                    .version(1L)
+                    .testCaseSchema("[]")
+                    .build();
+
+            when(jsonbMapper.map(suite.getDeploymentRef())).thenReturn(null);
+            when(jsonbMapper.mapEndpointContract(suite.getEndpointRef())).thenReturn(null);
+            when(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate())).thenReturn(null);
+            when(jsonbMapper.mapInputBindings(suite.getInputBindings())).thenReturn(List.of());
+            when(jsonbMapper.mapResponseColumns(suite.getResponseColumns())).thenReturn(List.of());
+            when(jsonbMapper.mapFieldDefinitions(dataset.getTestCaseSchema())).thenReturn(List.of());
+
+            SuiteSnapshotDto snapshot = builder.build(suite, dataset);
+
+            assertThat(snapshot.getOverallScoreThreshold()).isEqualTo(0.8);
+        }
+
+        @Test
+        @DisplayName("snapshots null overallScoreThreshold when the suite has none configured")
+        void buildsSnapshotWithNullOverallScoreThreshold() {
+            UUID datasetId = UUID.randomUUID();
+            TestSuite suite = TestSuite.builder()
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .datasetId(datasetId)
+                    .deploymentRef("{}")
+                    .endpointRef("{}")
+                    .requestTemplate("{}")
+                    .inputBindings("[]")
+                    .responseColumns("[]")
+                    .build();
+            Dataset dataset = Dataset.builder()
+                    .id(datasetId)
+                    .name("Dataset A")
+                    .version(1L)
+                    .testCaseSchema("[]")
+                    .build();
+
+            when(jsonbMapper.map(suite.getDeploymentRef())).thenReturn(null);
+            when(jsonbMapper.mapEndpointContract(suite.getEndpointRef())).thenReturn(null);
+            when(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate())).thenReturn(null);
+            when(jsonbMapper.mapInputBindings(suite.getInputBindings())).thenReturn(List.of());
+            when(jsonbMapper.mapResponseColumns(suite.getResponseColumns())).thenReturn(List.of());
+            when(jsonbMapper.mapFieldDefinitions(dataset.getTestCaseSchema())).thenReturn(List.of());
+
+            SuiteSnapshotDto snapshot = builder.build(suite, dataset);
+
+            assertThat(snapshot.getOverallScoreThreshold()).isNull();
+        }
+
+        @Test
+        @DisplayName("legacy snapshot JSON without overallScoreThreshold key deserializes as null")
+        void legacySnapshotJsonDeserializesNullThreshold() {
+            ObjectMapper objectMapper = JsonMapper.builder().build();
+            String legacyJson = "{\"snapshotVersion\":\"2\",\"suiteType\":\"DEPLOYMENT\"}";
+
+            SuiteSnapshotDto snapshot = objectMapper.readValue(legacyJson, SuiteSnapshotDto.class);
+
+            assertThat(snapshot.getOverallScoreThreshold()).isNull();
+            assertThat(snapshot.getSnapshotVersion()).isEqualTo("2");
         }
     }
 

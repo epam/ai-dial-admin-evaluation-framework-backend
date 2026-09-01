@@ -335,6 +335,8 @@ public class TestSuiteEvaluationJob {
                 .batchSize(metricEvaluationProperties.getBatchSize())
                 .perResultTimeoutMs(metricEvaluationProperties.getPerResultTimeoutMs())
                 .requestLabels(buildRequestLabels(snapshot))
+                .overallScoreDefinition(snapshot.getOverallScore())
+                .overallScoreThreshold(snapshot.getOverallScoreThreshold())
                 .build();
     }
 

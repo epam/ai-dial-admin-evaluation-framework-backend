@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -16,15 +17,22 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDt
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
+import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
+import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.ConditionContext;
 import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
+import com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryScoreService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryScoreBatchWriteItemDto;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -34,6 +42,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -80,6 +89,18 @@ class InProcessMetricEvaluationExecutorTest {
     private ConditionExpressionEvaluator conditionExpressionEvaluator;
 
     @Mock
+    private RunMetricSnapshotRepository runMetricSnapshotRepository;
+
+    @Mock
+    private MetricFieldDiscoverer metricFieldDiscoverer;
+
+    @Mock
+    private EvalSummaryRowScoreComputer evalSummaryRowScoreComputer;
+
+    @Mock
+    private EvalSummaryScoreService evalSummaryScoreService;
+
+    @Mock
     private Clock clock;
 
     @InjectMocks
@@ -88,6 +109,10 @@ class InProcessMetricEvaluationExecutorTest {
     @BeforeEach
     void stubConditions() {
         lenient().when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.run());
+        lenient()
+                .when(runMetricSnapshotRepository.findByRunIdAndComputationId(any(), any()))
+                .thenReturn(List.of());
+        lenient().when(metricFieldDiscoverer.discover(any())).thenReturn(List.of());
     }
 
     @Test
@@ -150,6 +175,123 @@ class InProcessMetricEvaluationExecutorTest {
         assertThat(items.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
         assertThat(items.get(0).getMetricValues()).isNotNull();
         assertThat(items.get(0).getMetricEvalDurationMs()).isEqualTo(150L);
+    }
+
+    @Test
+    @DisplayName("score/passed are computed via EvalSummaryRowScoreComputer and written right after the batch flush")
+    void writesRowScoresAfterFlush() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+        UUID resultId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .build();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L, null, new Mean(), 0.5);
+
+        TestCaseRunResult result = TestCaseRunResult.builder()
+                .id(resultId)
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        EvaluationResponseDto response = EvaluationResponseDto.builder()
+                .metricName("exact_match")
+                .output(Map.of(
+                        "score",
+                        MetricOutputFieldDto.builder()
+                                .type("value")
+                                .value(BigDecimal.ONE)
+                                .build()))
+                .build();
+        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context)))
+                .thenReturn(response);
+        when(clock.millis()).thenReturn(1_000L, 1_000L, 1_150L);
+
+        ObjectNode values = objectMapper.createObjectNode();
+        values.putObject("Accuracy").put("score", 1);
+        doReturn(values).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
+
+        when(evalSummaryRowScoreComputer.computeBatch(any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(4);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.8));
+                });
+
+        executor.execute(context);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+
+        List<EvalSummaryScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
+        assertThat(scoreItems).hasSize(1);
+        assertThat(scoreItems.get(0).getEvalSummaryId()).isNotNull();
+        assertThat(scoreItems.get(0).getScore()).isEqualTo(0.8);
+        assertThat(scoreItems.get(0).getPassed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("passed is null when the threshold is not configured, even though a score was computed")
+    void passedNullWhenThresholdMissing() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L, null, new Mean(), null);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        when(evalSummaryRowScoreComputer.computeBatch(any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(4);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.9));
+                });
+
+        executor.execute(context);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<EvalSummaryScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
+        verify(evalSummaryScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+
+        assertThat(scoreCaptor.getValue()).hasSize(1);
+        assertThat(scoreCaptor.getValue().get(0).getScore()).isEqualTo(0.9);
+        assertThat(scoreCaptor.getValue().get(0).getPassed()).isNull();
+    }
+
+    @Test
+    @DisplayName("Row score computation is skipped entirely when the suite has no overallScore definition")
+    void rowScoreSkippedWithoutDefinition() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        executor.execute(context);
+
+        verify(evalSummaryRowScoreComputer, never()).computeBatch(any(), any(), any(), any(), any());
+        verifyNoInteractions(evalSummaryScoreService);
     }
 
     @Test
@@ -570,6 +712,17 @@ class InProcessMetricEvaluationExecutorTest {
             List<AggregatedMetricDefinition> tsmds,
             long perResultTimeoutMs,
             List<String> requestLabels) {
+        return buildContext(runId, suiteId, tsmds, perResultTimeoutMs, requestLabels, null, null);
+    }
+
+    private MetricEvaluationContext buildContext(
+            UUID runId,
+            UUID suiteId,
+            List<AggregatedMetricDefinition> tsmds,
+            long perResultTimeoutMs,
+            List<String> requestLabels,
+            OverallScoreDefinition overallScoreDefinition,
+            Double overallScoreThreshold) {
         MetricEvaluationProperties.Retry retryConfig = new MetricEvaluationProperties.Retry();
         retryConfig.setMaxRetries(0);
         retryConfig.setRetryDelayMs(100L);
@@ -589,6 +742,8 @@ class InProcessMetricEvaluationExecutorTest {
                 .batchSize(100)
                 .perResultTimeoutMs(perResultTimeoutMs)
                 .requestLabels(requestLabels)
+                .overallScoreDefinition(overallScoreDefinition)
+                .overallScoreThreshold(overallScoreThreshold)
                 .build();
     }
 }

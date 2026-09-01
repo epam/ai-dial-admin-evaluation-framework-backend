@@ -85,6 +85,12 @@ public class SuiteSnapshotDto {
                     + "version-2 snapshots, which fall back to the default.")
     private OverallScoreDefinition overallScore;
 
+    @Schema(
+            description = "Per-suite 'overall' score threshold captured at snapshot time; null = not configured. "
+                    + "Fixed for the life of the run regardless of later edits to the suite's live threshold. "
+                    + "Additive-optional: absent in snapshots written before this field existed.")
+    private Double overallScoreThreshold;
+
     public static final String CURRENT_VERSION = "2";
 
     @JsonPOJOBuilder(withPrefix = "")

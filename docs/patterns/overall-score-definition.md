@@ -14,4 +14,18 @@ A suite's run-level `overall` metric-score definition (`TestSuiteRequestDto`/`Te
 
 `MetricScoreComputationContext.overallScoreDefinition` carries the typed value directly (no JSON-string round trip between the suite snapshot and Phase 3).
 
+## Per-row `score` reuses the same resolved query — one implementation, two scopes
+
+The same `OverallScoreDefinitionResolver` output also drives a second computation: a per-row `score`/`passed` on each `EvalSummary`, written to a sibling table `test_case_eval_scores` and joined back into the eval-summary read surface (see `docs/patterns/eval-summaries-read-surface.md`, `docs/database-schema.md`). This is **not** a second implementation — `EvalSummaryRowScoreComputer` (`query.service.metricscore`, a sibling of `OverallScoreDefinitionResolver`/`FilteredMetricScoreAggregator`) takes the exact `StructuredQuery` the resolver already produces for Phase 3 and grafts an `id IN (:rowIds)` filter plus a `GROUP BY id` onto it — turning the run-level aggregate into one row per id, in one query per Phase-2 flush batch. Because both scopes execute the *same* resolved query, `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly per row, with no separate coalesce/null-handling logic to keep in sync.
+
+| | Phase 3 `overall` (`MetricScoreComputationExecutor`) | Phase 2 per-row `score` (`EvalSummaryRowScoreComputer`) |
+|---|---|---|
+| Scope | One aggregate per `(run, computation)`, no `GROUP BY` | One value per `EvalSummary` row, `GROUP BY id` grafted on |
+| Written to | `metric_score_result` | `test_case_eval_scores` (joined into `EvalSummary.score`/`.passed` on read) |
+| Timing | After all `EvalSummary` rows for the computation exist | Right after each flush's own batch is written (not after the whole run) |
+
+**Why grafting `id`/`GROUP BY id` is safe for any resolved query, with zero query-builder changes**: `StructuredQueryBuilder.buildAggregate`/`resolveGroupKey` already handles a select column that's also a `GROUP BY` key by referencing the select's own output alias rather than re-translating the expression — the exact mechanism a per-row `id` column needs, whether the query came from `Mean`/`WeightedMean` or an opaque `CustomFunction`.
+
+**Where the reuse still hits a real limit**: a `CustomFunction` that's inherently population-dependent (e.g. `roc_auc`, which needs an `array_agg` of *many* rows' labels/probabilities to rank against each other) doesn't get a meaningful per-row value just because the query executes without error — grouped by `id`, its `array_agg` has exactly one element, so `roc_auc_score`'s `NULLIF(n_pos * n_neg, 0)` is `NULL` for every row (see `docs/database-schema.md`'s `roc_auc_score` section). This is a genuine mathematical boundary, not a plumbing gap: no amount of query-graft cleverness gives a population statistic a single-row meaning. `EvalSummaryRowScoreComputer.requireGroupableShape` additionally rejects (logs, doesn't execute) a `CustomFunction` that already specifies its own `groupBy` — rather than silently overwriting it — since such a query's author had something else in mind.
+
 See also: [Query DSL function catalog](query-dsl-function-catalog.md).

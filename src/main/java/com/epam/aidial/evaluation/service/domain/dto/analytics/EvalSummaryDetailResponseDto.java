@@ -67,6 +67,22 @@ public class EvalSummaryDetailResponseDto {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private JsonNode responseBody;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "Per-row overall score, computed via SQL from the suite's overallScore definition "
+                    + "grouped per row; null if not configured, or if the definition's aggregate is itself "
+                    + "degenerate for a single-row group (e.g. a population-dependent custom function like "
+                    + "roc_auc).",
+            example = "0.85")
+    private Double score;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(
+            description = "score >= overallScoreThreshold captured at snapshot time; null if score or "
+                    + "threshold is null.",
+            example = "true")
+    private Boolean passed;
+
     private Long createdAt;
     private Long computedAt;
 

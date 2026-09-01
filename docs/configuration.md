@@ -270,13 +270,13 @@ Applies only when `datasource.analytics.vendor=CLICKHOUSE`. A repeatable Flyway 
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
-| `clickhouse.analytics.backfill.enabled` | `CLICKHOUSE_ANALYTICS_BACKFILL_ENABLED` | `false` | No | `datasource.analytics.vendor=CLICKHOUSE` | Whether the backfill runs on the next startup. When `false` the migration records a no-op. |
-| `clickhouse.analytics.backfill.postgres.host` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_HOST` | `-` | Conditional | `clickhouse.analytics.backfill.enabled=true` | Source analytics Postgres host, as reachable from the ClickHouse server. |
+| `clickhouse.analytics.backfill.enabled` | `CLICKHOUSE_ANALYTICS_BACKFILL_ENABLED` | `true` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Whether the backfill runs on the next startup. When `false` the migration records a no-op. The default is intended for local development (docker-compose); in production set it explicitly and enable only for the cutover deploy. |
+| `clickhouse.analytics.backfill.postgres.host` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_HOST` | `postgres` | Recommended | `clickhouse.analytics.backfill.enabled=true` | Source analytics Postgres host, as reachable from the ClickHouse server. The default matches the local docker-compose service name. |
 | `clickhouse.analytics.backfill.postgres.port` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PORT` | `5432` | No | `clickhouse.analytics.backfill.enabled=true` | Source Postgres port. |
-| `clickhouse.analytics.backfill.postgres.database` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_DATABASE` | `-` | Conditional | `clickhouse.analytics.backfill.enabled=true` | Source analytics Postgres database name. |
+| `clickhouse.analytics.backfill.postgres.database` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_DATABASE` | `evaluation_analytics_db` | Recommended | `clickhouse.analytics.backfill.enabled=true` | Source analytics Postgres database name. |
 | `clickhouse.analytics.backfill.postgres.schema` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_SCHEMA` | `public` | No | `clickhouse.analytics.backfill.enabled=true` | Source Postgres schema holding the analytics tables. |
-| `clickhouse.analytics.backfill.postgres.username` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_USERNAME` | `-` | Conditional | `clickhouse.analytics.backfill.enabled=true` | Source Postgres username; use a dedicated read-only user. |
-| `clickhouse.analytics.backfill.postgres.password` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PASSWORD` | `-` | Conditional | `clickhouse.analytics.backfill.enabled=true` | Source Postgres password. Changing only the password does not re-trigger the backfill. |
+| `clickhouse.analytics.backfill.postgres.username` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_USERNAME` | `postgres` | Recommended | `clickhouse.analytics.backfill.enabled=true` | Source Postgres username; use a dedicated read-only user. The default is intended for local development only. |
+| `clickhouse.analytics.backfill.postgres.password` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PASSWORD` | `postgres` | Recommended | `clickhouse.analytics.backfill.enabled=true` | Source Postgres password. The default is intended for local development only. Changing only the password does not re-trigger the backfill. |
 
 ### 4.3 Azure AD Authentication
 

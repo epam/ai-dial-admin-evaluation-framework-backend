@@ -8,9 +8,9 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.math.BigDecimal;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.jooq.BatchBindStep;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.jooq.Query;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,7 +25,7 @@ import org.springframework.stereotype.Repository;
  * property (not a session-wide {@code SET}, which does not persist across statements on the
  * ClickHouse V2 HTTP driver — see {@code AnalyticsClickHouseConfiguration}'s Javadoc for the verified
  * mechanism, the single source of truth), and the {@code value} column is written through
- * {@link #exactFloat64} rather than as a plain bind.
+ * {@link #exactFloat64Bind()} rather than as a plain {@code Double} bind.
  */
 @Slf4j
 @Repository
@@ -43,46 +43,54 @@ public class ClickHouseMetricScoreResultRepository extends PostgresMetricScoreRe
         if (results == null || results.isEmpty()) {
             return;
         }
-        List<Query> queries = results.stream()
-                .map(r -> (Query) dsl.insertInto(METRIC_SCORE_RESULT)
-                        .set(METRIC_SCORE_RESULT.ID, r.getId().toString())
-                        .set(
-                                METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID,
-                                r.getTestSuiteRunId().toString())
-                        .set(
-                                METRIC_SCORE_RESULT.TEST_SUITE_ID,
-                                r.getTestSuiteId().toString())
-                        .set(
-                                METRIC_SCORE_RESULT.COMPUTATION_ID,
-                                r.getComputationId().toString())
-                        .set(METRIC_SCORE_RESULT.METRIC_SCORE_NAME, r.getMetricScoreName())
-                        .set(METRIC_SCORE_RESULT.METRIC_NAME, r.getMetricName())
-                        .set(METRIC_SCORE_RESULT.VALUE, exactFloat64(r.getValue()))
-                        .set(METRIC_SCORE_RESULT.COMPUTED_AT_MS, r.getComputedAtMs()))
-                .toList();
-        dsl.batch(queries).execute();
+        // Bind-value batch, never dsl.batch(List<Query>) — the multi-query batch inlines parameters and
+        // ClickHouse interprets backslash escapes in string literals, corrupting escaped text values.
+        // See docs/patterns/clickhouse-analytics.md.
+        BatchBindStep batch = dsl.batch(dsl.insertInto(
+                        METRIC_SCORE_RESULT,
+                        METRIC_SCORE_RESULT.ID,
+                        METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID,
+                        METRIC_SCORE_RESULT.TEST_SUITE_ID,
+                        METRIC_SCORE_RESULT.COMPUTATION_ID,
+                        METRIC_SCORE_RESULT.METRIC_SCORE_NAME,
+                        METRIC_SCORE_RESULT.METRIC_NAME,
+                        METRIC_SCORE_RESULT.COMPUTED_AT_MS,
+                        METRIC_SCORE_RESULT.VALUE)
+                .values(null, null, null, null, null, null, null, exactFloat64Bind()));
+        for (MetricScoreResult r : results) {
+            batch = batch.bind(
+                    r.getId().toString(),
+                    r.getTestSuiteRunId().toString(),
+                    r.getTestSuiteId().toString(),
+                    r.getComputationId().toString(),
+                    r.getMetricScoreName(),
+                    r.getMetricName(),
+                    r.getComputedAtMs(),
+                    plainDecimal(r.getValue()));
+        }
+        batch.execute();
         log.debug("Batch inserted {} metric score results", results.size());
     }
 
     /**
-     * Renders {@code value} as {@code toFloat64('<plain decimal>')} so it survives the insert bit-for-bit.
+     * Writes {@code value} as {@code toFloat64(?)} with a bound <em>plain-decimal string</em> so it survives
+     * the insert bit-for-bit regardless of how a {@code Double} would be rendered in transit.
      *
-     * <p>jOOQ's multi-query batch inlines its bind values, and it inlines a {@code Double} in Java's
-     * scientific notation ({@code 8.500000000000001E-1}). ClickHouse's textual {@code Float64} parser is one
-     * ULP off for the exponent form — verified against a live server, where
-     * {@code toFloat64('8.500000000000001E-1')} yields {@code 0.8500000000000002} while
-     * {@code toFloat64('0.8500000000000001')} yields the exact original. Silently shifting a persisted
-     * metric score by an ULP makes it disagree with the same statistic recomputed on the fly (which is what
-     * the run-comparison endpoint does), so the value is inlined as an explicit plain-decimal string
-     * instead. {@link BigDecimal#valueOf(double)} uses the shortest round-tripping representation, and
-     * {@link BigDecimal#toPlainString()} guarantees no exponent.
+     * <p>A {@code Double} formatted in Java's scientific notation ({@code 8.500000000000001E-1}) trips
+     * ClickHouse's textual {@code Float64} parser, which is one ULP off for the exponent form — verified
+     * against a live server, where {@code toFloat64('8.500000000000001E-1')} yields
+     * {@code 0.8500000000000002} while {@code toFloat64('0.8500000000000001')} yields the exact original.
+     * Silently shifting a persisted metric score by an ULP makes it disagree with the same statistic
+     * recomputed on the fly (which is what the run-comparison endpoint does), so the value crosses the wire
+     * as an explicit plain-decimal string. {@link BigDecimal#valueOf(double)} uses the shortest
+     * round-tripping representation, and {@link BigDecimal#toPlainString()} guarantees no exponent.
+     * {@code toFloat64(NULL)} propagates NULL for absent scores.
      */
-    private static Field<Double> exactFloat64(Double value) {
-        if (value == null) {
-            return DSL.inline((Double) null, SQLDataType.DOUBLE);
-        }
-        return DSL.field(
-                "toFloat64({0})",
-                SQLDataType.DOUBLE, DSL.inline(BigDecimal.valueOf(value).toPlainString()));
+    private static Field<Double> exactFloat64Bind() {
+        return DSL.field("toFloat64({0})", SQLDataType.DOUBLE, DSL.val((String) null));
+    }
+
+    private static String plainDecimal(Double value) {
+        return value == null ? null : BigDecimal.valueOf(value).toPlainString();
     }
 }

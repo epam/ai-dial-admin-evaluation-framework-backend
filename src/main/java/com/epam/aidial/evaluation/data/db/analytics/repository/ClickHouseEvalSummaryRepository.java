@@ -12,10 +12,10 @@ import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.math.BigDecimal;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.jooq.BatchBindStep;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.jooq.Query;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -70,45 +70,62 @@ public class ClickHouseEvalSummaryRepository extends PostgresEvalSummaryReposito
         if (summaries == null || summaries.isEmpty()) {
             return;
         }
-        List<Query> queries = summaries.stream()
-                .map(s -> (Query) dsl.insertInto(TEST_CASE_EVAL_SUMMARIES)
-                        .set(TEST_CASE_EVAL_SUMMARIES.ID, s.getId().toString())
-                        .set(
-                                TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID,
-                                s.getTestSuiteId().toString())
-                        .set(
-                                TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
-                                s.getTestSuiteRunId().toString())
-                        .set(
-                                TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
-                                s.getTestCaseRunResultId().toString())
-                        .set(
-                                TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
-                                s.getTestCaseId().toString())
-                        .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, s.getTestCaseName())
-                        .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, s.getRunIndex())
-                        .set(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX, s.getRequestIndex())
-                        .set(TEST_CASE_EVAL_SUMMARIES.TOTAL_REQUESTS, s.getTotalRequests())
-                        .set(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX, s.getTurnIndex())
-                        .set(TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS, s.getTotalTurns())
-                        .set(
-                                TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
-                                s.getComputationId().toString())
-                        .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA, toJsonb(s.getTestCaseData()))
-                        .set(TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS, toJsonb(s.getExtractedColumns()))
-                        .set(
-                                TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
-                                s.getExecutionStatus().name())
-                        .set(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS, s.getExecDurationMs())
-                        .set(TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS, s.getMetricEvalDurationMs())
-                        .set(TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE, s.getResponseStatusCode())
-                        .set(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES, toJsonb(s.getMetricValues()))
-                        .set(TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS, toJsonb(s.getMetricInfos()))
-                        .set(TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS, toJsonb(s.getExtractionWarnings()))
-                        .set(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, s.getCreatedAtMs())
-                        .set(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS, s.getComputedAtMs()))
-                .toList();
-        dsl.batch(queries).execute();
+        // Bind-value batch, never dsl.batch(List<Query>) — the multi-query batch inlines parameters and
+        // ClickHouse interprets backslash escapes in string literals, corrupting escaped JSON payloads.
+        // See docs/patterns/clickhouse-analytics.md.
+        BatchBindStep batch = dsl.batch(dsl.insertInto(
+                        TEST_CASE_EVAL_SUMMARIES,
+                        TEST_CASE_EVAL_SUMMARIES.ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES.TOTAL_REQUESTS,
+                        TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
+                        TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
+                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
+                        TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
+                        TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
+                        TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
+                        TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS,
+                        TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS)
+                .values(new Object[23]));
+        for (EvalSummary s : summaries) {
+            batch = batch.bind(
+                    s.getId().toString(),
+                    s.getTestSuiteId().toString(),
+                    s.getTestSuiteRunId().toString(),
+                    s.getTestCaseRunResultId().toString(),
+                    s.getTestCaseId().toString(),
+                    s.getTestCaseName(),
+                    s.getRunIndex(),
+                    s.getRequestIndex(),
+                    s.getTotalRequests(),
+                    s.getTurnIndex(),
+                    s.getTotalTurns(),
+                    s.getComputationId().toString(),
+                    toJsonb(s.getTestCaseData()),
+                    toJsonb(s.getExtractedColumns()),
+                    s.getExecutionStatus().name(),
+                    s.getExecDurationMs(),
+                    s.getMetricEvalDurationMs(),
+                    s.getResponseStatusCode(),
+                    toJsonb(s.getMetricValues()),
+                    toJsonb(s.getMetricInfos()),
+                    toJsonb(s.getExtractionWarnings()),
+                    s.getCreatedAtMs(),
+                    s.getComputedAtMs());
+        }
+        batch.execute();
         log.debug("Batch inserted {} eval summaries", summaries.size());
     }
 

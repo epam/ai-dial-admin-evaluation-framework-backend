@@ -8,8 +8,8 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.jooq.BatchBindStep;
 import org.jooq.DSLContext;
-import org.jooq.Query;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -50,42 +50,65 @@ public class ClickHouseTestCaseRunResultRepository extends PostgresTestCaseRunRe
         if (results == null || results.isEmpty()) {
             return;
         }
-        List<Query> queries = results.stream()
-                .map(r -> (Query) dsl.insertInto(TEST_CASE_RUN_RESULTS)
-                        .set(TEST_CASE_RUN_RESULTS.ID, r.getId().toString())
-                        .set(
-                                TEST_CASE_RUN_RESULTS.TEST_SUITE_RUN_ID,
-                                r.getTestSuiteRunId().toString())
-                        .set(
-                                TEST_CASE_RUN_RESULTS.TEST_SUITE_ID,
-                                r.getTestSuiteId().toString())
-                        .set(
-                                TEST_CASE_RUN_RESULTS.TEST_CASE_ID,
-                                r.getTestCaseId().toString())
-                        .set(TEST_CASE_RUN_RESULTS.TEST_CASE_NAME, r.getTestCaseName())
-                        .set(TEST_CASE_RUN_RESULTS.RUN_INDEX, r.getRunIndex())
-                        .set(TEST_CASE_RUN_RESULTS.REQUEST_INDEX, r.getRequestIndex())
-                        .set(TEST_CASE_RUN_RESULTS.TOTAL_REQUESTS, r.getTotalRequests())
-                        .set(TEST_CASE_RUN_RESULTS.TURN_INDEX, r.getTurnIndex())
-                        .set(TEST_CASE_RUN_RESULTS.TOTAL_TURNS, r.getTotalTurns())
-                        .set(TEST_CASE_RUN_RESULTS.TEST_CASE_DATA, toJsonb(r.getTestCaseData()))
-                        .set(TEST_CASE_RUN_RESULTS.REQUEST_BODY, toJsonb(r.getRequestBody()))
-                        .set(TEST_CASE_RUN_RESULTS.RESPONSE_BODY, toJsonb(r.getResponseBody()))
-                        .set(TEST_CASE_RUN_RESULTS.RESPONSE_STATUS_CODE, r.getResponseStatusCode())
-                        .set(
-                                TEST_CASE_RUN_RESULTS.EXECUTION_STATUS,
-                                r.getExecutionStatus().name())
-                        .set(TEST_CASE_RUN_RESULTS.EXEC_STARTED_AT_MS, r.getExecStartedAtMs())
-                        .set(TEST_CASE_RUN_RESULTS.EXEC_COMPLETED_AT_MS, r.getExecCompletedAtMs())
-                        .set(TEST_CASE_RUN_RESULTS.EXEC_DURATION_MS, r.getExecDurationMs())
-                        .set(TEST_CASE_RUN_RESULTS.TRACE_ID, r.getTraceId())
-                        .set(TEST_CASE_RUN_RESULTS.EXTRACTED_COLUMNS, toJsonb(r.getExtractedColumns()))
-                        .set(TEST_CASE_RUN_RESULTS.EXTRACTION_WARNINGS, toJsonb(r.getExtractionWarnings()))
-                        .set(TEST_CASE_RUN_RESULTS.RETRY_COUNT, r.getRetryCount())
-                        .set(TEST_CASE_RUN_RESULTS.LOG_DETAILS, toJsonb(r.getLogDetails()))
-                        .set(TEST_CASE_RUN_RESULTS.CREATED_AT_MS, r.getCreatedAtMs()))
-                .toList();
-        dsl.batch(queries).execute();
+        // One prepared statement executed as a JDBC batch with BIND VALUES — never dsl.batch(List<Query>):
+        // jOOQ's multi-query batch inlines parameters as static SQL, and ClickHouse interprets backslash
+        // escapes inside string literals, silently corrupting any JSON payload whose string values contain
+        // characters Jackson escapes (\n, \t, \", \\). See docs/patterns/clickhouse-analytics.md.
+        BatchBindStep batch = dsl.batch(dsl.insertInto(
+                        TEST_CASE_RUN_RESULTS,
+                        TEST_CASE_RUN_RESULTS.ID,
+                        TEST_CASE_RUN_RESULTS.TEST_SUITE_RUN_ID,
+                        TEST_CASE_RUN_RESULTS.TEST_SUITE_ID,
+                        TEST_CASE_RUN_RESULTS.TEST_CASE_ID,
+                        TEST_CASE_RUN_RESULTS.TEST_CASE_NAME,
+                        TEST_CASE_RUN_RESULTS.RUN_INDEX,
+                        TEST_CASE_RUN_RESULTS.REQUEST_INDEX,
+                        TEST_CASE_RUN_RESULTS.TOTAL_REQUESTS,
+                        TEST_CASE_RUN_RESULTS.TURN_INDEX,
+                        TEST_CASE_RUN_RESULTS.TOTAL_TURNS,
+                        TEST_CASE_RUN_RESULTS.TEST_CASE_DATA,
+                        TEST_CASE_RUN_RESULTS.REQUEST_BODY,
+                        TEST_CASE_RUN_RESULTS.RESPONSE_BODY,
+                        TEST_CASE_RUN_RESULTS.RESPONSE_STATUS_CODE,
+                        TEST_CASE_RUN_RESULTS.EXECUTION_STATUS,
+                        TEST_CASE_RUN_RESULTS.EXEC_STARTED_AT_MS,
+                        TEST_CASE_RUN_RESULTS.EXEC_COMPLETED_AT_MS,
+                        TEST_CASE_RUN_RESULTS.EXEC_DURATION_MS,
+                        TEST_CASE_RUN_RESULTS.TRACE_ID,
+                        TEST_CASE_RUN_RESULTS.EXTRACTED_COLUMNS,
+                        TEST_CASE_RUN_RESULTS.EXTRACTION_WARNINGS,
+                        TEST_CASE_RUN_RESULTS.RETRY_COUNT,
+                        TEST_CASE_RUN_RESULTS.LOG_DETAILS,
+                        TEST_CASE_RUN_RESULTS.CREATED_AT_MS)
+                .values(new Object[24]));
+        for (TestCaseRunResult r : results) {
+            batch = batch.bind(
+                    r.getId().toString(),
+                    r.getTestSuiteRunId().toString(),
+                    r.getTestSuiteId().toString(),
+                    r.getTestCaseId().toString(),
+                    r.getTestCaseName(),
+                    r.getRunIndex(),
+                    r.getRequestIndex(),
+                    r.getTotalRequests(),
+                    r.getTurnIndex(),
+                    r.getTotalTurns(),
+                    toJsonb(r.getTestCaseData()),
+                    toJsonb(r.getRequestBody()),
+                    toJsonb(r.getResponseBody()),
+                    r.getResponseStatusCode(),
+                    r.getExecutionStatus().name(),
+                    r.getExecStartedAtMs(),
+                    r.getExecCompletedAtMs(),
+                    r.getExecDurationMs(),
+                    r.getTraceId(),
+                    toJsonb(r.getExtractedColumns()),
+                    toJsonb(r.getExtractionWarnings()),
+                    r.getRetryCount(),
+                    toJsonb(r.getLogDetails()),
+                    r.getCreatedAtMs());
+        }
+        batch.execute();
         log.debug("Batch inserted {} test case run results", results.size());
     }
 }

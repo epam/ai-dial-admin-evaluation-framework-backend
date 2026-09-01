@@ -7,8 +7,9 @@ import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.jooq.BatchBindStep;
 import org.jooq.DSLContext;
-import org.jooq.Query;
+import org.jooq.JSONB;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -38,29 +39,49 @@ public class ClickHouseRunMetricSnapshotRepository extends PostgresRunMetricSnap
         if (snapshots == null || snapshots.isEmpty()) {
             return;
         }
-        List<Query> queries = snapshots.stream()
-                .map(s -> (Query) dsl.insertInto(RUN_METRIC_SNAPSHOTS)
-                        .set(RUN_METRIC_SNAPSHOTS.ID, s.getId().toString())
-                        .set(
-                                RUN_METRIC_SNAPSHOTS.COMPUTATION_ID,
-                                s.getComputationId().toString())
-                        .set(
-                                RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID,
-                                s.getTestSuiteRunId().toString())
-                        .set(RUN_METRIC_SNAPSHOTS.TSMD_ID, s.getTsmdId().toString())
-                        .set(RUN_METRIC_SNAPSHOTS.TSMD_NAME, s.getTsmdName())
-                        .set(
-                                RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_ID,
-                                s.getMetricDeclarationId().toString())
-                        .set(
-                                RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_VERSION_ID,
-                                s.getMetricDeclarationVersionId().toString())
-                        .set(RUN_METRIC_SNAPSHOTS.CONFIG_BINDINGS, toJsonb(s.getConfigBindings()))
-                        .set(RUN_METRIC_SNAPSHOTS.INPUT_BINDINGS, toJsonb(s.getInputBindings()))
-                        .set(RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA, toJsonb(s.getOutputSchema()))
-                        .set(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS, s.getComputedAtMs()))
-                .toList();
-        dsl.batch(queries).execute();
+        // Bind-value batch, never dsl.batch(List<Query>) — the multi-query batch inlines parameters and
+        // ClickHouse interprets backslash escapes in string literals, corrupting escaped JSON payloads.
+        // See docs/patterns/clickhouse-analytics.md.
+        BatchBindStep batch = dsl.batch(dsl.insertInto(
+                        RUN_METRIC_SNAPSHOTS,
+                        RUN_METRIC_SNAPSHOTS.ID,
+                        RUN_METRIC_SNAPSHOTS.COMPUTATION_ID,
+                        RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID,
+                        RUN_METRIC_SNAPSHOTS.TSMD_ID,
+                        RUN_METRIC_SNAPSHOTS.TSMD_NAME,
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_ID,
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_VERSION_ID,
+                        RUN_METRIC_SNAPSHOTS.CONFIG_BINDINGS,
+                        RUN_METRIC_SNAPSHOTS.INPUT_BINDINGS,
+                        RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA,
+                        RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS)
+                .values(
+                        (String) null,
+                        (String) null,
+                        (String) null,
+                        (String) null,
+                        (String) null,
+                        (String) null,
+                        (String) null,
+                        (JSONB) null,
+                        (JSONB) null,
+                        (JSONB) null,
+                        (Long) null));
+        for (RunMetricSnapshot s : snapshots) {
+            batch = batch.bind(
+                    s.getId().toString(),
+                    s.getComputationId().toString(),
+                    s.getTestSuiteRunId().toString(),
+                    s.getTsmdId().toString(),
+                    s.getTsmdName(),
+                    s.getMetricDeclarationId().toString(),
+                    s.getMetricDeclarationVersionId().toString(),
+                    toJsonb(s.getConfigBindings()),
+                    toJsonb(s.getInputBindings()),
+                    toJsonb(s.getOutputSchema()),
+                    s.getComputedAtMs());
+        }
+        batch.execute();
         log.debug("Batch inserted {} run metric snapshots", snapshots.size());
     }
 }

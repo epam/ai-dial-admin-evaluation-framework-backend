@@ -45,8 +45,14 @@ where ClickHouse's SQL surface or driver genuinely diverges (see "Known engine s
 twin; the Postgres base stays the vendor-agnostic default (`matchIfMissing = true` on
 `AnalyticsJdbcConfiguration`'s own POSTGRES conditional).
 
-Every twin overrides `saveAll`: ClickHouse has no `ON CONFLICT`, so writes are a plain `dsl.batch(...)`
-of `INSERT`s instead of an upsert.
+Every twin overrides `saveAll`: ClickHouse has no `ON CONFLICT`, so writes are plain `INSERT`s instead
+of an upsert — as a **bind-value batch** (`dsl.batch(insertTemplate).bind(row)...`, one prepared statement
+executed as a JDBC batch). Never use `dsl.batch(List<Query>)` here: jOOQ's multi-query batch renders
+*static* statements with parameters inlined, and ClickHouse interprets backslash escapes inside string
+literals (unlike Postgres with `standard_conforming_strings`), so an inlined JSON payload whose string
+values contain characters Jackson escapes (`\n`, `\t`, `\"`, `\\`) is silently corrupted at rest —
+the stored column stops being valid JSON. Regression-guarded by
+`ClickHouseAnalyticsSemanticsFunctionalTests#escapeWorthyCharactersSurviveBatchWrites`.
 
 **No-op `analyticsTransactionManager`** (`ClickHouseNoOpTransactionManager`, extends
 `AbstractPlatformTransactionManager` with no-op `doBegin`/`doCommit`/`doRollback`): ClickHouse has no
@@ -144,9 +150,9 @@ against its live schema. Details and the forced-type configuration:
 - **Float64, not `numeric`.** A bare ClickHouse `decimal` means `Decimal(10, 0)` — scale zero — so
   `cast(0.5 as decimal)` silently truncates to `0`. `DialectAwareSql#numericCast` casts to `Float64`
   on ClickHouse instead (coerced back to `NUMERIC` for the caller's `Field<BigDecimal>`); same
-  reasoning behind `ClickHouseMetricScoreResultRepository#exactFloat64` rendering an explicit
-  plain-decimal string (`toFloat64('0.85...')`) rather than letting jOOQ inline a `Double` in Java's
-  scientific notation, which ClickHouse's textual parser is one ULP off on.
+  reasoning behind `ClickHouseMetricScoreResultRepository#exactFloat64Bind` writing the score as
+  `toFloat64(?)` with a bound plain-decimal string rather than letting a `Double` cross the wire in
+  Java's scientific notation, which ClickHouse's textual parser is one ULP off on.
 - **`lower` is ASCII-only.** ClickHouse's `lower`/lowercase LIKE folding don't fold non-ASCII letters;
   `lowerUTF8` is the Unicode-aware equivalent, used wherever case-insensitive comparison must match
   Postgres' locale-aware `lower` (`PostgresEvalSummaryRepository#lowerName`, `FilterTranslator`'s

@@ -231,7 +231,7 @@ clickhouse:
     # must be reachable from the ClickHouse SERVER (it runs the copy via its postgresql() table
     # function). Use a read-only Postgres user.
     backfill:
-      enabled: ${CLICKHOUSE_ANALYTICS_BACKFILL_ENABLED:true}
+      enabled: ${CLICKHOUSE_ANALYTICS_BACKFILL_ENABLED:false}
       postgres:
         host: ${CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_HOST:postgres}
         port: ${CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PORT:5432}

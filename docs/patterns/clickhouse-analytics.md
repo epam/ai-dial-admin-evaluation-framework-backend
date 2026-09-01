@@ -163,6 +163,49 @@ For very large tables note the copy is one statement per table — raise driver/
 chunk manually (e.g. `WHERE created_at_ms` ranges via a temporary ClickHouse view) if a table
 exceeds what one statement can move comfortably.
 
+## Typed metric map twin: `metric_values_map`
+
+`test_case_eval_summaries` carries a ClickHouse-only **acceleration column**:
+
+```sql
+metric_values_map Map(String, Map(String, Nullable(Float64)))
+    MATERIALIZED JSONExtract(metric_values, 'Map(String, Map(String, Nullable(Float64)))')
+```
+
+The JSON text is parsed **once at insert** into typed columnar storage; every two-level numeric
+metric-path read — the aggregate endpoint (`ClickHouseEvalSummaryRepository#buildNumericMetricAccessor`),
+Stack A's `JSONB_NUMERIC` filters and the query DSL's `metric::<name>::<field>` family (both via the
+CLICKHOUSE branch of `DialectAwareJsonPathAccessor#jsonbAtAsNumeric`) — reads
+`metric_values_map[metric][field]` with **bound-parameter keys** instead of re-parsing the JSON blob
+per row. `metric_values` stays the serving source of truth: DTOs, exports and the pipeline's own
+reads select the raw String column, so explicit-null preservation and byte fidelity are untouched.
+The text metric accessor (presence counting: present-but-non-numeric still counts) also stays on the
+raw column.
+
+**Why a `Map`, not ClickHouse's native `JSON` type** (all verified against a live 25.8):
+
+- the JSON type **drops explicit nulls** (`{"a":null}` reads back `{}`), destroying the null-vs-absent
+  distinction that separates "metric failed" from "metric conditionally skipped";
+- it **flattens dotted keys** — `"Relevancy.score"` becomes the nested path `Relevancy → score` —
+  and a resulting path collision **fails the entire INSERT** (a user-supplied TSMD name could break
+  eval-summary writes);
+- its typed subcolumn read (`.value.:Float64`) returns the requested *variant* of a Dynamic value —
+  NULL when the stored variant is `Int64`, i.e. for every integer-valued score (`0`, `1`), silently
+  corrupting aggregates.
+
+The Map twin passes all three: values are typed `Float64` at extraction regardless of JSON integer/float
+notation (17-significant-digit doubles round-trip exactly), dotted names are plain keys, collisions are
+impossible, and it even preserves null-vs-absent (`mapContains` = 1 with NULL value vs 0).
+
+**Model bookkeeping:** the twin lives only in the CLICKHOUSE V1.1 migration. It is excluded from
+`generateClickHouseJooq` (`withExcludes` + `withIncludeExcludeColumns(true)`) so both generated jOOQ
+models stay column-identical (`AnalyticsModelParityTest` unaffected), and `ClickHouseSchemaDriftTest`
+carves it out of the live-schema comparison (`ACCELERATION_COLUMNS`). It is addressed by name — the
+accessor's twin registry (`CLICKHOUSE_NUMERIC_MAP_TWINS`, keyed `table.column`) and the repository
+override. When adding another twin, register it in all three places. Guarded end-to-end by
+`ClickHouseAnalyticsSemanticsFunctionalTests#metricAggregationReadsTheTypedMapTwinFaithfully`
+(integer-valued scores, dotted names, explicit nulls, 17-digit doubles).
+
 ## Generated model: one twin per vendor
 
 The analytics schema has **two** generated jOOQ models, each produced from its own vendor's

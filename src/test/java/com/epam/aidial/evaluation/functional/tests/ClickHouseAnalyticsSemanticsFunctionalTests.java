@@ -1,8 +1,11 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
+import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
+import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
@@ -125,6 +128,45 @@ public abstract class ClickHouseAnalyticsSemanticsFunctionalTests extends BaseFu
     }
 
     @Test
+    @DisplayName("Metric aggregation reads the typed metric_values_map twin faithfully: integer-valued scores, "
+            + "17-digit doubles, dotted metric names, explicit nulls and absent metrics")
+    void metricAggregationReadsTheTypedMapTwinFaithfully() {
+        final UUID suiteId = UUID.randomUUID();
+        final UUID runId = UUID.randomUUID();
+        final UUID computationId = UUID.randomUUID();
+
+        // The shapes that break the rejected alternatives: an integer-valued score (the native JSON
+        // type's Dynamic subcolumn reads NULL for Int64 under .:Float64), a dotted metric name (the JSON
+        // type flattens it into a nested path), an explicit null and an absent metric (must both
+        // aggregate as NULL, and the explicit null must not count as present).
+        evalSummaryRepository.saveAll(List.of(
+                metricSummary(suiteId, runId, computationId, "{\"Exact Match\":{\"value\":1}}"),
+                metricSummary(
+                        suiteId, runId, computationId, "{\"Exact Match\":{\"value\":" + ULP_SENSITIVE_SCORE + "}}"),
+                metricSummary(suiteId, runId, computationId, "{\"Exact Match\":{\"value\":null}}"),
+                metricSummary(suiteId, runId, computationId, "{\"Relevancy.score\":{\"value\":0.75}}")));
+
+        List<MetricAggregationResult> results = evalSummaryRepository.aggregate(
+                List.of(),
+                computationId,
+                null,
+                List.of(new MetricPath("Exact Match", "value"), new MetricPath("Relevancy.score", "value")));
+
+        assertThat(results).hasSize(2);
+        MetricAggregationResult exactMatch = results.getFirst();
+        assertThat(exactMatch.metricName()).isEqualTo("Exact Match");
+        assertThat(exactMatch.max()).isEqualTo(1.0d);
+        assertThat(exactMatch.min()).isEqualTo(ULP_SENSITIVE_SCORE);
+        assertThat(exactMatch.avg()).isCloseTo((1.0d + ULP_SENSITIVE_SCORE) / 2, within(1e-12));
+        assertThat(exactMatch.count()).isEqualTo(2L);
+
+        MetricAggregationResult dotted = results.getLast();
+        assertThat(dotted.metricName()).isEqualTo("Relevancy.score");
+        assertThat(dotted.avg()).isEqualTo(0.75d);
+        assertThat(dotted.count()).isEqualTo(1L);
+    }
+
+    @Test
     @DisplayName("Escape-worthy characters in JSON payloads and text columns survive the batch write verbatim")
     void escapeWorthyCharactersSurviveBatchWrites() {
         // JSON text whose string values contain a newline, a tab, escaped quotes and a backslash — the
@@ -230,6 +272,27 @@ public abstract class ClickHouseAnalyticsSemanticsFunctionalTests extends BaseFu
                 .createdAtMs(CREATED_AT_MS)
                 .testCaseDataJson("{}")
                 .metricValuesJson("{}")
+                .build();
+    }
+
+    private static EvalSummary metricSummary(UUID suiteId, UUID runId, UUID computationId, String metricValuesJson) {
+        return EvalSummary.builder()
+                .id(UUID.randomUUID())
+                .testSuiteId(suiteId)
+                .testSuiteRunId(runId)
+                .testCaseRunResultId(UUID.randomUUID())
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("map-twin-case")
+                .runIndex(0)
+                .computationId(computationId)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .execDurationMs(100L)
+                .metricValues(metricValuesJson)
+                .extractionWarnings("[]")
+                .createdAtMs(CREATED_AT_MS)
+                .computedAtMs(CREATED_AT_MS)
                 .build();
     }
 

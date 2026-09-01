@@ -33,8 +33,10 @@ import org.springframework.stereotype.Repository;
  *       connection property (not a session-wide {@code SET}, which does not persist across statements
  *       on the ClickHouse V2 HTTP driver — see {@code AnalyticsClickHouseConfiguration}'s Javadoc for
  *       the verified mechanism, the single source of truth).
- *   <li>the metric accessor used by {@link #aggregate} — Postgres' {@code ->}/{@code ->>} JSONB path
- *       operators do not exist on ClickHouse; replaced with {@code JSONExtract}.
+ *   <li>the metric accessors used by {@link #aggregate} — Postgres' {@code ->}/{@code ->>} JSONB path
+ *       operators do not exist on ClickHouse; the text accessor (presence counting) uses {@code
+ *       JSONExtract} over the JSON text, the numeric accessor reads the typed {@code metric_values_map}
+ *       acceleration twin.
  *   <li>the two {@code FILTER (WHERE ...)} aggregates used by {@link #countMatches} — ClickHouse does
  *       not support the standard SQL {@code FILTER} clause (confirmed by a render probe: jOOQ emits it
  *       verbatim on {@code SQLDialect.CLICKHOUSE}, which ClickHouse then rejects); replaced with {@code
@@ -141,12 +143,20 @@ public class ClickHouseEvalSummaryRepository extends PostgresEvalSummaryReposito
                 DSL.val(metric.outputName()));
     }
 
+    /**
+     * Reads the typed acceleration twin ({@code metric_values_map}, MATERIALIZED from
+     * {@code metric_values} at insert — see the CLICKHOUSE V1.1 migration) instead of re-parsing the
+     * JSON text per row: map access hits typed columnar data, keeps both keys as bound parameters, and
+     * yields NULL for absent keys and explicit-null values — the same shape the {@code JSONExtract}
+     * form produces. The text accessor above stays on the raw JSON column: its job is presence
+     * counting, where a non-numeric value must still count as present.
+     */
     @Override
     protected Field<BigDecimal> buildNumericMetricAccessor(MetricPath metric) {
         return DSL.field(
-                "JSONExtract({0}, {1}, {2}, '" + ClickHouseTypeNames.NULLABLE_FLOAT64 + "')",
+                "{0}[{1}][{2}]",
                 BigDecimal.class,
-                TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
+                DSL.field(DSL.name(TEST_CASE_EVAL_SUMMARIES.getName(), "metric_values_map")),
                 DSL.val(metric.metricName()),
                 DSL.val(metric.outputName()));
     }

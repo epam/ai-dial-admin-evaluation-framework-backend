@@ -99,6 +99,14 @@ class ClickHouseSchemaDriftTest {
 
     private static final int UUID_COLUMN_LENGTH = 36;
 
+    /**
+     * ClickHouse-only MATERIALIZED acceleration twins (see the CLICKHOUSE V1.1 migration). They exist in
+     * the live schema but are deliberately excluded from the generated model ({@code
+     * generateClickHouseJooq} excludes them) so the Postgres and ClickHouse models stay column-identical
+     * for {@code AnalyticsModelParityTest}; this drift check carves them out of the live side to match.
+     */
+    private static final Set<String> ACCELERATION_COLUMNS = Set.of("test_case_eval_summaries.metric_values_map");
+
     /** ClickHouse base type (after unwrapping {@code Nullable}/{@code LowCardinality}) → jOOQ type. */
     private static final Map<String, DataType<?>> TYPE_MAPPING = Map.of(
             "String", SQLDataType.VARCHAR,
@@ -213,7 +221,11 @@ class ClickHouseSchemaDriftTest {
             statement.setString(2, tableName);
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
-                    columns.put(resultSet.getString("name"), resultSet.getString("type"));
+                    final String name = resultSet.getString("name");
+                    if (ACCELERATION_COLUMNS.contains(tableName + "." + name)) {
+                        continue;
+                    }
+                    columns.put(name, resultSet.getString("type"));
                 }
             }
         }

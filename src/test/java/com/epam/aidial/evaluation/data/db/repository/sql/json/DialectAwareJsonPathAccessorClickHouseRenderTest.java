@@ -1,7 +1,9 @@
 package com.epam.aidial.evaluation.data.db.repository.sql.json;
 
+import static com.epam.aidial.evaluation.data.db.jooq.clickhouse.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.data.db.jooq.analytics.Tables;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.JSONB;
@@ -19,6 +21,11 @@ import org.junit.jupiter.api.Test;
  * safety check).
  */
 class DialectAwareJsonPathAccessorClickHouseRenderTest {
+
+    /** The registered twin column from each generated model — both must trigger the map substitution. */
+    private static final Field<JSONB> PG_MODEL_METRIC_VALUES = Tables.TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES;
+
+    private static final Field<JSONB> CLICKHOUSE_MODEL_METRIC_VALUES = TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES;
 
     private final DialectAwareJsonPathAccessor accessor = new DialectAwareJsonPathAccessor();
     private final Field<JSONB> column = DSL.field(DSL.name("data"), SQLDataType.JSONB);
@@ -59,10 +66,32 @@ class DialectAwareJsonPathAccessorClickHouseRenderTest {
     }
 
     @Test
-    @DisplayName("jsonbAtAsNumeric on ClickHouse renders JSONExtract(column, key1, key2, 'Nullable(Float64)')")
+    @DisplayName("jsonbAtAsNumeric on ClickHouse renders JSONExtract(column, key1, key2, 'Nullable(Float64)') "
+            + "for a column without an acceleration twin")
     void jsonbAtAsNumericOnClickHouse() {
         assertThat(render(SQLDialect.CLICKHOUSE, accessor.jsonbAtAsNumeric(column, key, key2)))
                 .isEqualTo("JSONExtract(\"data\", 'expected', 'nested', 'Nullable(Float64)')");
+    }
+
+    @Test
+    @DisplayName("jsonbAtAsNumeric on ClickHouse reads the metric_values_map twin for eval-summaries "
+            + "metric_values, from either generated model")
+    void jsonbAtAsNumericOnClickHouseUsesMapTwin() {
+        final String expected = "\"test_case_eval_summaries\".\"metric_values_map\"['expected']['nested']";
+        assertThat(render(SQLDialect.CLICKHOUSE, accessor.jsonbAtAsNumeric(PG_MODEL_METRIC_VALUES, key, key2)))
+                .isEqualTo(expected);
+        assertThat(render(SQLDialect.CLICKHOUSE, accessor.jsonbAtAsNumeric(CLICKHOUSE_MODEL_METRIC_VALUES, key, key2)))
+                .isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("jsonbAtAsNumeric on the default family ignores the twin registry and renders Postgres SQL")
+    void jsonbAtAsNumericOnDefaultFamilyIgnoresTwin() {
+        assertThat(render(SQLDialect.DEFAULT, accessor.jsonbAtAsNumeric(PG_MODEL_METRIC_VALUES, key, key2)))
+                .isEqualTo(render(
+                        SQLDialect.DEFAULT,
+                        DSL.jsonbGetAttributeAsText(DSL.jsonbGetAttribute(PG_MODEL_METRIC_VALUES, key), key2)
+                                .cast(SQLDataType.NUMERIC)));
     }
 
     @Test

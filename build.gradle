@@ -451,7 +451,14 @@ tasks.register('generateClickHouseJooq') {
                                             .withName("org.jooq.meta.clickhouse.ClickHouseDatabase")
                                             .withInputSchema(database)
                                             .withOutputSchema("analytics")
-                                            .withExcludes("flyway_schema_history")
+                                            // metric_values_map is a ClickHouse-only MATERIALIZED
+                                            // acceleration twin (see the CLICKHOUSE V1.1 migration);
+                                            // it stays out of the generated model so the Postgres and
+                                            // ClickHouse models remain column-identical
+                                            // (AnalyticsModelParityTest). Addressed by name in
+                                            // DialectAwareJsonPathAccessor / ClickHouseEvalSummaryRepository.
+                                            .withExcludes("flyway_schema_history|metric_values_map")
+                                            .withIncludeExcludeColumns(true)
                                             .withIncludes(".*")
                                             .withForcedTypes(analyticsForcedTypes()))
                                     .withGenerate(jooqGenerateFlags(false))

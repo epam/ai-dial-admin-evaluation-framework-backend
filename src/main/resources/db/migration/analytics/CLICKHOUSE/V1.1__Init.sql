@@ -19,7 +19,20 @@
 --      input_bindings, output_schema, log_details) are declared as String/Nullable(String), not
 --      ClickHouse's native JSON type. This keeps the byte-for-byte serialized representation
 --      produced by the application's ObjectMapper as the single source of truth and avoids
---      ClickHouse's JSON type re-serializing (and thus mutating) payloads on read.
+--      ClickHouse's JSON type re-serializing (and thus mutating) payloads on read. The native JSON
+--      type was evaluated and rejected even for acceleration columns (verified on 25.8): it drops
+--      explicit nulls, flattens dotted keys into nested paths (metric names like "Relevancy.score"
+--      restructure), fails the whole INSERT on a path collision, and its typed subcolumn reads
+--      (.:Float64) return NULL when the stored variant is Int64 (integer-valued scores).
+--   3. metric_values_map is a vendor-local ACCELERATION column: a typed Map twin of metric_values,
+--      MATERIALIZED at insert (parsed once, stored columnar and typed), read by the two-level
+--      metric-path accessors (aggregate endpoint, JSONB_NUMERIC filters, the query DSL's
+--      metric::<name>::<field> family) as metric_values_map[metric][field] with bound-param keys.
+--      metric_values stays the serving source of truth (explicit nulls, verbatim bytes); the map
+--      twin is never selected into DTOs. It is deliberately absent from the generated jOOQ model
+--      (excluded in generateClickHouseJooq) and from the Postgres twin schema (Postgres reads JSONB
+--      directly), so AnalyticsModelParityTest is unaffected and ClickHouseSchemaDriftTest carves it
+--      out explicitly.
 --
 -- ClickHouse DDL statements auto-commit individually; each CREATE TABLE below is one statement.
 --
@@ -84,6 +97,7 @@ CREATE TABLE IF NOT EXISTS test_case_eval_summaries
     metric_eval_duration_ms Int64 DEFAULT 0,
     response_status_code    Nullable(Int32),
     metric_values           String DEFAULT '{}',
+    metric_values_map       Map(String, Map(String, Nullable(Float64))) MATERIALIZED JSONExtract(metric_values, 'Map(String, Map(String, Nullable(Float64)))'),
     metric_infos            Nullable(String),
     extraction_warnings     String DEFAULT '[]',
     created_at_ms           Int64,

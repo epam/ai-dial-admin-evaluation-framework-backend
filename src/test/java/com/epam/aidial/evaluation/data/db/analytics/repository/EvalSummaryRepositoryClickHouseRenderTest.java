@@ -104,16 +104,15 @@ class EvalSummaryRepositoryClickHouseRenderTest {
     }
 
     @Test
-    @DisplayName("the JSONExtract numeric metric accessor override renders a bound-key ClickHouse JSON path")
-    void jsonExtractNumericMetricAccessorOverride() {
+    @DisplayName("the numeric metric accessor override reads the typed metric_values_map twin with bound keys")
+    void numericMetricAccessorOverrideReadsMapTwin() {
         ClickHouseEvalSummaryRepository repository =
                 new ClickHouseEvalSummaryRepository(dsl, mock(EvalSummaryRecordMapper.class), mock(WhereBuilder.class));
 
         Field<BigDecimal> field = repository.buildNumericMetricAccessor(new MetricPath("Exact Match", "score"));
 
         assertThat(dsl.renderInlined(field))
-                .isEqualTo("JSONExtract(\"analytics\".\"test_case_eval_summaries\".\"metric_values\", "
-                        + "'Exact Match', 'score', 'Nullable(Float64)')");
+                .isEqualTo("\"test_case_eval_summaries\".\"metric_values_map\"['Exact Match']['score']");
     }
 
     @Test

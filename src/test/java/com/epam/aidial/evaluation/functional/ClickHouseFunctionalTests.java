@@ -67,7 +67,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
             "config.rest.security.mode=none",
             "spring.http.client.factory=jdk",
             "dial.api-key=test-api-key",
-            "revalidation.batch-size=2"
+            "revalidation.batch-size=2",
+            // application.yml defaults the backfill ON for local docker-compose; here there is no
+            // "postgres" host reachable from the ClickHouse container, so the repeatable migration
+            // would fail context startup. ClickHouseBackfillTests exercises the backfill explicitly.
+            "clickhouse.analytics.backfill.enabled=false"
         })
 @Import(ClickHouseFunctionalTestConfiguration.class)
 @NestedTestConfiguration(NestedTestConfiguration.EnclosingConfiguration.INHERIT)

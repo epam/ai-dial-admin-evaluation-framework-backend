@@ -195,9 +195,13 @@ public abstract class MetricDeclarationFunctionalTests extends BaseFunctionalTes
 
         // Spring Boot 4 doubly-nested classes need their own context and don't inherit
         // the outer @DynamicPropertySource, so we re-register datasource properties here.
+        // That includes the analytics vendor: this class is Postgres-only (see the
+        // PostgresFunctionalTestConfiguration import), while application.yml now defaults
+        // to CLICKHOUSE, which would send Flyway at a ClickHouse server that isn't there.
         @DynamicPropertySource
         static void configureProperties(DynamicPropertyRegistry registry) {
             var container = PostgresFunctionalTests.getContainer();
+            registry.add("datasource.analytics.vendor", () -> "POSTGRES");
             registry.add("postgres.meta.datasource.url", container::getJdbcUrl);
             registry.add("postgres.meta.datasource.driver-class-name", () -> "org.postgresql.Driver");
             registry.add("postgres.meta.datasource.username", container::getUsername);

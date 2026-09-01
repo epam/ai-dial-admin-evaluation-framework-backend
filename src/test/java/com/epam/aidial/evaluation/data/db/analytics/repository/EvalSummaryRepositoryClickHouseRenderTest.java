@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
+import static com.epam.aidial.evaluation.data.db.jooq.clickhouse.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 

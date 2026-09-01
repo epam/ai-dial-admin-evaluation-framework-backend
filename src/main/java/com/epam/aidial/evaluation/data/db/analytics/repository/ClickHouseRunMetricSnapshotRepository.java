@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.RUN_METRIC_SNAPSHOTS;
+import static com.epam.aidial.evaluation.data.db.jooq.clickhouse.Tables.RUN_METRIC_SNAPSHOTS;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.RunMetricSnapshotRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;

@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
+import static com.epam.aidial.evaluation.data.db.jooq.clickhouse.Tables.TEST_CASE_EVAL_SUMMARIES;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.EvalSummaryRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;

@@ -2,7 +2,7 @@ package com.epam.aidial.evaluation.functional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.data.db.jooq.analytics.Tables;
+import com.epam.aidial.evaluation.data.db.jooq.clickhouse.Tables;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -30,12 +30,15 @@ import org.testcontainers.containers.wait.strategy.Wait;
 /**
  * ClickHouse-side counterpart of {@link JooqSchemaDriftTest}.
  *
- * <p>The generated analytics model is produced from the CLICKHOUSE migrations by {@code ./gradlew
- * generateClickHouseJooq}, so ClickHouse is the source of truth for that model. This test catches
- * the "edited a CLICKHOUSE migration but forgot to rerun the codegen task" case: it migrates a live
- * ClickHouse instance and compares its {@code system.columns} against the committed generated table
- * classes in both directions — no missing columns, no extra columns — plus nullability and the
+ * <p>The {@code ...jooq.clickhouse} model is produced from the CLICKHOUSE migrations by {@code
+ * ./gradlew generateClickHouseJooq}, so the live ClickHouse schema is its source of truth. This test
+ * catches the "edited a CLICKHOUSE migration but forgot to rerun the codegen task" case: it migrates
+ * a live ClickHouse instance and compares its {@code system.columns} against the committed generated
+ * table classes in both directions — no missing columns, no extra columns — plus nullability and the
  * ClickHouse-type → jOOQ-type mapping the codegen's forced types are expected to produce.
+ *
+ * <p>The Postgres twin ({@code ...jooq.analytics}) has its own guard in {@link JooqSchemaDriftTest},
+ * and {@code AnalyticsModelParityTest} holds the two generated models column-for-column identical.
  *
  * <p>This is a plain JUnit test: it needs Docker but no Spring context.
  */
@@ -104,7 +107,7 @@ class ClickHouseSchemaDriftTest {
             "Float64", SQLDataType.DOUBLE);
 
     private static final String REGENERATE_HINT =
-            "Run './gradlew generateClickHouseJooq' to regenerate the analytics sources.";
+            "Run './gradlew generateClickHouseJooq' to regenerate the ClickHouse analytics model.";
 
     private static GenericContainer<?> clickhouse;
     private static String jdbcUrl;

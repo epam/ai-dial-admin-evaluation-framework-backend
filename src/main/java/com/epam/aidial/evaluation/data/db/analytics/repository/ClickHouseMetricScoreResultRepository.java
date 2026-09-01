@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
+import static com.epam.aidial.evaluation.data.db.jooq.clickhouse.Tables.METRIC_SCORE_RESULT;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.MetricScoreResultRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;

@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
+import static com.epam.aidial.evaluation.data.db.jooq.clickhouse.Tables.TEST_CASE_RUN_RESULTS;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.TestCaseRunResultRecordMapper;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;

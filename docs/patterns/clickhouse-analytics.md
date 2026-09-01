@@ -197,6 +197,25 @@ The Map twin passes all three: values are typed `Float64` at extraction regardle
 notation (17-significant-digit doubles round-trip exactly), dotted names are plain keys, collisions are
 impossible, and it even preserves null-vs-absent (`mapContains` = 1 with NULL value vs 0).
 
+**Why the other JSON columns stay plain String (investigated, verified on 25.8):**
+
+- `test_case_data` is already filterable (Stack A `JSONB_STRING` on both entities; the DSL `data::`
+  family) over the String column, and **skip indexes do not need the JSON type**: `ALTER TABLE … ADD
+  INDEX … JSONExtract(col, 'field', 'Nullable(String)') TYPE bloom_filter` on a String column,
+  added after the fact and backfilled with `MATERIALIZE INDEX`, prunes granules (probe: 4/12 read).
+  Add exactly the index a hot filter needs, when it needs it. A native-JSON `test_case_data` would
+  additionally be a hazard: dataset field names may contain dots (validation is only
+  `^[^:]*$`), so the JSON type's dotted-key flattening applies to user-supplied names and a
+  `"a.b"`-vs-`"a"` path collision hard-fails every Phase-1 batch INSERT.
+- `extracted_columns` **can** get a faithful typed twin when a response-column analytics use-case
+  lands: `JSONExtract(…, 'Map(String, Nullable(String)))'` renders strings verbatim, numbers/bools as
+  text, arrays/objects as raw JSON text (closer to Postgres `->>` than the current
+  `JSONExtract 'Nullable(String)'` branch — see the accessor's Javadoc caveat) and **preserves
+  explicit nulls as NULL**; `Map(String, Nullable(Float64))` covers NUMBER-typed columns. Until then
+  it stays raw — speculative storage buys nothing.
+- `metric_infos` stays raw permanently: projection-only diagnostic payload, heterogeneous nested
+  objects, no aggregation surface.
+
 **Model bookkeeping:** the twin lives only in the CLICKHOUSE V1.1 migration. It is excluded from
 `generateClickHouseJooq` (`withExcludes` + `withIncludeExcludeColumns(true)`) so both generated jOOQ
 models stay column-identical (`AnalyticsModelParityTest` unaffected), and `ClickHouseSchemaDriftTest`

@@ -1,13 +1,22 @@
 package com.epam.aidial.evaluation.functional.helper;
 
+import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.METRIC_DECLARATIONS;
+import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.METRIC_DECLARATION_VERSIONS;
+
 import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.jooq.DSLContext;
+import org.jooq.JSONB;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Provides test data for metric declarations (same semantics as previously seeded by migration).
  * Use in functional tests that need the default catalog: Accuracy, Latency, Relevance.
+ *
+ * <p>Every insert targets the primary key in its ON CONFLICT clause ({@code onConflict(ID).doNothing()})
+ * rather than the untargeted {@code onDuplicateKeyIgnore()}: the latter renders a bare
+ * {@code ON CONFLICT DO NOTHING}, which would also swallow a
+ * uq_metric_declaration_versions_declaration_version violation and so mask the very conflict the
+ * duplicate-schema_version test asserts.
  */
 @RequiredArgsConstructor
 public class MetricDeclarationTestDataProvider {
@@ -19,16 +28,11 @@ public class MetricDeclarationTestDataProvider {
     private static final String SEED_LATENCY_ID = "00000000-0000-0000-0000-000000000002";
     private static final String SEED_RELEVANCE_ID = "00000000-0000-0000-0000-000000000003";
 
-    private static final String INSERT_SEED_METRIC_DECLARATIONS_SQL = """
-            INSERT INTO metric_declarations (id, name, description, created_at_ms, provider_id)
-            VALUES
-                (:id1, :name1, :desc1, :created_at_ms, :provider_id),
-                (:id2, :name2, :desc2, :created_at_ms, :provider_id),
-                (:id3, :name3, :desc3, :created_at_ms, :provider_id)
-            ON CONFLICT (id) DO NOTHING
-            """;
+    private static final JSONB EMPTY_SCHEMA = JSONB.valueOf("{}");
+    private static final JSONB SCORE_OUTPUT_SCHEMA =
+            JSONB.valueOf("{\"properties\": {\"score\": {\"type\": \"number\"}}}");
 
-    private final NamedParameterJdbcTemplate metaJdbcTemplate;
+    private final DSLContext metaDsl;
 
     /**
      * Inserts the same metric declarations that were previously seeded by migration (Accuracy, Latency,
@@ -38,19 +42,34 @@ public class MetricDeclarationTestDataProvider {
     @Transactional("metaTransactionManager")
     public void insertSeedMetricDeclarations() {
         long createdAtMs = System.currentTimeMillis();
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("id1", SEED_ACCURACY_ID)
-                .addValue("name1", "Accuracy")
-                .addValue("desc1", "Measures correctness of responses")
-                .addValue("id2", SEED_LATENCY_ID)
-                .addValue("name2", "Latency")
-                .addValue("desc2", "Measures response time in milliseconds")
-                .addValue("id3", SEED_RELEVANCE_ID)
-                .addValue("name3", "Relevance")
-                .addValue("desc3", "Measures relevance score")
-                .addValue("created_at_ms", createdAtMs)
-                .addValue("provider_id", SEED_METRIC_PROVIDER_ID);
-        metaJdbcTemplate.update(INSERT_SEED_METRIC_DECLARATIONS_SQL, params);
+        metaDsl.insertInto(
+                        METRIC_DECLARATIONS,
+                        METRIC_DECLARATIONS.ID,
+                        METRIC_DECLARATIONS.NAME,
+                        METRIC_DECLARATIONS.DESCRIPTION,
+                        METRIC_DECLARATIONS.CREATED_AT_MS,
+                        METRIC_DECLARATIONS.PROVIDER_ID)
+                .values(
+                        SEED_ACCURACY_ID,
+                        "Accuracy",
+                        "Measures correctness of responses",
+                        createdAtMs,
+                        SEED_METRIC_PROVIDER_ID)
+                .values(
+                        SEED_LATENCY_ID,
+                        "Latency",
+                        "Measures response time in milliseconds",
+                        createdAtMs,
+                        SEED_METRIC_PROVIDER_ID)
+                .values(
+                        SEED_RELEVANCE_ID,
+                        "Relevance",
+                        "Measures relevance score",
+                        createdAtMs,
+                        SEED_METRIC_PROVIDER_ID)
+                .onConflict(METRIC_DECLARATIONS.ID)
+                .doNothing()
+                .execute();
     }
 
     /**
@@ -59,25 +78,16 @@ public class MetricDeclarationTestDataProvider {
      */
     @Transactional("metaTransactionManager")
     public void insertSeedVersionForAccuracy() {
-        long createdAtMs = System.currentTimeMillis();
-        String versionId = "770e8400-e29b-41d4-a716-446655440001";
-        metaJdbcTemplate.update(
-                """
-                INSERT INTO metric_declaration_versions (
-                    id, metric_declaration_id, schema_version,
-                    config_schema, input_schema, output_schema, description, created_at_ms
-                ) VALUES (
-                    :id, :declarationId, 1,
-                    '{}', '{}',
-                    '{"properties": {"score": {"type": "number"}}}'::jsonb,
-                    'Measures correctness of responses', :createdAtMs
-                )
-                ON CONFLICT (id) DO NOTHING
-                """,
-                new MapSqlParameterSource()
-                        .addValue("id", versionId)
-                        .addValue("declarationId", SEED_ACCURACY_ID)
-                        .addValue("createdAtMs", createdAtMs));
+        insertVersion(
+                "770e8400-e29b-41d4-a716-446655440001",
+                SEED_ACCURACY_ID,
+                1,
+                EMPTY_SCHEMA,
+                EMPTY_SCHEMA,
+                SCORE_OUTPUT_SCHEMA,
+                null,
+                "Measures correctness of responses",
+                System.currentTimeMillis());
     }
 
     /**
@@ -91,26 +101,16 @@ public class MetricDeclarationTestDataProvider {
             String configSchema,
             String inputSchema,
             String outputSchema) {
-        long createdAtMs = System.currentTimeMillis();
-        metaJdbcTemplate.update(
-                """
-                INSERT INTO metric_declaration_versions (
-                    id, metric_declaration_id, schema_version,
-                    config_schema, input_schema, output_schema, description, created_at_ms
-                ) VALUES (
-                    :id, :declarationId, :schemaVersion,
-                    :configSchema::jsonb, :inputSchema::jsonb, :outputSchema::jsonb, 'test', :createdAtMs
-                )
-                ON CONFLICT (id) DO NOTHING
-                """,
-                new MapSqlParameterSource()
-                        .addValue("id", versionId)
-                        .addValue("declarationId", declarationId)
-                        .addValue("schemaVersion", schemaVersion)
-                        .addValue("configSchema", configSchema)
-                        .addValue("inputSchema", inputSchema)
-                        .addValue("outputSchema", outputSchema)
-                        .addValue("createdAtMs", createdAtMs));
+        insertVersion(
+                versionId,
+                declarationId,
+                schemaVersion,
+                toJsonb(configSchema),
+                toJsonb(inputSchema),
+                toJsonb(outputSchema),
+                null,
+                "test",
+                System.currentTimeMillis());
     }
 
     /**
@@ -121,19 +121,16 @@ public class MetricDeclarationTestDataProvider {
     @Transactional("metaTransactionManager")
     public void insertDeclarationWithMetadata(
             String id, String providerId, String name, String displayName, String description, long createdAtMs) {
-        metaJdbcTemplate.update(
-                """
-                INSERT INTO metric_declarations (id, provider_id, name, display_name, description, created_at_ms)
-                VALUES (:id, :providerId, :name, :displayName, :description, :createdAtMs)
-                ON CONFLICT (id) DO NOTHING
-                """,
-                new MapSqlParameterSource()
-                        .addValue("id", id)
-                        .addValue("providerId", providerId)
-                        .addValue("name", name)
-                        .addValue("displayName", displayName)
-                        .addValue("description", description)
-                        .addValue("createdAtMs", createdAtMs));
+        metaDsl.insertInto(METRIC_DECLARATIONS)
+                .set(METRIC_DECLARATIONS.ID, id)
+                .set(METRIC_DECLARATIONS.PROVIDER_ID, providerId)
+                .set(METRIC_DECLARATIONS.NAME, name)
+                .set(METRIC_DECLARATIONS.DISPLAY_NAME, displayName)
+                .set(METRIC_DECLARATIONS.DESCRIPTION, description)
+                .set(METRIC_DECLARATIONS.CREATED_AT_MS, createdAtMs)
+                .onConflict(METRIC_DECLARATIONS.ID)
+                .doNothing()
+                .execute();
     }
 
     /**
@@ -149,24 +146,16 @@ public class MetricDeclarationTestDataProvider {
             String displayName,
             String description,
             long createdAtMs) {
-        metaJdbcTemplate.update(
-                """
-                INSERT INTO metric_declaration_versions (
-                    id, metric_declaration_id, schema_version,
-                    config_schema, input_schema, output_schema, display_name, description, created_at_ms
-                ) VALUES (
-                    :id, :declarationId, :schemaVersion,
-                    '{}', '{}', '{}', :displayName, :description, :createdAtMs
-                )
-                ON CONFLICT (id) DO NOTHING
-                """,
-                new MapSqlParameterSource()
-                        .addValue("id", versionId)
-                        .addValue("declarationId", declarationId)
-                        .addValue("schemaVersion", schemaVersion)
-                        .addValue("displayName", displayName)
-                        .addValue("description", description)
-                        .addValue("createdAtMs", createdAtMs));
+        insertVersion(
+                versionId,
+                declarationId,
+                schemaVersion,
+                EMPTY_SCHEMA,
+                EMPTY_SCHEMA,
+                EMPTY_SCHEMA,
+                displayName,
+                description,
+                createdAtMs);
     }
 
     /**
@@ -174,8 +163,8 @@ public class MetricDeclarationTestDataProvider {
      */
     @Transactional("metaTransactionManager")
     public void clearMetricDeclarationsAndVersions() {
-        metaJdbcTemplate.update("DELETE FROM metric_declaration_versions", new MapSqlParameterSource());
-        metaJdbcTemplate.update("DELETE FROM metric_declarations", new MapSqlParameterSource());
+        metaDsl.deleteFrom(METRIC_DECLARATION_VERSIONS).execute();
+        metaDsl.deleteFrom(METRIC_DECLARATIONS).execute();
     }
 
     /**
@@ -184,17 +173,35 @@ public class MetricDeclarationTestDataProvider {
      */
     @Transactional("metaTransactionManager")
     public void insertSingleDeclarationWithoutVersion(String id, String providerId, String name) {
-        long createdAtMs = System.currentTimeMillis();
-        metaJdbcTemplate.update(
-                """
-                INSERT INTO metric_declarations (id, provider_id, name, description, created_at_ms)
-                VALUES (:id, :providerId, :name, '', :createdAtMs)
-                ON CONFLICT (id) DO NOTHING
-                """,
-                new MapSqlParameterSource()
-                        .addValue("id", id)
-                        .addValue("providerId", providerId)
-                        .addValue("name", name)
-                        .addValue("createdAtMs", createdAtMs));
+        insertDeclarationWithMetadata(id, providerId, name, null, "", System.currentTimeMillis());
+    }
+
+    private void insertVersion(
+            String versionId,
+            String declarationId,
+            int schemaVersion,
+            JSONB configSchema,
+            JSONB inputSchema,
+            JSONB outputSchema,
+            String displayName,
+            String description,
+            long createdAtMs) {
+        metaDsl.insertInto(METRIC_DECLARATION_VERSIONS)
+                .set(METRIC_DECLARATION_VERSIONS.ID, versionId)
+                .set(METRIC_DECLARATION_VERSIONS.METRIC_DECLARATION_ID, declarationId)
+                .set(METRIC_DECLARATION_VERSIONS.SCHEMA_VERSION, schemaVersion)
+                .set(METRIC_DECLARATION_VERSIONS.CONFIG_SCHEMA, configSchema)
+                .set(METRIC_DECLARATION_VERSIONS.INPUT_SCHEMA, inputSchema)
+                .set(METRIC_DECLARATION_VERSIONS.OUTPUT_SCHEMA, outputSchema)
+                .set(METRIC_DECLARATION_VERSIONS.DISPLAY_NAME, displayName)
+                .set(METRIC_DECLARATION_VERSIONS.DESCRIPTION, description)
+                .set(METRIC_DECLARATION_VERSIONS.CREATED_AT_MS, createdAtMs)
+                .onConflict(METRIC_DECLARATION_VERSIONS.ID)
+                .doNothing()
+                .execute();
+    }
+
+    private static JSONB toJsonb(String json) {
+        return json != null ? JSONB.valueOf(json) : null;
     }
 }

@@ -109,9 +109,11 @@ public class PostgresMetricDeclarationVersionRepository implements MetricDeclara
      * scan rather than the table self-join a MAX(schema_version) group-by would need. No tiebreaker
      * column is needed: the index is unique, so one (declaration, schema_version) matches at most one row.
      *
-     * <p>The INNER JOIN - not a filter - is what omits declarations that have no version row yet. It is
-     * many-to-one on the distinct key, so {@code DISTINCT ON} still yields exactly one row per
-     * declaration.
+     * <p>Declarations that have no version row yet are omitted because the query drives FROM
+     * metric_declaration_versions: such a declaration has no row to drive from. The join type is
+     * irrelevant to that - leftJoin would return the same rows, since a version row cannot point at a
+     * missing declaration (FK fk_metric_declaration_versions_declaration). The join is many-to-one on the
+     * distinct key, so {@code DISTINCT ON} still yields exactly one row per declaration.
      *
      * <p>The joined record is split back into the two typed records with {@code record.into(TABLE)},
      * which resolves each target field by Field <em>identity</em> against the projection. That is what

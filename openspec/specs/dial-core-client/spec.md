@@ -74,6 +74,7 @@ Implementation notes:
 - The resolver reads `HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE` + `PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE` and extracts the wildcard tail via `AntPathMatcher.extractPathWithinPattern`, falling back to the request URI minus the servlet context path. It is a generic web-layer component, not deployment-specific.
 - `WildcardPathResolver` returns an empty string (never `null`) when the request carries no tail; the emptiness check and its 400 belong to the controller.
 - Encoded slashes (`%2F`) are supported by the resolver, but Tomcat rejects them in request paths by default (`ALLOW_ENCODED_SLASH=false`), so they are not reachable end-to-end without changing that connector setting.
+Status: **Implemented**
 
 #### Scenario: Successful model retrieval
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments/dial-model/{id}`
@@ -149,7 +150,7 @@ Implementation notes:
 
 The system SHALL provide an endpoint to get a single deployment by ID **without** the caller supplying its type, mapped as `GET /api/v1/deployments/all/**`. Everything after the `all` segment is the deployment ID and SHALL be resolved and decoded exactly once by the same web-layer wildcard resolution as the typed endpoint, so slash-containing and percent-encoded IDs behave identically on both endpoints. An empty ID SHALL be rejected with HTTP 400 `VALIDATION_ERROR` and message `Deployment ID must not be empty` without any upstream call.
 
-For a non-empty ID the system SHALL probe all three DIAL Core deployment endpoints — `/openai/models/{id}`, `/openai/applications/{id}`, `/openai/toolsets/{id}` — **concurrently**, propagating the caller's JWT to every probe, so a lookup costs one round-trip of latency rather than three. Each probe yields one of: a **hit** (2xx with a non-empty body), a **miss** (2xx with an empty body), or an **error** (non-2xx upstream status).
+For a non-empty ID the system SHALL probe all three DIAL Core deployment endpoints — `/openai/models/{id}`, `/openai/applications/{id}`, `/openai/toolsets/{id}` — **concurrently**, propagating the caller's JWT to every probe, so a lookup costs one round-trip of latency rather than three. Each probe yields one of: a **hit** (2xx with a non-empty body), a **miss** (2xx with an empty body), or an **error** (a non-2xx upstream status, or an unreachable endpoint — a transport or response-conversion failure, which carries no upstream status and SHALL be recorded as a 502-class error). A failing probe SHALL NOT prevent a sibling probe's hit from being returned, whatever the failure's type.
 
 Outcome collapsing SHALL follow exactly two exit paths:
 
@@ -195,6 +196,12 @@ Status: **Implemented**
 - **AND** the models probe fails with HTTP 500
 - **THEN** the system SHALL return HTTP 200 with the application
 - **AND** the failed probe SHALL be logged without affecting the response
+
+#### Scenario: A probe that cannot reach DIAL Core does not discard a hit
+- **WHEN** one probe fails with a transport failure (e.g. a read timeout, carrying no upstream status)
+- **AND** another probe returns a deployment
+- **THEN** the system SHALL return HTTP 200 with that deployment
+- **AND** when no probe returns a deployment, the transport failure SHALL outrank the other probes' 404s and yield HTTP 502 with error code `UPSTREAM_ERROR`
 
 #### Scenario: Two probes hit — precedence decides
 - **WHEN** both the models probe and the applications probe return a deployment for the same ID

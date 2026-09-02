@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -193,6 +194,25 @@ class DeploymentServiceTokenPropagationTest {
         // Then: the winner goes through the same route resolution as the by-type path
         assertThat(result).isInstanceOf(DialApplicationInfoDto.class);
         verify(schemaRouteExtractor).resolveRoutes(application);
+    }
+
+    @Test
+    @DisplayName("getDeployment by ID keeps a hit when a sibling probe throws a non-DialCoreClientException")
+    void getDeploymentByIdKeepsHitWhenSiblingProbeThrowsTransportFailure() {
+        // Given: the toolsets leg fails with a raw transport exception (DialCoreClient.withRetry
+        // translates only RestClientResponseException), while the model leg resolves
+        when(dialCoreClient.getModel(DEPLOYMENT_ID))
+                .thenReturn(DialCoreModelDto.builder().id(DEPLOYMENT_ID).build());
+        when(dialCoreClient.getApplication(DEPLOYMENT_ID)).thenThrow(notFound());
+        when(dialCoreClient.getToolset(DEPLOYMENT_ID))
+                .thenThrow(new ResourceAccessException("I/O error: connect timed out"));
+
+        // When
+        DeploymentInfoDto result = deploymentService.getDeployment(DEPLOYMENT_ID);
+
+        // Then: the failing leg is recorded as a probe error, not propagated over the hit
+        assertThat(result).isInstanceOf(DialModelInfoDto.class);
+        assertThat(result.getDeploymentId()).isEqualTo(DEPLOYMENT_ID);
     }
 
     /** Stubs all three probe legs to record the token they observe; only the model leg resolves. */

@@ -33,7 +33,9 @@ import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -141,8 +143,35 @@ public class DeploymentService {
         try {
             return DeploymentProbe.completed(type, fetch.get());
         } catch (DialCoreClientException e) {
-            log.debug("Deployment lookup probe '{}' did not resolve: {}", type.getValue(), e.getMessage(), e);
+            logProbeFailure(type, e.getStatusCode(), e);
             return DeploymentProbe.failed(type, e);
+        } catch (RestClientException e) {
+            // DialCoreClient.withRetry translates only RestClientResponseException, so transport
+            // failures (connect/read timeout, connection reset) and message-conversion failures
+            // escape it raw. Recorded as an upstream failure rather than propagated: one unreachable
+            // endpoint must not discard a sibling probe's hit.
+            logProbeFailure(type, HttpStatus.BAD_GATEWAY, e);
+            return DeploymentProbe.failed(
+                    type,
+                    new DialCoreClientException(
+                            HttpStatus.BAD_GATEWAY, "Probe of " + type.getValue() + " failed: " + e.getMessage(), e));
+        }
+    }
+
+    /**
+     * A 404 is the expected outcome on two of three probe legs, so it stays at DEBUG; any other
+     * status is an anomaly worth seeing even when the lookup as a whole succeeds.
+     */
+    private static void logProbeFailure(DeploymentType type, HttpStatusCode status, RuntimeException cause) {
+        if (status != null && status.isSameCodeAs(HttpStatus.NOT_FOUND)) {
+            log.debug("Deployment lookup probe '{}' found nothing: {}", type.getValue(), cause.getMessage(), cause);
+        } else {
+            log.warn(
+                    "Deployment lookup probe '{}' failed with unexpected status {}: {}",
+                    type.getValue(),
+                    status,
+                    cause.getMessage(),
+                    cause);
         }
     }
 

@@ -27,7 +27,8 @@ import org.springframework.stereotype.Component;
  *       other probes returned 404</li>
  * </ul>
  *
- * <p>Pure function of its inputs — no HTTP, no Spring context needed to exercise it.
+ * <p>Decides purely from its inputs (it logs, but reads nothing else) — no HTTP and no Spring
+ * context are needed to exercise every branch.
  */
 @Slf4j
 @Component
@@ -47,6 +48,9 @@ public class DeploymentProbeCollapser {
 
     /** Label for a probe that answered 2xx with an empty body. */
     private static final String EMPTY_OUTCOME = "empty";
+
+    /** Label for a resolved probe; only reachable if outcomes() is ever rendered for a mixed list. */
+    private static final String HIT_OUTCOME = "hit";
 
     /**
      * Resolves the winning payload, or throws the unified upstream failure when nothing was found.
@@ -82,6 +86,9 @@ public class DeploymentProbeCollapser {
                 .map(DeploymentProbe::error)
                 .filter(Objects::nonNull)
                 .map(DialCoreClientException::getStatusCode)
+                // A null upstream status would NPE inside Stream.max and escape as a 500; dropping it
+                // falls back to the not-found default, which is what an unknown failure means here.
+                .filter(Objects::nonNull)
                 .max(Comparator.comparingInt(DeploymentProbeCollapser::severity))
                 .orElse(HttpStatus.NOT_FOUND);
         final String message = "Deployment '" + deploymentId + "' not resolvable in DIAL Core: " + outcomes(probes);
@@ -113,6 +120,9 @@ public class DeploymentProbeCollapser {
     }
 
     private static String outcome(DeploymentProbe probe) {
+        if (probe.isHit()) {
+            return HIT_OUTCOME;
+        }
         if (probe.error() == null) {
             return EMPTY_OUTCOME;
         }

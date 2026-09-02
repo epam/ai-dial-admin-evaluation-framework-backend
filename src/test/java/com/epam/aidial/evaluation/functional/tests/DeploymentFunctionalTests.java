@@ -31,6 +31,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -683,6 +684,76 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().get("$type")).isEqualTo("dial-model");
         verify(dialCoreClient).getModel("some-id");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} returns the hit when another probe fails with a transport error")
+    void getDeploymentByIdReturnsHitDespiteTransportFailure() {
+        // DialCoreClient.withRetry translates only RestClientResponseException, so a transport
+        // failure escapes it raw — it must not discard the sibling probe that actually resolved.
+        when(dialCoreClient.getModel(eq("timeout-neighbour")))
+                .thenThrow(new ResourceAccessException("I/O error: connect timed out"));
+        when(dialCoreClient.getApplication(eq("timeout-neighbour")))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id("timeout-neighbour")
+                        .displayName("Resolved Anyway")
+                        .build());
+        when(dialCoreClient.getToolset(eq("timeout-neighbour"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/timeout-neighbour"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("$type")).isEqualTo("dial-application");
+        assertThat(response.getBody().get("deploymentId")).isEqualTo("timeout-neighbour");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} reports a transport failure as 502 UPSTREAM_ERROR when nothing resolves")
+    void getDeploymentByIdTransportFailureOutranksNotFound() {
+        when(dialCoreClient.getModel(eq("unreachable")))
+                .thenThrow(new ResourceAccessException("I/O error: connect timed out"));
+        when(dialCoreClient.getApplication(eq("unreachable"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("unreachable"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/unreachable"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("code")).isEqualTo("UPSTREAM_ERROR");
+    }
+
+    @Test
+    @DisplayName("OpenAPI spec carries minimal and full response examples for the by-ID lookup")
+    void openApiSpecCarriesByIdLookupExamples() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode operation = new ObjectMapper()
+                .readTree(apiDocs.getBody())
+                .path("paths")
+                .path("/api/v1/deployments/all/**")
+                .path("get");
+        assertThat(operation.isMissingNode())
+                .as("the by-ID lookup operation should be registered")
+                .isFalse();
+        JsonNode examples = operation
+                .path("responses")
+                .path("200")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+        assertThat(examples.propertyNames())
+                .as("OpenApiExampleCustomizer should inject both examples for this operation")
+                .containsExactlyInAnyOrder("minimal", "full");
+        assertThat(examples.path("minimal").path("value").path("$type").asString())
+                .isEqualTo("dial-model");
+        assertThat(examples.path("full").path("value").path("$type").asString()).isEqualTo("dial-application");
     }
 
     private static DialCoreClientException upstreamNotFound() {

@@ -124,7 +124,7 @@ class DeploymentProbeCollapserTest {
     }
 
     @Test
-    @DisplayName("all probes 404 yields a unified 404 naming every probe outcome")
+    @DisplayName("all probes 404 unify into one 404-status failure naming every probe outcome")
     void allNotFoundYieldsUnified404() {
         assertThatThrownBy(() -> collapser.collapse(
                         DEPLOYMENT_ID,
@@ -226,6 +226,23 @@ class DeploymentProbeCollapserTest {
                 .satisfies(thrown -> assertThat(((DialCoreClientException) thrown).getStatusCode())
                         .isEqualTo(HttpStatus.NOT_FOUND))
                 .hasMessageContaining("dial-model=empty");
+    }
+
+    @Test
+    @DisplayName("a probe error carrying no upstream status does not NPE and falls back to 404")
+    void nullUpstreamStatusFallsBackToNotFound() {
+        DeploymentProbe statusless =
+                DeploymentProbe.failed(DeploymentType.DIAL_MODEL, new DialCoreClientException(null, "no status"));
+
+        assertThatThrownBy(() -> collapser.collapse(
+                        DEPLOYMENT_ID,
+                        List.of(
+                                statusless,
+                                notFound(DeploymentType.DIAL_APPLICATION),
+                                notFound(DeploymentType.DIAL_TOOLSET))))
+                .isInstanceOf(DialCoreClientException.class)
+                .satisfies(thrown -> assertThat(((DialCoreClientException) thrown).getStatusCode())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     private static DeploymentProbe notFound(DeploymentType type) {

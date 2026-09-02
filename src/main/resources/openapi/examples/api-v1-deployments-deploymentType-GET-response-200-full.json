@@ -5,6 +5,7 @@
   "version": null,
   "description": "",
   "owner": "organization-owner",
+  "reference": "EntityExtractor",
   "createdAt": 1769192823293,
   "updatedAt": 1769194293867,
   "descriptionKeywords": [],

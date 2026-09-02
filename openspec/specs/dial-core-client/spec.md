@@ -271,7 +271,7 @@ The system SHALL define a `DeploymentInfoDto` abstract base class with polymorph
 #### Scenario: Common fields present
 - **WHEN** system returns any `DeploymentInfoDto` from a single-deployment endpoint
 - **THEN** JSON contains required fields: `deploymentId`, `displayName`, `createdAt`, `updatedAt`
-- **AND** nullable fields present if available: `version`, `description`, `owner`, `descriptionKeywords`, `inputAttachmentTypes`
+- **AND** nullable fields present if available: `version`, `description`, `owner`, `descriptionKeywords`, `inputAttachmentTypes`, `reference` (the DIAL Core handle a client uses to open the deployment; normally the same value as `deploymentId`, but clients SHALL treat it as an opaque string and SHALL NOT rely on that equality)
 
 #### Scenario: Common fields on a listing entry
 - **WHEN** system returns a `DeploymentInfoDto` as an entry of `GET /api/v1/deployments`

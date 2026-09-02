@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.epam.aidial.evaluation.data.db.exception.InvalidFilterException;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
-import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
+import com.epam.aidial.evaluation.data.db.repository.sql.json.DialectAwareJsonPathAccessor;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 class WhereBuilderTest {
 
     private static final DSLContext DSL_CTX = DSL.using(SQLDialect.POSTGRES);
-    private final WhereBuilder builder = new WhereBuilder(new PostgresJsonPathAccessor());
+    private final WhereBuilder builder = new WhereBuilder(new DialectAwareJsonPathAccessor());
 
     @Test
     void shouldReturnTrueConditionWhenNoConditions() {

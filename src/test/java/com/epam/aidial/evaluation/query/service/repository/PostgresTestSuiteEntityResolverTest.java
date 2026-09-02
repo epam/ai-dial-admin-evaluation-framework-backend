@@ -3,7 +3,7 @@ package com.epam.aidial.evaluation.query.service.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
+import com.epam.aidial.evaluation.data.db.repository.sql.json.DialectAwareJsonPathAccessor;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 class PostgresTestSuiteEntityResolverTest {
 
     private final PostgresTestSuiteEntityResolver resolver = new PostgresTestSuiteEntityResolver(
-            mock(DSLContext.class), new JooqTableSchemaResolver(), new PostgresJsonPathAccessor());
+            mock(DSLContext.class), new JooqTableSchemaResolver(), new DialectAwareJsonPathAccessor());
 
     @Test
     @DisplayName("exposes entity name test_suites")

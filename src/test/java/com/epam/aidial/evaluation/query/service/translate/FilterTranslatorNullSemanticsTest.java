@@ -3,7 +3,7 @@ package com.epam.aidial.evaluation.query.service.translate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
+import com.epam.aidial.evaluation.data.db.repository.sql.json.DialectAwareJsonPathAccessor;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.Expr;
@@ -42,7 +42,7 @@ class FilterTranslatorNullSemanticsTest {
     private static final String NULL_NEGATES = "is not true";
 
     private final DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
-    private final PostgresJsonPathAccessor jsonPathAccessor = new PostgresJsonPathAccessor();
+    private final DialectAwareJsonPathAccessor jsonPathAccessor = new DialectAwareJsonPathAccessor();
 
     private final ValueExprToObjectMapper valueExprToObjectMapper = new ValueExprToObjectMapper();
     private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(jsonPathAccessor);

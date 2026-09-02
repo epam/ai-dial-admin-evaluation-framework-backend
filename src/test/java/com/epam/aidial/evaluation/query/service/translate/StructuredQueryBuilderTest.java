@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
+import com.epam.aidial.evaluation.data.db.repository.sql.json.DialectAwareJsonPathAccessor;
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
@@ -57,7 +57,7 @@ class StructuredQueryBuilderTest {
             new JooqTableSchemaResolver().bindings(TEST_CASE_EVAL_SUMMARIES);
 
     private final ValueExprToObjectMapper valueExprToObjectMapper = new ValueExprToObjectMapper();
-    private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(new PostgresJsonPathAccessor());
+    private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(new DialectAwareJsonPathAccessor());
 
     @SuppressWarnings("unchecked")
     private final ObjectProvider<StructuredQueryBuilder> queryBuilderProvider = mock(ObjectProvider.class);

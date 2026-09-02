@@ -236,7 +236,7 @@ The application uses a **dual datasource architecture**: a **meta** database for
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
-| `datasource.analytics.vendor` | `DATASOURCE_ANALYTICS_VENDOR` | `POSTGRES` | No | - | Analytics database vendor. Only `POSTGRES` is currently supported. |
+| `datasource.analytics.vendor` | `DATASOURCE_ANALYTICS_VENDOR` | `POSTGRES` | No | - | Analytics database vendor. `POSTGRES` or `CLICKHOUSE`. |
 | `datasource.analytics.auth.type` | `DATASOURCE_ANALYTICS_AUTH_TYPE` | `basic` | No | - | Analytics authentication strategy. Same semantics as `datasource.meta.auth.type`. |
 | `postgres.analytics.datasource.url` | `POSTGRES_ANALYTICS_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/evaluation_analytics_db` | Recommended | - | Analytics JDBC base URL without query parameters. Override in every non-local environment. |
 | `postgres.analytics.datasource.connection-params` | `POSTGRES_ANALYTICS_DATASOURCE_CONNECTION_PARAMS` | `reWriteBatchedInserts=true` | No | - | JDBC query parameters appended to the URL. The default enables batched-insert rewriting for the analytics write path. |
@@ -244,6 +244,39 @@ The application uses a **dual datasource architecture**: a **meta** database for
 | `postgres.analytics.datasource.username` | `POSTGRES_ANALYTICS_DATASOURCE_USERNAME` | `postgres` | Conditional | `datasource.analytics.auth.type=azure` | Database username. For `azure` auth this MUST be the Azure AD identity username. |
 | `postgres.analytics.datasource.password` | `POSTGRES_ANALYTICS_DATASOURCE_PASSWORD` | `postgres` | Recommended | `datasource.analytics.auth.type=basic` | Database password. The default is intended for local development only. Unused when `datasource.analytics.auth.type=azure`. |
 | `postgres.analytics.datasource.schema` | `POSTGRES_ANALYTICS_DATASOURCE_SCHEMA` | `public` | No | - | Database schema for analytics entities and Flyway migrations. |
+
+#### 4.2.1 ClickHouse Analytics Datasource
+
+Applies only when `datasource.analytics.vendor=CLICKHOUSE`. ClickHouse has no schemas in the PostgreSQL sense; `clickhouse.analytics.datasource.database` plays the equivalent role and must match the database segment of `clickhouse.analytics.datasource.url`. `datasource.analytics.auth.type=azure` is not supported for this vendor.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `clickhouse.analytics.datasource.url` | `CLICKHOUSE_ANALYTICS_DATASOURCE_URL` | `jdbc:clickhouse://localhost:8123/evaluation_analytics` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Analytics JDBC base URL without query parameters. The application accepts both `jdbc:ch://` and `jdbc:clickhouse://`, but the Flyway ClickHouse plugin only recognizes `jdbc:clickhouse://` — use the long prefix. Override in every non-local environment. |
+| `clickhouse.analytics.datasource.connection-params` | `CLICKHOUSE_ANALYTICS_DATASOURCE_CONNECTION_PARAMS` | `-` | No | `datasource.analytics.vendor=CLICKHOUSE` | JDBC query parameters appended to the URL. Empty by default. The application always appends `clickhouse_setting_final=1` and `clickhouse_setting_join_use_nulls=1` on top of whatever is set here; do not override those two. |
+| `clickhouse.analytics.datasource.driver-class-name` | `CLICKHOUSE_ANALYTICS_DATASOURCE_DRIVER_CLASS_NAME` | `com.clickhouse.jdbc.ClickHouseDriver` | No | `datasource.analytics.vendor=CLICKHOUSE` | JDBC driver class (ClickHouse V2 JDBC driver, requires >= 0.10.0 for Flyway compatibility). |
+| `clickhouse.analytics.datasource.username` | `CLICKHOUSE_ANALYTICS_DATASOURCE_USERNAME` | `clickhouse` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Database username. |
+| `clickhouse.analytics.datasource.password` | `CLICKHOUSE_ANALYTICS_DATASOURCE_PASSWORD` | `clickhouse` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Database password. The default is intended for local development only. Override via environment variable in every non-local environment. |
+| `clickhouse.analytics.datasource.database` | `CLICKHOUSE_ANALYTICS_DATASOURCE_DATABASE` | `evaluation_analytics` | No | `datasource.analytics.vendor=CLICKHOUSE` | ClickHouse database name; also used as the Flyway `defaultSchema`. The database must already exist; it is not created by the application. |
+
+On this vendor:
+
+- `analyticsTransactionManager` is a no-op (`ClickHouseNoOpTransactionManager`) — ClickHouse has no transactions, and analytics writes are idempotent append-only batches deduplicated at read time by `ReplacingMergeTree`.
+- Schema management is Flyway (`flyway-database-clickhouse`), the same as Postgres — see `AnalyticsClickHouseConfiguration`. This requires clickhouse-jdbc >= 0.10.0 (0.9.0's driver could not parse the plugin's schema-existence probe) and a `jdbc:clickhouse://` URL (the plugin does not recognize `jdbc:ch://`). Migrations live under `db/migration/analytics/CLICKHOUSE` and are tracked in `flyway_schema_history` exactly like the Postgres migrations.
+- Two ClickHouse server settings are pinned as connection properties and are load-bearing: `final=1` (dedup-exact reads over `ReplacingMergeTree`) and `join_use_nulls=1` (SQL-standard `LEFT JOIN` nullability, without which run-comparison anti-match predicates are silently always-true). They are connection properties rather than a `connectionInitSql` `SET` because the V2 driver sends every statement as an independent stateless HTTP request. See [Database Schema Reference — ClickHouse analytics schema](database-schema.md#clickhouse-analytics-schema-vendorclickhouse).
+
+#### 4.2.2 ClickHouse Analytics Backfill (one-time data migration from Postgres)
+
+Applies only when `datasource.analytics.vendor=CLICKHOUSE`. A repeatable Flyway Java migration (`ClickHouseAnalyticsBackfillMigration`) copies the four analytics tables from the previous analytics Postgres database into ClickHouse via ClickHouse's `postgresql()` table function — the copy runs server-side inside ClickHouse, so `postgres.host` must be reachable **from the ClickHouse server**, not from this application. Enable only for the cutover deploy (quiesce analytics writes first); the migration re-runs whenever this configuration changes (checksum-keyed; the password is excluded from the checksum), and re-runs are idempotent thanks to `ReplacingMergeTree` deduplication. Use a dedicated **read-only** Postgres user: the credentials travel inside the SQL text sent to ClickHouse (ClickHouse masks table-function credentials in `system.query_log`).
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `clickhouse.analytics.backfill.enabled` | `CLICKHOUSE_ANALYTICS_BACKFILL_ENABLED` | `true` | Recommended | `datasource.analytics.vendor=CLICKHOUSE` | Whether the backfill runs on the next startup. When `false` the migration records a no-op. The default is intended for local development (docker-compose); in production set it explicitly and enable only for the cutover deploy. |
+| `clickhouse.analytics.backfill.postgres.host` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_HOST` | `postgres` | Recommended | `clickhouse.analytics.backfill.enabled=true` | Source analytics Postgres host, as reachable from the ClickHouse server. The default matches the local docker-compose service name. |
+| `clickhouse.analytics.backfill.postgres.port` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PORT` | `5432` | No | `clickhouse.analytics.backfill.enabled=true` | Source Postgres port. |
+| `clickhouse.analytics.backfill.postgres.database` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_DATABASE` | `evaluation_analytics_db` | Recommended | `clickhouse.analytics.backfill.enabled=true` | Source analytics Postgres database name. |
+| `clickhouse.analytics.backfill.postgres.schema` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_SCHEMA` | `public` | No | `clickhouse.analytics.backfill.enabled=true` | Source Postgres schema holding the analytics tables. |
+| `clickhouse.analytics.backfill.postgres.username` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_USERNAME` | `postgres` | Recommended | `clickhouse.analytics.backfill.enabled=true` | Source Postgres username; use a dedicated read-only user. The default is intended for local development only. |
+| `clickhouse.analytics.backfill.postgres.password` | `CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PASSWORD` | `postgres` | Recommended | `clickhouse.analytics.backfill.enabled=true` | Source Postgres password. The default is intended for local development only. Changing only the password does not re-trigger the backfill. |
 
 ### 4.3 Azure AD Authentication
 

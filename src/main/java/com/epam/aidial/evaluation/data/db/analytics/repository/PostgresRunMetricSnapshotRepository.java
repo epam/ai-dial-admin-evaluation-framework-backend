@@ -25,7 +25,7 @@ import org.springframework.stereotype.Repository;
 public class PostgresRunMetricSnapshotRepository implements RunMetricSnapshotRepository {
 
     @Qualifier("analyticsDsl")
-    private final DSLContext dsl;
+    protected final DSLContext dsl;
 
     private final RunMetricSnapshotRecordMapper recordMapper;
 
@@ -89,7 +89,7 @@ public class PostgresRunMetricSnapshotRepository implements RunMetricSnapshotRep
                 .fetchOptional(r -> UUID.fromString(r.getValue(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID)));
     }
 
-    private static JSONB toJsonb(String json) {
+    protected static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
     }
 }

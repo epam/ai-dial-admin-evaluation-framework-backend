@@ -32,7 +32,7 @@ import org.springframework.stereotype.Repository;
 public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRepository {
 
     @Qualifier("analyticsDsl")
-    private final DSLContext dsl;
+    protected final DSLContext dsl;
 
     private final TestCaseRunResultRecordMapper recordMapper;
     private final WhereBuilder whereBuilder;
@@ -140,7 +140,7 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
         return condition;
     }
 
-    private static JSONB toJsonb(String json) {
+    protected static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
     }
 }

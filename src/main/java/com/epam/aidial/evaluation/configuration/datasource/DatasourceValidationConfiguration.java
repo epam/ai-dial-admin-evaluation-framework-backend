@@ -14,17 +14,25 @@ import org.springframework.context.annotation.Configuration;
 public class DatasourceValidationConfiguration {
 
     private static final int POSTGRES_DEFAULT_PORT = 5432;
-    private static final Set<String> SUPPORTED_ANALYTICS_VENDORS = Set.of("POSTGRES");
+    private static final int CLICKHOUSE_DEFAULT_PORT = 8123;
+    private static final Set<String> SUPPORTED_ANALYTICS_VENDORS = Set.of("POSTGRES", "CLICKHOUSE");
 
     @Bean
     public DatasourceValidationResult datasourceValidationResult(
             @Value("${postgres.meta.datasource.url}") String metaUrl,
-            @Value("${postgres.analytics.datasource.url}") String analyticsUrl,
+            @Value("${postgres.analytics.datasource.url}") String postgresAnalyticsUrl,
+            @Value("${clickhouse.analytics.datasource.url:}") String clickhouseAnalyticsUrl,
             @Value("${postgres.meta.datasource.schema:public}") String metaSchema,
             @Value("${postgres.analytics.datasource.schema:public}") String analyticsSchema,
             @Value("${datasource.analytics.vendor}") String analyticsVendor) {
 
         validateSupportedVendor(analyticsVendor);
+        String analyticsUrl = "CLICKHOUSE".equals(analyticsVendor) ? clickhouseAnalyticsUrl : postgresAnalyticsUrl;
+        // Meta is always POSTGRES; when analytics is CLICKHOUSE the two engines listen on different
+        // schemes/default ports, so a genuine same-database collision cannot happen in practice.
+        // The comparison below still runs unconditionally (host/port/database/schema string compare)
+        // rather than being special-cased per vendor — it is harmless (host/port will differ) and
+        // keeps this method's logic identical across vendors.
         validateDatasourceIsolation(metaUrl, analyticsUrl, metaSchema, analyticsSchema);
 
         return new DatasourceValidationResult(true);
@@ -67,13 +75,25 @@ public class DatasourceValidationConfiguration {
     }
 
     static JdbcUrlComponents parseJdbcUrl(String jdbcUrl) {
-        // Expected format: jdbc:postgresql://host[:port]/database[?params]
+        // Expected formats:
+        //   jdbc:postgresql://host[:port]/database[?params]      (default port 5432)
+        //   jdbc:ch://host[:port]/database[?params]               (default port 8123)
+        //   jdbc:clickhouse://host[:port]/database[?params]       (default port 8123)
         String url = jdbcUrl;
         if (url.startsWith("jdbc:")) {
             url = url.substring(5);
         }
+
+        int defaultPort;
         if (url.startsWith("postgresql://")) {
             url = url.substring("postgresql://".length());
+            defaultPort = POSTGRES_DEFAULT_PORT;
+        } else if (url.startsWith("clickhouse://")) {
+            url = url.substring("clickhouse://".length());
+            defaultPort = CLICKHOUSE_DEFAULT_PORT;
+        } else if (url.startsWith("ch://")) {
+            url = url.substring("ch://".length());
+            defaultPort = CLICKHOUSE_DEFAULT_PORT;
         } else {
             throw new IllegalArgumentException("Unsupported JDBC URL format: " + jdbcUrl);
         }
@@ -97,7 +117,7 @@ public class DatasourceValidationConfiguration {
         try {
             URI uri = URI.create("dummy://" + hostPort);
             host = uri.getHost() != null ? uri.getHost() : hostPort;
-            port = uri.getPort() > 0 ? uri.getPort() : POSTGRES_DEFAULT_PORT;
+            port = uri.getPort() > 0 ? uri.getPort() : defaultPort;
         } catch (Exception e) {
             // Fallback: manual parsing
             int colonIdx = hostPort.lastIndexOf(':');
@@ -107,11 +127,11 @@ public class DatasourceValidationConfiguration {
                     port = Integer.parseInt(hostPort.substring(colonIdx + 1));
                 } catch (NumberFormatException nfe) {
                     host = hostPort;
-                    port = POSTGRES_DEFAULT_PORT;
+                    port = defaultPort;
                 }
             } else {
                 host = hostPort;
-                port = POSTGRES_DEFAULT_PORT;
+                port = defaultPort;
             }
         }
 

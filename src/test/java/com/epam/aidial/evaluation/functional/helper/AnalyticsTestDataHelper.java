@@ -245,7 +245,9 @@ public class AnalyticsTestDataHelper {
                 .set(
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
                         UUID.randomUUID().toString())
-                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, UUID.randomUUID().toString())
+                .set(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
+                        fixture.getTestCaseId().toString())
                 .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, fixture.getTestCaseName())
                 .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, fixture.getRunIndex())
                 .set(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX, fixture.getRequestIndex())

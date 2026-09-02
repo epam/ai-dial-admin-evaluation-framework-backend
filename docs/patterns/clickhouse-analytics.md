@@ -1,0 +1,290 @@
+# ClickHouse analytics vendor
+
+`datasource.analytics.vendor=CLICKHOUSE` is a full alternative to the default `POSTGRES` analytics
+vendor, behind the existing meta/analytics seam (see [Dual Datasource](dual-datasource.md)). Design
+background: [docs/design/analytics-on-clickhouse/index.html](../design/analytics-on-clickhouse/index.html).
+
+## Render-time dialect switching
+
+`JsonPathAccessor`/`FilterTranslator` build SQL shared by **both** datasources (meta is always
+Postgres; analytics is either vendor) — a vendor-gated bean can't express this, since the same
+`FilterTranslator` instance renders both kinds of query within one request. `DialectAwareSql`
+(`data.db.repository.sql`) solves it with jOOQ `CustomCondition`/`CustomField`, which defer to a
+callback run at **render time**, when `ctx.family()` reports the dialect of *that* render call:
+
+```java
+DialectAwareSql.condition(family -> family == SQLDialect.CLICKHOUSE ? chSql : pgSqlUnchanged);
+```
+
+Every `byFamily` function treats `CLICKHOUSE` as the only special case and renders today's Postgres
+SQL byte-identical for every other family — this is what keeps the pre-existing Postgres
+render-pinning unit tests passing unmodified. Consumers: `DialectAwareJsonPathAccessor` (`->`/`->>`/
+numeric-cast JSONB access), `FilterTranslator` (null-satisfies, negate, array containment),
+`PostgresEvalSummaryRepository#lowerName`, `BuiltInQueryFunctions` (`roc_auc`, percentiles,
+`width_bucket`), `DialectAwareSql#numericCast`.
+
+**Pitfall — defensive extra parens on a `CustomCondition` operand.** Both `DSL.not(condition)` and a
+plain-SQL template's `{0}` substitution add a defensive parenthesis around a `Condition` argument
+when it is a `CustomCondition` (unlike a plain jOOQ-native condition, e.g. `Like`, which doesn't get
+one). Composing several dialect-aware conditions through `DSL.not(...)` from the outside therefore
+changes the paren shape between the "same node negated directly" and "positive node wrapped by a
+`not` logical node" cases — harmless (SQL stays valid and semantically identical either way), but
+surprising if you're diffing rendered SQL. `FilterTranslator` avoids stacking these where it can (each
+negated array-containment form is built as one flat family-specific expression instead of composing
+`nullSatisfies`/`negate` around an already-built dialect-aware `Condition`), and pins both shapes in
+`FilterTranslatorClickHouseRenderTest` where composition is unavoidable (a `not` logical node wrapping
+a `co` comparison).
+
+## ClickHouse vendor twins
+
+Every `ClickHouse*Repository`/`ClickHouse*EntityResolver` **extends** its Postgres twin rather than
+reimplementing it — the jOOQ query surface built by the base class already renders correctly for
+`CLICKHOUSE` once the injected `DSLContext` uses that dialect, and read paths only need overriding
+where ClickHouse's SQL surface or driver genuinely diverges (see "Known engine semantics" below).
+`@ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "CLICKHOUSE")` gates every
+twin; the Postgres base stays the vendor-agnostic default (`matchIfMissing = true` on
+`AnalyticsJdbcConfiguration`'s own POSTGRES conditional).
+
+Every twin overrides `saveAll`: ClickHouse has no `ON CONFLICT`, so writes are plain `INSERT`s instead
+of an upsert — as a **bind-value batch** (`dsl.batch(insertTemplate).bind(row)...`, one prepared statement
+executed as a JDBC batch). Never use `dsl.batch(List<Query>)` here: jOOQ's multi-query batch renders
+*static* statements with parameters inlined, and ClickHouse interprets backslash escapes inside string
+literals (unlike Postgres with `standard_conforming_strings`), so an inlined JSON payload whose string
+values contain characters Jackson escapes (`\n`, `\t`, `\"`, `\\`) is silently corrupted at rest —
+the stored column stops being valid JSON. Regression-guarded by
+`ClickHouseAnalyticsSemanticsFunctionalTests#escapeWorthyCharactersSurviveBatchWrites`.
+
+**No-op `analyticsTransactionManager`** (`ClickHouseNoOpTransactionManager`, extends
+`AbstractPlatformTransactionManager` with no-op `doBegin`/`doCommit`/`doRollback`): ClickHouse has no
+transaction semantics on a single connection, so existing `@Transactional("analyticsTransactionManager")`
+demarcations and `TransactionTemplate` callers throughout the analytics service layer keep binding to a
+valid bean and executing, they just demarcate nothing. Justification: analytics writes are idempotent,
+append-only batches deduplicated at read time (below), so a failed batch can simply be retried.
+
+## Dedup: ReplacingMergeTree as ON CONFLICT
+
+`ReplacingMergeTree` is ClickHouse's stand-in for Postgres' `UNIQUE` + `ON CONFLICT DO NOTHING` — there
+is no upsert primitive, and duplicate rows sharing an `ORDER BY` key collapse only in the background,
+eventually. Two connection properties on the analytics Hikari pool (`AnalyticsClickHouseConfiguration`)
+make reads deterministic without waiting for a merge:
+
+- `clickhouse_setting_final=1` — every read behaves as if `FINAL` were specified, collapsing
+  `ReplacingMergeTree` duplicates immediately.
+- `clickhouse_setting_join_use_nulls=1` — restores SQL-standard `NULL` fill for an unmatched `LEFT
+  JOIN` row (ClickHouse's default fills the type's zero-value instead, e.g. `''` for `String`, which
+  silently breaks every anti-match predicate in the run-comparison queries).
+
+These are **connection properties**, not `connectionInitSql = "SET final = 1"`: the ClickHouse V2
+driver sends each statement as an independent, stateless HTTP request, so a session-wide `SET` is
+silently forgotten per pooled connection (verified against a live server — `system.settings` kept
+reporting `final = 0`, and a duplicated key still returned two rows). The `clickhouse_setting_` prefix
+attaches the setting to every request instead. `AnalyticsClickHouseConfiguration` is the single source
+of truth for this — any comment elsewhere that says "session-wide `SET`" is stale.
+
+`ORDER BY` should equal the Postgres `onConflict` key set. `test_case_run_results` is the one
+exception: its `ORDER BY` leads with `test_suite_id`, a **superset** of the PG unique key. The two
+keys partition identically today only because `test_suite_id` is functionally dependent on
+`test_suite_run_id` — a future feature that reassigns a run's suite must revisit that `ORDER BY`.
+
+## Schema management: Flyway (`flyway-database-clickhouse`)
+
+`AnalyticsClickHouseConfiguration#analyticsFlywayMigration` runs a `flyway-database-clickhouse` Flyway
+bean shaped exactly like `AnalyticsFlywayConfiguration`'s Postgres bean — same `baselineOnMigrate(true)`,
+`validateMigrationNaming(true)`, `flyway.migrate()` call, and dependency on
+`DatasourceValidationResult` for bean ordering. Migrations live under
+`db/migration/analytics/CLICKHOUSE`, tracked in a real `flyway_schema_history` table, each script
+running exactly once — the same story as Postgres.
+
+Two things are required for this to work, both verified against a live ClickHouse 25.8:
+
+- **clickhouse-jdbc &ge; 0.10.0.** On 0.9.0, the plugin's schema-existence probe
+  (`SELECT COUNT() FROM system.databases WHERE name = ?`) failed: the driver's ANTLR statement parser
+  couldn't parse the bare `name` column reference, reported zero bind parameters, and `setString()`
+  threw `ArrayIndexOutOfBoundsException` before any SQL reached the server. 0.10.0 fixed the parser;
+  the probe and a full `flyway.migrate()` both succeed now.
+- **A `jdbc:clickhouse://` URL, not `jdbc:ch://`.** The plugin's `ClickHouseDatabaseType.handlesJDBCUrl`
+  only claims the `jdbc:clickhouse:` prefix, so it never recognizes the database type on the driver's
+  shorter `jdbc:ch:` alias — Flyway would silently fail to find a matching `DatabaseType`. The
+  application itself still accepts both prefixes (`DatasourceValidationConfiguration#parseJdbcUrl`);
+  only the Flyway-facing defaults (`application.yml`, docker-compose, test fixtures, docs) standardize
+  on the long form.
+
+`V1.1__Init.sql` still uses `CREATE TABLE IF NOT EXISTS` — not because scripts re-run on every startup
+(they don't, any more), but for transition safety: an environment that ran the old
+hand-rolled schema initializer (see history below) already has the tables but no
+`flyway_schema_history` row, and `baselineOnMigrate` may still execute `V1.1` there on first boot. New
+migrations (V1.2+) are written as ordinary, non-idempotent Flyway scripts.
+
+**History.** Between the initial ClickHouse vendor implementation and this fix, schema management was a
+hand-rolled `ClickHouseSchemaInitializer` (`ResourceDatabasePopulator` re-running every script on every
+startup, no history table) — a workaround for the 0.9.0 driver bug above. It has been removed now that
+the driver bump makes Flyway work.
+
+## Data backfill from Postgres: repeatable Java migration
+
+The one-time cutover copy of existing analytics data is `ClickHouseAnalyticsBackfillMigration`, a
+**repeatable Flyway Java migration** registered unconditionally on the ClickHouse Flyway bean via
+`.javaMigrations(...)`. The copy runs **server-side in ClickHouse** — `INSERT INTO <table> (cols)
+SELECT cols FROM postgresql('host:port', db, table, user, password, schema)` per table — so the
+application never streams rows, and the source Postgres must be reachable *from the ClickHouse
+server*, not from the app.
+
+Design decisions worth knowing before touching it:
+
+- **Java, not SQL, because of credentials.** The `postgresql()` call needs the source DB's
+  credentials inline in the SQL text; a checked-in `.sql` script would hardcode them (or need Flyway
+  placeholder splicing). The Java migration takes them from `ClickHouseBackfillProperties`
+  (`clickhouse.analytics.backfill.*`, see `docs/configuration.md` §4.2.2) at runtime. They still
+  appear in the statement sent to ClickHouse (masked in `system.query_log`); use a read-only
+  Postgres user.
+- **Repeatable, checksum-keyed on the config.** A versioned migration would be recorded as an
+  applied no-op on any environment that boots the vendor before backfill is configured (every fresh
+  install) and could then never run. `getChecksum()` is derived from the backfill config, so flipping
+  `enabled=true` (or re-pointing the source) is exactly what makes Flyway re-apply it. The password
+  is excluded from the checksum: rotating a credential must not replay the backfill.
+- **Idempotent re-runs.** Every target table is a `ReplacingMergeTree` ordered by the natural key
+  and reads run with `final=1`, so a repeated copy collapses to the same rows — verified by
+  `ClickHouseBackfillFunctionalTests`, which runs the migration twice against a scratch Postgres
+  carrying the real analytics POSTGRES schema (applied via the production Flyway migrations).
+- **Fail-fast verification.** After each table the migration compares `count(*)` on the source (via
+  `postgresql()`) with `count()` on the target and aborts startup on a shortfall. Target > source is
+  tolerated (rows written after cutover, or a re-run over live data).
+- **JSONB canonicalization.** Source columns are Postgres JSONB, which stores canonicalized JSON
+  (key order, spacing) — the backfill copies what Postgres serves, which is what the PG-vendor app
+  was already reading. Byte-exactness vs. the original client payload is not a goal; semantic JSON
+  equality is (asserted with `readTree` in the functional test). Values transfer over the Postgres
+  wire protocol typed (no string-literal parsing), so escape-heavy payloads and 17-significant-digit
+  doubles arrive intact.
+
+Operationally: quiesce analytics writes (drain running suites/imports), deploy with
+`clickhouse.analytics.backfill.enabled=true` + source coordinates, watch the per-table
+`Backfilled …: source rows=…, target rows=…` log lines, then disable the flag in the next deploy.
+For very large tables note the copy is one statement per table — raise driver/server timeouts or
+chunk manually (e.g. `WHERE created_at_ms` ranges via a temporary ClickHouse view) if a table
+exceeds what one statement can move comfortably.
+
+## Typed metric map twin: `metric_values_map`
+
+`test_case_eval_summaries` carries a ClickHouse-only **acceleration column**:
+
+```sql
+metric_values_map Map(String, Map(String, Nullable(Float64)))
+    MATERIALIZED JSONExtract(metric_values, 'Map(String, Map(String, Nullable(Float64)))')
+```
+
+The JSON text is parsed **once at insert** into typed columnar storage; every two-level numeric
+metric-path read — the aggregate endpoint (`ClickHouseEvalSummaryRepository#buildNumericMetricAccessor`),
+Stack A's `JSONB_NUMERIC` filters and the query DSL's `metric::<name>::<field>` family (both via the
+CLICKHOUSE branch of `DialectAwareJsonPathAccessor#jsonbAtAsNumeric`) — reads
+`metric_values_map[metric][field]` with **bound-parameter keys** instead of re-parsing the JSON blob
+per row. `metric_values` stays the serving source of truth: DTOs, exports and the pipeline's own
+reads select the raw String column, so explicit-null preservation and byte fidelity are untouched.
+The text metric accessor (presence counting: present-but-non-numeric still counts) also stays on the
+raw column.
+
+**Why a `Map`, not ClickHouse's native `JSON` type** (all verified against a live 25.8):
+
+- the JSON type **drops explicit nulls** (`{"a":null}` reads back `{}`), destroying the null-vs-absent
+  distinction that separates "metric failed" from "metric conditionally skipped";
+- it **flattens dotted keys** — `"Relevancy.score"` becomes the nested path `Relevancy → score` —
+  and a resulting path collision **fails the entire INSERT** (a user-supplied TSMD name could break
+  eval-summary writes);
+- its typed subcolumn read (`.value.:Float64`) returns the requested *variant* of a Dynamic value —
+  NULL when the stored variant is `Int64`, i.e. for every integer-valued score (`0`, `1`), silently
+  corrupting aggregates.
+
+The Map twin passes all three: values are typed `Float64` at extraction regardless of JSON integer/float
+notation (17-significant-digit doubles round-trip exactly), dotted names are plain keys, collisions are
+impossible, and it even preserves null-vs-absent (`mapContains` = 1 with NULL value vs 0).
+
+**Why the other JSON columns stay plain String (investigated, verified on 25.8):**
+
+- `test_case_data` is already filterable (Stack A `JSONB_STRING` on both entities; the DSL `data::`
+  family) over the String column, and **skip indexes do not need the JSON type**: `ALTER TABLE … ADD
+  INDEX … JSONExtract(col, 'field', 'Nullable(String)') TYPE bloom_filter` on a String column,
+  added after the fact and backfilled with `MATERIALIZE INDEX`, prunes granules (probe: 4/12 read).
+  Add exactly the index a hot filter needs, when it needs it. A native-JSON `test_case_data` would
+  additionally be a hazard: dataset field names may contain dots (validation is only
+  `^[^:]*$`), so the JSON type's dotted-key flattening applies to user-supplied names and a
+  `"a.b"`-vs-`"a"` path collision hard-fails every Phase-1 batch INSERT.
+- `extracted_columns` **can** get a faithful typed twin when a response-column analytics use-case
+  lands: `JSONExtract(…, 'Map(String, Nullable(String)))'` renders strings verbatim, numbers/bools as
+  text, arrays/objects as raw JSON text (closer to Postgres `->>` than the current
+  `JSONExtract 'Nullable(String)'` branch — see the accessor's Javadoc caveat) and **preserves
+  explicit nulls as NULL**; `Map(String, Nullable(Float64))` covers NUMBER-typed columns. Until then
+  it stays raw — speculative storage buys nothing.
+- `metric_infos` stays raw permanently: projection-only diagnostic payload, heterogeneous nested
+  objects, no aggregation surface.
+
+**Model bookkeeping:** the twin lives only in the CLICKHOUSE V1.1 migration. It is excluded from
+`generateClickHouseJooq` (`withExcludes` + `withIncludeExcludeColumns(true)`) so both generated jOOQ
+models stay column-identical (`AnalyticsModelParityTest` unaffected), and `ClickHouseSchemaDriftTest`
+carves it out of the live-schema comparison (`ACCELERATION_COLUMNS`). It is addressed by name — the
+accessor's twin registry (`CLICKHOUSE_NUMERIC_MAP_TWINS`, keyed `table.column`) and the repository
+override. When adding another twin, register it in all three places. Guarded end-to-end by
+`ClickHouseAnalyticsSemanticsFunctionalTests#metricAggregationReadsTheTypedMapTwinFaithfully`
+(integer-valued scores, dotted names, explicit nulls, 17-digit doubles).
+
+## Generated model: one twin per vendor
+
+The analytics schema has **two** generated jOOQ models, each produced from its own vendor's
+migrations:
+
+| Package | Generated from | By |
+|---------|----------------|----|
+| `…data.db.jooq.analytics` | `db/migration/analytics/POSTGRES` | `./gradlew generateJooq` |
+| `…data.db.jooq.clickhouse` | `db/migration/analytics/CLICKHOUSE` | `./gradlew generateClickHouseJooq` (Docker) |
+
+`…jooq.analytics` is the canonical model — shared query code, the record mappers, the schema
+providers, `FilterWhitelists` and the Postgres repositories use it, and it fixes the column order the
+API publishes. `…jooq.clickhouse` is used only by the code this vendor owns outright: the four
+`ClickHouse*Repository` overrides (batch inserts, the `JSONExtract` metric accessors, the `CASE WHEN`
+aggregates) and the two `ClickHouse*EntityResolver`s (`table()` + `bindings`). Inherited read paths
+keep whatever model the Postgres parent used — that is fine, because jOOQ fields render by name and
+every `DSLContext` sets `withRenderSchema(false)`, so the originating package never reaches SQL.
+
+Evolving the analytics schema is therefore **dual-authored**: write the CLICKHOUSE migration *and* its
+POSTGRES twin, rerun **both** codegen tasks, commit both diffs. `AnalyticsModelParityTest` (a plain
+unit test — no Docker) holds the two models column-for-column identical and fails when only one side
+was updated; `ClickHouseSchemaDriftTest` and `JooqSchemaDriftTest` each guard their own vendor's model
+against its live schema. Details and the forced-type configuration:
+[Typed SQL DSL](jooq-typed-sql-dsl.md).
+
+## Known engine semantics
+
+- **Float64, not `numeric`.** A bare ClickHouse `decimal` means `Decimal(10, 0)` — scale zero — so
+  `cast(0.5 as decimal)` silently truncates to `0`. `DialectAwareSql#numericCast` casts to `Float64`
+  on ClickHouse instead (coerced back to `NUMERIC` for the caller's `Field<BigDecimal>`); same
+  reasoning behind `ClickHouseMetricScoreResultRepository#exactFloat64Bind` writing the score as
+  `toFloat64(?)` with a bound plain-decimal string rather than letting a `Double` cross the wire in
+  Java's scientific notation, which ClickHouse's textual parser is one ULP off on.
+- **`lower` is ASCII-only.** ClickHouse's `lower`/lowercase LIKE folding don't fold non-ASCII letters;
+  `lowerUTF8` is the Unicode-aware equivalent, used wherever case-insensitive comparison must match
+  Postgres' locale-aware `lower` (`PostgresEvalSummaryRepository#lowerName`, `FilterTranslator`'s
+  ignore-case array containment).
+- **The V2 JDBC driver's parser rejects a `SELECT` nested inside a scalar expression** — e.g. the
+  jOOQ-generated `select exists (select 1 … where …)`. It reports zero bind parameters and the bind
+  fails before any SQL reaches the server. `ClickHouseEvalSummaryRepository#existsByRunIdAndComputationId`
+  replaces it with a `select 1 … limit 1` probe.
+- **No `roc_auc_score` stored function** — the built-in `arrayAUC(scores, labels)` covers the same
+  need, with its argument order swapped relative to `roc_auc_score(labels, scores)`.
+- **No approximate `quantile`.** `percentile_cont`/`percentile_disc` dialect-switch to
+  `quantileExactInclusive`/`quantileExactLow` — ClickHouse's default `quantile()` is approximate and
+  diverges from PG's exact semantics, breaking deterministic assertions.
+- **JSONB payloads are plain `String`/`Nullable(String)` columns**, not ClickHouse's native `JSON`
+  type — this keeps the application's serialized payload byte-for-byte rather than letting ClickHouse
+  re-parse and re-serialize (and thus mutate) it on read. Array-element containment (`co`/`nc` on an
+  `ARRAY`-typed field) therefore goes through `JSONExtract`/`JSONExtractArrayRaw`/`has`/`arrayExists`
+  rather than JSONB operators; the literal's `ValueType` (known at translate time) picks the
+  `JSONExtract` return type (`Nullable(Float64)` for a number, `Nullable(Bool)` for a boolean) or, for
+  a type ClickHouse can't recover faithfully from JSON text (`date`, `uuid`), rejects the query with a
+  `ValidationException` (HTTP 400) rather than silently rendering a comparison that can never match.
+  See `ClickHouseTypeNames` (`data.db.repository.sql`) for the shared type-literal constants.
+
+## Testing
+
+`ClickHouseFunctionalTests` mirrors `PostgresFunctionalTests` against a real `clickhouse-server`
+Testcontainer; render-pinning unit tests (`*ClickHouseRenderTest`) pin the SQL text each dialect-switch
+seam produces without a container. Two suites are excluded on ClickHouse:
+`RocAucScoreFunctionalTests` (exercises the Postgres stored function directly) and
+`EvalSummaryIndexFunctionalTests` (asserts against `pg_indexes`).

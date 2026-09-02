@@ -50,6 +50,26 @@ public abstract class RunComparisonRepositoryFunctionalTests extends BaseFunctio
     }
 
     @Test
+    @DisplayName("Should match two names differing only in the case of a non-ASCII letter")
+    void shouldMatchNonAsciiNamesDifferingOnlyInCase() {
+        // "ÉTAPE" / "étape" differ only by case, and only in non-ASCII letters. Case-folding the match key
+        // with an ASCII-only lower() (which is what ClickHouse's plain lower() is) leaves the two keys
+        // distinct, so the rows would report as mutually unmatched.
+        UUID upper = analyticsTestDataHelper.createEvalSummary(
+                suiteId, runA, computationA, "ÉTAPE", ExecutionStatus.SUCCESS.name(), 100L, CREATED_AT_MS);
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId, runB, computationB, "étape", ExecutionStatus.SUCCESS.name(), 100L, CREATED_AT_MS);
+
+        EvalSummaryMatchStats statsA = evalSummaryRepository.countMatches(runA, computationA, runB, computationB);
+
+        assertThat(statsA.totalRows()).isEqualTo(1L);
+        assertThat(statsA.matchedRows()).isEqualTo(1L);
+        assertThat(evalSummaryRepository.findUnmatchedIds(runA, computationA, runB, computationB))
+                .doesNotContain(upper)
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("Should match every row sharing a duplicated key and average all of them")
     void shouldMatchAllRowsSharingDuplicateKey() {
         // Side A holds two rows for one key (as the eval-results import path can produce) plus one row

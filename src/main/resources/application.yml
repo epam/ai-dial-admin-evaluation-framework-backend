@@ -29,7 +29,7 @@ datasource:
     auth:
       type: basic
   analytics:
-    vendor: POSTGRES
+    vendor: CLICKHOUSE
     auth:
       type: basic
 
@@ -216,6 +216,29 @@ postgres:
       username: postgres
       password: postgres  # Example value for local development. Override via environment variable in production.
       schema: public
+
+clickhouse:
+  analytics:
+    datasource:
+      url: jdbc:clickhouse://localhost:8123/evaluation_analytics
+      connection-params: ""
+      driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
+      username: clickhouse
+      password: clickhouse  # Example value for local development. Override via environment variable in production.
+      database: evaluation_analytics
+    # One-time data backfill from the previous analytics Postgres database, executed by a repeatable
+    # Flyway Java migration on startup. Enable only for the cutover deploy; the postgres coordinates
+    # must be reachable from the ClickHouse SERVER (it runs the copy via its postgresql() table
+    # function). Use a read-only Postgres user.
+    backfill:
+      enabled: ${CLICKHOUSE_ANALYTICS_BACKFILL_ENABLED:false}
+      postgres:
+        host: ${CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_HOST:postgres}
+        port: ${CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PORT:5432}
+        database: ${CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_DATABASE:evaluation_analytics_db}
+        schema: ${CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_SCHEMA:public}
+        username: ${CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_USERNAME:postgres}
+        password: ${CLICKHOUSE_ANALYTICS_BACKFILL_POSTGRES_PASSWORD:postgres}
 
 # Security configuration
 config:

@@ -53,7 +53,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     private static final String AVG_EXEC_DURATION_MS = "avg_exec_duration_ms";
 
     @Qualifier("analyticsDsl")
-    private final DSLContext dsl;
+    protected final DSLContext dsl;
 
     private final EvalSummaryRecordMapper recordMapper;
     private final WhereBuilder whereBuilder;
@@ -207,11 +207,14 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         List<Field<?>> selectFields = new ArrayList<>();
         for (int i = 0; i < metrics.size(); i++) {
             MetricPath metric = metrics.get(i);
-            Field<String> accessor = buildMetricAccessor(metric);
-            selectFields.add(DSL.avg(accessor.cast(BigDecimal.class)).as("avg_" + i));
-            selectFields.add(DSL.min(accessor.cast(BigDecimal.class)).as("min_" + i));
-            selectFields.add(DSL.max(accessor.cast(BigDecimal.class)).as("max_" + i));
-            selectFields.add(DSL.count(accessor).as("count_" + i));
+            Field<BigDecimal> numericAccessor = buildNumericMetricAccessor(metric);
+            Field<String> textAccessor = buildTextMetricAccessor(metric);
+            selectFields.add(DSL.avg(numericAccessor).as("avg_" + i));
+            selectFields.add(DSL.min(numericAccessor).as("min_" + i));
+            selectFields.add(DSL.max(numericAccessor).as("max_" + i));
+            // Counted via the text accessor (not the numeric one) so a present-but-non-numeric metric
+            // value still counts as present — preserves null-vs-absent semantics independent of casting.
+            selectFields.add(DSL.count(textAccessor).as("count_" + i));
         }
 
         Record row = dsl.select(selectFields)
@@ -250,13 +253,8 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         Record row = dsl.select(
                         DSL.count().as(TOTAL_ROWS),
                         DSL.count(probeKey(probe)).as(MATCHED_ROWS),
-                        DSL.count()
-                                .filterWhere(matched.and(
-                                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS.eq(ExecutionStatus.SUCCESS.name())))
-                                .as(MATCHED_SUCCESS_ROWS),
-                        DSL.avg(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS)
-                                .filterWhere(matched)
-                                .as(AVG_EXEC_DURATION_MS))
+                        matchedSuccessRowsField(matched).as(MATCHED_SUCCESS_ROWS),
+                        avgExecDurationMsField(matched).as(AVG_EXEC_DURATION_MS))
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .leftJoin(probe)
                 .on(matchCondition(probe))
@@ -284,7 +282,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .on(matchCondition(probe))
                 .where(runScope(runId, computationId).and(probeKey(probe).isNull()))
                 .orderBy(
-                        DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME),
+                        lowerName(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME),
                         TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
@@ -304,7 +302,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         // same table — without it the inner predicates read as if they might be correlated.
         TestCaseEvalSummaries other = TEST_CASE_EVAL_SUMMARIES.as(OTHER_RUN_ALIAS);
         return dsl.selectDistinct(
-                        DSL.lower(other.TEST_CASE_NAME).as(PROBE_NAME_LOWER),
+                        lowerName(other.TEST_CASE_NAME).as(PROBE_NAME_LOWER),
                         other.RUN_INDEX,
                         other.REQUEST_INDEX,
                         other.TURN_INDEX)
@@ -313,6 +311,14 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         .eq(otherRunId.toString())
                         .and(other.COMPUTATION_ID.eq(otherComputationId.toString())))
                 .asTable(PROBE_TABLE);
+    }
+
+    /**
+     * Case-folds a test case name for the run-comparison match key. Postgres' {@code lower} is
+     * locale-aware; overridden for ClickHouse, whose {@code lower} only folds ASCII.
+     */
+    protected Field<String> lowerName(Field<String> name) {
+        return DSL.lower(name);
     }
 
     /**
@@ -326,7 +332,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
 
     private Condition matchCondition(Table<?> probe) {
         return probeKey(probe)
-                .eq(DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME))
+                .eq(lowerName(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME))
                 .and(probe.field(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX))
                 .and(probe.field(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX))
                 .and(probe.field(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX));
@@ -341,6 +347,23 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .TEST_SUITE_RUN_ID
                 .eq(runId.toString())
                 .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()));
+    }
+
+    /**
+     * The matched-and-successful row count for {@link #countMatches}. Postgres uses the standard SQL
+     * {@code FILTER (WHERE ...)} aggregate clause; overridden for ClickHouse, which does not support it.
+     */
+    protected Field<Integer> matchedSuccessRowsField(Condition matched) {
+        return DSL.count()
+                .filterWhere(matched.and(TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS.eq(ExecutionStatus.SUCCESS.name())));
+    }
+
+    /**
+     * The average execution duration over matched rows for {@link #countMatches}. Postgres uses
+     * {@code FILTER (WHERE ...)}; overridden for ClickHouse, which does not support it.
+     */
+    protected Field<BigDecimal> avgExecDurationMsField(Condition matched) {
+        return DSL.avg(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS).filterWhere(matched);
     }
 
     private CursorPage<EvalSummary> findAllInternal(
@@ -480,16 +503,29 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         return condition;
     }
 
+    /**
+     * The metric value as text (metric_values -&gt; :metricName -&gt;&gt; :outputName), path components
+     * bound as params. Used both for the text-typed count in {@link #aggregate} (present-but-non-numeric
+     * still counts as present) and as the base for {@link #buildNumericMetricAccessor}. Overridden for
+     * ClickHouse, whose JSON path syntax differs entirely from Postgres' {@code ->}/{@code ->>} operators.
+     */
     @SuppressWarnings("unchecked")
-    private static Field<String> buildMetricAccessor(MetricPath metric) {
-        // (metric_values -> :metricName ->> :outputName) — path components bound as params
+    protected Field<String> buildTextMetricAccessor(MetricPath metric) {
         Field<JSONB> jsonbField = TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES;
         return DSL.field(
                 "({0}->{1}->>{2})",
                 String.class, jsonbField, DSL.val(metric.metricName()), DSL.val(metric.outputName()));
     }
 
-    private static JSONB toJsonb(String json) {
+    /**
+     * The metric value cast to numeric, for the avg/min/max aggregates in {@link #aggregate}. Overridden
+     * for ClickHouse to use its own numeric JSON extraction rather than casting the text accessor.
+     */
+    protected Field<BigDecimal> buildNumericMetricAccessor(MetricPath metric) {
+        return buildTextMetricAccessor(metric).cast(BigDecimal.class);
+    }
+
+    protected static JSONB toJsonb(String json) {
         return json != null ? JSONB.valueOf(json) : null;
     }
 }

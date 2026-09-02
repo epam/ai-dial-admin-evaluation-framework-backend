@@ -30,7 +30,7 @@ public class NewEntity {
 ## New RecordMapper
 
 Maps a generated jOOQ `*Record` to the domain model. After adding a Flyway migration and running
-`./gradlew generateJooq`, the generated `NewEntitiesRecord` becomes available.
+`./gradlew generateJooq` (plus `./gradlew generateClickHouseJooq` for an analytics table, whose model has a ClickHouse twin), the generated `NewEntitiesRecord` becomes available.
 
 ```java
 package com.epam.aidial.evaluation.data.db.mapper;
@@ -94,7 +94,7 @@ public interface NewEntityRepository {
 
 ## New Repository Implementation (Postgres)
 
-Uses the typed jOOQ DSL. After adding a migration and running `./gradlew generateJooq`, the
+Uses the typed jOOQ DSL. After adding a migration and running the matching codegen task (`generateJooq` for the Postgres meta and analytics models; `generateClickHouseJooq` in addition for the ClickHouse analytics twin), the
 generated `Tables.NEW_ENTITIES` constant and `NewEntitiesRecord` become available.
 
 ```java

@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.query.service.translate.function;
 
+import com.epam.aidial.evaluation.data.db.repository.sql.DialectAwareSql;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FnExpr;
 import com.epam.aidial.evaluation.query.model.ValueExpr;
@@ -10,7 +11,9 @@ import java.util.List;
 import java.util.function.BinaryOperator;
 import lombok.RequiredArgsConstructor;
 import org.jooq.Field;
+import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
+import org.jooq.impl.SQLDataType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -55,6 +58,15 @@ public class BuiltInQueryFunctions {
         return QueryFunction.of("abs", (fn, ctx) -> DSL.abs((Field) ctx.singleArg(fn)));
     }
 
+    /**
+     * {@code width_bucket(operand, low, high, count)} → the histogram bucket index of {@code operand}.
+     *
+     * <p>ClickHouse names the same function {@code widthBucket} and accepts {@code width_bucket} as an
+     * alias, so jOOQ's rendering is syntactically valid there — but ClickHouse requires the bucket
+     * <em>count</em> to be an <b>unsigned</b> integer and rejects the {@code Int32} that jOOQ's
+     * {@code cast(… as integer)} produces with {@code ILLEGAL_TYPE_OF_ARGUMENT} (verified against a live
+     * server). The ClickHouse branch therefore wraps the count in {@code toUInt32}.
+     */
     @Bean
     @SuppressWarnings({"unchecked", "rawtypes"})
     public QueryFunction widthBucketFunction() {
@@ -68,7 +80,14 @@ public class BuiltInQueryFunctions {
             final Field low = ctx.toField(args.get(1));
             final Field high = ctx.toField(args.get(2));
             final Field<Integer> count = ctx.toField(args.get(3)).cast(Integer.class);
-            return DSL.widthBucket(operand, low, high, count);
+            return DialectAwareSql.field(
+                    "width_bucket",
+                    SQLDataType.INTEGER,
+                    family -> family == SQLDialect.CLICKHOUSE
+                            ? DSL.field(
+                                    "widthBucket({0}, {1}, {2}, toUInt32({3}))",
+                                    SQLDataType.INTEGER, operand, low, high, count)
+                            : DSL.widthBucket(operand, low, high, count));
         });
     }
 
@@ -152,8 +171,8 @@ public class BuiltInQueryFunctions {
             if (args.size() != 2) {
                 throw new ValidationException("function 'coalesce' expects exactly two arguments");
             }
-            final Field<BigDecimal> value = ctx.toField(args.get(0)).cast(BigDecimal.class);
-            final Field<BigDecimal> fallback = ctx.toField(args.get(1)).cast(BigDecimal.class);
+            final Field<BigDecimal> value = DialectAwareSql.numericCast(ctx.toField(args.get(0)));
+            final Field<BigDecimal> fallback = DialectAwareSql.numericCast(ctx.toField(args.get(1)));
             return DSL.coalesce(value, fallback);
         });
     }
@@ -167,7 +186,7 @@ public class BuiltInQueryFunctions {
         }
         Field<BigDecimal> result = null;
         for (final Expr arg : args) {
-            final Field<BigDecimal> term = ctx.toField(arg).cast(BigDecimal.class);
+            final Field<BigDecimal> term = DialectAwareSql.numericCast(ctx.toField(arg));
             result = result == null ? term : combiner.apply(result, term);
         }
         return result;
@@ -180,14 +199,26 @@ public class BuiltInQueryFunctions {
         if (args.size() != 2) {
             throw new ValidationException("function '" + name + "' expects exactly two arguments");
         }
-        final Field<BigDecimal> left = ctx.toField(args.get(0)).cast(BigDecimal.class);
-        final Field<BigDecimal> right = ctx.toField(args.get(1)).cast(BigDecimal.class);
+        final Field<BigDecimal> left = DialectAwareSql.numericCast(ctx.toField(args.get(0)));
+        final Field<BigDecimal> right = DialectAwareSql.numericCast(ctx.toField(args.get(1)));
         return combiner.apply(left, right);
     }
 
     /**
      * {@code percentile_(cont|disc)(fraction, column)} → ordered-set aggregate with {@code WITHIN
      * GROUP (ORDER BY column)}. {@code fraction} must be a numeric literal in {@code [0, 1]}.
+     *
+     * <p>On {@link SQLDialect#CLICKHOUSE}, jOOQ's {@code DSL.percentileCont}/{@code percentileDisc}
+     * render as ClickHouse's {@code quantile}/{@code quantileExactLow} parametric aggregate functions.
+     * {@code quantile} is an <em>approximate</em>, sampling-based estimate — not the exact linear
+     * interpolation Postgres' {@code percentile_cont} computes — so metric statistics (e.g. P90/P99)
+     * would become nondeterministic and diverge semantically from Postgres. This dialect-switches to
+     * the exact ClickHouse equivalents instead: {@code quantileExactInclusive(fraction)(column)} for
+     * {@code percentile_cont}, {@code quantileExactLow(fraction)(column)} for {@code percentile_disc}
+     * (both exact, matching jOOQ's already-exact rendering for {@code percentile_disc} — only {@code
+     * percentile_cont} needed correcting). The fraction is inlined rather than bound: it is already
+     * validated as a numeric literal in {@code [0, 1]} by {@link #percentileFraction}, never
+     * user-controlled SQL text.
      */
     private Field<?> percentile(FnExpr fn, FunctionContext ctx, boolean continuous) {
         final List<Expr> args = ctx.args(fn);
@@ -195,11 +226,21 @@ public class BuiltInQueryFunctions {
             throw new ValidationException(
                     "function '" + fn.name() + "' expects exactly two arguments (fraction, column)");
         }
-        final Field<BigDecimal> fraction = DSL.val(percentileFraction(fn, args.getFirst()));
+        final BigDecimal fractionValue = percentileFraction(fn, args.getFirst());
+        final Field<BigDecimal> fraction = DSL.val(fractionValue);
         final Field<?> orderField = ctx.toField(args.get(1));
-        return continuous
-                ? DSL.percentileCont(fraction).withinGroupOrderBy(orderField)
-                : DSL.percentileDisc(fraction).withinGroupOrderBy(orderField);
+        return DialectAwareSql.field(
+                continuous ? "percentile_cont" : "percentile_disc",
+                SQLDataType.NUMERIC,
+                family -> family == SQLDialect.CLICKHOUSE
+                        ? DSL.field(
+                                (continuous ? "quantileExactInclusive({0})({1})" : "quantileExactLow({0})({1})"),
+                                SQLDataType.NUMERIC,
+                                DSL.inline(fractionValue),
+                                orderField)
+                        : (continuous
+                                ? DSL.percentileCont(fraction).withinGroupOrderBy(orderField)
+                                : DSL.percentileDisc(fraction).withinGroupOrderBy(orderField)));
     }
 
     private BigDecimal percentileFraction(FnExpr fn, Expr arg) {

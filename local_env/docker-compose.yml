@@ -17,6 +17,24 @@ services:
       timeout: 5s
       retries: 5
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: evaluation-clickhouse
+    environment:
+      CLICKHOUSE_DB: evaluation_analytics
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user clickhouse --password clickhouse --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
       context: ../
@@ -25,6 +43,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Uncomment when flipping the app to the ClickHouse analytics vendor below.
+      # clickhouse:
+      #   condition: service_healthy
     environment:
       # Meta datasource
       POSTGRES_META_DATASOURCE_URL: jdbc:postgresql://postgres:5432/evaluation_db
@@ -43,6 +64,11 @@ services:
       METRIC_PROVIDERS_EXTRA_BASE_URL: ${METRIC_PROVIDERS_EXTRA_BASE_URL:-http://localhost:8087}
       METRIC_PROVIDERS_SYNC_CRON: ${METRIC_PROVIDERS_SYNC_CRON}
       DIAL_EF_API_KEY: ${DIAL_EF_API_KEY}
+      # To run analytics on ClickHouse instead of Postgres:
+      # DATASOURCE_ANALYTICS_VENDOR: CLICKHOUSE
+      # CLICKHOUSE_ANALYTICS_DATASOURCE_URL: jdbc:clickhouse://clickhouse:8123/evaluation_analytics
+      # CLICKHOUSE_ANALYTICS_DATASOURCE_USERNAME: clickhouse
+      # CLICKHOUSE_ANALYTICS_DATASOURCE_PASSWORD: clickhouse
     ports:
       - "8080:8080"
     volumes:
@@ -50,3 +76,4 @@ services:
 
 volumes:
   postgres_data:
+  clickhouse_data:

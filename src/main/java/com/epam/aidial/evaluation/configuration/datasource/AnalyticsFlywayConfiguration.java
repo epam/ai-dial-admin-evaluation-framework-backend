@@ -6,12 +6,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.flywaydb.core.Flyway;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @Slf4j
 @LogExecution
+@ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES", matchIfMissing = true)
 public class AnalyticsFlywayConfiguration {
 
     @Bean

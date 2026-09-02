@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
-import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAccessor;
+import com.epam.aidial.evaluation.data.db.repository.sql.json.DialectAwareJsonPathAccessor;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.Expr;
@@ -38,7 +38,7 @@ import org.springframework.beans.factory.ObjectProvider;
 class FilterTranslatorArrayContainmentTest {
 
     private final DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
-    private final PostgresJsonPathAccessor jsonPathAccessor = new PostgresJsonPathAccessor();
+    private final DialectAwareJsonPathAccessor jsonPathAccessor = new DialectAwareJsonPathAccessor();
 
     private final ValueExprToObjectMapper valueExprToObjectMapper = new ValueExprToObjectMapper();
     private final JsonbFieldResolver jsonbFieldResolver = new JsonbFieldResolver(jsonPathAccessor);

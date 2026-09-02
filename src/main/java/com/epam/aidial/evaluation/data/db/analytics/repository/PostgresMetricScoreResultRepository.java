@@ -23,7 +23,7 @@ import org.springframework.stereotype.Repository;
 public class PostgresMetricScoreResultRepository implements MetricScoreResultRepository {
 
     @Qualifier("analyticsDsl")
-    private final DSLContext dsl;
+    protected final DSLContext dsl;
 
     private final MetricScoreResultRecordMapper recordMapper;
 

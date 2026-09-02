@@ -88,4 +88,12 @@ public class MetricDeclarationService {
                 .orElseThrow(() ->
                         new EntityNotFoundException("No version found for metric declaration id: " + declarationId));
     }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<MetricDeclarationVersionResponseDto> getLatestVersions() {
+        log.debug("Fetching the latest MetricDeclarationVersion of every metric declaration");
+        return metricDeclarationVersionRepository.findLatestPerMetricDeclaration().stream()
+                .map(metricDeclarationVersionMapper::toDto)
+                .toList();
+    }
 }

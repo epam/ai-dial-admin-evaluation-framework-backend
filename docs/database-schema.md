@@ -571,7 +571,7 @@ Schema versions for each metric declaration. New version is inserted when config
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
 | `idx_metric_declaration_versions_declaration_id` | `metric_declaration_id` | BTREE | Lookup by declaration |
-| `idx_metric_declaration_versions_declaration_version` | `(metric_declaration_id, schema_version DESC)` | BTREE | Latest-version lookup |
+| `uq_metric_declaration_versions_declaration_version` | `(metric_declaration_id, schema_version DESC)` | BTREE UNIQUE | Latest-version lookup + one row per (declaration, schema_version). Unique INDEX, not a UNIQUE constraint, so the second column keeps DESC ordering for `SELECT DISTINCT ON (metric_declaration_id) … ORDER BY metric_declaration_id, schema_version DESC` (V1.30 replaced the non-unique V1.9 index) |
 
 ---
 
@@ -959,6 +959,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.27 | `V1.27__AddMultiTurnDataToTestCases.sql` | Added nullable `multi_turn_data` JSONB to test_cases (ordered array of per-turn data maps). Coexists with `data` (shared vs per-turn fields, scoped in `test_case_schema`); no mutual-exclusivity CHECK constraint. |
 | V1.28 | `V1.28__AddMultiTurnDataToTestCaseRunInputs.sql` | Added nullable `multi_turn_data` JSONB to test_case_run_inputs (frozen multi-turn snapshot; one input row per case) |
 | V1.29 | `V1.29__AddAdditionalRequestsToTestSuites.sql` | Added `additional_requests` JSONB NOT NULL DEFAULT `'[]'::jsonb` (ordered chain of requests 1..N, List of RequestDefinitionDto) and nullable `request_name` VARCHAR(255) (label for request #0) to test_suites, for multi-request suites |
+| V1.30 | `V1.30__AddUniqueIndexToMetricDeclarationVersions.sql` | Replaced `idx_metric_declaration_versions_declaration_version` with UNIQUE INDEX `uq_metric_declaration_versions_declaration_version` on `(metric_declaration_id, schema_version DESC)` — enforces one row per (declaration, schema_version) while keeping the DESC ordering the latest-version `DISTINCT ON` query needs |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

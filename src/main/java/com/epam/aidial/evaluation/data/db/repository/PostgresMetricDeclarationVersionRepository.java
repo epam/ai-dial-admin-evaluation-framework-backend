@@ -35,6 +35,23 @@ public class PostgresMetricDeclarationVersionRepository implements MetricDeclara
     private final MetricDeclarationRecordMapper declarationRecordMapper;
     private final TransactionTimestampContext transactionTimestampContext;
 
+    /**
+     * Inserts the version, assigning {@code MAX(schema_version) + 1} when the caller passes a
+     * non-positive schema_version.
+     *
+     * <p>That assignment is deliberately <em>not</em> serialized with a lock on the parent declaration.
+     * uq_metric_declaration_versions_declaration_version is the guard: a writer that loses the race
+     * fails with SQLSTATE 23505 and its transaction rolls back, leaving no partial data. Serializing
+     * instead would be worse, not safer - the caller's change detection
+     * ({@code MetricProviderSyncService.differsFromLatest}) runs before the insert, so the waiter would
+     * unblock, never re-check, and persist a second version whose schemas are identical to the winner's;
+     * version ids are referenced by test suite metric definitions, so that inflation is durable. A
+     * {@code SELECT ... FOR UPDATE} would also conflict with the FOR KEY SHARE that FK checks take on
+     * metric_declarations, blocking unrelated inserts that never blocked before.
+     *
+     * <p>{@code MetricProviderSyncJob} therefore treats 23505 as an expected concurrent-sync outcome and
+     * lets the next scheduled run re-sync.
+     */
     @Override
     public MetricDeclarationVersion save(MetricDeclarationVersion version) {
         long createdAtMs = transactionTimestampContext.getTimestamp();
@@ -46,7 +63,6 @@ public class PostgresMetricDeclarationVersionRepository implements MetricDeclara
         }
         int schemaVersion = version.getSchemaVersion();
         if (schemaVersion <= 0) {
-            lockDeclaration(version.getMetricDeclarationId());
             Integer next = dsl.select(DSL.coalesce(DSL.max(METRIC_DECLARATION_VERSIONS.SCHEMA_VERSION), 0)
                             .add(1))
                     .from(METRIC_DECLARATION_VERSIONS)
@@ -137,20 +153,6 @@ public class PostgresMetricDeclarationVersionRepository implements MetricDeclara
                 .fetch(record -> new MetricDeclarationWithLatestVersion(
                         declarationRecordMapper.map(record.into(METRIC_DECLARATIONS)),
                         recordMapper.map(record.into(METRIC_DECLARATION_VERSIONS))));
-    }
-
-    /**
-     * Locks the parent metric declaration row so that the MAX(schema_version) + 1 read in
-     * {@link #save(MetricDeclarationVersion)} cannot be lost to a concurrent writer. Needed because uq_metric_declaration_versions_declaration_version
-     * turns such a lost update into a hard 23505 that fails the whole provider's sync transaction, and
-     * MetricProviderSyncJob runs on every application instance without leader election.
-     */
-    private void lockDeclaration(UUID metricDeclarationId) {
-        dsl.select(METRIC_DECLARATIONS.ID)
-                .from(METRIC_DECLARATIONS)
-                .where(METRIC_DECLARATIONS.ID.eq(metricDeclarationId.toString()))
-                .forUpdate()
-                .fetch();
     }
 
     private static JSONB toJsonb(String json) {

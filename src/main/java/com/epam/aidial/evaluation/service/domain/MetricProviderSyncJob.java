@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.properties.metricprovider.MetricProviderProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationDetector;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,15 @@ import org.springframework.stereotype.Component;
  * Only runs when sync.enabled is true and providers map is non-empty.
  * Within a run, a provider entry whose own enabled flag is false is logged and skipped.
  * One provider failure is logged and does not stop the job.
+ *
+ * <p>Concurrency: this job runs on every application instance without leader election, so two instances
+ * may sync the same provider at once. Version assignment is not locked (see
+ * {@code PostgresMetricDeclarationVersionRepository.save}); the loser of the race fails on
+ * uq_metric_declaration_versions_declaration_version, its provider transaction rolls back whole, and the
+ * next scheduled run re-syncs it. That 23505 is therefore expected traffic and is logged at info without
+ * a stacktrace and without an immediate retry (a retry would only add provider HTTP load). Everything
+ * else, deadlocks (40P01) included, stays a warn with the throwable - metrics are iterated in a
+ * deterministic order, so a lock cycle should be impossible and one occurring is a real anomaly.
  */
 @Slf4j
 @Component
@@ -69,7 +79,14 @@ public class MetricProviderSyncJob {
                 metricProviderSyncService.syncOne(providerId);
                 log.debug("Metric provider sync completed for provider {}", providerId);
             } catch (Exception e) {
-                log.warn("Metric provider sync failed for provider {}: {}", providerId, e.getMessage(), e);
+                if (UniqueConstraintViolationDetector.isUniqueViolation(e)) {
+                    log.info(
+                            "Metric provider sync for provider {} lost a concurrent version-assignment race; "
+                                    + "its transaction rolled back and the next scheduled run will re-sync",
+                            providerId);
+                } else {
+                    log.warn("Metric provider sync failed for provider {}: {}", providerId, e.getMessage(), e);
+                }
             }
         }
         log.info("Metric provider sync finished");

@@ -3,11 +3,13 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.epam.aidial.evaluation.configuration.properties.metricprovider.MetricProviderProperties;
 import com.epam.aidial.evaluation.configuration.properties.metricprovider.MetricProviderProperties.ProviderEntry;
+import java.sql.SQLException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.client.RestClientException;
 
 @ExtendWith(MockitoExtension.class)
@@ -107,6 +110,25 @@ class MetricProviderSyncJobTest {
 
             verify(metricProviderSyncService).syncOne(DIAL);
             verify(metricProviderSyncService).syncOne(EXTRA);
+            verify(metricProviderSyncService).syncOne(THIRD);
+        }
+
+        @Test
+        @DisplayName("logs and moves on without retrying when a provider loses the version-assignment race")
+        void uniqueViolation_notRetriedAndRemainingProvidersStillSynced() {
+            givenProvider(DIAL, true);
+            givenProvider(EXTRA, true);
+            givenProvider(THIRD, true);
+            doThrow(new DataIntegrityViolationException(
+                            "duplicate key",
+                            new SQLException("duplicate key value violates unique constraint", "23505")))
+                    .when(metricProviderSyncService)
+                    .syncOne(EXTRA);
+
+            job.onApplicationReady();
+
+            verify(metricProviderSyncService).syncOne(DIAL);
+            verify(metricProviderSyncService, times(1)).syncOne(EXTRA);
             verify(metricProviderSyncService).syncOne(THIRD);
         }
 

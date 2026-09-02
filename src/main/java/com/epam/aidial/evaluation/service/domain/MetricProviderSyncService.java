@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.data.db.model.MetricDeclarationVersion;
 import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationRepository;
 import com.epam.aidial.evaluation.data.db.repository.MetricDeclarationVersionRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,9 +43,25 @@ public class MetricProviderSyncService {
         MetricsResponseDto response = metricProviderClient.getMetrics(providerId);
         List<MetricsDescriptionDto> metrics =
                 response != null && response.getMetrics() != null ? response.getMetrics() : List.of();
-        for (MetricsDescriptionDto dto : metrics) {
+        for (MetricsDescriptionDto dto : sortedByName(metrics)) {
             upsertDeclarationAndVersion(providerId, dto);
         }
+    }
+
+    /**
+     * Orders the provider's metrics by name so that concurrent instances acquire declaration row locks in
+     * the same sequence. {@link #syncOne(String)} is one transaction per provider and every changed metric row-locks
+     * its declaration (via updateMetadata) until commit, so raw provider-response order would allow an
+     * ABBA cycle between two instances - a deadlock (40P01) instead of the clean 23505 the version-
+     * assignment race is designed to surface. UNIQUE(provider_id, name) makes name a total order within a
+     * provider. The response list is immutable, hence a sorted copy; name is not validated anywhere on the
+     * provider contract, hence nullsLast.
+     */
+    private static List<MetricsDescriptionDto> sortedByName(List<MetricsDescriptionDto> metrics) {
+        return metrics.stream()
+                .sorted(Comparator.comparing(
+                        MetricsDescriptionDto::getName, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
     }
 
     private void upsertDeclarationAndVersion(String providerId, MetricsDescriptionDto dto) {

@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.MetricDeclarationService;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationWithLatestVersionResponseDto;
 import com.epam.aidial.evaluation.web.pagination.FilterParam;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
 import io.swagger.v3.oas.annotations.Operation;
@@ -107,10 +108,11 @@ public class MetricDeclarationController {
 
     @GetMapping("/versions/latest")
     @Operation(
-            summary = "Get the latest version of every metric declaration",
-            description = "Returns the latest schema version (greatest schema_version) of every metric declaration, "
-                    + "ordered by metric declaration ID. Declarations that have no version yet are omitted; "
-                    + "an empty array is returned when no versions exist at all.")
+            summary = "Get every metric declaration with its latest version",
+            description = "Returns one item per metric declaration - the declaration itself, with its latest schema "
+                    + "version (greatest schema_version) nested under latestVersion - ordered by metric declaration "
+                    + "ID. Declarations that have no version yet are omitted; an empty array is returned when no "
+                    + "versions exist at all.")
     @ApiResponse(
             responseCode = "200",
             description = "Latest versions retrieved successfully",
@@ -122,9 +124,11 @@ public class MetricDeclarationController {
                                             schema =
                                                     @Schema(
                                                             implementation =
-                                                                    MetricDeclarationVersionResponseDto.class))))
-    public ResponseEntity<List<MetricDeclarationVersionResponseDto>> getLatestVersions() {
-        final List<MetricDeclarationVersionResponseDto> latestVersions = metricDeclarationService.getLatestVersions();
+                                                                    MetricDeclarationWithLatestVersionResponseDto
+                                                                            .class))))
+    public ResponseEntity<List<MetricDeclarationWithLatestVersionResponseDto>> getLatestVersions() {
+        final List<MetricDeclarationWithLatestVersionResponseDto> latestVersions =
+                metricDeclarationService.getLatestVersions();
         return ResponseEntity.ok(latestVersions);
     }
 }

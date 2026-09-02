@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataPro
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationWithLatestVersionResponseDto;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -183,7 +184,7 @@ public abstract class MetricDeclarationFunctionalTests extends BaseFunctionalTes
         metricDeclarationTestDataProvider.insertVersionWithSchemas(
                 "990e8400-e29b-41d4-a716-446655440004", SEED_LATENCY_ID.toString(), 1, "{}", "{}", "{}");
 
-        ResponseEntity<List<MetricDeclarationVersionResponseDto>> response = restTemplate.exchange(
+        ResponseEntity<List<MetricDeclarationWithLatestVersionResponseDto>> response = restTemplate.exchange(
                 apiUrl("/metric-declarations/versions/latest"),
                 HttpMethod.GET,
                 null,
@@ -194,10 +195,59 @@ public abstract class MetricDeclarationFunctionalTests extends BaseFunctionalTes
         // Ordered by metric_declaration_id: Accuracy (...0001) then Latency (...0002); Relevance has no version.
         assertThat(response.getBody())
                 .extracting(
-                        MetricDeclarationVersionResponseDto::getMetricDeclarationId,
-                        MetricDeclarationVersionResponseDto::getSchemaVersion)
+                        MetricDeclarationWithLatestVersionResponseDto::getId,
+                        dto -> dto.getLatestVersion().getSchemaVersion())
                 .containsExactly(tuple(SEED_ACCURACY_ID, 3), tuple(SEED_LATENCY_ID, 1));
-        assertThat(response.getBody().get(0).getConfigSchema()).containsEntry("type", "object");
+        assertThat(response.getBody())
+                .extracting(
+                        MetricDeclarationWithLatestVersionResponseDto::getProviderId,
+                        MetricDeclarationWithLatestVersionResponseDto::getName)
+                .containsExactly(
+                        tuple(MetricDeclarationTestDataProvider.SEED_METRIC_PROVIDER_ID, "Accuracy"),
+                        tuple(MetricDeclarationTestDataProvider.SEED_METRIC_PROVIDER_ID, "Latency"));
+        assertThat(response.getBody().getFirst().getLatestVersion().getConfigSchema())
+                .containsEntry("type", "object");
+    }
+
+    @Test
+    @DisplayName("Latest-versions list reads shared column names from the right table")
+    void shouldReadSharedColumnsFromTheirOwnTable() {
+        // metric_declarations and metric_declaration_versions both have id, display_name, description and
+        // created_at_ms, so give every one of them a distinct value and pin which side it must come from.
+        final String declarationId = "aa0e8400-e29b-41d4-a716-446655440001";
+        final String versionId = "bb0e8400-e29b-41d4-a716-446655440001";
+        metricDeclarationTestDataProvider.clearMetricDeclarationsAndVersions();
+        metricDeclarationTestDataProvider.insertDeclarationWithMetadata(
+                declarationId,
+                "provenance-provider",
+                "ProvenanceMetric",
+                "declaration display",
+                "declaration desc",
+                1L);
+        metricDeclarationTestDataProvider.insertVersionWithMetadata(
+                versionId, declarationId, 7, "version display", "version desc", 2L);
+
+        ResponseEntity<List<MetricDeclarationWithLatestVersionResponseDto>> response = restTemplate.exchange(
+                apiUrl("/metric-declarations/versions/latest"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).hasSize(1);
+        MetricDeclarationWithLatestVersionResponseDto item = response.getBody().getFirst();
+        assertThat(item.getId()).isEqualTo(UUID.fromString(declarationId));
+        assertThat(item.getProviderId()).isEqualTo("provenance-provider");
+        assertThat(item.getName()).isEqualTo("ProvenanceMetric");
+        assertThat(item.getDisplayName()).isEqualTo("declaration display");
+        assertThat(item.getDescription()).isEqualTo("declaration desc");
+        assertThat(item.getCreatedAt()).isEqualTo(1L);
+        assertThat(item.getLatestVersion().getId()).isEqualTo(UUID.fromString(versionId));
+        assertThat(item.getLatestVersion().getMetricDeclarationId()).isEqualTo(UUID.fromString(declarationId));
+        assertThat(item.getLatestVersion().getSchemaVersion()).isEqualTo(7);
+        assertThat(item.getLatestVersion().getDisplayName()).isEqualTo("version display");
+        assertThat(item.getLatestVersion().getDescription()).isEqualTo("version desc");
+        assertThat(item.getLatestVersion().getCreatedAt()).isEqualTo(2L);
     }
 
     @Test

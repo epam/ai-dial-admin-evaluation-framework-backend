@@ -114,6 +114,62 @@ public class MetricDeclarationTestDataProvider {
     }
 
     /**
+     * Inserts one declaration with fully explicit metadata. Use together with
+     * {@link #insertVersionWithMetadata} when a test must tell declaration-sourced response fields apart
+     * from version-sourced ones (both tables carry id, display_name, description and created_at_ms).
+     */
+    @Transactional("metaTransactionManager")
+    public void insertDeclarationWithMetadata(
+            String id, String providerId, String name, String displayName, String description, long createdAtMs) {
+        metaJdbcTemplate.update(
+                """
+                INSERT INTO metric_declarations (id, provider_id, name, display_name, description, created_at_ms)
+                VALUES (:id, :providerId, :name, :displayName, :description, :createdAtMs)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                new MapSqlParameterSource()
+                        .addValue("id", id)
+                        .addValue("providerId", providerId)
+                        .addValue("name", name)
+                        .addValue("displayName", displayName)
+                        .addValue("description", description)
+                        .addValue("createdAtMs", createdAtMs));
+    }
+
+    /**
+     * Inserts one version with fully explicit metadata (empty schemas). Counterpart of
+     * {@link #insertDeclarationWithMetadata}; pass values that differ from the declaration's so a test can
+     * prove which table each response field came from.
+     */
+    @Transactional("metaTransactionManager")
+    public void insertVersionWithMetadata(
+            String versionId,
+            String declarationId,
+            int schemaVersion,
+            String displayName,
+            String description,
+            long createdAtMs) {
+        metaJdbcTemplate.update(
+                """
+                INSERT INTO metric_declaration_versions (
+                    id, metric_declaration_id, schema_version,
+                    config_schema, input_schema, output_schema, display_name, description, created_at_ms
+                ) VALUES (
+                    :id, :declarationId, :schemaVersion,
+                    '{}', '{}', '{}', :displayName, :description, :createdAtMs
+                )
+                ON CONFLICT (id) DO NOTHING
+                """,
+                new MapSqlParameterSource()
+                        .addValue("id", versionId)
+                        .addValue("declarationId", declarationId)
+                        .addValue("schemaVersion", schemaVersion)
+                        .addValue("displayName", displayName)
+                        .addValue("description", description)
+                        .addValue("createdAtMs", createdAtMs));
+    }
+
+    /**
      * Clears all metric declarations and their versions. Use for "empty catalog" tests.
      */
     @Transactional("metaTransactionManager")

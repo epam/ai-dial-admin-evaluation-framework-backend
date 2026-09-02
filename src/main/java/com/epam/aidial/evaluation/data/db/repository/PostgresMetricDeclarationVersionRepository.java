@@ -3,15 +3,19 @@ package com.epam.aidial.evaluation.data.db.repository;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.METRIC_DECLARATIONS;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.METRIC_DECLARATION_VERSIONS;
 
+import com.epam.aidial.evaluation.data.db.mapper.MetricDeclarationRecordMapper;
 import com.epam.aidial.evaluation.data.db.mapper.MetricDeclarationVersionRecordMapper;
 import com.epam.aidial.evaluation.data.db.model.MetricDeclarationVersion;
+import com.epam.aidial.evaluation.data.db.model.MetricDeclarationWithLatestVersion;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.ArrayUtils;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.JSONB;
 import org.jooq.impl.DSL;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -28,6 +32,7 @@ public class PostgresMetricDeclarationVersionRepository implements MetricDeclara
     private final DSLContext dsl;
 
     private final MetricDeclarationVersionRecordMapper recordMapper;
+    private final MetricDeclarationRecordMapper declarationRecordMapper;
     private final TransactionTimestampContext transactionTimestampContext;
 
     @Override
@@ -103,16 +108,33 @@ public class PostgresMetricDeclarationVersionRepository implements MetricDeclara
      * ordering is exactly uq_metric_declaration_versions_declaration_version, so this is a single index
      * scan rather than the table self-join a MAX(schema_version) group-by would need. No tiebreaker
      * column is needed: the index is unique, so one (declaration, schema_version) matches at most one row.
+     *
+     * <p>The INNER JOIN - not a filter - is what omits declarations that have no version row yet. It is
+     * many-to-one on the distinct key, so {@code DISTINCT ON} still yields exactly one row per
+     * declaration.
+     *
+     * <p>The joined record is split back into the two typed records with {@code record.into(TABLE)},
+     * which resolves each target field by Field <em>identity</em> against the projection. That is what
+     * makes the split unambiguous even though both tables carry an id, description, created_at_ms and
+     * display_name column - so never alias a column here and never project an asterisk: either loses the
+     * identity match and silently falls back to matching by unqualified column name.
      */
     @Override
-    public List<MetricDeclarationVersion> findLatestPerMetricDeclaration() {
-        return dsl.selectDistinct(METRIC_DECLARATION_VERSIONS.fields())
+    public List<MetricDeclarationWithLatestVersion> findLatestPerMetricDeclaration() {
+        final Field<?>[] projection =
+                ArrayUtils.addAll(METRIC_DECLARATIONS.fields(), METRIC_DECLARATION_VERSIONS.fields());
+
+        return dsl.selectDistinct(projection)
                 .on(METRIC_DECLARATION_VERSIONS.METRIC_DECLARATION_ID)
                 .from(METRIC_DECLARATION_VERSIONS)
+                .join(METRIC_DECLARATIONS)
+                .on(METRIC_DECLARATION_VERSIONS.METRIC_DECLARATION_ID.eq(METRIC_DECLARATIONS.ID))
                 .orderBy(
                         METRIC_DECLARATION_VERSIONS.METRIC_DECLARATION_ID,
                         METRIC_DECLARATION_VERSIONS.SCHEMA_VERSION.desc())
-                .fetch(record -> recordMapper.map(record.into(METRIC_DECLARATION_VERSIONS)));
+                .fetch(record -> new MetricDeclarationWithLatestVersion(
+                        declarationRecordMapper.map(record.into(METRIC_DECLARATIONS)),
+                        recordMapper.map(record.into(METRIC_DECLARATION_VERSIONS))));
     }
 
     /**

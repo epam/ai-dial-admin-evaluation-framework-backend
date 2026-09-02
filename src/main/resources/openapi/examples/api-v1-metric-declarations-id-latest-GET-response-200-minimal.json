@@ -5,7 +5,6 @@
   "configSchema": {},
   "inputSchema": {},
   "outputSchema": {},
-  "displayName": null,
   "description": "Percentage of correct predictions",
   "createdAt": 1704067200000
 }

@@ -181,7 +181,7 @@ Specs for standalone command-line tools that consume the EF backend's public RES
 Specs documented but not yet fully implemented.
 
 - **[metrics-system](metrics-system/spec.md)** — Partial
-  Metric declarations/versioning and metric results storage. Stub implemented: list metric declarations (paginated/sorted/filtered, seeded Accuracy/Latency/Relevance).
+  Metric declarations/versioning and metric results storage. Implemented: paginated/sorted/filtered declaration list (provider-synced only; the seeded stubs were dropped by migration), `GET /{id}/latest` for one declaration's latest version, and `GET /versions/latest` returning every declaration with its latest version nested, plus per-declaration uniqueness of `schema_version`. Planned: MetricResult reproducibility and recalculation.
 - **[metric-provider-sync](metric-provider-sync/spec.md)** — Implemented
   Scheduled sync of metric declarations and versions from external metric provider services via GET /metrics API.
 - **[response-columns](response-columns/spec.md)** — Implemented

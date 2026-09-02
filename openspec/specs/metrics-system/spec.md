@@ -27,7 +27,7 @@ Status: **Planned**
 
 ### Requirement: Support MetricDeclaration versioning
 The system SHALL version MetricDeclarations to support reproducibility and recalculation. MetricDeclarationVersion SHALL be persisted with id, metric_declaration_id, schema_version, config_schema, input_schema, output_schema, description, display_name, and created_at. A new version SHALL be created when config_schema, input_schema, output_schema, description, or display_name change. implementation_version and implementation_ref are out of scope. schema_version SHALL be a per-declaration sequence: the database SHALL enforce that at most one MetricDeclarationVersion row exists for a given (metric_declaration_id, schema_version) pair, and the writer that assigns the next schema_version SHALL serialize concurrent assignment for the same declaration so the enforced uniqueness cannot fail a sync.
-Status: **Planned**
+Status: **Partial** (versions are persisted and created on change by provider sync; per-declaration uniqueness of schema_version and serialized assignment are implemented - see `V1.30` in Implementation Notes; MetricResult reproducibility and recalculation remain planned)
 
 #### Scenario: Reproducibility
 - **WHEN** a MetricResult is stored
@@ -74,8 +74,8 @@ Status: **Implemented**
 - **THEN** results SHALL be stored in `test_case_eval_summaries` (analytics DB), not in a separate normalized `metric_results` table
 
 ### Requirement: List metric declarations (stub)
-The service SHALL provide a paginated endpoint to list metric declarations available for discovery. Each listed declaration SHALL include id, provider_id, name, display_name, description, and created_at. The endpoint MAY support an optional filter by provider_id. The endpoint MAY include the latest MetricDeclarationVersion's config_schema, input_schema, and output_schema for discovery (exact shape to be defined in implementation). When these schema fields are included, they SHALL be serialized as JSON objects (not as JSON strings). Previously seeded (stub) records SHALL have been removed by migration; the list SHALL contain only provider-synced metrics. The display_name field SHALL be nullable in the response (providers may omit it).
-Status: **Partial** (provider_id and versioning added; filter/schemas optional)
+The service SHALL provide a paginated endpoint to list metric declarations available for discovery. Each listed declaration SHALL include id, provider_id, name, display_name, description, and created_at. The endpoint MAY support an optional filter by provider_id. This endpoint SHALL NOT embed version schemas; clients needing the latest version's config_schema, input_schema, and output_schema SHALL use GET /api/v1/metric-declarations/versions/latest (see "List every metric declaration with its latest version"), which returns them as JSON objects. Previously seeded (stub) records SHALL have been removed by migration; the list SHALL contain only provider-synced metrics. The display_name field SHALL be nullable in the response (providers may omit it).
+Status: **Partial** (provider_id and versioning added; filter optional; version schemas served by the dedicated latest-versions endpoint)
 
 #### Scenario: Empty catalog
 - **WHEN** client calls `GET /api/v1/metric-declarations` and no metric declarations exist (e.g. no sync run yet or no providers configured)
@@ -99,6 +99,7 @@ Status: **Partial** (provider_id and versioning added; filter/schemas optional)
 
 ### Requirement: MetricDeclaration has provider identity
 Each MetricDeclaration SHALL have a non-null provider_id. The system SHALL enforce UNIQUE(provider_id, name) so the same metric name from different providers is distinct. provider_id SHALL be set from configuration when declarations are synced from a metric provider.
+Status: **Implemented**
 
 #### Scenario: Same metric name from two providers
 - **WHEN** two configured providers both expose a metric named "exact_match"
@@ -110,10 +111,11 @@ Each MetricDeclaration SHALL have a non-null provider_id. The system SHALL enfor
 
 ### Requirement: Get latest metric declaration version by declaration id
 The service SHALL provide an endpoint GET /api/v1/metric-declarations/{id}/latest that returns the latest MetricDeclarationVersion for the metric declaration with the given id. Latest SHALL be determined by the greatest schema_version for that metric_declaration_id. The response SHALL include the version's id, metric_declaration_id, schema_version, config_schema, input_schema, output_schema, description, display_name, and created_at (or equivalent epoch-ms timestamp). The config_schema, input_schema, and output_schema fields in the response SHALL be serialized as JSON objects (not as JSON strings), consistent with how other JSONB-backed schema fields (e.g. test case data, test suite schemas) are returned by the API. The display_name field SHALL be nullable in the response.
+Status: **Implemented**
 
 #### Scenario: Latest version returned with object-typed schemas and displayName
 - **WHEN** client calls GET /api/v1/metric-declarations/{id}/latest and the metric declaration exists and has at least one version
-- **THEN** system SHALL respond with HTTP 200 and the latest MetricDeclarationVersion where configSchema, inputSchema, and outputSchema are JSON objects and displayName reflects the value stored in that version (may be null)
+- **THEN** system SHALL respond with HTTP 200 and the latest MetricDeclarationVersion where configSchema, inputSchema, and outputSchema are JSON objects and displayName reflects the value stored in that version (nullable, and omitted from the payload when not set)
 
 #### Scenario: Empty schemas returned as empty objects
 - **WHEN** client calls GET /api/v1/metric-declarations/{id}/latest and the latest version has empty schemas (stored as `{}` in DB; columns are NOT NULL)
@@ -128,7 +130,8 @@ The service SHALL provide an endpoint GET /api/v1/metric-declarations/{id}/lates
 - **THEN** system SHALL respond with HTTP 404
 
 ### Requirement: List every metric declaration with its latest version
-The service SHALL provide an endpoint GET /api/v1/metric-declarations/versions/latest that returns every metric declaration together with its latest MetricDeclarationVersion as a JSON array. Latest SHALL be determined per metric_declaration_id by the greatest schema_version. Each array item SHALL be the metric declaration - id (the declaration's id), provider_id, name, display_name, description, created_at - with the latest version nested under `latestVersion`, whose shape SHALL match the single-version response of GET /api/v1/metric-declarations/{id}/latest (id, metric_declaration_id, schema_version, config_schema, input_schema, output_schema, description, display_name, created_at). config_schema, input_schema, and output_schema SHALL be serialized as JSON objects (not JSON strings). display_name SHALL be nullable at both levels; because responses are serialized with NON_NULL inclusion, a null display_name is omitted from the payload rather than emitted as null. Metric declarations that have no MetricDeclarationVersion rows SHALL be omitted from the array. The array SHALL be ordered by metric_declaration_id.
+The service SHALL provide an endpoint GET /api/v1/metric-declarations/versions/latest that returns every metric declaration together with its latest MetricDeclarationVersion as a JSON array. Latest SHALL be determined per metric_declaration_id by the greatest schema_version. Each array item SHALL be the metric declaration - id (the declaration's id), provider_id, name, display_name, description, created_at - with the latest version nested under `latestVersion`, whose shape SHALL match the single-version response of GET /api/v1/metric-declarations/{id}/latest. display_name SHALL be nullable at both levels. Metric declarations that have no MetricDeclarationVersion rows SHALL be omitted from the array. The array SHALL be ordered by metric_declaration_id. The endpoint SHALL accept no pagination, filter, or sort parameters - the catalog is bounded by provider configuration - so it is outside the scope of the entity-filtering spec (which covers only list endpoints that support those parameters) and needs no `OpenApiQueryParamCustomizer` registry entry.
+Status: **Implemented**
 
 #### Scenario: One latest version per declaration
 - **WHEN** client calls GET /api/v1/metric-declarations/versions/latest and several metric declarations each have one or more versions
@@ -146,7 +149,7 @@ The service SHALL provide an endpoint GET /api/v1/metric-declarations/versions/l
 - **WHEN** client calls GET /api/v1/metric-declarations/versions/latest and some metric declarations have no MetricDeclarationVersion rows
 - **THEN** system SHALL omit those declarations from the array rather than returning items with a null latestVersion or responding 404
 
-#### Scenario: Empty catalog
+#### Scenario: Empty catalog returns an empty array
 - **WHEN** client calls GET /api/v1/metric-declarations/versions/latest and no MetricDeclarationVersion rows exist
 - **THEN** system SHALL respond with HTTP 200 and an empty array
 
@@ -155,9 +158,10 @@ The service SHALL provide an endpoint GET /api/v1/metric-declarations/versions/l
 - **THEN** each item's latestVersion.configSchema, latestVersion.inputSchema, and latestVersion.outputSchema SHALL be JSON objects (empty objects when the stored schema is `{}`), consistent with GET /api/v1/metric-declarations/{id}/latest
 
 ## Implementation Notes
+- Null response fields are omitted, not emitted as null: `JsonMapperConfiguration` builds the HTTP `JsonMapper` with `NON_NULL` inclusion for both values and content. The requirements above therefore only state that a field (e.g. display_name) is nullable; the wire payload simply lacks the key when the value is null, and OpenAPI examples must not show `"field": null`.
 - Vision references: `docs/design/entity-relationship-model.md` (metric entities, versioning, recalculation policy), `docs/design/infrastructure-architecture.md` (metrics job + services).
 - Latest-per-declaration query: `MetricDeclarationVersionRepository.findLatestPerMetricDeclaration()` uses Postgres `SELECT DISTINCT ON (metric_declaration_id) ... ORDER BY metric_declaration_id, schema_version DESC`, served by `uq_metric_declaration_versions_declaration_version` as a single index scan (no `MAX(schema_version)` self-join). The `ORDER BY` is the selection criterion, not cosmetic: `DISTINCT ON` keeps the first row per key. No tiebreaker column is needed because that index is unique. The response is therefore ordered by `metric_declaration_id`; a different response order would require wrapping this query in a subquery, since `DISTINCT ON` forces `ORDER BY` to lead with the distinct key.
-- The same query INNER JOINs `metric_declarations` and returns the composite `MetricDeclarationWithLatestVersion`, so the declaration's fields come from the one round trip rather than a second query per item. Version-less declarations are omitted because the query drives FROM `metric_declaration_versions` and such a declaration has no row there - not because of the join type (a `LEFT JOIN` would return the same rows, since the FK forbids a version row without its declaration). The join is many-to-one on the distinct key, so `DISTINCT ON` still yields exactly one row per declaration. The joined record is split back into the two typed jOOQ records with `record.into(TABLE)`, which reuses both existing `*RecordMapper` components unchanged; see the `into(TABLE)` section of [typed-sql-dsl pattern doc](../../../docs/patterns/jooq-typed-sql-dsl.md) for why no column may be aliased there.
+- The same query joins `metric_declarations` and returns the composite `MetricDeclarationWithLatestVersion`, so the declaration's fields come from the one round trip rather than a second query per item. Version-less declarations are omitted because the query drives FROM `metric_declaration_versions` and such a declaration has no row there - not because of the join type (a `LEFT JOIN` would return the same rows, since the FK forbids a version row without its declaration). The join is many-to-one on the distinct key, so `DISTINCT ON` still yields exactly one row per declaration. The joined record is split back into the two typed jOOQ records with `record.into(TABLE)`, which reuses both existing `*RecordMapper` components unchanged; see the `into(TABLE)` section of [typed-sql-dsl pattern doc](../../../docs/patterns/jooq-typed-sql-dsl.md) for why no column may be aliased there.
 - Version uniqueness is a UNIQUE **index** (`V1.30`), not a UNIQUE constraint, and it replaced the non-unique V1.9 index on the same columns: a constraint cannot declare `schema_version DESC`, and only a DESC second column can serve the `DISTINCT ON` ordering above, so a constraint would have left two indexes over the same pair. Nothing FK-references the pair, so an index is sufficient. `PostgresMetricDeclarationVersionRepository.save` locks the parent `metric_declarations` row (`SELECT ... FOR UPDATE`) before computing `MAX(schema_version) + 1`, because `MetricProviderSyncJob` runs on every instance without leader election and `syncOne` is one transaction per provider - an unserialized lost update would now abort that whole provider's sync with a 23505 instead of silently writing a duplicate row.
 - Metric provider client: config_schema, input_schema, and output_schema are kept as `String` in the DB model (`MetricDeclarationVersion`) and normalized to string for storage and comparison via a custom Jackson deserializer. In response DTOs (`MetricDeclarationVersionResponseDto`), these fields are typed as `Map<String, Object>` so the REST API returns them as JSON objects. Conversion between `String` (model) and `Map<String, Object>` (DTO) is handled by `JsonbMapper.mapJsonSchema`, consistent with other JSONB-backed schema fields (e.g. test case data, test suite schemas).
 

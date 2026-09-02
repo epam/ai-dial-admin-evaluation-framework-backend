@@ -1,15 +1,16 @@
 {
   "$type": "dial-application",
-  "deploymentId": "EntityExtractor",
-  "displayName": "Entity Extractor",
-  "version": null,
-  "description": "",
+  "deploymentId": "applications/public/Quick App with RAG__0.0.1",
+  "displayName": "Quick App with RAG",
+  "version": "0.0.1",
+  "description": "Resolved by ID alone: the applications probe answered, the models and toolsets probes returned 404.",
   "owner": "organization-owner",
+  "reference": "applications/public/Quick App with RAG__0.0.1",
   "createdAt": 1769192823293,
   "updatedAt": 1769194293867,
   "descriptionKeywords": [],
   "inputAttachmentTypes": null,
-  "applicationTypeSchemaId": "https://dial-entity-extractor.example.com/",
+  "applicationTypeSchemaId": "https://dial-quick-apps.example.com/",
   "applicationProperties": {},
   "routes": {
     "v1": {
@@ -18,7 +19,7 @@
       "response": null,
       "rewritePath": true,
       "paths": ["/v1/.*"],
-      "methods": ["DELETE", "GET"],
+      "methods": ["GET", "POST"],
       "upstreams": [
         {
           "endpoint": "http://my-endpoint.svc.cluster.local",

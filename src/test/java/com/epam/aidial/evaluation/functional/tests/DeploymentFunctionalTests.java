@@ -31,6 +31,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -411,6 +412,352 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
                         .get(0)
                         .getEndpoint())
                 .isEqualTo("http://schema-v2");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} returns the model when only the model probe resolves")
+    void getDeploymentByIdReturnsModel() {
+        when(dialCoreClient.getModel(eq("gpt-5")))
+                .thenReturn(DialCoreModelDto.builder()
+                        .id("gpt-5")
+                        .displayName("GPT-5")
+                        .displayVersion("2025")
+                        .build());
+        when(dialCoreClient.getApplication(eq("gpt-5"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("gpt-5"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/gpt-5"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("$type")).isEqualTo("dial-model");
+        assertThat(response.getBody().get("deploymentId")).isEqualTo("gpt-5");
+        assertThat(response.getBody().get("displayName")).isEqualTo("GPT-5");
+        assertThat(response.getBody().get("version")).isEqualTo("2025");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} returns the application with schema-resolved routes")
+    void getDeploymentByIdReturnsApplicationWithResolvedRoutes() {
+        String schemaId = "https://my-schema.example/";
+        when(dialCoreClient.getModel(eq("schema-app"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getApplication(eq("schema-app")))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id("schema-app")
+                        .displayName("Schema App")
+                        .applicationTypeSchemaId(schemaId)
+                        .routes(null)
+                        .build());
+        when(dialCoreClient.getToolset(eq("schema-app"))).thenThrow(upstreamNotFound());
+
+        ObjectMapper om = new ObjectMapper();
+        JsonNode schemaJson = om.valueToTree(Map.of(
+                "dial:applicationTypeRoutes",
+                Map.of(
+                        "v1",
+                        Map.of(
+                                "dial:paths", new String[] {"/v1/.*"},
+                                "dial:methods", new String[] {"GET"},
+                                "dial:upstreams",
+                                        new Object[] {Map.of("dial:endpoint", "http://upstream-svc", "dial:weight", 1)},
+                                "dial:rewritePath", true))));
+        when(dialCoreClient.getApplicationTypeSchema(eq(schemaId))).thenReturn(schemaJson);
+
+        ResponseEntity<DialApplicationInfoDto> response =
+                restTemplate.getForEntity(apiUrl("/deployments/all/schema-app"), DialApplicationInfoDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeploymentId()).isEqualTo("schema-app");
+        assertThat(response.getBody().getRoutes()).isNotNull().containsOnlyKeys("v1");
+        assertThat(response.getBody().getRoutes().get("v1").getPaths()).containsExactly("/v1/.*");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} returns the toolset when only the toolset probe resolves")
+    void getDeploymentByIdReturnsToolset() {
+        when(dialCoreClient.getModel(eq("my-toolset"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getApplication(eq("my-toolset"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("my-toolset")))
+                .thenReturn(DialCoreToolsetDto.builder()
+                        .id("my-toolset")
+                        .displayName("My Toolset")
+                        .build());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/my-toolset"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("$type")).isEqualTo("dial-toolset");
+        assertThat(response.getBody().get("deploymentId")).isEqualTo("my-toolset");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} returns the model when both the model and application probes resolve")
+    void getDeploymentByIdAppliesTypePrecedenceOnMultiHit() {
+        when(dialCoreClient.getModel(eq("ambiguous")))
+                .thenReturn(DialCoreModelDto.builder()
+                        .id("ambiguous")
+                        .displayName("As Model")
+                        .build());
+        when(dialCoreClient.getApplication(eq("ambiguous")))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id("ambiguous")
+                        .displayName("As Application")
+                        .build());
+        when(dialCoreClient.getToolset(eq("ambiguous"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/ambiguous"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("$type")).isEqualTo("dial-model");
+        assertThat(response.getBody().get("displayName")).isEqualTo("As Model");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} returns the hit even when another probe fails with 500")
+    void getDeploymentByIdReturnsHitDespiteFailingProbe() {
+        when(dialCoreClient.getModel(eq("survivor")))
+                .thenThrow(new DialCoreClientException(HttpStatusCode.valueOf(500), "Core exploded"));
+        when(dialCoreClient.getApplication(eq("survivor")))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id("survivor")
+                        .displayName("Survivor")
+                        .build());
+        when(dialCoreClient.getToolset(eq("survivor"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/survivor"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("$type")).isEqualTo("dial-application");
+        assertThat(response.getBody().get("deploymentId")).isEqualTo("survivor");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} when no probe resolves yields 502 and UPSTREAM_NOT_FOUND")
+    void getDeploymentByIdWhenNotFoundAnywhereYields502AndUpstreamNotFound() {
+        when(dialCoreClient.getModel(eq("nowhere"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getApplication(eq("nowhere"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("nowhere"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/nowhere"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("code")).isEqualTo("UPSTREAM_NOT_FOUND");
+        String message = (String) response.getBody().get("message");
+        assertThat(message).contains("nowhere");
+        assertThat(message).contains("dial-model=404");
+        assertThat(message).contains("dial-application=404");
+        assertThat(message).contains("dial-toolset=404");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} reports a 401 probe as UPSTREAM_AUTH_ERROR, not UPSTREAM_NOT_FOUND")
+    void getDeploymentByIdAuthFailureOutranksNotFound() {
+        when(dialCoreClient.getModel(eq("unauthorized")))
+                .thenThrow(new DialCoreClientException(HttpStatusCode.valueOf(401), "Unauthorized"));
+        when(dialCoreClient.getApplication(eq("unauthorized"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("unauthorized"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/unauthorized"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("code")).isEqualTo("UPSTREAM_AUTH_ERROR");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} reports a 403 probe as 403 ACCESS_DENIED")
+    void getDeploymentByIdAccessDeniedOutranksNotFound() {
+        when(dialCoreClient.getModel(eq("forbidden"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getApplication(eq("forbidden")))
+                .thenThrow(new DialCoreClientException(HttpStatusCode.valueOf(403), "Forbidden"));
+        when(dialCoreClient.getToolset(eq("forbidden"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/forbidden"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("code")).isEqualTo("ACCESS_DENIED");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} reports a 500 probe as 502 UPSTREAM_ERROR")
+    void getDeploymentByIdUpstreamErrorOutranksNotFound() {
+        when(dialCoreClient.getModel(eq("broken"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getApplication(eq("broken"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("broken")))
+                .thenThrow(new DialCoreClientException(HttpStatusCode.valueOf(500), "Core exploded"));
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/broken"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("code")).isEqualTo("UPSTREAM_ERROR");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} passes a slash-containing ID to every probe intact")
+    void getDeploymentByIdWithSlashContainingIdKeepsAllSegments() {
+        String deploymentId = "applications/public/my-app__0.0.1";
+        when(dialCoreClient.getModel(eq(deploymentId))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getApplication(eq(deploymentId)))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id(deploymentId)
+                        .displayName("My App")
+                        .build());
+        when(dialCoreClient.getToolset(eq(deploymentId))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<DialApplicationInfoDto> response = restTemplate.getForEntity(
+                URI.create(apiUrl("/deployments/all/" + deploymentId)), DialApplicationInfoDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeploymentId()).isEqualTo(deploymentId);
+        verify(dialCoreClient).getModel(deploymentId);
+        verify(dialCoreClient).getApplication(deploymentId);
+        verify(dialCoreClient).getToolset(deploymentId);
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} decodes percent-encoded characters in the ID once")
+    void getDeploymentByIdWithPercentEncodedIdDecodesOnce() {
+        String deploymentId = "applications/public/Quick App with RAG__0.0.1";
+        when(dialCoreClient.getModel(eq(deploymentId))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getApplication(eq(deploymentId)))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id(deploymentId)
+                        .displayName("Quick App with RAG")
+                        .build());
+        when(dialCoreClient.getToolset(eq(deploymentId))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<DialApplicationInfoDto> response = restTemplate.getForEntity(
+                URI.create(apiUrl("/deployments/all/applications/public/Quick%20App%20with%20RAG__0.0.1")),
+                DialApplicationInfoDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getDeploymentId()).isEqualTo(deploymentId);
+        verify(dialCoreClient).getApplication(deploymentId);
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/ with an empty deployment ID returns 400 and probes nothing")
+    void getDeploymentByIdWithEmptyIdReturns400() {
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                URI.create(apiUrl("/deployments/all/")), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("code")).isEqualTo("VALIDATION_ERROR");
+        assertThat((String) response.getBody().get("message")).contains("Deployment ID must not be empty");
+        verify(dialCoreClient, never()).getModel(any());
+        verify(dialCoreClient, never()).getApplication(any());
+        verify(dialCoreClient, never()).getToolset(any());
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} is not swallowed by the by-type wildcard mapping")
+    void allPathIsNotSwallowedByTypedWildcardMapping() {
+        when(dialCoreClient.getModel(eq("some-id")))
+                .thenReturn(DialCoreModelDto.builder().id("some-id").build());
+        when(dialCoreClient.getApplication(eq("some-id"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("some-id"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/some-id"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        // Reaching the by-type handler would reject 'all' as an invalid deployment type with
+        // VALIDATION_ERROR; instead the literal /all/** mapping wins and the lookup runs.
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("$type")).isEqualTo("dial-model");
+        verify(dialCoreClient).getModel("some-id");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} returns the hit when another probe fails with a transport error")
+    void getDeploymentByIdReturnsHitDespiteTransportFailure() {
+        // DialCoreClient.withRetry translates only RestClientResponseException, so a transport
+        // failure escapes it raw — it must not discard the sibling probe that actually resolved.
+        when(dialCoreClient.getModel(eq("timeout-neighbour")))
+                .thenThrow(new ResourceAccessException("I/O error: connect timed out"));
+        when(dialCoreClient.getApplication(eq("timeout-neighbour")))
+                .thenReturn(DialCoreApplicationDto.builder()
+                        .id("timeout-neighbour")
+                        .displayName("Resolved Anyway")
+                        .build());
+        when(dialCoreClient.getToolset(eq("timeout-neighbour"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/timeout-neighbour"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("$type")).isEqualTo("dial-application");
+        assertThat(response.getBody().get("deploymentId")).isEqualTo("timeout-neighbour");
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} reports a transport failure as 502 UPSTREAM_ERROR when nothing resolves")
+    void getDeploymentByIdTransportFailureOutranksNotFound() {
+        when(dialCoreClient.getModel(eq("unreachable")))
+                .thenThrow(new ResourceAccessException("I/O error: connect timed out"));
+        when(dialCoreClient.getApplication(eq("unreachable"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("unreachable"))).thenThrow(upstreamNotFound());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/unreachable"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("code")).isEqualTo("UPSTREAM_ERROR");
+    }
+
+    @Test
+    @DisplayName("OpenAPI spec carries minimal and full response examples for the by-ID lookup")
+    void openApiSpecCarriesByIdLookupExamples() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode operation = new ObjectMapper()
+                .readTree(apiDocs.getBody())
+                .path("paths")
+                .path("/api/v1/deployments/all/**")
+                .path("get");
+        assertThat(operation.isMissingNode())
+                .as("the by-ID lookup operation should be registered")
+                .isFalse();
+        JsonNode examples = operation
+                .path("responses")
+                .path("200")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+        assertThat(examples.propertyNames())
+                .as("OpenApiExampleCustomizer should inject both examples for this operation")
+                .containsExactlyInAnyOrder("minimal", "full");
+        assertThat(examples.path("minimal").path("value").path("$type").asString())
+                .isEqualTo("dial-model");
+        assertThat(examples.path("full").path("value").path("$type").asString()).isEqualTo("dial-application");
+    }
+
+    private static DialCoreClientException upstreamNotFound() {
+        return new DialCoreClientException(HttpStatusCode.valueOf(404), "Not found");
     }
 
     @Test

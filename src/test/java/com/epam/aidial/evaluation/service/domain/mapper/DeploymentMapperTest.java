@@ -15,9 +15,11 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaAttachmentPa
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteResponseDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteUpstreamDto;
+import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialModelInfoDto;
+import com.epam.aidial.evaluation.service.domain.dto.deployment.ToolsetInfoDto;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -172,6 +174,27 @@ class DeploymentMapperTest {
         assertThat(mappedRoute.getUpstreams()).hasSize(1);
         assertThat(mappedRoute.getUpstreams().get(0).getEndpoint()).isEqualTo("http://upstream");
         assertThat(mappedRoute.getAttachmentPaths().getRequestBody()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("maps reference onto every deployment info subtype")
+    void mapsReferenceOntoEverySubtype() {
+        // The mapping is implicit name-matching, so a rename on DialCoreDeploymentDto would silently
+        // null this API field with nothing else failing.
+        DialModelInfoDto model = mapper.toDialModelInfoDto(DialCoreModelDto.builder()
+                .id("gpt-5-mini")
+                .reference("model-ref")
+                .build());
+        DialApplicationInfoDto application = mapper.toDialApplicationInfoDto(
+                DialCoreApplicationDto.builder().id("app").reference("app-ref").build());
+        ToolsetInfoDto toolset = mapper.toToolsetInfoDto(DialCoreToolsetDto.builder()
+                .id("toolset")
+                .reference("toolset-ref")
+                .build());
+
+        assertThat(model.getReference()).isEqualTo("model-ref");
+        assertThat(application.getReference()).isEqualTo("app-ref");
+        assertThat(toolset.getReference()).isEqualTo("toolset-ref");
     }
 
     @Test

@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
+import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryScore;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
+import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryScoreRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
@@ -30,6 +32,7 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +48,9 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
 
     @Autowired
     private EvalSummaryRepository evalSummaryRepository;
+
+    @Autowired
+    private EvalSummaryScoreRepository evalSummaryScoreRepository;
 
     private static StructuredQuery rowQuery(FilterNode filter, List<OutputColumn> select) {
         return new StructuredQuery(
@@ -519,6 +525,113 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         assertThatThrownBy(() -> queryRepository.execute(query))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("[0, 1]");
+    }
+
+    @Test
+    @DisplayName("groups by passed to count how many test cases passed vs. failed within a run")
+    void groupsByPassedForPassFailCount() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        UUID passedA = analyticsTestDataHelper.createEvalSummary(
+                suiteId, runId, computationId, "case-a", ExecutionStatus.SUCCESS.name(), 100L, 1_000L);
+        UUID passedB = analyticsTestDataHelper.createEvalSummary(
+                suiteId, runId, computationId, "case-b", ExecutionStatus.SUCCESS.name(), 200L, 2_000L);
+        UUID failedC = analyticsTestDataHelper.createEvalSummary(
+                suiteId, runId, computationId, "case-c", ExecutionStatus.SUCCESS.name(), 300L, 3_000L);
+        // A row with no test_case_eval_scores entry at all (e.g. no overallScore configured) reads as
+        // passed = NULL via the LEFT JOIN, same as an explicit null score/passed row would.
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId, runId, computationId, "case-d", ExecutionStatus.SUCCESS.name(), 400L, 4_000L);
+        evalSummaryScoreRepository.saveAll(List.of(
+                EvalSummaryScore.builder()
+                        .evalSummaryId(passedA)
+                        .score(0.9)
+                        .passed(true)
+                        .computedAtMs(1_000L)
+                        .build(),
+                EvalSummaryScore.builder()
+                        .evalSummaryId(passedB)
+                        .score(0.95)
+                        .passed(true)
+                        .computedAtMs(2_000L)
+                        .build(),
+                EvalSummaryScore.builder()
+                        .evalSummaryId(failedC)
+                        .score(0.1)
+                        .passed(false)
+                        .computedAtMs(3_000L)
+                        .build()));
+
+        StructuredQuery query = new StructuredQuery(
+                "eval_summaries",
+                runIdEq(runId),
+                QueryMode.AGGREGATE,
+                false,
+                List.of(
+                        new OutputColumn(new FieldExpr("passed"), "passed"),
+                        new OutputColumn(new FnExpr("count", false, List.of()), "count")),
+                List.of("passed"),
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        QueryResultPage page = queryRepository.execute(query);
+
+        Map<Object, Long> countByPassed = page.rows().stream()
+                .collect(Collectors.toMap(row -> row.get("passed"), row -> ((Number) row.get("count")).longValue()));
+        assertThat(countByPassed.get(true)).isEqualTo(2L);
+        assertThat(countByPassed.get(false)).isEqualTo(1L);
+        assertThat(countByPassed.get(null)).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("selects test_case_name and score by run id in row mode")
+    void selectsTestCaseNameAndScoreByRunId() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        UUID idA = analyticsTestDataHelper.createEvalSummary(
+                suiteId, runId, computationId, "case-a", ExecutionStatus.SUCCESS.name(), 100L, 1_000L);
+        UUID idB = analyticsTestDataHelper.createEvalSummary(
+                suiteId, runId, computationId, "case-b", ExecutionStatus.SUCCESS.name(), 200L, 2_000L);
+        // A different run's row must never leak into this run's results.
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "other-run-case",
+                ExecutionStatus.SUCCESS.name(),
+                100L,
+                5_000L);
+        evalSummaryScoreRepository.saveAll(List.of(
+                EvalSummaryScore.builder()
+                        .evalSummaryId(idA)
+                        .score(0.8)
+                        .passed(true)
+                        .computedAtMs(1_000L)
+                        .build(),
+                EvalSummaryScore.builder()
+                        .evalSummaryId(idB)
+                        .score(0.2)
+                        .passed(false)
+                        .computedAtMs(2_000L)
+                        .build()));
+
+        QueryResultPage page = queryRepository.execute(rowQuery(
+                runIdEq(runId),
+                List.of(
+                        col(new FieldExpr("test_case_name")),
+                        col(new FieldExpr("score")),
+                        col(new FieldExpr("passed")))));
+
+        assertThat(page.rows()).hasSize(2);
+        Map<String, Map<String, Object>> byName =
+                page.rows().stream().collect(Collectors.toMap(row -> (String) row.get("test_case_name"), row -> row));
+        assertThat(((Number) byName.get("case-a").get("score")).doubleValue()).isEqualTo(0.8);
+        assertThat(byName.get("case-a").get("passed")).isEqualTo(true);
+        assertThat(((Number) byName.get("case-b").get("score")).doubleValue()).isEqualTo(0.2);
+        assertThat(byName.get("case-b").get("passed")).isEqualTo(false);
     }
 
     private static FnExpr percentileCont(String fraction, String column) {

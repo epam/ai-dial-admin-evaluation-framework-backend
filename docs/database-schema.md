@@ -830,7 +830,7 @@ Per-row overall score/pass-fail for each `test_case_eval_summaries` row, compute
 | `passed` | BOOLEAN | NULL | - | `score >= overallScoreThreshold` as captured in the run's suite snapshot at run-start time; null if `score` or the threshold is null |
 | `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp (matches the corresponding `test_case_eval_summaries.computed_at_ms`) |
 
-No denormalized run/computation/test-case context: every read goes through a join to `test_case_eval_summaries` (which already carries that context), so `eval_summary_id` is the only key needed. There is no direct-query path for this table today; add columns back in a follow-up migration if one is actually needed.
+No denormalized run/computation/test-case context: every read goes through a join to `test_case_eval_summaries` (which already carries that context), so `eval_summary_id` is the only key needed. There is no entity of its own for this table — `score`/`passed` are queryable via the `eval_summaries` Query DSL entity, which joins a narrowed projection of this table (`eval_summary_id`/`score`/`passed` only; see `docs/patterns/query-dsl-entity-resolution.md`), and via the dedicated REST endpoints' own join (`docs/patterns/eval-summaries-read-surface.md`). Add columns back in a follow-up migration if a genuine direct-query need shows up.
 
 ### Primary Key
 

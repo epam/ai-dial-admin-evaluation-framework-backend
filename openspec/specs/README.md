@@ -64,7 +64,7 @@ Specs defining the primary business entities and their APIs.
 Specs for external service integrations.
 
 - **[dial-core-client](dial-core-client/spec.md)** — Implemented
-  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, JWT propagation, upstream error mapping, deployment invocation.
+  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, supported `interfaces` exposed on single-deployment responses (not on listing entries), JWT propagation, upstream error mapping, deployment invocation.
 - **[app-schema-route-resolution](app-schema-route-resolution/spec.md)** — Implemented
   Application route resolution inherited from app type schemas via DIAL Core schema API, schema route DTOs, merge behavior.
 - **[mcp-tool-invocation](mcp-tool-invocation/spec.md)** — Implemented

@@ -10,6 +10,7 @@
   "updatedAt": 1769194293867,
   "descriptionKeywords": [],
   "inputAttachmentTypes": null,
+  "interfaces": ["chat", "custom_ui"],
   "applicationTypeSchemaId": "https://dial-quick-apps.example.com/",
   "applicationProperties": {},
   "routes": {

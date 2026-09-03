@@ -15,7 +15,7 @@ List entries SHALL be mapped to a **short projection** of the `DeploymentInfoDto
 - `deploymentId`, `displayName`, `description` — for every subtype (in addition to the `$type` discriminator);
 - `transport` — additionally for `ToolsetInfoDto`, because callers pick an MCP transport straight off the list.
 
-Every other field SHALL be left null and therefore SHALL be absent from the JSON (the shared `ObjectMapper` uses `NON_NULL` inclusion): `version`, `owner`, `createdAt`, `updatedAt`, `descriptionKeywords`, `inputAttachmentTypes`, model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, toolset `allowedTools`. Clients needing any of those SHALL fetch the deployment individually via `GET /api/v1/deployments/{deploymentType}/**`, which keeps the full per-type mapping. Schema-route resolution via `SchemaRouteExtractor` likewise remains exclusive to the single-application GET.
+Every other field SHALL be left null and therefore SHALL be absent from the JSON (the shared `ObjectMapper` uses `NON_NULL` inclusion): `version`, `owner`, `createdAt`, `updatedAt`, `descriptionKeywords`, `inputAttachmentTypes`, `interfaces`, model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, toolset `allowedTools`. Clients needing any of those SHALL fetch the deployment individually via `GET /api/v1/deployments/{deploymentType}/**`, which keeps the full per-type mapping. Schema-route resolution via `SchemaRouteExtractor` likewise remains exclusive to the single-application GET.
 
 #### Scenario: Successful deployment listing
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments`
@@ -25,7 +25,7 @@ Every other field SHALL be left null and therefore SHALL be absent from the JSON
 - **AND** returns merged list with HTTP 200
 
 #### Scenario: Detail fields omitted from the listing
-- **WHEN** DIAL Core returns entries carrying `display_version`, `owner`, timestamps, `descriptionKeywords`, `inputAttachmentTypes`, model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, or toolset `allowedTools`
+- **WHEN** DIAL Core returns entries carrying `display_version`, `owner`, timestamps, `descriptionKeywords`, `inputAttachmentTypes`, `interfaces`, model `capabilities`/`limits`/`pricing`, application `applicationProperties`/`applicationTypeSchemaId`/`routes`, or toolset `allowedTools`
 - **THEN** the listing response SHALL NOT contain those properties for any entry
 - **AND** the same deployment fetched via `GET /api/v1/deployments/{deploymentType}/**` SHALL still contain them
 
@@ -271,12 +271,42 @@ The system SHALL define a `DeploymentInfoDto` abstract base class with polymorph
 #### Scenario: Common fields present
 - **WHEN** system returns any `DeploymentInfoDto` from a single-deployment endpoint
 - **THEN** JSON contains required fields: `deploymentId`, `displayName`, `createdAt`, `updatedAt`
-- **AND** nullable fields present if available: `version`, `description`, `owner`, `descriptionKeywords`, `inputAttachmentTypes`, `reference` (the DIAL Core handle a client uses to open the deployment; normally the same value as `deploymentId`, but clients SHALL treat it as an opaque string and SHALL NOT rely on that equality)
+- **AND** nullable fields present if available: `version`, `description`, `owner`, `descriptionKeywords`, `inputAttachmentTypes`, `reference` (the DIAL Core handle a client uses to open the deployment; normally the same value as `deploymentId`, but clients SHALL treat it as an opaque string and SHALL NOT rely on that equality), `interfaces` (the interfaces the deployment supports, see "Supported interfaces on single-deployment responses")
 
 #### Scenario: Common fields on a listing entry
 - **WHEN** system returns a `DeploymentInfoDto` as an entry of `GET /api/v1/deployments`
 - **THEN** JSON contains only `$type`, `deploymentId`, `displayName`, `description` (and `transport` for `dial-toolset`)
 - **AND** `createdAt`/`updatedAt` are absent — they are not guaranteed on listing entries
+
+---
+
+### Requirement: Supported interfaces on single-deployment responses
+
+`DeploymentInfoDto` SHALL carry an `interfaces` field of type `List<InterfaceType>` on the shared base, so every subtype (`DialModelInfoDto`, `DialApplicationInfoDto`, `ToolsetInfoDto`) exposes it. The value SHALL be the `interfaces` list DIAL Core reported for that deployment, mapped through implicitly (both `DialCoreDeploymentDto` and `DeploymentInfoDto` name the field `interfaces`), and SHALL serialize using `InterfaceType`'s `@JsonValue` wire strings (`chat`, `embedding`, `mcp`, `custom_ui`, `openaiChatCompletions`, `openaiResponses`, `openaiEmbeddings`, `anthropicMessages`) — the same vocabulary the `interface` query parameter accepts.
+
+The field SHALL be populated on the single-deployment endpoints only (`GET /api/v1/deployments/{deploymentType}/**` and `GET /api/v1/deployments/all/**`). It SHALL be left null by the short listing projection and therefore absent from `GET /api/v1/deployments` entries, per "List all deployments". When DIAL Core reports no `interfaces` for a deployment, the field SHALL be null and therefore absent from the response (`NON_NULL` inclusion), which SHALL NOT be read as "supports nothing".
+Status: **Implemented**
+
+#### Scenario: Interfaces returned on a by-type lookup
+- **WHEN** DIAL Core returns a model with `"interfaces": ["chat", "openaiResponses"]`
+- **AND** a client sends `GET /api/v1/deployments/dial-model/{id}`
+- **THEN** the response JSON contains `"interfaces": ["chat", "openaiResponses"]`
+
+#### Scenario: Interfaces returned on a by-ID lookup
+- **WHEN** a deployment is resolved by `GET /api/v1/deployments/all/**`
+- **THEN** its `interfaces` are present exactly as on the by-type response for the same deployment
+
+#### Scenario: Interfaces on every subtype
+- **WHEN** a `dial-model`, `dial-application` or `dial-toolset` is fetched individually
+- **THEN** each carries its own `interfaces` list (e.g. a toolset reports `["mcp"]`)
+
+#### Scenario: Interfaces absent from listing entries
+- **WHEN** a client sends `GET /api/v1/deployments`
+- **THEN** no entry contains an `interfaces` property, even when DIAL Core reported one
+
+#### Scenario: Deployment with no interfaces reported
+- **WHEN** DIAL Core omits `interfaces` for a deployment
+- **THEN** the single-deployment response omits the property entirely
 
 ---
 
@@ -825,6 +855,7 @@ Status: **Implemented**
 - Modified: `DeploymentMapper` — `toDeploymentInfoDto()` dispatches via a pattern-matching switch on the concrete subtype (`DialCoreModelDto`/`DialCoreApplicationDto`/`DialCoreToolsetDto`), not `source.getObject()` string branching; add `dialTransportToMcp()` converter (`HTTP` → `STREAMABLE_HTTP`, `SSE` → `SSE`)
 - Modified: `DeploymentController` — add `type` and `interface` query params; tools endpoint at `GET /deployments/tools?deploymentId=&transport=` (query params, not path variables); by-ID endpoint mapped as `/{deploymentType}/**` with the ID resolved from the wildcard tail via the injected `WildcardPathResolver` and rejected with 400 when blank
 - New: `web.path.WildcardPathResolver` — generic web-layer `@Component` returning the decoded `/**` tail of the matched mapping pattern; the single place a slash-containing path value is extracted and percent-decoded (exactly once, `+` preserved)
+- Modified: `DeploymentInfoDto` — carries `interfaces` (`List<InterfaceType>`) on the base, so all three subtypes expose it on the single-deployment endpoints; `DeploymentMapper.toDeploymentInfoShortDto` deliberately does not set it, keeping listing entries short
 - New: `DialCoreDeploymentDto` in `client.dialcore.dto` is now the abstract polymorphic base of the deployment DTO hierarchy — carries common fields (`object`, `id`, `displayName`, `displayVersion`, `description`, `descriptionKeywords`, `iconUrl`, `reference`, `owner`, `status`, `createdAt`, `updatedAt`, `defaults`, `maxRetryAttempts`, `inputAttachmentTypes`, `interfaces` (List<InterfaceType>), `features`); `transport` moved to the `DialCoreToolsetDto` subtype
 - New enum: `DialTransport` in `client.dialcore.dto` — `HTTP("HTTP")`, `SSE("SSE")`, fail-fast on unknown values via `@JsonCreator`
 - New DTO: `DialCoreToolsetDto` in `client.dialcore.dto` — extends the base; used for both single toolset detail and the toolset variant of unified list entries; adds `transport` (DialTransport) and `allowedTools`

@@ -10,6 +10,7 @@
   "updatedAt": 1768856213216,
   "descriptionKeywords": ["Text Generation", "Continue Supported"],
   "inputAttachmentTypes": ["*/*"],
+  "interfaces": ["chat", "openaiChatCompletions"],
   "capabilities": {
     "scaleTypes": ["standard"],
     "completion": false,

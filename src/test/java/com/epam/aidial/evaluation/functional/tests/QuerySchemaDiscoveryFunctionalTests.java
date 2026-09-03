@@ -104,7 +104,13 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
                 .contains(
                         new QuerySchemaFieldDto("test_suite_run_id", QueryFieldType.UUID, "test_suite_run_id"),
                         new QuerySchemaFieldDto("test_case_data", QueryFieldType.OBJECT, "test_case_data"),
-                        new QuerySchemaFieldDto("metric_values", QueryFieldType.OBJECT, "metric_values"));
+                        new QuerySchemaFieldDto("metric_values", QueryFieldType.OBJECT, "metric_values"),
+                        // score/passed come from the joined test_case_eval_scores table, not a column of
+                        // test_case_eval_summaries itself — must be advertised explicitly (see
+                        // EvalSummariesSchemaProvider) to match what PostgresEvalSummaryEntityResolver
+                        // actually accepts as queryable fields.
+                        new QuerySchemaFieldDto("score", QueryFieldType.DECIMAL, "score"),
+                        new QuerySchemaFieldDto("passed", QueryFieldType.BOOLEAN, "passed"));
     }
 
     @Test
@@ -128,7 +134,11 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
                         new QuerySchemaFieldDto("metric::Accuracy::score", QueryFieldType.DECIMAL, "metric_values"),
                         new QuerySchemaFieldDto(
                                 "metric::Accuracy::explanation", QueryFieldType.DECIMAL, "metric_values"),
-                        new QuerySchemaFieldDto("metricInfo::Accuracy", QueryFieldType.OBJECT, "metric_infos"))
+                        new QuerySchemaFieldDto("metricInfo::Accuracy", QueryFieldType.OBJECT, "metric_infos"),
+                        // score/passed are not flattenable JSONB fields, so the detailed schema keeps them
+                        // as-is from the base schema, same as any other plain column.
+                        new QuerySchemaFieldDto("score", QueryFieldType.DECIMAL, "score"),
+                        new QuerySchemaFieldDto("passed", QueryFieldType.BOOLEAN, "passed"))
                 .noneMatch(field -> field.name().equals("test_case_data"))
                 .noneMatch(field -> field.name().equals("metric_values"))
                 .noneMatch(field -> field.name().equals("metric_infos"));

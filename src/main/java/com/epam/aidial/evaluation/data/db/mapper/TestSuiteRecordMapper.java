@@ -30,6 +30,7 @@ public class TestSuiteRecordMapper {
                 .additionalRequests(toJsonString(r.getAdditionalRequests()))
                 .requestName(r.getRequestName())
                 .overallScore(toJsonString(r.getOverallScore()))
+                .testCaseOverallScore(toJsonString(r.getTestCaseOverallScore()))
                 .overallScoreThreshold(r.getOverallScoreThreshold())
                 .testCaseFilter(toJsonString(r.getTestCaseFilter()))
                 .valid(r.getIsValid())

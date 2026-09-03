@@ -30,6 +30,7 @@ This document describes the current database schema as implemented by Flyway mig
 |-------|-------------|-------------|
 | `test_case_run_results` | Test case execution results | `(created_at_ms, id)` (composite) |
 | `test_case_eval_summaries` | Metric-enriched test case results (denormalized) | `(created_at_ms, id)` (composite) |
+| `test_case_eval_scores` | Per-row overall score/pass-fail, computed via SQL and joined into the eval-summary read surface | `eval_summary_id` (VARCHAR(36)) |
 | `run_metric_snapshots` | Metric definition snapshots per computation batch | `id` (VARCHAR(36)) |
 
 ---
@@ -102,9 +103,10 @@ Test suite definitions that bind to a dataset for their test cases and schema.
 | `mcp_deployment_ref` | JSONB | NULL | - | MCP deployment reference (McpDeploymentReferenceDto) — MCP suites |
 | `tool_ref` | JSONB | NULL | - | MCP tool reference with schema (ToolReferenceDto) — MCP suites |
 | `argument_template` | JSONB | NULL | - | MCP argument template with bindings (ArgumentTemplateDto) — MCP suites |
-| `overall_score` | JSONB | NULL | - | Per-suite `overall` metric-score definition — a serialized `StructuredQuery` expression. Settable and readable via the suite API (`overallScore` on `POST`/`PUT`/`GET /api/v1/test-suites`); references configured metric columns by their flattened name `metric::<metricName>::<outputField>`. NULL = system default (the single metric's average — `avg(:metricField)` — computed only when the run has exactly one numeric metric field). Captured verbatim into the suite snapshot per run; Phase 3 honors a non-null value for any metric count. See V1.23. |
+| `overall_score` | JSONB | NULL | - | Per-suite `overall` metric-score definition — a serialized `StructuredQuery` expression. Settable and readable via the suite API (`overallScore` on `POST`/`PUT`/`GET /api/v1/test-suites`); references configured metric columns by their flattened name `metric::<metricName>::<outputField>`. NULL = system default (the single metric's average — `avg(:metricField)` — computed only when the run has exactly one numeric metric field). Captured verbatim into the suite snapshot per run; Phase 3 honors a non-null value for any metric count and always uses this column, unconditionally, for the run-level `overall` aggregate. See V1.23. |
+| `test_case_overall_score` | JSONB | NULL | - | Optional per-suite definition used for PER-TEST-CASE score computation (`test_case_eval_scores.score`/`.passed`) instead of `overall_score`. Same shape as `overall_score`. Settable and readable via the suite API (`testCaseOverallScore` on `POST`/`PUT`/`GET /api/v1/test-suites`). NULL = per-test-case scoring falls back to `overall_score` (the common case — see `docs/patterns/overall-score-definition.md`). Captured verbatim into the suite snapshot per run; does not affect the run-level `overall` aggregate. See V1.31. |
 | `test_case_filter` | JSONB | NULL | - | Per-suite test-case selection filter — a serialized Structured Query DSL `filter` subtree authored over the dataset's test-case fields (base columns and flattened `data::<field>` fields). Settable and readable via the suite API (`testCaseFilter` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time against the bound dataset's test-case schema (unknown field/type/malformed → HTTP 400). NULL = no filter (run every valid test case). When set, it is AND-combined with `is_valid` to select the runnable test cases at run-creation count and snapshot. Does not affect suite validity. See V1.24. |
-| `overall_score_threshold` | DOUBLE PRECISION | NULL | - | Optional per-suite threshold, same numeric type as the computed run-level `overall` metric score result (`metric_score_result.value`). Settable and readable via the suite API (`overallScoreThreshold` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time to be within `[0.0, 1.0]` inclusive (HTTP 400 `VALIDATION_ERROR` otherwise). NULL = no threshold configured. Not compared server-side against a run's computed score — comparison is a client-side concern. Not captured in the suite snapshot. See V1.25. |
+| `overall_score_threshold` | DOUBLE PRECISION | NULL | - | Optional per-suite threshold, same numeric type as the computed run-level `overall` metric score result (`metric_score_result.value`). Settable and readable via the suite API (`overallScoreThreshold` on `POST`/`PUT`/`GET /api/v1/test-suites`); validated at write time to be within `[0.0, 1.0]` inclusive (HTTP 400 `VALIDATION_ERROR` otherwise). NULL = no threshold configured. Captured into the suite snapshot per run (`SuiteSnapshotDto.overallScoreThreshold`), so a run's per-row `passed` (`test_case_eval_scores.passed`) stays stable even if the suite's live threshold is edited afterward; the run-level `overall` metric score result itself is still compared client-side. See V1.25. |
 | `additional_requests` | JSONB | NOT NULL | `'[]'::jsonb` | Ordered chain of requests 1..N executed after request #0 (the suite's own `endpoint_ref`/`request_template`/`response_columns`/`input_bindings`), against the same `deployment_ref` (List of RequestDefinitionDto). Response columns across request #0 and every additional request share one flat, globally-unique namespace capped at `RunnerValidationConstants.MAX_RESPONSE_COLUMNS` (50) in total; chain length capped at `RunnerValidationConstants.MAX_ADDITIONAL_REQUESTS` (10). Rejected (400) when non-empty on an `MCP_TOOL` suite. Settable and readable via the suite API (`additionalRequests` on `POST`/`PUT`/`GET /api/v1/test-suites`); rewritten (`@ef/suites/{id}/` prefix) on clone. Captured into the suite snapshot per run. See V1.29. |
 | `request_name` | VARCHAR(255) | NULL | - | Optional user-facing label for request #0, mirroring `RequestDefinitionDto.name` on each additional request, so every request in the chain is labellable (e.g. for a metric `condition`'s `request.name`). NULL = request #0 unlabelled. Settable and readable via the suite API (`requestName` on `POST`/`PUT`/`GET /api/v1/test-suites`); captured into the suite snapshot per run. See V1.29. |
 | `is_valid` | BOOLEAN | NOT NULL | TRUE | Suite-level validation status |
@@ -816,6 +818,27 @@ Arbitrary JSON detail objects, keyed by metric name and nested by output name.
 
 ---
 
+## Table: `test_case_eval_scores` (Analytics DB)
+
+Per-row overall score/pass-fail for each `test_case_eval_summaries` row, computed via SQL right after that row's own batch is written (Phase 2) — reusing `OverallScoreDefinitionResolver`'s output (the same `StructuredQuery` Phase 3 builds from the suite's `overallScore` definition) with an `id IN (:rowIds)` filter and a `GROUP BY id` grafted on, so `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly. A row is only inserted when the grouped query returned a result for that id; a present row with `score = NULL` (e.g. a population-dependent `CustomFunction` like `roc_auc` degenerating on a single-row group) and a row's total absence (LEFT JOIN miss on read) look identical to a client, by design. Introduced in V1.19.
+
+> **Note:** This table resides in the **analytics database**. Foreign key references to meta DB entities and to `test_case_eval_summaries` are soft FKs — no physical constraint.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `eval_summary_id` | VARCHAR(36) | NOT NULL | - | Reference to the scored `test_case_eval_summaries.id` row (soft FK); primary key |
+| `score` | DOUBLE PRECISION | NULL | - | Per-row overall score, computed via SQL from the suite's `overallScore` definition grouped per row; null when the definition's aggregate is itself SQL NULL (e.g. `roc_auc` on a single-row group) |
+| `passed` | BOOLEAN | NULL | - | `score >= overallScoreThreshold` as captured in the run's suite snapshot at run-start time; null if `score` or the threshold is null |
+| `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp (matches the corresponding `test_case_eval_summaries.computed_at_ms`) |
+
+No denormalized run/computation/test-case context: every read goes through a join to `test_case_eval_summaries` (which already carries that context), so `eval_summary_id` is the only key needed. There is no entity of its own for this table — `score`/`passed` are queryable via the `eval_summaries` Query DSL entity, which joins a narrowed projection of this table (`eval_summary_id`/`score`/`passed` only; see `docs/patterns/query-dsl-entity-resolution.md`), and via the dedicated REST endpoints' own join (`docs/patterns/eval-summaries-read-surface.md`). Add columns back in a follow-up migration if a genuine direct-query need shows up.
+
+### Primary Key
+
+`eval_summary_id` — a 1:1 (or 0:1, since a row without a computable score is simply never inserted) relationship with `test_case_eval_summaries.id`, so no surrogate PK is needed. No secondary indexes exist on this table.
+
+---
+
 ## Table: `run_metric_snapshots` (Analytics DB)
 
 Metric definition snapshots captured at computation time. Each row records the metric declaration version, bindings, and output schema used for a specific metric computation batch.
@@ -881,6 +904,8 @@ Metric definition snapshots captured at computation time. Each row records the m
 
 The per-metric statistics (AVG, P10, P90, MIN, MAX) are defined in code as typed `StructuredQuery` objects in `BuiltInMetricStatistics` (package `query.service.metricscore`), each a single-`value` aggregate over `eval_summaries` parameterized with `:runId`/`:computationId` plus `:metricField`. The run-level **`overall`** is a per-suite property (`test_suites.overall_score`), snapshotted per run; when unset, Phase 3 uses the built-in default — the single metric's average (`avg(:metricField)`), computed only for single-metric runs. Phase-3 computation runs these queries via `StructuredQueryService` and writes results to the analytics `metric_score_result` table below.
 
+The same `overallScore` definition also drives a per-row score (Phase 2, `test_case_eval_scores` above): `EvalSummaryRowScoreComputer` reuses `OverallScoreDefinitionResolver`'s output unchanged, grafting an `id IN (:rowIds)` filter and `GROUP BY id` so the run-level aggregate becomes one value per row, in one query per batch. Both computations share the same resolved query — there is no second implementation that could drift.
+
 ---
 
 ## Table: `metric_score_result` (Analytics DB)
@@ -923,6 +948,8 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 
 `roc_auc_score(y double precision[], p double precision[]) RETURNS double precision` — computes the ROC AUC score (rank-sum / Mann-Whitney formulation) for a binary classifier. `y` holds the actual class (0/1) and `p` the predicted probability, paired positionally by array index (both arrays must be built from the same row scan, e.g. `array_agg(y)`/`array_agg(p)` in the same `SELECT`). Returns `NULL` when either class is absent (no positive/negative pair to rank). Introduced in `V1.11__CreateRocAucScoreFunction.sql`; invoked from the Query DSL's `roc_auc(label, probability)` function (`query.service.translate.function.BuiltInQueryFunctions`), usable anywhere a `FnExpr` is valid, including a suite's custom `overallScore` expression.
 
+When used as a suite's `overallScore` and computed per row (`test_case_eval_scores`, see above), a `GROUP BY id` group has exactly one row, so its `array_agg` has one element — only one class is ever present, `NULLIF(n_pos * n_neg, 0)` is `NULL`, and the function returns `NULL` for every row. This is a natural degeneration, not an error: `roc_auc` is inherently population-dependent and has no single-row meaning.
+
 ---
 
 ## Migration History
@@ -960,6 +987,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.28 | `V1.28__AddMultiTurnDataToTestCaseRunInputs.sql` | Added nullable `multi_turn_data` JSONB to test_case_run_inputs (frozen multi-turn snapshot; one input row per case) |
 | V1.29 | `V1.29__AddAdditionalRequestsToTestSuites.sql` | Added `additional_requests` JSONB NOT NULL DEFAULT `'[]'::jsonb` (ordered chain of requests 1..N, List of RequestDefinitionDto) and nullable `request_name` VARCHAR(255) (label for request #0) to test_suites, for multi-request suites |
 | V1.30 | `V1.30__AddUniqueIndexToMetricDeclarationVersions.sql` | Replaced `idx_metric_declaration_versions_declaration_version` with UNIQUE INDEX `uq_metric_declaration_versions_declaration_version` on `(metric_declaration_id, schema_version DESC)` — enforces one row per (declaration, schema_version) while keeping the DESC ordering the latest-version `DISTINCT ON` query needs |
+| V1.31 | `V1.31__AddTestCaseOverallScoreToTestSuites.sql` | Added nullable `test_case_overall_score` JSONB column to test_suites (optional per-suite definition overriding `overall_score` for per-test-case scoring only; NULL = falls back to `overall_score`) |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 
@@ -982,6 +1010,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 | V1.16 | `V1.16__AddMetricEvalDurationToEvalSummaries.sql` | Added `metric_eval_duration_ms` (BIGINT NOT NULL DEFAULT 0) to test_case_eval_summaries |
 | V1.17 | `V1.17__AddRequestColumnsToTestCaseRunResults.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_run_results; dropped and re-created `uq_results_run_case_index` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` |
 | V1.18 | `V1.18__AddRequestColumnsToEvalSummaries.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; dropped and re-created unique index `uq_eval_summaries_natural_key` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` |
+| V1.19 | `V1.19__CreateTestCaseEvalScoresTable.sql` | Created test_case_eval_scores table (`eval_summary_id` PK, nullable `score`/`passed`, `computed_at_ms`); no denormalized context, no secondary indexes — every read joins to test_case_eval_summaries |
 
 ---
 

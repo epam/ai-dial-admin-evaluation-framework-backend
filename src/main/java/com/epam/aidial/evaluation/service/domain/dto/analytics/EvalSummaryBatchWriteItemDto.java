@@ -20,6 +20,13 @@ import tools.jackson.databind.JsonNode;
 @AllArgsConstructor
 public class EvalSummaryBatchWriteItemDto {
 
+    @Schema(
+            description = "Client-generated id for this row; when omitted, the service generates one. Set by "
+                    + "the in-process metric evaluation engine so the row's id is known before it is written, "
+                    + "letting a subsequent per-row score computation reference it without a re-query.",
+            example = "a10e8400-e29b-41d4-a716-446655440001")
+    private UUID id;
+
     @NotNull(message = "testCaseRunResultId is required")
     private UUID testCaseRunResultId;
 

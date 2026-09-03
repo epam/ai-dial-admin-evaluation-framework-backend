@@ -369,6 +369,20 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         return (String) get(24);
     }
 
+    /**
+     * Setter for <code>meta.test_suites.test_case_overall_score</code>.
+     */
+    public void setTestCaseOverallScore(JSONB value) {
+        set(25, value);
+    }
+
+    /**
+     * Getter for <code>meta.test_suites.test_case_overall_score</code>.
+     */
+    public JSONB getTestCaseOverallScore() {
+        return (JSONB) get(25);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -392,7 +406,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
     /**
      * Create a detached, initialised TestSuitesRecord
      */
-    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, JSONB testCaseFilter, Double overallScoreThreshold, JSONB additionalRequests, String requestName) {
+    public TestSuitesRecord(String id, String name, String description, String createdBy, Long createdAtMs, Long updatedAtMs, JSONB deploymentRef, JSONB endpointRef, Long version, JSONB requestTemplate, JSONB inputBindings, Boolean isValid, JSONB validationWarnings, JSONB responseColumns, String suiteType, JSONB mcpDeploymentRef, JSONB toolRef, JSONB argumentTemplate, String datasetId, JSONB disabledTestCaseIds, JSONB overallScore, JSONB testCaseFilter, Double overallScoreThreshold, JSONB additionalRequests, String requestName, JSONB testCaseOverallScore) {
         super(TestSuites.TEST_SUITES);
 
         setId(id);
@@ -420,6 +434,7 @@ public class TestSuitesRecord extends UpdatableRecordImpl<TestSuitesRecord> {
         setOverallScoreThreshold(overallScoreThreshold);
         setAdditionalRequests(additionalRequests);
         setRequestName(requestName);
+        setTestCaseOverallScore(testCaseOverallScore);
         resetTouchedOnNotNull();
     }
 }

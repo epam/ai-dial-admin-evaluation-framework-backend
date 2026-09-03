@@ -24,6 +24,8 @@
       "score": {"reason": "Highly relevant to the prompt", "confidence": 0.85}
     }
   },
+  "score": 0.915,
+  "passed": true,
   "createdAt": 1739750399000,
   "computedAt": 1739750500000,
   "grafanaTraceUrl": "http://grafana:3000/explore?..."

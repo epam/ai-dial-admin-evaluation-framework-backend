@@ -13,7 +13,9 @@ import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
+import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
+import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
@@ -50,6 +52,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -92,6 +95,9 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private MetricScoreResultRepository metricScoreResultRepository;
+
+    @Autowired
+    private EvalSummaryRepository evalSummaryRepository;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -1028,6 +1034,151 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should use testCaseOverallScore for per-row scoring while overallScore still drives the "
+            + "run-level roc_auc aggregate — the two scopes are independent")
+    void shouldUseTestCaseOverallScoreForPerRowWhileOverallScoreDrivesRunLevel() {
+        // Same roc_auc overallScore as shouldComputeCustomOverallRocAucFromDatasetLabelAndMetricProbability
+        // (a population-dependent function, meaningless per row — see
+        // shouldWriteNullScoreForRocAucCustomFunctionOverall) but PAIRED with a row-safe
+        // testCaseOverallScore (a plain avg over one metric field), so per-row scoring uses that instead
+        // and gets real values rather than degenerating to null.
+        CustomFunction overallScore = new CustomFunction(Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "filter",
+                Map.of(
+                        "op",
+                        "and",
+                        "args",
+                        List.of(
+                                Map.of(
+                                        "op",
+                                        "eq",
+                                        "args",
+                                        List.of(
+                                                Map.of("type", "field", "name", "test_suite_run_id"),
+                                                Map.of("type", "param", "name", "runId"))),
+                                Map.of(
+                                        "op",
+                                        "eq",
+                                        "args",
+                                        List.of(
+                                                Map.of("type", "field", "name", "computation_id"),
+                                                Map.of("type", "param", "name", "computationId"))))),
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "roc_auc",
+                                "args",
+                                List.of(
+                                        Map.of("type", "field", "name", "data::y"),
+                                        Map.of("type", "field", "name", "metric::Classifier::probability"))),
+                        "as",
+                        "value"))));
+        CustomFunction testCaseOverallScore = new CustomFunction(Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "avg",
+                                "args",
+                                List.of(Map.of("type", "field", "name", "metric::Classifier::probability"))),
+                        "as",
+                        "value"))));
+
+        TestSuiteResponseDto suite = createTestSuiteWithOverallScore(
+                "Suite For Independent Overall And Test Case Overall Score", overallScore, testCaseOverallScore);
+
+        // Same label/probabilityHint pairs as the sibling roc_auc test -> run-level AUC = 0.75.
+        createTestCaseForSuite(suite.getId(), "case-a", Map.of("y", 0, "probabilityHint", 0.1));
+        createTestCaseForSuite(suite.getId(), "case-b", Map.of("y", 0, "probabilityHint", 0.4));
+        createTestCaseForSuite(suite.getId(), "case-c", Map.of("y", 1, "probabilityHint", 0.35));
+        createTestCaseForSuite(suite.getId(), "case-d", Map.of("y", 1, "probabilityHint", 0.8));
+
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        String classifierVersionId = UUID.randomUUID().toString();
+        metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                classifierVersionId,
+                "00000000-0000-0000-0000-000000000001",
+                1,
+                "{}",
+                "{}",
+                "{\"properties\":{\"probability\":{\"type\":\"number\"}}}");
+
+        String inputBindings = """
+                [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
+                """;
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                suite.getId(),
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                UUID.fromString(classifierVersionId),
+                "Classifier",
+                "[]",
+                inputBindings.trim());
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200,
+                        false,
+                        Map.of("id", "mock", "choices", List.of(Map.of("message", Map.of("content", "answer")))),
+                        null,
+                        new HttpHeaders()));
+        when(metricProviderClient.evaluate(anyString(), any(EvaluationRequestDto.class)))
+                .thenAnswer(invocation -> {
+                    EvaluationRequestDto request = invocation.getArgument(1);
+                    BigDecimal probability =
+                            new BigDecimal(request.getInput().get("phint").toString());
+                    return EvaluationResponseDto.builder()
+                            .metricName("Classifier")
+                            .output(Map.of(
+                                    "probability",
+                                    MetricOutputFieldDto.builder()
+                                            .type("value")
+                                            .value(probability)
+                                            .build()))
+                            .build();
+                });
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        // Per-row: testCaseOverallScore (avg of the single probability field == the field itself) gives
+        // real values, not the roc_auc-null pattern.
+        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
+        assertThat(summariesByTestCaseName).hasSize(4);
+        assertThat(summariesByTestCaseName.get("case-a").getScore()).isCloseTo(0.1, within(1e-9));
+        assertThat(summariesByTestCaseName.get("case-b").getScore()).isCloseTo(0.4, within(1e-9));
+        assertThat(summariesByTestCaseName.get("case-c").getScore()).isCloseTo(0.35, within(1e-9));
+        assertThat(summariesByTestCaseName.get("case-d").getScore()).isCloseTo(0.8, within(1e-9));
+
+        // Run-level: overallScore (roc_auc) still drives metric_score_result's "overall" row, unaffected
+        // by testCaseOverallScore.
+        List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
+        assertThat(snapshots).hasSize(1);
+        UUID computationId = UUID.fromString((String) snapshots.get(0).get("computation_id"));
+        List<MetricScoreResult> results =
+                metricScoreResultRepository.findByRunAndComputation(run.getId(), computationId);
+        MetricScoreResult overall = results.stream()
+                .filter(r -> "overall".equals(r.getMetricScoreName()) && "overall".equals(r.getMetricName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("missing overall metric score result"));
+        assertThat(overall.getValue()).isCloseTo(0.75, within(1e-9));
+    }
+
+    @Test
     @DisplayName("Should compute a suite's custom overall as a weighted mean Sigma(w_i*m_i)/Sigma(w_i) of two metrics, "
             + "combining a duplicated weighted term")
     void shouldComputeCustomOverallWeightedMeanOfSpecificMetrics() {
@@ -1098,6 +1249,223 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         assertThat(fetchOverallResult(run).getValue()).isCloseTo(1.0 / 3.0, within(1e-9));
     }
 
+    @Test
+    @DisplayName("Should compute per-row score/passed from a WeightedMean overallScore against the snapshotted "
+            + "threshold, one insert per row")
+    void shouldComputePerRowScoreAndPassedFromWeightedMean() {
+        // Per-row score = (1*MetricA + 1*MetricB) / (1+1) = avg(valA, valB) for that row (each metric
+        // mock echoes back its own input). Threshold 0.5: case-a's 0.8 passes, case-b's 0.2 does not.
+        WeightedMean overallScore = new WeightedMean(List.of(
+                new WeightedMetric("MetricA", "score", BigDecimal.ONE),
+                new WeightedMetric("MetricB", "score", BigDecimal.ONE)));
+
+        TestSuiteResponseDto suite = createSuiteWithTwoWeightableMetrics(
+                "Suite For Per-Row Score",
+                overallScore,
+                Map.of("valA", 0.8, "valB", 0.8),
+                Map.of("valA", 0.2, "valB", 0.2),
+                0.5);
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
+        assertThat(summariesByTestCaseName).hasSize(2);
+
+        EvalSummary caseA = summariesByTestCaseName.get("case-a");
+        assertThat(caseA.getScore()).isCloseTo(0.8, within(1e-9));
+        assertThat(caseA.getPassed()).isTrue();
+
+        EvalSummary caseB = summariesByTestCaseName.get("case-b");
+        assertThat(caseB.getScore()).isCloseTo(0.2, within(1e-9));
+        assertThat(caseB.getPassed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should compute a real per-row score for a row-safe CustomFunction (a simple avg over one "
+            + "metric field, grafted per row via GROUP BY id)")
+    void shouldComputePerRowScoreForRowSafeCustomFunction() {
+        // avg(metric::MetricA::score) grouped per row degenerates to that row's own MetricA value —
+        // the behavior that distinguishes a row-safe CustomFunction from a population-dependent one
+        // like roc_auc (see shouldWriteNullScoreForRocAucCustomFunctionOverall).
+        CustomFunction overallScore = new CustomFunction(Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "filter",
+                Map.of(
+                        "op",
+                        "and",
+                        "args",
+                        List.of(
+                                Map.of(
+                                        "op",
+                                        "eq",
+                                        "args",
+                                        List.of(
+                                                Map.of("type", "field", "name", "test_suite_run_id"),
+                                                Map.of("type", "param", "name", "runId"))),
+                                Map.of(
+                                        "op",
+                                        "eq",
+                                        "args",
+                                        List.of(
+                                                Map.of("type", "field", "name", "computation_id"),
+                                                Map.of("type", "param", "name", "computationId"))))),
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "avg",
+                                "args",
+                                List.of(Map.of("type", "field", "name", "metric::MetricA::score"))),
+                        "as",
+                        "value"))));
+
+        TestSuiteResponseDto suite = createSuiteWithTwoWeightableMetrics(
+                "Suite For CustomFunction Overall",
+                overallScore,
+                Map.of("valA", 0.8, "valB", 0.8),
+                Map.of("valA", 0.2, "valB", 0.2),
+                0.5);
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
+        assertThat(summariesByTestCaseName).hasSize(2);
+
+        EvalSummary caseA = summariesByTestCaseName.get("case-a");
+        assertThat(caseA.getScore()).isCloseTo(0.8, within(1e-9));
+        assertThat(caseA.getPassed()).isTrue();
+
+        EvalSummary caseB = summariesByTestCaseName.get("case-b");
+        assertThat(caseB.getScore()).isCloseTo(0.2, within(1e-9));
+        assertThat(caseB.getPassed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should write a null per-row score for a population-dependent CustomFunction (roc_auc), "
+            + "which degenerates on a single-row GROUP BY id group, without failing the run")
+    void shouldWriteNullScoreForRocAucCustomFunctionOverall() {
+        // roc_auc(data::y, metric::Classifier::probability), stored as the suite's overallScore. Grouped
+        // per row, each array_agg has exactly one element, so n_pos*n_neg is always 0 and
+        // roc_auc_score's NULLIF(n_pos*n_neg, 0) degenerates to SQL NULL for every row — not an error.
+        CustomFunction overallScore = new CustomFunction(Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "filter",
+                Map.of(
+                        "op",
+                        "and",
+                        "args",
+                        List.of(
+                                Map.of(
+                                        "op",
+                                        "eq",
+                                        "args",
+                                        List.of(
+                                                Map.of("type", "field", "name", "test_suite_run_id"),
+                                                Map.of("type", "param", "name", "runId"))),
+                                Map.of(
+                                        "op",
+                                        "eq",
+                                        "args",
+                                        List.of(
+                                                Map.of("type", "field", "name", "computation_id"),
+                                                Map.of("type", "param", "name", "computationId"))))),
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "roc_auc",
+                                "args",
+                                List.of(
+                                        Map.of("type", "field", "name", "data::y"),
+                                        Map.of("type", "field", "name", "metric::Classifier::probability"))),
+                        "as",
+                        "value"))));
+
+        TestSuiteResponseDto suite = createTestSuiteWithOverallScore("Suite For Per-Row ROC AUC Overall", overallScore);
+
+        createTestCaseForSuite(suite.getId(), "case-a", Map.of("y", 0, "probabilityHint", 0.1));
+        createTestCaseForSuite(suite.getId(), "case-b", Map.of("y", 1, "probabilityHint", 0.8));
+
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        String classifierVersionId = UUID.randomUUID().toString();
+        metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                classifierVersionId,
+                "00000000-0000-0000-0000-000000000001",
+                1,
+                "{}",
+                "{}",
+                "{\"properties\":{\"probability\":{\"type\":\"number\"}}}");
+
+        String inputBindings = """
+                [{"property": "phint", "source": {"$type": "TestCase", "columnName": "probabilityHint"}}]
+                """;
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                suite.getId(),
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                UUID.fromString(classifierVersionId),
+                "Classifier",
+                "[]",
+                inputBindings.trim());
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(
+                        200,
+                        false,
+                        Map.of("id", "mock", "choices", List.of(Map.of("message", Map.of("content", "answer")))),
+                        null,
+                        new HttpHeaders()));
+        when(metricProviderClient.evaluate(anyString(), any(EvaluationRequestDto.class)))
+                .thenAnswer(invocation -> {
+                    EvaluationRequestDto request = invocation.getArgument(1);
+                    BigDecimal probability =
+                            new BigDecimal(request.getInput().get("phint").toString());
+                    return EvaluationResponseDto.builder()
+                            .metricName("Classifier")
+                            .output(Map.of(
+                                    "probability",
+                                    MetricOutputFieldDto.builder()
+                                            .type("value")
+                                            .value(probability)
+                                            .build()))
+                            .build();
+                });
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
+        assertThat(summariesByTestCaseName).hasSize(2);
+        assertThat(summariesByTestCaseName.values()).allSatisfy(summary -> {
+            assertThat(summary.getScore()).isNull();
+            assertThat(summary.getPassed()).isNull();
+        });
+    }
+
+    private Map<String, EvalSummary> fetchEvalSummariesByTestCaseName(UUID runId) {
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findEvalSummariesByRunId(runId);
+        Map<String, EvalSummary> byName = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            UUID id = UUID.fromString((String) row.get("id"));
+            EvalSummary summary = evalSummaryRepository.findById(id).orElseThrow();
+            byName.put((String) row.get("test_case_name"), summary);
+        }
+        return byName;
+    }
+
     /**
      * A suite bound to two numeric fields ({@code valA}, {@code valB}), two test cases (data supplied by
      * the caller), and two metrics (MetricA reading {@code valA}, MetricB reading {@code valB}, each
@@ -1109,7 +1477,17 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
             OverallScoreDefinition overallScore,
             Map<String, Object> testCaseDataA,
             Map<String, Object> testCaseDataB) {
-        TestSuiteResponseDto suite = createTestSuiteWithTwoNumericFieldsOverallScore(suiteName, overallScore);
+        return createSuiteWithTwoWeightableMetrics(suiteName, overallScore, testCaseDataA, testCaseDataB, null);
+    }
+
+    private TestSuiteResponseDto createSuiteWithTwoWeightableMetrics(
+            String suiteName,
+            OverallScoreDefinition overallScore,
+            Map<String, Object> testCaseDataA,
+            Map<String, Object> testCaseDataB,
+            Double overallScoreThreshold) {
+        TestSuiteResponseDto suite =
+                createTestSuiteWithTwoNumericFieldsOverallScore(suiteName, overallScore, overallScoreThreshold);
 
         createTestCaseForSuite(suite.getId(), "case-a", testCaseDataA);
         createTestCaseForSuite(suite.getId(), "case-b", testCaseDataB);
@@ -1320,6 +1698,11 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     private TestSuiteResponseDto createTestSuiteWithOverallScore(String name, OverallScoreDefinition overallScore) {
+        return createTestSuiteWithOverallScore(name, overallScore, null);
+    }
+
+    private TestSuiteResponseDto createTestSuiteWithOverallScore(
+            String name, OverallScoreDefinition overallScore, OverallScoreDefinition testCaseOverallScore) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name)
                 .description("Description for " + name)
@@ -1358,6 +1741,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                 .requestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
                 .overallScore(overallScore)
+                .testCaseOverallScore(testCaseOverallScore)
                 .build();
 
         ResponseEntity<TestSuiteResponseDto> response =
@@ -1368,6 +1752,11 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
     private TestSuiteResponseDto createTestSuiteWithTwoNumericFieldsOverallScore(
             String name, OverallScoreDefinition overallScore) {
+        return createTestSuiteWithTwoNumericFieldsOverallScore(name, overallScore, null);
+    }
+
+    private TestSuiteResponseDto createTestSuiteWithTwoNumericFieldsOverallScore(
+            String name, OverallScoreDefinition overallScore, Double overallScoreThreshold) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name)
                 .description("Description for " + name)
@@ -1406,6 +1795,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                 .requestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
                 .overallScore(overallScore)
+                .overallScoreThreshold(overallScoreThreshold)
                 .build();
 
         ResponseEntity<TestSuiteResponseDto> response =

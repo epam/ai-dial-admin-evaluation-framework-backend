@@ -6,6 +6,7 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunMetricSnapshots;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
 
@@ -42,6 +43,11 @@ public class Analytics extends SchemaImpl {
     public final RunMetricSnapshots RUN_METRIC_SNAPSHOTS = RunMetricSnapshots.RUN_METRIC_SNAPSHOTS;
 
     /**
+     * The table <code>analytics.test_case_eval_scores</code>.
+     */
+    public final TestCaseEvalScores TEST_CASE_EVAL_SCORES = TestCaseEvalScores.TEST_CASE_EVAL_SCORES;
+
+    /**
      * The table <code>analytics.test_case_eval_summaries</code>.
      */
     public final TestCaseEvalSummaries TEST_CASE_EVAL_SUMMARIES = TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES;
@@ -69,6 +75,7 @@ public class Analytics extends SchemaImpl {
         return Arrays.asList(
             MetricScoreResult.METRIC_SCORE_RESULT,
             RunMetricSnapshots.RUN_METRIC_SNAPSHOTS,
+            TestCaseEvalScores.TEST_CASE_EVAL_SCORES,
             TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES,
             TestCaseRunResults.TEST_CASE_RUN_RESULTS
         );

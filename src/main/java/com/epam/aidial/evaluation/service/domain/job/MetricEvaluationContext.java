@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,6 +29,12 @@ public class MetricEvaluationContext {
     private final int defaultConcurrencyPerProvider;
     private final int batchSize;
     private final long perResultTimeoutMs;
+
+    /** Suite's snapshotted 'overall' score definition; null = not configured. */
+    private final OverallScoreDefinition overallScoreDefinition;
+
+    /** Suite's snapshotted pass/fail threshold; null = not configured. */
+    private final Double overallScoreThreshold;
 
     /**
      * The chain's request labels in index order: element 0 is request #0's {@code requestName},

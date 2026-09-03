@@ -87,7 +87,14 @@ public class EvalSummariesSchemaProvider implements QueryableEntitySchemaProvide
         this.outputSchemaFieldExtractor = outputSchemaFieldExtractor;
         this.schemaFieldTypeMapper = schemaFieldTypeMapper;
         this.responseColumnUnionResolver = responseColumnUnionResolver;
-        this.baseSchema = schemaResolver.resolve(TEST_CASE_EVAL_SUMMARIES);
+        final List<QuerySchemaFieldDto> fields = new ArrayList<>(schemaResolver.resolve(TEST_CASE_EVAL_SUMMARIES));
+        // score/passed are not columns of TEST_CASE_EVAL_SUMMARIES itself — they come from the sibling
+        // test_case_eval_scores table joined in by PostgresEvalSummaryEntityResolver.table(), so schemaResolver
+        // can't derive them from the generated table alone; add them explicitly to keep the advertised
+        // schema in sync with what PostgresEvalSummaryEntityResolver.bindings() actually accepts.
+        fields.add(new QuerySchemaFieldDto("score", QueryFieldType.DECIMAL, "score"));
+        fields.add(new QuerySchemaFieldDto("passed", QueryFieldType.BOOLEAN, "passed"));
+        this.baseSchema = List.copyOf(fields);
     }
 
     @Override

@@ -83,6 +83,13 @@ public class TestSuiteResponseDto {
     private OverallScoreDefinition overallScore;
 
     @Schema(
+            description = "Optional per-suite definition used for per-test-case score computation "
+                    + "(`test_case_eval_scores.score`/`.passed`) instead of `overallScore`. When null, "
+                    + "per-test-case scoring falls back to `overallScore`. Does not affect the run-level "
+                    + "`overall` aggregate, which always uses `overallScore`.")
+    private OverallScoreDefinition testCaseOverallScore;
+
+    @Schema(
             description =
                     "Threshold the run-level `overall` metric score is compared against. Null when not configured.")
     private Double overallScoreThreshold;

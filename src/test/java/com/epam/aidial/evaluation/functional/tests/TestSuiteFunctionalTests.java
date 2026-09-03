@@ -17,6 +17,8 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
+import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -661,6 +663,106 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
         assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(fetched.getBody()).isNotNull();
         assertThat(fetched.getBody().getOverallScore()).isEqualTo(overallScoreDefinition);
+    }
+
+    @Test
+    @DisplayName("Should persist testCaseOverallScore independently of overallScore on update")
+    void shouldPersistTestCaseOverallScoreIndependentlyOfOverallScore() {
+        // Given: a suite, and an update carrying DIFFERENT overallScore and testCaseOverallScore definitions
+        TestSuiteResponseDto created = createTestSuite("Test Case Overall Score Suite");
+        Map<String, Object> customFunctionExpression = Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "roc_auc",
+                                "args",
+                                List.of(
+                                        Map.of("type", "field", "name", "metric::Classifier::label"),
+                                        Map.of("type", "field", "name", "metric::Classifier::probability"))),
+                        "as",
+                        "value")));
+        OverallScoreDefinition overallScoreDefinition = new CustomFunction(customFunctionExpression);
+        OverallScoreDefinition testCaseOverallScoreDefinition = new Mean();
+        TestSuiteRequestDto updateRequest = TestSuiteRequestDto.builder()
+                .name(created.getName())
+                .description(created.getDescription())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(buildEndpointContract("/v1/chat"))
+                .datasetId(created.getDatasetId())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .overallScore(overallScoreDefinition)
+                .testCaseOverallScore(testCaseOverallScoreDefinition)
+                .build();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch(created.getVersion() != null ? "\"" + created.getVersion() + "\"" : "0");
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + created.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(updateRequest, headers),
+                TestSuiteResponseDto.class);
+
+        // Then: the response echoes both, independently
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getOverallScore()).isEqualTo(overallScoreDefinition);
+        assertThat(response.getBody().getTestCaseOverallScore()).isEqualTo(testCaseOverallScoreDefinition);
+
+        // And: both are persisted — a fresh GET returns the same pair
+        ResponseEntity<TestSuiteResponseDto> fetched =
+                restTemplate.getForEntity(apiUrl("/test-suites/" + created.getId()), TestSuiteResponseDto.class);
+        assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(fetched.getBody()).isNotNull();
+        assertThat(fetched.getBody().getOverallScore()).isEqualTo(overallScoreDefinition);
+        assertThat(fetched.getBody().getTestCaseOverallScore()).isEqualTo(testCaseOverallScoreDefinition);
+    }
+
+    @Test
+    @DisplayName("Should leave testCaseOverallScore null when omitted on update")
+    void shouldLeaveTestCaseOverallScoreNullWhenOmitted() {
+        // Given: a suite updated with only overallScore set
+        TestSuiteResponseDto created = createTestSuite("No Test Case Overall Score Suite");
+        OverallScoreDefinition overallScoreDefinition = new Mean();
+        TestSuiteRequestDto updateRequest = TestSuiteRequestDto.builder()
+                .name(created.getName())
+                .description(created.getDescription())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(buildEndpointContract("/v1/chat"))
+                .datasetId(created.getDatasetId())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .overallScore(overallScoreDefinition)
+                .build();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch(created.getVersion() != null ? "\"" + created.getVersion() + "\"" : "0");
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + created.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(updateRequest, headers),
+                TestSuiteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getOverallScore()).isEqualTo(overallScoreDefinition);
+        assertThat(response.getBody().getTestCaseOverallScore()).isNull();
     }
 
     @Test

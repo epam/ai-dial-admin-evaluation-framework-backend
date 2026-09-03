@@ -70,6 +70,7 @@ public class TestSuiteMapper {
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
                 .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
+                .testCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(entity.getTestCaseOverallScore()))
                 .overallScoreThreshold(entity.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();
@@ -96,6 +97,7 @@ public class TestSuiteMapper {
                 .requestName(dto.getRequestName())
                 .additionalRequests(jsonbMapper.mapAdditionalRequests(dto.getAdditionalRequests()))
                 .overallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()))
+                .testCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(dto.getTestCaseOverallScore()))
                 .overallScoreThreshold(dto.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()))
                 .valid(true)
@@ -122,6 +124,7 @@ public class TestSuiteMapper {
         entity.setRequestName(dto.getRequestName());
         entity.setAdditionalRequests(jsonbMapper.mapAdditionalRequests(dto.getAdditionalRequests()));
         entity.setOverallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()));
+        entity.setTestCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(dto.getTestCaseOverallScore()));
         entity.setOverallScoreThreshold(dto.getOverallScoreThreshold());
         entity.setTestCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()));
     }
@@ -204,6 +207,7 @@ public class TestSuiteMapper {
                 .requestName(source.getRequestName())
                 .additionalRequests(additionalRequests)
                 .overallScore(source.getOverallScore())
+                .testCaseOverallScore(source.getTestCaseOverallScore())
                 .overallScoreThreshold(source.getOverallScoreThreshold())
                 .testCaseFilter(source.getTestCaseFilter())
                 .version(0L)
@@ -245,6 +249,7 @@ public class TestSuiteMapper {
                                 ? jsonbMapper.mapAdditionalRequests(entity.getAdditionalRequests())
                                 : null)
                 .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
+                .testCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(entity.getTestCaseOverallScore()))
                 .overallScoreThreshold(entity.getOverallScoreThreshold())
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();

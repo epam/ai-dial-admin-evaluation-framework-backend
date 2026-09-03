@@ -187,6 +187,11 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
      */
     public final TableField<TestSuitesRecord, String> REQUEST_NAME = createField(DSL.name("request_name"), SQLDataType.VARCHAR(255), this, "");
 
+    /**
+     * The column <code>meta.test_suites.test_case_overall_score</code>.
+     */
+    public final TableField<TestSuitesRecord, JSONB> TEST_CASE_OVERALL_SCORE = createField(DSL.name("test_case_overall_score"), SQLDataType.JSONB, this, "");
+
     private TestSuites(Name alias, Table<TestSuitesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

@@ -14,13 +14,16 @@ A suite's run-level `overall` metric-score definition (`TestSuiteRequestDto`/`Te
 
 `MetricScoreComputationContext.overallScoreDefinition` carries the typed value directly (no JSON-string round trip between the suite snapshot and Phase 3).
 
-## Per-row `score` reuses the same resolved query — one implementation, two scopes
+## Per-row `score` reuses the same resolved-query machinery — usually the same definition, optionally a different one
 
-The same `OverallScoreDefinitionResolver` output also drives a second computation: a per-row `score`/`passed` on each `EvalSummary`, written to a sibling table `test_case_eval_scores` and joined back into the eval-summary read surface (see `docs/patterns/eval-summaries-read-surface.md`, `docs/database-schema.md`). This is **not** a second implementation — `EvalSummaryRowScoreComputer` (`query.service.metricscore`, a sibling of `OverallScoreDefinitionResolver`/`FilteredMetricScoreAggregator`) takes the exact `StructuredQuery` the resolver already produces for Phase 3 and grafts an `id IN (:rowIds)` filter plus a `GROUP BY id` onto it — turning the run-level aggregate into one row per id, in one query per Phase-2 flush batch. Because both scopes execute the *same* resolved query, `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly per row, with no separate coalesce/null-handling logic to keep in sync.
+The same `OverallScoreDefinitionResolver` also drives a second computation: a per-row `score`/`passed` on each `EvalSummary`, written to a sibling table `test_case_eval_scores` and joined back into the eval-summary read surface (see `docs/patterns/eval-summaries-read-surface.md`, `docs/database-schema.md`). This is **not** a second implementation — `EvalSummaryRowScoreComputer` (`query.service.metricscore`, a sibling of `OverallScoreDefinitionResolver`/`FilteredMetricScoreAggregator`) takes whatever `OverallScoreDefinition` it's given, resolves it the same way Phase 3 does, and grafts an `id IN (:rowIds)` filter plus a `GROUP BY id` onto the resulting `StructuredQuery` — turning a run-level aggregate into one row per id, in one query per Phase-2 flush batch. `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly per row this way, whichever definition is fed in.
+
+**Which definition is fed in can now differ between the two scopes.** A suite has two independent optional fields: `overallScore` (always drives Phase 3's run-level `metric_score_result.overall`, unconditionally) and `testCaseOverallScore` (drives Phase 2's per-row scoring *instead of* `overallScore`, when configured — falling back to `overallScore` when absent, which is the common case and preserves the "one definition, two scopes" behavior described above). The fallback is resolved once, in `TestSuiteEvaluationJob.buildMetricEvaluationContext` (`snapshot.getTestCaseOverallScore() != null ? ... : snapshot.getOverallScore()`), before `MetricEvaluationContext` is built — `EvalSummaryRowScoreComputer` itself has no notion of "which suite field this came from," it just resolves whatever `OverallScoreDefinition` its caller passes.
 
 | | Phase 3 `overall` (`MetricScoreComputationExecutor`) | Phase 2 per-row `score` (`EvalSummaryRowScoreComputer`) |
 |---|---|---|
 | Scope | One aggregate per `(run, computation)`, no `GROUP BY` | One value per `EvalSummary` row, `GROUP BY id` grafted on |
+| Definition used | Always `overallScore` | `testCaseOverallScore` if configured, else `overallScore` |
 | Written to | `metric_score_result` | `test_case_eval_scores` (joined into `EvalSummary.score`/`.passed` on read) |
 | Timing | After all `EvalSummary` rows for the computation exist | Right after each flush's own batch is written (not after the whole run) |
 

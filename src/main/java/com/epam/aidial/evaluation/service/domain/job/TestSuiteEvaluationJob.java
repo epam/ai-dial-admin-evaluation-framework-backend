@@ -335,7 +335,13 @@ public class TestSuiteEvaluationJob {
                 .batchSize(metricEvaluationProperties.getBatchSize())
                 .perResultTimeoutMs(metricEvaluationProperties.getPerResultTimeoutMs())
                 .requestLabels(buildRequestLabels(snapshot))
-                .overallScoreDefinition(snapshot.getOverallScore())
+                // Per-test-case scoring prefers testCaseOverallScore when the suite configured one,
+                // falling back to overallScore otherwise. The run-level aggregate (computeMetricScores,
+                // below) always uses overallScore unconditionally — the two scopes may diverge.
+                .overallScoreDefinition(
+                        snapshot.getTestCaseOverallScore() != null
+                                ? snapshot.getTestCaseOverallScore()
+                                : snapshot.getOverallScore())
                 .overallScoreThreshold(snapshot.getOverallScoreThreshold())
                 .build();
     }

@@ -86,6 +86,14 @@ public class SuiteSnapshotDto {
     private OverallScoreDefinition overallScore;
 
     @Schema(
+            description = "Optional per-suite definition captured at snapshot time, used for per-test-case "
+                    + "score computation instead of `overallScore` when present. Null = per-test-case scoring "
+                    + "falls back to `overallScore`. Does not affect the run-level `overall` aggregate, which "
+                    + "always uses `overallScore`. Additive-optional: absent in snapshots written before this "
+                    + "field existed, which fall back to `overallScore` the same way a null value would.")
+    private OverallScoreDefinition testCaseOverallScore;
+
+    @Schema(
             description = "Per-suite 'overall' score threshold captured at snapshot time; null = not configured. "
                     + "Fixed for the life of the run regardless of later edits to the suite's live threshold. "
                     + "Additive-optional: absent in snapshots written before this field existed.")

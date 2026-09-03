@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.data.db.analytics.model;
+package com.epam.aidial.evaluation.service.domain.dto.analytics;
 
 import java.util.UUID;
 import lombok.AllArgsConstructor;
@@ -10,9 +10,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class EvalSummaryScore {
+public class TestCaseEvalScoreBatchWriteItemDto {
     private UUID evalSummaryId;
     private Double score;
     private Boolean passed;
-    private Long computedAtMs;
 }

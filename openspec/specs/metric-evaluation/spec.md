@@ -354,7 +354,7 @@ Status: **Implemented**
 - **THEN** `runMetricSnapshotRepository.findByRunIdAndComputationId` SHALL be called exactly once for the whole `execute()` call, and every flush's per-row score computation SHALL use the same discovered field list
 
 ### Requirement: Per-row score computed and written immediately after each flush
-Immediately after each Phase-2 flush's `EvalSummaryBatchWriteClient.batchWrite(...)` call succeeds, and before the buffer is cleared, the executor SHALL compute a per-row score for that batch (via `EvalSummaryRowScoreComputer`, see `eval-summary-scoring`) and write the results to `test_case_eval_scores` (via `EvalSummaryScoreService.batchCreate(...)`, see `metrics-storage`). This SHALL be skipped entirely when the suite's snapshotted `overallScore` definition is absent.
+Immediately after each Phase-2 flush's `EvalSummaryBatchWriteClient.batchWrite(...)` call succeeds, and before the buffer is cleared, the executor SHALL compute a per-row score for that batch (via `EvalSummaryRowScoreComputer`, see `eval-summary-scoring`) and write the results to `test_case_eval_scores` (via `TestCaseEvalScoreService.batchCreate(...)`, see `metrics-storage`). This SHALL be skipped entirely when the suite's snapshotted `overallScore` definition is absent.
 Status: **Implemented**
 
 #### Scenario: Score computation skipped without a definition

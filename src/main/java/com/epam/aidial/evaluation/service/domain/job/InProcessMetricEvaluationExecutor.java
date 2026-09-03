@@ -19,10 +19,10 @@ import com.epam.aidial.evaluation.service.domain.ConditionContext;
 import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
-import com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryScoreService;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseEvalScoreService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryScoreBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
 import io.opentelemetry.context.Context;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -72,7 +72,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final MetricFieldDiscoverer metricFieldDiscoverer;
     private final EvalSummaryRowScoreComputer evalSummaryRowScoreComputer;
-    private final EvalSummaryScoreService evalSummaryScoreService;
+    private final TestCaseEvalScoreService testCaseEvalScoreService;
     private final Clock clock;
 
     @Override
@@ -468,11 +468,11 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             if (scoresById.isEmpty()) {
                 return;
             }
-            List<EvalSummaryScoreBatchWriteItemDto> items = buffer.stream()
+            List<TestCaseEvalScoreBatchWriteItemDto> items = buffer.stream()
                     .filter(item -> scoresById.containsKey(item.getId()))
                     .map(item -> toScoreItem(item, scoresById.get(item.getId()), context))
                     .toList();
-            evalSummaryScoreService.batchCreate(context.getComputedAtMs(), items);
+            testCaseEvalScoreService.batchCreate(context.getComputedAtMs(), items);
             log.debug("Wrote {} eval summary scores for run {}", items.size(), context.getTestSuiteRunId());
         } catch (RuntimeException e) {
             log.warn(
@@ -484,12 +484,12 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
         }
     }
 
-    private EvalSummaryScoreBatchWriteItemDto toScoreItem(
+    private TestCaseEvalScoreBatchWriteItemDto toScoreItem(
             EvalSummaryBatchWriteItemDto item, Double score, MetricEvaluationContext context) {
         Boolean passed = (score != null && context.getOverallScoreThreshold() != null)
                 ? score >= context.getOverallScoreThreshold()
                 : null;
-        return EvalSummaryScoreBatchWriteItemDto.builder()
+        return TestCaseEvalScoreBatchWriteItemDto.builder()
                 .evalSummaryId(item.getId())
                 .score(score)
                 .passed(passed)

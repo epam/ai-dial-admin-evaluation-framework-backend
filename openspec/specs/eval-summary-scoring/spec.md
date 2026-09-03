@@ -86,6 +86,6 @@ Status: **Implemented**
 ## Implementation Notes
 - New component: `EvalSummaryRowScoreComputer` (`com.epam.aidial.evaluation.query.service.metricscore`), a sibling of `OverallScoreDefinitionResolver` and `FilteredMetricScoreAggregator` (not an extension of the latter — that component's contract is scoped to read-only what-if recomputation, not persistence).
 - Reuses `OverallScoreDefinitionResolver.resolve(...)` unchanged — no separate implementation for `Mean`/`WeightedMean`/`CustomFunction` resolution.
-- Invoked from `InProcessMetricEvaluationExecutor`'s flush cycle, right after each batch's `EvalSummaryBatchWriteClient.batchWrite(...)` call; results are written to `test_case_eval_scores` via `EvalSummaryScoreService.batchCreate(...)`.
+- Invoked from `InProcessMetricEvaluationExecutor`'s flush cycle, right after each batch's `EvalSummaryBatchWriteClient.batchWrite(...)` call; results are written to `test_case_eval_scores` via `TestCaseEvalScoreService.batchCreate(...)`.
 - Persisted on `test_case_eval_scores`, joined into the `EvalSummary` read surface — see `metrics-storage` for the schema and API-exposure changes, and `metric-evaluation` for the write-path wiring.
 - Threshold source: `SuiteSnapshotDto.overallScoreThreshold` — see `suite-run-snapshot`.

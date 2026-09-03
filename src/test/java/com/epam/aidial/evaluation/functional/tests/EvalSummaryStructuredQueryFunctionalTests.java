@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
-import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryScore;
+import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
-import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryScoreRepository;
+import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseEvalScoreRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
@@ -50,7 +50,7 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
     private EvalSummaryRepository evalSummaryRepository;
 
     @Autowired
-    private EvalSummaryScoreRepository evalSummaryScoreRepository;
+    private TestCaseEvalScoreRepository testCaseEvalScoreRepository;
 
     private static StructuredQuery rowQuery(FilterNode filter, List<OutputColumn> select) {
         return new StructuredQuery(
@@ -543,20 +543,20 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         // passed = NULL via the LEFT JOIN, same as an explicit null score/passed row would.
         analyticsTestDataHelper.createEvalSummary(
                 suiteId, runId, computationId, "case-d", ExecutionStatus.SUCCESS.name(), 400L, 4_000L);
-        evalSummaryScoreRepository.saveAll(List.of(
-                EvalSummaryScore.builder()
+        testCaseEvalScoreRepository.saveAll(List.of(
+                TestCaseEvalScore.builder()
                         .evalSummaryId(passedA)
                         .score(0.9)
                         .passed(true)
                         .computedAtMs(1_000L)
                         .build(),
-                EvalSummaryScore.builder()
+                TestCaseEvalScore.builder()
                         .evalSummaryId(passedB)
                         .score(0.95)
                         .passed(true)
                         .computedAtMs(2_000L)
                         .build(),
-                EvalSummaryScore.builder()
+                TestCaseEvalScore.builder()
                         .evalSummaryId(failedC)
                         .score(0.1)
                         .passed(false)
@@ -604,14 +604,14 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                 ExecutionStatus.SUCCESS.name(),
                 100L,
                 5_000L);
-        evalSummaryScoreRepository.saveAll(List.of(
-                EvalSummaryScore.builder()
+        testCaseEvalScoreRepository.saveAll(List.of(
+                TestCaseEvalScore.builder()
                         .evalSummaryId(idA)
                         .score(0.8)
                         .passed(true)
                         .computedAtMs(1_000L)
                         .build(),
-                EvalSummaryScore.builder()
+                TestCaseEvalScore.builder()
                         .evalSummaryId(idB)
                         .score(0.2)
                         .passed(false)

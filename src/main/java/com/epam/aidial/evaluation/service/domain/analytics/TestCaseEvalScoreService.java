@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.service.domain.analytics;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryScore;
-import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryScoreRepository;
+import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
+import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseEvalScoreRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryScoreBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,24 +20,24 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @LogExecution
 @RequiredArgsConstructor
-public class EvalSummaryScoreService {
+public class TestCaseEvalScoreService {
 
-    private final EvalSummaryScoreRepository evalSummaryScoreRepository;
+    private final TestCaseEvalScoreRepository testCaseEvalScoreRepository;
 
     @Transactional("analyticsTransactionManager")
-    public void batchCreate(long computedAtMs, List<EvalSummaryScoreBatchWriteItemDto> items) {
+    public void batchCreate(long computedAtMs, List<TestCaseEvalScoreBatchWriteItemDto> items) {
         if (items.isEmpty()) {
             return;
         }
-        List<EvalSummaryScore> entities = items.stream()
-                .map(item -> EvalSummaryScore.builder()
+        List<TestCaseEvalScore> entities = items.stream()
+                .map(item -> TestCaseEvalScore.builder()
                         .evalSummaryId(item.getEvalSummaryId())
                         .score(item.getScore())
                         .passed(item.getPassed())
                         .computedAtMs(computedAtMs)
                         .build())
                 .toList();
-        evalSummaryScoreRepository.saveAll(entities);
+        testCaseEvalScoreRepository.saveAll(entities);
         log.debug("Batch created {} eval summary scores", entities.size());
     }
 }

@@ -30,9 +30,9 @@ import com.epam.aidial.evaluation.service.domain.ConditionContext;
 import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
-import com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryScoreService;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseEvalScoreService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryScoreBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -98,7 +98,7 @@ class InProcessMetricEvaluationExecutorTest {
     private EvalSummaryRowScoreComputer evalSummaryRowScoreComputer;
 
     @Mock
-    private EvalSummaryScoreService evalSummaryScoreService;
+    private TestCaseEvalScoreService testCaseEvalScoreService;
 
     @Mock
     private Clock clock;
@@ -236,10 +236,10 @@ class InProcessMetricEvaluationExecutorTest {
         executor.execute(context);
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<EvalSummaryScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(evalSummaryScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+        ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseEvalScoreService).batchCreate(anyLong(), scoreCaptor.capture());
 
-        List<EvalSummaryScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
+        List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems).hasSize(1);
         assertThat(scoreItems.get(0).getEvalSummaryId()).isNotNull();
         assertThat(scoreItems.get(0).getScore()).isEqualTo(0.8);
@@ -268,8 +268,8 @@ class InProcessMetricEvaluationExecutorTest {
         executor.execute(context);
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<EvalSummaryScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(evalSummaryScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+        ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseEvalScoreService).batchCreate(anyLong(), scoreCaptor.capture());
 
         assertThat(scoreCaptor.getValue()).hasSize(1);
         assertThat(scoreCaptor.getValue().get(0).getScore()).isEqualTo(0.9);
@@ -291,7 +291,7 @@ class InProcessMetricEvaluationExecutorTest {
         executor.execute(context);
 
         verify(evalSummaryRowScoreComputer, never()).computeBatch(any(), any(), any(), any(), any());
-        verifyNoInteractions(evalSummaryScoreService);
+        verifyNoInteractions(testCaseEvalScoreService);
     }
 
     @Test

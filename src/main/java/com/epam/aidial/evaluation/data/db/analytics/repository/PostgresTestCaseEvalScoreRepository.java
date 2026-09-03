@@ -2,7 +2,7 @@ package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryScore;
+import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -18,13 +18,13 @@ import org.springframework.stereotype.Repository;
 @LogExecution
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES")
-public class PostgresEvalSummaryScoreRepository implements EvalSummaryScoreRepository {
+public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRepository {
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
 
     @Override
-    public void saveAll(List<EvalSummaryScore> scores) {
+    public void saveAll(List<TestCaseEvalScore> scores) {
         if (scores == null || scores.isEmpty()) {
             return;
         }

@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.FilterNode;
 import com.epam.aidial.evaluation.query.model.LogicalNode;
 import com.epam.aidial.evaluation.query.model.LogicalOp;
+import com.epam.aidial.evaluation.query.model.OffsetPage;
 import com.epam.aidial.evaluation.query.model.OutputColumn;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
@@ -16,6 +17,7 @@ import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.model.ValueType;
 import com.epam.aidial.evaluation.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.query.service.translate.StructuredQueryBuilder;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import java.util.ArrayList;
@@ -57,6 +59,10 @@ public class EvalSummaryRowScoreComputer {
      * from the returned map means no row was computed for it: {@code definition} is {@code null}, an
      * unparseable {@code CustomFunction} (already logged by the resolver), or a resolved query whose
      * shape cannot be safely grafted with a per-row group (logged here).
+     *
+     * <p>{@code rowIds} is chunked to {@link StructuredQueryBuilder#MAX_LIMIT} per query — the
+     * translator clamps any {@code OffsetPage} limit to that cap, so a single ungrafted query over a
+     * larger batch would silently drop the excess rows rather than fail.
      */
     public Map<UUID, Double> computeBatch(
             OverallScoreDefinition definition,
@@ -75,18 +81,23 @@ public class EvalSummaryRowScoreComputer {
         if (valueAlias == null) {
             return Map.of();
         }
-        StructuredQuery grouped = groupById(resolved, rowIds);
 
-        QueryResultPage page = structuredQueryService.execute(grouped, runAndComputationIdParams(runId, computationId));
         Map<UUID, Double> result = new HashMap<>();
-        for (Map<String, Object> row : page.rows()) {
-            Object idValue = row.get(FIELD_ID);
-            if (idValue == null) {
-                continue;
+        for (int offset = 0; offset < rowIds.size(); offset += StructuredQueryBuilder.MAX_LIMIT) {
+            int end = Math.min(offset + StructuredQueryBuilder.MAX_LIMIT, rowIds.size());
+            List<UUID> chunk = rowIds.subList(offset, end);
+            StructuredQuery grouped = groupById(resolved, chunk);
+            QueryResultPage page =
+                    structuredQueryService.execute(grouped, runAndComputationIdParams(runId, computationId));
+            for (Map<String, Object> row : page.rows()) {
+                Object idValue = row.get(FIELD_ID);
+                if (idValue == null) {
+                    continue;
+                }
+                UUID id = UUID.fromString(String.valueOf(idValue));
+                Object value = row.get(valueAlias);
+                result.put(id, value instanceof Number number ? number.doubleValue() : null);
             }
-            UUID id = UUID.fromString(String.valueOf(idValue));
-            Object value = row.get(valueAlias);
-            result.put(id, value instanceof Number number ? number.doubleValue() : null);
         }
         return result;
     }
@@ -130,7 +141,15 @@ public class EvalSummaryRowScoreComputer {
         return alias;
     }
 
-    /** Adds {@code id} to the select list, sets {@code groupBy = [id]}, ANDs {@code id IN (:rowIds)}. */
+    /**
+     * Adds {@code id} to the select list, sets {@code groupBy = [id]}, ANDs {@code id IN (:rowIds)}, and
+     * sets an explicit page sized to {@code rowIds} — one row per grouped id — rather than passing the
+     * resolved query's own {@code page} (typically {@code null}, since the run-level aggregate is a
+     * single row) through unchanged; the translator defaults a {@code null} page to a 100-row limit,
+     * which would silently truncate a larger batch's results with no {@code ORDER BY} to make the
+     * truncation deterministic. Callers are responsible for keeping {@code rowIds.size()} within
+     * {@link StructuredQueryBuilder#MAX_LIMIT}.
+     */
     private StructuredQuery groupById(StructuredQuery query, List<UUID> rowIds) {
         List<OutputColumn> select = new ArrayList<>();
         select.add(new OutputColumn(new FieldExpr(FIELD_ID), FIELD_ID));
@@ -150,7 +169,7 @@ public class EvalSummaryRowScoreComputer {
                 List.of(FIELD_ID),
                 query.having(),
                 query.sort(),
-                query.page());
+                new OffsetPage(0, rowIds.size(), false));
     }
 
     private FilterNode idInPredicate(List<UUID> rowIds) {

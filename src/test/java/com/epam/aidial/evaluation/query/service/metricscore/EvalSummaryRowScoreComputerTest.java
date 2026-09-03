@@ -5,19 +5,24 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.JsonMapperConfiguration;
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
+import com.epam.aidial.evaluation.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.LogicalNode;
 import com.epam.aidial.evaluation.query.model.LogicalOp;
+import com.epam.aidial.evaluation.query.model.OffsetPage;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.query.service.translate.StructuredQueryBuilder;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
@@ -27,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -88,6 +94,51 @@ class EvalSummaryRowScoreComputerTest {
                         assertThat(cmp.args().getFirst()).isEqualTo(new FieldExpr("id"));
                     }));
         });
+    }
+
+    @Test
+    @DisplayName("Should set an explicit page sized to rowIds rather than passing through the resolved query's "
+            + "(typically null) page, which would otherwise default to a 100-row limit and silently truncate")
+    void setsExplicitPageSizedToRowIds() {
+        stubRows(Map.of(ROW_A.toString(), 0.7, ROW_B.toString(), 0.5));
+
+        computer.computeBatch(new Mean(), List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, List.of(ROW_A, ROW_B));
+
+        StructuredQuery executed = capturedQuery();
+        assertThat(executed.page()).isEqualTo(new OffsetPage(0, 2, false));
+    }
+
+    @Test
+    @DisplayName("Should chunk rowIds larger than the translator's MAX_LIMIT into multiple queries, merging "
+            + "all chunks' results rather than silently dropping the excess rows")
+    void chunksRowIdsExceedingMaxLimit() {
+        List<UUID> rowIds = IntStream.range(0, StructuredQueryBuilder.MAX_LIMIT + 50)
+                .mapToObj(i -> UUID.randomUUID())
+                .toList();
+
+        // Each execute() call returns exactly one scored row: the first id of whatever chunk it received,
+        // proving every chunk actually executes rather than only the first MAX_LIMIT rows.
+        when(structuredQueryService.execute(any(), anyMap())).thenAnswer(invocation -> {
+            StructuredQuery query = invocation.getArgument(0);
+            LogicalNode filter = (LogicalNode) query.filter();
+            ComparisonNode inNode = filter.args().stream()
+                    .filter(ComparisonNode.class::isInstance)
+                    .map(ComparisonNode.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            ArrayExpr idList = (ArrayExpr) inNode.args().get(1);
+            String firstId = ((ValueExpr) idList.items().getFirst()).value();
+            return new QueryResultPage(List.of(rowOf(firstId, 0.5)), null);
+        });
+
+        Map<UUID, Double> result =
+                computer.computeBatch(new Mean(), List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, rowIds);
+
+        verify(structuredQueryService, times(2)).execute(any(), anyMap());
+        assertThat(result)
+                .hasSize(2)
+                .containsEntry(rowIds.getFirst(), 0.5)
+                .containsEntry(rowIds.get(StructuredQueryBuilder.MAX_LIMIT), 0.5);
     }
 
     @Test

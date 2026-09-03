@@ -77,8 +77,8 @@ class MetricProviderSyncServiceTest {
         }
 
         @Test
-        @DisplayName("sorts a metric with no name last instead of failing the provider's sync")
-        void nullNamedMetric_sortedLastWithoutThrowing() {
+        @DisplayName("orders a metric with no name last instead of throwing while sorting")
+        void nullNamedMetric_orderedLastWithoutThrowing() {
             when(metricProviderClient.getMetrics(PROVIDER_ID))
                     .thenReturn(MetricsResponseDto.builder()
                             .metrics(List.of(metric(null), metric("Alpha")))

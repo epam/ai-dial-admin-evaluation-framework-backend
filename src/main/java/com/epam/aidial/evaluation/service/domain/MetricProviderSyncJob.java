@@ -20,12 +20,19 @@ import org.springframework.stereotype.Component;
  *
  * <p>Concurrency: this job runs on every application instance without leader election, so two instances
  * may sync the same provider at once. Version assignment is not locked (see
- * {@code PostgresMetricDeclarationVersionRepository.save}); the loser of the race fails on
- * uq_metric_declaration_versions_declaration_version, its provider transaction rolls back whole, and the
- * next scheduled run re-syncs it. That 23505 is therefore expected traffic and is logged at info without
- * a stacktrace and without an immediate retry (a retry would only add provider HTTP load). Everything
- * else, deadlocks (40P01) included, stays a warn with the throwable - metrics are iterated in a
- * deterministic order, so a lock cycle should be impossible and one occurring is a real anomaly.
+ * {@code PostgresMetricDeclarationVersionRepository.save}); a write rejected by a unique constraint -
+ * uq_metric_declaration_versions_declaration_version on a concurrent version assignment, or
+ * uq_metric_declarations_provider_id_name when both instances create the same new declaration - rolls
+ * its whole provider transaction back. Such a 23505 is expected traffic, so it is logged at info,
+ * without a stacktrace and without an immediate retry (a retry would only add provider HTTP load), and
+ * recovery is left to the next run of this job.
+ *
+ * <p>"Next run" means the next startup or, when metric-providers.sync.cron is set to an expression, the
+ * next scheduled run - the shipped default is "-", which disables recurring sync, so a deployment that
+ * relies on this recovery must configure a cron.
+ *
+ * <p>Everything else, deadlocks (40P01) included, stays a warn with the throwable: metrics are iterated
+ * in a deterministic order, so a lock cycle is not expected and one occurring is a real anomaly.
  */
 @Slf4j
 @Component
@@ -81,9 +88,11 @@ public class MetricProviderSyncJob {
             } catch (Exception e) {
                 if (UniqueConstraintViolationDetector.isUniqueViolation(e)) {
                     log.info(
-                            "Metric provider sync for provider {} lost a concurrent version-assignment race; "
-                                    + "its transaction rolled back and the next scheduled run will re-sync",
-                            providerId);
+                            "Metric provider sync for provider {} lost a concurrent-sync race on a unique "
+                                    + "constraint; its transaction rolled back whole and the next sync run "
+                                    + "will re-sync it: {}",
+                            providerId,
+                            e.getMessage());
                 } else {
                     log.warn("Metric provider sync failed for provider {}: {}", providerId, e.getMessage(), e);
                 }

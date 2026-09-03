@@ -39,18 +39,27 @@ public class PostgresMetricDeclarationVersionRepository implements MetricDeclara
      * Inserts the version, assigning {@code MAX(schema_version) + 1} when the caller passes a
      * non-positive schema_version.
      *
-     * <p>That assignment is deliberately <em>not</em> serialized with a lock on the parent declaration.
-     * uq_metric_declaration_versions_declaration_version is the guard: a writer that loses the race
-     * fails with SQLSTATE 23505 and its transaction rolls back, leaving no partial data. Serializing
-     * instead would be worse, not safer - the caller's change detection
-     * ({@code MetricProviderSyncService.differsFromLatest}) runs before the insert, so the waiter would
-     * unblock, never re-check, and persist a second version whose schemas are identical to the winner's;
-     * version ids are referenced by test suite metric definitions, so that inflation is durable. A
-     * {@code SELECT ... FOR UPDATE} would also conflict with the FOR KEY SHARE that FK checks take on
-     * metric_declarations, blocking unrelated inserts that never blocked before.
+     * <p>That assignment is deliberately <em>not</em> serialized with a lock on the parent declaration;
+     * uq_metric_declaration_versions_declaration_version is the only guard. When two concurrent writers
+     * both read MAX before either commits they compute the same schema_version, so one insert is rejected
+     * with SQLSTATE 23505 and its transaction rolls back, leaving no partial data.
+     *
+     * <p>That guard is not airtight, and knowingly so. The meta transaction manager runs at the Postgres
+     * default READ COMMITTED, where every statement takes a fresh snapshot, so a winner that commits
+     * between the caller's change detection and the MAX read below leaves the loser computing a distinct
+     * schema_version and inserting successfully - persisting a version whose schemas may duplicate the
+     * winner's.
+     *
+     * <p>Locking would not close that case; it would make it certain. The caller's change detection
+     * ({@code MetricProviderSyncService.differsFromLatest}) runs before the insert, so a waiter would
+     * unblock, never re-check, and always persist the redundant version - and version ids are referenced
+     * by test suite metric definitions, so the inflation is durable. A {@code SELECT ... FOR UPDATE} would
+     * additionally conflict with the FOR KEY SHARE that FK checks take on metric_declarations, blocking
+     * inserts into metric_declaration_versions (V1.9) and test_suite_metric_definitions (V1.13) that never
+     * blocked before. A rare redundant version is the cheaper trade.
      *
      * <p>{@code MetricProviderSyncJob} therefore treats 23505 as an expected concurrent-sync outcome and
-     * lets the next scheduled run re-sync.
+     * leaves recovery to the next sync run.
      */
     @Override
     public MetricDeclarationVersion save(MetricDeclarationVersion version) {

@@ -49,13 +49,19 @@ public class MetricProviderSyncService {
     }
 
     /**
-     * Orders the provider's metrics by name so that concurrent instances acquire declaration row locks in
-     * the same sequence. {@link #syncOne(String)} is one transaction per provider and every changed metric row-locks
-     * its declaration (via updateMetadata) until commit, so raw provider-response order would allow an
-     * ABBA cycle between two instances - a deadlock (40P01) instead of the clean 23505 the version-
-     * assignment race is designed to surface. UNIQUE(provider_id, name) makes name a total order within a
-     * provider. The response list is immutable, hence a sorted copy; name is not validated anywhere on the
-     * provider contract, hence nullsLast.
+     * Orders the provider's metrics by name so that concurrent instances take their per-declaration waits
+     * in the same sequence. {@link #syncOne(String)} is one transaction per provider, and each changed
+     * metric first inserts a version row - which waits on the other transaction when both computed the
+     * same schema_version - and then row-locks the declaration via updateMetadata; both waits last until
+     * commit. In raw provider-response order two instances could therefore take those waits in opposite
+     * order and die on an ABBA deadlock (40P01) instead of the clean 23505 the version-assignment race is
+     * meant to surface. UNIQUE(provider_id, name) makes name a total order within a provider, and ordered
+     * traversals of one total order cannot cycle even when the two instances see different changed
+     * subsets.
+     *
+     * <p>The response list is immutable, hence a sorted copy. name is not validated anywhere in the
+     * provider contract, hence nullsLast - which only keeps the comparator itself from throwing; a
+     * null-named metric still fails downstream on the NOT NULL name column.
      */
     private static List<MetricsDescriptionDto> sortedByName(List<MetricsDescriptionDto> metrics) {
         return metrics.stream()

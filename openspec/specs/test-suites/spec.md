@@ -707,6 +707,30 @@ Status: **Implemented**
 - **WHEN** a run is started for a suite carrying `overallScoreThreshold`
 - **THEN** the run's `SuiteSnapshotDto.overallScoreThreshold` SHALL equal the suite's current value at that moment, and subsequent edits to the suite's `overallScoreThreshold` SHALL NOT affect that run's already-computed or future `passed` values
 
+### Requirement: Per-suite `testCaseOverallScore` on the suite API
+The suite create and update request bodies SHALL accept an optional `testCaseOverallScore` field — a JSON object holding the same `OverallScoreDefinition` shape as `overallScore` (`Mean`, `WeightedMean`, or `CustomFunction`). When present, `testCaseOverallScore` SHALL be used instead of `overallScore` to drive per-row `score`/`passed` computation on a run's `EvalSummary` rows (see `eval-summary-scoring`); when absent, per-row scoring SHALL fall back to `overallScore`. The system SHALL persist it verbatim to `test_suites.test_case_overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `testCaseOverallScore` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. `testCaseOverallScore` SHALL NOT affect Phase 3's run-level `overall` metric-score result, which SHALL always be computed from `overallScore` regardless of whether `testCaseOverallScore` is configured.
+Status: **Implemented**
+
+#### Scenario: Set testCaseOverallScore independently of overallScore
+- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with a `testCaseOverallScore` object that differs from the suite's `overallScore`
+- **THEN** system SHALL persist and return both fields independently, and a subsequent `GET /api/v1/test-suites/{id}` SHALL return the same value for each
+
+#### Scenario: Omitted testCaseOverallScore leaves the column null
+- **WHEN** client creates or updates a suite without a `testCaseOverallScore` field
+- **THEN** system SHALL store `test_case_overall_score` as NULL and the suite response SHALL omit `testCaseOverallScore` (or return it as null)
+
+#### Scenario: testCaseOverallScore does not affect suite validity
+- **WHEN** client sets `testCaseOverallScore` on an otherwise valid suite
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `testCaseOverallScore`
+
+#### Scenario: Clone inherits the source testCaseOverallScore
+- **WHEN** a suite carrying a `testCaseOverallScore` is cloned
+- **THEN** the cloned suite SHALL inherit the same `testCaseOverallScore` (as with `overallScore`)
+
+#### Scenario: testCaseOverallScore does not affect the run-level overall aggregate
+- **WHEN** a suite has both `overallScore` and `testCaseOverallScore` configured with different definitions
+- **THEN** Phase 3's run-level `overall` metric-score result SHALL be computed from `overallScore` only, unaffected by `testCaseOverallScore`
+
 ### Requirement: Per-suite `testCaseFilter` on the suite API
 The suite create and update request bodies SHALL accept an optional `testCaseFilter` field — a JSON
 object holding a Structured Query DSL `filter` subtree that selects which of the bound dataset's test
@@ -822,6 +846,8 @@ Status: **Implemented**
 - `testCaseFilter` (per-suite): DTO fields `TestSuiteRequestDto.testCaseFilter` / `TestSuiteResponseDto.testCaseFilter` (`Map<String, Object>`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseFilter`. Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` / `toRequestDto` / `toCloneEntity`. New column: `V1.24__AddTestCaseFilterToTestSuites.sql` (`test_case_filter JSONB`), then `./gradlew generateJooq`. Write-time validation delegates to `RunnableTestCaseSelector.validateFilter(datasetId, filterJson)` from `TestSuiteService` (see `suite-test-case-filter`).
 - `overallScoreThreshold` (per-suite): DTO fields `TestSuiteRequestDto.overallScoreThreshold` / `TestSuiteResponseDto.overallScoreThreshold` (`Double`) — a plain scalar column, not JSONB (unlike `overallScore`/`testCaseFilter`), mapped directly with no `JsonbMapper` conversion. Model field: `TestSuite.overallScoreThreshold` (`Double`). Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` / `toRequestDto` / `toCloneEntity`; record mapping in `TestSuiteRecordMapper`. Repository: `PostgresTestSuiteRepository` sets `TEST_SUITES.OVERALL_SCORE_THRESHOLD` alongside `TEST_SUITES.OVERALL_SCORE` in the create, update, and clone-create statements. New column: `V1.25__AddOverallScoreThresholdToTestSuites.sql` (`overall_score_threshold DOUBLE PRECISION`), then `./gradlew generateJooq`. Range validation via `@DecimalMin`/`@DecimalMax` on `TestSuiteRequestDto.overallScoreThreshold`, with bound literals and message in `ValidationConstants` (`MIN_OVERALL_SCORE_THRESHOLD` = `"0.0"`, `MAX_OVERALL_SCORE_THRESHOLD` = `"1.0"`, `OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE`).
 - Now captured into `SuiteSnapshotDto.overallScoreThreshold` by `SuiteSnapshotBuilder` at run-start (see `suite-run-snapshot`) and used to derive each row's `passed` (see `eval-summary-scoring`). The suite's *live* threshold remains editable independently of any already-started run.
+- `testCaseOverallScore` (per-suite): DTO field `TestSuiteRequestDto.testCaseOverallScore` (`OverallScoreDefinition`, `@Valid`, no `example`/response-DTO split noted beyond the discriminated-type shape shared with `overallScore`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseOverallScore(OverallScoreDefinition)` (write) / `mapTestCaseOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `toDto` / `toRequestDto` / `toCloneEntity` (raw JSONB string copied verbatim, same as `overallScore`). Model field: `TestSuite.testCaseOverallScore` (`String`, raw JSON); record mapping in `TestSuiteRecordMapper`. New column: `V1.30__AddTestCaseOverallScoreToTestSuites.sql` (`test_case_overall_score JSONB`), then `./gradlew generateJooq`. Not referenced anywhere in `SuiteValidationService` — exempt from `isValid`/`validationWarnings` exactly like `overallScore`.
+- Now captured into `SuiteSnapshotDto.testCaseOverallScore` by `SuiteSnapshotBuilder` at run-start (see `suite-run-snapshot`); `TestSuiteEvaluationJob.buildMetricEvaluationContext` resolves the fallback once, per run, before Phase 2 starts: `snapshot.getTestCaseOverallScore() != null ? ... : snapshot.getOverallScore()`. Phase 3's `MetricScoreComputationContext` always uses `snapshot.getOverallScore()` directly — the fallback is a Phase-2-only concern (see `eval-summary-scoring`).
 
 ## Open Questions / TODO
 - Add explicit validation rules for `name`/`description` in DTOs (current behavior depends on DTO constraints).

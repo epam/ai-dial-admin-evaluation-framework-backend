@@ -354,16 +354,20 @@ Status: **Implemented**
 - **THEN** `runMetricSnapshotRepository.findByRunIdAndComputationId` SHALL be called exactly once for the whole `execute()` call, and every flush's per-row score computation SHALL use the same discovered field list
 
 ### Requirement: Per-row score computed and written immediately after each flush
-Immediately after each Phase-2 flush's `EvalSummaryBatchWriteClient.batchWrite(...)` call succeeds, and before the buffer is cleared, the executor SHALL compute a per-row score for that batch (via `EvalSummaryRowScoreComputer`, see `eval-summary-scoring`) and write the results to `test_case_eval_scores` (via `TestCaseEvalScoreService.batchCreate(...)`, see `metrics-storage`). This SHALL be skipped entirely when the suite's snapshotted `overallScore` definition is absent.
+Immediately after each Phase-2 flush's `EvalSummaryBatchWriteClient.batchWrite(...)` call succeeds, and before the buffer is cleared, the executor SHALL compute a per-row score for that batch (via `EvalSummaryRowScoreComputer`, see `eval-summary-scoring`) and write the results to `test_case_eval_scores` (via `TestCaseEvalScoreService.batchCreate(...)`, see `metrics-storage`). The definition fed into this computation is the suite's *effective* per-row score definition — the snapshotted `testCaseOverallScore` when present, otherwise the snapshotted `overallScore` (see `test-suites`) — resolved once per run before Phase 2 starts. This SHALL be skipped entirely when the effective definition is absent (neither `testCaseOverallScore` nor `overallScore` configured).
 Status: **Implemented**
 
 #### Scenario: Score computation skipped without a definition
-- **WHEN** the suite's snapshotted `overallScore` is absent
+- **WHEN** the suite's snapshotted `testCaseOverallScore` and `overallScore` are both absent
 - **THEN** `EvalSummaryRowScoreComputer.computeBatch` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run
 
 #### Scenario: Score computation runs for every flush when a definition is configured
-- **WHEN** the suite's snapshotted `overallScore` is present
+- **WHEN** the suite's snapshotted `testCaseOverallScore` or `overallScore` is present
 - **THEN** every flush (size-triggered or final) SHALL be followed by exactly one score computation and, if any row produced a result, one `test_case_eval_scores` batch write scoped to that flush's row ids
+
+#### Scenario: testCaseOverallScore takes precedence over overallScore
+- **WHEN** the suite's snapshot carries both `testCaseOverallScore` and `overallScore`, configured with different definitions
+- **THEN** the per-row score computation for that run SHALL use `testCaseOverallScore`, not `overallScore`
 
 #### Scenario: A failed score write is logged but does not cancel the run
 - **WHEN** the per-row score computation or its batch write throws an unexpected error

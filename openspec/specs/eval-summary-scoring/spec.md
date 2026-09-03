@@ -1,16 +1,16 @@
 # Eval Summary Scoring
 
 ## Purpose
-This spec defines per-row overall score computation for eval summaries: deriving a `score` (and a threshold-based `passed`) for each `EvalSummary` row by reusing the exact `StructuredQuery` a suite's `overallScore` definition (`Mean`, `WeightedMean`, or `CustomFunction`) already resolves for the run-level aggregate, grafted with a per-row `GROUP BY id`. Storage and API exposure of the computed values live in `metrics-storage`; the write-path wiring into the Phase-2 flush cycle lives in `metric-evaluation`; the threshold source lives in `suite-run-snapshot`.
+This spec defines per-row overall score computation for eval summaries: deriving a `score` (and a threshold-based `passed`) for each `EvalSummary` row by reusing the exact `StructuredQuery` a suite's effective per-row score definition (`testCaseOverallScore` when configured, else `overallScore` — see `test-suites`; `Mean`, `WeightedMean`, or `CustomFunction` in either case) already resolves for the run-level aggregate, grafted with a per-row `GROUP BY id`. Storage and API exposure of the computed values live in `metrics-storage`; the write-path wiring into the Phase-2 flush cycle lives in `metric-evaluation`; the threshold source lives in `suite-run-snapshot`.
 
 Status: **Implemented**
 
 ## Requirements
 
 ### Requirement: Per-row overall score computed by reusing the resolved OverallScoreDefinition query
-The system SHALL compute a per-row `score` (Double) for each `EvalSummary` by reusing the exact `StructuredQuery` that `OverallScoreDefinitionResolver` already produces for a suite's `overallScore` definition (`Mean`, `WeightedMean`, or `CustomFunction`) — grafting an `id IN (:rowIds)` filter and a `GROUP BY id` onto that query for a batch of row ids, turning the run-level aggregate into one value per row. This SHALL be issued as one SQL query per Phase-2 flush batch (not one query per row), immediately after that batch's `EvalSummary` rows are written — a second write, not a follow-up `UPDATE` on the same row.
+The system SHALL compute a per-row `score` (Double) for each `EvalSummary` by reusing the exact `StructuredQuery` that `OverallScoreDefinitionResolver` already produces for the suite's effective per-row score definition (`Mean`, `WeightedMean`, or `CustomFunction`) — grafting an `id IN (:rowIds)` filter and a `GROUP BY id` onto that query for a batch of row ids, turning the run-level aggregate into one value per row. This SHALL be issued as one SQL query per Phase-2 flush batch (not one query per row), immediately after that batch's `EvalSummary` rows are written — a second write, not a follow-up `UPDATE` on the same row. The effective per-row definition is resolved once per run, before Phase 2 starts, by `TestSuiteEvaluationJob`: the suite's snapshotted `testCaseOverallScore` when present, otherwise its snapshotted `overallScore` (see `test-suites`, `suite-run-snapshot`) — `EvalSummaryRowScoreComputer` itself has no notion of which suite field the definition it receives came from.
 
-If the suite has no `overallScore` definition configured, `score` SHALL be `null` for every row.
+If neither `testCaseOverallScore` nor `overallScore` is configured, `score` SHALL be `null` for every row.
 Status: **Implemented**
 
 #### Scenario: One query per flush batch, not per row
@@ -25,8 +25,8 @@ Status: **Implemented**
 - **WHEN** a suite's `overallScore` is a `CustomFunction` whose resolved query is a single-column aggregate over `eval_summaries` with no pre-existing `groupBy` (e.g. a simple `avg` over one metric field)
 - **THEN** the system SHALL graft the per-row `id`/`GROUP BY id` onto it exactly as for `Mean`/`WeightedMean`, and each row's `score` SHALL reflect that row's own value
 
-#### Scenario: No overallScore definition configured
-- **WHEN** the suite's snapshotted `overallScore` is absent
+#### Scenario: No effective score definition configured
+- **WHEN** the suite's snapshotted `testCaseOverallScore` and `overallScore` are both absent
 - **THEN** every row's `score` and `passed` SHALL be `null`, and no additional SQL query SHALL be issued for that batch
 
 ### Requirement: Grafting the per-row group is safe for any resolved query shape, with a shape guard
@@ -89,3 +89,4 @@ Status: **Implemented**
 - Invoked from `InProcessMetricEvaluationExecutor`'s flush cycle, right after each batch's `EvalSummaryBatchWriteClient.batchWrite(...)` call; results are written to `test_case_eval_scores` via `TestCaseEvalScoreService.batchCreate(...)`.
 - Persisted on `test_case_eval_scores`, joined into the `EvalSummary` read surface — see `metrics-storage` for the schema and API-exposure changes, and `metric-evaluation` for the write-path wiring.
 - Threshold source: `SuiteSnapshotDto.overallScoreThreshold` — see `suite-run-snapshot`.
+- Effective-definition source: `SuiteSnapshotDto.testCaseOverallScore` (fallback: `SuiteSnapshotDto.overallScore`), resolved by `TestSuiteEvaluationJob.buildMetricEvaluationContext` — see `test-suites` for the suite-API field and `suite-run-snapshot` for its snapshot capture. Phase 3's run-level `overall` aggregate always uses `overallScore` directly and is never affected by `testCaseOverallScore`.

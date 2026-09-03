@@ -19,15 +19,17 @@ Status: **Implemented**
 The DTO SHALL additionally carry the suite's request chain: `additionalRequests` (a list of `RequestDefinitionDto`, defaulting to an empty list) and `requestName` (`String`, nullable — the label of the suite's own request). Both additions SHALL be **additive-optional**: `snapshotVersion` SHALL REMAIN `"2"`, and a snapshot JSON written before these fields existed SHALL deserialize unchanged, yielding an empty `additionalRequests` and a null `requestName` (a one-request chain). No backfill of stored snapshots SHALL be performed.
 
 The DTO SHALL additionally carry `overallScoreThreshold` (`Double`, nullable), captured from the suite's `overallScoreThreshold` at snapshot time, alongside the existing `overallScore` field. This addition SHALL also be **additive-optional**: a snapshot JSON written before this field existed SHALL deserialize with `overallScoreThreshold = null`, and no backfill of stored snapshots SHALL be performed. Once captured, `overallScoreThreshold` SHALL remain fixed for the life of the run regardless of subsequent edits to the live suite's threshold.
+
+The DTO SHALL additionally carry `testCaseOverallScore` (`OverallScoreDefinition`, nullable), captured from the suite's `testCaseOverallScore` at snapshot time, alongside the existing `overallScore` field. This addition SHALL also be **additive-optional**: a snapshot JSON written before this field existed SHALL deserialize with `testCaseOverallScore = null`. `SuiteSnapshotDto` carries `testCaseOverallScore` as captured, with no fallback logic of its own; resolving the effective per-row definition (`testCaseOverallScore` if present, else `overallScore`) is a Phase-2 concern performed once per run by `TestSuiteEvaluationJob.buildMetricEvaluationContext` (see `test-suites`, `eval-summary-scoring`), not by this DTO or its builder.
 Status: **Implemented**
 
 #### Scenario: DEPLOYMENT suite snapshot fields
 - **WHEN** snapshot is built for a DEPLOYMENT suite
-- **THEN** snapshot SHALL include `snapshotVersion = "2"` (explicitly stamped by `SuiteSnapshotBuilder`), `suiteType = "DEPLOYMENT"`, `datasetRef` (`{id, version, name}` for the dataset referenced by the suite at snapshot time), `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `requestName`, `additionalRequests`, `testCaseSchema` (sourced from the dataset, not the suite), `overallScore`, and `overallScoreThreshold`; MCP-specific fields SHALL be null/absent
+- **THEN** snapshot SHALL include `snapshotVersion = "2"` (explicitly stamped by `SuiteSnapshotBuilder`), `suiteType = "DEPLOYMENT"`, `datasetRef` (`{id, version, name}` for the dataset referenced by the suite at snapshot time), `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `requestName`, `additionalRequests`, `testCaseSchema` (sourced from the dataset, not the suite), `overallScore`, `overallScoreThreshold`, and `testCaseOverallScore`; MCP-specific fields SHALL be null/absent
 
 #### Scenario: MCP_TOOL suite snapshot fields
 - **WHEN** snapshot is built for an MCP_TOOL suite
-- **THEN** snapshot SHALL include `snapshotVersion = "2"` (explicitly stamped), `suiteType = "MCP_TOOL"`, `datasetRef`, `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema` (sourced from the dataset), `overallScore`, and `overallScoreThreshold`; deployment-specific fields SHALL be null/absent and `additionalRequests` SHALL be empty (an MCP suite cannot carry a chain)
+- **THEN** snapshot SHALL include `snapshotVersion = "2"` (explicitly stamped), `suiteType = "MCP_TOOL"`, `datasetRef`, `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema` (sourced from the dataset), `overallScore`, `overallScoreThreshold`, and `testCaseOverallScore`; deployment-specific fields SHALL be null/absent and `additionalRequests` SHALL be empty (an MCP suite cannot carry a chain)
 
 #### Scenario: Missing snapshotVersion defaults to CURRENT_VERSION
 - **WHEN** a stored snapshot JSON lacks `snapshotVersion`
@@ -56,6 +58,14 @@ Status: **Implemented**
 #### Scenario: Threshold is frozen against later suite edits
 - **WHEN** a run's snapshot is taken and the suite's `overallScoreThreshold` is subsequently edited
 - **THEN** per-row `passed` values computed for that run SHALL continue to reflect the threshold as it was at snapshot time, not the suite's current value
+
+#### Scenario: Snapshot written before testCaseOverallScore existed deserializes as null
+- **WHEN** a stored `suite_snapshot` JSON has no `testCaseOverallScore` key
+- **THEN** it SHALL deserialize with `testCaseOverallScore = null`, and Phase 2's per-row scoring for that run SHALL fall back to `overallScore`
+
+#### Scenario: testCaseOverallScore is frozen against later suite edits
+- **WHEN** a run's snapshot is taken and the suite's `testCaseOverallScore` is subsequently edited or cleared
+- **THEN** the run SHALL continue computing per-row scores using `testCaseOverallScore` (or its `overallScore` fallback) as captured in its snapshot, not the suite's current value
 
 ### Requirement: Execution context carries the snapshotted chain
 The evaluation context passed to the execution engine SHALL carry the snapshot's `additionalRequests` and `requestName` alongside the existing single-request snapshot fields (`snapshotEndpointRef`, `snapshotRequestTemplate`, `snapshotInputBindings`, `snapshotResponseColumns`, `snapshotTestCaseSchema`). The existing singular fields SHALL be interpreted as request #0's definition; the chain executor SHALL assemble the ordered chain from them plus the additional requests. `testCaseSchema` SHALL remain suite-level (one dataset per suite), shared by every request when deciding per-request turn counts.

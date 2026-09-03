@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,6 +53,56 @@ class MetricProviderSyncServiceTest {
                 metricDeclarationRepository,
                 metricDeclarationVersionRepository,
                 new ObjectMapper());
+    }
+
+    @Nested
+    @DisplayName("metric iteration order")
+    class MetricIterationOrder {
+
+        @Test
+        @DisplayName("processes a provider's metrics sorted by name, not in provider-response order")
+        void unsortedResponse_processedInNameOrder() {
+            when(metricProviderClient.getMetrics(PROVIDER_ID))
+                    .thenReturn(MetricsResponseDto.builder()
+                            .metrics(List.of(metric("Zeta"), metric("Alpha")))
+                            .build());
+            when(metricDeclarationRepository.findByProviderIdAndName(eq(PROVIDER_ID), any()))
+                    .thenReturn(Optional.empty());
+
+            syncService.syncOne(PROVIDER_ID);
+
+            final var order = inOrder(metricDeclarationRepository);
+            order.verify(metricDeclarationRepository).findByProviderIdAndName(PROVIDER_ID, "Alpha");
+            order.verify(metricDeclarationRepository).findByProviderIdAndName(PROVIDER_ID, "Zeta");
+        }
+
+        @Test
+        @DisplayName("orders a metric with no name last instead of throwing while sorting")
+        void nullNamedMetric_orderedLastWithoutThrowing() {
+            when(metricProviderClient.getMetrics(PROVIDER_ID))
+                    .thenReturn(MetricsResponseDto.builder()
+                            .metrics(List.of(metric(null), metric("Alpha")))
+                            .build());
+            when(metricDeclarationRepository.findByProviderIdAndName(eq(PROVIDER_ID), any()))
+                    .thenReturn(Optional.empty());
+
+            syncService.syncOne(PROVIDER_ID);
+
+            final var order = inOrder(metricDeclarationRepository);
+            order.verify(metricDeclarationRepository).findByProviderIdAndName(PROVIDER_ID, "Alpha");
+            order.verify(metricDeclarationRepository).findByProviderIdAndName(PROVIDER_ID, null);
+        }
+
+        private MetricsDescriptionDto metric(String name) {
+            return MetricsDescriptionDto.builder()
+                    .name(name)
+                    .displayName(name)
+                    .description("d")
+                    .configSchema("{}")
+                    .inputSchema("{}")
+                    .outputSchema("{}")
+                    .build();
+        }
     }
 
     @Nested

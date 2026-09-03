@@ -104,10 +104,12 @@ import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.MetricProviderSyncJob;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -609,6 +611,44 @@ public class PostgresFunctionalTests extends FunctionalTests {
             assertThat(response.getBody().getContent().getFirst().getName()).isEqualTo("SyncedMetric");
             assertThat(response.getBody().getContent().getFirst().getProviderId())
                     .isEqualTo("sync-test-provider");
+        }
+
+        @Test
+        @DisplayName("second sync with a changed schema assigns the next schema_version")
+        void changedSchemaAssignsNextSchemaVersion() {
+            when(metricProviderClientFromContext.getMetrics(eq("sync-test-provider")))
+                    .thenReturn(syncedMetric("{}"), syncedMetric("{\"type\":\"object\"}"));
+
+            metricProviderSyncJob.runScheduledSync();
+            metricProviderSyncJob.runScheduledSync();
+
+            String portStr = environment.getProperty("local.server.port");
+            int port = portStr != null ? Integer.parseInt(portStr) : 8080;
+            String listUrl = "http://localhost:" + port + "/api/v1/metric-declarations?page=0&size=20";
+            ResponseEntity<PageResponseDto<MetricDeclarationResponseDto>> listResponse =
+                    restTemplate.exchange(listUrl, HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+            assertThat(listResponse.getBody()).isNotNull();
+            assertThat(listResponse.getBody().getContent()).hasSize(1);
+            UUID declarationId = listResponse.getBody().getContent().getFirst().getId();
+
+            ResponseEntity<MetricDeclarationVersionResponseDto> latest = restTemplate.getForEntity(
+                    "http://localhost:" + port + "/api/v1/metric-declarations/" + declarationId + "/latest",
+                    MetricDeclarationVersionResponseDto.class);
+            assertThat(latest.getBody()).isNotNull();
+            assertThat(latest.getBody().getSchemaVersion()).isEqualTo(2);
+            assertThat(latest.getBody().getOutputSchema()).containsEntry("type", "object");
+        }
+
+        private static MetricsResponseDto syncedMetric(String outputSchema) {
+            return MetricsResponseDto.builder()
+                    .metrics(List.of(MetricsDescriptionDto.builder()
+                            .name("SyncedMetric")
+                            .description("From sync test")
+                            .configSchema("{}")
+                            .inputSchema("{}")
+                            .outputSchema(outputSchema)
+                            .build()))
+                    .build();
         }
 
         @Test

@@ -1,6 +1,8 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.epam.aidial.evaluation.functional.PostgresFunctionalTests;
 import com.epam.aidial.evaluation.functional.config.PostgresFunctionalTestConfiguration;
@@ -9,6 +11,8 @@ import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataPro
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationWithLatestVersionResponseDto;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +25,7 @@ import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRe
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -161,6 +166,97 @@ public abstract class MetricDeclarationFunctionalTests extends BaseFunctionalTes
                 restTemplate.getForEntity(apiUrl("/metric-declarations/" + nonExistentId), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Latest-versions list returns the greatest version per declaration and omits version-less ones")
+    void shouldListLatestVersionPerDeclaration() {
+        // Accuracy already has schema_version 1 from @BeforeEach; add 2 and 3 so only 3 may be returned.
+        metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                "990e8400-e29b-41d4-a716-446655440002", SEED_ACCURACY_ID.toString(), 2, "{}", "{}", "{}");
+        metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                "990e8400-e29b-41d4-a716-446655440003",
+                SEED_ACCURACY_ID.toString(),
+                3,
+                "{\"type\":\"object\"}",
+                "{}",
+                "{}");
+        metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                "990e8400-e29b-41d4-a716-446655440004", SEED_LATENCY_ID.toString(), 1, "{}", "{}", "{}");
+
+        ResponseEntity<List<MetricDeclarationWithLatestVersionResponseDto>> response = restTemplate.exchange(
+                apiUrl("/metric-declarations/versions/latest"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        // Ordered by metric_declaration_id: Accuracy (...0001) then Latency (...0002); Relevance has no version.
+        assertThat(response.getBody())
+                .extracting(
+                        MetricDeclarationWithLatestVersionResponseDto::getId,
+                        dto -> dto.getLatestVersion().getSchemaVersion())
+                .containsExactly(tuple(SEED_ACCURACY_ID, 3), tuple(SEED_LATENCY_ID, 1));
+        assertThat(response.getBody())
+                .extracting(
+                        MetricDeclarationWithLatestVersionResponseDto::getProviderId,
+                        MetricDeclarationWithLatestVersionResponseDto::getName)
+                .containsExactly(
+                        tuple(MetricDeclarationTestDataProvider.SEED_METRIC_PROVIDER_ID, "Accuracy"),
+                        tuple(MetricDeclarationTestDataProvider.SEED_METRIC_PROVIDER_ID, "Latency"));
+        assertThat(response.getBody().getFirst().getLatestVersion().getConfigSchema())
+                .containsEntry("type", "object");
+    }
+
+    @Test
+    @DisplayName("Latest-versions list reads shared column names from the right table")
+    void shouldReadSharedColumnsFromTheirOwnTable() {
+        // metric_declarations and metric_declaration_versions both have id, display_name, description and
+        // created_at_ms, so give every one of them a distinct value and pin which side it must come from.
+        final String declarationId = "aa0e8400-e29b-41d4-a716-446655440001";
+        final String versionId = "bb0e8400-e29b-41d4-a716-446655440001";
+        metricDeclarationTestDataProvider.clearMetricDeclarationsAndVersions();
+        metricDeclarationTestDataProvider.insertDeclarationWithMetadata(
+                declarationId,
+                "provenance-provider",
+                "ProvenanceMetric",
+                "declaration display",
+                "declaration desc",
+                1L);
+        metricDeclarationTestDataProvider.insertVersionWithMetadata(
+                versionId, declarationId, 7, "version display", "version desc", 2L);
+
+        ResponseEntity<List<MetricDeclarationWithLatestVersionResponseDto>> response = restTemplate.exchange(
+                apiUrl("/metric-declarations/versions/latest"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).hasSize(1);
+        MetricDeclarationWithLatestVersionResponseDto item = response.getBody().getFirst();
+        assertThat(item.getId()).isEqualTo(UUID.fromString(declarationId));
+        assertThat(item.getProviderId()).isEqualTo("provenance-provider");
+        assertThat(item.getName()).isEqualTo("ProvenanceMetric");
+        assertThat(item.getDisplayName()).isEqualTo("declaration display");
+        assertThat(item.getDescription()).isEqualTo("declaration desc");
+        assertThat(item.getCreatedAt()).isEqualTo(1L);
+        assertThat(item.getLatestVersion().getId()).isEqualTo(UUID.fromString(versionId));
+        assertThat(item.getLatestVersion().getMetricDeclarationId()).isEqualTo(UUID.fromString(declarationId));
+        assertThat(item.getLatestVersion().getSchemaVersion()).isEqualTo(7);
+        assertThat(item.getLatestVersion().getDisplayName()).isEqualTo("version display");
+        assertThat(item.getLatestVersion().getDescription()).isEqualTo("version desc");
+        assertThat(item.getLatestVersion().getCreatedAt()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("A second row for an existing (declaration, schema_version) pair is rejected")
+    void shouldRejectDuplicateSchemaVersionForSameDeclaration() {
+        // @BeforeEach already stored schema_version 1 for Accuracy; a different row id must not help.
+        assertThatThrownBy(() -> metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                        "990e8400-e29b-41d4-a716-446655440009", SEED_ACCURACY_ID.toString(), 1, "{}", "{}", "{}"))
+                .isInstanceOf(DuplicateKeyException.class);
     }
 
     @Test

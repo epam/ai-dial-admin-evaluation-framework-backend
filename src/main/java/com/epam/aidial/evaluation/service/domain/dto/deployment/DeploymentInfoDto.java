@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -63,4 +64,6 @@ public abstract class DeploymentInfoDto {
                     + "Populated on single-deployment responses only; absent from listing entries.",
             example = "[\"chat\", \"openaiChatCompletions\", \"openaiResponses\"]")
     private List<InterfaceType> interfaces;
+
+    private Map<String, Object> features;
 }

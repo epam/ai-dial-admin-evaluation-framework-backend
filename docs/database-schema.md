@@ -671,20 +671,30 @@ Test case execution results stored in the analytics database. Each row represent
 
 ### Primary Key
 
-Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for future time-based partitioning.
+Composite: `(created_at_ms, id)` — `created_at_ms` as leading column, partitioned on since `V1.20`.
 
 ### Constraints
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Extended with `turn_index` in V1.13 so each turn is uniquely keyed, and with `request_index` in V1.17 (inserted before `turn_index`, matching the request-then-turn nesting of the execution model) so each chain position is uniquely keyed. Includes `created_at_ms` for future partitioning. |
+| `uq_results_run_case_index` | UNIQUE | `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, created_at_ms)` | Idempotent writes (ON CONFLICT DO NOTHING). Extended with `turn_index` in V1.13 so each turn is uniquely keyed, and with `request_index` in V1.17 (inserted before `turn_index`, matching the request-then-turn nesting of the execution model) so each chain position is uniquely keyed. Includes `created_at_ms`, which is also the partition key (`V1.20`). |
 
 ### Indexes
 
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
 | `idx_results_suite_run_case` | `(test_suite_id, test_suite_run_id, test_case_name)` | BTREE | Composite index for suite/run/case filtering |
-| `idx_results_id` | `(id)` | BTREE | Standalone index for efficient `findById` lookups (PK has `created_at_ms` as leading column) |
+| `idx_results_id` | `(id)` | BTREE | Standalone index for efficient `findById` lookups (PK has `created_at_ms` as leading column); scans across every partition since it has no `created_at_ms` predicate |
+
+### Partitioning (`V1.20`)
+
+Native PostgreSQL declarative RANGE partitioning on `created_at_ms`, monthly, UTC-aligned. See [`docs/patterns/analytics-time-partitioning.md`](patterns/analytics-time-partitioning.md) for the full pattern (naming convention, maintenance job, retention, rollback).
+
+- **`test_case_run_results_p_legacy`** — everything created before the migration's cutover (`MINVALUE` to the start of the UTC month after the migration ran). Attached with zero data copy, since the pre-existing PK/unique constraint already satisfy the partition-key requirement.
+- **`test_case_run_results_p<yyyyMM>`** — one partition per calendar month going forward (e.g. `test_case_run_results_p202610`), created ahead of need by `AnalyticsPartitionMaintenanceJob`.
+- **`test_case_run_results_p_default`** — catch-all for any `created_at_ms` outside every explicit range; a run's `created_at_ms` comes from the meta DB and can in principle be older than the oldest live partition.
+- All indexes and constraints listed above are *partitioned* — declared once on the parent, automatically materialized on every current and future partition.
+- Retention (opt-in, disabled by default): partitions past the configured `analytics.partitioning.retention-months` window are dropped or detached by the maintenance job, evaluated independently of `test_case_eval_summaries`/`test_case_eval_scores` (no pairing).
 
 ### JSONB Column Schemas
 
@@ -779,13 +789,13 @@ Metric-enriched test case results stored in the analytics database. Each row rep
 
 ### Primary Key
 
-Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for future time-based partitioning.
+Composite: `(created_at_ms, id)` — `created_at_ms` as leading column, partitioned on since `V1.20`.
 
 ### Constraints
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_eval_summaries_natural_key` | UNIQUE (INDEX) | `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` | Idempotent writes. Extended with `turn_index` in V1.14 so each turn's summary is uniquely keyed per computation, and with `request_index` in V1.18 (inserted before `turn_index`) so each chain position's summary is uniquely keyed. Includes `created_at_ms` for future partitioning. |
+| `uq_eval_summaries_natural_key` | UNIQUE (INDEX) | `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` | Idempotent writes. Extended with `turn_index` in V1.14 so each turn's summary is uniquely keyed per computation, and with `request_index` in V1.18 (inserted before `turn_index`) so each chain position's summary is uniquely keyed. Includes `created_at_ms`, which is also the partition key (`V1.20`). |
 
 ### Indexes
 
@@ -793,8 +803,12 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 |------------|---------|------|-------|
 | `idx_eval_summaries_run_computation` | `(test_suite_run_id, computation_id)` | BTREE | Lookup by run and computation batch |
 | `idx_eval_summaries_computation` | `(computation_id)` | BTREE | Lookup by computation batch |
-| `idx_eval_summaries_id` | `(id)` | BTREE | Standalone index for efficient `findById` lookups (PK has `created_at_ms` as leading column) |
-| `idx_eval_summaries_run_computed_at` | `(test_suite_run_id, computed_at_ms DESC, computation_id)` | BTREE | Latest-computation resolution (V1.15): serves `WHERE test_suite_run_id = ? ORDER BY computed_at_ms DESC LIMIT 1` as a top-1 descent with `computation_id` available from the index tuple |
+| `idx_eval_summaries_id` | `(id)` | BTREE | Standalone index for efficient `findById` lookups (PK has `created_at_ms` as leading column); scans across every partition since it has no `created_at_ms` predicate |
+| `idx_eval_summaries_run_computed_at` | `(test_suite_run_id, computed_at_ms DESC, computation_id)` | BTREE | Latest-computation resolution (V1.15): serves `WHERE test_suite_run_id = ? ORDER BY computed_at_ms DESC LIMIT 1` as a top-1 descent with `computation_id` available from the index tuple. `EvalSummaryRepository.findLatestComputationId`/`existsByRunIdAndComputationId` accept an optional `created_at_ms` equality predicate (`V1.20`) so this query prunes to a single partition whenever the caller has the run's timestamp available. |
+
+### Partitioning (`V1.20`)
+
+Same shape as `test_case_run_results` (see above) — `test_case_eval_summaries_p_legacy`, `test_case_eval_summaries_p<yyyyMM>`, `test_case_eval_summaries_p_default` — with one addition: **its partitions are removed in lockstep with `test_case_eval_scores`'s**. For a given month, both tables' partitions are dropped together, or both are detached together; retention never removes one without the other, since a `test_case_eval_scores` row's only meaning is in relation to its `test_case_eval_summaries` row. See [`docs/patterns/analytics-time-partitioning.md`](patterns/analytics-time-partitioning.md).
 
 ### JSONB Column Schemas
 
@@ -826,16 +840,21 @@ Per-row overall score/pass-fail for each `test_case_eval_summaries` row, compute
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
-| `eval_summary_id` | VARCHAR(36) | NOT NULL | - | Reference to the scored `test_case_eval_summaries.id` row (soft FK); primary key |
+| `eval_summary_id` | VARCHAR(36) | NOT NULL | - | Reference to the scored `test_case_eval_summaries.id` row (soft FK) |
 | `score` | DOUBLE PRECISION | NULL | - | Per-row overall score, computed via SQL from the suite's `overallScore` definition grouped per row; null when the definition's aggregate is itself SQL NULL (e.g. `roc_auc` on a single-row group) |
 | `passed` | BOOLEAN | NULL | - | `score >= overallScoreThreshold` as captured in the run's suite snapshot at run-start time; null if `score` or the threshold is null |
 | `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp (matches the corresponding `test_case_eval_summaries.computed_at_ms`) |
+| `created_at_ms` | BIGINT | NOT NULL | - | Added in `V1.20`: the parent `test_case_eval_summaries` row's `created_at_ms`, backfilled for all pre-existing rows via a join to that table at migration time. Exists purely so this table can be partitioned on the same key as its parent — see Partitioning below. |
 
-No denormalized run/computation/test-case context: every read goes through a join to `test_case_eval_summaries` (which already carries that context), so `eval_summary_id` is the only key needed. There is no entity of its own for this table — `score`/`passed` are queryable via the `eval_summaries` Query DSL entity, which joins a narrowed projection of this table (`eval_summary_id`/`score`/`passed` only; see `docs/patterns/query-dsl-entity-resolution.md`), and via the dedicated REST endpoints' own join (`docs/patterns/eval-summaries-read-surface.md`). Add columns back in a follow-up migration if a genuine direct-query need shows up.
+No denormalized run/computation/test-case context beyond `created_at_ms`: every read goes through a join to `test_case_eval_summaries` (which already carries the rest of that context) — see `docs/patterns/query-dsl-entity-resolution.md` and `docs/patterns/eval-summaries-read-surface.md`. The join matches on both `eval_summary_id` **and** `created_at_ms` (`V1.20`), which still resolves to the same single row (both are accurate, including for backfilled legacy rows) while additionally letting the join key line up with the partition key.
 
 ### Primary Key
 
-`eval_summary_id` — a 1:1 (or 0:1, since a row without a computable score is simply never inserted) relationship with `test_case_eval_summaries.id`, so no surrogate PK is needed. No secondary indexes exist on this table.
+Composite: `(created_at_ms, eval_summary_id)` (`V1.20`; previously `eval_summary_id` alone). Still effectively a 1:1 (or 0:1) relationship with `test_case_eval_summaries.id` — the composite key exists only because Postgres requires the partition key to be part of every unique constraint on a partitioned table, not because `eval_summary_id` stopped being naturally unique. No secondary indexes exist on this table.
+
+### Partitioning (`V1.20`)
+
+Partitioned identically to `test_case_eval_summaries` — same monthly boundaries, same `_p_legacy`/`_p<yyyyMM>`/`_p_default` naming — and its partitions are always created, dropped, and archived **together with** `test_case_eval_summaries`'s for the same month; see the note under that table and [`docs/patterns/analytics-time-partitioning.md`](patterns/analytics-time-partitioning.md). Unlike the other two partitioned tables, this one required a real backfill (not a zero-copy `ATTACH`): the `created_at_ms` column didn't exist before `V1.20`, so every pre-existing row had it populated via `UPDATE ... FROM test_case_eval_summaries` at migration time.
 
 ---
 

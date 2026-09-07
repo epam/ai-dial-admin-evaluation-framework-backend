@@ -6,7 +6,7 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records;
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 
-import org.jooq.Record1;
+import org.jooq.Record2;
 import org.jooq.impl.UpdatableRecordImpl;
 
 
@@ -74,13 +74,27 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
         return (Long) get(3);
     }
 
+    /**
+     * Setter for <code>analytics.test_case_eval_scores.created_at_ms</code>.
+     */
+    public void setCreatedAtMs(Long value) {
+        set(4, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_scores.created_at_ms</code>.
+     */
+    public Long getCreatedAtMs() {
+        return (Long) get(4);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
 
     @Override
-    public Record1<String> key() {
-        return (Record1) super.key();
+    public Record2<Long, String> key() {
+        return (Record2) super.key();
     }
 
     // -------------------------------------------------------------------------
@@ -97,13 +111,14 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
     /**
      * Create a detached, initialised TestCaseEvalScoresRecord
      */
-    public TestCaseEvalScoresRecord(String evalSummaryId, Double score, Boolean passed, Long computedAtMs) {
+    public TestCaseEvalScoresRecord(String evalSummaryId, Double score, Boolean passed, Long computedAtMs, Long createdAtMs) {
         super(TestCaseEvalScores.TEST_CASE_EVAL_SCORES);
 
         setEvalSummaryId(evalSummaryId);
         setScore(score);
         setPassed(passed);
         setComputedAtMs(computedAtMs);
+        setCreatedAtMs(createdAtMs);
         resetTouchedOnNotNull();
     }
 }

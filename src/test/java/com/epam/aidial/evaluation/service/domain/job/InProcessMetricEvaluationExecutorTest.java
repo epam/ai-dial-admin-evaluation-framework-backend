@@ -237,7 +237,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchCreate(anyLong(), eq(FIXED_CLOCK.millis()), scoreCaptor.capture());
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems).hasSize(1);
@@ -269,7 +269,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchCreate(anyLong(), eq(FIXED_CLOCK.millis()), scoreCaptor.capture());
 
         assertThat(scoreCaptor.getValue()).hasSize(1);
         assertThat(scoreCaptor.getValue().get(0).getScore()).isEqualTo(0.9);

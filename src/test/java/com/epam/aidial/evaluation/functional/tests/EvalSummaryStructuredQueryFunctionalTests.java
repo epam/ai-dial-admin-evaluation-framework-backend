@@ -549,18 +549,21 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                         .score(0.9)
                         .passed(true)
                         .computedAtMs(1_000L)
+                        .createdAtMs(1_000L)
                         .build(),
                 TestCaseEvalScore.builder()
                         .evalSummaryId(passedB)
                         .score(0.95)
                         .passed(true)
                         .computedAtMs(2_000L)
+                        .createdAtMs(2_000L)
                         .build(),
                 TestCaseEvalScore.builder()
                         .evalSummaryId(failedC)
                         .score(0.1)
                         .passed(false)
                         .computedAtMs(3_000L)
+                        .createdAtMs(3_000L)
                         .build()));
 
         StructuredQuery query = new StructuredQuery(
@@ -610,12 +613,14 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
                         .score(0.8)
                         .passed(true)
                         .computedAtMs(1_000L)
+                        .createdAtMs(1_000L)
                         .build(),
                 TestCaseEvalScore.builder()
                         .evalSummaryId(idB)
                         .score(0.2)
                         .passed(false)
                         .computedAtMs(2_000L)
+                        .createdAtMs(2_000L)
                         .build()));
 
         QueryResultPage page = queryRepository.execute(rowQuery(

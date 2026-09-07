@@ -70,6 +70,11 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
      */
     public final TableField<TestCaseEvalScoresRecord, Long> COMPUTED_AT_MS = createField(DSL.name("computed_at_ms"), SQLDataType.BIGINT.nullable(false), this, "");
 
+    /**
+     * The column <code>analytics.test_case_eval_scores.created_at_ms</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, Long> CREATED_AT_MS = createField(DSL.name("created_at_ms"), SQLDataType.BIGINT.nullable(false), this, "");
+
     private TestCaseEvalScores(Name alias, Table<TestCaseEvalScoresRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

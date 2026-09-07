@@ -25,7 +25,7 @@ public class TestCaseEvalScoreService {
     private final TestCaseEvalScoreRepository testCaseEvalScoreRepository;
 
     @Transactional("analyticsTransactionManager")
-    public void batchCreate(long computedAtMs, List<TestCaseEvalScoreBatchWriteItemDto> items) {
+    public void batchCreate(long computedAtMs, long createdAtMs, List<TestCaseEvalScoreBatchWriteItemDto> items) {
         if (items.isEmpty()) {
             return;
         }
@@ -35,6 +35,7 @@ public class TestCaseEvalScoreService {
                         .score(item.getScore())
                         .passed(item.getPassed())
                         .computedAtMs(computedAtMs)
+                        .createdAtMs(createdAtMs)
                         .build())
                 .toList();
         testCaseEvalScoreRepository.saveAll(entities);

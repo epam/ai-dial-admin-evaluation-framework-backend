@@ -36,7 +36,8 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
                         .set(TEST_CASE_EVAL_SCORES.SCORE, s.getScore())
                         .set(TEST_CASE_EVAL_SCORES.PASSED, s.getPassed())
                         .set(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS, s.getComputedAtMs())
-                        .onConflict(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID)
+                        .set(TEST_CASE_EVAL_SCORES.CREATED_AT_MS, s.getCreatedAtMs())
+                        .onConflict(TEST_CASE_EVAL_SCORES.CREATED_AT_MS, TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID)
                         .doNothing())
                 .toList();
         dsl.batch(queries).execute();

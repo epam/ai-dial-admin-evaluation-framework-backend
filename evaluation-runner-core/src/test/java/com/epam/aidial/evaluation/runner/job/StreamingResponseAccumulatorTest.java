@@ -450,10 +450,14 @@ class StreamingResponseAccumulatorTest {
         @DisplayName("Should assemble the terminal response object verbatim, matching a non-streaming body")
         void accumulate_responsesApiFormat_usesTerminalResponseObject() throws Exception {
             InputStream stream = buildSseStream(
-                    "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"output\":[]}}",
-                    "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}",
-                    "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\" world\"}",
-                    "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\","
+                    "event: response.created\n"
+                            + "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"output\":[]}}",
+                    "event: response.output_text.delta\n"
+                            + "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}",
+                    "event: response.output_text.delta\n"
+                            + "data: {\"type\":\"response.output_text.delta\",\"delta\":\" world\"}",
+                    "event: response.completed\n"
+                            + "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\","
                             + "\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\","
                             + "\"content\":[{\"type\":\"output_text\",\"text\":\"Hello world\"}]}],"
                             + "\"usage\":{\"total_tokens\":42}}}",
@@ -481,9 +485,12 @@ class StreamingResponseAccumulatorTest {
         @DisplayName("Should synthesize a Responses-shaped document from deltas when the terminal event never arrives")
         void accumulate_responsesApiFormatWithoutTerminalEvent_synthesizesFromDeltas() throws Exception {
             InputStream stream = buildSseStream(
-                    "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"output\":[]}}",
-                    "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"Par\"}",
-                    "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"is\"}");
+                    "event: response.created\n"
+                            + "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"output\":[]}}",
+                    "event: response.output_text.delta\n"
+                            + "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Par\"}",
+                    "event: response.output_text.delta\n"
+                            + "data: {\"type\":\"response.output_text.delta\",\"delta\":\"is\"}");
 
             StreamingResponseAccumulator accumulator = createAccumulator();
             accumulator.accumulate(stream);
@@ -503,7 +510,8 @@ class StreamingResponseAccumulatorTest {
             InputStream stream = buildSseStream(
                     "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi\"}",
                     "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\","
-                            + "\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi\"}]}]}}",
+                            + "\"output\":[{\"type\":\"message\","
+                            + "\"content\":[{\"type\":\"output_text\",\"text\":\"Hi\"}]}]}}",
                     "data: [DONE]");
 
             StreamingResponseAccumulator accumulator = createAccumulator();
@@ -540,21 +548,37 @@ class StreamingResponseAccumulatorTest {
         @Test
         @DisplayName("Should assemble a real DIAL Core Responses stream, including reasoning and usage fields")
         void accumulate_realDialCoreResponsesStream_assemblesTerminalResponse() throws Exception {
+            // Each text block is one SSE event; trailing `\` joins the wrapped JSON back into a single
+            // data: line (SSE data must stay on one line).
             InputStream stream = buildSseStream("""
                     event: response.created
-                    data: {"response":{"id":"dial_gpt_1","created_at":1788525428,"model":"gpt-5.6-sol",                    "object":"response","output":[],"status":"in_progress","usage":null},                    "sequence_number":0,"type":"response.created"}""", """
+                    data: {"response":{"id":"dial_gpt_1","created_at":1788525428,"model":"gpt-5.6-sol",\
+                    "object":"response","output":[],"status":"in_progress","usage":null},\
+                    "sequence_number":0,"type":"response.created"}""", """
                     event: response.in_progress
-                    data: {"response":{"id":"dial_gpt_1","output":[],"status":"in_progress","usage":null},                    "sequence_number":1,"type":"response.in_progress"}""", """
+                    data: {"response":{"id":"dial_gpt_1","output":[],"status":"in_progress","usage":null},\
+                    "sequence_number":1,"type":"response.in_progress"}""", """
                     event: response.output_item.added
-                    data: {"item":{"id":"msg_1","content":[],"role":"assistant","status":"in_progress",                    "type":"message","phase":"final_answer"},"output_index":0,"sequence_number":2,                    "type":"response.output_item.added"}""", """
+                    data: {"item":{"id":"msg_1","content":[],"role":"assistant","status":"in_progress",\
+                    "type":"message","phase":"final_answer"},"output_index":0,"sequence_number":2,\
+                    "type":"response.output_item.added"}""", """
                     event: response.output_text.delta
-                    data: {"content_index":0,"delta":"Hello","item_id":"msg_1","output_index":0,                    "sequence_number":4,"type":"response.output_text.delta","obfuscation":"O1brxaqajdo"}""", """
+                    data: {"content_index":0,"delta":"Hello","item_id":"msg_1","output_index":0,\
+                    "sequence_number":4,"type":"response.output_text.delta","obfuscation":"O1brxaqajdo"}""", """
                     event: response.output_text.delta
-                    data: {"content_index":0,"delta":"! How can I help?","item_id":"msg_1","output_index":0,                    "sequence_number":5,"type":"response.output_text.delta","obfuscation":"4fP95F7XZ"}""", """
+                    data: {"content_index":0,"delta":"! How can I help?","item_id":"msg_1","output_index":0,\
+                    "sequence_number":5,"type":"response.output_text.delta","obfuscation":"4fP95F7XZ"}""", """
                     event: response.output_text.done
-                    data: {"content_index":0,"item_id":"msg_1","output_index":0,"sequence_number":11,                    "text":"Hello! How can I help?","type":"response.output_text.done"}""", """
+                    data: {"content_index":0,"item_id":"msg_1","output_index":0,"sequence_number":11,\
+                    "text":"Hello! How can I help?","type":"response.output_text.done"}""", """
                     event: response.completed
-                    data: {"response":{"id":"dial_gpt_1","model":"gpt-5.6-sol","object":"response",                    "output":[{"id":"msg_1","content":[{"annotations":[],"text":"Hello! How can I help?",                    "type":"output_text","logprobs":[]}],"role":"assistant","status":"completed",                    "type":"message","phase":"final_answer"}],"status":"completed","reasoning":                    {"context":"all_turns","effort":"medium","mode":"standard","summary":null},                    "usage":{"input_tokens":7,"output_tokens":11,"total_tokens":18}},                    "sequence_number":14,"type":"response.completed"}""");
+                    data: {"response":{"id":"dial_gpt_1","model":"gpt-5.6-sol","object":"response",\
+                    "output":[{"id":"msg_1","content":[{"annotations":[],"text":"Hello! How can I help?",\
+                    "type":"output_text","logprobs":[]}],"role":"assistant","status":"completed",\
+                    "type":"message","phase":"final_answer"}],"status":"completed","reasoning":\
+                    {"context":"all_turns","effort":"medium","mode":"standard","summary":null},\
+                    "usage":{"input_tokens":7,"output_tokens":11,"total_tokens":18}},\
+                    "sequence_number":14,"type":"response.completed"}""");
 
             StreamingResponseAccumulator accumulator = createAccumulator();
             accumulator.accumulate(stream);

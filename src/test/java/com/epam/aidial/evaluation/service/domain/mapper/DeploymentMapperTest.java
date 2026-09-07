@@ -16,7 +16,6 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteResponseDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteUpstreamDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
-import com.epam.aidial.evaluation.client.dialcore.dto.InterfaceType;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;
@@ -200,37 +199,37 @@ class DeploymentMapperTest {
     }
 
     @Test
-    @DisplayName("maps interfaces onto every deployment info subtype")
-    void mapsInterfacesOntoEverySubtype() {
+    @DisplayName("maps features onto every deployment info subtype")
+    void mapsFeaturesOntoEverySubtype() {
         // Implicit name-matching off the shared DialCoreDeploymentDto base, like reference above.
         DialModelInfoDto model = mapper.toDialModelInfoDto(DialCoreModelDto.builder()
                 .id("gpt-5-mini")
-                .interfaces(List.of(InterfaceType.CHAT, InterfaceType.OPEN_AI_RESPONSES))
+                .features(Map.of("rate", true, "tokenize", false))
                 .build());
         DialApplicationInfoDto application = mapper.toDialApplicationInfoDto(DialCoreApplicationDto.builder()
                 .id("app")
-                .interfaces(List.of(InterfaceType.CUSTOM_UI))
+                .features(Map.of("configuration", true))
                 .build());
         ToolsetInfoDto toolset = mapper.toToolsetInfoDto(DialCoreToolsetDto.builder()
                 .id("toolset")
-                .interfaces(List.of(InterfaceType.MCP))
+                .features(Map.of("tools", true))
                 .build());
 
-        assertThat(model.getInterfaces()).containsExactly(InterfaceType.CHAT, InterfaceType.OPEN_AI_RESPONSES);
-        assertThat(application.getInterfaces()).containsExactly(InterfaceType.CUSTOM_UI);
-        assertThat(toolset.getInterfaces()).containsExactly(InterfaceType.MCP);
+        assertThat(model.getFeatures()).containsExactlyInAnyOrderEntriesOf(Map.of("rate", true, "tokenize", false));
+        assertThat(application.getFeatures()).containsExactlyInAnyOrderEntriesOf(Map.of("configuration", true));
+        assertThat(toolset.getFeatures()).containsExactlyInAnyOrderEntriesOf(Map.of("tools", true));
     }
 
     @Test
-    @DisplayName("leaves interfaces out of the short listing projection")
-    void shortProjectionOmitsInterfaces() {
+    @DisplayName("leaves features out of the short listing projection")
+    void shortProjectionOmitsFeatures() {
         DeploymentInfoDto result = mapper.toDeploymentInfoShortDto(DialCoreModelDto.builder()
                 .id("gpt-5-mini")
                 .displayName("GPT-5 mini")
-                .interfaces(List.of(InterfaceType.CHAT))
+                .features(Map.of("rate", true))
                 .build());
 
-        assertThat(result.getInterfaces()).isNull();
+        assertThat(result.getFeatures()).isNull();
     }
 
     @Test

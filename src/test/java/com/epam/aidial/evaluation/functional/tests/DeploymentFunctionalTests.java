@@ -14,7 +14,6 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreRouteUpstreamDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
-import com.epam.aidial.evaluation.client.dialcore.dto.InterfaceType;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;
@@ -108,13 +107,13 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("GET /deployments/dial-model/{id} returns the interfaces DIAL Core reported, on the wire")
-    void getDeploymentModelReturnsInterfaces() {
+    @DisplayName("GET /deployments/dial-model/{id} returns the features DIAL Core reported, on the wire")
+    void getDeploymentModelReturnsFeatures() {
         when(dialCoreClient.getModel(eq("gpt-5")))
                 .thenReturn(DialCoreModelDto.builder()
                         .id("gpt-5")
                         .displayName("GPT-5")
-                        .interfaces(List.of(InterfaceType.CHAT, InterfaceType.OPEN_AI_RESPONSES))
+                        .features(Map.of("rate", true, "tokenize", false))
                         .build());
 
         ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
@@ -122,18 +121,18 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().get("interfaces")).isEqualTo(List.of("chat", "openaiResponses"));
+        assertThat(response.getBody().get("features")).isEqualTo(Map.of("rate", true, "tokenize", false));
     }
 
     @Test
-    @DisplayName("GET /deployments/all/{id} returns the interfaces of the deployment that resolved")
-    void getDeploymentByIdReturnsInterfaces() {
+    @DisplayName("GET /deployments/all/{id} returns the features of the deployment that resolved")
+    void getDeploymentByIdReturnsFeatures() {
         when(dialCoreClient.getModel(eq("my-toolset"))).thenThrow(upstreamNotFound());
         when(dialCoreClient.getApplication(eq("my-toolset"))).thenThrow(upstreamNotFound());
         when(dialCoreClient.getToolset(eq("my-toolset")))
                 .thenReturn(DialCoreToolsetDto.builder()
                         .id("my-toolset")
-                        .interfaces(List.of(InterfaceType.MCP))
+                        .features(Map.of("tools", true))
                         .build());
 
         ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
@@ -142,17 +141,17 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().get("$type")).isEqualTo("dial-toolset");
-        assertThat(response.getBody().get("interfaces")).isEqualTo(List.of("mcp"));
+        assertThat(response.getBody().get("features")).isEqualTo(Map.of("tools", true));
     }
 
     @Test
-    @DisplayName("GET /deployments listing entries omit interfaces (short projection)")
-    void getAllDeploymentsOmitsInterfaces() {
+    @DisplayName("GET /deployments listing entries omit features (short projection)")
+    void getAllDeploymentsOmitsFeatures() {
         when(dialCoreClient.getDeployments(eq(null)))
                 .thenReturn(List.of(DialCoreModelDto.builder()
                         .id("m1")
                         .displayName("Model 1")
-                        .interfaces(List.of(InterfaceType.CHAT))
+                        .features(Map.of("rate", true))
                         .build()));
 
         ResponseEntity<List<Map<String, Object>>> response = restTemplate.exchange(
@@ -160,7 +159,7 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).hasSize(1);
-        assertThat(response.getBody().get(0)).doesNotContainKey("interfaces");
+        assertThat(response.getBody().get(0)).doesNotContainKey("features");
     }
 
     @Test

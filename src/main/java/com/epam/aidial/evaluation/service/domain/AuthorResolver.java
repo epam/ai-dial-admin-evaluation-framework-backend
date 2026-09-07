@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
@@ -38,37 +39,25 @@ public class AuthorResolver {
         if (jwt == null) {
             return ANONYMOUS;
         }
+
         final String claim = jwtSecurityProperties.getUserClaim();
         final Object value = jwt.getClaim(claim);
         if (value == null) {
             return ANONYMOUS;
         }
+
         final String userId = value.toString();
         if (!jwtSecurityProperties.isResolveUserName()) {
             return userId;
         }
+
         final String displayName = resolveDisplayName(userId);
         return displayName != null ? displayName : userId;
     }
 
     private String resolveDisplayName(String userId) {
         try {
-            final JsonNode userInfo = dialCoreClient.getUserInfo();
-            if (userInfo == null) {
-                log.debug("DIAL Core user-info returned no body for user '{}'; using claim value", userId);
-                return null;
-            }
-
-            final JsonNode nameNode = userInfo.get(USER_DISPLAY_NAME_FIELD);
-            final String displayName = nameNode != null && nameNode.isString() ? nameNode.asString() : null;
-            if (StringUtils.isBlank(displayName)) {
-                log.debug(
-                        "DIAL Core user-info has no '{}' for user '{}'; using claim value",
-                        USER_DISPLAY_NAME_FIELD,
-                        userId);
-                return null;
-            }
-            return displayName;
+            return tryResolveDisplayName(userId);
         } catch (DialCoreClientException | RestClientException e) {
             log.warn(
                     "Failed to resolve display name for user '{}' via DIAL Core; using claim value: {}",
@@ -77,5 +66,25 @@ public class AuthorResolver {
                     e);
             return null;
         }
+    }
+
+    private @Nullable String tryResolveDisplayName(String userId) {
+        final JsonNode userInfo = dialCoreClient.getUserInfo();
+        if (userInfo == null) {
+            log.debug("DIAL Core user-info returned no body for user '{}'; using claim value", userId);
+            return null;
+        }
+
+        final JsonNode nameNode = userInfo.get(USER_DISPLAY_NAME_FIELD);
+        final String displayName = nameNode != null && nameNode.isString() ? nameNode.asString() : null;
+        if (StringUtils.isBlank(displayName)) {
+            log.debug(
+                    "DIAL Core user-info has no '{}' for user '{}'; using claim value",
+                    USER_DISPLAY_NAME_FIELD,
+                    userId);
+            return null;
+        }
+
+        return displayName;
     }
 }

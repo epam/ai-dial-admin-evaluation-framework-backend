@@ -130,6 +130,7 @@ context: |
   `request:{index,total,last,name}` namespace in a TSMD `condition`; fail-fast chain abort; orchestrated by `runner.job.RequestChainExecutor`).
   Infrastructure: Analytics Datasource (dual datasource — meta + analytics),
   Typed SQL DSL (jOOQ 3.20 — all repositories use DSLContext; generated sources in data.db.jooq.{meta,analytics}; drift guard via JooqSchemaDriftTest),
+  Analytics Time-Based Partitioning (monthly RANGE partitioning of test_case_run_results/test_case_eval_summaries/test_case_eval_scores by created_at_ms; AnalyticsPartitionMaintenanceJob creates look-ahead partitions and removes expired ones on an opt-in retention window; paired removal of eval_summaries/eval_scores partitions),
   DIAL File Storage (file upload/download proxy via DialFileClient, EF service key bucket management, alias-based file references).
   CLI Tools: `eval-cli` (standalone Spring Boot picocli CLI, DB-free, `clone`/`fetch`/`run`/`import`/`evaluate` commands,
   consumes `evaluation-runner-core`'s batch execution path and the EF backend's public REST API for cross-environment evaluation).

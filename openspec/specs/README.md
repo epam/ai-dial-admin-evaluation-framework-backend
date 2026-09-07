@@ -64,7 +64,7 @@ Specs defining the primary business entities and their APIs.
 Specs for external service integrations.
 
 - **[dial-core-client](dial-core-client/spec.md)** — Implemented
-  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, supported `interfaces` exposed on single-deployment responses (not on listing entries), JWT propagation, upstream error mapping, deployment invocation.
+  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, caller user-info fetch (`/v1/user/info`), JWT propagation, upstream error mapping, deployment invocation.
 - **[app-schema-route-resolution](app-schema-route-resolution/spec.md)** — Implemented
   Application route resolution inherited from app type schemas via DIAL Core schema API, schema route DTOs, merge behavior.
 - **[mcp-tool-invocation](mcp-tool-invocation/spec.md)** — Implemented
@@ -98,7 +98,7 @@ Specs for behaviors that apply across multiple domain areas.
 - **[entity-filtering](entity-filtering/spec.md)** — Implemented
   Pagination and structured `filter` (whitelist, AND/`in` operators, HTTP 400 validation) on list endpoints.
 - **[security](security/spec.md)** — Implemented
-  OIDC/JWT multi-issuer authentication + configurable security modes; DIAL API-Key authentication via DIAL Core introspection as an alternative to bearer tokens.
+  OIDC/JWT multi-issuer authentication + configurable security modes; DIAL API-Key authentication via DIAL Core introspection as an alternative to bearer tokens; `createdBy` author attribution with opt-in display-name resolution via DIAL Core user info.
 - **[openapi-examples](openapi-examples/spec.md)** — Implemented
   OpenAPI request/response examples (minimal + full), resource-based JSON, OpenApiExampleCustomizer.
 - **[openapi-query-param-docs](openapi-query-param-docs/spec.md)** — Implemented
@@ -126,6 +126,8 @@ Specs for the analytics datasource and result storage.
   Eval summary storage layer — denormalized analytics table for metric-enriched test case results, run metric snapshots, computation versioning, JSONB metric filtering and aggregation. `metric_eval_duration_ms` column (required on batch write, exposed on response DTOs) tracks the summed per-TSMD metric evaluation latency.
 - **[metric-evaluation](metric-evaluation/spec.md)** — Implemented
   In-process metric evaluation engine — Phase 2 of test suite run lifecycle. Evaluates configured TSMDs against test case results by calling metric provider `/evaluate` endpoints with resolved bindings, writes results as EvalSummary records. Runs for any TSMD count including zero: a metric-less run still writes one EvalSummary per result row (`metric_values = {}`, no `metric_infos`, no RunMetricSnapshots), so its responses and extracted columns stay readable. Provider-bounded concurrency, retry with exponential backoff, RunMetricSnapshot capture. Measures per-TSMD `/evaluate` call duration (including failed/timed-out calls, excluding `ConditionError`) and persists the sum as `metricEvalDurationMs` per eval-summary row.
+- **[eval-summary-scoring](eval-summary-scoring/spec.md)** — Implemented
+  Per-row overall score/pass-fail for eval summaries — reuses the suite's effective per-row score `StructuredQuery` (`testCaseOverallScore` when configured, else `overallScore`; `Mean`/`WeightedMean`/`CustomFunction`), grafting a per-batch `id IN (:rowIds)` + `GROUP BY id` to turn the run-level aggregate into one value per row, computed and written (`EvalSummaryRowScoreComputer`) immediately after each Phase-2 flush. `passed` is derived in application code from `score >= overallScoreThreshold` (the run-snapshotted threshold), null-propagating. Population-dependent `CustomFunction`s (e.g. `roc_auc`) degrade to a null per-row score rather than erroring; `overallScore` alone always drives Phase 3's run-level `overall` aggregate. Related: metric-evaluation, metrics-storage, metric-score-statistics, suite-run-snapshot, test-suites.
 - **[conditional-metric-execution](conditional-metric-execution/spec.md)** — Implemented
   Optional per-TSMD `condition` (JSONata, max 2000 chars) deciding per result row (per request, per turn) whether a metric runs. Evaluated over a namespaced dictionary `{data, response, turn:{index,total,last}, request:{index,total,last,name}}` — the `request` namespace mirrors `turn` and lets a condition pin a metric to one position in a multi-request chain, e.g. `request.last` (`name` is JSON null when the request is unlabelled); clean `true` runs the metric, clean `false` omits it, a throw/non-boolean/null yields a wholesale metric-level error (`metricError::<name>`) while the row stays SUCCESS. Validated as JSONata at write time (400 on bad syntax). Related: test-suite-metric-definitions, tsmd-validation, metric-evaluation, multi-turn-test-case, multi-request-suite.
 - **[metric-score-statistics](metric-score-statistics/spec.md)** — Implemented

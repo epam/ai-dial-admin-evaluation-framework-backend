@@ -32,6 +32,11 @@ public class SuiteSnapshotBuilder {
                 .testCaseSchema(jsonbMapper.mapFieldDefinitions(dataset.getTestCaseSchema()))
                 // Stored verbatim (null = system default); the single-metric default is resolved at Phase 3.
                 .overallScore(jsonbMapper.mapOverallScore(suite.getOverallScore()))
+                // Optional per-test-case override; null = per-test-case scoring falls back to overallScore.
+                .testCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(suite.getTestCaseOverallScore()))
+                // Frozen at snapshot time so per-row `passed` stays stable even if the suite's live
+                // threshold is edited after the run starts.
+                .overallScoreThreshold(suite.getOverallScoreThreshold())
                 // Request chain: additionalRequests is always '[]' for MCP_TOOL (enforced at write time by
                 // TestSuiteRequestValidator), so mapping it unconditionally is equivalent to gating it on
                 // suiteType and keeps this builder's common section the single place chain fields are set.

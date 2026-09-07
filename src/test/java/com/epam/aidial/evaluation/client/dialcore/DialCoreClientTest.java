@@ -20,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.RequestMatcher;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("DialCoreClient")
@@ -161,6 +162,48 @@ class DialCoreClientTest {
 
         assertThat(response.getData()).hasSize(1);
         assertThat(response.getData().get(0).getId()).isEqualTo("m1");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getUserInfo parses body Core labels as application/octet-stream")
+    void getUserInfoParsesOctetStreamBody() {
+        String json = "{\"sub\":\"user-123\",\"userClaims\":{\"email\":[\"jane@example.com\"]}}";
+        RequestMatcher userInfo =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/user/info");
+        server.expect(userInfo).andRespond(withSuccess(json, MediaType.APPLICATION_OCTET_STREAM));
+
+        JsonNode response = client.getUserInfo();
+
+        assertThat(response).isNotNull();
+        assertThat(response.get("sub").asString()).isEqualTo("user-123");
+        assertThat(response.get("userClaims").get("email").get(0).asString()).isEqualTo("jane@example.com");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getUserInfo returns null on empty body")
+    void getUserInfoReturnsNullOnEmptyBody() {
+        RequestMatcher userInfo =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/user/info");
+        server.expect(userInfo).andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        assertThat(client.getUserInfo()).isNull();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getUserInfo throws DialCoreClientException on 401 from Core")
+    void getUserInfoThrowsOnUnauthorized() {
+        RequestMatcher userInfo =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/user/info");
+        server.expect(userInfo).andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+
+        assertThatThrownBy(() -> client.getUserInfo())
+                .isInstanceOf(DialCoreClientException.class)
+                .satisfies(e -> assertThat(
+                                ((DialCoreClientException) e).getStatusCode().value())
+                        .isEqualTo(401));
         server.verify();
     }
 }

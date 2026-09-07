@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.mapper;
 
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
@@ -73,6 +74,8 @@ public class EvalSummaryRecordMapper {
                 .metricEvalDurationMs(r.getValue(TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS))
                 .responseStatusCode(r.getValue(TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE))
                 .metricValues(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES)))
+                .score(r.getValue(TEST_CASE_EVAL_SCORES.SCORE))
+                .passed(r.getValue(TEST_CASE_EVAL_SCORES.PASSED))
                 .createdAtMs(r.getValue(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS))
                 .computedAtMs(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
                 .build();
@@ -105,6 +108,8 @@ public class EvalSummaryRecordMapper {
                 .metricValues(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES)))
                 .metricInfos(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS)))
                 .extractionWarnings(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS)))
+                .score(r.getValue(TEST_CASE_EVAL_SCORES.SCORE))
+                .passed(r.getValue(TEST_CASE_EVAL_SCORES.PASSED))
                 .createdAtMs(r.getValue(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS))
                 .computedAtMs(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
                 .build();
@@ -139,6 +144,8 @@ public class EvalSummaryRecordMapper {
                 .extractionWarnings(toJsonString(r.getValue(TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS)))
                 .requestBody(toJsonString(r.getValue(TEST_CASE_RUN_RESULTS.REQUEST_BODY)))
                 .responseBody(toJsonString(r.getValue(TEST_CASE_RUN_RESULTS.RESPONSE_BODY)))
+                .score(r.getValue(TEST_CASE_EVAL_SCORES.SCORE))
+                .passed(r.getValue(TEST_CASE_EVAL_SCORES.PASSED))
                 .createdAtMs(r.getValue(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS))
                 .computedAtMs(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
                 .build();

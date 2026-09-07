@@ -119,7 +119,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Eval summaries = single read surface](docs/patterns/eval-summaries-read-surface.md) | One summary per result row even at zero TSMDs; empty list ≠ "no metrics" |
 | [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md) | Single pre-pass resolver rewrites `StructuredQuery` params before translation |
 | [Query DSL function catalog](docs/patterns/query-dsl-function-catalog.md) | Registry-driven `QueryFunction` SPI; stored-function delegation; no `mean` fn |
-| [Typed `OverallScoreDefinition`](docs/patterns/overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null |
+| [Typed `OverallScoreDefinition`](docs/patterns/overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null; Phase 2 per-row `score`/`passed` (`test_case_eval_scores`) reuses the same resolved query via an `id IN (...)`/`GROUP BY id` graft — `roc_auc`-style population functions degenerate to null per row |
 | [Query DSL entity resolution](docs/patterns/query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check |
 | [Query DSL subqueries](docs/patterns/query-dsl-subqueries.md) | Subquery-valued `in` and scalar subqueries; the one lazy-bean cycle break |
 | [Query DSL null polarity](docs/patterns/query-dsl-null-polarity.md) | `nc`/`ne`/`not` are total (null satisfies); positive ops stay unwrapped/sargable |
@@ -132,7 +132,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 ### Inline conventions
 
 - **Bulk and export operations** — use paginated DB queries with streaming response, or batched parsing/persistence, for bulk/export (e.g. CSV). Never load full datasets into memory; respect pagination max size.
-- **AuthorResolver** (`service.domain.AuthorResolver`) — extracts user identity from JWT for `createdBy` fields. Uses configurable claim name (`security.jwt.user-claim`), not hardcoded `sub`. Returns `"anonymous"` when JWT is null (security mode `none`).
+- **AuthorResolver** (`service.domain.AuthorResolver`) — extracts user identity from JWT for `createdBy` fields. Uses configurable claim name (`security.jwt.user-claim`), not hardcoded `sub`. Returns `"anonymous"` when JWT is null (security mode `none`). With `security.jwt.resolve-user-name=true` it resolves `userDisplayName` via `DialCoreClient.getUserInfo()` (caller's bearer token) and falls back to the raw claim on missing name or any Core error — never fails the request.
 - **API Timestamp Convention** — all timestamps in REST APIs and DB models use **epoch milliseconds (Long)**. Do NOT convert to `Instant` or ISO 8601 strings in DTOs; MapStruct maps `Long → Long` automatically.
 - **ValidationWarningsSerializer** — injectable `@Component` for JSON ser/deser of validation warnings and maps. **Fail-fast** (throws) for serialization; **graceful degradation** (logs + empty) for deserialization. Inject instead of duplicating `ObjectMapper` logic.
 - **Exception Handling Pattern** — **fail-fast (throw)** for data integrity (serialization, writes); **graceful degradation (log + fallback)** only when data is regenerable. Document rationale in comment or log message. See also `config.yaml` global rules.

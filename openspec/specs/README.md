@@ -147,6 +147,8 @@ Specs for database, observability, and operational concerns.
   jOOQ 3.20 typed DSL replacing NamedParameterJdbcTemplate across all repositories. Zonky EmbeddedPostgres codegen pipeline (`./gradlew generateJooq`), committed generated sources, schema-drift guard test, DSLContext beans with TransactionAwareDataSourceProxy and exception translation, RecordMapper pattern, FilterWhitelists/SortWhitelists with typed Field references, ArchUnit fence enforcing JdbcTemplate usage limits.
 - **[database-and-migrations](database-and-migrations/spec.md)** — Implemented
   PostgreSQL JDBC + Flyway migration conventions.
+- **[analytics-partitioning](analytics-partitioning/spec.md)** — Implemented
+  Native PostgreSQL monthly RANGE partitioning of `test_case_run_results`, `test_case_eval_summaries`, and `test_case_eval_scores` by `created_at_ms` — `_p_legacy`/`_p<yyyyMM>`/`_p_default` naming, `AnalyticsPartitionMaintenanceJob` proactively creating look-ahead partitions and (opt-in) removing expired ones, paired removal of `test_case_eval_summaries`/`test_case_eval_scores`, and a partition-pruning predicate on latest-computation resolution. Related: analytics-datasource, metrics-storage, database-and-migrations.
 - **[observability-and-logging](observability-and-logging/spec.md)** — Implemented
   Correlation IDs, request logging, dynamic log levels, OTel distributed tracing (W3C traceparent propagation, OTLP export, span attributes on eval and metric spans for Grafana Tempo navigation, and OTel Baggage propagation of eval run/suite id on run-scoped outbound calls for downstream analytics grouping).
 - **[health](health/spec.md)** — Implemented

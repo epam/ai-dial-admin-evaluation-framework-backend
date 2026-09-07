@@ -19,7 +19,12 @@ import org.springframework.stereotype.Component;
  *
  * <p>This component does not open its own transaction. Callers are responsible for opening a
  * {@code @Transactional("analyticsTransactionManager")} scope (or an equivalent
- * {@code TransactionTemplate}) before invoking {@link #resolve(String, UUID)}.
+ * {@code TransactionTemplate}) before invoking {@link #resolve(String, UUID, Long)}.
+ *
+ * <p>{@code runCreatedAtMs}, when the caller has it available, is passed through to
+ * {@link EvalSummaryRepository#findLatestComputationId(UUID, Long)} as a partition-pruning
+ * predicate (see {@code openspec/changes/partition-analytics-tables/design.md} D7) — pass
+ * {@code null} when unavailable; resolution is still correct, just without pruning.
  *
  * <p>Result conventions:
  * <ul>
@@ -45,9 +50,9 @@ public class ComputationResolver {
 
     private final EvalSummaryRepository evalSummaryRepository;
 
-    public Optional<UUID> resolve(String computation, UUID runId) {
+    public Optional<UUID> resolve(String computation, UUID runId, Long runCreatedAtMs) {
         if (computation == null || LATEST_SENTINEL.equalsIgnoreCase(computation)) {
-            return evalSummaryRepository.findLatestComputationId(runId);
+            return evalSummaryRepository.findLatestComputationId(runId, runCreatedAtMs);
         }
         try {
             return Optional.of(UUID.fromString(computation));

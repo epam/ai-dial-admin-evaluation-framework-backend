@@ -42,6 +42,7 @@ This document is the operator-facing reference for every configurable property o
    - [SSE Event Processing](#612-sse-event-processing)
    - [Analytics Run Comparison](#613-analytics-run-comparison)
    - [JSONata Evaluation](#614-jsonata-evaluation)
+   - [Analytics Partitioning](#615-analytics-partitioning)
 7. [Data Management](#7-data-management)
    - [Pagination](#71-pagination)
    - [CSV Export](#72-csv-export)
@@ -531,6 +532,19 @@ Runtime bounds applied to every JSONata expression evaluation (request-template 
 |---|---|---|---|---|---|
 | `jsonata.evaluation-timeout-ms` | `JSONATA_EVALUATION_TIMEOUT_MS` | `10000` | No | - | Maximum wall-clock time in milliseconds a single JSONata expression evaluation may run before it is aborted. Minimum `1`. |
 | `jsonata.max-recursion-depth` | `JSONATA_MAX_RECURSION_DEPTH` | `1000` | No | - | Maximum call-stack recursion depth a single JSONata expression evaluation may reach before it is aborted. Minimum `1`. |
+
+### 6.15 Analytics Partitioning
+
+Controls for `AnalyticsPartitionMaintenanceJob`, the scheduled task that creates upcoming monthly partitions for `test_case_run_results`, `test_case_eval_summaries`, and `test_case_eval_scores` (native PostgreSQL declarative RANGE partitioning, `V1.20`) and, when retention is enabled, removes expired ones. See [`docs/patterns/analytics-time-partitioning.md`](patterns/analytics-time-partitioning.md).
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `analytics.partitioning.enabled` | `ANALYTICS_PARTITIONING_ENABLED` | `true` | No | - | Master switch for the maintenance job. `false` skips partition creation, drop, and detach entirely. |
+| `analytics.partitioning.look-ahead-months` | `ANALYTICS_PARTITIONING_LOOK_AHEAD_MONTHS` | `2` | No | - | Number of months beyond the current UTC month to keep a partition ready for, on all three partitioned tables. Minimum `1`. |
+| `analytics.partitioning.retention-months` | `ANALYTICS_PARTITIONING_RETENTION_MONTHS` | `0` | No | - | Months of history to retain before a partition becomes eligible for removal. `0` disables retention entirely — no partition is ever dropped or detached, regardless of age. Operators must opt in explicitly. Minimum `0`. |
+| `analytics.partitioning.archive-instead-of-drop` | `ANALYTICS_PARTITIONING_ARCHIVE_INSTEAD_OF_DROP` | `false` | No | `retention-months > 0` | `false` permanently drops an expired partition (and, for `test_case_eval_summaries`, its paired `test_case_eval_scores` partition). `true` detaches it instead, preserving the data as a standalone, no-longer-partitioned table. |
+| `analytics.partitioning.maintenance-interval-ms` | `ANALYTICS_PARTITIONING_MAINTENANCE_INTERVAL_MS` | `86400000` | No | - | Fixed delay in milliseconds between maintenance job runs. Minimum `1`. |
+| `analytics.partitioning.initial-delay-ms` | `ANALYTICS_PARTITIONING_INITIAL_DELAY_MS` | `60000` | No | - | Delay in milliseconds after application startup before the first maintenance job run. Minimum `0`. |
 
 ---
 

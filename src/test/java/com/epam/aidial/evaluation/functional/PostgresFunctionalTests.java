@@ -16,6 +16,9 @@ import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsDescriptionDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsResponseDto;
 import com.epam.aidial.evaluation.functional.config.PostgresFunctionalTestConfiguration;
+import com.epam.aidial.evaluation.functional.tests.AnalyticsDefaultPartitionFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.AnalyticsPartitionMaintenanceFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.AnalyticsPartitionPruningFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultBatchWriteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultCountFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultGetByIdFunctionalTests;
@@ -63,7 +66,9 @@ import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnSharedDataFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
+import com.epam.aidial.evaluation.functional.tests.PartitionedAnalyticsPaginationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.PostgresAnalyticsPartitionRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseRunInputRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestSuiteRunRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.QuerySchemaDiscoveryFunctionalTests;
@@ -529,6 +534,21 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class PostgresTestCaseRunInputRepositoryTests extends PostgresTestCaseRunInputRepositoryFunctionalTests {}
+
+    @Nested
+    class PostgresAnalyticsPartitionRepositoryTests extends PostgresAnalyticsPartitionRepositoryFunctionalTests {}
+
+    @Nested
+    class PartitionedAnalyticsPaginationTests extends PartitionedAnalyticsPaginationFunctionalTests {}
+
+    @Nested
+    class AnalyticsDefaultPartitionTests extends AnalyticsDefaultPartitionFunctionalTests {}
+
+    @Nested
+    class AnalyticsPartitionMaintenanceTests extends AnalyticsPartitionMaintenanceFunctionalTests {}
+
+    @Nested
+    class AnalyticsPartitionPruningTests extends AnalyticsPartitionPruningFunctionalTests {}
 
     @Nested
     class TestCaseRunInputsRetentionTests extends TestCaseRunInputsRetentionFunctionalTests {}

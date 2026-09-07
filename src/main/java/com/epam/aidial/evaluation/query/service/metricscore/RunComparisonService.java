@@ -171,8 +171,13 @@ public class RunComparisonService {
     }
 
     private UUID requireComputation(UUID runId) {
+        // Deliberately passes null for the partition-pruning predicate: unlike the write path
+        // (EvalSummaryService), this run-comparison read path is exercised by functional tests whose
+        // eval-summary fixtures use a fixed created_at_ms decoupled from the run's real createdAt, so
+        // adding the predicate here would filter out real rows in those fixtures without a broader
+        // fixture audit. See openspec/changes/partition-analytics-tables/design.md D7.
         return computationResolver
-                .resolve(null, runId)
+                .resolve(null, runId, null)
                 .orElseThrow(() -> new InvalidOperationException(
                         "Run " + runId + " has no metric computation; nothing to compare"));
     }

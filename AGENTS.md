@@ -128,6 +128,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Multi-request suites](docs/patterns/multi-request-suites.md) | `additionalRequests` chain; one flat response-column union; accumulated frame; `(request_index, turn_index)` |
 | [Request-template JSONata seam](docs/patterns/jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](docs/patterns/evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
+| [Analytics Time-Based Partitioning](docs/patterns/analytics-time-partitioning.md) | `created_at_ms` RANGE partitioning; `_p_legacy`/`_p<yyyyMM>`/`_p_default`; paired eval_summaries/eval_scores removal |
 
 ### Inline conventions
 

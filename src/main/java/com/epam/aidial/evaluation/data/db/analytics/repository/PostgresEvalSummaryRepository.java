@@ -167,7 +167,10 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .leftJoin(TEST_CASE_RUN_RESULTS)
                 .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID))
                 .leftJoin(TEST_CASE_EVAL_SCORES)
-                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
+                .on(TEST_CASE_EVAL_SCORES
+                        .EVAL_SUMMARY_ID
+                        .eq(TEST_CASE_EVAL_SUMMARIES.ID)
+                        .and(TEST_CASE_EVAL_SCORES.CREATED_AT_MS.eq(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS)))
                 .where(TEST_CASE_EVAL_SUMMARIES.ID.eq(id.toString()))
                 .fetchOptional(recordMapper::mapExportWithBodies);
     }
@@ -183,21 +186,29 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     }
 
     @Override
-    public Optional<UUID> findLatestComputationId(UUID runId) {
+    public Optional<UUID> findLatestComputationId(UUID runId, Long runCreatedAtMs) {
+        Condition condition = TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString());
+        if (runCreatedAtMs != null) {
+            condition = condition.and(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.eq(runCreatedAtMs));
+        }
         return dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
                 .from(TEST_CASE_EVAL_SUMMARIES)
-                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .where(condition)
                 .orderBy(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc())
                 .limit(1)
                 .fetchOptional(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)));
     }
 
     @Override
-    public boolean existsByRunIdAndComputationId(UUID runId, UUID computationId) {
-        return dsl.fetchExists(dsl.selectOne()
-                .from(TEST_CASE_EVAL_SUMMARIES)
-                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString())));
+    public boolean existsByRunIdAndComputationId(UUID runId, UUID computationId, Long runCreatedAtMs) {
+        Condition condition = TEST_CASE_EVAL_SUMMARIES
+                .TEST_SUITE_RUN_ID
+                .eq(runId.toString())
+                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()));
+        if (runCreatedAtMs != null) {
+            condition = condition.and(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.eq(runCreatedAtMs));
+        }
+        return dsl.fetchExists(dsl.selectOne().from(TEST_CASE_EVAL_SUMMARIES).where(condition));
     }
 
     @Override
@@ -410,7 +421,10 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .leftJoin(TEST_CASE_EVAL_SCORES)
-                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
+                .on(TEST_CASE_EVAL_SCORES
+                        .EVAL_SUMMARY_ID
+                        .eq(TEST_CASE_EVAL_SUMMARIES.ID)
+                        .and(TEST_CASE_EVAL_SCORES.CREATED_AT_MS.eq(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS)))
                 .where(condition)
                 .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
     }
@@ -444,7 +458,10 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .leftJoin(TEST_CASE_EVAL_SCORES)
-                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
+                .on(TEST_CASE_EVAL_SCORES
+                        .EVAL_SUMMARY_ID
+                        .eq(TEST_CASE_EVAL_SUMMARIES.ID)
+                        .and(TEST_CASE_EVAL_SCORES.CREATED_AT_MS.eq(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS)))
                 .where(condition)
                 .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
     }
@@ -482,7 +499,10 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .leftJoin(TEST_CASE_RUN_RESULTS)
                 .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID))
                 .leftJoin(TEST_CASE_EVAL_SCORES)
-                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
+                .on(TEST_CASE_EVAL_SCORES
+                        .EVAL_SUMMARY_ID
+                        .eq(TEST_CASE_EVAL_SUMMARIES.ID)
+                        .and(TEST_CASE_EVAL_SCORES.CREATED_AT_MS.eq(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS)))
                 .where(condition)
                 .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
     }

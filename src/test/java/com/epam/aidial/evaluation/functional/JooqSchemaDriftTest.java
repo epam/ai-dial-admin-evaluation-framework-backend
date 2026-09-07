@@ -6,11 +6,14 @@ import static org.assertj.core.api.Assertions.fail;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Tables;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -91,6 +94,33 @@ class JooqSchemaDriftTest {
                 List.of(Tables.TEST_CASE_EVAL_SUMMARIES, Tables.TEST_CASE_RUN_RESULTS, Tables.RUN_METRIC_SNAPSHOTS);
 
         verifyTablesExistInDb(dsl, jooqTables, dbMeta);
+    }
+
+    /**
+     * Guards the {@code withExcludes} regex in build.gradle's analytics jOOQ generator: partition
+     * child tables ({@code _p_legacy}, {@code _p_default}, {@code _p<yyyyMM>}) of the three
+     * partitioned tables must never be generated as their own jOOQ {@code Table} fields — only the
+     * partitioned parent's field should exist. See
+     * openspec/changes/partition-analytics-tables/design.md D6.
+     */
+    @Test
+    void analyticsGeneratedTablesHaveNoLeakedPartitionChildren() throws IllegalAccessException {
+        Pattern partitionChildPattern = Pattern.compile(
+                "(test_case_run_results|test_case_eval_summaries|test_case_eval_scores)_p(_default|_legacy|\\d{6})");
+
+        for (Field field : Tables.class.getFields()) {
+            if (!Modifier.isStatic(field.getModifiers()) || !Table.class.isAssignableFrom(field.getType())) {
+                continue;
+            }
+            Table<?> table = (Table<?>) field.get(null);
+            String tableName = table.getName().toLowerCase();
+            assertThat(partitionChildPattern.matcher(tableName).matches())
+                    .as(
+                            "jOOQ generated a Table field for partition child '%s' — the analytics"
+                                    + " withExcludes regex in build.gradle should have excluded it",
+                            tableName)
+                    .isFalse();
+        }
     }
 
     private void verifyTablesExistInDb(DSLContext dsl, List<Table<?>> jooqTables, Meta dbMeta) {

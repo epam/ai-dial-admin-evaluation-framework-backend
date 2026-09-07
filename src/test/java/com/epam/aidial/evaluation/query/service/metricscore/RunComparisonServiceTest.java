@@ -138,7 +138,7 @@ class RunComparisonServiceTest {
     @DisplayName("Should reject a run with no resolvable computation")
     void shouldRejectRunWithoutComputation() {
         stubRuns(null, null);
-        when(computationResolver.resolve(null, RUN_A)).thenReturn(Optional.empty());
+        when(computationResolver.resolve(null, RUN_A, null)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.compare(List.of(RUN_A, RUN_B)))
                 .isInstanceOf(InvalidOperationException.class)
@@ -277,8 +277,8 @@ class RunComparisonServiceTest {
 
         service.compare(List.of(RUN_A, RUN_B));
 
-        verify(computationResolver, times(1)).resolve(null, RUN_A);
-        verify(computationResolver, times(1)).resolve(null, RUN_B);
+        verify(computationResolver, times(1)).resolve(null, RUN_A, null);
+        verify(computationResolver, times(1)).resolve(null, RUN_B, null);
         // The same computation is used for both directions of the match query.
         verify(evalSummaryRepository).countMatches(RUN_A, COMPUTATION_A, RUN_B, COMPUTATION_B);
         verify(evalSummaryRepository).countMatches(RUN_B, COMPUTATION_B, RUN_A, COMPUTATION_A);
@@ -292,8 +292,8 @@ class RunComparisonServiceTest {
     }
 
     private void stubComputations() {
-        when(computationResolver.resolve(null, RUN_A)).thenReturn(Optional.of(COMPUTATION_A));
-        when(computationResolver.resolve(null, RUN_B)).thenReturn(Optional.of(COMPUTATION_B));
+        when(computationResolver.resolve(null, RUN_A, null)).thenReturn(Optional.of(COMPUTATION_A));
+        when(computationResolver.resolve(null, RUN_B, null)).thenReturn(Optional.of(COMPUTATION_B));
     }
 
     private void stubStats(UUID runId, EvalSummaryMatchStats stats) {

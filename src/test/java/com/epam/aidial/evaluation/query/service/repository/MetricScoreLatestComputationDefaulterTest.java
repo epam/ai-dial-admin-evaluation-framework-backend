@@ -36,7 +36,7 @@ class MetricScoreLatestComputationDefaulterTest {
     @Test
     @DisplayName("computation_id eq \"latest\" is resolved to the run's latest computation id")
     void resolvesLatestSentinelForSingleRun() {
-        when(computationResolver.resolve("latest", RUN_ID)).thenReturn(Optional.of(LATEST));
+        when(computationResolver.resolve("latest", RUN_ID, null)).thenReturn(Optional.of(LATEST));
         final FilterNode filter =
                 new LogicalNode(LogicalOp.AND, List.of(eqRun(RUN_ID), eqField("computation_id", "LATEST")));
 
@@ -103,7 +103,7 @@ class MetricScoreLatestComputationDefaulterTest {
     @Test
     @DisplayName("\"latest\" for a run with no computations is left untouched (resolves to empty)")
     void leavesLatestSentinelUntouchedWhenNoComputations() {
-        when(computationResolver.resolve("latest", RUN_ID)).thenReturn(Optional.empty());
+        when(computationResolver.resolve("latest", RUN_ID, null)).thenReturn(Optional.empty());
         final FilterNode filter =
                 new LogicalNode(LogicalOp.AND, List.of(eqRun(RUN_ID), eqField("computation_id", "latest")));
         final StructuredQuery query = query(filter);

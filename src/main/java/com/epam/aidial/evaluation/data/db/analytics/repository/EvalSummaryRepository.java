@@ -44,15 +44,23 @@ public interface EvalSummaryRepository {
      * Resolves the run's most recent computation from the rows callers actually read, so a run
      * whose suite had no metrics — and therefore no {@code run_metric_snapshots} — still resolves.
      * Returns empty when the run has no eval summaries.
+     *
+     * <p>{@code runCreatedAtMs}, when supplied, is applied as an additional equality predicate so
+     * the query prunes to the relevant {@code test_case_eval_summaries} partition instead of
+     * scanning every partition; pass {@code null} when the caller does not have the run's creation
+     * timestamp available (correctness is unaffected either way).
      */
-    Optional<UUID> findLatestComputationId(UUID runId);
+    Optional<UUID> findLatestComputationId(UUID runId, Long runCreatedAtMs);
 
     /**
      * Tells whether the given computation produced any eval summary for the run, without
      * fetching rows. Used by the export path to decide not-found for an explicit
      * {@code computation=<uuid>}, which must not depend on metric snapshots existing.
+     *
+     * <p>{@code runCreatedAtMs} is the same partition-pruning predicate as
+     * {@link #findLatestComputationId(UUID, Long)} — pass {@code null} when unavailable.
      */
-    boolean existsByRunIdAndComputationId(UUID runId, UUID computationId);
+    boolean existsByRunIdAndComputationId(UUID runId, UUID computationId, Long runCreatedAtMs);
 
     List<MetricAggregationResult> aggregate(
             List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs, List<MetricPath> metrics);

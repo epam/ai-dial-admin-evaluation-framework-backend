@@ -115,6 +115,14 @@ digraph EF {
   - **K8s Jobs + lightweight controller**: minimal deps; fewer DAG features; simplest ops.
 - **DAG need between TestSuite Evaluation and Metrics Calculation**: deemed overkill for now; sequential submission is sufficient. Revisit if we add branch/parallel steps or complex retries.
 
+### In-Process Scheduled Jobs
+Separate from the K8s Job orchestration above: lightweight, in-process Spring `@Scheduled` maintenance tasks running inside the backend application itself.
+
+| Job | Purpose | Schedule |
+|---|---|---|
+| `TestCaseRunInputsRetentionJob` | Purges `test_case_run_inputs` (meta DB) rows for runs in a terminal state past the configured retention duration | `fixedDelay = 86_400_000` (daily) |
+| `AnalyticsPartitionMaintenanceJob` | Creates upcoming monthly partitions ahead of need, and (opt-in) drops/detaches expired ones, for `test_case_run_results`/`test_case_eval_summaries`/`test_case_eval_scores` (analytics DB) — see [Analytics Time-Based Partitioning](../patterns/analytics-time-partitioning.md) | `analytics.partitioning.maintenance-interval-ms` (default daily), `initial-delay-ms` after startup |
+
 ## 7. Messaging vs Direct Calls
 - **Current choice**: Direct invocation from Runner to Metrics Calculation and from Metrics Job to Metrics Services.
 - **Pros (direct)**: Lower ops cost, simpler failure modes, fewer components.

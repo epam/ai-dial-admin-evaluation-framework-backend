@@ -472,7 +472,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     .filter(item -> scoresById.containsKey(item.getId()))
                     .map(item -> toScoreItem(item, scoresById.get(item.getId()), context))
                     .toList();
-            testCaseEvalScoreService.batchCreate(context.getComputedAtMs(), items);
+            testCaseEvalScoreService.batchCreate(context.getComputedAtMs(), context.getRunCreatedAtMs(), items);
             log.debug("Wrote {} eval summary scores for run {}", items.size(), context.getTestSuiteRunId());
         } catch (RuntimeException e) {
             log.warn(

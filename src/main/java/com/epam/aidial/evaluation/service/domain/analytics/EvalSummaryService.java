@@ -103,13 +103,13 @@ public class EvalSummaryService {
         validateRequiredRunIdFilter(filters);
 
         UUID runId = extractRunId(filters);
-        UUID computationId = resolveComputationId(computation, runId);
+        Long runCreatedAtMs = resolveRunCreatedAtMs(runId);
+        UUID computationId = resolveComputationId(computation, runId, runCreatedAtMs);
         if (computationId == null) {
             return emptyPage(size);
         }
 
         Cursor cursor = cursorCodec.decode(cursorEncoded);
-        Long runCreatedAtMs = resolveRunCreatedAtMs(runId);
 
         CursorPage<EvalSummary> page;
         try {
@@ -145,12 +145,11 @@ public class EvalSummaryService {
         validateRequiredRunIdFilter(filters);
 
         UUID runId = extractRunId(filters);
-        UUID computationId = resolveComputationId(computation, runId);
+        Long runCreatedAtMs = resolveRunCreatedAtMs(runId);
+        UUID computationId = resolveComputationId(computation, runId, runCreatedAtMs);
         if (computationId == null) {
             return ResultCountResponseDto.builder().count(0).build();
         }
-
-        Long runCreatedAtMs = resolveRunCreatedAtMs(runId);
 
         long count;
         try {
@@ -169,7 +168,8 @@ public class EvalSummaryService {
         validateRequiredRunIdFilter(filters);
 
         UUID runId = extractRunId(filters);
-        UUID computationId = resolveComputationId(computation, runId);
+        Long runCreatedAtMs = resolveRunCreatedAtMs(runId);
+        UUID computationId = resolveComputationId(computation, runId, runCreatedAtMs);
         if (computationId == null) {
             return MetricAggregationResponseDto.builder()
                     .computationId(null)
@@ -178,7 +178,6 @@ public class EvalSummaryService {
         }
 
         List<MetricPath> parsedMetricPaths = parseMetricPaths(metricPaths);
-        Long runCreatedAtMs = resolveRunCreatedAtMs(runId);
 
         List<MetricAggregationResult> results;
         try {
@@ -219,8 +218,8 @@ public class EvalSummaryService {
                 .orElseThrow(() -> new ValidationException("Filter 'runId' is required"));
     }
 
-    private UUID resolveComputationId(String computation, UUID runId) {
-        return computationResolver.resolve(computation, runId).orElse(null);
+    private UUID resolveComputationId(String computation, UUID runId, Long runCreatedAtMs) {
+        return computationResolver.resolve(computation, runId, runCreatedAtMs).orElse(null);
     }
 
     private Long resolveRunCreatedAtMs(UUID runId) {

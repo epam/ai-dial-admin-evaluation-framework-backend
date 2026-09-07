@@ -15,4 +15,5 @@ public class TestCaseEvalScore {
     private Double score;
     private Boolean passed;
     private Long computedAtMs;
+    private Long createdAtMs;
 }

@@ -223,7 +223,10 @@ public class EvalSummaryExportService {
 
         return analyticsTransactionTemplate.execute(status -> {
             UUID computationId = computationResolver
-                    .resolve(computation, metaSetup.run().getId())
+                    .resolve(
+                            computation,
+                            metaSetup.run().getId(),
+                            metaSetup.run().getCreatedAt())
                     .orElseThrow(() -> new EntityNotFoundException("No computation snapshot found for run "
                             + metaSetup.run().getId()
                             + " (computation="
@@ -241,7 +244,9 @@ public class EvalSummaryExportService {
             boolean explicitComputationUuid = computation != null && !LATEST_SENTINEL.equalsIgnoreCase(computation);
             if (explicitComputationUuid
                     && !evalSummaryRepository.existsByRunIdAndComputationId(
-                            metaSetup.run().getId(), computationId)) {
+                            metaSetup.run().getId(),
+                            computationId,
+                            metaSetup.run().getCreatedAt())) {
                 throw new EntityNotFoundException("No eval summaries found for run "
                         + metaSetup.run().getId() + " (computation=" + computation + ")");
             }

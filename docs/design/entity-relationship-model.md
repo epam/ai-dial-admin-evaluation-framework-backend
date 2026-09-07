@@ -556,6 +556,8 @@ This keeps historical runs reproducible for analysis even if the authored TestSu
   - Requires careful up-front selection of extracted fields
   - Slight schema complexity increase
 
+**As implemented (`V1.20`, `openspec/changes/partition-analytics-tables`)**: the time-based partitioning half of this option is now real — `test_case_run_results`, `test_case_eval_summaries`, and `test_case_eval_scores` are native PostgreSQL declarative RANGE partitions on `created_at_ms`, monthly. Partitioning by `test_suite_id` was not pursued (time is the skewed access dimension — recent runs dominate reads — not suite identity), and the "generated/stored hot-field columns" half of this option remains unimplemented; extracted fields are still handled via `extracted_columns` JSONB plus selective column projection (see [Selective Column Projection](../patterns/selective-column-projection.md)), not generated columns. See [Analytics Time-Based Partitioning](../patterns/analytics-time-partitioning.md) for the realized design.
+
 #### 6.4.4 Option D — Columnar object storage (Parquet) + lake table format
 
 - **How it works**: store run/metric facts as Parquet in object storage (e.g., S3/MinIO) with a table format (Iceberg/Delta/Hudi); keep metadata (suites/TSMD/MD) in a transactional store (e.g., Postgres).

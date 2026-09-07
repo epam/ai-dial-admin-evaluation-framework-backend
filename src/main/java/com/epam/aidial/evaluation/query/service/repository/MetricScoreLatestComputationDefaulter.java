@@ -30,6 +30,15 @@ import org.springframework.stereotype.Component;
  * with no single-run filter. When the run has no eval summaries — the table {@link ComputationResolver}
  * resolves "latest" from — the sentinel is left in place and the engine rejects it (a run with no
  * eval summaries has no metric scores to return anyway).
+ *
+ * <p>This resolver has no access to the run's {@code created_at_ms} (only the run id is available
+ * here in the Query DSL filter tree), so it always passes {@code null} for
+ * {@link ComputationResolver}'s partition-pruning predicate — meaning resolution scans every
+ * {@code test_case_eval_summaries} partition for this one lookup. Deliberately accepted: injecting
+ * a meta-DB read into this query-resolution path just to obtain that value would add a
+ * cross-datasource dependency to a component that otherwise has none, for a single indexed
+ * {@code LIMIT 1} lookup that is not on a hot loop. See
+ * {@code openspec/changes/partition-analytics-tables/design.md} D7.
  */
 @Component
 @LogExecution
@@ -54,7 +63,7 @@ public class MetricScoreLatestComputationDefaulter {
             return query; // no single run to resolve "latest" against; the engine validates the sentinel
         }
         return computationResolver
-                .resolve(LATEST, UUID.fromString(runId.get()))
+                .resolve(LATEST, UUID.fromString(runId.get()), null)
                 .map(id -> withFilter(query, rewriteLatestComputation(filter, id.toString())))
                 .orElse(query);
     }

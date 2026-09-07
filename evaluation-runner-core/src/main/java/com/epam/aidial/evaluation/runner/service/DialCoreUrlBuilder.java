@@ -1,9 +1,7 @@
 package com.epam.aidial.evaluation.runner.service;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
-
 import java.util.Set;
-
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

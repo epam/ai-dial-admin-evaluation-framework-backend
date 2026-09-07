@@ -12,12 +12,16 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Two-mode SSE response accumulator:
+ * Three-mode SSE response accumulator:
  * <ol>
- *   <li><b>OpenAI mode</b> — auto-detected when the first event has no named {@code event:} type
- *       (type is {@code "message"}) AND its data contains a {@code choices[]} array. Extracts
- *       {@code choices[0].delta.content} from each chunk, concatenates, and assembles a complete
+ *   <li><b>OpenAI chat-completions mode</b> — auto-detected when the first event has no named
+ *       {@code event:} type (type is {@code "message"}) AND its data contains a {@code choices[]} array.
+ *       Extracts {@code choices[0].delta.content} from each chunk, concatenates, and assembles a complete
  *       non-streaming chat-completions response.</li>
+ *   <li><b>OpenAI Responses mode</b> — auto-detected when the first event's data is a JSON object whose
+ *       {@code type} starts with {@code "response."}. Assembles the terminal event's {@code response}
+ *       object, i.e. exactly the document a non-streaming Responses call returns
+ *       ({@link ResponsesApiAccumulator}).</li>
  *   <li><b>Structured SSE mode</b> — for all other streams. Wraps parsed events in a
  *       {@code {"events": [{event, data}, ...]}} envelope that JSONata expressions can navigate.</li>
  * </ol>
@@ -77,11 +81,15 @@ public class StreamingResponseAccumulator {
         this.truncationWarning = result.truncationWarning();
 
         List<SseEvent> events = result.events();
-        boolean isOpenAi = isOpenAiMode(events);
 
-        if (isOpenAi) {
+        if (isOpenAiMode(events)) {
+            log.debug("Assembling {} SSE events in OpenAI chat-completions mode", events.size());
             assembleOpenAiResponse(events, result.status());
+        } else if (isResponsesApiMode(events)) {
+            log.debug("Assembling {} SSE events in OpenAI Responses mode", events.size());
+            assembleResponsesApiResponse(events, result.status());
         } else {
+            log.debug("Assembling {} SSE events in structured SSE mode", events.size());
             assembleStructuredSseResponse(events);
         }
     }
@@ -143,6 +151,35 @@ public class StreamingResponseAccumulator {
             }
         } catch (JacksonException e) {
             log.error("Failed to assemble OpenAI streaming response: {}", e.getMessage(), e);
+            executionStatus = ExecutionStatus.ERROR;
+        }
+    }
+
+    /**
+     * Responses mode: the first event's data is a JSON object whose {@code type} starts with
+     * {@code "response."}. Detection reads the payload rather than the {@code event:} name, so a proxy
+     * that forwards the events unnamed is still recognised.
+     */
+    private boolean isResponsesApiMode(List<SseEvent> events) {
+        return !events.isEmpty()
+                && ResponsesApiAccumulator.isResponsesApiEvent(events.get(0).data());
+    }
+
+    private void assembleResponsesApiResponse(List<SseEvent> events, ExecutionStatus parseStatus) {
+        final ResponsesApiAccumulator responsesAccumulator = new ResponsesApiAccumulator();
+        for (SseEvent event : events) {
+            responsesAccumulator.accumulate(event.data());
+        }
+
+        try {
+            if (parseStatus != ExecutionStatus.SUCCESS) {
+                // Truncated — store the text accumulated so far as a JSON string, as OpenAI mode does
+                responseBody = objectMapper.writeValueAsString(responsesAccumulator.getOutputText());
+            } else {
+                responseBody = objectMapper.writeValueAsString(responsesAccumulator.getAssembled());
+            }
+        } catch (JacksonException e) {
+            log.error("Failed to assemble Responses API streaming response: {}", e.getMessage(), e);
             executionStatus = ExecutionStatus.ERROR;
         }
     }

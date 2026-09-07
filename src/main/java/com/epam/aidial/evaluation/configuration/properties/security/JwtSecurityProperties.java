@@ -16,4 +16,11 @@ public class JwtSecurityProperties {
 
     @NotBlank
     private String userClaim;
+
+    /**
+     * When {@code true}, {@code AuthorResolver} calls DIAL Core's user-info endpoint and uses
+     * {@code userDisplayName} for {@code created_by}, falling back to the raw claim value when the
+     * name is absent or Core is unavailable.
+     */
+    private boolean resolveUserName;
 }

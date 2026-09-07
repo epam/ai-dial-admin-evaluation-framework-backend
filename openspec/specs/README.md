@@ -64,7 +64,7 @@ Specs defining the primary business entities and their APIs.
 Specs for external service integrations.
 
 - **[dial-core-client](dial-core-client/spec.md)** — Implemented
-  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, JWT propagation, upstream error mapping, deployment invocation.
+  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, caller user-info fetch (`/v1/user/info`), JWT propagation, upstream error mapping, deployment invocation.
 - **[app-schema-route-resolution](app-schema-route-resolution/spec.md)** — Implemented
   Application route resolution inherited from app type schemas via DIAL Core schema API, schema route DTOs, merge behavior.
 - **[mcp-tool-invocation](mcp-tool-invocation/spec.md)** — Implemented
@@ -98,7 +98,7 @@ Specs for behaviors that apply across multiple domain areas.
 - **[entity-filtering](entity-filtering/spec.md)** — Implemented
   Pagination and structured `filter` (whitelist, AND/`in` operators, HTTP 400 validation) on list endpoints.
 - **[security](security/spec.md)** — Implemented
-  OIDC/JWT multi-issuer authentication + configurable security modes; DIAL API-Key authentication via DIAL Core introspection as an alternative to bearer tokens.
+  OIDC/JWT multi-issuer authentication + configurable security modes; DIAL API-Key authentication via DIAL Core introspection as an alternative to bearer tokens; `createdBy` author attribution with opt-in display-name resolution via DIAL Core user info.
 - **[openapi-examples](openapi-examples/spec.md)** — Implemented
   OpenAPI request/response examples (minimal + full), resource-based JSON, OpenApiExampleCustomizer.
 - **[openapi-query-param-docs](openapi-query-param-docs/spec.md)** — Implemented

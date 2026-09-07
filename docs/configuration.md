@@ -196,6 +196,7 @@ providers:
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `security.jwt.user-claim` | `SECURITY_JWT_USER_CLAIM` | `sub` | No | `config.rest.security.mode=oidc` | JWT claim used by `AuthorResolver` to populate `createdBy`/`updatedBy` on domain entities. Falls back to `"anonymous"` when `config.rest.security.mode=none`. |
+| `security.jwt.resolve-user-name` | `SECURITY_JWT_RESOLVE_USER_NAME` | `false` | No | `config.rest.security.mode=oidc` | When `true`, `AuthorResolver` calls DIAL Core `GET /v1/user/info` with the caller's bearer token and stores `userDisplayName` in `createdBy` instead of the raw claim value. Falls back to the claim value when `userDisplayName` is missing/blank or Core responds with an error. The stored value is a snapshot taken at creation time. |
 
 ### 3.4 DIAL API-Key Authentication
 

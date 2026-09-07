@@ -13,6 +13,8 @@ import java.net.URI;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -39,6 +42,7 @@ public class DialCoreClient {
     private static final String DEPLOYMENTS_PATH = "/v1/deployments";
     private static final String TOOLSETS_PATH = "/openai/toolsets";
     private static final String SCHEMAS_PATH = "/v1/application_type_schemas/schema";
+    private static final String USER_INFO_PATH = "/v1/user/info";
     private static final List<Integer> RETRYABLE_STATUS_CODES = List.of(408, 429, 500, 502, 503, 504);
 
     private static final TypeReference<List<DialCoreDeploymentDto>> DEPLOYMENT_LIST_TYPE = new TypeReference<>() {};
@@ -106,6 +110,30 @@ public class DialCoreClient {
                 .toUri();
         String uriString = uri.toASCIIString();
         return withRetry(uriString, () -> get(uriString, JsonNode.class));
+    }
+
+    /**
+     * Fetches DIAL Core's {@code /v1/user/info} for the current caller's token. Used by
+     * {@code AuthorResolver} to resolve a human-readable display name for {@code created_by}.
+     *
+     * <p>The body is fetched as a {@code String} and parsed here because Core labels this JSON
+     * response {@code application/octet-stream}, which the default JSON converter refuses to parse.
+     */
+    public JsonNode getUserInfo() {
+        return withRetry(USER_INFO_PATH, this::callUserInfo);
+    }
+
+    private @Nullable JsonNode callUserInfo() {
+        String raw = get(USER_INFO_PATH, String.class);
+        if (StringUtils.isBlank(raw)) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(raw);
+        } catch (JacksonException e) {
+            throw new DialCoreClientException(
+                    HttpStatusCode.valueOf(502), "Failed to parse user info response: " + e.getMessage(), e);
+        }
     }
 
     private <T> T get(String path, Class<T> responseType) {

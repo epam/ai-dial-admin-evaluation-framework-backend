@@ -53,4 +53,7 @@ public abstract class DeploymentInfoDto {
 
     @Schema(description = "Allowed input attachment MIME types")
     private List<String> inputAttachmentTypes;
+
+    @Schema(description = "Reference to use for opening the application")
+    private String reference;
 }

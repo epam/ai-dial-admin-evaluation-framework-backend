@@ -1,0 +1,40 @@
+{
+  "$type": "dial-application",
+  "deploymentId": "EntityExtractor",
+  "displayName": "Entity Extractor",
+  "version": null,
+  "description": "",
+  "owner": "organization-owner",
+  "reference": "EntityExtractor",
+  "createdAt": 1769192823293,
+  "updatedAt": 1769194293867,
+  "descriptionKeywords": [],
+  "inputAttachmentTypes": null,
+  "applicationTypeSchemaId": "https://dial-entity-extractor.example.com/",
+  "applicationProperties": {},
+  "routes": {
+    "v1": {
+      "name": "v1",
+      "userRoles": null,
+      "response": null,
+      "rewritePath": true,
+      "paths": ["/v1/.*"],
+      "methods": ["DELETE", "GET"],
+      "upstreams": [
+        {
+          "endpoint": "http://my-endpoint.svc.cluster.local",
+          "extraData": null,
+          "weight": 1,
+          "tier": 0
+        }
+      ],
+      "maxRetryAttempts": 1,
+      "order": 2147483647,
+      "permissions": [],
+      "attachmentPaths": {
+        "requestBody": [],
+        "responseBody": []
+      }
+    }
+  }
+}

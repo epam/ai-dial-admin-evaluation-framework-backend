@@ -29,6 +29,7 @@ public class TestSuite {
     private String additionalRequests;
     private String requestName;
     private String overallScore;
+    private String testCaseOverallScore;
     private Double overallScoreThreshold;
     private String testCaseFilter;
     private boolean valid;

@@ -85,7 +85,7 @@ Package inventory: [docs/key-packages.md](docs/key-packages.md).
 Code-quality practices (imports over FQNs, config defaults in YAML only, constants per bounded context, no duplicated logic) are defined in [openspec/specs/best-practices/spec.md](openspec/specs/best-practices/spec.md). New code MUST follow that spec.
 
 ### OpenAPI examples
-Add request/response examples to the OpenAPI spec. Use `@Schema(example = "…")` on DTO fields; for operation-level examples, add JSON files under `src/main/resources/openapi/examples/`. Non-trivial endpoints need minimal + full examples. Keep examples in sync when changing endpoints. See [openapi-examples spec](openspec/specs/openapi-examples/spec.md).
+Add request/response examples to the OpenAPI spec. Use `@Schema(example = "…")` on DTO fields; for operation-level examples, add JSON files under `src/main/resources/openapi/examples/`. Non-trivial endpoints need minimal + full examples. Keep examples in sync when changing endpoints. See [openapi-examples spec](openspec/specs/openapi-examples/spec.md). A file's name must match the endpoint's **registered** OpenAPI path (`{pathKey}-{method}-response-{status}-{name}.json`), and for a trailing-wildcard mapping the pathKey drops the `/**` — e.g. `/api/v1/deployments/all/**` → `api-v1-deployments-all-GET-response-200-minimal.json`. A mismatched name fails silently (the operation just ships with no examples), so cover at least one such endpoint with a test asserting its examples appear in `/v3/api-docs`.
 
 ### OpenAPI query parameter docs
 `OpenApiQueryParamCustomizer` auto-generates rich descriptions for `filter`/`sort`/`page`/`size`/`cursor` params from `FilterWhitelists`/`SortWhitelists`/`PaginationProperties`. **When adding a new list endpoint**, add a registry entry in the customizer. See [openapi-query-param-docs spec](openspec/specs/openapi-query-param-docs/spec.md).
@@ -119,7 +119,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Eval summaries = single read surface](docs/patterns/eval-summaries-read-surface.md) | One summary per result row even at zero TSMDs; empty list ≠ "no metrics" |
 | [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md) | Single pre-pass resolver rewrites `StructuredQuery` params before translation |
 | [Query DSL function catalog](docs/patterns/query-dsl-function-catalog.md) | Registry-driven `QueryFunction` SPI; stored-function delegation; no `mean` fn |
-| [Typed `OverallScoreDefinition`](docs/patterns/overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null |
+| [Typed `OverallScoreDefinition`](docs/patterns/overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null; Phase 2 per-row `score`/`passed` (`test_case_eval_scores`) reuses the same resolved query via an `id IN (...)`/`GROUP BY id` graft — `roc_auc`-style population functions degenerate to null per row |
 | [Query DSL entity resolution](docs/patterns/query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check |
 | [Query DSL subqueries](docs/patterns/query-dsl-subqueries.md) | Subquery-valued `in` and scalar subqueries; the one lazy-bean cycle break |
 | [Query DSL null polarity](docs/patterns/query-dsl-null-polarity.md) | `nc`/`ne`/`not` are total (null satisfies); positive ops stay unwrapped/sargable |

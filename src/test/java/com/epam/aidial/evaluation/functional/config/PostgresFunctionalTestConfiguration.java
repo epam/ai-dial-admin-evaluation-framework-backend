@@ -31,8 +31,8 @@ public class PostgresFunctionalTestConfiguration {
 
     @Bean
     public MetricDeclarationTestDataProvider metricDeclarationTestDataProvider(
-            @Qualifier("metaJdbcTemplate") NamedParameterJdbcTemplate metaJdbcTemplate) {
-        return new MetricDeclarationTestDataProvider(metaJdbcTemplate);
+            @Qualifier("metaDsl") DSLContext metaDsl) {
+        return new MetricDeclarationTestDataProvider(metaDsl);
     }
 
     @Bean

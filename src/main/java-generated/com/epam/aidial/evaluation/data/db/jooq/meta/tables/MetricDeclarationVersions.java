@@ -178,7 +178,7 @@ public class MetricDeclarationVersions extends TableImpl<MetricDeclarationVersio
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_METRIC_DECLARATION_VERSIONS_DECLARATION_ID, Indexes.IDX_METRIC_DECLARATION_VERSIONS_DECLARATION_VERSION);
+        return Arrays.asList(Indexes.IDX_METRIC_DECLARATION_VERSIONS_DECLARATION_ID, Indexes.UQ_METRIC_DECLARATION_VERSIONS_DECLARATION_VERSION);
     }
 
     @Override

@@ -59,7 +59,9 @@ import org.springframework.stereotype.Component;
 public class StructuredQueryBuilder {
 
     private static final int DEFAULT_LIMIT = 100;
-    private static final int MAX_LIMIT = 1000;
+
+    /** The hard cap {@link #applyPage} clamps any {@code OffsetPage.limit()} to, default included. */
+    public static final int MAX_LIMIT = 1000;
 
     private final ExprTranslator exprTranslator;
     private final FilterTranslator filterTranslator;

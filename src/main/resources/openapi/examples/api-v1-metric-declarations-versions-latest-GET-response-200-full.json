@@ -1,0 +1,72 @@
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "providerId": "test-provider",
+    "name": "Accuracy",
+    "displayName": "Exact Match",
+    "description": "Percentage of correct predictions",
+    "createdAt": 1704067200000,
+    "latestVersion": {
+      "id": "660e8400-e29b-41d4-a716-446655440003",
+      "metricDeclarationId": "550e8400-e29b-41d4-a716-446655440000",
+      "schemaVersion": 3,
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "threshold": {
+            "type": "number"
+          }
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "predictions",
+          "labels"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "number"
+          }
+        }
+      },
+      "displayName": "Exact Match",
+      "description": "Percentage of correct predictions",
+      "createdAt": 1704067200000
+    }
+  },
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440010",
+    "providerId": "test-provider",
+    "name": "Latency",
+    "displayName": "Latency",
+    "description": "Measures response time in milliseconds",
+    "createdAt": 1704067200000,
+    "latestVersion": {
+      "id": "660e8400-e29b-41d4-a716-446655440011",
+      "metricDeclarationId": "550e8400-e29b-41d4-a716-446655440010",
+      "schemaVersion": 1,
+      "configSchema": {},
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "latencyMs"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "number"
+          }
+        }
+      },
+      "displayName": "Latency",
+      "description": "Measures response time in milliseconds",
+      "createdAt": 1704067200000
+    }
+  }
+]

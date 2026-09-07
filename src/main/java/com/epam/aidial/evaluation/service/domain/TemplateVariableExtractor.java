@@ -66,6 +66,32 @@ public class TemplateVariableExtractor {
     }
 
     /**
+     * Parses a value that is expected to be a single, full-value {@code ${{...}}} placeholder.
+     * Returns {@code null} when the value is not a placeholder, so callers can distinguish a
+     * placeholder-valued field from a constant one without re-implementing the syntax.
+     *
+     * @param value the value to parse (may be null)
+     * @return the parsed variable, or {@code null} when {@code value} is not a full-value placeholder
+     */
+    public ExtractedVariable parsePlaceholder(String value) {
+        if (value == null) {
+            return null;
+        }
+        Matcher matcher = PLACEHOLDER_PATTERN.matcher(value);
+        if (!matcher.matches()) {
+            return null;
+        }
+        String varName = matcher.group(1).trim();
+        if (varName.isEmpty()) {
+            return null;
+        }
+        String defaultValue = matcher.group(3);
+        SchemaFieldType declaredType = parseTypeHint(matcher.group(2), varName, new ArrayList<>());
+        return new ExtractedVariable(
+                varName, EnumSet.of(TemplateVariableSource.ARGUMENT), defaultValue != null, defaultValue, declaredType);
+    }
+
+    /**
      * Extracts all template variables from the given ArgumentTemplateDto (MCP suites).
      * Variables are tagged with {@link TemplateVariableSource#ARGUMENT}.
      *

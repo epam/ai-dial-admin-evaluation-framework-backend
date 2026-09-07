@@ -60,7 +60,8 @@ class MetricDefinitionValidationServiceTest {
     void setUp() {
         ValidationWarningsSerializer serializer = new ValidationWarningsSerializer(OBJECT_MAPPER);
         OutputSchemaFieldExtractor extractor = new OutputSchemaFieldExtractor(OBJECT_MAPPER);
-        service = new MetricDefinitionValidationService(OBJECT_MAPPER, serializer, extractor);
+        service = new MetricDefinitionValidationService(
+                OBJECT_MAPPER, serializer, extractor, new JsonSchemaPropertyExtractor(OBJECT_MAPPER));
     }
 
     @Test

@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationVersionResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.MetricDeclarationWithLatestVersionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.FilterValidationException;
@@ -87,5 +88,13 @@ public class MetricDeclarationService {
                 .map(metricDeclarationVersionMapper::toDto)
                 .orElseThrow(() ->
                         new EntityNotFoundException("No version found for metric declaration id: " + declarationId));
+    }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<MetricDeclarationWithLatestVersionResponseDto> getLatestVersions() {
+        log.debug("Fetching every metric declaration with its latest MetricDeclarationVersion");
+        return metricDeclarationVersionRepository.findLatestPerMetricDeclaration().stream()
+                .map(metricDeclarationVersionMapper::toDto)
+                .toList();
     }
 }

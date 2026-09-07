@@ -474,6 +474,124 @@ Status: **Implemented**
 - **WHEN** an MCP_TOOL suite has `argumentTemplate: null`
 - **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a warning indicating argument template is recommended for tool evaluation
 
+### Requirement: MCP argument coverage against the tool input schema
+
+MCP suite soft validation SHALL check `argumentTemplate.arguments` against `toolRef.inputSchema`, in
+addition to the existing template-variable / binding / dataset-schema cross-checks.
+
+Every property named in `inputSchema.required` SHALL be **satisfied**. A required argument is
+satisfied when `argumentTemplate.arguments` contains an entry under that name whose **effective value**
+is present and non-blank, where the effective value is resolved as follows:
+
+- a constant value — used as-is; a `null`, empty, or whitespace-only string is **not** satisfied, and a
+  non-string constant (number, boolean, object, array) is always satisfied;
+- a `${{variable}}` placeholder — resolved through the suite's `inputBindings`, using the same
+  precedence the run-time resolver applies: a binding carrying a `dataField` is satisfied; a binding
+  carrying only a `constantValue` follows the constant rule above, and that constant wins even when
+  the placeholder also declares an inline default; with no binding, a placeholder that declares no
+  default is left to the existing unbound-variable check and SHALL NOT additionally produce an
+  argument-coverage warning, while a placeholder that declares a default is satisfied only when that
+  default is non-blank.
+
+Each unsatisfied required argument SHALL produce one validation warning with `code = REQUIRED`,
+`fieldName` = the argument name, and `path = "$.argumentTemplate.arguments"`, which makes the suite
+`isValid = false`.
+
+An argument name that is not declared in `inputSchema.properties` SHALL NOT produce a warning: JSON
+Schema permits additional properties by default, and `toolRef.inputSchema` is a client-supplied
+snapshot rather than a live read of the tool, so a stale snapshot must never invalidate a suite the
+tool would accept.
+
+The check SHALL degrade gracefully: when `toolRef` is absent, `toolRef.inputSchema` is absent, or the
+schema declares no `properties`, the check SHALL produce no warnings.
+
+The check SHALL apply to the top level of `inputSchema` only; `required` declared inside a nested
+object property is out of scope and SHALL NOT be evaluated.
+
+Because suite validity is recomputed on suite create/update, on clone, and on dataset-rooted
+revalidation, the check SHALL apply on all three paths.
+
+Status: **Implemented**
+
+Implementation notes: `service.domain.McpArgumentValidator` (effective-value resolution, invoked from
+`SuiteValidationService.validateMcpSuite`), `service.domain.JsonSchemaPropertyExtractor` (shared
+`properties`/`required` reading, also used by `MetricDefinitionValidationService`), and
+`TemplateVariableExtractor.parsePlaceholder` (single full-value placeholder parsing).
+
+#### Scenario: Required argument saved with an empty constant
+- **WHEN** an MCP_TOOL suite has `toolRef.inputSchema.required = ["repoName"]` and
+  `argumentTemplate.arguments = {"repoName": ""}`
+- **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a `REQUIRED` warning with
+  `fieldName = "repoName"` and `path = "$.argumentTemplate.arguments"`
+
+#### Scenario: Required argument missing from the template
+- **WHEN** an MCP_TOOL suite has `toolRef.inputSchema.required = ["repoName"]` and
+  `argumentTemplate.arguments` contains no `repoName` entry
+- **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a `REQUIRED` warning with
+  `fieldName = "repoName"`
+
+#### Scenario: Required argument set to null
+- **WHEN** an MCP_TOOL suite has `toolRef.inputSchema.required = ["repoName"]` and
+  `argumentTemplate.arguments = {"repoName": null}`
+- **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a `REQUIRED` warning with
+  `fieldName = "repoName"`
+
+#### Scenario: Required argument set to whitespace only
+- **WHEN** an MCP_TOOL suite has `toolRef.inputSchema.required = ["repoName"]` and
+  `argumentTemplate.arguments = {"repoName": "   "}`
+- **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a `REQUIRED` warning with
+  `fieldName = "repoName"`
+
+#### Scenario: Required argument bound to a blank constant
+- **WHEN** an MCP_TOOL suite has `toolRef.inputSchema.required = ["repoName"]`,
+  `argumentTemplate.arguments = {"repoName": "${{repo}}"}`, and an `inputBindings` entry for `repo`
+  whose `constantValue` is `""`
+- **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a `REQUIRED` warning with
+  `fieldName = "repoName"`
+
+#### Scenario: Required argument bound to a data field
+- **WHEN** an MCP_TOOL suite has `toolRef.inputSchema.required = ["repoName"]`,
+  `argumentTemplate.arguments = {"repoName": "${{repo}}"}`, and an `inputBindings` entry for `repo`
+  whose `dataField` names a field present in the dataset's `testCaseSchema`
+- **THEN** no argument-coverage warning SHALL be produced for `repoName`
+
+#### Scenario: Optional argument left empty
+- **WHEN** an MCP_TOOL suite declares `branch` in `inputSchema.properties` but not in
+  `inputSchema.required`, and `argumentTemplate.arguments = {"repoName": "dial", "branch": ""}`
+- **THEN** no warning SHALL be produced for `branch`
+
+#### Scenario: Argument not declared by the tool
+- **WHEN** `argumentTemplate.arguments` contains an entry whose name is absent from
+  `inputSchema.properties`
+- **THEN** no argument-coverage warning SHALL be produced for that argument
+
+#### Scenario: Required argument whose placeholder carries a blank default
+- **WHEN** an MCP_TOOL suite has `toolRef.inputSchema.required = ["repoName"]`,
+  `argumentTemplate.arguments = {"repoName": "${{repo:}}"}`, and no binding for `repo`
+- **THEN** `isValid` SHALL be `false` and `validationWarnings` SHALL include a `REQUIRED` warning with
+  `fieldName = "repoName"`
+
+#### Scenario: Required argument whose placeholder carries a usable default
+- **WHEN** an MCP_TOOL suite has `toolRef.inputSchema.required = ["repoName"]`,
+  `argumentTemplate.arguments = {"repoName": "${{repo:main}}"}`, and no binding for `repo`
+- **THEN** no argument-coverage warning SHALL be produced for `repoName`
+
+#### Scenario: Tool schema absent or without properties
+- **WHEN** an MCP_TOOL suite has no `toolRef`, a `toolRef` without `inputSchema`, or an `inputSchema`
+  declaring no `properties`
+- **THEN** the argument-coverage check SHALL contribute no warnings and `isValid` SHALL be determined
+  by the other MCP checks alone
+
+#### Scenario: Nested required properties are not evaluated
+- **WHEN** `inputSchema.properties.filters` is an object schema declaring its own `required` list, and
+  the corresponding argument value supplies an object missing one of those nested properties
+- **THEN** no argument-coverage warning SHALL be produced for the nested property
+
+#### Scenario: Coverage re-checked on clone and revalidation
+- **WHEN** an MCP_TOOL suite with an unsatisfied required argument is cloned, or its bound dataset's
+  `testCaseSchema` is updated and the dataset-rooted revalidation task refreshes the suite
+- **THEN** the resulting suite's `isValid` SHALL be `false` with the same `REQUIRED` warning
+
 ### Requirement: Suite response includes type and MCP fields
 
 The `TestSuiteResponseDto` SHALL include `suiteType` and the MCP-specific fields when applicable.
@@ -554,7 +672,7 @@ Status: **Implemented**
 - **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `overallScore`
 
 ### Requirement: Per-suite `overallScoreThreshold` on the suite API
-The suite create and update request bodies SHALL accept an optional `overallScoreThreshold` field — a numeric value (same type as the computed run-level `overall` metric score result) that a client can compare a run's `overall` score against. The system SHALL persist it verbatim to `test_suites.overall_score_threshold` (`DOUBLE PRECISION`) and SHALL return it on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `overallScoreThreshold` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. The system SHALL reject a value outside the inclusive range `0.0`–`1.0` with HTTP 400 `VALIDATION_ERROR` at write time and SHALL NOT persist it. The system SHALL NOT perform any comparison against a run's computed `overall` score — evaluating the threshold against a run's result is a client-side concern.
+The suite create and update request bodies SHALL accept an optional `overallScoreThreshold` field — a numeric value (same type as the computed run-level `overall` metric score result) that a client can compare a run's `overall` score against, and that the system uses to derive a per-row `passed` value on each run's `EvalSummary` rows (see `eval-summary-scoring`). The system SHALL persist it verbatim to `test_suites.overall_score_threshold` (`DOUBLE PRECISION`) and SHALL return it on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `overallScoreThreshold` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. The system SHALL reject a value outside the inclusive range `0.0`–`1.0` with HTTP 400 `VALIDATION_ERROR` at write time and SHALL NOT persist it. At snapshot time (run start), the suite's current `overallScoreThreshold` SHALL be captured into the run's `SuiteSnapshotDto` (see `suite-run-snapshot`) and used thereafter to compute each row's `passed`; the system SHALL NOT perform any comparison against the run-level computed `overall` metric score result itself — evaluating the threshold against that run-level aggregate remains a client-side concern.
 Status: **Implemented**
 
 #### Scenario: Set overallScoreThreshold on update and read it back
@@ -584,6 +702,34 @@ Status: **Implemented**
 #### Scenario: Boundary values 0.0 and 1.0 are accepted
 - **WHEN** client submits `overallScoreThreshold` equal to `0.0` or `1.0`
 - **THEN** system SHALL accept and persist the value
+
+#### Scenario: Threshold is captured into the run snapshot at run start
+- **WHEN** a run is started for a suite carrying `overallScoreThreshold`
+- **THEN** the run's `SuiteSnapshotDto.overallScoreThreshold` SHALL equal the suite's current value at that moment, and subsequent edits to the suite's `overallScoreThreshold` SHALL NOT affect that run's already-computed or future `passed` values
+
+### Requirement: Per-suite `testCaseOverallScore` on the suite API
+The suite create and update request bodies SHALL accept an optional `testCaseOverallScore` field — a JSON object holding the same `OverallScoreDefinition` shape as `overallScore` (`Mean`, `WeightedMean`, or `CustomFunction`). When present, `testCaseOverallScore` SHALL be used instead of `overallScore` to drive per-row `score`/`passed` computation on a run's `EvalSummary` rows (see `eval-summary-scoring`); when absent, per-row scoring SHALL fall back to `overallScore`. The system SHALL persist it verbatim to `test_suites.test_case_overall_score` (JSONB) and SHALL return it, as a JSON object, on the suite read (`GET`) and in create/update responses. When omitted or `null`, the column SHALL be left/stored as NULL. `testCaseOverallScore` SHALL NOT affect suite validity (`isValid`/`validationWarnings`); suite validity remains configuration-only. `testCaseOverallScore` SHALL NOT affect Phase 3's run-level `overall` metric-score result, which SHALL always be computed from `overallScore` regardless of whether `testCaseOverallScore` is configured.
+Status: **Implemented**
+
+#### Scenario: Set testCaseOverallScore independently of overallScore
+- **WHEN** client calls `PUT /api/v1/test-suites/{id}` with a `testCaseOverallScore` object that differs from the suite's `overallScore`
+- **THEN** system SHALL persist and return both fields independently, and a subsequent `GET /api/v1/test-suites/{id}` SHALL return the same value for each
+
+#### Scenario: Omitted testCaseOverallScore leaves the column null
+- **WHEN** client creates or updates a suite without a `testCaseOverallScore` field
+- **THEN** system SHALL store `test_case_overall_score` as NULL and the suite response SHALL omit `testCaseOverallScore` (or return it as null)
+
+#### Scenario: testCaseOverallScore does not affect suite validity
+- **WHEN** client sets `testCaseOverallScore` on an otherwise valid suite
+- **THEN** the suite's `isValid` and `validationWarnings` SHALL be unchanged by the presence or content of `testCaseOverallScore`
+
+#### Scenario: Clone inherits the source testCaseOverallScore
+- **WHEN** a suite carrying a `testCaseOverallScore` is cloned
+- **THEN** the cloned suite SHALL inherit the same `testCaseOverallScore` (as with `overallScore`)
+
+#### Scenario: testCaseOverallScore does not affect the run-level overall aggregate
+- **WHEN** a suite has both `overallScore` and `testCaseOverallScore` configured with different definitions
+- **THEN** Phase 3's run-level `overall` metric-score result SHALL be computed from `overallScore` only, unaffected by `testCaseOverallScore`
 
 ### Requirement: Per-suite `testCaseFilter` on the suite API
 The suite create and update request bodies SHALL accept an optional `testCaseFilter` field — a JSON
@@ -698,7 +844,10 @@ Status: **Implemented**
 - FilterWhitelists: `TEST_SUITES` — `suiteType` (EQ, IN), `id` (EQ, IN), `description` (CO), `updatedAt` (GT, GTE, LT, LTE), plus existing `name`, `createdBy`, `createdAt`
 - `overallScore` (per-suite): DTO fields `TestSuiteRequestDto.overallScore` / `TestSuiteResponseDto.overallScore` (`Map<String, Object>`), per the JSONB-as-object convention. Conversion via `JsonbMapper.mapOverallScore(Map)` (write) / `mapOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` (clone already preserves it via `toCloneEntity`). Column pre-exists: `V1.23__AddOverallScoreToTestSuites.sql` (no new migration).
 - `testCaseFilter` (per-suite): DTO fields `TestSuiteRequestDto.testCaseFilter` / `TestSuiteResponseDto.testCaseFilter` (`Map<String, Object>`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseFilter`. Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` / `toRequestDto` / `toCloneEntity`. New column: `V1.24__AddTestCaseFilterToTestSuites.sql` (`test_case_filter JSONB`), then `./gradlew generateJooq`. Write-time validation delegates to `RunnableTestCaseSelector.validateFilter(datasetId, filterJson)` from `TestSuiteService` (see `suite-test-case-filter`).
-- `overallScoreThreshold` (per-suite): DTO fields `TestSuiteRequestDto.overallScoreThreshold` / `TestSuiteResponseDto.overallScoreThreshold` (`Double`) — a plain scalar column, not JSONB (unlike `overallScore`/`testCaseFilter`), mapped directly with no `JsonbMapper` conversion. Model field: `TestSuite.overallScoreThreshold` (`Double`). Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` / `toRequestDto` / `toCloneEntity`; record mapping in `TestSuiteRecordMapper`. Repository: `PostgresTestSuiteRepository` sets `TEST_SUITES.OVERALL_SCORE_THRESHOLD` alongside `TEST_SUITES.OVERALL_SCORE` in the create, update, and clone-create statements. New column: `V1.25__AddOverallScoreThresholdToTestSuites.sql` (`overall_score_threshold DOUBLE PRECISION`), then `./gradlew generateJooq`. Range validation via `@DecimalMin`/`@DecimalMax` on `TestSuiteRequestDto.overallScoreThreshold`, with bound literals and message in `ValidationConstants` (`MIN_OVERALL_SCORE_THRESHOLD` = `"0.0"`, `MAX_OVERALL_SCORE_THRESHOLD` = `"1.0"`, `OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE`). Not included in `SuiteSnapshotDto`/`SuiteSnapshotBuilder` — reflects the suite's current configured value, not captured per-run.
+- `overallScoreThreshold` (per-suite): DTO fields `TestSuiteRequestDto.overallScoreThreshold` / `TestSuiteResponseDto.overallScoreThreshold` (`Double`) — a plain scalar column, not JSONB (unlike `overallScore`/`testCaseFilter`), mapped directly with no `JsonbMapper` conversion. Model field: `TestSuite.overallScoreThreshold` (`Double`). Mapping in `TestSuiteMapper` `toEntity` / `update` / `toDto` / `toRequestDto` / `toCloneEntity`; record mapping in `TestSuiteRecordMapper`. Repository: `PostgresTestSuiteRepository` sets `TEST_SUITES.OVERALL_SCORE_THRESHOLD` alongside `TEST_SUITES.OVERALL_SCORE` in the create, update, and clone-create statements. New column: `V1.25__AddOverallScoreThresholdToTestSuites.sql` (`overall_score_threshold DOUBLE PRECISION`), then `./gradlew generateJooq`. Range validation via `@DecimalMin`/`@DecimalMax` on `TestSuiteRequestDto.overallScoreThreshold`, with bound literals and message in `ValidationConstants` (`MIN_OVERALL_SCORE_THRESHOLD` = `"0.0"`, `MAX_OVERALL_SCORE_THRESHOLD` = `"1.0"`, `OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE`).
+- Now captured into `SuiteSnapshotDto.overallScoreThreshold` by `SuiteSnapshotBuilder` at run-start (see `suite-run-snapshot`) and used to derive each row's `passed` (see `eval-summary-scoring`). The suite's *live* threshold remains editable independently of any already-started run.
+- `testCaseOverallScore` (per-suite): DTO field `TestSuiteRequestDto.testCaseOverallScore` (`OverallScoreDefinition`, `@Valid`, no `example`/response-DTO split noted beyond the discriminated-type shape shared with `overallScore`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseOverallScore(OverallScoreDefinition)` (write) / `mapTestCaseOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `toDto` / `toRequestDto` / `toCloneEntity` (raw JSONB string copied verbatim, same as `overallScore`). Model field: `TestSuite.testCaseOverallScore` (`String`, raw JSON); record mapping in `TestSuiteRecordMapper`. New column: `V1.31__AddTestCaseOverallScoreToTestSuites.sql` (`test_case_overall_score JSONB`), then `./gradlew generateJooq`. Not referenced anywhere in `SuiteValidationService` — exempt from `isValid`/`validationWarnings` exactly like `overallScore`.
+- Now captured into `SuiteSnapshotDto.testCaseOverallScore` by `SuiteSnapshotBuilder` at run-start (see `suite-run-snapshot`); `TestSuiteEvaluationJob.buildMetricEvaluationContext` resolves the fallback once, per run, before Phase 2 starts: `snapshot.getTestCaseOverallScore() != null ? ... : snapshot.getOverallScore()`. Phase 3's `MetricScoreComputationContext` always uses `snapshot.getOverallScore()` directly — the fallback is a Phase-2-only concern (see `eval-summary-scoring`).
 
 ## Open Questions / TODO
 - Add explicit validation rules for `name`/`description` in DTOs (current behavior depends on DTO constraints).

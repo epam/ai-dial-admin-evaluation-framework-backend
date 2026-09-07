@@ -50,7 +50,14 @@ public class OpenApiExampleCustomizer implements OpenApiCustomizer {
     }
 
     private static String pathToKey(String path) {
-        return path.replace("/", "-").replaceFirst("^-", "").replace("{", "").replace("}", "");
+        // Trailing-wildcard mappings (slash-containing path values, e.g. deployment IDs) are registered
+        // by SpringDoc with the '/**' intact. Dropping it keeps example filenames free of '*', which is
+        // illegal on Windows and shell-glob-hostile everywhere.
+        return path.replaceAll("/\\*\\*$", "")
+                .replace("/", "-")
+                .replaceFirst("^-", "")
+                .replace("{", "")
+                .replace("}", "");
     }
 
     private void injectRequestExamples(io.swagger.v3.oas.models.Operation operation, String pathKey, String method) {

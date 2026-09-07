@@ -1,12 +1,17 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
+import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
+import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
+import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
@@ -14,14 +19,17 @@ import com.epam.aidial.evaluation.service.domain.ConditionContext;
 import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseEvalScoreService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
 import io.opentelemetry.context.Context;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -61,6 +69,10 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private final ObjectMapper objectMapper;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
     private final ConditionExpressionEvaluator conditionExpressionEvaluator;
+    private final RunMetricSnapshotRepository runMetricSnapshotRepository;
+    private final MetricFieldDiscoverer metricFieldDiscoverer;
+    private final EvalSummaryRowScoreComputer evalSummaryRowScoreComputer;
+    private final TestCaseEvalScoreService testCaseEvalScoreService;
     private final Clock clock;
 
     @Override
@@ -79,6 +91,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 context.getAggregatedTsmds().size());
 
         writeRunMetricSnapshots(context);
+        List<String> metricFieldNames = discoverMetricFieldNames(context);
 
         Map<String, Semaphore> providerSemaphores = buildProviderSemaphores(context);
         List<FilterCondition> filters = buildRunIdFilters(context);
@@ -115,11 +128,11 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     }
                 }
 
-                flushIfNeeded(buffer, context);
+                flushIfNeeded(buffer, context, metricFieldNames);
                 cursor = page.nextCursor();
             } while (cursor != null);
         } finally {
-            flushRemaining(buffer, context);
+            flushRemaining(buffer, context, metricFieldNames);
             executor.shutdownNow();
         }
 
@@ -148,6 +161,19 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 snapshots.size(),
                 context.getTestSuiteRunId(),
                 context.getComputationId());
+    }
+
+    /**
+     * The run's discovered numeric metric field names, read back once via the same
+     * {@link MetricFieldDiscoverer} Phase 3 uses — so a {@code Mean} overall score's divisor can never
+     * disagree between the two phases for the same run. One query per {@link #execute} call, not per flush.
+     */
+    private List<String> discoverMetricFieldNames(MetricEvaluationContext context) {
+        List<RunMetricSnapshot> snapshots = runMetricSnapshotRepository.findByRunIdAndComputationId(
+                context.getTestSuiteRunId(), context.getComputationId());
+        return metricFieldDiscoverer.discover(snapshots).stream()
+                .map(MetricField::flattenedName)
+                .toList();
     }
 
     private Map<String, Semaphore> buildProviderSemaphores(MetricEvaluationContext context) {
@@ -346,6 +372,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             ObjectNode metricInfos,
             long metricEvalDurationMs) {
         return EvalSummaryBatchWriteItemDto.builder()
+                .id(UUID.randomUUID())
                 .testCaseRunResultId(result.getId())
                 .testCaseId(result.getTestCaseId())
                 .testCaseName(result.getTestCaseName())
@@ -378,19 +405,22 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
         }
     }
 
-    private void flushIfNeeded(List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context) {
+    private void flushIfNeeded(
+            List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
         if (buffer.size() >= context.getBatchSize()) {
-            doFlush(buffer, context);
+            doFlush(buffer, context, metricFieldNames);
         }
     }
 
-    private void flushRemaining(List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context) {
+    private void flushRemaining(
+            List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
         if (!buffer.isEmpty()) {
-            doFlush(buffer, context);
+            doFlush(buffer, context, metricFieldNames);
         }
     }
 
-    private void doFlush(List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context) {
+    private void doFlush(
+            List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
         try {
             evalSummaryBatchWriteClient.batchWrite(
                     context.getTestSuiteId(),
@@ -399,6 +429,9 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     context.getComputedAtMs(),
                     new ArrayList<>(buffer));
             log.debug("Flushed {} eval summaries for run {}", buffer.size(), context.getTestSuiteRunId());
+
+            writeRowScores(buffer, context, metricFieldNames);
+
             buffer.clear();
         } catch (RuntimeException e) {
             log.error(
@@ -409,5 +442,57 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             context.getCancellationSignal().set(true);
             buffer.clear();
         }
+    }
+
+    /**
+     * Computes and writes per-row {@code score}/{@code passed} for this flush's batch, right after its
+     * {@code test_case_eval_summaries} rows are committed — one extra SQL query per batch (not per row),
+     * reusing {@link EvalSummaryRowScoreComputer}. Skipped entirely when the suite has no {@code overallScore}
+     * definition. A batch-write failure here is logged but does not cancel the run: score/passed are
+     * regenerable derived data, unlike the eval summaries themselves.
+     */
+    private void writeRowScores(
+            List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
+        if (context.getOverallScoreDefinition() == null) {
+            return;
+        }
+        try {
+            List<UUID> rowIds =
+                    buffer.stream().map(EvalSummaryBatchWriteItemDto::getId).toList();
+            Map<UUID, Double> scoresById = evalSummaryRowScoreComputer.computeBatch(
+                    context.getOverallScoreDefinition(),
+                    metricFieldNames,
+                    context.getTestSuiteRunId(),
+                    context.getComputationId(),
+                    rowIds);
+            if (scoresById.isEmpty()) {
+                return;
+            }
+            List<TestCaseEvalScoreBatchWriteItemDto> items = buffer.stream()
+                    .filter(item -> scoresById.containsKey(item.getId()))
+                    .map(item -> toScoreItem(item, scoresById.get(item.getId()), context))
+                    .toList();
+            testCaseEvalScoreService.batchCreate(context.getComputedAtMs(), items);
+            log.debug("Wrote {} eval summary scores for run {}", items.size(), context.getTestSuiteRunId());
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Per-row score computation/write failed for run {}, computation {}: {}",
+                    context.getTestSuiteRunId(),
+                    context.getComputationId(),
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+    private TestCaseEvalScoreBatchWriteItemDto toScoreItem(
+            EvalSummaryBatchWriteItemDto item, Double score, MetricEvaluationContext context) {
+        Boolean passed = (score != null && context.getOverallScoreThreshold() != null)
+                ? score >= context.getOverallScoreThreshold()
+                : null;
+        return TestCaseEvalScoreBatchWriteItemDto.builder()
+                .evalSummaryId(item.getId())
+                .score(score)
+                .passed(passed)
+                .build();
     }
 }

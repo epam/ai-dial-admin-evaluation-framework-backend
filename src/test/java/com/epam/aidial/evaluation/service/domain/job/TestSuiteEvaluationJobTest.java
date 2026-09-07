@@ -24,6 +24,7 @@ import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputati
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
@@ -427,6 +428,55 @@ class TestSuiteEvaluationJobTest {
 
             assertThat(context.requestLabelAt(0)).isNull();
             assertThat(context.requestLabelAt(1)).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("buildMetricEvaluationContext — overallScoreDefinition fallback")
+    class OverallScoreDefinitionFallback {
+
+        @Test
+        @DisplayName("prefers testCaseOverallScore over overallScore when both are configured")
+        void prefersTestCaseOverallScoreWhenPresent() throws Exception {
+            Mean overallScore = new Mean();
+            Mean testCaseOverallScore = new Mean();
+            SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                    .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                    .suiteType("DEPLOYMENT")
+                    .overallScore(overallScore)
+                    .testCaseOverallScore(testCaseOverallScore)
+                    .build();
+            TestSuiteRun run = TestSuiteRun.builder()
+                    .id(UUID.randomUUID())
+                    .testSuiteId(UUID.randomUUID())
+                    .suiteSnapshot(objectMapper.writeValueAsString(snapshot))
+                    .build();
+
+            MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
+
+            assertThat(context.getOverallScoreDefinition()).isEqualTo(testCaseOverallScore);
+        }
+
+        @Test
+        @DisplayName("falls back to overallScore when testCaseOverallScore is absent")
+        void fallsBackToOverallScoreWhenTestCaseOverallScoreAbsent() throws Exception {
+            Mean overallScore = new Mean();
+            SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                    .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                    .suiteType("DEPLOYMENT")
+                    .overallScore(overallScore)
+                    .build();
+            TestSuiteRun run = TestSuiteRun.builder()
+                    .id(UUID.randomUUID())
+                    .testSuiteId(UUID.randomUUID())
+                    .suiteSnapshot(objectMapper.writeValueAsString(snapshot))
+                    .build();
+
+            MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
+
+            assertThat(context.getOverallScoreDefinition()).isEqualTo(overallScore);
         }
     }
 

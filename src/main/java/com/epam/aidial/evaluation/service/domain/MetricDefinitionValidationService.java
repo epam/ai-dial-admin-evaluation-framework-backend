@@ -30,6 +30,7 @@ public class MetricDefinitionValidationService {
     private final ObjectMapper objectMapper;
     private final ValidationWarningsSerializer warningsSerializer;
     private final OutputSchemaFieldExtractor outputSchemaFieldExtractor;
+    private final JsonSchemaPropertyExtractor jsonSchemaPropertyExtractor;
 
     /**
      * Validates config and input bindings against their respective metric schemas and the suite context.
@@ -97,8 +98,8 @@ public class MetricDefinitionValidationService {
             List<ValidationWarningDto> warnings) {
         if (bindings == null || bindings.isEmpty()) {
             // Still need to check required properties with no bindings
-            Set<String> schemaProperties = extractSchemaPropertyNames(schemaJson);
-            Set<String> requiredProperties = extractRequiredPropertyNames(schemaJson);
+            Set<String> schemaProperties = jsonSchemaPropertyExtractor.propertyNames(schemaJson);
+            Set<String> requiredProperties = jsonSchemaPropertyExtractor.requiredNames(schemaJson);
             for (String required : requiredProperties) {
                 if (schemaProperties.contains(required)) {
                     warnings.add(buildWarning(
@@ -111,8 +112,8 @@ public class MetricDefinitionValidationService {
             return;
         }
 
-        Set<String> schemaProperties = extractSchemaPropertyNames(schemaJson);
-        Set<String> requiredProperties = extractRequiredPropertyNames(schemaJson);
+        Set<String> schemaProperties = jsonSchemaPropertyExtractor.propertyNames(schemaJson);
+        Set<String> requiredProperties = jsonSchemaPropertyExtractor.requiredNames(schemaJson);
         Set<String> boundProperties = new HashSet<>();
 
         for (MetricParameterBindingDto binding : bindings) {
@@ -183,48 +184,6 @@ public class MetricDefinitionValidationService {
                             "Required property '" + required + "' has no binding"));
                 }
             }
-        }
-    }
-
-    private Set<String> extractSchemaPropertyNames(String schemaJson) {
-        if (schemaJson == null || schemaJson.isBlank()) {
-            return Collections.emptySet();
-        }
-        try {
-            JsonNode schema = objectMapper.readTree(schemaJson);
-            JsonNode properties = schema.get("properties");
-            if (properties == null || !properties.isObject()) {
-                return Collections.emptySet();
-            }
-            Set<String> names = new HashSet<>();
-            properties.propertyNames().forEach(names::add);
-            return names;
-        } catch (JacksonException e) {
-            log.warn("Failed to parse metric schema JSON, skipping property checks: {}", e.getMessage(), e);
-            return Collections.emptySet();
-        }
-    }
-
-    private Set<String> extractRequiredPropertyNames(String schemaJson) {
-        if (schemaJson == null || schemaJson.isBlank()) {
-            return Collections.emptySet();
-        }
-        try {
-            JsonNode schema = objectMapper.readTree(schemaJson);
-            JsonNode required = schema.get("required");
-            if (required == null || !required.isArray()) {
-                return Collections.emptySet();
-            }
-            Set<String> names = new HashSet<>();
-            required.forEach(node -> {
-                if (node.isString()) {
-                    names.add(node.asString());
-                }
-            });
-            return names;
-        } catch (JacksonException e) {
-            log.warn("Failed to parse metric schema required array: {}", e.getMessage(), e);
-            return Collections.emptySet();
         }
     }
 

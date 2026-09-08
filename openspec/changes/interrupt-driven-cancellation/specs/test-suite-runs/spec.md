@@ -1,5 +1,62 @@
 ## MODIFIED Requirements
 
+### Requirement: Trigger a test suite run
+The service SHALL provide `POST /api/v1/test-suites/{testSuiteId}/runs` to create and trigger a new test suite run. The endpoint SHALL validate the request, verify the suite is bound to a dataset, persist a run record with status PENDING (including `testRunName` and `numberOfTestCases` snapshot), dispatch an async job, and return the run details immediately (without waiting for job completion). The unbound-suite guard (`datasetId IS NULL`) SHALL run before the `valid = false` check, so unbound suites SHALL surface as HTTP 409 with error code `SUITE_HAS_NO_DATASET` regardless of their validation state. An additional **run-time presence check** SHALL be performed after the `valid = false` guard: the service SHALL count the runnable test cases for the bound dataset — those that are valid and (when the suite has a `testCaseFilter`) match that filter — and if the count is zero, SHALL respond with HTTP 409 `INVALID_OPERATION` with message "Suite has no valid and enabled test cases". No run record SHALL be persisted and no async job SHALL be dispatched when this check fails. The count SHALL NOT consider any other exclusion source; `test_suites.disabled_test_case_ids` is not read.
+
+Guard order:
+1. Suite not found → 404 `NOT_FOUND`
+2. Unbound (`datasetId == null`) → 409 `SUITE_HAS_NO_DATASET`
+3. Config-invalid (`isValid == false`) → 409 `INVALID_OPERATION`
+4. Zero runnable test cases → 409 `INVALID_OPERATION`
+5. Concurrent run limits → 429 `TOO_MANY_REQUESTS`
+
+Status: **Implemented**
+
+#### Scenario: Successful run trigger
+- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` with a valid `RunConfigDto` body and the test suite exists and is bound to a dataset
+- **THEN** system SHALL create a `test_suite_runs` record with status `PENDING`, populate `testRunName` (from config or auto-generated), snapshot `numberOfTestCases` from the bound dataset's runnable test case count (valid, and matching `testCaseFilter` when set), dispatch an async evaluation job on the dedicated executor, and return HTTP 202 Accepted with the `TestSuiteRunResponseDto`
+
+#### Scenario: Test suite not found
+- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` with a non-existent `testSuiteId`
+- **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
+
+#### Scenario: Unbound suite (datasetId is null) rejected
+- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` for an existing suite whose `datasetId IS NULL`
+- **THEN** system SHALL respond with HTTP 409 and error code `SUITE_HAS_NO_DATASET`; no run record SHALL be persisted and no async job SHALL be dispatched; this check SHALL run before the `valid = false` guard so the dataset-binding failure mode is reported even when the suite would also fail validation
+
+#### Scenario: Invalid run configuration
+- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` with an invalid body (e.g., `numberOfRuns` is null, zero, negative, or exceeds maximum)
+- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
+
+#### Scenario: Global concurrent run limit exceeded
+- **WHEN** client triggers a run but the total count of active (PENDING + RUNNING + CANCELLING) runs across all suites has reached the configured global limit
+- **THEN** system SHALL respond with HTTP 429 Too Many Requests with error code `TOO_MANY_REQUESTS` and a message indicating the global limit was reached, including current and maximum counts in `details`
+
+#### Scenario: Per-suite concurrent run limit exceeded
+- **WHEN** client triggers a run but the count of active (PENDING + RUNNING + CANCELLING) runs for the target test suite has reached the configured per-suite limit
+- **THEN** system SHALL respond with HTTP 429 Too Many Requests with error code `TOO_MANY_REQUESTS` and a message indicating the per-suite limit was reached, including current and maximum counts in `details`
+
+#### Scenario: Test suite not in valid state
+- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` for a bound test suite that has `valid = false` (failed validation)
+- **THEN** system SHALL respond with HTTP 409 Conflict and error code `INVALID_OPERATION` with a message indicating the test suite is not in a valid state (this check applies only to suites that pass the `SUITE_HAS_NO_DATASET` guard)
+
+#### Scenario: Bound suite with no runnable test cases rejected
+- **WHEN** client calls `POST /api/v1/test-suites/{testSuiteId}/runs` for a config-valid, bound suite whose dataset has zero runnable test cases — because none are valid, or none match the suite's `testCaseFilter`
+- **THEN** system SHALL respond with HTTP 409 Conflict and error code `INVALID_OPERATION` with message "Suite has no valid and enabled test cases"; no run record SHALL be persisted and no async job SHALL be dispatched
+
+#### Scenario: Runnable count ignores legacy stored exclusions
+- **WHEN** a config-valid, bound suite carries a non-empty `test_suites.disabled_test_case_ids` value stored by an earlier version of the product
+- **THEN** the runnable count and the persisted `numberOfTestCases` SHALL equal the number of valid, `testCaseFilter`-matching test cases in the dataset, as if the stored value were empty
+- **AND** a `testCaseFilter` matching only test cases named in that stored value SHALL still produce a successful run (no 409)
+
+#### Scenario: Runnable count honors testCaseFilter
+- **WHEN** a config-valid, bound suite has valid test cases but its `testCaseFilter` matches a non-empty subset of them
+- **THEN** the zero-runnable guard SHALL pass and the persisted `numberOfTestCases` SHALL equal the count of the filter-matching subset
+
+#### Scenario: Executor rejects job submission
+- **WHEN** the run is created successfully but the dedicated executor's queue is full and max pool size is reached at async dispatch time
+- **THEN** the run SHALL have been persisted with status PENDING and HTTP 202 returned to the client. The service SHALL catch `RejectedExecutionException` in the post-commit callback, mark the run as FAILED with error category `RESOURCE_LIMIT` and code `EXECUTOR_REJECTED`, and log a warning
+
 ### Requirement: Run status lifecycle
 Each test suite run SHALL have a status that follows a defined lifecycle. Valid statuses are: `PENDING`, `RUNNING`, `CANCELLING`, `COMPLETED`, `FAILED`, `CANCELLED`. `CANCELLING` is a non-terminal status meaning "cancellation was requested while the run was RUNNING and the async job has not yet finalized it". Status transitions SHALL be enforced.
 Status: **Implemented**
@@ -27,6 +84,78 @@ Status: **Implemented**
 #### Scenario: Terminal status is immutable
 - **WHEN** a run has reached a terminal status (COMPLETED, FAILED, or CANCELLED)
 - **THEN** no further status transitions SHALL occur
+
+### Requirement: List test suite runs (paginated)
+The service SHALL provide `GET /api/v1/test-suite-runs` to list runs with filtering, sorting, and pagination. Filterable fields SHALL include: `testSuiteId` (UUID, `eq`/`in`), `id` (UUID, `eq`/`in`), `status` (STRING, `eq`/`ne`/`in`), `testRunName` (STRING, `eq`/`ne`/`co`/`in`), `createdAt` (LONG epoch ms, `gt`/`gte`/`lt`/`lte`), `startedAt` (LONG epoch ms, `gt`/`gte`/`lt`/`lte`), `completedAt` (LONG epoch ms, `gt`/`gte`/`lt`/`lte`).
+Status: **Implemented**
+
+#### Scenario: Default pagination
+- **WHEN** client calls `GET /api/v1/test-suite-runs` without pagination params
+- **THEN** response SHALL be a `PageResponseDto<TestSuiteRunResponseDto>` with default `page=0` and `size=100` (matching project-wide pagination default)
+
+#### Scenario: Pagination bounds
+- **WHEN** client calls `GET /api/v1/test-suite-runs?page=<p>&size=<s>`
+- **THEN** `page` SHALL be >= 0 and `size` SHALL be between 1 and the configured maximum page size
+
+#### Scenario: Filter by testSuiteId
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=testSuiteId:eq:<uuid>`
+- **THEN** system SHALL return only runs belonging to that test suite
+
+#### Scenario: Filter by id (equality)
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=id:eq:<uuid>`
+- **THEN** system SHALL return only the run with that exact id
+
+#### Scenario: Filter by id (set membership)
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=id:in:<uuid1>,<uuid2>`
+- **THEN** system SHALL return only runs whose id appears in the provided set
+
+#### Scenario: Filter by status
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=status:eq:RUNNING`
+- **THEN** system SHALL return only runs with status RUNNING
+
+#### Scenario: Filter by testRunName
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=testRunName:eq:My Regression Test`
+- **THEN** system SHALL return only runs with matching `testRunName`
+
+#### Scenario: Filter by createdAt range
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=createdAt:ge:1735689600000&filter=createdAt:lt:1738368000000`
+- **THEN** system SHALL return only runs created within the specified epoch ms range
+
+#### Scenario: Filter by startedAt range
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=startedAt:ge:<epochMs>`
+- **THEN** system SHALL return only runs where `startedAt` is greater than or equal to the given epoch ms value; runs with null `startedAt` SHALL be excluded
+
+#### Scenario: Filter by startedAt upper bound
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=startedAt:lt:<epochMs>`
+- **THEN** system SHALL return only runs where `startedAt` is strictly less than the given epoch ms value; runs with null `startedAt` SHALL be excluded
+
+#### Scenario: Filter by completedAt range
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=completedAt:ge:<epochMs>`
+- **THEN** system SHALL return only runs where `completedAt` is greater than or equal to the given epoch ms value; runs with null `completedAt` (PENDING, RUNNING or CANCELLING runs) SHALL be excluded
+
+#### Scenario: Filter by completedAt upper bound
+- **WHEN** client calls `GET /api/v1/test-suite-runs?filter=completedAt:lt:<epochMs>`
+- **THEN** system SHALL return only runs where `completedAt` is strictly less than the given epoch ms value; runs with null `completedAt` SHALL be excluded
+
+#### Scenario: Multiple filters combined with AND
+- **WHEN** client provides multiple `filter` parameters
+- **THEN** system SHALL apply all filters using AND combination
+
+#### Scenario: Sorting
+- **WHEN** client calls `GET /api/v1/test-suite-runs?sort=createdAt,desc`
+- **THEN** system SHALL sort results by `createdAt` descending
+
+#### Scenario: Default sort order
+- **WHEN** client calls `GET /api/v1/test-suite-runs` without `sort` parameter
+- **THEN** system SHALL sort by `createdAt` descending (most recent first)
+
+#### Scenario: Sortable fields
+- **WHEN** client calls `GET /api/v1/test-suite-runs?sort=<field>,<dir>`
+- **THEN** system SHALL support sorting by: `createdAt`, `startedAt`, `completedAt`, `status`, `testRunName`
+
+#### Scenario: Include total count
+- **WHEN** client calls `GET /api/v1/test-suite-runs?includeTotalCount=true`
+- **THEN** response SHALL include `totalElements` and `totalPages`
 
 ### Requirement: TestSuiteRunResponseDto structure
 The response DTO for a test suite run SHALL include all relevant run information, including the extended `runConfig` with execution and retry settings.
@@ -75,6 +204,74 @@ Status: **Implemented**
 #### Scenario: Cancel non-existent run
 - **WHEN** client calls `POST /api/v1/test-suite-runs/{id}/cancel` for a non-existent id
 - **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
+
+### Requirement: Delete a test suite run
+The service SHALL provide `DELETE /api/v1/test-suite-runs/{id}` to delete a run and its related resources. Only runs in a terminal status (COMPLETED, FAILED, CANCELLED) MAY be deleted. PENDING and RUNNING runs MUST be cancelled first; a CANCELLING run MUST finish cancelling first.
+Status: **Implemented**
+
+#### Scenario: Delete terminal run
+- **WHEN** client calls `DELETE /api/v1/test-suite-runs/{id}` for a run with status COMPLETED, FAILED, or CANCELLED
+- **THEN** system SHALL delete the run record (and any future related resources via CASCADE) and return HTTP 204 No Content
+
+#### Scenario: Delete RUNNING run rejected
+- **WHEN** client calls `DELETE /api/v1/test-suite-runs/{id}` for a run with status RUNNING
+- **THEN** system SHALL respond with HTTP 409 Conflict and error code `INVALID_OPERATION` with a message suggesting to cancel the run first
+
+#### Scenario: Delete PENDING run rejected
+- **WHEN** client calls `DELETE /api/v1/test-suite-runs/{id}` for a run with status PENDING
+- **THEN** system SHALL respond with HTTP 409 Conflict and error code `INVALID_OPERATION` with a message indicating that PENDING runs must complete or be cancelled before deletion
+
+#### Scenario: Delete CANCELLING run rejected
+- **WHEN** client calls `DELETE /api/v1/test-suite-runs/{id}` for a run with status CANCELLING
+- **THEN** system SHALL respond with HTTP 409 Conflict and error code `INVALID_OPERATION` with a message indicating the run is still being cancelled
+
+#### Scenario: Delete non-existent run
+- **WHEN** client calls `DELETE /api/v1/test-suite-runs/{id}` for a non-existent id
+- **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
+
+#### Scenario: Cascade delete on test suite removal
+- **WHEN** a test suite is deleted via `DELETE /api/v1/test-suites/{id}`
+- **THEN** all associated test suite runs SHALL be deleted automatically via database CASCADE
+
+### Requirement: SSE status stream
+The service SHALL provide `GET /api/v1/test-suite-runs/status-stream` as a Server-Sent Events endpoint for real-time run status updates. Clients MAY filter which updates they receive via query parameters.
+Status: **Implemented**
+
+#### Scenario: Connect without filters (all updates)
+- **WHEN** client connects to `GET /api/v1/test-suite-runs/status-stream` without query parameters
+- **THEN** system SHALL stream status update events for ALL runs
+
+#### Scenario: Filter by runIds
+- **WHEN** client connects with `?runIds=uuid1,uuid2`
+- **THEN** system SHALL stream updates only for the specified run ids
+
+#### Scenario: Filter by testSuiteIds
+- **WHEN** client connects with `?testSuiteIds=uuid1,uuid2`
+- **THEN** system SHALL stream updates only for runs belonging to the specified test suites
+
+#### Scenario: Filter by statuses
+- **WHEN** client connects with `?statuses=RUNNING,COMPLETED`
+- **THEN** system SHALL stream updates only for runs transitioning to the specified statuses
+
+#### Scenario: Combined filters
+- **WHEN** client provides multiple filter parameters (e.g., `?testSuiteIds=uuid1&statuses=FAILED`)
+- **THEN** system SHALL apply all filters with AND combination
+
+#### Scenario: Cancellation emits two transitions
+- **WHEN** a RUNNING run is cancelled via the cancel endpoint
+- **THEN** connected clients SHALL receive a `status-update` event with `status = CANCELLING` when the cancel request commits, followed later by a `status-update` event with `status = CANCELLED` when the async job finalizes the run
+
+#### Scenario: SSE event format
+- **WHEN** a run status changes
+- **THEN** the SSE event SHALL have event name `status-update` and JSON data containing: `runId` (UUID), `testSuiteId` (UUID), `status` (String), `message` (String, nullable — human-readable status description), `timestamp` (Long, epoch ms)
+
+#### Scenario: Connection timeout
+- **WHEN** an SSE connection has been open for longer than the configured timeout (default 30 minutes)
+- **THEN** system SHALL close the connection gracefully
+
+#### Scenario: Heartbeat events
+- **WHEN** an SSE connection is active and no status updates have been sent recently
+- **THEN** system SHALL periodically send heartbeat events to keep the connection alive
 
 ### Requirement: Concurrent run limits
 The service SHALL enforce configurable limits on the number of concurrent active runs (PENDING + RUNNING + CANCELLING), both globally and per test suite. A CANCELLING run still holds execution resources until the job finalizes it and therefore counts as active.
@@ -145,6 +342,30 @@ Status: **Implemented**
 - **WHEN** the metric evaluation phase encounters errors (provider unavailable, individual metric errors)
 - **THEN** the run SHALL still transition to COMPLETED. Individual metric errors are captured per-EvalSummary row (`executionStatus = FAILED` with error details in `metricInfos`).
 
+### Requirement: Update test suite run properties
+The service SHALL provide `PATCH /api/v1/test-suite-runs/{id}` to update mutable properties of a test suite run. Currently, only `testRunName` is mutable. This endpoint is extensible for future mutable properties.
+Status: **Implemented**
+
+#### Scenario: Update testRunName
+- **WHEN** client calls `PATCH /api/v1/test-suite-runs/{id}` with body `{ "testRunName": "New Name" }`
+- **THEN** system SHALL update the run's `testRunName`, update `updatedAt`, and return HTTP 200 with the updated `TestSuiteRunResponseDto`
+
+#### Scenario: Update with empty or null testRunName rejected
+- **WHEN** client calls `PATCH /api/v1/test-suite-runs/{id}` with `testRunName` as null or blank
+- **THEN** system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`
+
+#### Scenario: Update with duplicate testRunName
+- **WHEN** client calls `PATCH /api/v1/test-suite-runs/{id}` with a `testRunName` that already exists for another run in the same test suite
+- **THEN** system SHALL respond with HTTP 409 and error code `UNIQUE_CONSTRAINT_VIOLATION`
+
+#### Scenario: Update non-existent run
+- **WHEN** client calls `PATCH /api/v1/test-suite-runs/{id}` for a non-existent id
+- **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
+
+#### Scenario: Update any-status run
+- **WHEN** client calls `PATCH /api/v1/test-suite-runs/{id}` for a run in any status (PENDING, RUNNING, CANCELLING, COMPLETED, FAILED, CANCELLED)
+- **THEN** system SHALL allow the update (mutable properties like `testRunName` are not status-dependent)
+
 ### Requirement: Configuration properties
 The service SHALL expose configurable properties for executor, SSE, execution settings, retry defaults, and concurrent run limits under the `test-suite-run` prefix.
 Status: **Implemented**
@@ -205,7 +426,7 @@ Status: **Implemented**
 - **WHEN** the application starts
 - **THEN** reconciliation SHALL complete before the service begins accepting new run creation requests (e.g., via `@EventListener(ApplicationReadyEvent.class)` or `SmartLifecycle`)
 
-## Implementation notes
+## Implementation Notes
 - `RunStatus` gains `CANCELLING`; `TERMINAL_STATUSES` is unchanged; a new `ACTIVE_STATUSES` set feeds
   `TestSuiteRunService.enforceConcurrencyLimits`.
 - `TestSuiteRunRepository`: `updateToRunning` / `updateToCompleted` / `updateToCancelled` become status-guarded and

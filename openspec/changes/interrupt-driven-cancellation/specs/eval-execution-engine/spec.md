@@ -1,5 +1,17 @@
 ## MODIFIED Requirements
 
+### Requirement: Evaluation executor interface
+The system SHALL define an `EvaluationExecutor` interface with a single `execute(EvaluationContext)` method. The `EvaluationContext` SHALL carry: `runId`, `testSuiteId`, execution settings (concurrency, timeout, retry, rate limit), the run's worker executor (owned and shut down by the run owner, never by the executor implementation), a progress callback, and a result sink. This interface enables swapping in-process execution with K8s Job submission without changing orchestration code.
+Status: **Implemented**
+
+#### Scenario: In-process executor is the default
+- **WHEN** the application starts with default configuration
+- **THEN** the `InProcessEvaluationExecutor` bean SHALL be the active `EvaluationExecutor` implementation
+
+#### Scenario: Executor receives fully populated context
+- **WHEN** `TestSuiteEvaluationJob` dispatches a run
+- **THEN** it SHALL construct an `EvaluationContext` from the run's `RunConfigDto` (with system defaults for omitted fields) carrying the run's registered worker executor, and pass it to the executor. The run's executor SHALL be registered before async dispatch so a cancel request can reach it even if the job thread has not started yet.
+
 ### Requirement: Retry policy execution
 When a `RetryPolicyDto` is configured with `maxRetries > 0`, the worker SHALL retry failed calls according to the policy.
 Status: **Implemented**
@@ -68,6 +80,22 @@ Status: **Implemented**
 - **WHEN** an operator inspects a run with `status = CANCELLED` and finds `count(test_case_run_results WHERE run_id = X)` < `numberOfTestCases × numberOfRuns`
 - **THEN** the missing rows correspond to test cases that were either never dispatched (executor already shut down) or interrupted mid-flight. The run's `status = CANCELLED` and the WARN log line are the authoritative explanation; no per-case row is required to convey this.
 
+### Requirement: Catastrophic executor failures are rethrown
+If an exception escapes the dispatch loop itself (e.g., `findByRunId` throws because the meta DB connection died, an OOM in path-resolution code), the executor SHALL best-effort flush the buffer and re-throw the original exception so the evaluation job marks the run `FAILED` via its outer catch. Rejection of a task by the run's executor is NOT a catastrophic failure: it is the cancellation signal and is handled inside the dispatch loop (`submit` reports it and the loop ends), so it never reaches this path. The current code swallows such exceptions — that behaviour is removed.
+Status: **Implemented**
+
+#### Scenario: Dispatch-loop exception rethrown
+- **WHEN** an exception escapes the dispatch loop (e.g., from `testCaseRunInputRepository.findByRunId`)
+- **THEN** the executor's `catch (Exception e)` SHALL log the failure with the exception as last SLF4J argument, attempt one final `resultBatchWriter.flush(buffer)` inside a `try/catch` that logs and continues on failure, and then **re-throw** the original exception (unwrapped, no new exception class introduced)
+
+#### Scenario: Run marked FAILED by outer catch
+- **WHEN** the executor rethrows a catastrophic failure and the run has not been cancelled
+- **THEN** the evaluation job's outer `catch (Exception e)` SHALL log it and call `repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now)` with `code = "UNEXPECTED_ERROR"` and `category = INTERNAL` — preserving the existing error path
+
+#### Scenario: Catastrophic failure during cancellation ends CANCELLED
+- **WHEN** the executor rethrows a dispatch-loop exception while the run's executor has already been shut down by a cancel request
+- **THEN** the evaluation job SHALL record the run as CANCELLED, not FAILED — the user's cancellation takes precedence over an incidental failure of the aborting run (an analytics batch-write failure is the one exception and still yields FAILED / `ANALYTICS_WRITE_FAILED`)
+
 ## REMOVED Requirements
 
 ### Requirement: Graceful cancellation
@@ -86,14 +114,14 @@ Status: **Implemented**
 
 #### Scenario: In-flight calls are interrupted immediately
 - **WHEN** cancellation is requested while HTTP or MCP calls are in flight
-- **THEN** the worker threads SHALL be interrupted at once — blocking on the concurrency semaphore, the rate limiter, a retry backoff sleep, the HTTP send, or the streaming response read all end with an interruption — and the executor SHALL wait for those tasks to terminate before flushing
+- **THEN** the worker threads SHALL be interrupted at once — a retry backoff sleep, the HTTP send, or the streaming response read all end with an interruption — and the executor SHALL wait for those tasks to terminate before flushing. The dispatching thread is not interrupted: its pacing waits (concurrency semaphore, rate limiter) end because interrupted workers release their permits, and its next submission is rejected
 
 #### Scenario: Long-running uncancelled run does NOT time out
 - **WHEN** a run executes for a long time and is never cancelled
 - **THEN** the executor SHALL wait for all dispatched futures without any overall timeout. Per-call wall-clock bounds remain the responsibility of `requestTimeoutMs` per test case.
 
 #### Scenario: Interrupted cases produce no rows
-- **WHEN** a worker task is interrupted by cancellation (before, during or after its call) 
+- **WHEN** a worker task is interrupted by cancellation (before, during or after its call)
 - **THEN** the executor SHALL NOT write any result row for that case — neither a real row from a partially received response nor a synthetic ERROR row — the case remains absent from `test_case_run_results`
 
 #### Scenario: Partial results preserved
@@ -104,7 +132,7 @@ Status: **Implemented**
 - **WHEN** the async run task completes (success, failure, or cancellation)
 - **THEN** the run's executor SHALL be shut down (if not already) and its registration removed in a `finally` block
 
-## Implementation notes
+## Implementation Notes
 - `runner.job.EvaluationContext` carries the run's `ExecutorService` (`executor`) instead of an `AtomicBoolean`
   signal and a grace period; `TestCaseRunner` no longer creates or shuts down an executor — the owner
   (`TestSuiteEvaluationJob` via `RunHandle`, or the CLI's `RunOrchestrationService`) does. `awaitCompletion()` is an

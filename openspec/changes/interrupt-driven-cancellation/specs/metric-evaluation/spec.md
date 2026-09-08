@@ -61,10 +61,8 @@ Status: **Implemented**
 ## ADDED Requirements
 
 ### Requirement: Cancellation via the run's shared executor
-
-Status: Implemented
-
 The metric evaluation phase SHALL dispatch its per-TSMD tasks on the run's shared worker executor (the same executor Phase 1 used, provided through `MetricEvaluationContext`) and SHALL NOT create an executor of its own. Cancellation is delivered by the run owner shutting that executor down: in-flight metric-provider calls are interrupted immediately and further dispatch is rejected. There is no grace-period drain — metric evaluation is append-only and results can be regenerated.
+Status: **Implemented**
 
 #### Scenario: Cancellation stops new dispatches
 - **WHEN** the run's executor has been shut down during metric evaluation
@@ -82,7 +80,7 @@ The metric evaluation phase SHALL dispatch its per-TSMD tasks on the run's share
 - **WHEN** metric evaluation is cancelled
 - **THEN** all EvalSummary records written before cancellation SHALL be preserved
 
-## Implementation notes
+## Implementation Notes
 - `MetricEvaluationContext` replaces `AtomicBoolean cancellationSignal` with `ExecutorService executor`;
   `InProcessMetricEvaluationExecutor` uses it for `CompletableFuture.runAsync` and drops its own
   `newVirtualThreadPerTaskExecutor()` and `shutdownNow()`.

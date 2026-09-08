@@ -35,6 +35,9 @@ spec-mandated `FAILED` / `ANALYTICS_WRITE_FAILED`.
   `Thread.sleep`. `TestCaseRunner` no longer owns/creates an executor and no longer implements grace logic.
 - **Bug fix:** a Phase 2 analytics batch-write failure now propagates and marks the run `FAILED` /
   `ANALYTICS_WRITE_FAILED`.
+- The metric-provider `RestClient` moves from `SimpleClientHttpRequestFactory` (`HttpURLConnection`, not
+  interruptible — an interrupted call would block for the full `read-timeout-ms`, 150 s by default) to
+  `JdkClientHttpRequestFactory`, the factory the DIAL Core invoker already uses, so Phase 2 cancellation is immediate.
 - `TestSuiteEvaluationJob` drops `@Async` in favour of explicit submission to the existing `testSuiteRunExecutor`
   bean so the job can register the run's executor handle before dispatch and clean it up on rejection.
 - New classes: `service.domain.job.RunHandle`, `service.domain.job.ActiveRunRegistry` (root module). No new packages.
@@ -53,16 +56,23 @@ None.
   count `CANCELLING` as active; startup reconciliation maps `CANCELLING` to `CANCELLED`; evaluation-job orchestration
   requirement describes registry-based interrupt-driven cancellation instead of a pre-registered signal; response DTO
   status enumeration; configuration properties drop the grace period.
-- `eval-execution-engine`: "Graceful cancellation" becomes "Immediate cancellation" — no grace period, interrupt
-  workers immediately; "Diagnostic logging for unfinished cases on cancel" and the batch-writing shutdown-ordering
-  scenarios drop the grace step; "Batch write failure" no longer sets a cancellation signal; retry policy's
-  "Retry respects cancellation" becomes interruption-based; execution configuration scenario drops
-  `cancellation-grace-period-ms`.
+- `eval-execution-engine`: "Graceful cancellation" is removed and replaced by "Immediate cancellation" — no grace
+  period, interrupt workers immediately; "Diagnostic logging for unfinished cases on cancel" and the batch-writing
+  shutdown-ordering scenarios drop the grace step; "Batch write failure" no longer sets a cancellation signal;
+  retry policy's "Retry respects cancellation" becomes interruption-based; "Evaluation executor interface" carries
+  the run's executor instead of a cancellation signal; "Catastrophic executor failures are rethrown" excludes
+  executor rejection (the cancel path) and yields CANCELLED when the run was cancelled.
 - `metric-evaluation`: "Cancellation with hard shutdown" describes the shared run executor being shut down externally
   (no executor owned by the phase); "Batch write failure" propagates as a run failure; worker retry backoff respects
   interruption rather than a signal.
 - `eval-results-import`: imported runs use the same interrupt-driven cancellation and the same `CANCELLING` status
   (wording only — behavior stays "no special-casing").
+- `observability-and-logging`: OTel context propagation scenarios describe direct submission to `testSuiteRunExecutor`
+  and the run-scoped shared virtual-thread executor instead of `@Async` and a per-phase executor.
+- `evaluation-runner-core-module`: `TestCaseRunner`'s description in the module boundary inventory (caller-owned
+  executor, no grace period).
+- `eval-summary-export`: the terminal-only guard also rejects `CANCELLING`.
+- `suite-run-snapshot`: retention preserves inputs of `CANCELLING` runs (wording of the non-terminal scenario).
 
 ## Impact
 
@@ -71,7 +81,7 @@ None.
   filtering or switching on status must handle the new value.
 - **Data**: no schema change. New rows may carry `status = 'CANCELLING'` transiently.
 - **Code**: root `service.domain.job.*` (job, both in-process executors, worker, contexts, new `RunHandle` +
-  `ActiveRunRegistry`), `service.domain.TestSuiteRunService`, `TestSuiteRunReconciliation`, `data.db.model.RunStatus`,
+  `ActiveRunRegistry`, `AnalyticsWriteException`), `client.metricprovider.MetricProviderRestClientConfiguration`, `service.domain.TestSuiteRunService`, `TestSuiteRunReconciliation`, `data.db.model.RunStatus`,
   `TestSuiteRunRepository` + Postgres impl (guarded updates returning affected-row counts, `markCancelling`,
   `cancelOrphanedCancellingRuns`), `query.service.metricscore.MetricScoreComputationExecutor`, web controller docs.
   `evaluation-runner-core`: `EvaluationContext` (gains `executor`, loses signal + grace), `TestCaseRunner`,

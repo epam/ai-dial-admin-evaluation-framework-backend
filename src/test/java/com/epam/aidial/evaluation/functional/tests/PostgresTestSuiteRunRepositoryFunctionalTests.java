@@ -106,12 +106,17 @@ public abstract class PostgresTestSuiteRunRepositoryFunctionalTests extends Base
                 .getId();
         TestSuiteRun run = metaTestDataHelper.createRunWithStatus(suiteId, RunStatus.PENDING);
 
-        int affected = runRepository.updateToRunning(run.getId(), 111L, 222L);
+        try {
+            int affected = runRepository.updateToRunning(run.getId(), 111L, 222L);
 
-        assertThat(affected).isEqualTo(1);
-        TestSuiteRun updated = runRepository.findById(run.getId()).orElseThrow();
-        assertThat(updated.getStatus()).isEqualTo(RunStatus.RUNNING.name());
-        assertThat(updated.getStartedAt()).isEqualTo(111L);
+            assertThat(affected).isEqualTo(1);
+            TestSuiteRun updated = runRepository.findById(run.getId()).orElseThrow();
+            assertThat(updated.getStatus()).isEqualTo(RunStatus.RUNNING.name());
+            assertThat(updated.getStartedAt()).isEqualTo(111L);
+        } finally {
+            // A RUNNING row left lying around would count toward other tests' active-run limits.
+            metaTestDataHelper.deleteRun(run.getId());
+        }
     }
 
     @Test
@@ -254,12 +259,17 @@ public abstract class PostgresTestSuiteRunRepositoryFunctionalTests extends Base
                 .getId();
         TestSuiteRun run = metaTestDataHelper.createRunWithStatus(suiteId, RunStatus.RUNNING);
 
-        int affected = metaTestDataHelper.markCancelling(run.getId());
+        try {
+            int affected = metaTestDataHelper.markCancelling(run.getId());
 
-        assertThat(affected).isEqualTo(1);
-        TestSuiteRun updated = runRepository.findById(run.getId()).orElseThrow();
-        assertThat(updated.getStatus()).isEqualTo(RunStatus.CANCELLING.name());
-        assertThat(updated.getCompletedAt()).isNull();
+            assertThat(affected).isEqualTo(1);
+            TestSuiteRun updated = runRepository.findById(run.getId()).orElseThrow();
+            assertThat(updated.getStatus()).isEqualTo(RunStatus.CANCELLING.name());
+            assertThat(updated.getCompletedAt()).isNull();
+        } finally {
+            // A CANCELLING row left lying around would count toward other tests' active-run limits.
+            metaTestDataHelper.deleteRun(run.getId());
+        }
     }
 
     @Test

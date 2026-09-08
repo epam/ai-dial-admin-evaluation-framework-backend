@@ -3,7 +3,7 @@
 ## Purpose
 This spec defines the CSV export and JSON preview endpoints for eval summaries. The CSV endpoint streams a downloadable report of all `EvalSummary` rows for a single `(runId, computationId)` pair; the preview endpoint returns a typed array-of-arrays JSON shape for client-side column discovery before invoking the full export.
 
-The column manifest is derived **exclusively** from the run's frozen `test_suite_runs.suite_snapshot` and the resolved computation's `run_metric_snapshots`, so old runs export with their original schemas regardless of subsequent edits to the live `TestSuite` or `TestSuiteMetricDefinition` rows. Request and response bodies are opt-in via explicit `columns`; the default column set excludes them. Both endpoints reject non-terminal runs (`PENDING`, `RUNNING`) with `HTTP 409` because cursor pagination over `test_case_eval_summaries` requires a stable table snapshot.
+The column manifest is derived **exclusively** from the run's frozen `test_suite_runs.suite_snapshot` and the resolved computation's `run_metric_snapshots`, so old runs export with their original schemas regardless of subsequent edits to the live `TestSuite` or `TestSuiteMetricDefinition` rows. Request and response bodies are opt-in via explicit `columns`; the default column set excludes them. Both endpoints reject non-terminal runs (`PENDING`, `RUNNING`, `CANCELLING`) with `HTTP 409` because cursor pagination over `test_case_eval_summaries` requires a stable table snapshot.
 
 Status: **Implemented**
 
@@ -412,7 +412,7 @@ Status: **Implemented**
 - **THEN** the rendered cell SHALL be the empty string (CSV-quoted as needed)
 
 ### Requirement: Run state guard (terminal-only)
-Both the export endpoint and the preview endpoint SHALL reject requests targeting a `TestSuiteRun` whose `status` is not terminal (`PENDING` or `RUNNING`) with `HTTP 409 Conflict` and error code `RUN_NOT_TERMINAL`. Terminal statuses (`COMPLETED`, `FAILED`, `CANCELLED`) are the only ones allowed because cursor pagination over `test_case_eval_summaries` requires a stable snapshot of the underlying table; concurrent inserts during a non-terminal run would produce skipped or duplicated rows in the response. The check SHALL use `RunStatus.isTerminal(run.getStatus())` after loading the `TestSuiteRun` and before any column-planning or repository read.
+Both the export endpoint and the preview endpoint SHALL reject requests targeting a `TestSuiteRun` whose `status` is not terminal (`PENDING`, `RUNNING` or `CANCELLING`) with `HTTP 409 Conflict` and error code `RUN_NOT_TERMINAL`. Terminal statuses (`COMPLETED`, `FAILED`, `CANCELLED`) are the only ones allowed because cursor pagination over `test_case_eval_summaries` requires a stable snapshot of the underlying table; concurrent inserts during a non-terminal run would produce skipped or duplicated rows in the response. The check SHALL use `RunStatus.isTerminal(run.getStatus())` after loading the `TestSuiteRun` and before any column-planning or repository read.
 Status: **Implemented**
 
 #### Scenario: Export rejects a RUNNING run
@@ -423,8 +423,12 @@ Status: **Implemented**
 - **WHEN** a client invokes the export endpoint for a `TestSuiteRun` whose `status` is `PENDING`
 - **THEN** the service SHALL return `HTTP 409` with error code `RUN_NOT_TERMINAL`
 
+#### Scenario: Export rejects a CANCELLING run
+- **WHEN** a client invokes the export endpoint for a `TestSuiteRun` whose `status` is `CANCELLING`
+- **THEN** the service SHALL return `HTTP 409` with error code `RUN_NOT_TERMINAL` — the run is still being finalized and its eval summaries may still change
+
 #### Scenario: Preview applies the same guard
-- **WHEN** a client invokes `GET /api/v1/analytics/eval-summaries/export/preview` for a `TestSuiteRun` whose `status` is `RUNNING` or `PENDING`
+- **WHEN** a client invokes `GET /api/v1/analytics/eval-summaries/export/preview` for a `TestSuiteRun` whose `status` is `RUNNING`, `PENDING` or `CANCELLING`
 - **THEN** the service SHALL return `HTTP 409` with error code `RUN_NOT_TERMINAL`
 
 #### Scenario: Terminal runs are allowed

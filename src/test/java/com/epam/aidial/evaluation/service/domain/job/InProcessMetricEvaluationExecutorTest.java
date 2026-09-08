@@ -11,6 +11,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -453,6 +454,31 @@ class InProcessMetricEvaluationExecutorTest {
     }
 
     @Test
+    @DisplayName("Batch write fails on the size-triggered flush — buffer drained before write, "
+            + "so the exception propagates and the client is invoked exactly once with that batch")
+    void batchWriteFailsOnSizeTriggeredFlush_bufferDrainedBeforeWrite_invokedOnce() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContextWithBatchSize(runId, suiteId, List.of(), 10000L, 1);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        doThrow(new RuntimeException("db down"))
+                .when(evalSummaryBatchWriteClient)
+                .batchWrite(any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> executor.execute(context))
+                .as("the size-triggered flush failure must propagate, not be masked by a second flush")
+                .isInstanceOf(AnalyticsWriteException.class)
+                .hasMessageContaining(runId.toString());
+
+        verify(evalSummaryBatchWriteClient, times(1)).batchWrite(any(), any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("Dispatches TSMD evaluation on the context's executor rather than creating its own")
     void shouldDispatchOnProvidedExecutor() throws Exception {
         UUID runId = UUID.randomUUID();
@@ -655,6 +681,29 @@ class InProcessMetricEvaluationExecutorTest {
             long perResultTimeoutMs,
             List<String> requestLabels,
             ExecutorService executor) {
+        return buildContextWithBatchSize(runId, suiteId, tsmds, perResultTimeoutMs, 100, requestLabels, executor);
+    }
+
+    private MetricEvaluationContext buildContextWithBatchSize(
+            UUID runId, UUID suiteId, List<AggregatedMetricDefinition> tsmds, long perResultTimeoutMs, int batchSize) {
+        return buildContextWithBatchSize(
+                runId,
+                suiteId,
+                tsmds,
+                perResultTimeoutMs,
+                batchSize,
+                null,
+                Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    private MetricEvaluationContext buildContextWithBatchSize(
+            UUID runId,
+            UUID suiteId,
+            List<AggregatedMetricDefinition> tsmds,
+            long perResultTimeoutMs,
+            int batchSize,
+            List<String> requestLabels,
+            ExecutorService executor) {
         MetricEvaluationProperties.Retry retryConfig = new MetricEvaluationProperties.Retry();
         retryConfig.setMaxRetries(0);
         retryConfig.setRetryDelayMs(100L);
@@ -671,7 +720,7 @@ class InProcessMetricEvaluationExecutorTest {
                 .executor(executor)
                 .retryConfig(retryConfig)
                 .defaultConcurrencyPerProvider(5)
-                .batchSize(100)
+                .batchSize(batchSize)
                 .perResultTimeoutMs(perResultTimeoutMs)
                 .requestLabels(requestLabels)
                 .build();

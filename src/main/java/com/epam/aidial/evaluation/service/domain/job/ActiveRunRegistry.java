@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
@@ -40,9 +39,5 @@ public class ActiveRunRegistry {
     /** Removes the run's handle. Called once the run's job has finished, in its {@code finally} block. */
     public void remove(UUID runId) {
         handles.remove(runId);
-    }
-
-    public Optional<RunHandle> find(UUID runId) {
-        return Optional.ofNullable(handles.get(runId));
     }
 }

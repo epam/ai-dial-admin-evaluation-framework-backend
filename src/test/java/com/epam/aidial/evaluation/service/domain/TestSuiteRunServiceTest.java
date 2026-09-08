@@ -364,11 +364,14 @@ class TestSuiteRunServiceTest {
 
             TransactionSynchronizationManager.initSynchronization();
             TestSuiteRunResponseDto result = service.cancelRun(runId);
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
 
             assertThat(result).isSameAs(dto);
             verify(sseService).notifyStatusUpdate(cancelled);
             verify(testSuiteRunRepository, never()).markCancelling(any());
-            verify(registry, never()).cancel(runId);
+            verify(registry).cancel(runId);
         }
 
         @Test

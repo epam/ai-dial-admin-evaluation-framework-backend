@@ -19,7 +19,7 @@
   },
   "numberOfTestCases": 50,
   "suiteSnapshot": {
-    "snapshotVersion": "1",
+    "snapshotVersion": "2",
     "suiteType": "DEPLOYMENT",
     "deploymentRef": {
       "id": "gpt-35-turbo",

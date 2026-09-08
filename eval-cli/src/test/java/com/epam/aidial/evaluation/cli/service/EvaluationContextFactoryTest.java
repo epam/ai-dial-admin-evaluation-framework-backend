@@ -105,7 +105,17 @@ class EvaluationContextFactoryTest {
         assertThat(context.getMaxRetries()).isEqualTo(3);
         assertThat(context.getToken()).isEqualTo("my-token");
         assertThat(context.getCreatedAtMs()).isEqualTo(1700000000000L);
-        assertThat(context.getExecutor()).isNotNull();
+        assertThat(context.getExecutor().isShutdown()).isFalse();
+
+        final EvaluationContext secondContext = factory.create(
+                suite,
+                10,
+                DeploymentReferenceDto.builder().id("dep").name("dep").build(),
+                null);
+
+        assertThat(secondContext.getExecutor())
+                .as("each create(...) call must get its own executor, not a shared singleton")
+                .isNotSameAs(context.getExecutor());
     }
 
     @Test

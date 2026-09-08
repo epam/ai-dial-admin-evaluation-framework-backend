@@ -222,8 +222,11 @@ hand-edited at archive time after `/opsx:sync`; requirement blocks are only chan
   reconciliation finalizes it; counts toward concurrency limits meanwhile. Functional tests clean up such rows.
 - [Old build rolled back with rows in `CANCELLING`] → transient status only exists during an active job; documented
   in proposal; manual `UPDATE` to `CANCELLED` if ever needed.
-- [Hikari acquisition interrupted] → job thread is never interrupted (D3); worker threads never touch the meta DB.
-  `PostgresResultBatchWriter.flush()` is called by the job thread only.
+- [Hikari acquisition interrupted] → the job thread never touches the DB with an interrupt flag set (D3). The
+  size-triggered analytics batch flush in `PostgresResultBatchWriter.addResults` runs on a worker thread, so a
+  worker interrupted by `shutdownNow()` mid-flush can lose up to `batchSize` completed results of that batch —
+  acceptable for cancellation (results are absent, never synthetic). The final flush after `awaitCompletion()`
+  still runs on the job thread.
 - [Switching the metric-provider HTTP factory changes low-level client behaviour] → same timeouts, HTTP/1.1 pinned,
   same interceptor; covered by existing metric-evaluation functional tests against the mock provider.
 - [Tests that raced the grace period (`shouldNotSynthesizeRows_whenCancelledMidFlight`) become deterministic but need

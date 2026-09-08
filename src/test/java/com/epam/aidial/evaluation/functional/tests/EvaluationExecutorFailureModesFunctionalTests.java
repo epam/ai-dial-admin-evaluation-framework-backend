@@ -189,6 +189,12 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
         Thread statusPoller = new Thread(() -> {
             while (keepPolling.get()) {
                 testSuiteRunRepository.findById(runId).ifPresent(run -> observedStatuses.add(run.getStatus()));
+                try {
+                    Thread.sleep(5);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
         });
         statusPoller.setDaemon(true);

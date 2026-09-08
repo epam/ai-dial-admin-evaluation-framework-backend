@@ -26,7 +26,7 @@ on `close()` also reaps per-result-timeout worker orphans, since `Future.cancel(
 interrupt an already-running task.
 
 `ActiveRunRegistry` (`@Component @LogExecution`) is a per-JVM `ConcurrentHashMap<UUID, RunHandle>` with
-`register`, `cancel` (no-op if the run has no handle on this instance), `remove`, `find`.
+`register`, `cancel` (no-op if the run has no handle on this instance), `remove`.
 `TestSuiteEvaluationJob.dispatch` registers the handle on the caller's thread (so a cancel racing dispatch
 still finds it) before submitting `run(...)` to the shared `testSuiteRunExecutor`.
 
@@ -34,9 +34,13 @@ Both execution phases dispatch onto the run's own executor instead of creating t
 `EvaluationContext.executor` (runner-core) and `MetricEvaluationContext.executor` both carry
 `handle.executor()`. `TestCaseRunner.submit(page)` returns `boolean` — `false` as soon as the executor
 rejects a submission (caught `RejectedExecutionException`, permit released, loop left), signalling the
-caller to stop fetching further pages. `TestCaseRunner.awaitCompletion()` **always** runs before any flush,
-on both the happy path and the cancel path, so the "single final flush after all workers have terminated"
-invariant holds either way.
+caller to stop fetching further pages. The job thread never touches the DB with an interrupt flag set (D3).
+The size-triggered analytics batch flush in `PostgresResultBatchWriter.addResults` runs on a **worker**
+thread (called synchronously from `TestCaseRunner.runWorker`), so a worker interrupted by `shutdownNow()`
+mid-flush can lose up to `batchSize` already-completed results of that in-flight batch — acceptable for
+cancellation (results are simply absent, never synthetic). `TestCaseRunner.awaitCompletion()` **always**
+runs before the *final* flush, on both the happy path and the cancel path, and that final flush still runs
+on the job thread.
 
 ## Status lifecycle
 

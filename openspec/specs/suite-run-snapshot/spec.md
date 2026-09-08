@@ -9,7 +9,7 @@ Status: **Implemented**
 - **SuiteSnapshotDto**: Versioned DTO capturing all execution-relevant suite fields at snapshot time. Fields: `snapshotVersion` (default `CURRENT_VERSION` = `"2"`), `suiteType`, and type-specific fields (DEPLOYMENT: `deploymentRef`, `endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`; MCP_TOOL: `mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`, `responseColumns`, `testCaseSchema`). Annotated with `@JsonIgnoreProperties(ignoreUnknown = true)` for forward compatibility.
 - **SuiteSnapshotBuilder**: `@Component` in `service.domain` that builds `SuiteSnapshotDto` from a `TestSuite` model via `JsonbMapper`. Always stamps `snapshotVersion = "2"` (`CURRENT_VERSION`).
 - **test_case_run_inputs**: Append-only meta table with columns `run_id`, `position`, `test_case_id`, `test_case_name`, `test_case_data` (JSONB), `request_template_override` (JSONB, nullable), `input_bindings_override` (JSONB, nullable). Primary key `(run_id, position)`.
-- **Snapshot phase**: The first phase of `executeRunAsync` — runs before the RUNNING state transition, uses `ISOLATION_REPEATABLE_READ`, retries on `40001`, idempotent.
+- **Snapshot phase**: The first phase of `TestSuiteEvaluationJob.dispatch` — runs before the RUNNING state transition, uses `ISOLATION_REPEATABLE_READ`, retries on `40001`, idempotent.
 
 ## Requirements
 
@@ -154,7 +154,7 @@ Status: **Implemented**
 - **THEN** it SHALL delete rows from `test_case_run_inputs` where `run_id IN (SELECT id FROM test_suite_runs WHERE status IN ('COMPLETED','FAILED') AND updated_at_ms < NOW() - retention)`
 
 #### Scenario: Non-terminal run inputs preserved
-- **WHEN** a run has status PENDING or RUNNING
+- **WHEN** a run has status PENDING, RUNNING or CANCELLING
 - **THEN** its `test_case_run_inputs` rows SHALL NOT be deleted regardless of age
 
 #### Scenario: Recent terminal run inputs preserved

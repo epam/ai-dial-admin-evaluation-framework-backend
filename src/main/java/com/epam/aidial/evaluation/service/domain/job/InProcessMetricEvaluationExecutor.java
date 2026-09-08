@@ -379,15 +379,19 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     private void doFlush(List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context) {
+        // Drain the buffer before writing so a failed batch is never re-sent by the caller's
+        // finally { flushRemaining(...) } — EvalSummaryBatchWriteClient chunks internally and may
+        // have already committed some chunks before throwing.
+        List<EvalSummaryBatchWriteItemDto> items = new ArrayList<>(buffer);
+        buffer.clear();
         try {
             evalSummaryBatchWriteClient.batchWrite(
                     context.getTestSuiteId(),
                     context.getTestSuiteRunId(),
                     context.getComputationId(),
                     context.getComputedAtMs(),
-                    new ArrayList<>(buffer));
-            log.debug("Flushed {} eval summaries for run {}", buffer.size(), context.getTestSuiteRunId());
-            buffer.clear();
+                    items);
+            log.debug("Flushed {} eval summaries for run {}", items.size(), context.getTestSuiteRunId());
         } catch (RuntimeException e) {
             log.error("Batch write failed for run {}: {}", context.getTestSuiteRunId(), e.getMessage(), e);
             throw new AnalyticsWriteException(

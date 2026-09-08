@@ -558,6 +558,7 @@ class TestSuiteEvaluationJobTest {
             verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
             verify(repository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
             verify(registry).remove(runId);
+            verify(sseService, never()).notifyStatusUpdate(any());
         }
 
         @Test
@@ -631,12 +632,67 @@ class TestSuiteEvaluationJobTest {
         void shouldNotifySseExactlyOnce_whenSnapshotPhaseFails() {
             when(repository.findById(runId)).thenReturn(Optional.of(run));
             when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.empty());
+            when(repository.updateToFailed(eq(runId), any(), any(), anyLong(), anyLong()))
+                    .thenReturn(1);
 
             job.run(runId, null, true, handle);
 
             verify(repository).updateToFailed(eq(runId), any(), any(), anyLong(), anyLong());
             verify(sseService, times(1)).notifyStatusUpdate(any());
             verify(registry).remove(runId);
+        }
+
+        @Test
+        @DisplayName("shouldNotNotifySse_whenSnapshotPhaseFailedWriteAffectsNoRows")
+        void shouldNotNotifySse_whenSnapshotPhaseFailedWriteAffectsNoRows() {
+            when(repository.findById(runId)).thenReturn(Optional.of(run));
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.empty());
+            when(repository.updateToFailed(eq(runId), any(), any(), anyLong(), anyLong()))
+                    .thenReturn(0);
+
+            job.run(runId, null, true, handle);
+
+            verify(repository).updateToFailed(eq(runId), any(), any(), anyLong(), anyLong());
+            verify(sseService, never()).notifyStatusUpdate(any());
+            verify(registry).remove(runId);
+        }
+
+        @Test
+        @DisplayName("shouldMarkCancelled_whenUnexpectedExceptionDuringPhase1AndHandleIsCancelled")
+        void shouldMarkCancelled_whenUnexpectedExceptionDuringPhase1AndHandleIsCancelled() {
+            stubResolvableRun();
+            stubExecutionRunProperties();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            when(repository.updateToCancelled(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            doAnswer(invocation -> {
+                        handle.cancel();
+                        throw new IllegalStateException("boom");
+                    })
+                    .when(evaluationExecutor)
+                    .execute(any());
+
+            job.run(runId, null, false, handle);
+
+            verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
+            verify(repository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
+            verify(metricEvaluationExecutor, never()).execute(any());
+        }
+
+        @Test
+        @DisplayName("shouldMarkFailedUnexpectedError_whenUnexpectedExceptionDuringPhase1AndHandleNotCancelled")
+        void shouldMarkFailedUnexpectedError_whenUnexpectedExceptionDuringPhase1AndHandleNotCancelled() {
+            stubResolvableRun();
+            stubExecutionRunProperties();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            doThrow(new IllegalStateException("boom")).when(evaluationExecutor).execute(any());
+
+            job.run(runId, null, false, handle);
+
+            ArgumentCaptor<String> detailsCaptor = ArgumentCaptor.forClass(String.class);
+            verify(repository).updateToFailed(eq(runId), any(), detailsCaptor.capture(), anyLong(), anyLong());
+            assertThat(detailsCaptor.getValue()).contains("UNEXPECTED_ERROR");
+            verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
+            verify(metricEvaluationExecutor, never()).execute(any());
         }
     }
 }

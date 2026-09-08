@@ -13,13 +13,12 @@ class ActiveRunRegistryTest {
     private final ActiveRunRegistry registry = new ActiveRunRegistry();
 
     @Test
-    @DisplayName("register makes the handle findable and not cancelled")
-    void registerMakesHandleFindable() {
+    @DisplayName("register returns a fresh, not-yet-cancelled handle")
+    void registerReturnsFreshHandle() {
         UUID runId = UUID.randomUUID();
 
         RunHandle handle = registry.register(runId);
 
-        assertThat(registry.find(runId)).contains(handle);
         assertThat(handle.isCancelled()).isFalse();
     }
 
@@ -41,19 +40,16 @@ class ActiveRunRegistryTest {
     }
 
     @Test
-    @DisplayName("remove clears the handle so find returns empty")
-    void removeClearsHandle() {
+    @DisplayName("remove clears the handle so a subsequent cancel is a no-op")
+    void removeClearsHandleSoCancelIsNoop() {
         UUID runId = UUID.randomUUID();
-        registry.register(runId);
+        RunHandle handle = registry.register(runId);
 
         registry.remove(runId);
+        registry.cancel(runId);
 
-        assertThat(registry.find(runId)).isEmpty();
-    }
-
-    @Test
-    @DisplayName("find returns empty for an id that was never registered")
-    void findReturnsEmptyForUnknownId() {
-        assertThat(registry.find(UUID.randomUUID())).isEmpty();
+        assertThat(handle.isCancelled())
+                .as("cancel after remove must not reach the handle that was just removed")
+                .isFalse();
     }
 }

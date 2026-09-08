@@ -34,6 +34,7 @@ import com.epam.aidial.evaluation.service.domain.exception.TooManyRunsException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationDetector;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
+import com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
@@ -68,6 +69,7 @@ public class TestSuiteRunService {
     private final QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteRunProperties properties;
     private final TestSuiteEvaluationJob evaluationJob;
+    private final ActiveRunRegistry registry;
     private final ExecutionSettingsValidator executionSettingsValidator;
     private final TestSuiteRunSseService sseService;
     private final TestSuiteRunMapper mapper;
@@ -298,23 +300,16 @@ public class TestSuiteRunService {
     }
 
     /**
-     * Registers the run's cancellation signal and dispatches Phase 1–3 (or Phase 2/3 only, when
-     * {@code skipDeploymentPhase} is {@code true}) via {@link TestSuiteEvaluationJob#executeRunAsync}.
-     * If the executor rejects the submission, removes the cancellation signal and invokes
-     * {@code onRejected} so each caller can apply its own failure-compensation logic. Any other
-     * exception also removes the cancellation signal before being rethrown.
+     * Dispatches Phase 1–3 (or Phase 2/3 only, when {@code skipDeploymentPhase} is {@code true}) via
+     * {@link TestSuiteEvaluationJob#dispatch}. If the executor rejects the submission, invokes
+     * {@code onRejected} so each caller can apply its own failure-compensation logic.
      */
     private void dispatchEvaluation(UUID runId, String token, boolean skipDeploymentPhase, Runnable onRejected) {
-        evaluationJob.registerCancellationSignal(runId);
         try {
-            evaluationJob.executeRunAsync(runId, token, skipDeploymentPhase);
+            evaluationJob.dispatch(runId, token, skipDeploymentPhase);
         } catch (RejectedExecutionException ex) {
-            evaluationJob.removeCancellationSignal(runId);
             log.warn("Executor rejected job submission for run {}: {}", runId, ex.getMessage(), ex);
             onRejected.run();
-        } catch (Exception ex) {
-            evaluationJob.removeCancellationSignal(runId);
-            throw ex;
         }
     }
 
@@ -406,7 +401,7 @@ public class TestSuiteRunService {
             run = testSuiteRunRepository.findById(runId).orElseThrow();
         }
 
-        evaluationJob.interruptRun(runId);
+        registry.cancel(runId);
         return mapper.toDto(run);
     }
 

@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -28,5 +27,4 @@ public class MetricScoreComputationContext {
     private final UUID computationId;
     private final OverallScoreDefinition overallScoreDefinition;
     private final long computedAtMs;
-    private final AtomicBoolean cancellationSignal;
 }

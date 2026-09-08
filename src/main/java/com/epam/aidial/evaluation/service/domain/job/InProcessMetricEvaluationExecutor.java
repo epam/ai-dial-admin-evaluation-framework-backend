@@ -16,7 +16,6 @@ import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
-import io.opentelemetry.context.Context;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,7 +25,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -85,22 +83,13 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
         List<EvalSummaryBatchWriteItemDto> buffer = new ArrayList<>();
         Cursor cursor = null;
 
-        ExecutorService executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
+        ExecutorService executor = context.getExecutor();
         try {
             do {
-                if (context.getCancellationSignal().get()) {
-                    log.info("Metric evaluation cancelled for run {}", context.getTestSuiteRunId());
-                    break;
-                }
-
                 CursorPage<TestCaseRunResult> page =
                         resultRepository.findAll(filters, context.getRunCreatedAtMs(), cursor, RESULT_PAGE_SIZE);
 
                 for (TestCaseRunResult result : page.content()) {
-                    if (context.getCancellationSignal().get()) {
-                        break;
-                    }
-
                     log.debug(
                             "Run {}: evaluating metrics for result {} (testCaseId={}, status={})",
                             context.getTestSuiteRunId(),
@@ -120,7 +109,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             } while (cursor != null);
         } finally {
             flushRemaining(buffer, context);
-            executor.shutdownNow();
         }
 
         log.info("Metric evaluation completed for run {}", context.getTestSuiteRunId());
@@ -401,13 +389,9 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             log.debug("Flushed {} eval summaries for run {}", buffer.size(), context.getTestSuiteRunId());
             buffer.clear();
         } catch (RuntimeException e) {
-            log.error(
-                    "Batch write failed for run {}, setting cancellation signal: {}",
-                    context.getTestSuiteRunId(),
-                    e.getMessage(),
-                    e);
-            context.getCancellationSignal().set(true);
-            buffer.clear();
+            log.error("Batch write failed for run {}: {}", context.getTestSuiteRunId(), e.getMessage(), e);
+            throw new AnalyticsWriteException(
+                    "Failed to write eval summaries for run " + context.getTestSuiteRunId(), e);
         }
     }
 }

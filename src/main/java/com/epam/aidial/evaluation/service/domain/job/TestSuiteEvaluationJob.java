@@ -36,14 +36,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -80,51 +81,53 @@ public class TestSuiteEvaluationJob {
     @Qualifier("metaTransactionManager")
     private final PlatformTransactionManager metaTransactionManager;
 
-    private final ConcurrentHashMap<UUID, AtomicBoolean> activeCancellationSignals = new ConcurrentHashMap<>();
+    @Qualifier("testSuiteRunExecutor")
+    private final AsyncTaskExecutor taskExecutor;
+
+    private final ActiveRunRegistry registry;
 
     /**
-     * Registers a cancellation signal for the given run BEFORE async dispatch.
-     * Must be called in the caller's thread to prevent race conditions.
+     * Registers a {@link RunHandle} for the run (in the caller's thread, so a cancel request arriving
+     * before the job thread starts still finds it) and submits {@link #run} to the shared run executor.
+     * If submission itself fails (executor rejection or any other exception), the handle is removed and
+     * closed before the exception is rethrown, so callers keep their existing rejection-compensation logic.
      */
-    public void registerCancellationSignal(UUID runId) {
-        activeCancellationSignals.put(runId, new AtomicBoolean(false));
-    }
-
-    /**
-     * Removes the cancellation signal for the given run.
-     * Used for cleanup if async dispatch fails.
-     */
-    public void removeCancellationSignal(UUID runId) {
-        activeCancellationSignals.remove(runId);
-    }
-
-    public void interruptRun(UUID runId) {
-        AtomicBoolean signal = activeCancellationSignals.get(runId);
-        if (signal != null) {
-            signal.set(true);
+    public void dispatch(UUID runId, String token, boolean skipDeploymentPhase) {
+        RunHandle handle = registry.register(runId);
+        try {
+            taskExecutor.execute(() -> run(runId, token, skipDeploymentPhase, handle));
+        } catch (RuntimeException e) {
+            registry.remove(runId);
+            handle.close();
+            throw e;
         }
     }
 
-    @Async("testSuiteRunExecutor")
-    public void executeRunAsync(UUID runId, String token, boolean skipDeploymentPhase) {
-        final AtomicBoolean cancellationSignal =
-                activeCancellationSignals.computeIfAbsent(runId, _ -> new AtomicBoolean(false));
+    /**
+     * Runs the whole evaluation job for a run, on the run's shared worker executor thread. Never
+     * interrupted (see {@code design.md} decision D3): cancellation is observed only via
+     * {@link RunHandle#throwIfCancelled()} at phase boundaries and via {@link RejectedExecutionException}
+     * when a phase's dispatch onto the (possibly already shut-down) run executor is rejected.
+     *
+     * <p>Terminal status precedence (design D4): an {@link AnalyticsWriteException} from Phase 2's flush
+     * always maps to FAILED, even when the handle was cancelled; a {@link CancellationException} or
+     * {@link RejectedExecutionException} maps to CANCELLED; any other exception maps to CANCELLED only if
+     * the handle was cancelled, otherwise FAILED.
+     */
+    void run(UUID runId, String token, boolean skipDeploymentPhase, RunHandle handle) {
+        log.info("Starting test suite run {}", runId);
         try {
-            log.info("Starting test suite run {}", runId);
-            long now = clock.millis();
-            if (cancellationSignal.get()) {
-                log.info("Run {} cancelled before start", runId);
-                repository.updateToCancelled(runId, now, now);
-                notifySse(runId);
-                return;
-            }
+            handle.throwIfCancelled();
 
             if (!executeSnapshotPhase(runId, !skipDeploymentPhase)) {
                 return;
             }
 
-            now = clock.millis();
-            repository.updateToRunning(runId, now, now);
+            long now = clock.millis();
+            if (repository.updateToRunning(runId, now, now) == 0) {
+                log.info("Run {} was cancelled while PENDING; exiting without executing any phase", runId);
+                return;
+            }
             notifySse(runId);
 
             TestSuiteRun run =
@@ -152,46 +155,61 @@ public class TestSuiteEvaluationJob {
                     return;
                 }
 
+                handle.throwIfCancelled();
                 // Phase 1: Deployment evaluation
-                EvaluationContext context = buildContext(run, snapshot.get(), cancellationSignal, token);
+                EvaluationContext context = buildContext(run, snapshot.get(), handle.executor(), token);
                 evaluationExecutor.execute(context);
             }
 
+            handle.throwIfCancelled();
             // Phase 2: Metric evaluation
-            if (!cancellationSignal.get()) {
-                MetricEvaluationContext metricContext =
-                        buildMetricEvaluationContext(run, snapshot.get(), cancellationSignal);
-                metricEvaluationExecutor.execute(metricContext);
+            MetricEvaluationContext metricContext =
+                    buildMetricEvaluationContext(run, snapshot.get(), handle.executor());
+            metricEvaluationExecutor.execute(metricContext);
 
-                // Phase 3: Metric score statistics — reuses Phase 2's computationId. Non-fatal: a
-                // failure here must not fail an otherwise-good run (scores are regenerable).
-                if (!cancellationSignal.get()) {
-                    computeMetricScores(run, snapshot.get(), metricContext, cancellationSignal);
-                }
-            }
+            handle.throwIfCancelled();
+            // Phase 3: Metric score statistics — reuses Phase 2's computationId. Non-fatal: a
+            // failure here must not fail an otherwise-good run (scores are regenerable).
+            computeMetricScores(run, snapshot.get(), metricContext);
 
             now = clock.millis();
-            if (cancellationSignal.get()) {
-                log.info("Run {} cancelled", runId);
+            if (repository.updateToCompleted(runId, now, now) == 0) {
                 repository.updateToCancelled(runId, now, now);
+                log.info("Run {} cancelled", runId);
             } else {
                 log.info("Run {} completed", runId);
-                repository.updateToCompleted(runId, now, now);
             }
-            notifySse(runId);
-
-        } catch (Exception e) {
-            log.error("Run failed unexpectedly: {}", runId, e);
+        } catch (AnalyticsWriteException e) {
+            log.error("Analytics batch write failed for run {}: {}", runId, e.getMessage(), e);
             long now = clock.millis();
             String errorDetails = buildErrorDetails(
-                    "UNEXPECTED_ERROR",
+                    AnalyticsWriteException.ERROR_CODE,
                     RunErrorCategory.INTERNAL,
-                    "An unexpected error occurred during execution",
+                    "Analytics batch write failed",
                     null);
             repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now);
-            notifySse(runId);
+        } catch (CancellationException | RejectedExecutionException e) {
+            log.info("Run {} cancelled: {}", runId, e.getMessage(), e);
+            long now = clock.millis();
+            repository.updateToCancelled(runId, now, now);
+        } catch (Exception e) {
+            long now = clock.millis();
+            if (handle.isCancelled()) {
+                log.info("Run {} cancelled, suppressing failure: {}", runId, e.getMessage(), e);
+                repository.updateToCancelled(runId, now, now);
+            } else {
+                log.error("Run {} failed unexpectedly: {}", runId, e.getMessage(), e);
+                String errorDetails = buildErrorDetails(
+                        "UNEXPECTED_ERROR",
+                        RunErrorCategory.INTERNAL,
+                        "An unexpected error occurred during execution",
+                        null);
+                repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now);
+            }
         } finally {
-            activeCancellationSignals.remove(runId);
+            handle.close();
+            registry.remove(runId);
+            notifySse(runId);
         }
     }
 
@@ -218,7 +236,9 @@ public class TestSuiteEvaluationJob {
                         : resolveSnapshotErrorCode(e);
                 String errorDetails = buildErrorDetails(
                         code, RunErrorCategory.INTERNAL, "Snapshot phase failed: " + e.getMessage(), null);
-                repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now);
+                if (repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now) == 0) {
+                    log.info("Run {} was already terminal when the snapshot phase attempted to mark it FAILED", runId);
+                }
                 notifySse(runId);
                 return false;
             }
@@ -318,7 +338,7 @@ public class TestSuiteEvaluationJob {
     }
 
     private MetricEvaluationContext buildMetricEvaluationContext(
-            TestSuiteRun run, SuiteSnapshotDto snapshot, AtomicBoolean cancellationSignal) {
+            TestSuiteRun run, SuiteSnapshotDto snapshot, ExecutorService executor) {
         List<AggregatedMetricDefinition> tsmds =
                 testSuiteMetricDefinitionService.findAllEnabledAndValidAggregatedByTestSuiteId(run.getTestSuiteId());
 
@@ -329,7 +349,7 @@ public class TestSuiteEvaluationJob {
                 .testSuiteId(run.getTestSuiteId())
                 .runCreatedAtMs(run.getCreatedAt())
                 .aggregatedTsmds(tsmds)
-                .cancellationSignal(cancellationSignal)
+                .executor(executor)
                 .retryConfig(metricEvaluationProperties.getRetry())
                 .defaultConcurrencyPerProvider(metricEvaluationProperties.getDefaultConcurrencyPerProvider())
                 .batchSize(metricEvaluationProperties.getBatchSize())
@@ -362,10 +382,7 @@ public class TestSuiteEvaluationJob {
      * the run still completes, because scores are a regenerable projection over the eval summaries.
      */
     private void computeMetricScores(
-            TestSuiteRun run,
-            SuiteSnapshotDto snapshot,
-            MetricEvaluationContext metricContext,
-            AtomicBoolean cancellationSignal) {
+            TestSuiteRun run, SuiteSnapshotDto snapshot, MetricEvaluationContext metricContext) {
         try {
             MetricScoreComputationContext ctx = MetricScoreComputationContext.builder()
                     .testSuiteRunId(run.getId())
@@ -373,7 +390,6 @@ public class TestSuiteEvaluationJob {
                     .computationId(metricContext.getComputationId())
                     .overallScoreDefinition(snapshot.getOverallScore())
                     .computedAtMs(clock.millis())
-                    .cancellationSignal(cancellationSignal)
                     .build();
             metricScoreComputation.execute(ctx);
         } catch (RuntimeException e) {
@@ -386,7 +402,7 @@ public class TestSuiteEvaluationJob {
     }
 
     private EvaluationContext buildContext(
-            TestSuiteRun run, SuiteSnapshotDto snapshot, AtomicBoolean cancellationSignal, String token) {
+            TestSuiteRun run, SuiteSnapshotDto snapshot, ExecutorService executor, String token) {
         RunConfigDto config = parseRunConfig(run.getRunConfig(), run.getId());
         EvaluationRunProperties.Execution execProps = evaluationRunProperties.getExecution();
         EvaluationRunProperties.Retry retryProps = evaluationRunProperties.getRetry();
@@ -421,8 +437,7 @@ public class TestSuiteEvaluationJob {
                 .maxRetryDelayMs(retryProps.getMaxRetryDelayMs())
                 .resultBatchSize(execProps.getResultBatchSize())
                 .maxResponseSizeBytes(execProps.getMaxResponseSizeBytes())
-                .cancellationGracePeriodMs(execProps.getCancellationGracePeriodMs())
-                .cancellationSignal(cancellationSignal)
+                .executor(executor)
                 .token(token)
                 .createdAtMs(run.getCreatedAt())
                 .suiteType(suiteType)

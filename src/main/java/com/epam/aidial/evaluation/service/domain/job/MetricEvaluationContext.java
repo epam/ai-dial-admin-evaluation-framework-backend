@@ -4,7 +4,7 @@ import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationPrope
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -23,7 +23,14 @@ public class MetricEvaluationContext {
     private final UUID testSuiteId;
     private final Long runCreatedAtMs;
     private final List<AggregatedMetricDefinition> aggregatedTsmds;
-    private final AtomicBoolean cancellationSignal;
+
+    /**
+     * Worker executor for this run, shared with Phase 1. Owned, and eventually shut down, by the run
+     * owner ({@code TestSuiteEvaluationJob} via {@code RunHandle}); this phase never creates or shuts it
+     * down. Cancellation is delivered by the owner calling {@code shutdownNow()} on it.
+     */
+    private final ExecutorService executor;
+
     private final MetricEvaluationProperties.Retry retryConfig;
     private final int defaultConcurrencyPerProvider;
     private final int batchSize;

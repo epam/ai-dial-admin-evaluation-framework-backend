@@ -17,7 +17,6 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.RunComparisonRunD
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -634,7 +633,6 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
                 .testSuiteId(suiteId)
                 .computationId(computationId)
                 .computedAtMs(COMPUTED_AT_MS)
-                .cancellationSignal(new AtomicBoolean(false))
                 .build());
     }
 

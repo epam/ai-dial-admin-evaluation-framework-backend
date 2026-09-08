@@ -35,6 +35,7 @@ import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRule
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
+import com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
@@ -77,6 +78,9 @@ class TestSuiteRunServiceTest {
 
     @Mock
     private TestSuiteEvaluationJob evaluationJob;
+
+    @Mock
+    private ActiveRunRegistry registry;
 
     @Mock
     private ExecutionSettingsValidator executionSettingsValidator;
@@ -127,6 +131,7 @@ class TestSuiteRunServiceTest {
                 runnableTestCaseSelector,
                 properties,
                 evaluationJob,
+                registry,
                 executionSettingsValidator,
                 sseService,
                 mapper,
@@ -257,8 +262,7 @@ class TestSuiteRunServiceTest {
             assertThat(itemsCaptor.getValue()).hasSize(1);
             assertThat(itemsCaptor.getValue().get(0).getTestCaseName()).isEqualTo("tc1");
 
-            verify(evaluationJob).registerCancellationSignal(any(UUID.class));
-            verify(evaluationJob).executeRunAsync(any(UUID.class), isNull(), eq(true));
+            verify(evaluationJob).dispatch(any(UUID.class), isNull(), eq(true));
             verify(testSuiteRunRepository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
         }
 
@@ -282,8 +286,7 @@ class TestSuiteRunServiceTest {
                             anyLong(),
                             anyLong());
             verify(sseService).notifyStatusUpdate(any(TestSuiteRun.class));
-            verify(evaluationJob, never()).executeRunAsync(any(), any(), anyBoolean());
-            verify(evaluationJob, never()).registerCancellationSignal(any());
+            verify(evaluationJob, never()).dispatch(any(), any(), anyBoolean());
         }
     }
 

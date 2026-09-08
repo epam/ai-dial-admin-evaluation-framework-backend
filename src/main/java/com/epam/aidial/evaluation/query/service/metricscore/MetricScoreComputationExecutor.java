@@ -62,9 +62,6 @@ public class MetricScoreComputationExecutor {
 
     /** Computes and persists the run's metric scores for the computation described by {@code ctx}. */
     public void execute(MetricScoreComputationContext ctx) {
-        if (isCancelled(ctx)) {
-            return;
-        }
         final long computedAtMs = ctx.getComputedAtMs();
         final List<RunMetricSnapshot> snapshots = runMetricSnapshotRepository.findByRunIdAndComputationId(
                 ctx.getTestSuiteRunId(), ctx.getComputationId());
@@ -81,16 +78,11 @@ public class MetricScoreComputationExecutor {
 
         // Per-metric statistics: each built-in statistic, once per metric field.
         for (final BuiltInMetricStatistics.MetricStatistic statistic : builtInStatistics.perMetric()) {
-            if (isCancelled(ctx)) {
-                return;
-            }
             results.addAll(computePerMetric(statistic.query(), statistic.name(), metricFields, ctx, computedAtMs));
         }
 
         // Run-level overall, from the suite's (snapshot) definition or the single-metric default.
-        if (!isCancelled(ctx)) {
-            results.addAll(computeOverall(ctx, metricFields, computedAtMs));
-        }
+        results.addAll(computeOverall(ctx, metricFields, computedAtMs));
 
         metricScoreService.saveAll(results);
         log.debug(
@@ -214,10 +206,5 @@ public class MetricScoreComputationExecutor {
                 .value(value)
                 .computedAtMs(computedAtMs)
                 .build();
-    }
-
-    private static boolean isCancelled(MetricScoreComputationContext ctx) {
-        return ctx.getCancellationSignal() != null
-                && ctx.getCancellationSignal().get();
     }
 }

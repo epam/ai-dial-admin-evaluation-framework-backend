@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,14 +37,17 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
@@ -97,6 +101,12 @@ class TestSuiteEvaluationJobTest {
     @Mock
     private PlatformTransactionManager metaTransactionManager;
 
+    @Mock
+    private AsyncTaskExecutor taskExecutor;
+
+    @Mock
+    private ActiveRunRegistry registry;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private TestSuiteEvaluationJob job;
@@ -119,7 +129,9 @@ class TestSuiteEvaluationJobTest {
                 metricEvaluationExecutor,
                 metricScoreComputation,
                 clock,
-                metaTransactionManager);
+                metaTransactionManager,
+                taskExecutor,
+                registry);
     }
 
     @Nested
@@ -340,7 +352,6 @@ class TestSuiteEvaluationJobTest {
             execution.setDefaultRequestTimeoutMs(1000L);
             execution.setResultBatchSize(10);
             execution.setMaxResponseSizeBytes(1000L);
-            execution.setCancellationGracePeriodMs(1000L);
             EvaluationRunProperties.Retry retry = new EvaluationRunProperties.Retry();
             retry.setDefaultMaxRetries(0);
             retry.setDefaultRetryDelayMs(100L);
@@ -350,7 +361,12 @@ class TestSuiteEvaluationJobTest {
             when(evaluationRunProperties.getRetry()).thenReturn(retry);
 
             EvaluationContext context = (EvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token");
+                    job,
+                    "buildContext",
+                    run,
+                    invokeResolveSnapshot(run),
+                    Executors.newVirtualThreadPerTaskExecutor(),
+                    "token");
 
             assertThat(context.getSnapshotRequestName()).isEqualTo("first");
             assertThat(context.getSnapshotAdditionalRequests()).isEqualTo(additionalRequests);
@@ -372,7 +388,6 @@ class TestSuiteEvaluationJobTest {
             execution.setDefaultRequestTimeoutMs(1000L);
             execution.setResultBatchSize(10);
             execution.setMaxResponseSizeBytes(1000L);
-            execution.setCancellationGracePeriodMs(1000L);
             EvaluationRunProperties.Retry retry = new EvaluationRunProperties.Retry();
             retry.setDefaultMaxRetries(0);
             retry.setDefaultRetryDelayMs(100L);
@@ -382,7 +397,12 @@ class TestSuiteEvaluationJobTest {
             when(evaluationRunProperties.getRetry()).thenReturn(retry);
 
             EvaluationContext context = (EvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false), "token");
+                    job,
+                    "buildContext",
+                    run,
+                    invokeResolveSnapshot(run),
+                    Executors.newVirtualThreadPerTaskExecutor(),
+                    "token");
 
             assertThat(context.getSnapshotRequestName()).isNull();
             assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();
@@ -405,7 +425,11 @@ class TestSuiteEvaluationJobTest {
                     .build();
 
             MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
+                    job,
+                    "buildMetricEvaluationContext",
+                    run,
+                    invokeResolveSnapshot(run),
+                    Executors.newVirtualThreadPerTaskExecutor());
 
             assertThat(context.requestLabelAt(0)).isEqualTo("first");
             assertThat(context.requestLabelAt(1)).isEqualTo("second");
@@ -423,7 +447,11 @@ class TestSuiteEvaluationJobTest {
                     .build();
 
             MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
-                    job, "buildMetricEvaluationContext", run, invokeResolveSnapshot(run), new AtomicBoolean(false));
+                    job,
+                    "buildMetricEvaluationContext",
+                    run,
+                    invokeResolveSnapshot(run),
+                    Executors.newVirtualThreadPerTaskExecutor());
 
             assertThat(context.requestLabelAt(0)).isNull();
             assertThat(context.requestLabelAt(1)).isNull();
@@ -431,8 +459,8 @@ class TestSuiteEvaluationJobTest {
     }
 
     @Nested
-    @DisplayName("executeRunAsync(skipDeploymentPhase=true)")
-    class ExecuteRunAsyncSkipDeploymentPhase {
+    @DisplayName("run(...) — job orchestration (design D4)")
+    class Run {
 
         private UUID runId;
         private UUID suiteId;
@@ -440,6 +468,7 @@ class TestSuiteEvaluationJobTest {
         private TestSuiteRun run;
         private TestSuite liveSuite;
         private Dataset liveDataset;
+        private RunHandle handle;
 
         @BeforeEach
         void setUp() {
@@ -449,6 +478,7 @@ class TestSuiteEvaluationJobTest {
             run = TestSuiteRun.builder()
                     .id(runId)
                     .testSuiteId(suiteId)
+                    .createdAt(1000L)
                     .suiteSnapshot(null)
                     .build();
 
@@ -458,11 +488,11 @@ class TestSuiteEvaluationJobTest {
                     .datasetId(datasetId)
                     .build();
             liveDataset = Dataset.builder().id(datasetId).build();
+            handle = new RunHandle();
         }
 
-        @Test
-        @DisplayName("runs Phase 2 + Phase 3 but never Phase 1, and completes the run")
-        void runsPhase2And3NeverPhase1() {
+        /** Stubs the snapshot phase (and legacy snapshot resolution) so the run reaches Phase 1/2. */
+        private void stubResolvableRun() {
             SuiteSnapshotDto builtSnapshot = SuiteSnapshotDto.builder()
                     .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
                     .suiteType("DEPLOYMENT")
@@ -471,57 +501,128 @@ class TestSuiteEvaluationJobTest {
             when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(liveSuite));
             when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(liveDataset));
             when(suiteSnapshotBuilder.build(liveSuite, liveDataset)).thenReturn(builtSnapshot);
+        }
 
-            job.executeRunAsync(runId, null, true);
+        /** Stubs {@code evaluationRunProperties} so {@code buildContext} (Phase 1) does not NPE. */
+        private void stubExecutionRunProperties() {
+            EvaluationRunProperties.Execution execution = new EvaluationRunProperties.Execution();
+            execution.setDefaultConcurrencyLevel(1);
+            execution.setDefaultRequestTimeoutMs(1000L);
+            execution.setResultBatchSize(10);
+            execution.setMaxResponseSizeBytes(1000L);
+            EvaluationRunProperties.Retry retry = new EvaluationRunProperties.Retry();
+            retry.setDefaultMaxRetries(0);
+            retry.setDefaultRetryDelayMs(100L);
+            retry.setMaxRetryDelayMs(100L);
+            retry.setDefaultRetryBackoffMultiplier(1.0);
+            when(evaluationRunProperties.getExecution()).thenReturn(execution);
+            when(evaluationRunProperties.getRetry()).thenReturn(retry);
+        }
+
+        @Test
+        @DisplayName("runs Phase 2 + Phase 3 but never Phase 1, and completes the run")
+        void runsPhase2And3NeverPhase1() {
+            stubResolvableRun();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            when(repository.updateToCompleted(eq(runId), anyLong(), anyLong())).thenReturn(1);
+
+            job.run(runId, null, true, handle);
 
             verify(evaluationExecutor, never()).execute(any());
             verify(metricEvaluationExecutor).execute(any());
             verify(metricScoreComputation).execute(any());
             verify(repository).updateToRunning(eq(runId), anyLong(), anyLong());
             verify(repository).updateToCompleted(eq(runId), anyLong(), anyLong());
+            verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
+            verify(repository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
             verify(repository).updateSuiteSnapshot(eq(runId), any(), anyLong());
             verify(testCaseRunInputRepository, never()).insertBatch(any());
             verify(runnableTestCaseSelector, never()).loadRunnablePage(any(), any(), anyInt(), anyInt());
             verify(repository, never()).updateNumberOfTestCases(any(), anyInt(), anyLong());
+            verify(registry).remove(runId);
         }
 
         @Test
-        @DisplayName("cancellation before Phase 2 skips both metric evaluation and score computation")
-        void cancellationSkipsPhase2And3() {
-            job.registerCancellationSignal(runId);
-            job.interruptRun(runId);
+        @DisplayName("shouldExitWithoutRunning_whenCancelledWhilePending")
+        void shouldExitWithoutRunning_whenCancelledWhilePending() {
+            stubResolvableRun();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(0);
 
-            job.executeRunAsync(runId, null, true);
+            job.run(runId, null, true, handle);
 
+            verify(evaluationExecutor, never()).execute(any());
+            verify(metricEvaluationExecutor, never()).execute(any());
+            verify(metricScoreComputation, never()).execute(any());
+            verify(repository, never()).updateToCompleted(any(), anyLong(), anyLong());
+            verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
+            verify(repository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
+            verify(registry).remove(runId);
+        }
+
+        @Test
+        @DisplayName("shouldSkipSnapshot_whenHandleCancelledBeforeStart")
+        void shouldSkipSnapshot_whenHandleCancelledBeforeStart() {
+            handle.cancel();
+
+            job.run(runId, null, true, handle);
+
+            verify(repository, never()).updateToRunning(any(), anyLong(), anyLong());
+            verify(repository, never()).updateSuiteSnapshot(any(), any(), anyLong());
+            verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
+            verify(registry).remove(runId);
+        }
+
+        @Test
+        @DisplayName("shouldMarkCancelledAndSkipPhase2And3_whenCancelledDuringPhase1")
+        void shouldMarkCancelledAndSkipPhase2And3_whenCancelledDuringPhase1() {
+            stubResolvableRun();
+            stubExecutionRunProperties();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            doThrow(new RejectedExecutionException("run executor shut down"))
+                    .when(evaluationExecutor)
+                    .execute(any());
+
+            job.run(runId, null, false, handle);
+
+            verify(evaluationExecutor).execute(any());
             verify(metricEvaluationExecutor, never()).execute(any());
             verify(metricScoreComputation, never()).execute(any());
             verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
+            verify(repository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
         }
 
         @Test
-        @DisplayName("cancellation during Phase 2 skips Phase 3 and cancels the run")
-        void cancellationDuringPhase2SkipsPhase3() {
-            SuiteSnapshotDto builtSnapshot = SuiteSnapshotDto.builder()
-                    .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
-                    .suiteType("DEPLOYMENT")
-                    .build();
-            when(repository.findById(runId)).thenReturn(Optional.of(run));
-            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(liveSuite));
-            when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(liveDataset));
-            when(suiteSnapshotBuilder.build(liveSuite, liveDataset)).thenReturn(builtSnapshot);
-            job.registerCancellationSignal(runId);
+        @DisplayName("shouldMarkCancelled_whenCompletedWriteAffectsNoRows")
+        void shouldMarkCancelled_whenCompletedWriteAffectsNoRows() {
+            stubResolvableRun();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            when(repository.updateToCompleted(eq(runId), anyLong(), anyLong())).thenReturn(0);
+
+            job.run(runId, null, true, handle);
+
+            verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
+            verify(repository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
+        }
+
+        @Test
+        @DisplayName("shouldMarkFailedAnalyticsWriteFailed_whenPhase2FlushThrows_evenIfCancelled")
+        void shouldMarkFailedAnalyticsWriteFailed_whenPhase2FlushThrows_evenIfCancelled() {
+            stubResolvableRun();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
             doAnswer(invocation -> {
-                        job.interruptRun(runId);
-                        return null;
+                        handle.cancel();
+                        throw new AnalyticsWriteException("flush failed", new RuntimeException("db down"));
                     })
                     .when(metricEvaluationExecutor)
                     .execute(any());
 
-            job.executeRunAsync(runId, null, true);
+            job.run(runId, null, true, handle);
 
-            verify(metricEvaluationExecutor).execute(any());
+            ArgumentCaptor<String> detailsCaptor = ArgumentCaptor.forClass(String.class);
+            verify(repository).updateToFailed(eq(runId), any(), detailsCaptor.capture(), anyLong(), anyLong());
+            assertThat(detailsCaptor.getValue()).contains(AnalyticsWriteException.ERROR_CODE);
             verify(metricScoreComputation, never()).execute(any());
-            verify(repository).updateToCancelled(eq(runId), anyLong(), anyLong());
+            verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
         }
     }
 }

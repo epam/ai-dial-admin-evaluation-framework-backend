@@ -1,8 +1,10 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -15,13 +17,16 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @LogExecution
+@RequiredArgsConstructor
 public class ActiveRunRegistry {
 
     private final ConcurrentHashMap<UUID, RunHandle> handles = new ConcurrentHashMap<>();
 
+    private final RunExecutorFactory runExecutorFactory;
+
     /** Registers a new {@link RunHandle} for the given run id, replacing any previous handle for it. */
     public RunHandle register(UUID runId) {
-        RunHandle handle = new RunHandle();
+        RunHandle handle = new RunHandle(runExecutorFactory.newWorkerExecutor());
         handles.put(runId, handle);
         return handle;
     }
@@ -39,5 +44,10 @@ public class ActiveRunRegistry {
     /** Removes the run's handle. Called once the run's job has finished, in its {@code finally} block. */
     public void remove(UUID runId) {
         handles.remove(runId);
+    }
+
+    /** Number of runs currently in flight on this instance (registered but not yet removed). */
+    public int activeCount() {
+        return handles.size();
     }
 }

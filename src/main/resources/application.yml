@@ -110,10 +110,6 @@ analytics:
 
 # Test suite run configuration
 test-suite-run:
-  executor:
-    core-pool-size: 5
-    max-pool-size: 10
-    queue-capacity: 50
   sse:
     timeout-minutes: 30
     cleanup-interval-ms: 300000

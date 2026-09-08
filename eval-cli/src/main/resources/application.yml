@@ -3,7 +3,7 @@ spring:
     name: eval-cli
   threads:
     virtual:
-      enabled: true
+      enabled: ${VIRTUAL_THREADS_ENABLED:true}
   main:
     # Disable web server — this is a CLI application
     web-application-type: none

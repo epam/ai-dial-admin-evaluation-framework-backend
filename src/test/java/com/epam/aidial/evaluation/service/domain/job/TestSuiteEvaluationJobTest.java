@@ -8,6 +8,8 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -46,6 +48,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -489,7 +492,7 @@ class TestSuiteEvaluationJobTest {
                     .datasetId(datasetId)
                     .build();
             liveDataset = Dataset.builder().id(datasetId).build();
-            handle = new RunHandle();
+            handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
         }
 
         /** Stubs the snapshot phase (and legacy snapshot resolution) so the run reaches Phase 1/2. */
@@ -541,6 +544,22 @@ class TestSuiteEvaluationJobTest {
             verify(runnableTestCaseSelector, never()).loadRunnablePage(any(), any(), anyInt(), anyInt());
             verify(repository, never()).updateNumberOfTestCases(any(), anyInt(), anyLong());
             verify(registry).remove(runId);
+        }
+
+        @Test
+        @DisplayName("registry.remove is invoked after the terminal notifySse, not before")
+        void registryRemoveInvokedAfterNotifySse() {
+            stubResolvableRun();
+            when(repository.updateToRunning(eq(runId), anyLong(), anyLong())).thenReturn(1);
+            when(repository.updateToCompleted(eq(runId), anyLong(), anyLong())).thenReturn(1);
+
+            job.run(runId, null, true, handle);
+
+            InOrder inOrder = inOrder(sseService, registry);
+            // Two notifySse calls happen on this path: once after updateToRunning, once as the
+            // terminal notification in the finally block. registry.remove must come after both.
+            inOrder.verify(sseService, times(2)).notifyStatusUpdate(any());
+            inOrder.verify(registry).remove(runId);
         }
 
         @Test
@@ -693,6 +712,26 @@ class TestSuiteEvaluationJobTest {
             assertThat(detailsCaptor.getValue()).contains("UNEXPECTED_ERROR");
             verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
             verify(metricEvaluationExecutor, never()).execute(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("dispatch(...) — submission-time cleanup (design D4)")
+    class Dispatch {
+
+        @Test
+        @DisplayName("cleans up and rethrows the Error when the executor throws at submission time")
+        void cleansUpAndRethrowsErrorFromExecutorSubmission() {
+            UUID runId = UUID.randomUUID();
+            RunHandle handle = mock(RunHandle.class);
+            when(registry.register(runId)).thenReturn(handle);
+            OutOfMemoryError error = new OutOfMemoryError("unable to create native thread");
+            doThrow(error).when(taskExecutor).execute(any());
+
+            assertThatThrownBy(() -> job.dispatch(runId, null, true)).isSameAs(error);
+
+            verify(registry).remove(runId);
+            verify(handle).close();
         }
     }
 }

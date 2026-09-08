@@ -8,12 +8,11 @@ import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
-import io.opentelemetry.context.Context;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -32,6 +31,7 @@ public class EvaluationContextFactory {
     private final EvalCliProperties cliProperties;
     private final TargetProperties targetProperties;
     private final Clock clock;
+    private final RunExecutorFactory runExecutorFactory;
 
     /**
      * Creates a new {@link EvaluationContext} for the given suite and test-case count.
@@ -78,8 +78,9 @@ public class EvaluationContextFactory {
                 // System settings from CLI config
                 .resultBatchSize(run.getResultBatchSize())
                 .maxResponseSizeBytes(run.getMaxResponseSizeBytes())
-                // Worker executor for this run; owned and shut down by RunOrchestrationService
-                .executor(Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor()))
+                // Worker executor for this run; thread mode follows spring.threads.virtual.enabled
+                // (VIRTUAL_THREADS_ENABLED); owned and shut down by RunOrchestrationService
+                .executor(runExecutorFactory.newWorkerExecutor())
                 // Auth token for per-worker propagation
                 .token(targetProperties.getApiKey())
                 .createdAtMs(clock.millis())

@@ -14,9 +14,13 @@ Cancelling a `RUNNING` test suite run used to flip an in-memory `AtomicBoolean` 
 
 ## The mechanism
 
-`RunHandle` (`service.domain.job`, plain class, not a bean) owns one
-`Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor())` per run — OTel context propagation is
-preserved across the wrapped executor. It exposes `executor()`, `cancel()` (= `shutdownNow()` + sets an
+`RunHandle` (`service.domain.job`, plain class, not a bean) owns one `ExecutorService` per run, passed into
+its constructor rather than built by `RunHandle` itself — OTel context propagation is preserved because
+that executor is always the one returned by `RunExecutorFactory.newWorkerExecutor()`
+(`evaluation-runner-core`, `runner.job`), which wraps it in `Context.taskWrapping(...)`. `ActiveRunRegistry`
+holds the `RunExecutorFactory` and calls `new RunHandle(factory.newWorkerExecutor())` in `register`, so
+`RunHandle` stays a plain session object that any test can construct with any executor. `RunHandle` exposes
+`executor()`, `cancel()` (= `shutdownNow()` + sets an
 internal `cancelled` flag), `isCancelled()`, `throwIfCancelled()` (throws `CancellationException` once
 cancelled), and `close()` (= `shutdownNow()` too, but does **not** set `cancelled` — a run that finished on
 its own is never reported as cancelled). `shutdownNow()` is used in both paths instead of
@@ -41,6 +45,29 @@ mid-flush can lose up to `batchSize` already-completed results of that in-flight
 cancellation (results are simply absent, never synthetic). `TestCaseRunner.awaitCompletion()` **always**
 runs before the *final* flush, on both the happy path and the cancel path, and that final flush still runs
 on the job thread.
+
+### Thread mode
+
+`RunExecutorFactory(boolean virtualThreads)` is the single source of the run thread mode, read from
+`spring.threads.virtual.enabled` (`VIRTUAL_THREADS_ENABLED`, default `true`) via
+`Threading.VIRTUAL.isActive(environment)` in `EvaluationRunnerAutoConfiguration`. Virtual threads are the
+default; setting `VIRTUAL_THREADS_ENABLED=false` switches every run's worker executor to platform threads
+(named `run-worker-*`, daemon) so a sampling profiler or `jcmd Thread.print` can attribute CPU time to real
+OS threads — virtual threads are invisible to samplers. Both modes build a thread-per-task executor
+(`Executors.newThreadPerTaskExecutor(threadFactory)`), so `shutdownNow()` semantics (interrupt every live
+task, reject new submissions) are identical regardless of mode — cancellation code never needs a
+mode-specific branch.
+
+The job executor (`AsyncConfiguration.testSuiteRunExecutor`, `test-suite-run-*` threads) is a
+`SimpleAsyncTaskExecutor` that follows the same switch (`setVirtualThreads(factory.isVirtualThreads())`),
+has no pool, queue, or concurrency limit — run concurrency is governed solely by `test-suite-run.limits.*`
+— and rejects submissions only after the application context starts closing
+(`setCancelRemainingTasksOnClose(true)`, which interrupts any in-flight job thread at that point; see
+"Never interrupt the job thread" below for why that is safe only at shutdown).
+
+Same switch, same JVM: `VIRTUAL_THREADS_ENABLED=false` also flips Spring Boot's own executors (e.g.
+Tomcat's request-handling threads) to platform threads, which is the point — one knob for the whole
+process during profiling, not a run-specific override.
 
 ## Status lifecycle
 
@@ -117,6 +144,10 @@ terminal status. Single-instance is still the standing assumption for reconcilia
 - Simulate a cancel in a unit test by calling `handle.cancel()` (or `handle.executor().shutdownNow()`
   directly) before or during the call under test, then assert the resulting `CancellationException` /
   `RejectedExecutionException` path.
+- Construct a `RunHandle` directly with any `ExecutorService` — e.g.
+  `new RunHandle(Executors.newVirtualThreadPerTaskExecutor())` for a quick unit test, or
+  `new RunHandle(new RunExecutorFactory(true).newWorkerExecutor())` when the test wants the exact
+  production wiring (OTel context wrapping included). `RunHandle` no longer has a no-arg constructor.
 - Mockito returns `0` for an unstubbed `int`-returning repository method. In happy-path tests that don't
   care about the guard, stub `updateToRunning`/`updateToCompleted` to return `1` — otherwise the job takes
   the "zero rows affected ⇒ cancelled" branch and the test asserts the wrong terminal status.

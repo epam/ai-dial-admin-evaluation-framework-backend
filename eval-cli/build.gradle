@@ -91,13 +91,6 @@ dependencies {
     // autoconfiguration
     implementation project(':evaluation-runner-core')
 
-    // OTel context propagation for the CLI's own worker executor (Context.taskWrapping in
-    // EvaluationContextFactory) — evaluation-runner-core depends on this internally as 'implementation',
-    // so it is not exposed on this module's compile classpath and must be declared here too, pinned to
-    // the same instrumentation BOM runner-core uses.
-    implementation platform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.29.0')
-    implementation 'io.opentelemetry:opentelemetry-context'
-
     // CLI framework
     implementation 'info.picocli:picocli:4.7.7'
     implementation 'info.picocli:picocli-spring-boot-starter:4.7.7'

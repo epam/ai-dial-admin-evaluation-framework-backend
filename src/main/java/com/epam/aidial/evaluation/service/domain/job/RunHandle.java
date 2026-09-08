@@ -1,14 +1,15 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
-import io.opentelemetry.context.Context;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Owns a single test suite run's worker executor for the run's whole lifetime. Not a Spring bean —
- * session-scoped, created and registered by {@link ActiveRunRegistry} once per dispatched run.
+ * session-scoped, created and registered by {@link ActiveRunRegistry} once per dispatched run. The
+ * executor is supplied by the caller: in production, {@link ActiveRunRegistry} obtains it from
+ * {@code RunExecutorFactory.newWorkerExecutor()}, whose thread mode (virtual vs. platform) follows
+ * {@code spring.threads.virtual.enabled}.
  *
  * <p>Cancellation is delivered by shutting the executor down ({@link #cancel()} = {@code shutdownNow()})
  * rather than by a flag that phases poll (see {@code design.md} decision D1). {@link #close()} also calls
@@ -26,8 +27,8 @@ public class RunHandle {
     private final ExecutorService executor;
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
 
-    public RunHandle() {
-        this.executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
+    public RunHandle(ExecutorService executor) {
+        this.executor = executor;
     }
 
     public ExecutorService executor() {

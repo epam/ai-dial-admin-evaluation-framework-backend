@@ -96,7 +96,10 @@ public class TestSuiteEvaluationJob {
         RunHandle handle = registry.register(runId);
         try {
             taskExecutor.execute(() -> run(runId, token, skipDeploymentPhase, handle));
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | Error e) {
+            // Platform-mode thread exhaustion at task submission surfaces as OutOfMemoryError, not a
+            // RuntimeException; without this branch it would leak the just-registered handle and strand
+            // the run PENDING with no cleanup. The Error is left for the caller to propagate.
             registry.remove(runId);
             handle.close();
             throw e;
@@ -204,9 +207,9 @@ public class TestSuiteEvaluationJob {
             int affected = repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now);
             statusChanged = affected > 0;
         } catch (CancellationException | RejectedExecutionException e) {
-            // Clear a stray interrupt flag before the terminal write: the job thread is interrupted
-            // only at container shutdown, and an interrupted thread would fail Hikari connection
-            // acquisition for this write.
+            // Clear a stray interrupt flag before the terminal write: the job thread is interrupted only
+            // when SimpleAsyncTaskExecutor.close() runs at container shutdown, and an interrupted thread
+            // would fail Hikari connection acquisition for this write.
             Thread.interrupted();
             log.info("Run {} cancelled: {}", runId, e.getMessage(), e);
             long now = clock.millis();
@@ -232,10 +235,14 @@ public class TestSuiteEvaluationJob {
             }
         } finally {
             handle.close();
-            registry.remove(runId);
+            // registry.remove(runId) must be the LAST statement: notifySse performs a DB read
+            // (repository.findById), and the functional-test drain waits on registry.activeCount() == 0
+            // before tearing down its schema, so the handle must stay registered until every DB access
+            // this method makes has completed.
             if (statusChanged) {
                 notifySse(runId);
             }
+            registry.remove(runId);
         }
     }
 

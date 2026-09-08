@@ -14,11 +14,14 @@ import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,7 +48,7 @@ class EvaluationContextFactoryTest {
 
     @BeforeEach
     void setUp() {
-        factory = new EvaluationContextFactory(cliProperties, targetProperties, clock);
+        factory = new EvaluationContextFactory(cliProperties, targetProperties, clock, new RunExecutorFactory(true));
 
         when(cliProperties.getRun()).thenReturn(runConfig);
         when(runConfig.getConcurrencyLevel()).thenReturn(4);
@@ -116,6 +119,30 @@ class EvaluationContextFactoryTest {
         assertThat(secondContext.getExecutor())
                 .as("each create(...) call must get its own executor, not a shared singleton")
                 .isNotSameAs(context.getExecutor());
+    }
+
+    @Test
+    @DisplayName("runs the context's executor on a platform thread when virtual threads are disabled")
+    void executorRunsOnPlatformThreadWhenVirtualThreadsDisabled() throws Exception {
+        final EvaluationContextFactory platformFactory =
+                new EvaluationContextFactory(cliProperties, targetProperties, clock, new RunExecutorFactory(false));
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final EvaluationContext context = platformFactory.create(
+                suite, 1, DeploymentReferenceDto.builder().id("d").name("d").build(), null);
+        final ExecutorService executor = context.getExecutor();
+        try {
+            final Future<Boolean> isVirtual =
+                    executor.submit(() -> Thread.currentThread().isVirtual());
+            assertThat(isVirtual.get()).isFalse();
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

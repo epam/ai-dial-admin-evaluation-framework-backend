@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
@@ -17,7 +18,7 @@ class RunHandleTest {
     @Test
     @DisplayName("cancel() marks the handle as cancelled")
     void cancelMarksCancelled() {
-        RunHandle handle = new RunHandle();
+        RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
 
         handle.cancel();
 
@@ -27,7 +28,7 @@ class RunHandleTest {
     @Test
     @DisplayName("throwIfCancelled throws CancellationException once cancelled")
     void throwIfCancelledThrowsAfterCancel() {
-        RunHandle handle = new RunHandle();
+        RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
         handle.cancel();
 
         assertThatThrownBy(handle::throwIfCancelled).isInstanceOf(CancellationException.class);
@@ -36,7 +37,7 @@ class RunHandleTest {
     @Test
     @DisplayName("throwIfCancelled is a no-op before cancel")
     void throwIfCancelledNoopBeforeCancel() {
-        RunHandle handle = new RunHandle();
+        RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
 
         assertThatCode(handle::throwIfCancelled).doesNotThrowAnyException();
     }
@@ -44,7 +45,7 @@ class RunHandleTest {
     @Test
     @DisplayName("executor().execute rejects new tasks after cancel")
     void executorRejectsAfterCancel() {
-        RunHandle handle = new RunHandle();
+        RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
         handle.cancel();
 
         assertThatThrownBy(() -> handle.executor().execute(() -> {})).isInstanceOf(RejectedExecutionException.class);
@@ -53,7 +54,7 @@ class RunHandleTest {
     @Test
     @DisplayName("close() returns promptly even while a non-interruptible task is busy-looping")
     void closeReturnsPromptlyWithBusyTaskInFlight() throws InterruptedException {
-        RunHandle handle = new RunHandle();
+        RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
         CountDownLatch taskStarted = new CountDownLatch(1);
         BusyFlag busyFlag = new BusyFlag();
 
@@ -80,7 +81,7 @@ class RunHandleTest {
     @Test
     @DisplayName("close() alone does not mark the handle as cancelled")
     void closeAloneDoesNotSetCancelled() {
-        RunHandle handle = new RunHandle();
+        RunHandle handle = new RunHandle(Executors.newVirtualThreadPerTaskExecutor());
 
         handle.close();
 

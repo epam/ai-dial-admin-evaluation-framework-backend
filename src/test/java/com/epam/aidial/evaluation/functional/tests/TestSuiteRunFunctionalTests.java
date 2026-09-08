@@ -16,6 +16,8 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
@@ -87,6 +89,9 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private AnalyticsTestDataHelper analyticsTestDataHelper;
+
+    @Autowired
+    private TestSuiteRunRepository testSuiteRunRepository;
 
     @Autowired
     private MetricDeclarationTestDataProvider metricDeclarationTestDataProvider;
@@ -627,12 +632,53 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         UUID runId = metaTestDataHelper
                 .createRunningRun(suite.getId(), "Running Cancel")
                 .getId();
+        try {
+            ResponseEntity<TestSuiteRunResponseDto> response = restTemplate.postForEntity(
+                    apiUrl("/test-suite-runs/" + runId + "/cancel"), null, TestSuiteRunResponseDto.class);
 
-        ResponseEntity<TestSuiteRunResponseDto> response = restTemplate.postForEntity(
-                apiUrl("/test-suite-runs/" + runId + "/cancel"), null, TestSuiteRunResponseDto.class);
+            // For RUNNING, cancel writes CANCELLING synchronously; response returns that transient state
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getStatus()).isEqualTo(RunStatus.CANCELLING.name());
+            assertThat(response.getBody().getCompletedAt()).isNull();
 
-        // For RUNNING, cancel triggers interrupt; response returns current state
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            TestSuiteRun stored = testSuiteRunRepository
+                    .findById(runId)
+                    .orElseThrow(() -> new AssertionError("run not found: " + runId));
+            assertThat(stored.getStatus()).isEqualTo(RunStatus.CANCELLING.name());
+        } finally {
+            metaTestDataHelper.deleteRun(runId);
+        }
+    }
+
+    @Test
+    @DisplayName("Should return CANCELLING unchanged when cancel called twice")
+    void shouldReturnCancellingUnchanged_whenCancelCalledTwice() {
+        TestSuiteResponseDto suite = createTestSuite("Suite For Cancel Twice");
+        UUID runId = metaTestDataHelper
+                .createRunningRun(suite.getId(), "Running Cancel Twice")
+                .getId();
+        try {
+            ResponseEntity<TestSuiteRunResponseDto> first = restTemplate.postForEntity(
+                    apiUrl("/test-suite-runs/" + runId + "/cancel"), null, TestSuiteRunResponseDto.class);
+            ResponseEntity<TestSuiteRunResponseDto> second = restTemplate.postForEntity(
+                    apiUrl("/test-suite-runs/" + runId + "/cancel"), null, TestSuiteRunResponseDto.class);
+
+            assertThat(first.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(first.getBody()).isNotNull();
+            assertThat(first.getBody().getStatus()).isEqualTo(RunStatus.CANCELLING.name());
+
+            assertThat(second.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(second.getBody()).isNotNull();
+            assertThat(second.getBody().getStatus()).isEqualTo(RunStatus.CANCELLING.name());
+
+            TestSuiteRun stored = testSuiteRunRepository
+                    .findById(runId)
+                    .orElseThrow(() -> new AssertionError("run not found: " + runId));
+            assertThat(stored.getStatus()).isEqualTo(RunStatus.CANCELLING.name());
+        } finally {
+            metaTestDataHelper.deleteRun(runId);
+        }
     }
 
     @Test

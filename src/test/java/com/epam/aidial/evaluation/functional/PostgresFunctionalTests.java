@@ -393,7 +393,6 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class ExecutionSettingsTests extends ExecutionSettingsFunctionalTests {}
 
     @Nested
-    @TestPropertySource(properties = {"test-suite-run.execution.cancellation-grace-period-ms=1000"})
     class EvaluationExecutorFailureModesTests extends EvaluationExecutorFailureModesFunctionalTests {}
 
     @Nested

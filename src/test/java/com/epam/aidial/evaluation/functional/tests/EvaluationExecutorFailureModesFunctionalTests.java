@@ -6,7 +6,6 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
-import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
@@ -27,13 +26,10 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -73,9 +69,6 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
 
     @Autowired
     private ObjectMapper objectMapper;
-
-    @Autowired
-    private TestSuiteRunRepository testSuiteRunRepository;
 
     private UUID newDatasetWithSchema(List<FieldDefinitionDto> schema) {
         try {
@@ -142,9 +135,10 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
     }
 
     @Test
-    @DisplayName("Should cancel run mid-flight immediately, surfacing CANCELLING before CANCELLED, "
-            + "with rows for unfinished cases absent (no synthetic CANCELLED/INTERRUPTED rows)")
-    void shouldCancelRunMidFlight_withAbsentRowsForUnfinishedCases() throws InterruptedException {
+    @DisplayName("Should cancel run mid-flight immediately, returning CANCELLING from the cancel call and "
+            + "finalizing to CANCELLED, with rows for unfinished cases absent "
+            + "(no synthetic CANCELLED/INTERRUPTED rows)")
+    void shouldCancelRunMidFlight_withAbsentRowsForUnfinishedCases() {
         TestSuiteResponseDto suite = createTestSuite("Suite Cancel Mid-flight");
         for (int i = 1; i <= 4; i++) {
             createTestCaseForSuite(suite.getId(), "TC" + i, Map.of("expected", "v" + i));
@@ -178,28 +172,9 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
         // Wait until run is RUNNING (snapshot phase done) so cancel happens mid-flight
         awaitRunStatus(runId, RunStatus.RUNNING.name(), 15);
 
-        // The CANCELLING status is written synchronously by the cancel call, then finalized to a
-        // terminal status by the job's background thread within milliseconds (no grace period).
-        // A single point-in-time read right after the cancel call returns would race against that
-        // background finalization, so poll the DB in a tight loop spanning the whole cancel call
-        // instead — this reliably observes the transient CANCELLING status regardless of exactly
-        // how fast the finalization completes.
-        List<String> observedStatuses = Collections.synchronizedList(new ArrayList<>());
-        AtomicBoolean keepPolling = new AtomicBoolean(true);
-        Thread statusPoller = new Thread(() -> {
-            while (keepPolling.get()) {
-                testSuiteRunRepository.findById(runId).ifPresent(run -> observedStatuses.add(run.getStatus()));
-                try {
-                    Thread.sleep(5);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-        });
-        statusPoller.setDaemon(true);
-        statusPoller.start();
-
+        // The cancel response body is the deterministic observation of the transient CANCELLING
+        // status; DB-readability of CANCELLING is covered separately by
+        // TestSuiteRunFunctionalTests.shouldCancelRunningRun.
         long cancelStartNanos = System.nanoTime();
         ResponseEntity<TestSuiteRunResponseDto> cancelResponse = restTemplate.exchange(
                 apiUrl("/test-suite-runs/" + runId + "/cancel"),
@@ -212,13 +187,8 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
 
         TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 30);
         long cancelToTerminalMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - cancelStartNanos);
-        keepPolling.set(false);
-        statusPoller.join(TimeUnit.SECONDS.toMillis(5));
 
         assertThat(terminal.getStatus()).isEqualTo(RunStatus.CANCELLED.name());
-        assertThat(observedStatuses)
-                .as("the transient CANCELLING status must be observable before the run reaches CANCELLED")
-                .contains(RunStatus.CANCELLING.name());
         assertThat(cancelToTerminalMillis)
                 .as("cancellation is immediate (executor shutdownNow, no grace-period drain)")
                 .isLessThan(2000L);

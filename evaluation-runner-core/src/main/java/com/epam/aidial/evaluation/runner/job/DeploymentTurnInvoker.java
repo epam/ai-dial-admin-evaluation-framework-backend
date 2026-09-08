@@ -58,18 +58,12 @@ public class DeploymentTurnInvoker {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             if (attempt > 0) {
-                if (context.getCancellationSignal().get()) {
-                    break;
-                }
                 final long delay = DeploymentInvocationSupport.nextBackoffDelayMs(
                         attempt, retryDelayMs, multiplier, maxRetryDelay);
                 try {
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    break;
-                }
-                if (context.getCancellationSignal().get()) {
                     break;
                 }
             }

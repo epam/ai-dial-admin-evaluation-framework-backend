@@ -75,9 +75,5 @@ public class EvalCliProperties {
         @NotNull
         @Min(1)
         private Long maxResponseSizeBytes;
-
-        @NotNull
-        @Min(0)
-        private Long cancellationGracePeriodMs;
     }
 }

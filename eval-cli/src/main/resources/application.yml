@@ -32,7 +32,6 @@ cli:
     max-retry-delay-ms: ${CLI_RUN_MAX_RETRY_DELAY_MS:30000}
     result-batch-size: ${CLI_RUN_RESULT_BATCH_SIZE:50}
     max-response-size-bytes: ${CLI_RUN_MAX_RESPONSE_SIZE_BYTES:10485760}
-    cancellation-grace-period-ms: ${CLI_RUN_CANCELLATION_GRACE_PERIOD_MS:30000}
 
 # Target DIAL Core host (reuses evaluation-runner-core's DialCoreProperties binding) and API key
 dial:
@@ -70,7 +69,6 @@ test-suite-run:
     max-request-timeout-ms: ${TEST_SUITE_RUN_MAX_REQUEST_TIMEOUT_MS:3600000}
     result-batch-size: ${TEST_SUITE_RUN_RESULT_BATCH_SIZE:50}
     max-response-size-bytes: ${TEST_SUITE_RUN_MAX_RESPONSE_SIZE_BYTES:10485760}
-    cancellation-grace-period-ms: ${TEST_SUITE_RUN_CANCELLATION_GRACE_PERIOD_MS:30000}
     header-blacklist:
       - Authorization
       - Api-Key

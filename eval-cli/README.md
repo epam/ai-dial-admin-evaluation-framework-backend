@@ -121,7 +121,6 @@ these two, `--deployment-id` (also CLI-flag-only) is optional — see the [Comma
 | `cli.run.max-retry-delay-ms` | `CLI_RUN_MAX_RETRY_DELAY_MS` | `30000` | Yes | Maximum delay between retries regardless of backoff (ms). |
 | `cli.run.result-batch-size` | `CLI_RUN_RESULT_BATCH_SIZE` | `50` | Yes | Number of results flushed to CSV per write batch. |
 | `cli.run.max-response-size-bytes` | `CLI_RUN_MAX_RESPONSE_SIZE_BYTES` | `10485760` | Yes | Maximum response body size accepted from the target deployment (bytes). Default: 10 MiB. |
-| `cli.run.cancellation-grace-period-ms` | `CLI_RUN_CANCELLATION_GRACE_PERIOD_MS` | `30000` | Yes | Grace period to wait for in-flight tasks after a cancellation signal before force-stopping (ms). |
 
 ### Target DIAL Core host (`dial.components.core.*`)
 
@@ -157,7 +156,6 @@ request-build time (headers a test case cannot override, including the `Api-Key`
 | `test-suite-run.execution.max-request-timeout-ms` | `TEST_SUITE_RUN_MAX_REQUEST_TIMEOUT_MS` | `3600000` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.execution.result-batch-size` | `TEST_SUITE_RUN_RESULT_BATCH_SIZE` | `50` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.execution.max-response-size-bytes` | `TEST_SUITE_RUN_MAX_RESPONSE_SIZE_BYTES` | `10485760` | Yes | Unused by eval-cli's own execution path; must bind. |
-| `test-suite-run.execution.cancellation-grace-period-ms` | `TEST_SUITE_RUN_CANCELLATION_GRACE_PERIOD_MS` | `30000` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.execution.header-blacklist` | _(list, not env-overridable here)_ | `Authorization, Api-Key, Host, Content-Length, Transfer-Encoding, Connection, traceparent, tracestate` | Yes | Headers a test case's own headers may never override. |
 | `test-suite-run.retry.default-max-retries` | `TEST_SUITE_RUN_DEFAULT_MAX_RETRIES` | `0` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.retry.max-max-retries` | `TEST_SUITE_RUN_MAX_MAX_RETRIES` | `10` | Yes | Unused by eval-cli's own execution path; must bind. |

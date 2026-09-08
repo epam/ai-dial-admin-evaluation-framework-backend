@@ -13,7 +13,7 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -48,10 +48,12 @@ public class EvaluationContext {
     // System settings
     private final int resultBatchSize;
     private final long maxResponseSizeBytes;
-    private final long cancellationGracePeriodMs;
 
-    // Cancellation signal
-    private final AtomicBoolean cancellationSignal;
+    /**
+     * Worker executor for this run. Owned, and eventually shut down, by the caller; the runner never
+     * creates or shuts it down. Cancellation is delivered by the owner calling shutdownNow().
+     */
+    private final ExecutorService executor;
 
     // Token for propagation to workers
     private final String token;

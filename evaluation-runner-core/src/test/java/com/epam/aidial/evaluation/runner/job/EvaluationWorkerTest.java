@@ -35,7 +35,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -401,8 +401,7 @@ class EvaluationWorkerTest {
                 .maxRetryDelayMs(1000L)
                 .resultBatchSize(100)
                 .maxResponseSizeBytes(5242880L)
-                .cancellationGracePeriodMs(5000L)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .token("test-token")
                 .createdAtMs(System.currentTimeMillis())
                 .build();
@@ -432,8 +431,7 @@ class EvaluationWorkerTest {
                 .maxRetryDelayMs(1000L)
                 .resultBatchSize(100)
                 .maxResponseSizeBytes(5242880L)
-                .cancellationGracePeriodMs(5000L)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .token("test-token")
                 .createdAtMs(FIXED_CLOCK.millis())
                 .suiteType(SuiteType.MCP_TOOL)

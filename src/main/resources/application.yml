@@ -124,7 +124,6 @@ test-suite-run:
     max-request-timeout-ms: ${TEST_SUITE_RUN_EXEC_MAX_TIMEOUT:1200000}
     result-batch-size: 100
     max-response-size-bytes: 5242880  # 5MB
-    cancellation-grace-period-ms: 30000
     header-blacklist:
       - Authorization
       - Host

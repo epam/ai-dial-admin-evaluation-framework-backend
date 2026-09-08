@@ -1,10 +1,10 @@
 package com.epam.aidial.evaluation.runner.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -15,13 +15,19 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,10 +56,17 @@ class TestCaseRunnerTest {
     private final Clock fixedClock = Clock.fixed(Instant.ofEpochMilli(FIXED_NOW_MS), ZoneOffset.UTC);
 
     private TestCaseRunResultFactory testCaseRunResultFactory;
+    private ExecutorService executor;
 
     @BeforeEach
     void setUp() {
         testCaseRunResultFactory = new TestCaseRunResultFactory(new ObjectMapper());
+        executor = Executors.newVirtualThreadPerTaskExecutor();
+    }
+
+    @AfterEach
+    void tearDown() {
+        executor.shutdownNow();
     }
 
     private TestCaseRunner createRunner(EvaluationContext context) {
@@ -80,8 +93,7 @@ class TestCaseRunnerTest {
                 .maxRetryDelayMs(1000L)
                 .resultBatchSize(100)
                 .maxResponseSizeBytes(5242880L)
-                .cancellationGracePeriodMs(5000L)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(executor)
                 .token("test-token")
                 .createdAtMs(System.currentTimeMillis())
                 .snapshotResponseColumns(List.of());
@@ -125,7 +137,7 @@ class TestCaseRunnerTest {
         when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), eq(0), anyList()))
                 .thenReturn(List.of(result));
 
-        runner.submit(List.of(input));
+        assertThat(runner.submit(List.of(input))).isTrue();
         runner.awaitCompletion();
 
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
@@ -176,20 +188,6 @@ class TestCaseRunnerTest {
                 .execute(eq(input), any(EvaluationContext.class), eq(0), anyList());
         verify(evaluationWorker, timeout(ASYNC_TIMEOUT_MS))
                 .execute(eq(input), any(EvaluationContext.class), eq(1), anyList());
-    }
-
-    @Test
-    @DisplayName("submit with cancellation before dispatch stops early")
-    void submit_cancellationBeforeDispatch_stopsEarly() {
-        AtomicBoolean cancellationSignal = new AtomicBoolean(true);
-        EvaluationContext context =
-                buildContextBuilder(1, 1).cancellationSignal(cancellationSignal).build();
-        TestCaseRunner runner = createRunner(context);
-
-        runner.submit(List.of(buildInput()));
-        runner.awaitCompletion();
-
-        verify(evaluationWorker, never()).execute(any(), any(), any(Integer.class), anyList());
     }
 
     @Test
@@ -255,18 +253,17 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName("Long-running workers complete even when sleep > grace period (no cancellation)")
+    @DisplayName("Long-running workers are awaited to completion with no cancellation and no timeout")
     void shouldNotTimeoutOnLongRun_whenNoCancellation() {
         TestCaseRunInput input1 = buildInput();
         TestCaseRunInput input2 = buildInput();
         TestCaseRunResult result1 = buildResult(input1);
         TestCaseRunResult result2 = buildResult(input2);
 
-        // grace = 50 ms; workers sleep 200 ms — must NOT time out, no cancellation
-        EvaluationContext context = buildContextBuilder(1, 2)
-                .concurrencyLevel(2)
-                .cancellationGracePeriodMs(50L)
-                .build();
+        // Workers sleep past any reasonable "grace period" that used to exist — awaitCompletion() has no
+        // timeout at all, so both MUST complete normally.
+        EvaluationContext context =
+                buildContextBuilder(1, 2).concurrencyLevel(2).build();
         TestCaseRunner runner = createRunner(context);
 
         when(evaluationWorker.execute(eq(input1), any(), eq(0), anyList())).thenAnswer(inv -> {
@@ -326,50 +323,6 @@ class TestCaseRunnerTest {
     }
 
     @Test
-    @DisplayName("Cancellation mid-flight does not synthesize rows for unfinished cases")
-    void shouldNotSynthesizeRows_whenCancelledMidFlight() {
-        TestCaseRunInput input1 = buildInput();
-        TestCaseRunInput input2 = buildInput();
-
-        AtomicBoolean cancellationSignal = new AtomicBoolean(false);
-        EvaluationContext context = buildContextBuilder(1, 2)
-                .concurrencyLevel(2)
-                .cancellationSignal(cancellationSignal)
-                .cancellationGracePeriodMs(50L)
-                .build();
-        TestCaseRunner runner = createRunner(context);
-
-        // Each worker flips the cancellation signal then blocks. The main thread either
-        // (a) reaches the post-dispatch signal check after a worker flipped it → bounded
-        //     grace path → shutdownNow → workers throw InterruptedException, OR
-        // (b) reaches it before any worker ran → unbounded join path → workers sleep
-        //     and return SUCCESS results normally.
-        // Either way the production code MUST NOT produce a synthetic ERROR row: in (a)
-        // because interruption is filtered by the worker catch (per spec D4), in (b)
-        // because the workers complete successfully.
-        when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), any(Integer.class), anyList()))
-                .thenAnswer(inv -> {
-                    cancellationSignal.set(true);
-                    Thread.sleep(500);
-                    TestCaseRunInput in = inv.getArgument(0);
-                    return List.of(buildResult(in));
-                });
-
-        runner.submit(List.of(input1, input2));
-        runner.awaitCompletion();
-
-        ArgumentCaptor<List<TestCaseRunResult>> captor = ArgumentCaptor.captor();
-        List<TestCaseRunResult> delivered = new ArrayList<>();
-        try {
-            verify(resultsWriter, atLeastOnce()).addResults(captor.capture());
-            captor.getAllValues().forEach(delivered::addAll);
-        } catch (AssertionError ignored) {
-            // No accept invocations at all — that's fine; nothing was synthesized.
-        }
-        assertThat(delivered).noneMatch(r -> r.getExecutionStatus() == ExecutionStatus.ERROR);
-    }
-
-    @Test
     @DisplayName("Synthesis failure (writer throws on ERROR row) is logged and does not stop subsequent test cases")
     void shouldNotRetry_whenSynthesisFails() {
         TestCaseRunInput input1 = buildInput();
@@ -424,5 +377,77 @@ class TestCaseRunnerTest {
         verify(evaluationWorker, times(1)).execute(eq(input2), any(EvaluationContext.class), eq(0), anyList());
         verify(resultsWriter).addResults(eq(List.of(result1)));
         verify(resultsWriter).addResults(eq(List.of(result2)));
+    }
+
+    @Test
+    @DisplayName("shutdownNow interrupts in-flight workers and their results are dropped without a synthetic row")
+    void shouldDropResultsAndSkipSyntheticRow_whenWorkerInterruptedByShutdownNow() throws InterruptedException {
+        TestCaseRunInput input1 = buildInput();
+        TestCaseRunInput input2 = buildInput();
+        CountDownLatch workersStarted = new CountDownLatch(2);
+
+        EvaluationContext context =
+                buildContextBuilder(1, 2).concurrencyLevel(2).build();
+        TestCaseRunner runner = createRunner(context);
+
+        when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), any(Integer.class), anyList()))
+                .thenAnswer(inv -> {
+                    workersStarted.countDown();
+                    Thread.sleep(60_000);
+                    TestCaseRunInput in = inv.getArgument(0);
+                    return List.of(buildResult(in));
+                });
+
+        runner.submit(List.of(input1, input2));
+        assertThat(workersStarted.await(ASYNC_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                .isTrue();
+        executor.shutdownNow();
+
+        runner.awaitCompletion();
+
+        verify(resultsWriter, never()).addResults(anyList());
+    }
+
+    @Test
+    @DisplayName("submit returns false and releases the acquired permit when the executor rejects submission")
+    void shouldReturnFalseAndReleasePermit_whenExecutorRejectsSubmission() {
+        executor.shutdown();
+
+        EvaluationContext context =
+                buildContextBuilder(1, 2).concurrencyLevel(1).build();
+        TestCaseRunner runner = createRunner(context);
+
+        // If submit() failed to release the permit it acquired before the rejected runAsync call, a
+        // second submit() on the same runner would block forever on semaphore.acquire() (concurrencyLevel
+        // = 1, no permit ever released). assertTimeoutPreemptively turns that hang into a failure instead
+        // of an indefinite CI stall.
+        boolean secondCallAccepted = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            boolean first = runner.submit(List.of(buildInput()));
+            assertThat(first).isFalse();
+            return runner.submit(List.of(buildInput()));
+        });
+
+        assertThat(secondCallAccepted).isFalse();
+        verify(evaluationWorker, never()).execute(any(), any(), any(Integer.class), anyList());
+    }
+
+    @Test
+    @DisplayName(
+            "worker wrapper drops the result and skips the synthetic row when the worker call throws after interrupting itself")
+    void shouldPreserveInterruptFlagAtWrapper_whenWorkerCallThrowsAfterInterrupt() {
+        TestCaseRunInput input = buildInput();
+        EvaluationContext context = buildContext(1, 1);
+        TestCaseRunner runner = createRunner(context);
+
+        when(evaluationWorker.execute(any(TestCaseRunInput.class), any(), eq(0), anyList()))
+                .thenAnswer(inv -> {
+                    Thread.currentThread().interrupt();
+                    throw new UncheckedIOException(new IOException("interrupted"));
+                });
+
+        runner.submit(List.of(input));
+        runner.awaitCompletion();
+
+        verify(resultsWriter, never()).addResults(anyList());
     }
 }

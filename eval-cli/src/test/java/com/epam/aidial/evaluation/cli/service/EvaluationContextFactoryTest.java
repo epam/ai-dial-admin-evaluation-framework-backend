@@ -56,7 +56,6 @@ class EvaluationContextFactoryTest {
         when(runConfig.getMaxRetryDelayMs()).thenReturn(30000L);
         when(runConfig.getResultBatchSize()).thenReturn(50);
         when(runConfig.getMaxResponseSizeBytes()).thenReturn(10485760L);
-        when(runConfig.getCancellationGracePeriodMs()).thenReturn(30000L);
         when(runConfig.getRateLimitRps()).thenReturn(null);
         when(targetProperties.getApiKey()).thenReturn("my-token");
     }
@@ -106,8 +105,7 @@ class EvaluationContextFactoryTest {
         assertThat(context.getMaxRetries()).isEqualTo(3);
         assertThat(context.getToken()).isEqualTo("my-token");
         assertThat(context.getCreatedAtMs()).isEqualTo(1700000000000L);
-        assertThat(context.getCancellationSignal()).isNotNull();
-        assertThat(context.getCancellationSignal().get()).isFalse();
+        assertThat(context.getExecutor()).isNotNull();
     }
 
     @Test

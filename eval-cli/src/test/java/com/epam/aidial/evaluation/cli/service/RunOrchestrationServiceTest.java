@@ -26,7 +26,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -104,8 +104,7 @@ class RunOrchestrationServiceTest {
                 .maxRetryDelayMs(0L)
                 .resultBatchSize(10)
                 .maxResponseSizeBytes(1048576L)
-                .cancellationGracePeriodMs(5000L)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .token("tok")
                 .createdAtMs(0L)
                 .snapshotDeploymentRef(targetRef)
@@ -131,6 +130,48 @@ class RunOrchestrationServiceTest {
         verify(testCaseRunner).awaitCompletion();
         verify(suiteContractValidator).validate(suite);
         assertThat(csvFile).exists();
+    }
+
+    @Test
+    @DisplayName("shuts down the context's executor after the run completes")
+    void shutsDownContextExecutorAfterRun() throws Exception {
+        final UUID sourceSuiteId = UUID.randomUUID();
+        final TestCaseResponseDto tc = TestCaseResponseDto.builder()
+                .id(UUID.randomUUID())
+                .testCaseName("TC1")
+                .build();
+
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(sourceSuiteId)
+                .name("Suite")
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        final SuiteFetchBundle bundle = SuiteFetchBundle.builder()
+                .sourceSuiteId(sourceSuiteId)
+                .destinationSuiteId(UUID.randomUUID())
+                .suite(suite)
+                .testCases(List.of(tc))
+                .build();
+
+        final DeploymentReferenceDto targetRef =
+                DeploymentReferenceDto.builder().id("target").name("Target").build();
+
+        final EvaluationContext context = minimalContext(targetRef);
+
+        when(evaluationContextFactory.create(any(), eq(1), eq(targetRef), any()))
+                .thenReturn(context);
+        when(testCaseRunInputMapper.toInput(any()))
+                .thenReturn(TestCaseRunInput.builder()
+                        .testCaseId(tc.getId())
+                        .testCaseName("TC1")
+                        .build());
+        when(testCaseRunnerFactory.create(any(), any(), any())).thenReturn(testCaseRunner);
+
+        service.run(bundle, targetRef, tempDir.toString());
+
+        assertThat(context.getExecutor().isShutdown()).isTrue();
     }
 
     @Test
@@ -175,8 +216,7 @@ class RunOrchestrationServiceTest {
                 .maxRetryDelayMs(0L)
                 .resultBatchSize(10)
                 .maxResponseSizeBytes(1048576L)
-                .cancellationGracePeriodMs(5000L)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .token("tok")
                 .createdAtMs(0L)
                 .snapshotDeploymentRef(suiteDeploymentRef)
@@ -414,8 +454,7 @@ class RunOrchestrationServiceTest {
                 .maxRetryDelayMs(0L)
                 .resultBatchSize(10)
                 .maxResponseSizeBytes(1048576L)
-                .cancellationGracePeriodMs(5000L)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .token("tok")
                 .createdAtMs(0L)
                 .snapshotDeploymentRef(targetRef)

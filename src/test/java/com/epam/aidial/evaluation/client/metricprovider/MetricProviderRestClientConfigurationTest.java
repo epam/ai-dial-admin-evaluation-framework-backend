@@ -4,10 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.configuration.properties.metricprovider.MetricProviderProperties;
 import com.epam.aidial.evaluation.configuration.properties.metricprovider.MetricProviderProperties.ProviderEntry;
+import com.sun.net.httpserver.HttpServer;
 import io.opentelemetry.api.OpenTelemetry;
+import java.net.InetSocketAddress;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 
 @DisplayName("MetricProviderRestClientConfiguration")
 class MetricProviderRestClientConfigurationTest {
@@ -17,11 +24,21 @@ class MetricProviderRestClientConfigurationTest {
 
     private MetricProviderProperties properties;
     private MetricProviderRestClientConfiguration configuration;
+    private HttpServer blockingServer;
+    private final CountDownLatch releaseHandler = new CountDownLatch(1);
 
     @BeforeEach
     void setUp() {
         properties = new MetricProviderProperties();
         configuration = new MetricProviderRestClientConfiguration();
+    }
+
+    @AfterEach
+    void tearDown() {
+        releaseHandler.countDown();
+        if (blockingServer != null) {
+            blockingServer.stop(0);
+        }
     }
 
     private void givenProvider(String providerId, String baseUrl, boolean enabled) {
@@ -76,5 +93,44 @@ class MetricProviderRestClientConfigurationTest {
         final var factory = buildFactory();
 
         assertThat(factory.getRestClient(DIAL)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ends an in-flight call within 1s when its virtual thread is interrupted (interruptible client)")
+    void interruptedInFlightCall_endsQuickly() throws Exception {
+        final CountDownLatch requestReceived = new CountDownLatch(1);
+        blockingServer = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        blockingServer.createContext("/", exchange -> {
+            requestReceived.countDown();
+            try {
+                releaseHandler.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        blockingServer.start();
+
+        givenProvider(DIAL, "http://localhost:" + blockingServer.getAddress().getPort(), true);
+        final RestClient client = buildFactory().getRestClient(DIAL).orElseThrow();
+
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final CountDownLatch callFinished = new CountDownLatch(1);
+        final Thread worker = Thread.ofVirtual().start(() -> {
+            try {
+                client.post().uri("/evaluate").retrieve().body(String.class);
+            } catch (Throwable t) {
+                failure.set(t);
+            } finally {
+                callFinished.countDown();
+            }
+        });
+
+        assertThat(requestReceived.await(2, TimeUnit.SECONDS)).isTrue();
+        worker.interrupt();
+
+        assertThat(callFinished.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(failure.get()).isNotNull();
     }
 }

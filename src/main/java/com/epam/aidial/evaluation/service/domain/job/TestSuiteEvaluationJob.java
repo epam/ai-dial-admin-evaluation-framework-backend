@@ -151,7 +151,6 @@ public class TestSuiteEvaluationJob {
                             "Exactly one of suite_snapshot / test_case_run_inputs is present",
                             null);
                     repository.updateToFailed(runId, "Inconsistent snapshot state", errorDetails, now, now);
-                    notifySse(runId);
                     return;
                 }
 
@@ -239,7 +238,6 @@ public class TestSuiteEvaluationJob {
                 if (repository.updateToFailed(runId, e.getMessage(), errorDetails, now, now) == 0) {
                     log.info("Run {} was already terminal when the snapshot phase attempted to mark it FAILED", runId);
                 }
-                notifySse(runId);
                 return false;
             }
         }

@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -623,6 +624,19 @@ class TestSuiteEvaluationJobTest {
             assertThat(detailsCaptor.getValue()).contains(AnalyticsWriteException.ERROR_CODE);
             verify(metricScoreComputation, never()).execute(any());
             verify(repository, never()).updateToCancelled(any(), anyLong(), anyLong());
+        }
+
+        @Test
+        @DisplayName("shouldNotifySseExactlyOnce_whenSnapshotPhaseFails")
+        void shouldNotifySseExactlyOnce_whenSnapshotPhaseFails() {
+            when(repository.findById(runId)).thenReturn(Optional.of(run));
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.empty());
+
+            job.run(runId, null, true, handle);
+
+            verify(repository).updateToFailed(eq(runId), any(), any(), anyLong(), anyLong());
+            verify(sseService, times(1)).notifyStatusUpdate(any());
+            verify(registry).remove(runId);
         }
     }
 }

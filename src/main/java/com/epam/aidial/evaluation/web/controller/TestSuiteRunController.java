@@ -199,9 +199,16 @@ public class TestSuiteRunController {
         return testSuiteRunService.updateRunName(id, updateDto.getTestRunName());
     }
 
-    @PostMapping("/api/v1/test-suite-runs/{id}/cancel")
-    @Operation(summary = "Cancel a test suite run", description = "Cancels a PENDING or RUNNING test suite run")
-    @ApiResponse(responseCode = "200", description = "Cancellation requested")
+    @PostMapping(value = "/api/v1/test-suite-runs/{id}/cancel", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+            summary = "Cancel a test suite run",
+            description = "Cancels a PENDING or RUNNING run. A PENDING run becomes CANCELLED immediately; a"
+                    + " RUNNING run becomes CANCELLING and is finalized to CANCELLED by the async job; calling"
+                    + " cancel on a CANCELLING run is idempotent (200, current state).")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Cancellation requested: PENDING -> CANCELLED, RUNNING -> CANCELLING, or"
+                    + " CANCELLING unchanged (idempotent)")
     @ApiResponse(responseCode = "404", description = "Run not found")
     @ApiResponse(responseCode = "409", description = "Cannot cancel terminal run")
     public TestSuiteRunResponseDto cancelRun(@Parameter(description = "Run ID") @PathVariable UUID id) {

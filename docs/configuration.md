@@ -379,7 +379,6 @@ Configuration for dial-adas, an external analytics service queried for `GET /api
 | `test-suite-run.execution.max-request-timeout-ms` | `TEST_SUITE_RUN_EXECUTION_MAX_REQUEST_TIMEOUT_MS` | `600000` | No | - | Upper bound on per-request timeout. |
 | `test-suite-run.execution.result-batch-size` | `TEST_SUITE_RUN_EXECUTION_RESULT_BATCH_SIZE` | `100` | No | - | Number of results buffered before flushing to the analytics database. |
 | `test-suite-run.execution.max-response-size-bytes` | `TEST_SUITE_RUN_EXECUTION_MAX_RESPONSE_SIZE_BYTES` | `5242880` | No | - | Maximum captured response body size in bytes before truncation (5 MB default). |
-| `test-suite-run.execution.cancellation-grace-period-ms` | `TEST_SUITE_RUN_EXECUTION_CANCELLATION_GRACE_PERIOD_MS` | `30000` | No | - | Time in milliseconds to wait for in-flight calls to drain AFTER a run is cancelled, before calling `shutdownNow()` to interrupt remaining workers. Applies ONLY when cancellation is requested; it is NOT an overall evaluation timeout. A run that takes longer than this value without being cancelled continues to completion. Per-call wall-clock bounding is the responsibility of `request-timeout-ms`. |
 | `test-suite-run.execution.header-blacklist` | `TEST_SUITE_RUN_EXECUTION_HEADER_BLACKLIST` | `[Authorization, Host, Content-Length, Transfer-Encoding, Connection, traceparent, tracestate]` | No | - | HTTP headers silently stripped from evaluation requests before they are forwarded. |
 
 ### 6.4 Test Suite Run — Retry Settings

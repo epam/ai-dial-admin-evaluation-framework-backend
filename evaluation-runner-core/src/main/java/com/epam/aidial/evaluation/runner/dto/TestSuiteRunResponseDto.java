@@ -17,7 +17,14 @@ public class TestSuiteRunResponseDto {
     private UUID id;
     private UUID testSuiteId;
     private String testRunName;
+
+    @Schema(
+            description = "Run lifecycle status. CANCELLING is a transient state entered when a RUNNING run is"
+                    + " cancelled; the async job finalizes it to CANCELLED.",
+            allowableValues = {"PENDING", "RUNNING", "CANCELLING", "COMPLETED", "FAILED", "CANCELLED"},
+            example = "RUNNING")
     private String status;
+
     private RunConfigDto runConfig;
     private int numberOfTestCases;
 

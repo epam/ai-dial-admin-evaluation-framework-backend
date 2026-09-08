@@ -111,6 +111,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Typed SQL DSL (jOOQ)](docs/patterns/jooq-typed-sql-dsl.md) | Codegen pipeline, drift guard, DSLContext config, RecordMapper convention |
 | [Dataset Entity](docs/patterns/dataset-entity.md) | `DatasetSchemaProvider`, `dataset.id` vs `suite.id`, visibility rules, exclusion via `testCaseFilter` |
 | [Suite Run Snapshot Phase](docs/patterns/suite-run-snapshot.md) | Snapshot tx, `40001` retry, inconsistent-snapshot guard, version handling |
+| [Run cancellation](docs/patterns/run-cancellation.md) | Per-run executor teardown + guarded status writes; never interrupt the job thread; keep worker HTTP clients interruptible (JDK factory) |
 | [Selective Column Projection (TOAST)](docs/patterns/selective-column-projection.md) | Column-tier constants to avoid TOAST decompression on bulk queries |
 | [MCP Tool Invocation](docs/patterns/mcp-tool-invocation.md) | Per-call `McpSyncClient` via DIAL Core MCP proxy |
 | [Slash-containing path values](docs/patterns/slash-path-values.md) | `/**` mapping + `WildcardPathResolver`; decode exactly once, never `URLDecoder` |

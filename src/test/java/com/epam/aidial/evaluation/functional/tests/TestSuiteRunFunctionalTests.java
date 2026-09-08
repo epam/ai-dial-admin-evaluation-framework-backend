@@ -64,6 +64,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestSuiteRun Functional Tests")
@@ -645,6 +646,33 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).contains("INVALID_OPERATION");
+    }
+
+    @Test
+    @DisplayName("OpenAPI spec carries a CANCELLING response example for the cancel operation")
+    void openApiSpecCarriesCancelCancellingExample() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode operation = new ObjectMapper()
+                .readTree(apiDocs.getBody())
+                .path("paths")
+                .path("/api/v1/test-suite-runs/{id}/cancel")
+                .path("post");
+        assertThat(operation.isMissingNode())
+                .as("the cancel operation should be registered")
+                .isFalse();
+        JsonNode examples = operation
+                .path("responses")
+                .path("200")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+        assertThat(examples.propertyNames())
+                .as("OpenApiExampleCustomizer should inject the cancelling example for this operation")
+                .contains("cancelling");
+        assertThat(examples.path("cancelling").path("value").path("status").asString())
+                .isEqualTo("CANCELLING");
     }
 
     // --- Reconciliation Test (Task 35) ---

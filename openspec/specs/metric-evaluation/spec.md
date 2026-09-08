@@ -488,8 +488,9 @@ Status: **Implemented**
 - Client DTOs: `EvaluationRequestDto`, `EvaluationResponseDto`, `MetricOutputFieldDto`, `MetricErrorDto` in `client.metricprovider.dto`
 - Config: `com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties`
 - `MetricEvaluationContext` replaces `AtomicBoolean cancellationSignal` with `ExecutorService executor`;
-  `InProcessMetricEvaluationExecutor` uses it for `CompletableFuture.runAsync` and drops its own
-  `newVirtualThreadPerTaskExecutor()` and `shutdownNow()`.
+  `InProcessMetricEvaluationExecutor` uses it for `CompletableFuture.runAsync` and never creates or shuts
+  down an executor of its own — the run's executor comes from `RunExecutorFactory` (runner-core; virtual
+  threads by default, platform when `spring.threads.virtual.enabled=false`) via `RunHandle`.
 - `MetricEvaluationWorker.sleepWithCancellation` is replaced by plain `Thread.sleep` (interruptible); the
   pre-attempt signal check is removed.
 - `MetricScoreComputationContext` loses `cancellationSignal`; Phase 3 is sequential and is gated only by the job's

@@ -21,16 +21,16 @@ class AsyncConfigurationTest {
     private record ThreadInfo(boolean virtual, boolean daemon, String name) {}
 
     private static ThreadInfo captureThreadInfo() {
-        Thread thread = Thread.currentThread();
+        final Thread thread = Thread.currentThread();
         return new ThreadInfo(thread.isVirtual(), thread.isDaemon(), thread.getName());
     }
 
     @Test
     @DisplayName("virtual thread mode: a submitted task runs on a virtual thread named test-suite-run-*")
     void virtualModeRunsOnVirtualThread() throws Exception {
-        AsyncTaskExecutor executor = configuration.testSuiteRunExecutor(new RunExecutorFactory(true));
+        final AsyncTaskExecutor executor = configuration.testSuiteRunExecutor(new RunExecutorFactory(true));
 
-        ThreadInfo info = CompletableFuture.supplyAsync(AsyncConfigurationTest::captureThreadInfo, executor)
+        final ThreadInfo info = CompletableFuture.supplyAsync(AsyncConfigurationTest::captureThreadInfo, executor)
                 .get(5, TimeUnit.SECONDS);
 
         assertThat(info.virtual()).isTrue();
@@ -40,9 +40,9 @@ class AsyncConfigurationTest {
     @Test
     @DisplayName("platform thread mode: a submitted task runs on a daemon platform thread named test-suite-run-*")
     void platformModeRunsOnDaemonPlatformThread() throws Exception {
-        AsyncTaskExecutor executor = configuration.testSuiteRunExecutor(new RunExecutorFactory(false));
+        final AsyncTaskExecutor executor = configuration.testSuiteRunExecutor(new RunExecutorFactory(false));
 
-        ThreadInfo info = CompletableFuture.supplyAsync(AsyncConfigurationTest::captureThreadInfo, executor)
+        final ThreadInfo info = CompletableFuture.supplyAsync(AsyncConfigurationTest::captureThreadInfo, executor)
                 .get(5, TimeUnit.SECONDS);
 
         assertThat(info.virtual()).isFalse();
@@ -53,7 +53,7 @@ class AsyncConfigurationTest {
     @Test
     @DisplayName("close() rejects new task submissions")
     void closeRejectsNewSubmissions() {
-        SimpleAsyncTaskExecutor executor =
+        final SimpleAsyncTaskExecutor executor =
                 (SimpleAsyncTaskExecutor) configuration.testSuiteRunExecutor(new RunExecutorFactory(true));
 
         executor.close();
@@ -64,10 +64,10 @@ class AsyncConfigurationTest {
     @Test
     @DisplayName("close() interrupts a task blocked in Thread.sleep")
     void closeInterruptsBlockedTask() throws Exception {
-        SimpleAsyncTaskExecutor executor =
+        final SimpleAsyncTaskExecutor executor =
                 (SimpleAsyncTaskExecutor) configuration.testSuiteRunExecutor(new RunExecutorFactory(true));
-        CountDownLatch taskStarted = new CountDownLatch(1);
-        CompletableFuture<Boolean> observedInterrupt = new CompletableFuture<>();
+        final CountDownLatch taskStarted = new CountDownLatch(1);
+        final CompletableFuture<Boolean> observedInterrupt = new CompletableFuture<>();
 
         executor.execute(() -> {
             taskStarted.countDown();

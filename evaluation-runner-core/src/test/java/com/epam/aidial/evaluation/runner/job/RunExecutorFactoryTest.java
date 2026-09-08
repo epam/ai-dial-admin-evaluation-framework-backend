@@ -29,9 +29,9 @@ class RunExecutorFactoryTest {
     @Test
     @DisplayName("newWorkerExecutor returns a distinct executor instance on every call")
     void newWorkerExecutor_returnsDistinctInstancesPerCall() {
-        RunExecutorFactory factory = new RunExecutorFactory(true);
-        ExecutorService first = factory.newWorkerExecutor();
-        ExecutorService second = factory.newWorkerExecutor();
+        final RunExecutorFactory factory = new RunExecutorFactory(true);
+        final ExecutorService first = factory.newWorkerExecutor();
+        final ExecutorService second = factory.newWorkerExecutor();
         try {
             assertThat(first).isNotSameAs(second);
         } finally {
@@ -43,10 +43,10 @@ class RunExecutorFactoryTest {
     @Test
     @DisplayName("virtual mode runs tasks on a virtual thread named run-worker-*")
     void virtualMode_runsTasksOnVirtualThreadWithExpectedName() throws Exception {
-        RunExecutorFactory factory = new RunExecutorFactory(true);
-        ExecutorService executor = factory.newWorkerExecutor();
-        AtomicBoolean virtual = new AtomicBoolean();
-        AtomicReference<String> threadName = new AtomicReference<>();
+        final RunExecutorFactory factory = new RunExecutorFactory(true);
+        final ExecutorService executor = factory.newWorkerExecutor();
+        final AtomicBoolean virtual = new AtomicBoolean();
+        final AtomicReference<String> threadName = new AtomicReference<>();
         try {
             executor.submit(() -> {
                         virtual.set(Thread.currentThread().isVirtual());
@@ -63,11 +63,11 @@ class RunExecutorFactoryTest {
     @Test
     @DisplayName("platform mode runs tasks on a daemon platform thread named run-worker-*")
     void platformMode_runsTasksOnDaemonPlatformThreadWithExpectedName() throws Exception {
-        RunExecutorFactory factory = new RunExecutorFactory(false);
-        ExecutorService executor = factory.newWorkerExecutor();
-        AtomicBoolean virtual = new AtomicBoolean(true);
-        AtomicBoolean daemon = new AtomicBoolean();
-        AtomicReference<String> threadName = new AtomicReference<>();
+        final RunExecutorFactory factory = new RunExecutorFactory(false);
+        final ExecutorService executor = factory.newWorkerExecutor();
+        final AtomicBoolean virtual = new AtomicBoolean(true);
+        final AtomicBoolean daemon = new AtomicBoolean();
+        final AtomicReference<String> threadName = new AtomicReference<>();
         try {
             executor.submit(() -> {
                         virtual.set(Thread.currentThread().isVirtual());
@@ -97,11 +97,11 @@ class RunExecutorFactoryTest {
 
     private void assertShutdownNowInterruptsBlockedTaskAndRejectsFurtherSubmissions(RunExecutorFactory factory)
             throws Exception {
-        ExecutorService executor = factory.newWorkerExecutor();
-        CountDownLatch taskStarted = new CountDownLatch(1);
-        AtomicBoolean interrupted = new AtomicBoolean();
+        final ExecutorService executor = factory.newWorkerExecutor();
+        final CountDownLatch taskStarted = new CountDownLatch(1);
+        final AtomicBoolean interrupted = new AtomicBoolean();
         try {
-            Future<?> future = executor.submit(() -> {
+            final Future<?> future = executor.submit(() -> {
                 taskStarted.countDown();
                 try {
                     Thread.sleep(BLOCKING_SLEEP_MS);

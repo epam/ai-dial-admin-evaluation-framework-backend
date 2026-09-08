@@ -73,7 +73,7 @@ class ActiveRunRegistryTest {
     @Test
     @DisplayName("activeCount returns to 0 after the registered run is removed")
     void activeCountIsZeroAfterRemove() {
-        UUID runId = UUID.randomUUID();
+        final UUID runId = UUID.randomUUID();
         registry.register(runId);
 
         registry.remove(runId);
@@ -84,9 +84,9 @@ class ActiveRunRegistryTest {
     @Test
     @DisplayName("the registered handle's executor runs tasks on virtual threads")
     void registeredHandleExecutorRunsOnVirtualThreads() throws Exception {
-        RunHandle handle = registry.register(UUID.randomUUID());
+        final RunHandle handle = registry.register(UUID.randomUUID());
 
-        boolean isVirtual = CompletableFuture.supplyAsync(
+        final boolean isVirtual = CompletableFuture.supplyAsync(
                         () -> Thread.currentThread().isVirtual(), handle.executor())
                 .get(5, TimeUnit.SECONDS);
 

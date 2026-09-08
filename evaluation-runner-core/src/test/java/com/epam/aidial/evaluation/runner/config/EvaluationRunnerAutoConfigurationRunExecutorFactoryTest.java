@@ -45,9 +45,10 @@ class EvaluationRunnerAutoConfigurationRunExecutorFactoryTest {
         @Test
         @DisplayName("spring.threads.virtual.enabled=true yields a virtual-mode factory")
         void virtualThreadsEnabled_yieldsVirtualModeFactory() {
-            MockEnvironment environment = new MockEnvironment().withProperty("spring.threads.virtual.enabled", "true");
+            final MockEnvironment environment =
+                    new MockEnvironment().withProperty("spring.threads.virtual.enabled", "true");
 
-            RunExecutorFactory factory = autoConfiguration.runExecutorFactory(environment);
+            final RunExecutorFactory factory = autoConfiguration.runExecutorFactory(environment);
 
             assertThat(factory.isVirtualThreads()).isTrue();
         }
@@ -55,9 +56,10 @@ class EvaluationRunnerAutoConfigurationRunExecutorFactoryTest {
         @Test
         @DisplayName("spring.threads.virtual.enabled=false yields a platform-mode factory")
         void virtualThreadsDisabled_yieldsPlatformModeFactory() {
-            MockEnvironment environment = new MockEnvironment().withProperty("spring.threads.virtual.enabled", "false");
+            final MockEnvironment environment =
+                    new MockEnvironment().withProperty("spring.threads.virtual.enabled", "false");
 
-            RunExecutorFactory factory = autoConfiguration.runExecutorFactory(environment);
+            final RunExecutorFactory factory = autoConfiguration.runExecutorFactory(environment);
 
             assertThat(factory.isVirtualThreads()).isFalse();
         }
@@ -65,9 +67,9 @@ class EvaluationRunnerAutoConfigurationRunExecutorFactoryTest {
         @Test
         @DisplayName("spring.threads.virtual.enabled unset defaults to platform mode (Boot default)")
         void virtualThreadsUnset_defaultsToPlatformMode() {
-            MockEnvironment environment = new MockEnvironment();
+            final MockEnvironment environment = new MockEnvironment();
 
-            RunExecutorFactory factory = autoConfiguration.runExecutorFactory(environment);
+            final RunExecutorFactory factory = autoConfiguration.runExecutorFactory(environment);
 
             assertThat(factory.isVirtualThreads()).isFalse();
         }

@@ -555,7 +555,7 @@ class TestSuiteEvaluationJobTest {
 
             job.run(runId, null, true, handle);
 
-            InOrder inOrder = inOrder(sseService, registry);
+            final InOrder inOrder = inOrder(sseService, registry);
             // Two notifySse calls happen on this path: once after updateToRunning, once as the
             // terminal notification in the finally block. registry.remove must come after both.
             inOrder.verify(sseService, times(2)).notifyStatusUpdate(any());
@@ -716,16 +716,16 @@ class TestSuiteEvaluationJobTest {
     }
 
     @Nested
-    @DisplayName("dispatch(...) — submission-time cleanup (design D4)")
+    @DisplayName("dispatch(...) — submission-time cleanup (configurable-thread-mode-run-executors design D4)")
     class Dispatch {
 
         @Test
         @DisplayName("cleans up and rethrows the Error when the executor throws at submission time")
         void cleansUpAndRethrowsErrorFromExecutorSubmission() {
-            UUID runId = UUID.randomUUID();
-            RunHandle handle = mock(RunHandle.class);
+            final UUID runId = UUID.randomUUID();
+            final RunHandle handle = mock(RunHandle.class);
             when(registry.register(runId)).thenReturn(handle);
-            OutOfMemoryError error = new OutOfMemoryError("unable to create native thread");
+            final OutOfMemoryError error = new OutOfMemoryError("unable to create native thread");
             doThrow(error).when(taskExecutor).execute(any());
 
             assertThatThrownBy(() -> job.dispatch(runId, null, true)).isSameAs(error);

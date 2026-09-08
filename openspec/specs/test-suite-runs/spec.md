@@ -69,7 +69,7 @@ Status: **Implemented**
 - **THEN** the zero-runnable guard SHALL pass and the persisted `numberOfTestCases` SHALL equal the count of the filter-matching subset
 
 #### Scenario: Executor rejects job submission
-- **WHEN** the run is created successfully but the dedicated executor's queue is full and max pool size is reached at async dispatch time
+- **WHEN** the run is created successfully but the dedicated executor rejects the submission at async dispatch time (e.g. once the executor has been closed because the application context is shutting down)
 - **THEN** the run SHALL have been persisted with status PENDING and HTTP 202 returned to the client. The service SHALL catch `RejectedExecutionException` in the post-commit callback, mark the run as FAILED with error category `RESOURCE_LIMIT` and code `EXECUTOR_REJECTED`, and log a warning
 
 ### Requirement: Run configuration model
@@ -466,25 +466,37 @@ Status: **Implemented**
 - **WHEN** the metric evaluation phase encounters errors (provider unavailable, individual metric errors)
 - **THEN** the run SHALL still transition to COMPLETED. Individual metric errors are captured per-EvalSummary row (`executionStatus = FAILED` with error details in `metricInfos`).
 
-### Requirement: Dedicated async executor
-The service SHALL use a dedicated `ThreadPoolTaskExecutor` bean (named `testSuiteRunExecutor`) for test suite run jobs, separate from the default async executor.
+### Requirement: Dedicated run job executor
+The service SHALL execute each test suite run job on a dedicated executor (bean `testSuiteRunExecutor`), separate from the default Spring async executor. The executor SHALL start one new thread per run for the run's whole lifetime — no thread pool, no queue, no executor-level concurrency limit — so that the number of concurrently executing runs is governed solely by the concurrent run limits (`test-suite-run.limits.*`). The threads SHALL be virtual when `spring.threads.virtual.enabled` is `true` (default) and platform threads when it is `false`, so that a single switch moves the whole JVM to platform threads for sampling/profiling.
 Status: **Implemented**
 
 #### Scenario: Executor isolation
 - **WHEN** test suite run jobs are dispatched
 - **THEN** they SHALL execute on the dedicated executor, not the default Spring async executor
 
-#### Scenario: Configurable pool settings
-- **WHEN** the application starts
-- **THEN** the executor SHALL be configured with core pool size, max pool size, and queue capacity from application properties (defaults: core=5, max=10, queue=50)
+#### Scenario: One thread per run
+- **WHEN** N runs are admitted by the concurrent run limits and dispatched
+- **THEN** all N jobs SHALL start executing immediately on N distinct threads; none SHALL wait in a queue behind a pool size
 
-#### Scenario: Rejected execution handling
-- **WHEN** the executor's queue is full and max pool size is reached
-- **THEN** the executor SHALL reject the job submission (via `AbortPolicy`), the service SHALL catch `RejectedExecutionException`, mark the run as FAILED with error category `RESOURCE_LIMIT` and code `EXECUTOR_REJECTED`, and notify SSE clients
+#### Scenario: Virtual threads by default
+- **WHEN** `spring.threads.virtual.enabled` is `true` (the default)
+- **THEN** run job threads and each run's worker threads SHALL be virtual threads
+
+#### Scenario: Platform threads on opt-out
+- **WHEN** `spring.threads.virtual.enabled` is `false`
+- **THEN** run job threads and each run's worker threads SHALL be platform daemon threads, visible to sampling profilers and thread dumps; cancellation and interrupt behaviour SHALL be identical to the virtual-thread case
 
 #### Scenario: Thread naming
 - **WHEN** the executor creates threads
-- **THEN** thread names SHALL use the prefix `test-suite-run-` for identification in logs and monitoring
+- **THEN** run job thread names SHALL use the prefix `test-suite-run-` and run worker thread names the prefix `run-worker-` for identification in logs, thread dumps and profilers
+
+#### Scenario: Rejected execution after shutdown
+- **WHEN** the executor rejects a run job at dispatch time (e.g. it has been closed because the application context is shutting down)
+- **THEN** the service SHALL treat the `RejectedExecutionException` by marking the run as FAILED with error category `RESOURCE_LIMIT` and code `EXECUTOR_REJECTED` and notify SSE clients
+
+#### Scenario: Context close interrupts in-flight jobs
+- **WHEN** the application context is closed while run jobs are executing
+- **THEN** the executor SHALL interrupt the in-flight job threads immediately rather than waiting for the runs to finish; any run left in a non-terminal status SHALL be reconciled at the next startup
 
 ### Requirement: Database schema for test suite runs
 The service SHALL create a `test_suite_runs` table via Flyway migration to persist run records.
@@ -507,12 +519,16 @@ Status: **Implemented**
 - **THEN** all related test suite runs SHALL be automatically deleted via ON DELETE CASCADE
 
 ### Requirement: Configuration properties
-The service SHALL expose configurable properties for executor, SSE, execution settings, retry defaults, and concurrent run limits under the `test-suite-run` prefix.
+The service SHALL expose configurable properties for SSE, execution settings, retry defaults, and concurrent run limits under the `test-suite-run` prefix, and SHALL honour Spring Boot's `spring.threads.virtual.enabled` as the thread mode of the run job executor and of every run's worker executor.
 Status: **Implemented**
 
 #### Scenario: Executor properties
+- **WHEN** a deployment YAML still contains `test-suite-run.executor.core-pool-size`, `test-suite-run.executor.max-pool-size` or `test-suite-run.executor.queue-capacity`
+- **THEN** the application SHALL start normally and the properties SHALL have no effect (the run job executor is thread-per-run with no pool or queue)
+
+#### Scenario: Thread mode property
 - **WHEN** the application starts
-- **THEN** it SHALL read `test-suite-run.executor.core-pool-size` (default 5), `test-suite-run.executor.max-pool-size` (default 10), and `test-suite-run.executor.queue-capacity` (default 50)
+- **THEN** it SHALL read `spring.threads.virtual.enabled` (environment variable `VIRTUAL_THREADS_ENABLED`, default `true`) and use it to decide whether run job threads and run worker threads are virtual (`true`) or platform (`false`) threads
 
 #### Scenario: SSE properties
 - **WHEN** the application starts
@@ -677,7 +693,11 @@ Status: **Implemented**
 - Mapper: `com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper`
 - Constants: `com.epam.aidial.evaluation.constants.TestSuiteRunConstants`
 - Configuration: `com.epam.aidial.evaluation.configuration.properties.TestSuiteRunProperties`, `com.epam.aidial.evaluation.configuration.properties.testsuite.EvaluationRunProperties`
-- Async config: `com.epam.aidial.evaluation.configuration.AsyncConfiguration`
+- Async config: `com.epam.aidial.evaluation.configuration.AsyncConfiguration` — `testSuiteRunExecutor` is a
+  `SimpleAsyncTaskExecutor` (thread-per-run, `test-suite-run-` prefix, `ContextPropagatingTaskDecorator`,
+  `cancelRemainingTasksOnClose`, no concurrency limit); its thread mode and every run's worker executor come
+  from runner-core's `RunExecutorFactory` bean (`Threading.VIRTUAL.isActive(environment)`). The former
+  `test-suite-run.executor.*` pool properties are gone; run concurrency is governed only by `test-suite-run.limits.*`.
 - Flyway migration: `V1.6__CreateTestSuiteRunsTable.sql`
 - Execution engine: See `eval-execution-engine` spec for executor, worker, and related components
 - `TestSuiteRunService.createRun` calls `RunnableTestCaseSelector.countRunnable(datasetId, filterJson)`

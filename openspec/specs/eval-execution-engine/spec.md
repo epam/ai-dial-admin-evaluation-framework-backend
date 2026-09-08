@@ -44,7 +44,7 @@ Status: **Implemented**
 
 #### Scenario: Parallel execution
 - **WHEN** `concurrencyLevel` is greater than 1 (e.g., 10)
-- **THEN** the executor SHALL process up to `concurrencyLevel` test case calls concurrently using a semaphore-bounded virtual thread executor
+- **THEN** the executor SHALL process up to `concurrencyLevel` test case calls concurrently using a semaphore-bounded, thread-per-task worker executor supplied by the run owner — virtual threads when `spring.threads.virtual.enabled` is `true` (default), platform daemon threads when it is `false`; the executor SHALL NOT be created by the execution engine itself
 
 #### Scenario: All enabled and valid test cases are executed
 - **WHEN** the executor runs for a suite with N enabled+valid test cases and `numberOfRuns = M`

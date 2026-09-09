@@ -107,6 +107,62 @@ public abstract class DeploymentFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("GET /deployments/dial-model/{id} returns the features DIAL Core reported, on the wire")
+    void getDeploymentModelReturnsFeatures() {
+        when(dialCoreClient.getModel(eq("gpt-5")))
+                .thenReturn(DialCoreModelDto.builder()
+                        .id("gpt-5")
+                        .displayName("GPT-5")
+                        .features(Map.of("rate", true, "tokenize", false))
+                        .build());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/dial-model/gpt-5"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("features")).isEqualTo(Map.of("rate", true, "tokenize", false));
+    }
+
+    @Test
+    @DisplayName("GET /deployments/all/{id} returns the features of the deployment that resolved")
+    void getDeploymentByIdReturnsFeatures() {
+        when(dialCoreClient.getModel(eq("my-toolset"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getApplication(eq("my-toolset"))).thenThrow(upstreamNotFound());
+        when(dialCoreClient.getToolset(eq("my-toolset")))
+                .thenReturn(DialCoreToolsetDto.builder()
+                        .id("my-toolset")
+                        .features(Map.of("tools", true))
+                        .build());
+
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/deployments/all/my-toolset"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("$type")).isEqualTo("dial-toolset");
+        assertThat(response.getBody().get("features")).isEqualTo(Map.of("tools", true));
+    }
+
+    @Test
+    @DisplayName("GET /deployments listing entries omit features (short projection)")
+    void getAllDeploymentsOmitsFeatures() {
+        when(dialCoreClient.getDeployments(eq(null)))
+                .thenReturn(List.of(DialCoreModelDto.builder()
+                        .id("m1")
+                        .displayName("Model 1")
+                        .features(Map.of("rate", true))
+                        .build()));
+
+        ResponseEntity<List<Map<String, Object>>> response = restTemplate.exchange(
+                apiUrl("/deployments"), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).hasSize(1);
+        assertThat(response.getBody().get(0)).doesNotContainKey("features");
+    }
+
+    @Test
     @DisplayName("GET /deployments/dial-application/{id} returns application")
     void getDeploymentApplicationReturnsApplication() {
         when(dialCoreClient.getApplication(eq("EntityExtractor")))

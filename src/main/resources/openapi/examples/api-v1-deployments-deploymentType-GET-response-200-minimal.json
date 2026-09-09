@@ -10,6 +10,23 @@
   "updatedAt": 1768856213216,
   "descriptionKeywords": ["Text Generation", "Continue Supported", "Image Recognition"],
   "inputAttachmentTypes": ["*/*"],
+  "interfaces": ["chat", "openaiChatCompletions", "openaiResponses"],
+  "features": {
+    "rate": true,
+    "tokenize": true,
+    "truncate_prompt": true,
+    "configuration": false,
+    "system_prompt": true,
+    "tools": true,
+    "seed": true,
+    "url_attachments": false,
+    "folder_attachments": false,
+    "allow_resume": true,
+    "accessible_by_per_request_key": true,
+    "content_parts": true,
+    "temperature": true,
+    "addons": true
+  },
   "capabilities": {
     "scaleTypes": ["standard"],
     "completion": false,

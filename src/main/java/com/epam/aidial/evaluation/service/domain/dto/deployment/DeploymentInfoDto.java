@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -56,4 +57,10 @@ public abstract class DeploymentInfoDto {
 
     @Schema(description = "Reference to use for opening the application")
     private String reference;
+
+    @Schema(description = "Interfaces supported by the deployment")
+    private List<String> interfaces;
+
+    @Schema(description = "Features supported by the deployment")
+    private Map<String, Object> features;
 }

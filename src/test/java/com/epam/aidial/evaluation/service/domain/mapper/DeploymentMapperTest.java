@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteRespons
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteUpstreamDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
+import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialModelInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ToolsetInfoDto;
@@ -195,6 +196,40 @@ class DeploymentMapperTest {
         assertThat(model.getReference()).isEqualTo("model-ref");
         assertThat(application.getReference()).isEqualTo("app-ref");
         assertThat(toolset.getReference()).isEqualTo("toolset-ref");
+    }
+
+    @Test
+    @DisplayName("maps features onto every deployment info subtype")
+    void mapsFeaturesOntoEverySubtype() {
+        // Implicit name-matching off the shared DialCoreDeploymentDto base, like reference above.
+        DialModelInfoDto model = mapper.toDialModelInfoDto(DialCoreModelDto.builder()
+                .id("gpt-5-mini")
+                .features(Map.of("rate", true, "tokenize", false))
+                .build());
+        DialApplicationInfoDto application = mapper.toDialApplicationInfoDto(DialCoreApplicationDto.builder()
+                .id("app")
+                .features(Map.of("configuration", true))
+                .build());
+        ToolsetInfoDto toolset = mapper.toToolsetInfoDto(DialCoreToolsetDto.builder()
+                .id("toolset")
+                .features(Map.of("tools", true))
+                .build());
+
+        assertThat(model.getFeatures()).containsExactlyInAnyOrderEntriesOf(Map.of("rate", true, "tokenize", false));
+        assertThat(application.getFeatures()).containsExactlyInAnyOrderEntriesOf(Map.of("configuration", true));
+        assertThat(toolset.getFeatures()).containsExactlyInAnyOrderEntriesOf(Map.of("tools", true));
+    }
+
+    @Test
+    @DisplayName("leaves features out of the short listing projection")
+    void shortProjectionOmitsFeatures() {
+        DeploymentInfoDto result = mapper.toDeploymentInfoShortDto(DialCoreModelDto.builder()
+                .id("gpt-5-mini")
+                .displayName("GPT-5 mini")
+                .features(Map.of("rate", true))
+                .build());
+
+        assertThat(result.getFeatures()).isNull();
     }
 
     @Test

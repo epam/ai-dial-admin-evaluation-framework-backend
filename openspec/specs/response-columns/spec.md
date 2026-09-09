@@ -374,7 +374,9 @@ Each element in `events` has:
 - `event` — the SSE event type name (e.g., `"message"`, `"result"`, or any named event)
 - `data` — the parsed JSON payload, or a raw string if the payload was not valid JSON
 
-**OpenAI mode (unchanged)**: When the SSE stream uses OpenAI chat-completions format (`choices[].delta.content`), the engine assembles a standard non-streaming response. JSONata expressions for OpenAI streams use the same paths as before (e.g., `choices[0].message.content`).
+**OpenAI chat-completions mode (unchanged)**: When the SSE stream uses OpenAI chat-completions format (`choices[].delta.content`), the engine assembles a standard non-streaming response. JSONata expressions for OpenAI streams use the same paths as before (e.g., `choices[0].message.content`).
+
+**OpenAI Responses mode**: When the SSE stream uses the Responses format (events whose data `type` starts with `response.`), the engine assembles the terminal `response.completed` event's `response` object — i.e. exactly the non-streaming Responses body. Response columns therefore use the same paths for a streamed and a non-streamed Responses deployment (e.g. `output[0].content[0].text`, `output[content.type="output_text"].content.text`, `usage.total_tokens`), and never see an `{"events":[…]}` envelope.
 
 #### Scenario: Extract last result from non-OpenAI SSE stream
 - **WHEN** response body is `{"events":[{"event":"start","data":{}},{"event":"result","data":{"output":"Paris"}}]}`

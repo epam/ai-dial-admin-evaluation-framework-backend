@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.config.properties.McpClientProperties;
 import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -23,6 +24,7 @@ import org.springframework.core.env.Environment;
  * declaring the {@code evaluation-runner-core} dependency (see Decision 6 in the
  * {@code evaluation-runner-core-module} change's {@code design.md}).
  */
+@Slf4j
 @AutoConfiguration
 @LogExecution
 @ComponentScan("com.epam.aidial.evaluation.runner")
@@ -44,6 +46,8 @@ public class EvaluationRunnerAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public RunExecutorFactory runExecutorFactory(Environment environment) {
-        return new RunExecutorFactory(Threading.VIRTUAL.isActive(environment));
+        final boolean virtualThreads = Threading.VIRTUAL.isActive(environment);
+        log.info("Virtual threads: {}", virtualThreads);
+        return new RunExecutorFactory(virtualThreads);
     }
 }

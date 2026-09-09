@@ -371,7 +371,7 @@ Status: **Implemented**
 
 #### Scenario: A failed score write is logged but does not cancel the run
 - **WHEN** the per-row score computation or its batch write throws an unexpected error
-- **THEN** the executor SHALL log the error and continue processing — this failure SHALL NOT set the cancellation signal, unlike a `test_case_eval_summaries` batch-write failure
+- **THEN** the executor SHALL log the error and continue processing — this failure SHALL NOT fail or cancel the run, unlike a `test_case_eval_summaries` batch-write failure, which propagates as `AnalyticsWriteException` and ends the run `FAILED` / `ANALYTICS_WRITE_FAILED`
 
 ### Requirement: RunMetricSnapshot writing via service-layer client
 The `RunMetricSnapshotBatchWriteClient` SHALL convert internal RunMetricSnapshot models to the existing `RunMetricSnapshotBatchWriteRequestDto` and delegate to `RunMetricSnapshotService.batchCreate()`.

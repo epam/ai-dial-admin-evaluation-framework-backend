@@ -38,4 +38,18 @@ class DialCoreUrlBuilderTest {
         String url = urlBuilder.buildUrl("gpt-4", "/chat/completions/stream");
         assertThat(url).isEqualTo("/v1/deployments/gpt-4/route/chat/completions/stream");
     }
+
+    @Test
+    @DisplayName("Anthropic Messages path routes to itself without deployment id spliced in")
+    void anthropicMessagesRoutesToItself() {
+        String url = urlBuilder.buildUrl("claude-3-5-sonnet", "/anthropic/v1/messages");
+        assertThat(url).isEqualTo("/anthropic/v1/messages");
+    }
+
+    @Test
+    @DisplayName("path similar to Anthropic Messages but not exact routes to custom")
+    void anthropicMessagesNearMissRoutesToCustom() {
+        String url = urlBuilder.buildUrl("claude-3-5-sonnet", "/anthropic/v1/messages/count_tokens");
+        assertThat(url).isEqualTo("/v1/deployments/claude-3-5-sonnet/route/anthropic/v1/messages/count_tokens");
+    }
 }

@@ -10,11 +10,13 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartType;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
@@ -606,6 +608,165 @@ class SuiteValidationServiceTest {
 
             assertThat(result.isValid()).isTrue();
             assertThat(result.getWarnings()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("Anthropic Messages model/deploymentRef consistency")
+    class AnthropicModelDeploymentRefConsistency {
+
+        private static final UUID SUITE_ID = UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+
+        @Test
+        @DisplayName("Literal model matching deploymentRef.id produces no warning")
+        void modelMatchesDeploymentRef_noWarning() {
+            TestSuiteRequestDto dto = buildMessagesSuite("claude-3-5-sonnet-v2", "claude-3-5-sonnet-v2", null);
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isTrue();
+            assertThat(result.getWarnings()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Mismatched literal model on request #0 produces a warning at $.requestTemplate.body")
+        void modelMismatchOnRequestZero_warns() {
+            TestSuiteRequestDto dto = buildMessagesSuite("claude-3-5-sonnet-v2", "claude-3-opus", null);
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE
+                            && "$.requestTemplate.body".equals(w.getPath())
+                            && w.getMessage().contains("claude-3-opus")
+                            && w.getMessage().contains("claude-3-5-sonnet-v2"));
+        }
+
+        @Test
+        @DisplayName("Mismatched literal model on additionalRequests[1] produces a warning at the indexed path")
+        void modelMismatchOnAdditionalRequest_warnsAtIndexedPath() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder()
+                            .id("claude-3-5-sonnet-v2")
+                            .build())
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/v1/chat")
+                            .build())
+                    .requestTemplate(
+                            RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                    .additionalRequests(List.of(
+                            RequestDefinitionDto.builder()
+                                    .name("first-extra")
+                                    .endpointRef(EndpointContractDto.builder()
+                                            .method(HttpMethod.POST)
+                                            .relativeUrlPattern("/v1/chat")
+                                            .build())
+                                    .requestTemplate(RequestTemplateDto.builder()
+                                            .urlTemplate("/v1/chat")
+                                            .build())
+                                    .build(),
+                            RequestDefinitionDto.builder()
+                                    .name("second-extra")
+                                    .endpointRef(EndpointContractDto.builder()
+                                            .method(HttpMethod.POST)
+                                            .relativeUrlPattern("/anthropic/v1/messages")
+                                            .build())
+                                    .requestTemplate(RequestTemplateDto.builder()
+                                            .urlTemplate("/anthropic/v1/messages")
+                                            .body(JsonRequestBodyDto.builder()
+                                                    .content(Map.of("model", "claude-3-opus"))
+                                                    .build())
+                                            .build())
+                                    .build()))
+                    .build();
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE
+                            && "$.additionalRequests[1].requestTemplate.body".equals(w.getPath()));
+        }
+
+        @Test
+        @DisplayName("Placeholder model value is skipped (not statically checkable)")
+        void modelIsPlaceholder_skipped() {
+            TestSuiteRequestDto dto = buildMessagesSuite("claude-3-5-sonnet-v2", "${{model}}", null);
+            dto.setInputBindings(List.of(InputBindingDto.builder()
+                    .templateVariable("model")
+                    .constantValue("claude-3-opus")
+                    .build()));
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.getWarnings())
+                    .noneMatch(w ->
+                            w.getCode() == ValidationWarningCode.TYPE && "$.requestTemplate.body".equals(w.getPath()));
+        }
+
+        @Test
+        @DisplayName("jsonataContent body is skipped (not statically checkable)")
+        void jsonataContentBody_skipped() {
+            TestSuiteRequestDto dto = buildMessagesSuite(
+                    "claude-3-5-sonnet-v2", null, "{ \"model\": \"claude-3-opus\", \"messages\": [] }");
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isTrue();
+            assertThat(result.getWarnings()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Non-/messages endpoint with an unrelated literal model is not checked")
+        void nonMessagesEndpoint_notChecked() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder().id("gpt-4").build())
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/chat/completions")
+                            .build())
+                    .requestTemplate(RequestTemplateDto.builder()
+                            .urlTemplate("/chat/completions")
+                            .body(JsonRequestBodyDto.builder()
+                                    .content(Map.of("model", "some-unrelated-value"))
+                                    .build())
+                            .build())
+                    .build();
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isTrue();
+            assertThat(result.getWarnings()).isEmpty();
+        }
+
+        private TestSuiteRequestDto buildMessagesSuite(
+                String deploymentRefId, String literalModel, String jsonataContent) {
+            JsonRequestBodyDto.JsonRequestBodyDtoBuilder bodyBuilder = JsonRequestBodyDto.builder();
+            if (jsonataContent != null) {
+                bodyBuilder.jsonataContent(jsonataContent);
+            } else {
+                bodyBuilder.content(Map.of("model", literalModel));
+            }
+            return TestSuiteRequestDto.builder()
+                    .name("Suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(
+                            DeploymentReferenceDto.builder().id(deploymentRefId).build())
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern("/anthropic/v1/messages")
+                            .build())
+                    .requestTemplate(RequestTemplateDto.builder()
+                            .urlTemplate("/anthropic/v1/messages")
+                            .body(bodyBuilder.build())
+                            .build())
+                    .build();
         }
     }
 }

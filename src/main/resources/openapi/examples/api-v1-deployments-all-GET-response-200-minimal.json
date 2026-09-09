@@ -11,6 +11,22 @@
   "descriptionKeywords": ["Text Generation", "Continue Supported"],
   "inputAttachmentTypes": ["*/*"],
   "interfaces": ["chat", "openaiChatCompletions"],
+  "features": {
+    "rate": true,
+    "tokenize": true,
+    "truncate_prompt": true,
+    "configuration": false,
+    "system_prompt": true,
+    "tools": true,
+    "seed": true,
+    "url_attachments": false,
+    "folder_attachments": false,
+    "allow_resume": true,
+    "accessible_by_per_request_key": true,
+    "content_parts": true,
+    "temperature": true,
+    "addons": true
+  },
   "capabilities": {
     "scaleTypes": ["standard"],
     "completion": false,

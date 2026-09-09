@@ -58,6 +58,9 @@ public abstract class DeploymentInfoDto {
     @Schema(description = "Reference to use for opening the application")
     private String reference;
 
+    @Schema(description = "Interfaces supported by the deployment")
+    private List<String> interfaces;
+
     @Schema(description = "Features supported by the deployment")
     private Map<String, Object> features;
 }

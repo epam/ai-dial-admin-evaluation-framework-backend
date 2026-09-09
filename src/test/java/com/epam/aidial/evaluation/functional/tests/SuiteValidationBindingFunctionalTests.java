@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartType;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodySchemaDto;
@@ -176,6 +177,44 @@ public abstract class SuiteValidationBindingFunctionalTests extends BaseFunction
                 .anyMatch(w -> w.getCode() == ValidationWarningCode.ADDITIONAL
                         && w.getMessage() != null
                         && w.getMessage().contains("argumentTemplate"));
+    }
+
+    @Test
+    @DisplayName(
+            "DEPLOYMENT suite targeting /anthropic/v1/messages with a mismatched literal model produces a TYPE warning")
+    void messagesSuiteWithMismatchedModel_producesWarning() {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Suite-anthropic-model-mismatch-" + UUID.randomUUID())
+                .suiteType(SuiteType.DEPLOYMENT)
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("claude-3-5-sonnet-v2")
+                        .name("Claude 3.5 Sonnet")
+                        .version("v2")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/anthropic/v1/messages")
+                        .build())
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/anthropic/v1/messages")
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("model", "claude-3-opus"))
+                                .build())
+                        .build())
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isValid()).isFalse();
+        assertThat(response.getBody().getValidationWarnings())
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE
+                        && "$.requestTemplate.body".equals(w.getPath())
+                        && w.getMessage() != null
+                        && w.getMessage().contains("claude-3-opus")
+                        && w.getMessage().contains("claude-3-5-sonnet-v2"));
     }
 
     private TestSuiteRequestDto buildMcpSuiteRequest(

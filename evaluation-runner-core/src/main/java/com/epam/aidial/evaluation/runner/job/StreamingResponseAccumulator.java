@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.runner.job;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Map;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import tools.jackson.core.JacksonException;
@@ -12,7 +13,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Three-mode SSE response accumulator:
+ * Four-mode SSE response accumulator:
  * <ol>
  *   <li><b>OpenAI chat-completions mode</b> — auto-detected when the first event has no named
  *       {@code event:} type (type is {@code "message"}) AND its data contains a {@code choices[]} array.
@@ -22,6 +23,9 @@ import tools.jackson.databind.node.ObjectNode;
  *       {@code type} starts with {@code "response."}. Assembles the terminal event's {@code response}
  *       object, i.e. exactly the document a non-streaming Responses call returns
  *       ({@link ResponsesApiAccumulator}).</li>
+ *   <li><b>Anthropic mode</b> — auto-detected when the first event is named {@code message_start} and
+ *       its data contains a {@code message} field. Reassembles Anthropic Messages API content blocks
+ *       via {@link AnthropicContentAccumulator} into a complete non-streaming message object.</li>
  *   <li><b>Structured SSE mode</b> — for all other streams. Wraps parsed events in a
  *       {@code {"events": [{event, data}, ...]}} envelope that JSONata expressions can navigate.</li>
  * </ol>
@@ -88,6 +92,9 @@ public class StreamingResponseAccumulator {
         } else if (isResponsesApiMode(events)) {
             log.debug("Assembling {} SSE events in OpenAI Responses mode", events.size());
             assembleResponsesApiResponse(events, result.status());
+        } else if (isAnthropicMode(events)) {
+            log.debug("Assembling {} SSE events in Anthropic mode", events.size());
+            assembleAnthropicResponse(events, result.status());
         } else {
             log.debug("Assembling {} SSE events in structured SSE mode", events.size());
             assembleStructuredSseResponse(events);
@@ -110,6 +117,96 @@ public class StreamingResponseAccumulator {
             return false;
         }
         return node.has("choices") && node.get("choices").isArray();
+    }
+
+    /**
+     * Anthropic mode: first event must be named {@code message_start} and its data must contain a
+     * {@code message} field. A named {@code message_start} event without that field degrades to
+     * Structured SSE mode rather than being (mis)treated as Anthropic-shaped.
+     */
+    private boolean isAnthropicMode(List<SseEvent> events) {
+        if (events.isEmpty()) {
+            return false;
+        }
+        SseEvent first = events.get(0);
+        if (!"message_start".equals(first.event())) {
+            return false;
+        }
+        if (!(first.data() instanceof JsonNode node)) {
+            return false;
+        }
+        return node.has("message");
+    }
+
+    private void assembleAnthropicResponse(List<SseEvent> events, ExecutionStatus parseStatus) {
+        ObjectNode message = null;
+        final AnthropicContentAccumulator contentAccumulator = new AnthropicContentAccumulator(objectMapper);
+
+        for (SseEvent event : events) {
+            if (!(event.data() instanceof JsonNode node)) {
+                continue;
+            }
+            switch (event.event()) {
+                case "message_start" -> {
+                    if (node.get("message") instanceof ObjectNode baseMessage) {
+                        message = baseMessage.deepCopy();
+                    }
+                }
+                case "content_block_start" -> {
+                    JsonNode index = node.get("index");
+                    if (index != null && index.isNumber()) {
+                        contentAccumulator.onBlockStart(index.asInt(), node.get("content_block"));
+                    }
+                }
+                case "content_block_delta" -> {
+                    JsonNode index = node.get("index");
+                    if (index != null && index.isNumber()) {
+                        contentAccumulator.onBlockDelta(index.asInt(), node.get("delta"));
+                    }
+                }
+                case "message_delta" -> {
+                    if (message != null) {
+                        mergeMessageDelta(message, node);
+                    }
+                }
+                default -> {
+                    // content_block_stop, message_stop, ping — no-ops for reconstruction
+                }
+            }
+        }
+
+        try {
+            if (parseStatus != ExecutionStatus.SUCCESS) {
+                // Truncated — store accumulated text content as a JSON string
+                responseBody = objectMapper.writeValueAsString(contentAccumulator.accumulatedText());
+            } else {
+                if (message == null) {
+                    message = objectMapper.createObjectNode();
+                }
+                message.set("content", contentAccumulator.buildContentArray());
+                responseBody = objectMapper.writeValueAsString(message);
+            }
+        } catch (JacksonException e) {
+            log.error("Failed to assemble Anthropic streaming response: {}", e.getMessage(), e);
+            executionStatus = ExecutionStatus.ERROR;
+        }
+    }
+
+    private void mergeMessageDelta(ObjectNode message, JsonNode node) {
+        if (node.get("delta") instanceof ObjectNode delta) {
+            for (Map.Entry<String, JsonNode> entry : delta.properties()) {
+                message.set(entry.getKey(), entry.getValue().deepCopy());
+            }
+        }
+        if (node.get("usage") instanceof ObjectNode usage) {
+            ObjectNode mergedUsage = message.get("usage") instanceof ObjectNode existingUsage
+                    ? existingUsage
+                    : objectMapper.createObjectNode();
+            for (Map.Entry<String, JsonNode> entry : usage.properties()) {
+                mergedUsage.set(entry.getKey(), entry.getValue().deepCopy());
+            }
+            message.set("usage", mergedUsage);
+        }
     }
 
     private void assembleOpenAiResponse(List<SseEvent> events, ExecutionStatus parseStatus) {

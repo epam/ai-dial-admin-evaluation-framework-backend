@@ -9,7 +9,7 @@ Status: **Implemented**
 - **EvaluationExecutor**: Interface for execution strategies (`execute(EvaluationContext)`). Currently implemented by `InProcessEvaluationExecutor`; designed for future K8s Job extraction.
 - **EvaluationContext**: Immutable context carrier for a run — carries runId, suiteId, execution settings, retry policy, the run's shared `ExecutorService`, and JWT token.
 - **EvaluationWorker**: Single test case execution logic — resolves request, calls endpoint, captures response, tracks retries, extracts columns, builds `TestCaseRunResult`.
-- **StreamingResponseAccumulator**: Three-mode SSE accumulator — OpenAI chat-completions assembly, OpenAI Responses assembly, or `{"events":[...]}` envelope for custom SSE formats. Delegates SSE wire format parsing to `SseEventParser`.
+- **StreamingResponseAccumulator**: Four-mode SSE accumulator — OpenAI chat-completions assembly, OpenAI Responses assembly, Anthropic Messages format assembly, or `{"events":[...]}` envelope for custom SSE formats. Delegates SSE wire format parsing to `SseEventParser`.
 - **ResultBatchWriter**: Thread-safe result buffer that flushes to analytics DB at configurable batch size thresholds, with SSE progress reporting.
 
 ## Requirements
@@ -197,11 +197,12 @@ Status: **Implemented**
 - **AND** it SHALL have tags for `testcase.id` (UUID string) and `run.index` (int)
 
 ### Requirement: Streaming response accumulation
-`StreamingResponseAccumulator` parses SSE event streams and assembles complete response bodies. It delegates SSE wire format parsing to `SseEventParser` and operates in three modes, evaluated in this order:
+`StreamingResponseAccumulator` parses SSE event streams and assembles complete response bodies. It delegates SSE wire format parsing to `SseEventParser` and operates in four modes, evaluated in this order:
 
 1. **OpenAI chat-completions mode** — auto-detected when the first event has no named `event:` type (type is `"message"`) AND its data contains a `choices[]` array. Extracts `choices[0].delta.content` from each chunk, concatenates, and assembles a complete non-streaming chat-completions response.
 2. **OpenAI Responses mode** — auto-detected when the first event's data is a JSON object whose `type` is a string starting with `"response."`. Assembly is delegated to `ResponsesApiAccumulator` and yields exactly the document a non-streaming Responses call returns (see "Responses API streaming assembly" below).
-3. **Structured SSE mode** — for all other streams. Wraps parsed events in a `{"events": [{"event": "<type>", "data": <payload>}, ...]}` envelope. Named events force this mode regardless of data payload structure, **except** for Responses events, which are detected from the payload and never fall through to this mode.
+3. **Anthropic mode** — auto-detected when the first event's named `event:` type is `message_start` AND its data contains a `message` object. Reassembles `content_block_start`/`content_block_delta`/`message_delta` events into a complete Anthropic Messages response: a `content` array (text and tool_use blocks merged from deltas, other block types passed through unchanged) plus the base message's `stop_reason`/`stop_sequence`/`usage` merged from `message_delta`.
+4. **Structured SSE mode** — for all other streams. Wraps parsed events in a `{"events": [{"event": "<type>", "data": <payload>}, ...]}` envelope. Named events force this mode regardless of data payload structure, **except** when they match Anthropic mode's detection, and **except** for Responses events, which are detected from the payload and never fall through to this mode.
 
 Status: **Implemented**
 
@@ -218,11 +219,11 @@ Status: **Implemented**
 - **THEN** the accumulator SHALL set `executionStatus = ERROR` and store whatever was accumulated as `responseBody`
 
 #### Scenario: Non-OpenAI streaming format fallback
-- **WHEN** the response has `Content-Type: text/event-stream` but events do NOT follow OpenAI format (either named `event:` types are present, or data lacks `choices[].delta.content` structure)
+- **WHEN** the response has `Content-Type: text/event-stream` but events do NOT follow OpenAI format (either named `event:` types are present, or data lacks `choices[].delta.content` structure), AND the stream does NOT match Responses mode's detection (first event's data being an object whose `type` starts with `"response."`) or Anthropic mode's detection (first event named `message_start` carrying a `message` object)
 - **THEN** the accumulator SHALL produce `responseBody` as a JSON object with `events` array: `{"events": [{"event": "<type>", "data": <payload>}, ...]}`. Each event's `event` field SHALL contain the SSE event type name (defaulting to `"message"` when absent). Each event's `data` field SHALL contain parsed JSON if the data payload is valid JSON, or a raw string if not.
 
 #### Scenario: OpenAI mode detection with named events
-- **WHEN** SSE stream has named `event:` types (e.g., `event: process_rules`) whose data is not a Responses event
+- **WHEN** SSE stream has named `event:` types (e.g., `event: process_rules`) whose data is not a Responses event and that do not match Anthropic mode's `message_start`-with-`message` detection
 - **THEN** accumulator SHALL use structured SSE mode regardless of data payload structure — named events are never treated as OpenAI chat-completions format
 
 #### Scenario: JSON array fallback enables JSONata extraction
@@ -260,8 +261,36 @@ Status: **Implemented**
 - **THEN** the accumulator SHALL synthesize `{"status":"incomplete","output":[{"type":"message","role":"assistant","status":"incomplete","content":[{"type":"output_text","text":"<concatenated deltas>"}]}]}` — the empty `response` object from `response.created` SHALL NOT be used
 
 #### Scenario: Non-Responses named events are unaffected
-- **WHEN** the first event is a named non-Responses event (e.g. `event: process_rules`)
+- **WHEN** the first event is a named non-Responses, non-Anthropic event (e.g. `event: process_rules`)
 - **THEN** the accumulator SHALL use structured SSE mode as before
+
+#### Scenario: Anthropic Messages SSE format detected
+- **WHEN** the response stream's first event has a named `event:` type of `message_start` and its data contains a `message` object
+- **THEN** the accumulator SHALL use Anthropic mode
+
+#### Scenario: Anthropic mode text block assembly
+- **WHEN** an Anthropic-mode stream contains a `content_block_start` event with `content_block.type = "text"` at some index, followed by one or more `content_block_delta` events with `delta.type = "text_delta"` at that index
+- **THEN** the accumulator SHALL concatenate the `delta.text` values in arrival order and produce a final `content` entry at that index: `{"type":"text","text": "<concatenated text>"}`
+
+#### Scenario: Anthropic mode tool_use block assembly
+- **WHEN** an Anthropic-mode stream contains a `content_block_start` event with `content_block.type = "tool_use"` at some index, followed by one or more `content_block_delta` events with `delta.type = "input_json_delta"` at that index
+- **THEN** the accumulator SHALL concatenate the `delta.partial_json` fragments in arrival order, parse the concatenated result as JSON, and produce a final `content` entry at that index: `{"type":"tool_use","id":<id>,"name":<name>,"input": <parsed JSON>}`. If the concatenated fragments do not parse as valid JSON, `input` SHALL instead be the raw concatenated string.
+
+#### Scenario: Anthropic mode multiple content blocks assembled in order
+- **WHEN** an Anthropic-mode stream contains `content_block_start`/`content_block_delta` events for more than one content block index
+- **THEN** the accumulator SHALL produce the final `content` array with entries ordered by ascending block index
+
+#### Scenario: Anthropic mode message_delta merged
+- **WHEN** an Anthropic-mode stream contains a `message_delta` event with a `delta` object (e.g., `stop_reason`, `stop_sequence`) and/or a `usage` object
+- **THEN** the accumulator SHALL merge `delta.stop_reason`/`delta.stop_sequence` into the base message object (taken from the `message_start` event's `message`) and merge `usage` into that base message's `usage` object
+
+#### Scenario: Anthropic mode ignores lifecycle-only events
+- **WHEN** an Anthropic-mode stream contains `content_block_stop`, `message_stop`, or `ping` events
+- **THEN** the accumulator SHALL treat them as no-ops for content reconstruction
+
+#### Scenario: Anthropic mode non-text/tool_use block passthrough
+- **WHEN** a `content_block_start` event carries a `content_block.type` other than `text` or `tool_use` (e.g., `thinking`)
+- **THEN** the accumulator SHALL pass that block through unchanged, exactly as captured from `content_block_start`, into the final `content` array at its index — without reconstructing it from subsequent delta events
 
 ### Requirement: Response size limiting
 The system SHALL enforce a configurable maximum response body size. Responses exceeding the limit SHALL be truncated with a warning recorded. Because `response_body` is a JSONB column, truncation MUST produce valid JSON — raw byte-level truncation is NOT allowed.
@@ -277,7 +306,7 @@ Status: **Implemented**
 
 #### Scenario: Streaming response exceeds limit
 - **WHEN** accumulated SSE event data bytes exceed `max-response-size-bytes` during streaming (size tracked by `SseEventParser`)
-- **THEN** the accumulator SHALL stop accumulating and set `executionStatus = ERROR`. For OpenAI chat-completions mode: store the accumulated content as a truncated JSON string. For Responses mode: store the text concatenated from `response.output_text.delta` events as a truncated JSON string. For structured SSE mode: store the `{"events": [...]}` envelope with events accumulated before the limit was hit. A truncation warning SHALL be recorded in all cases.
+- **THEN** the accumulator SHALL stop accumulating and set `executionStatus = ERROR`. For OpenAI chat-completions mode: store the accumulated content as a truncated JSON string. For Responses mode: store the text concatenated from `response.output_text.delta` events as a truncated JSON string. For Anthropic mode: store the concatenation of all `text`-block accumulated text (in ascending block-index order) as a truncated JSON string. For structured SSE mode: store the `{"events": [...]}` envelope with events accumulated before the limit was hit. A truncation warning SHALL be recorded in all cases.
 
 ### Requirement: Retry policy execution
 When a `RetryPolicyDto` is configured with `maxRetries > 0`, the worker SHALL retry failed calls according to the policy.
@@ -499,6 +528,10 @@ Status: **Implemented**
 #### Scenario: HTTP method from endpointRef
 - **WHEN** `endpointRef.method` is `POST`
 - **THEN** the worker SHALL use POST as the HTTP method for the deployment call
+
+#### Scenario: Anthropic Messages endpoint
+- **WHEN** `endpointRef.relativeUrlPattern` is `/anthropic/v1/messages`
+- **THEN** the worker SHALL construct URL as `{dialCoreBaseUrl}/anthropic/v1/messages` (passed through unchanged — it is DIAL Core's real, deployment-less route), with the deployment ID NOT included anywhere in the URL. The suite author is responsible for including a `model` field identifying the deployment inside the JSON request body — DIAL Core resolves the deployment from that field, not from the URL. This mapping applies regardless of the value of `deploymentRef.id`.
 
 ### Requirement: Request headers and query parameters
 The worker SHALL include resolved headers and query parameters from the request template in the deployment call.
@@ -766,6 +799,7 @@ Status: **Implemented**
   longer special-cases a cancelled turn. `EvaluationRunProperties.Execution.cancellationGracePeriodMs` and the
   `test-suite-run.execution.cancellation-grace-period-ms` key are removed.
 - Streaming accumulator: `com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator` (moved to `evaluation-runner-core`)
+- Anthropic content accumulator: `com.epam.aidial.evaluation.runner.job.AnthropicContentAccumulator` (package-private, `evaluation-runner-core`; mirrors `CustomContentAccumulator`'s per-run lifecycle)
 - Result factory: `com.epam.aidial.evaluation.runner.job.TestCaseRunResultFactory` (moved to `evaluation-runner-core`)
 - Batch writer interface: `com.epam.aidial.evaluation.runner.job.ResultBatchWriter` (`addResults(List<TestCaseRunResult>)`, `flush()` — moved to `evaluation-runner-core` as a DB-free interface)
 - Postgres batch writer: `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriter` (plain per-run instance) and `com.epam.aidial.evaluation.service.domain.job.PostgresResultBatchWriterFactory` (Spring bean) — EF backend, implement the shared `ResultBatchWriter` interface; supersede the baseline's `ResultBatchWriter`/`ResultBatchWriterTransactional` classes, which no longer exist

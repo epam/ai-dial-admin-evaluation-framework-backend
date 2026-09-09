@@ -104,3 +104,7 @@ Status: **Implemented**
 #### Scenario: Streaming response exceeds limit
 - **WHEN** accumulated SSE event data bytes exceed `max-response-size-bytes` during streaming (size tracked by `SseEventParser`)
 - **THEN** the accumulator SHALL stop accumulating and set `executionStatus = ERROR`. For OpenAI mode: store the accumulated content as a truncated JSON string. For Anthropic mode: store the concatenation of all `text`-block accumulated text (in ascending block-index order) as a truncated JSON string. For structured SSE mode: store the `{"events": [...]}` envelope with events accumulated before the limit was hit. A truncation warning SHALL be recorded in all cases.
+
+## Implementation Notes (addendum)
+At sync/archive time, add the following line to the baseline spec's existing "## Implementation Notes" section (also update the "Key Terms" entry for `StreamingResponseAccumulator` from "Two-mode" to "Three-mode"):
+- Anthropic content accumulator: `com.epam.aidial.evaluation.runner.job.AnthropicContentAccumulator` (package-private, `evaluation-runner-core`; mirrors `CustomContentAccumulator`'s per-run lifecycle)

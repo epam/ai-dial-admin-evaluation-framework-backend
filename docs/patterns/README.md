@@ -33,4 +33,4 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [Multi-request suites](multi-request-suites.md) | `additionalRequests` chain; one flat response-column union; accumulated frame; `(request_index, turn_index)` |
 | [Request-template JSONata seam](jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
-| [Anthropic Messages API support](anthropic-messages-api.md) | Deployment-less `/messages` URL; third `StreamingResponseAccumulator` mode; `model`-in-body |
+| [Anthropic Messages API support](anthropic-messages-api.md) | Deployment-less `/anthropic/v1/messages` URL passthrough; third `StreamingResponseAccumulator` mode; `model`-in-body |

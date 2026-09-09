@@ -12,18 +12,20 @@
 - [x] 2.4 Wire the three-way dispatch in `assemble()`: `isOpenAiMode` → `assembleOpenAiResponse`; else `isAnthropicMode` → `assembleAnthropicResponse`; else `assembleStructuredSseResponse`.
 - [x] 2.5 In `evaluation-runner-core/src/test/java/com/epam/aidial/evaluation/runner/job/StreamingResponseAccumulatorTest.java`, add an `@Nested AnthropicMode` class covering: single text block across multiple deltas; `message_delta` stop_reason/usage merge; `tool_use` block with valid JSON reassembly; multiple blocks assembled in index order; truncation mid-stream (plain JSON string, `ERROR` status); a named-`message_start`-without-`message` stream falling back to Structured SSE mode.
 - [x] 2.6 Run `./gradlew :evaluation-runner-core:test --tests "com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulatorTest"` and confirm all cases pass.
+- [x] 2.7 Add a dedicated `evaluation-runner-core/src/test/java/com/epam/aidial/evaluation/runner/job/AnthropicContentAccumulatorTest.java` (mirroring `CustomContentAccumulatorTest`'s per-class unit coverage) covering: text-block delta concatenation, `tool_use` JSON reassembly (valid, invalid-falls-back-to-raw-string, empty-delta-yields-empty-object), other-block-type passthrough ignoring deltas, out-of-order block-index output, and `accumulatedText()` excluding non-text blocks. Run `./gradlew :evaluation-runner-core:test --tests "com.epam.aidial.evaluation.runner.job.AnthropicContentAccumulatorTest"` and confirm all cases pass.
 
 ## 3. Documentation
 
 - [x] 3.1 Add `docs/patterns/anthropic-messages-api.md` documenting the two-seam design, the `model`-in-body requirement, and the explicit non-goals (no gating via `interfaces`/`InterfaceType`, no `count_tokens`, no `thinking` block reconstruction).
-- [x] 3.2 Update `AGENTS.md` per AGENTS.md Maintenance guidelines: add a row to the "Unique Patterns" table linking to `docs/patterns/anthropic-messages-api.md` (done: table row added, no other section needs changes for this feature-following-existing-pattern work).
+- [x] 3.2 Update `AGENTS.md` per AGENTS.md Maintenance guidelines: add a row to the "Unique Patterns" table linking to `docs/patterns/anthropic-messages-api.md`, and add the corresponding row to `docs/patterns/README.md` (done: both rows added, using the real full path `/anthropic/v1/messages`, not a shorthand; no other section needs changes for this feature-following-existing-pattern work).
 - [x] 3.3 Confirm `openspec/changes/add-anthropic-messages-api-support/specs/eval-execution-engine/spec.md` accurately reflects the final implementation (done: delta already written during planning; revise only if implementation diverges from the design).
+- [x] 3.4 Confirm `openspec/changes/add-anthropic-messages-api-support/specs/test-suites/spec.md` accurately reflects the final implementation (done: delta already written during planning; revise only if implementation diverges from the design).
 
 ## 4. Verification
 
 - [x] 4.1 Run `./gradlew spotlessApply`.
 - [x] 4.2 Run `./gradlew build` (full build: compiles both modules, `checkstyleMain`/`checkstyleTest`, `LayeredArchitectureTest`, `spotlessCheck`) and confirm no regressions.
-- [ ] 4.3 Manually verify via the "Try it out" flow (`TryItOutService`) against a real DIAL Core instance with an Anthropic-backed deployment: `endpointRef.relativeUrlPattern = "/anthropic/v1/messages"` plus a request body containing `"model": "<deploymentId>"`, confirming the end-to-end path (URL construction → DIAL Core → streaming or non-streaming response → JSONata response-column extraction).
+- [x] 4.3 Manually verify via the "Try it out" flow (`TryItOutService`) against a real DIAL Core instance with an Anthropic-backed deployment: `endpointRef.relativeUrlPattern = "/anthropic/v1/messages"` plus a request body containing `"model": "<deploymentId>"`, confirming the end-to-end path (URL construction → DIAL Core → streaming or non-streaming response → JSONata response-column extraction). (Confirmed working by user.)
 
 ## 5. Suite validation: model/deploymentRef consistency
 

@@ -16,10 +16,6 @@ public class TestSuiteRunProperties {
 
     @NotNull
     @Valid
-    private Executor executor;
-
-    @NotNull
-    @Valid
     private Sse sse;
 
     @NotNull
@@ -29,23 +25,6 @@ public class TestSuiteRunProperties {
     @NotNull
     @Valid
     private Limits limits;
-
-    @Getter
-    @Setter
-    public static class Executor {
-
-        @NotNull
-        @Min(1)
-        private Integer corePoolSize;
-
-        @NotNull
-        @Min(1)
-        private Integer maxPoolSize;
-
-        @NotNull
-        @Min(0)
-        private Integer queueCapacity;
-    }
 
     @Getter
     @Setter

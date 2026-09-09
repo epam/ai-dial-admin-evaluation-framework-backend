@@ -135,14 +135,19 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
     }
 
     @Test
-    @DisplayName("Should cancel run mid-flight with rows for unfinished cases absent (no synthetic CANCELLED rows)")
+    @DisplayName("Should cancel run mid-flight immediately, returning CANCELLING from the cancel call and "
+            + "finalizing to CANCELLED, with rows for unfinished cases absent "
+            + "(no synthetic CANCELLED/INTERRUPTED rows)")
     void shouldCancelRunMidFlight_withAbsentRowsForUnfinishedCases() {
         TestSuiteResponseDto suite = createTestSuite("Suite Cancel Mid-flight");
         for (int i = 1; i <= 4; i++) {
             createTestCaseForSuite(suite.getId(), "TC" + i, Map.of("expected", "v" + i));
         }
 
-        // Slow down workers so the run is still RUNNING when we cancel
+        // Slow down workers so the run is still RUNNING when we cancel. Since the deployment
+        // client sits behind an interruptible JdkClientHttpRequestFactory in production, and this
+        // stub's Thread.sleep is itself interruptible, shutdownNow() on the run's executor breaks
+        // every in-flight call immediately — there is no grace-period drain any more.
         when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                 .thenAnswer(inv -> {
                     Thread.sleep(2000);
@@ -167,25 +172,36 @@ public abstract class EvaluationExecutorFailureModesFunctionalTests extends Base
         // Wait until run is RUNNING (snapshot phase done) so cancel happens mid-flight
         awaitRunStatus(runId, RunStatus.RUNNING.name(), 15);
 
+        // The cancel response body is the deterministic observation of the transient CANCELLING
+        // status; DB-readability of CANCELLING is covered separately by
+        // TestSuiteRunFunctionalTests.shouldCancelRunningRun.
+        long cancelStartNanos = System.nanoTime();
         ResponseEntity<TestSuiteRunResponseDto> cancelResponse = restTemplate.exchange(
                 apiUrl("/test-suite-runs/" + runId + "/cancel"),
                 HttpMethod.POST,
                 jsonEntity(null),
                 TestSuiteRunResponseDto.class);
-        assertThat(cancelResponse.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(cancelResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(cancelResponse.getBody()).isNotNull();
+        assertThat(cancelResponse.getBody().getStatus()).isEqualTo(RunStatus.CANCELLING.name());
 
         TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 30);
+        long cancelToTerminalMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - cancelStartNanos);
+
         assertThat(terminal.getStatus()).isEqualTo(RunStatus.CANCELLED.name());
+        assertThat(cancelToTerminalMillis)
+                .as("cancellation is immediate (executor shutdownNow, no grace-period drain)")
+                .isLessThan(2000L);
 
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(runId);
         // Strictly fewer than the total (4 cases × 1 run); some cases were interrupted before completion
         assertThat(results.size()).isLessThan(4);
-        // Existing rows must be real outcomes only — never a synthetic "CANCELLED" status (the enum
-        // doesn't even include CANCELLED, but assert explicitly for clarity).
+        // Existing rows must be real outcomes only — an interrupted case writes no row at all, so no
+        // row is ever synthesized with a "CANCELLED" or "INTERRUPTED" status.
         assertThat(results).allSatisfy(row -> {
             String status = String.valueOf(row.get("execution_status"));
             assertThat(status).isIn("SUCCESS", "ERROR", "FAILED", "TIMEOUT");
-            assertThat(status).isNotEqualTo("CANCELLED");
+            assertThat(status).isNotIn("CANCELLED", "INTERRUPTED");
         });
     }
 

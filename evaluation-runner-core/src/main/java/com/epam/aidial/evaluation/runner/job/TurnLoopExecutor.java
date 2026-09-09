@@ -194,29 +194,25 @@ public class TurnLoopExecutor {
                             step.extractionWarningsJson(),
                             persistedDataJson));
                 } else {
-                    final boolean requestIssued = step.outcome() != null;
-                    if (requestIssued || !context.getCancellationSignal().get()) {
-                        final ResponseColumnExtractor.ExtractionResult abortExtraction = step.outcome() != null
-                                ? responseColumnExtractor.extract(
-                                        responseColumns, step.outcome().responseBody(), step.requestBodyJson())
-                                : new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of());
-                        final Map<String, Object> rowAccumulated =
-                                mergeAccumulated(accumulated, abortExtraction.values());
-                        results.add(buildTurnRow(
-                                input,
-                                context,
-                                runIndex,
-                                traceId,
-                                turnStart,
-                                turnEnd,
-                                rowIdentity,
-                                step.status(),
-                                step.outcome(),
-                                step.requestBodyJson(),
-                                serializeAccumulated(rowAccumulated),
-                                abortExtraction.extractionWarnings(),
-                                persistedDataJson));
-                    }
+                    final ResponseColumnExtractor.ExtractionResult abortExtraction = step.outcome() != null
+                            ? responseColumnExtractor.extract(
+                                    responseColumns, step.outcome().responseBody(), step.requestBodyJson())
+                            : new ResponseColumnExtractor.ExtractionResult("{}", "[]", Map.of());
+                    final Map<String, Object> rowAccumulated = mergeAccumulated(accumulated, abortExtraction.values());
+                    results.add(buildTurnRow(
+                            input,
+                            context,
+                            runIndex,
+                            traceId,
+                            turnStart,
+                            turnEnd,
+                            rowIdentity,
+                            step.status(),
+                            step.outcome(),
+                            step.requestBodyJson(),
+                            serializeAccumulated(rowAccumulated),
+                            abortExtraction.extractionWarnings(),
+                            persistedDataJson));
                     aborted = true;
                     break;
                 }
@@ -328,10 +324,6 @@ public class TurnLoopExecutor {
             UUID testCaseId,
             int turnIndex,
             EvaluationContext context) {
-
-        if (context.getCancellationSignal().get()) {
-            return TurnStepResult.abortBeforeRequest(ExecutionStatus.ERROR, null, null);
-        }
 
         final ResolvedRequestDto resolved;
         try {

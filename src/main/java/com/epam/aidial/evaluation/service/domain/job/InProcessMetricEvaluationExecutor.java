@@ -23,7 +23,6 @@ import com.epam.aidial.evaluation.service.domain.analytics.TestCaseEvalScoreServ
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
-import io.opentelemetry.context.Context;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,7 +33,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -98,22 +96,13 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
         List<EvalSummaryBatchWriteItemDto> buffer = new ArrayList<>();
         Cursor cursor = null;
 
-        ExecutorService executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor());
+        ExecutorService executor = context.getExecutor();
         try {
             do {
-                if (context.getCancellationSignal().get()) {
-                    log.info("Metric evaluation cancelled for run {}", context.getTestSuiteRunId());
-                    break;
-                }
-
                 CursorPage<TestCaseRunResult> page =
                         resultRepository.findAll(filters, context.getRunCreatedAtMs(), cursor, RESULT_PAGE_SIZE);
 
                 for (TestCaseRunResult result : page.content()) {
-                    if (context.getCancellationSignal().get()) {
-                        break;
-                    }
-
                     log.debug(
                             "Run {}: evaluating metrics for result {} (testCaseId={}, status={})",
                             context.getTestSuiteRunId(),
@@ -133,7 +122,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
             } while (cursor != null);
         } finally {
             flushRemaining(buffer, context, metricFieldNames);
-            executor.shutdownNow();
         }
 
         log.info("Metric evaluation completed for run {}", context.getTestSuiteRunId());
@@ -421,26 +409,25 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
 
     private void doFlush(
             List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
+        // Drain the buffer before writing so a failed batch is never re-sent by the caller's
+        // finally { flushRemaining(...) } — EvalSummaryBatchWriteClient chunks internally and may
+        // have already committed some chunks before throwing.
+        List<EvalSummaryBatchWriteItemDto> items = new ArrayList<>(buffer);
+        buffer.clear();
         try {
             evalSummaryBatchWriteClient.batchWrite(
                     context.getTestSuiteId(),
                     context.getTestSuiteRunId(),
                     context.getComputationId(),
                     context.getComputedAtMs(),
-                    new ArrayList<>(buffer));
-            log.debug("Flushed {} eval summaries for run {}", buffer.size(), context.getTestSuiteRunId());
+                    items);
+            log.debug("Flushed {} eval summaries for run {}", items.size(), context.getTestSuiteRunId());
 
-            writeRowScores(buffer, context, metricFieldNames);
-
-            buffer.clear();
+            writeRowScores(items, context, metricFieldNames);
         } catch (RuntimeException e) {
-            log.error(
-                    "Batch write failed for run {}, setting cancellation signal: {}",
-                    context.getTestSuiteRunId(),
-                    e.getMessage(),
-                    e);
-            context.getCancellationSignal().set(true);
-            buffer.clear();
+            log.error("Batch write failed for run {}: {}", context.getTestSuiteRunId(), e.getMessage(), e);
+            throw new AnalyticsWriteException(
+                    "Failed to write eval summaries for run " + context.getTestSuiteRunId(), e);
         }
     }
 

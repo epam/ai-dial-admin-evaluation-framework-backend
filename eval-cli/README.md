@@ -112,7 +112,7 @@ these two, `--deployment-id` (also CLI-flag-only) is optional — see the [Comma
 
 | Property | Environment Variable | Default | Required | Description |
 |----------|---------------------|---------|----------|-------------|
-| `cli.run.concurrency-level` | `CLI_RUN_CONCURRENCY_LEVEL` | `4` | Yes | Number of test cases executed concurrently (virtual threads). |
+| `cli.run.concurrency-level` | `CLI_RUN_CONCURRENCY_LEVEL` | `4` | Yes | Number of test cases executed concurrently (threads from the run worker executor; virtual by default, see Thread mode). |
 | `cli.run.rate-limit-rps` | `CLI_RUN_RATE_LIMIT_RPS` | _(unbounded)_ | No | Optional rate limit in requests per second sent to the target deployment. |
 | `cli.run.request-timeout-ms` | `CLI_RUN_REQUEST_TIMEOUT_MS` | `3600000` | Yes | Per-request timeout for deployment invocations (ms). Min: 1000. |
 | `cli.run.max-retries` | `CLI_RUN_MAX_RETRIES` | `3` | Yes | Maximum number of retries per test case on transient failures. |
@@ -121,7 +121,6 @@ these two, `--deployment-id` (also CLI-flag-only) is optional — see the [Comma
 | `cli.run.max-retry-delay-ms` | `CLI_RUN_MAX_RETRY_DELAY_MS` | `30000` | Yes | Maximum delay between retries regardless of backoff (ms). |
 | `cli.run.result-batch-size` | `CLI_RUN_RESULT_BATCH_SIZE` | `50` | Yes | Number of results flushed to CSV per write batch. |
 | `cli.run.max-response-size-bytes` | `CLI_RUN_MAX_RESPONSE_SIZE_BYTES` | `10485760` | Yes | Maximum response body size accepted from the target deployment (bytes). Default: 10 MiB. |
-| `cli.run.cancellation-grace-period-ms` | `CLI_RUN_CANCELLATION_GRACE_PERIOD_MS` | `30000` | Yes | Grace period to wait for in-flight tasks after a cancellation signal before force-stopping (ms). |
 
 ### Target DIAL Core host (`dial.components.core.*`)
 
@@ -157,7 +156,6 @@ request-build time (headers a test case cannot override, including the `Api-Key`
 | `test-suite-run.execution.max-request-timeout-ms` | `TEST_SUITE_RUN_MAX_REQUEST_TIMEOUT_MS` | `3600000` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.execution.result-batch-size` | `TEST_SUITE_RUN_RESULT_BATCH_SIZE` | `50` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.execution.max-response-size-bytes` | `TEST_SUITE_RUN_MAX_RESPONSE_SIZE_BYTES` | `10485760` | Yes | Unused by eval-cli's own execution path; must bind. |
-| `test-suite-run.execution.cancellation-grace-period-ms` | `TEST_SUITE_RUN_CANCELLATION_GRACE_PERIOD_MS` | `30000` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.execution.header-blacklist` | _(list, not env-overridable here)_ | `Authorization, Api-Key, Host, Content-Length, Transfer-Encoding, Connection, traceparent, tracestate` | Yes | Headers a test case's own headers may never override. |
 | `test-suite-run.retry.default-max-retries` | `TEST_SUITE_RUN_DEFAULT_MAX_RETRIES` | `0` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.retry.max-max-retries` | `TEST_SUITE_RUN_MAX_MAX_RETRIES` | `10` | Yes | Unused by eval-cli's own execution path; must bind. |
@@ -167,6 +165,16 @@ request-build time (headers a test case cannot override, including the `Api-Key`
 | `test-suite-run.retry.max-retry-backoff-multiplier` | `TEST_SUITE_RUN_MAX_RETRY_BACKOFF_MULTIPLIER` | `10.0` | Yes | Unused by eval-cli's own execution path; must bind. |
 | `test-suite-run.run-inputs.retention-days` | `TEST_SUITE_RUN_RUN_INPUTS_RETENTION_DAYS` | `7` | Yes | Unused by eval-cli (no DB retention job runs here); must bind. |
 | `sse-event-processing.max-total-duration-ms` | `SSE_MAX_TOTAL_DURATION_MS` | `3600000` | Yes | Absolute cap on how long a single SSE stream may be parsed during a streaming deployment invocation. |
+
+### Thread mode (`spring.threads.virtual.enabled`)
+
+The run's worker executor uses virtual threads by default. Set `VIRTUAL_THREADS_ENABLED=false` to run
+it on platform threads instead, so a sampling profiler can attribute CPU time to real OS threads;
+cancellation semantics are identical in both modes.
+
+| Property | Environment Variable | Default | Required | Description |
+|----------|---------------------|---------|----------|-------------|
+| `spring.threads.virtual.enabled` | `VIRTUAL_THREADS_ENABLED` | `true` | No | Set to `false` to run the run worker executor on platform threads (profiling opt-out); virtual threads otherwise. |
 
 ### OpenTelemetry (`otel.*`)
 

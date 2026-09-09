@@ -34,6 +34,7 @@ import com.epam.aidial.evaluation.service.domain.exception.TooManyRunsException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationDetector;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
+import com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
@@ -68,6 +69,7 @@ public class TestSuiteRunService {
     private final QueryDslRunnableTestCaseSelector runnableTestCaseSelector;
     private final TestSuiteRunProperties properties;
     private final TestSuiteEvaluationJob evaluationJob;
+    private final ActiveRunRegistry registry;
     private final ExecutionSettingsValidator executionSettingsValidator;
     private final TestSuiteRunSseService sseService;
     private final TestSuiteRunMapper mapper;
@@ -163,7 +165,7 @@ public class TestSuiteRunService {
      * uploaded CSV via {@link EvalResultsCsvParser}, creates a {@code PENDING} run, then — once
      * this transaction commits — persists the results (analytics datasource) and triggers Phase 2 (metric
      * evaluation) + Phase 3 (score computation) asynchronously via
-     * {@link TestSuiteEvaluationJob#executeRunAsync} with Phase 1 skipped. Dispatch is deferred to
+     * {@link TestSuiteEvaluationJob#dispatch} with Phase 1 skipped. Dispatch is deferred to
      * {@code afterCommit} for the same reason {@link #createRun} defers it: the async job reads the run by
      * id on its own connection and must not race a not-yet-visible row.
      */
@@ -223,7 +225,7 @@ public class TestSuiteRunService {
      * {@link #createRun} and {@link #importResultsAndEvaluate}.
      */
     private void enforceConcurrencyLimits(UUID testSuiteId) {
-        List<String> activeStatuses = List.of(RunStatus.PENDING.name(), RunStatus.RUNNING.name());
+        List<String> activeStatuses = RunStatus.activeStatusNames();
 
         int globalActive = testSuiteRunRepository.countByStatuses(activeStatuses);
         if (globalActive >= properties.getLimits().getMaxConcurrentRunsGlobal()) {
@@ -298,23 +300,16 @@ public class TestSuiteRunService {
     }
 
     /**
-     * Registers the run's cancellation signal and dispatches Phase 1–3 (or Phase 2/3 only, when
-     * {@code skipDeploymentPhase} is {@code true}) via {@link TestSuiteEvaluationJob#executeRunAsync}.
-     * If the executor rejects the submission, removes the cancellation signal and invokes
-     * {@code onRejected} so each caller can apply its own failure-compensation logic. Any other
-     * exception also removes the cancellation signal before being rethrown.
+     * Dispatches Phase 1–3 (or Phase 2/3 only, when {@code skipDeploymentPhase} is {@code true}) via
+     * {@link TestSuiteEvaluationJob#dispatch}. If the executor rejects the submission, invokes
+     * {@code onRejected} so each caller can apply its own failure-compensation logic.
      */
     private void dispatchEvaluation(UUID runId, String token, boolean skipDeploymentPhase, Runnable onRejected) {
-        evaluationJob.registerCancellationSignal(runId);
         try {
-            evaluationJob.executeRunAsync(runId, token, skipDeploymentPhase);
+            evaluationJob.dispatch(runId, token, skipDeploymentPhase);
         } catch (RejectedExecutionException ex) {
-            evaluationJob.removeCancellationSignal(runId);
             log.warn("Executor rejected job submission for run {}: {}", runId, ex.getMessage(), ex);
             onRejected.run();
-        } catch (Exception ex) {
-            evaluationJob.removeCancellationSignal(runId);
-            throw ex;
         }
     }
 
@@ -387,27 +382,70 @@ public class TestSuiteRunService {
 
     @Transactional("metaTransactionManager")
     public TestSuiteRunResponseDto cancelRun(UUID runId) {
-        TestSuiteRun run = testSuiteRunRepository
-                .findById(runId)
-                .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId));
+        return cancelRun(runId, findRunOrThrow(runId));
+    }
 
-        if (RunStatus.isTerminal(run.getStatus())) {
-            throw new InvalidOperationException("Cannot cancel run with status: " + run.getStatus());
+    /**
+     * Design D5 cancel state machine. Terminal statuses are rejected (409); PENDING attempts an
+     * optimistic CAS straight to CANCELLED; CANCELLING is an idempotent no-op returning the current
+     * state; RUNNING attempts {@link TestSuiteRunRepository#markCancelling}. Either optimistic write can
+     * lose a race to a concurrent transition — in that case the row is re-read and this method recurses
+     * on the fresh status. A run's status only ever advances
+     * (PENDING -&gt; RUNNING -&gt; CANCELLING -&gt; terminal), so the recursion is bounded.
+     */
+    private TestSuiteRunResponseDto cancelRun(UUID runId, TestSuiteRun run) {
+        String status = run.getStatus();
+
+        if (RunStatus.isTerminal(status)) {
+            throw new InvalidOperationException("Cannot cancel run with status: " + status);
         }
 
-        if (run.getStatus().equals(RunStatus.PENDING.name())) {
+        if (status.equals(RunStatus.PENDING.name())) {
             int updated = testSuiteRunRepository.updateStatusOptimistic(
                     runId, RunStatus.CANCELLED.name(), RunStatus.PENDING.name());
-            if (updated > 0) {
-                TestSuiteRun cancelled = testSuiteRunRepository.findById(runId).orElseThrow();
-                sseService.notifyStatusUpdate(cancelled);
-                return mapper.toDto(cancelled);
+            if (updated == 0) {
+                return cancelRun(runId, findRunOrThrow(runId));
             }
-            run = testSuiteRunRepository.findById(runId).orElseThrow();
+            TestSuiteRun cancelled = findRunOrThrow(runId);
+            afterCommit(() -> registry.cancel(runId));
+            sseService.notifyStatusUpdate(cancelled);
+            return mapper.toDto(cancelled);
         }
 
-        evaluationJob.interruptRun(runId);
-        return mapper.toDto(run);
+        if (status.equals(RunStatus.CANCELLING.name())) {
+            return mapper.toDto(run);
+        }
+
+        // RUNNING
+        if (testSuiteRunRepository.markCancelling(runId) == 0) {
+            return cancelRun(runId, findRunOrThrow(runId));
+        }
+
+        TestSuiteRun cancelling = findRunOrThrow(runId);
+        afterCommit(() -> registry.cancel(runId));
+        sseService.notifyStatusUpdate(cancelling);
+        return mapper.toDto(cancelling);
+    }
+
+    private TestSuiteRun findRunOrThrow(UUID runId) {
+        return testSuiteRunRepository
+                .findById(runId)
+                .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId));
+    }
+
+    /**
+     * Registers {@code action} to run once the current transaction commits, via the same
+     * {@link TransactionSynchronization} idiom {@link #createRun} and {@link #importResultsAndEvaluate}
+     * use for their post-commit dispatch: a rolled-back cancel must not leave a dead run executor behind
+     * a still-{@code RUNNING} row.
+     */
+    private void afterCommit(Runnable action) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     @Transactional("metaTransactionManager")
@@ -417,8 +455,11 @@ public class TestSuiteRunService {
                 .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId));
 
         if (!RunStatus.isTerminal(run.getStatus())) {
+            String reason = run.getStatus().equals(RunStatus.CANCELLING.name())
+                    ? "The run is still being cancelled."
+                    : "Cancel it first.";
             throw new InvalidOperationException(
-                    "Cannot delete a test suite run with status " + run.getStatus() + ". Cancel it first.");
+                    "Cannot delete a test suite run with status " + run.getStatus() + ". " + reason);
         }
 
         testSuiteRunRepository.deleteById(runId);

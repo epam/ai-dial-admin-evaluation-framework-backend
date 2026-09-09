@@ -2,7 +2,10 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.data.db.model.RunStatus;
+import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -21,6 +24,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 /**
  * Regression tests for the {@code /api/v1/test-suite-runs/status-stream} SSE endpoint.
@@ -38,6 +43,9 @@ public abstract class TestSuiteRunSseFunctionalTests extends BaseFunctionalTest 
 
     @Autowired
     private TestSuiteRunSseService sseService;
+
+    @Autowired
+    private MetaTestDataHelper metaTestDataHelper;
 
     @Test
     @DisplayName("connected event data is plain JSON, not a string-escaped JSON literal")
@@ -85,6 +93,44 @@ public abstract class TestSuiteRunSseFunctionalTests extends BaseFunctionalTest 
         } finally {
             closeQuietly(stream.get());
             reader.interrupt();
+        }
+    }
+
+    /**
+     * Cancelling a RUNNING run must surface CANCELLING (written synchronously by {@code
+     * TestSuiteRunService.cancelRun}) as a {@code status-update} SSE event. A fixture row created
+     * directly via {@code MetaTestDataHelper} has no live {@code RunHandle} in {@code
+     * ActiveRunRegistry}, so the terminal CANCELLING to CANCELLED transition is not exercised here —
+     * it is covered by {@code TestSuiteEvaluationJobTest}.
+     */
+    @Test
+    @DisplayName("Cancelling a RUNNING run emits a CANCELLING status-update event")
+    void cancelRunningRunEmitsCancellingStatusUpdateEvent() throws Exception {
+        TestSuite suite = metaTestDataHelper.createTestSuite("Suite For Cancel SSE");
+        UUID runId = metaTestDataHelper
+                .createRunningRun(suite.getId(), "Running Cancel SSE")
+                .getId();
+
+        final BlockingQueue<SseEvent> events = new LinkedBlockingQueue<>();
+        final AtomicReference<InputStream> stream = new AtomicReference<>();
+        final Thread reader = startReader(events, stream);
+        try {
+            // Ensure the emitter is registered server-side before triggering the cancel.
+            awaitEvent(events, "connected");
+
+            ResponseEntity<String> cancelResponse =
+                    restTemplate.postForEntity(apiUrl("/test-suite-runs/" + runId + "/cancel"), null, String.class);
+            assertThat(cancelResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            final SseEvent cancelling = awaitEvent(events, "status-update");
+            assertThat(cancelling.data())
+                    .as("the RUNNING to CANCELLING transition must be pushed as a status-update event")
+                    .contains("\"runId\":\"" + runId + "\"")
+                    .contains("\"status\":\"" + RunStatus.CANCELLING.name() + "\"");
+        } finally {
+            closeQuietly(stream.get());
+            reader.interrupt();
+            metaTestDataHelper.deleteRun(runId);
         }
     }
 

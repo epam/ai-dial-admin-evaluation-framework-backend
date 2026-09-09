@@ -23,8 +23,7 @@ import org.springframework.test.context.TestPropertySource;
             "cli.run.retry-backoff-multiplier=2.0",
             "cli.run.max-retry-delay-ms=30000",
             "cli.run.result-batch-size=50",
-            "cli.run.max-response-size-bytes=10485760",
-            "cli.run.cancellation-grace-period-ms=30000"
+            "cli.run.max-response-size-bytes=10485760"
         })
 class PropertiesBindingTest {
 
@@ -66,6 +65,5 @@ class PropertiesBindingTest {
         assertThat(evalCliProperties.getRun().getMaxRetryDelayMs()).isEqualTo(30000L);
         assertThat(evalCliProperties.getRun().getResultBatchSize()).isEqualTo(50);
         assertThat(evalCliProperties.getRun().getMaxResponseSizeBytes()).isEqualTo(10485760L);
-        assertThat(evalCliProperties.getRun().getCancellationGracePeriodMs()).isEqualTo(30000L);
     }
 }

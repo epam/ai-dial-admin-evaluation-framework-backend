@@ -4,6 +4,7 @@ import static com.epam.aidial.evaluation.data.db.jooq.meta.Sequences.TEST_SUITE_
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS;
 
 import com.epam.aidial.evaluation.data.db.mapper.TestSuiteRunRecordMapper;
+import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
@@ -165,44 +166,72 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
     }
 
     @Override
-    public void updateToRunning(UUID id, long startedAt, long updatedAt) {
-        dsl.update(TEST_SUITE_RUNS)
-                .set(TEST_SUITE_RUNS.STATUS, "RUNNING")
+    public int updateToRunning(UUID id, long startedAt, long updatedAt) {
+        return dsl.update(TEST_SUITE_RUNS)
+                .set(TEST_SUITE_RUNS.STATUS, RunStatus.RUNNING.name())
                 .set(TEST_SUITE_RUNS.STARTED_AT_MS, startedAt)
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, updatedAt)
-                .where(TEST_SUITE_RUNS.ID.eq(id.toString()))
+                .where(TEST_SUITE_RUNS.ID.eq(id.toString()).and(TEST_SUITE_RUNS.STATUS.eq(RunStatus.PENDING.name())))
                 .execute();
     }
 
     @Override
-    public void updateToCompleted(UUID id, long completedAt, long updatedAt) {
-        dsl.update(TEST_SUITE_RUNS)
-                .set(TEST_SUITE_RUNS.STATUS, "COMPLETED")
+    public int updateToCompleted(UUID id, long completedAt, long updatedAt) {
+        return dsl.update(TEST_SUITE_RUNS)
+                .set(TEST_SUITE_RUNS.STATUS, RunStatus.COMPLETED.name())
                 .set(TEST_SUITE_RUNS.COMPLETED_AT_MS, completedAt)
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, updatedAt)
-                .where(TEST_SUITE_RUNS.ID.eq(id.toString()))
+                .where(TEST_SUITE_RUNS.ID.eq(id.toString()).and(TEST_SUITE_RUNS.STATUS.eq(RunStatus.RUNNING.name())))
                 .execute();
     }
 
     @Override
-    public void updateToFailed(UUID id, String errorMessage, String errorDetails, long completedAt, long updatedAt) {
-        dsl.update(TEST_SUITE_RUNS)
-                .set(TEST_SUITE_RUNS.STATUS, "FAILED")
+    public int updateToFailed(UUID id, String errorMessage, String errorDetails, long completedAt, long updatedAt) {
+        return dsl.update(TEST_SUITE_RUNS)
+                .set(TEST_SUITE_RUNS.STATUS, RunStatus.FAILED.name())
                 .set(TEST_SUITE_RUNS.ERROR_MESSAGE, errorMessage)
                 .set(TEST_SUITE_RUNS.ERROR_DETAILS, toJsonb(errorDetails))
                 .set(TEST_SUITE_RUNS.COMPLETED_AT_MS, completedAt)
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, updatedAt)
-                .where(TEST_SUITE_RUNS.ID.eq(id.toString()))
+                .where(TEST_SUITE_RUNS
+                        .ID
+                        .eq(id.toString())
+                        .and(TEST_SUITE_RUNS.STATUS.in(
+                                RunStatus.PENDING.name(), RunStatus.RUNNING.name(), RunStatus.CANCELLING.name())))
                 .execute();
     }
 
     @Override
-    public void updateToCancelled(UUID id, long completedAt, long updatedAt) {
-        dsl.update(TEST_SUITE_RUNS)
-                .set(TEST_SUITE_RUNS.STATUS, "CANCELLED")
+    public int updateToCancelled(UUID id, long completedAt, long updatedAt) {
+        return dsl.update(TEST_SUITE_RUNS)
+                .set(TEST_SUITE_RUNS.STATUS, RunStatus.CANCELLED.name())
                 .set(TEST_SUITE_RUNS.COMPLETED_AT_MS, completedAt)
                 .set(TEST_SUITE_RUNS.UPDATED_AT_MS, updatedAt)
-                .where(TEST_SUITE_RUNS.ID.eq(id.toString()))
+                .where(TEST_SUITE_RUNS
+                        .ID
+                        .eq(id.toString())
+                        .and(TEST_SUITE_RUNS.STATUS.in(RunStatus.RUNNING.name(), RunStatus.CANCELLING.name())))
+                .execute();
+    }
+
+    @Override
+    public int markCancelling(UUID id) {
+        long now = transactionTimestampContext.getTimestamp();
+        return dsl.update(TEST_SUITE_RUNS)
+                .set(TEST_SUITE_RUNS.STATUS, RunStatus.CANCELLING.name())
+                .set(TEST_SUITE_RUNS.UPDATED_AT_MS, now)
+                .where(TEST_SUITE_RUNS.ID.eq(id.toString()).and(TEST_SUITE_RUNS.STATUS.eq(RunStatus.RUNNING.name())))
+                .execute();
+    }
+
+    @Override
+    public int cancelOrphanedCancellingRuns() {
+        long now = transactionTimestampContext.getTimestamp();
+        return dsl.update(TEST_SUITE_RUNS)
+                .set(TEST_SUITE_RUNS.STATUS, RunStatus.CANCELLED.name())
+                .set(TEST_SUITE_RUNS.COMPLETED_AT_MS, now)
+                .set(TEST_SUITE_RUNS.UPDATED_AT_MS, now)
+                .where(TEST_SUITE_RUNS.STATUS.eq(RunStatus.CANCELLING.name()))
                 .execute();
     }
 

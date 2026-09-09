@@ -1,14 +1,18 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -40,8 +44,9 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -570,6 +575,101 @@ class InProcessMetricEvaluationExecutorTest {
     }
 
     @Test
+    @DisplayName("Batch write failure propagates as AnalyticsWriteException")
+    void shouldPropagateAnalyticsWriteException_whenBatchWriteFails() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        doThrow(new RuntimeException("db down"))
+                .when(evalSummaryBatchWriteClient)
+                .batchWrite(any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> executor.execute(context))
+                .isInstanceOf(AnalyticsWriteException.class)
+                .hasMessageContaining(runId.toString());
+    }
+
+    @Test
+    @DisplayName("Batch write fails on the size-triggered flush — buffer drained before write, "
+            + "so the exception propagates and the client is invoked exactly once with that batch")
+    void batchWriteFailsOnSizeTriggeredFlush_bufferDrainedBeforeWrite_invokedOnce() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContextWithBatchSize(runId, suiteId, List.of(), 10000L, 1);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        doThrow(new RuntimeException("db down"))
+                .when(evalSummaryBatchWriteClient)
+                .batchWrite(any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> executor.execute(context))
+                .as("the size-triggered flush failure must propagate, not be masked by a second flush")
+                .isInstanceOf(AnalyticsWriteException.class)
+                .hasMessageContaining(runId.toString());
+
+        verify(evalSummaryBatchWriteClient, times(1)).batchWrite(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Dispatches TSMD evaluation on the context's executor rather than creating its own")
+    void shouldDispatchOnProvidedExecutor() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .build();
+
+        ExecutorService mockExecutor = mock(ExecutorService.class);
+        doAnswer(invocation -> {
+                    Runnable task = invocation.getArgument(0);
+                    task.run();
+                    return null;
+                })
+                .when(mockExecutor)
+                .execute(any());
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L, null, mockExecutor);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        EvaluationResponseDto response = EvaluationResponseDto.builder()
+                .metricName("exact_match")
+                .output(Map.of(
+                        "score",
+                        MetricOutputFieldDto.builder()
+                                .type("value")
+                                .value(BigDecimal.ONE)
+                                .build()))
+                .build();
+        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context)))
+                .thenReturn(response);
+        when(clock.millis()).thenReturn(1_000L, 1_000L, 1_100L);
+
+        doReturn(objectMapper.createObjectNode()).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
+
+        executor.execute(context);
+
+        verify(mockExecutor).execute(any());
+    }
+
+    @Test
     @DisplayName("computeMetricEvalDurationMs excludes ConditionError entries and defaults to 0")
     void computeMetricEvalDurationMs_excludesConditionErrorsAndDefaultsToZero() {
         EvaluationResponseDto response = EvaluationResponseDto.builder().build();
@@ -712,7 +812,8 @@ class InProcessMetricEvaluationExecutorTest {
             List<AggregatedMetricDefinition> tsmds,
             long perResultTimeoutMs,
             List<String> requestLabels) {
-        return buildContext(runId, suiteId, tsmds, perResultTimeoutMs, requestLabels, null, null);
+        return buildContext(
+                runId, suiteId, tsmds, perResultTimeoutMs, requestLabels, Executors.newVirtualThreadPerTaskExecutor());
     }
 
     private MetricEvaluationContext buildContext(
@@ -721,6 +822,53 @@ class InProcessMetricEvaluationExecutorTest {
             List<AggregatedMetricDefinition> tsmds,
             long perResultTimeoutMs,
             List<String> requestLabels,
+            ExecutorService executor) {
+        return buildContextWithBatchSize(
+                runId, suiteId, tsmds, perResultTimeoutMs, 100, requestLabels, executor, null, null);
+    }
+
+    private MetricEvaluationContext buildContext(
+            UUID runId,
+            UUID suiteId,
+            List<AggregatedMetricDefinition> tsmds,
+            long perResultTimeoutMs,
+            List<String> requestLabels,
+            OverallScoreDefinition overallScoreDefinition,
+            Double overallScoreThreshold) {
+        return buildContextWithBatchSize(
+                runId,
+                suiteId,
+                tsmds,
+                perResultTimeoutMs,
+                100,
+                requestLabels,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                overallScoreDefinition,
+                overallScoreThreshold);
+    }
+
+    private MetricEvaluationContext buildContextWithBatchSize(
+            UUID runId, UUID suiteId, List<AggregatedMetricDefinition> tsmds, long perResultTimeoutMs, int batchSize) {
+        return buildContextWithBatchSize(
+                runId,
+                suiteId,
+                tsmds,
+                perResultTimeoutMs,
+                batchSize,
+                null,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                null,
+                null);
+    }
+
+    private MetricEvaluationContext buildContextWithBatchSize(
+            UUID runId,
+            UUID suiteId,
+            List<AggregatedMetricDefinition> tsmds,
+            long perResultTimeoutMs,
+            int batchSize,
+            List<String> requestLabels,
+            ExecutorService executor,
             OverallScoreDefinition overallScoreDefinition,
             Double overallScoreThreshold) {
         MetricEvaluationProperties.Retry retryConfig = new MetricEvaluationProperties.Retry();
@@ -736,10 +884,10 @@ class InProcessMetricEvaluationExecutorTest {
                 .testSuiteId(suiteId)
                 .runCreatedAtMs(FIXED_CLOCK.millis())
                 .aggregatedTsmds(tsmds)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(executor)
                 .retryConfig(retryConfig)
                 .defaultConcurrencyPerProvider(5)
-                .batchSize(100)
+                .batchSize(batchSize)
                 .perResultTimeoutMs(perResultTimeoutMs)
                 .requestLabels(requestLabels)
                 .overallScoreDefinition(overallScoreDefinition)

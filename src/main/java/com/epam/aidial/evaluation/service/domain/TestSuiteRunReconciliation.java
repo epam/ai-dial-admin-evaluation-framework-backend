@@ -33,14 +33,19 @@ public class TestSuiteRunReconciliation {
                 "Run was not completed because the application restarted",
                 null);
 
-        int updated = repository.failOrphanedRuns(
+        int failedCount = repository.failOrphanedRuns(
                 List.of(RunStatus.PENDING.name(), RunStatus.RUNNING.name()),
                 RunStatus.FAILED.name(),
                 "Run was orphaned due to application restart",
                 errorDetails);
 
-        if (updated > 0) {
-            log.info("Reconciliation: marked {} orphaned runs as FAILED", updated);
+        int cancelledCount = repository.cancelOrphanedCancellingRuns();
+
+        if (failedCount > 0 || cancelledCount > 0) {
+            log.info(
+                    "Reconciliation: marked {} orphaned run(s) as FAILED, finalized {} orphaned CANCELLING run(s) as CANCELLED",
+                    failedCount,
+                    cancelledCount);
         } else {
             log.debug("Reconciliation: no orphaned runs found");
         }

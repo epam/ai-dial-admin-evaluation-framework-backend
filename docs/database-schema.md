@@ -374,7 +374,7 @@ Tracks async test suite evaluation runs.
 | `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
 | `test_suite_id` | VARCHAR(36) | NOT NULL | - | FK to test_suites.id |
 | `test_run_name` | VARCHAR(255) | NOT NULL | - | Display name (auto-generated or user-provided) |
-| `status` | VARCHAR(20) | NOT NULL | - | PENDING, RUNNING, COMPLETED, FAILED, CANCELLED |
+| `status` | VARCHAR(20) | NOT NULL | - | PENDING, RUNNING, CANCELLING, COMPLETED, FAILED, CANCELLED |
 | `run_config` | JSONB | NOT NULL | - | Run configuration (RunConfigDto) |
 | `number_of_test_cases` | INTEGER | NOT NULL | - | Preview count at creation; finalized at snapshot phase to match `COUNT(test_case_run_inputs)` |
 | `suite_snapshot` | JSONB | NULL | - | Execution-relevant suite configuration captured at snapshot phase (SuiteSnapshotDto) |

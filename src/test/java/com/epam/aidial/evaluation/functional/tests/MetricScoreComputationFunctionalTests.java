@@ -18,7 +18,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -297,7 +296,6 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
                 .computationId(computationId)
                 .overallScoreDefinition(overallScoreDefinition)
                 .computedAtMs(COMPUTED_AT_MS)
-                .cancellationSignal(new AtomicBoolean(false))
                 .build();
     }
 

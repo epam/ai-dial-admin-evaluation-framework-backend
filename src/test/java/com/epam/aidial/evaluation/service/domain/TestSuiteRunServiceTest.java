@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateRowDto;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
+import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
@@ -35,6 +36,7 @@ import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRule
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
+import com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
@@ -77,6 +79,9 @@ class TestSuiteRunServiceTest {
 
     @Mock
     private TestSuiteEvaluationJob evaluationJob;
+
+    @Mock
+    private ActiveRunRegistry registry;
 
     @Mock
     private ExecutionSettingsValidator executionSettingsValidator;
@@ -127,6 +132,7 @@ class TestSuiteRunServiceTest {
                 runnableTestCaseSelector,
                 properties,
                 evaluationJob,
+                registry,
                 executionSettingsValidator,
                 sseService,
                 mapper,
@@ -257,8 +263,7 @@ class TestSuiteRunServiceTest {
             assertThat(itemsCaptor.getValue()).hasSize(1);
             assertThat(itemsCaptor.getValue().get(0).getTestCaseName()).isEqualTo("tc1");
 
-            verify(evaluationJob).registerCancellationSignal(any(UUID.class));
-            verify(evaluationJob).executeRunAsync(any(UUID.class), isNull(), eq(true));
+            verify(evaluationJob).dispatch(any(UUID.class), isNull(), eq(true));
             verify(testSuiteRunRepository, never()).updateToFailed(any(), any(), any(), anyLong(), anyLong());
         }
 
@@ -282,8 +287,136 @@ class TestSuiteRunServiceTest {
                             anyLong(),
                             anyLong());
             verify(sseService).notifyStatusUpdate(any(TestSuiteRun.class));
-            verify(evaluationJob, never()).executeRunAsync(any(), any(), anyBoolean());
-            verify(evaluationJob, never()).registerCancellationSignal(any());
+            verify(evaluationJob, never()).dispatch(any(), any(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("shouldCountCancellingAsActive_forConcurrencyLimits")
+        void shouldCountCancellingAsActive_forConcurrencyLimits() {
+            TransactionSynchronizationManager.initSynchronization();
+            service.importResultsAndEvaluate(testSuiteId, null, emptyCsvStream(), 0L, ',');
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<String>> globalStatusesCaptor = ArgumentCaptor.forClass(List.class);
+            verify(testSuiteRunRepository).countByStatuses(globalStatusesCaptor.capture());
+            assertThat(globalStatusesCaptor.getValue()).contains(RunStatus.CANCELLING.name());
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<String>> suiteStatusesCaptor = ArgumentCaptor.forClass(List.class);
+            verify(testSuiteRunRepository)
+                    .countByTestSuiteIdAndStatuses(eq(testSuiteId), suiteStatusesCaptor.capture());
+            assertThat(suiteStatusesCaptor.getValue()).contains(RunStatus.CANCELLING.name());
+        }
+    }
+
+    @Nested
+    @DisplayName("cancelRun")
+    class CancelRun {
+
+        private final UUID runId = UUID.randomUUID();
+
+        private TestSuiteRun runWithStatus(String status) {
+            return TestSuiteRun.builder().id(runId).status(status).build();
+        }
+
+        @Test
+        @DisplayName("throws InvalidOperationException for a terminal run and never touches the registry")
+        void throwsInvalidOperation_whenTerminal() {
+            when(testSuiteRunRepository.findById(runId))
+                    .thenReturn(Optional.of(runWithStatus(RunStatus.COMPLETED.name())));
+
+            assertThatThrownBy(() -> service.cancelRun(runId)).isInstanceOf(InvalidOperationException.class);
+
+            verify(registry, never()).cancel(any());
+            verify(sseService, never()).notifyStatusUpdate(any());
+        }
+
+        @Test
+        @DisplayName("shouldReturnCurrentDto_whenAlreadyCancelling")
+        void shouldReturnCurrentDto_whenAlreadyCancelling() {
+            TestSuiteRun run = runWithStatus(RunStatus.CANCELLING.name());
+            when(testSuiteRunRepository.findById(runId)).thenReturn(Optional.of(run));
+            TestSuiteRunResponseDto dto = TestSuiteRunResponseDto.builder().build();
+            when(mapper.toDto(run)).thenReturn(dto);
+
+            TestSuiteRunResponseDto result = service.cancelRun(runId);
+
+            assertThat(result).isSameAs(dto);
+            verify(testSuiteRunRepository, never()).updateStatusOptimistic(any(), any(), any());
+            verify(testSuiteRunRepository, never()).markCancelling(any());
+            verify(registry, never()).cancel(any());
+            verify(sseService, never()).notifyStatusUpdate(any());
+        }
+
+        @Test
+        @DisplayName("cancels a PENDING run optimistically without calling markCancelling")
+        void cancelsPendingRunOptimistically() {
+            TestSuiteRun pending = runWithStatus(RunStatus.PENDING.name());
+            TestSuiteRun cancelled = runWithStatus(RunStatus.CANCELLED.name());
+            when(testSuiteRunRepository.findById(runId))
+                    .thenReturn(Optional.of(pending))
+                    .thenReturn(Optional.of(cancelled));
+            when(testSuiteRunRepository.updateStatusOptimistic(
+                            runId, RunStatus.CANCELLED.name(), RunStatus.PENDING.name()))
+                    .thenReturn(1);
+            TestSuiteRunResponseDto dto = TestSuiteRunResponseDto.builder().build();
+            when(mapper.toDto(cancelled)).thenReturn(dto);
+
+            TransactionSynchronizationManager.initSynchronization();
+            TestSuiteRunResponseDto result = service.cancelRun(runId);
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+
+            assertThat(result).isSameAs(dto);
+            verify(sseService).notifyStatusUpdate(cancelled);
+            verify(testSuiteRunRepository, never()).markCancelling(any());
+            verify(registry).cancel(runId);
+        }
+
+        @Test
+        @DisplayName("shouldMarkCancellingAndCancelHandleAfterCommit_whenRunning")
+        void shouldMarkCancellingAndCancelHandleAfterCommit_whenRunning() {
+            TestSuiteRun running = runWithStatus(RunStatus.RUNNING.name());
+            TestSuiteRun cancelling = runWithStatus(RunStatus.CANCELLING.name());
+            when(testSuiteRunRepository.findById(runId))
+                    .thenReturn(Optional.of(running))
+                    .thenReturn(Optional.of(cancelling));
+            when(testSuiteRunRepository.markCancelling(runId)).thenReturn(1);
+            TestSuiteRunResponseDto dto = TestSuiteRunResponseDto.builder().build();
+            when(mapper.toDto(cancelling)).thenReturn(dto);
+
+            TransactionSynchronizationManager.initSynchronization();
+            TestSuiteRunResponseDto result = service.cancelRun(runId);
+
+            assertThat(result).isSameAs(dto);
+            verify(sseService).notifyStatusUpdate(cancelling);
+            verify(registry, never()).cancel(runId);
+
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+            verify(registry).cancel(runId);
+        }
+
+        @Test
+        @DisplayName("shouldNotCancelHandle_whenTransactionRollsBack")
+        void shouldNotCancelHandle_whenTransactionRollsBack() {
+            TestSuiteRun running = runWithStatus(RunStatus.RUNNING.name());
+            TestSuiteRun cancelling = runWithStatus(RunStatus.CANCELLING.name());
+            when(testSuiteRunRepository.findById(runId))
+                    .thenReturn(Optional.of(running))
+                    .thenReturn(Optional.of(cancelling));
+            when(testSuiteRunRepository.markCancelling(runId)).thenReturn(1);
+            when(mapper.toDto(cancelling))
+                    .thenReturn(TestSuiteRunResponseDto.builder().build());
+
+            TransactionSynchronizationManager.initSynchronization();
+            service.cancelRun(runId);
+            // Transaction rolls back: afterCommit callbacks never fire.
+            TransactionSynchronizationManager.clearSynchronization();
+
+            verify(registry, never()).cancel(runId);
         }
     }
 

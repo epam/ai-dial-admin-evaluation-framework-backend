@@ -12,7 +12,7 @@ Status: **Implemented**
 - **BindingResolver**: Resolves TSMD config/input bindings against test case data and extracted columns from a TestCaseRunResult.
 - **EvalSummaryBatchWriteClient**: Service-layer wrapper that converts internal EvalSummary models to batch write DTOs and delegates to `EvalSummaryService.batchCreate()`, chunking items to respect the existing batch size limit.
 - **RunMetricSnapshotBatchWriteClient**: Service-layer wrapper that converts internal RunMetricSnapshot models to batch write DTOs and delegates to `RunMetricSnapshotService.batchCreate()`.
-- **MetricEvaluationContext**: Immutable context carrier for a metric evaluation run — carries computationId, aggregated TSMDs grouped by provider, semaphores, cancellation signal, retry config.
+- **MetricEvaluationContext**: Immutable context carrier for a metric evaluation run — carries computationId, aggregated TSMDs grouped by provider, semaphores, the run's shared executor, retry config.
 
 ## Requirements
 
@@ -138,7 +138,7 @@ Status: **Implemented**
 
 #### Scenario: Retry respects cancellation
 - **WHEN** the run is cancelled while a retry backoff is in progress
-- **THEN** the worker SHALL abort the retry and throw an exception with the last known error
+- **THEN** the worker thread SHALL be interrupted, the backoff sleep SHALL end immediately with `InterruptedException`, and the worker SHALL propagate it without issuing another attempt
 
 #### Scenario: Transport failure propagation to executor
 - **WHEN** the worker throws an exception (transport failure, all retries exhausted)
@@ -339,11 +339,11 @@ Status: **Implemented**
 
 #### Scenario: Flush on cancellation
 - **WHEN** the run is cancelled during metric evaluation
-- **THEN** the executor SHALL flush all accumulated records via the client before returning
+- **THEN** the executor SHALL flush all records accumulated for fully evaluated results via the client before returning
 
 #### Scenario: Batch write failure
 - **WHEN** a batch write via the service fails
-- **THEN** the executor SHALL set the cancellation signal, stop dispatching new evaluations, and log the error; `executor.shutdownNow()` will interrupt in-flight threads immediately via the `finally` block (no grace-period drain — metric evaluation is append-only)
+- **THEN** the executor SHALL log the error and let the failure propagate; the job SHALL mark the run FAILED with error category `INTERNAL` and code `ANALYTICS_WRITE_FAILED`. The failure SHALL NOT be expressed as a cancellation and the run SHALL NOT end `CANCELLED` because of it.
 
 ### Requirement: Metric field names discovered once per metric evaluation run
 Before iterating result pages, the executor SHALL discover the run's numeric metric field names once — via `runMetricSnapshotRepository.findByRunIdAndComputationId(...)` followed by `MetricFieldDiscoverer.discover(...)`, the same mechanism Phase 3 uses — and reuse that list for every flush's per-row score computation within the same `execute()` call. This SHALL be one query per `execute()` call, not one per flush, and SHALL guarantee a `Mean` overall score's divisor can never disagree between Phase 2 and Phase 3 for the same run.
@@ -371,7 +371,7 @@ Status: **Implemented**
 
 #### Scenario: A failed score write is logged but does not cancel the run
 - **WHEN** the per-row score computation or its batch write throws an unexpected error
-- **THEN** the executor SHALL log the error and continue processing — this failure SHALL NOT set the cancellation signal, unlike a `test_case_eval_summaries` batch-write failure
+- **THEN** the executor SHALL log the error and continue processing — this failure SHALL NOT fail or cancel the run, unlike a `test_case_eval_summaries` batch-write failure, which propagates as `AnalyticsWriteException` and ends the run `FAILED` / `ANALYTICS_WRITE_FAILED`
 
 ### Requirement: RunMetricSnapshot writing via service-layer client
 The `RunMetricSnapshotBatchWriteClient` SHALL convert internal RunMetricSnapshot models to the existing `RunMetricSnapshotBatchWriteRequestDto` and delegate to `RunMetricSnapshotService.batchCreate()`.
@@ -405,19 +405,21 @@ Status: **Implemented**
 - **WHEN** `evaluate()` is called with a providerId that has no configured RestClient
 - **THEN** it SHALL throw `IllegalArgumentException`
 
-### Requirement: Cancellation with hard shutdown during metric evaluation
-
-Status: Implemented
-
-The metric evaluation phase SHALL support cancellation via the same `AtomicBoolean` signal used by the deployment evaluation phase. The grace-period drain semantics are removed; Phase 2 uses hard shutdown (immediate thread interrupt) because metric evaluation is append-only and results can be regenerated.
+### Requirement: Cancellation via the run's shared executor
+The metric evaluation phase SHALL dispatch its per-TSMD tasks on the run's shared worker executor (the same executor Phase 1 used, provided through `MetricEvaluationContext`) and SHALL NOT create an executor of its own. Cancellation is delivered by the run owner shutting that executor down: in-flight metric-provider calls are interrupted immediately and further dispatch is rejected. There is no grace-period drain — metric evaluation is append-only and results can be regenerated.
+Status: **Implemented**
 
 #### Scenario: Cancellation stops new dispatches
-- **WHEN** cancellation is signaled during metric evaluation
-- **THEN** the executor SHALL stop dispatching new metric evaluation tasks
+- **WHEN** the run's executor has been shut down during metric evaluation
+- **THEN** the next attempt to dispatch a TSMD task SHALL be rejected and the executor SHALL stop iterating results; the failure surfaces to the job, which records the run as CANCELLED
 
-#### Scenario: Executor shutdown on any exit path
-- **WHEN** the executor's `execute()` method exits (whether by normal completion, cancellation, or exception)
-- **THEN** the executor SHALL call `executor.shutdownNow()` in the `finally` block unconditionally to release thread resources and interrupt any lingering in-flight threads (no grace-period drain — metric evaluation is append-only and results can be regenerated)
+#### Scenario: In-flight metric calls are interrupted
+- **WHEN** the run's executor is shut down while TSMD evaluations are in flight
+- **THEN** those worker threads SHALL be interrupted at once; the per-result assembly SHALL treat interrupted TSMDs like failed ones for the row currently being assembled
+
+#### Scenario: Executor lifecycle is owned by the run, not the phase
+- **WHEN** the metric evaluation `execute()` method exits (normal completion, cancellation, or exception)
+- **THEN** it SHALL flush its remaining buffer but SHALL NOT shut the executor down — the run owner shuts the executor down exactly once when the whole run finishes
 
 #### Scenario: Partial results preserved
 - **WHEN** metric evaluation is cancelled
@@ -513,6 +515,14 @@ Status: **Implemented**
 - Context: `com.epam.aidial.evaluation.service.domain.job.MetricEvaluationContext`
 - Client DTOs: `EvaluationRequestDto`, `EvaluationResponseDto`, `MetricOutputFieldDto`, `MetricErrorDto` in `client.metricprovider.dto`
 - Config: `com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties`
+- `MetricEvaluationContext` replaces `AtomicBoolean cancellationSignal` with `ExecutorService executor`;
+  `InProcessMetricEvaluationExecutor` uses it for `CompletableFuture.runAsync` and never creates or shuts
+  down an executor of its own — the run's executor comes from `RunExecutorFactory` (runner-core; virtual
+  threads by default, platform when `spring.threads.virtual.enabled=false`) via `RunHandle`.
+- `MetricEvaluationWorker.sleepWithCancellation` is replaced by plain `Thread.sleep` (interruptible); the
+  pre-attempt signal check is removed.
+- `MetricScoreComputationContext` loses `cancellationSignal`; Phase 3 is sequential and is gated only by the job's
+  phase-boundary check.
 - `MetricEvaluationContext` carries `overallScoreDefinition` (`OverallScoreDefinition`) and `overallScoreThreshold` (`Double`), sourced from the run's snapshot (`snapshot.getOverallScore()` / `snapshot.getOverallScoreThreshold()`) in `TestSuiteEvaluationJob.buildMetricEvaluationContext`.
 - `InProcessMetricEvaluationExecutor.buildItem` generates `EvalSummaryBatchWriteItemDto.id` via `UUID.randomUUID()` (replacing the id-generation that previously happened inside `EvalSummaryMapper.toEntity`); `EvalSummaryMapper.toEntity` now falls back to generating one only when the item's `id` is absent, preserving the external batch-write API's existing contract.
 - `writeRowScores` (new private method on `InProcessMetricEvaluationExecutor`) computes `passed = (score != null && threshold != null) ? score >= threshold : null` in Java after receiving `EvalSummaryRowScoreComputer`'s `Map<UUID, Double>`.

@@ -28,7 +28,6 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -81,7 +80,6 @@ class MetricScoreComputationExecutorTest {
                 .computationId(COMPUTATION_ID)
                 .overallScoreDefinition(overallScoreDefinition)
                 .computedAtMs(FIXED_MILLIS)
-                .cancellationSignal(new AtomicBoolean(false))
                 .build();
     }
 

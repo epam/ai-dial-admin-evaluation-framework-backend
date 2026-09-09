@@ -15,6 +15,7 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [Typed SQL DSL (jOOQ)](jooq-typed-sql-dsl.md) | Codegen pipeline, drift guard, DSLContext config, RecordMapper pattern |
 | [Dataset Entity](dataset-entity.md) | `DatasetSchemaProvider`, `dataset.id` vs `suite.id`, visibility rules, exclusion via `testCaseFilter` |
 | [Suite Run Snapshot Phase](suite-run-snapshot.md) | Snapshot tx, `40001` retry, inconsistent-snapshot guard, version handling |
+| [Run Cancellation](run-cancellation.md) | Per-run executor teardown + guarded status writes; never interrupt the job thread; keep worker HTTP clients interruptible (JDK factory) |
 | [Selective Column Projection (TOAST)](selective-column-projection.md) | Column-tier constants to avoid TOAST decompression on bulk queries |
 | [MCP Tool Invocation](mcp-tool-invocation.md) | Per-call `McpSyncClient` via DIAL Core MCP proxy |
 | [Slash-containing path values](slash-path-values.md) | `/**` mapping + `WildcardPathResolver`; decode exactly once, never `URLDecoder` |

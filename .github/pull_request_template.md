@@ -7,12 +7,10 @@
 
 <!-- Please explain the changes you made right below this line. -->
 
-
 # Checklist
 
 <!-- [Place an '[X]' (no spaces) in all applicable fields. Please remove unrelated fields.] -->
 
-- [ ] pull request name complies with [Conventional Commits](https://www.conventionalcommits.org/)
 - [ ] corresponding issue(s) linked in the "Development" section of sidebar and referenced in "Applicable issues" section above
 - [ ] I have read the "Description of changes" and understood it
 

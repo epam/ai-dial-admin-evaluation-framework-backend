@@ -75,6 +75,7 @@ validation:
 security:
   jwt:
     user-claim: sub
+    resolve-user-name: ${SECURITY_JWT_RESOLVE_USER_NAME:false}
 
 # Pagination configuration
 pagination:

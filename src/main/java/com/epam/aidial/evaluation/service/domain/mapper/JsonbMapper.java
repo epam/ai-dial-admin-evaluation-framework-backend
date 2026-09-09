@@ -164,6 +164,23 @@ public class JsonbMapper {
     }
 
     /**
+     * Serializes the per-suite {@code testCaseOverallScore} definition (used for per-test-case scoring
+     * instead of {@code overallScore} when present) from the request DTO into the entity's JSONB column.
+     * Returns {@code null} for a null input so the column stays null (meaning "fall back to overallScore").
+     */
+    public String mapTestCaseOverallScore(OverallScoreDefinition value) {
+        return write(value, "testCaseOverallScore");
+    }
+
+    /**
+     * The per-suite {@code testCaseOverallScore} definition, read from the entity into the suite snapshot
+     * or the suite response. A null column means per-test-case scoring falls back to {@code overallScore}.
+     */
+    public OverallScoreDefinition mapTestCaseOverallScore(String json) {
+        return read(json, OverallScoreDefinition.class, "testCaseOverallScore");
+    }
+
+    /**
      * Serializes the per-suite {@code testCaseFilter} (an opaque Structured Query DSL filter subtree)
      * from the request DTO into the entity's JSONB column. Returns {@code null} for a null input so the
      * column stays null (meaning "no filter").

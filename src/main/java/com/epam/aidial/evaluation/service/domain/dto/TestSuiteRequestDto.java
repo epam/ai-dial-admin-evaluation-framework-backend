@@ -121,6 +121,18 @@ public class TestSuiteRequestDto {
             example = "{\"type\":\"mean\"}")
     private OverallScoreDefinition overallScore;
 
+    @Valid
+    @Schema(
+            description = "Optional per-suite definition used for per-test-case score computation "
+                    + "(`test_case_eval_scores.score`/`.passed`) instead of `overallScore`. Same discriminated "
+                    + "shape as `overallScore` (`mean`/`weighted_mean`/`custom_function`). When omitted, "
+                    + "per-test-case scoring falls back to `overallScore`. Does not affect the run-level "
+                    + "`overall` aggregate, which always uses `overallScore` unconditionally. "
+                    + "`weighted_mean`/`custom_function` are not validated as referencing real metrics at "
+                    + "write time.",
+            example = "{\"type\":\"mean\"}")
+    private OverallScoreDefinition testCaseOverallScore;
+
     @DecimalMin(
             value = ValidationConstants.MIN_OVERALL_SCORE_THRESHOLD,
             message = ValidationConstants.OVERALL_SCORE_THRESHOLD_RANGE_MESSAGE)

@@ -340,6 +340,183 @@ class StreamingResponseAccumulatorTest {
     }
 
     // =====================================================================
+    // Anthropic mode
+    // =====================================================================
+
+    @Nested
+    @DisplayName("Anthropic mode")
+    class AnthropicMode {
+
+        @Test
+        @DisplayName("Should concatenate Anthropic text_delta content from multiple content_block_delta chunks")
+        void accumulate_anthropicTextBlock_concatenatesDeltas() throws Exception {
+            InputStream stream = buildSseStream(
+                    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\","
+                            + "\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-3-5-sonnet\","
+                            + "\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}",
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,"
+                            + "\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,"
+                            + "\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}",
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,"
+                            + "\"delta\":{\"type\":\"text_delta\",\"text\":\" world\"}}",
+                    "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}",
+                    "event: message_stop\ndata: {\"type\":\"message_stop\"}");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode response = OBJECT_MAPPER.readTree(accumulator.getResponseBody());
+            JsonNode block = response.get("content").get(0);
+            assertThat(block.get("type").asString()).isEqualTo("text");
+            assertThat(block.get("text").asString()).isEqualTo("Hello world");
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        }
+
+        @Test
+        @DisplayName("Should merge message_delta stop_reason and usage into the final message object")
+        void accumulate_anthropicMessageDelta_mergesStopReasonAndUsage() throws Exception {
+            InputStream stream = buildSseStream(
+                    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\","
+                            + "\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-3-5-sonnet\","
+                            + "\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}",
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,"
+                            + "\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,"
+                            + "\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}",
+                    "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}",
+                    "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},"
+                            + "\"usage\":{\"output_tokens\":5}}",
+                    "event: message_stop\ndata: {\"type\":\"message_stop\"}");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode response = OBJECT_MAPPER.readTree(accumulator.getResponseBody());
+            assertThat(response.get("stop_reason").asString()).isEqualTo("end_turn");
+            assertThat(response.get("usage").get("input_tokens").asInt()).isEqualTo(10);
+            assertThat(response.get("usage").get("output_tokens").asInt()).isEqualTo(5);
+        }
+
+        @Test
+        @DisplayName("Should reassemble input_json_delta chunks into parsed JSON for a tool_use block")
+        void accumulate_anthropicToolUseBlock_reassemblesPartialJson() throws Exception {
+            InputStream stream = buildSseStream(
+                    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\","
+                            + "\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-3-5-sonnet\","
+                            + "\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}",
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,"
+                            + "\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"get_weather\","
+                            + "\"input\":{}}}",
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,"
+                            + "\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"city\\\":\"}}",
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,"
+                            + "\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"Paris\\\"}\"}}",
+                    "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}",
+                    "event: message_stop\ndata: {\"type\":\"message_stop\"}");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode block = OBJECT_MAPPER
+                    .readTree(accumulator.getResponseBody())
+                    .get("content")
+                    .get(0);
+            assertThat(block.get("type").asString()).isEqualTo("tool_use");
+            assertThat(block.get("name").asString()).isEqualTo("get_weather");
+            assertThat(block.get("input").get("city").asString()).isEqualTo("Paris");
+        }
+
+        @Test
+        @DisplayName("Should assemble multiple content blocks in ascending index order")
+        void accumulate_anthropicMultipleBlocks_assembledInIndexOrder() throws Exception {
+            InputStream stream = buildSseStream(
+                    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\","
+                            + "\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-3-5-sonnet\","
+                            + "\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}",
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,"
+                            + "\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,"
+                            + "\"delta\":{\"type\":\"text_delta\",\"text\":\"Checking weather\"}}",
+                    "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}",
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,"
+                            + "\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"get_weather\","
+                            + "\"input\":{}}}",
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,"
+                            + "\"delta\":{\"type\":\"input_json_delta\","
+                            + "\"partial_json\":\"{\\\"city\\\":\\\"Paris\\\"}\"}}",
+                    "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}",
+                    "event: message_stop\ndata: {\"type\":\"message_stop\"}");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode content =
+                    OBJECT_MAPPER.readTree(accumulator.getResponseBody()).get("content");
+            assertThat(content).hasSize(2);
+            assertThat(content.get(0).get("type").asString()).isEqualTo("text");
+            assertThat(content.get(0).get("text").asString()).isEqualTo("Checking weather");
+            assertThat(content.get(1).get("type").asString()).isEqualTo("tool_use");
+            assertThat(content.get(1).get("input").get("city").asString()).isEqualTo("Paris");
+        }
+
+        @Test
+        @DisplayName("Should truncate mid-stream to accumulated text and set ERROR status in Anthropic mode")
+        void accumulate_anthropicTruncatedMidStream_storesAccumulatedTextAndSetsError() {
+            String messageStartData = "{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\","
+                    + "\"role\":\"assistant\",\"content\":[]}}";
+            String blockStartData = "{\"type\":\"content_block_start\",\"index\":0,"
+                    + "\"content_block\":{\"type\":\"text\",\"text\":\"\"}}";
+            String firstDeltaData = "{\"type\":\"content_block_delta\",\"index\":0,"
+                    + "\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}";
+            String secondDeltaData = "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\","
+                    + "\"text\":\" world, this text pushes the accumulated size past the limit\"}}";
+
+            long admitFirstThreeEventsOnly = messageStartData.getBytes(StandardCharsets.UTF_8).length
+                    + blockStartData.getBytes(StandardCharsets.UTF_8).length
+                    + firstDeltaData.getBytes(StandardCharsets.UTF_8).length
+                    + 1;
+            StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
+                    sseEventParser,
+                    OBJECT_MAPPER,
+                    LARGE_IDLE_TIMEOUT_MS,
+                    LARGE_MAX_TOTAL_MS,
+                    admitFirstThreeEventsOnly);
+
+            InputStream stream = buildSseStream(
+                    "event: message_start\ndata: " + messageStartData,
+                    "event: content_block_start\ndata: " + blockStartData,
+                    "event: content_block_delta\ndata: " + firstDeltaData,
+                    "event: content_block_delta\ndata: " + secondDeltaData);
+
+            accumulator.accumulate(stream);
+
+            assertThat(accumulator.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+            assertThat(accumulator.getTruncationWarning()).isNotNull();
+            JsonNode body = OBJECT_MAPPER.readTree(accumulator.getResponseBody());
+            assertThat(body.isString()).isTrue();
+            assertThat(body.asString()).isEqualTo("Hello");
+        }
+
+        @Test
+        @DisplayName("Should fall back to Structured SSE mode when message_start event lacks a message field")
+        void accumulate_messageStartWithoutMessageField_fallsBackToStructuredMode() throws Exception {
+            InputStream stream = buildSseStream(
+                    "event: message_start\ndata: {\"type\":\"message_start\"}",
+                    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,"
+                            + "\"content_block\":{\"type\":\"text\",\"text\":\"\"}}");
+
+            StreamingResponseAccumulator accumulator = createAccumulator();
+            accumulator.accumulate(stream);
+
+            JsonNode response = OBJECT_MAPPER.readTree(accumulator.getResponseBody());
+            assertThat(response.has("events")).isTrue();
+            assertThat(response.get("events").isArray()).isTrue();
+            assertThat(response.get("events")).hasSize(2);
+        }
+    }
+
+    // =====================================================================
     // Structured SSE mode
     // =====================================================================
 

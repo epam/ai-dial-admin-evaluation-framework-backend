@@ -3,10 +3,12 @@ package com.epam.aidial.evaluation.service.domain;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.FormPartType;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.MultipartFormDataRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.RequestBodyDto;
@@ -17,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
@@ -133,8 +136,15 @@ public class SuiteValidationService {
 
     private ValidationResult validateDeploymentSuite(
             TestSuiteRequestDto dto, UUID suiteId, List<FieldDefinitionDto> testCaseSchema) {
+        DeploymentReferenceDto deploymentRef = dto.getDeploymentRef();
         List<ValidationWarningDto> warnings = new ArrayList<>(validateRequest(
-                dto.getEndpointRef(), dto.getRequestTemplate(), dto.getInputBindings(), suiteId, testCaseSchema, ""));
+                dto.getEndpointRef(),
+                dto.getRequestTemplate(),
+                dto.getInputBindings(),
+                suiteId,
+                testCaseSchema,
+                deploymentRef,
+                ""));
 
         List<RequestDefinitionDto> additionalRequests = dto.getAdditionalRequests();
         if (additionalRequests != null) {
@@ -149,6 +159,7 @@ public class SuiteValidationService {
                         request.getInputBindings(),
                         suiteId,
                         testCaseSchema,
+                        deploymentRef,
                         "$.additionalRequests[" + i + "]"));
             }
         }
@@ -173,6 +184,7 @@ public class SuiteValidationService {
             List<InputBindingDto> bindings,
             UUID suiteId,
             List<FieldDefinitionDto> testCaseSchema,
+            DeploymentReferenceDto deploymentRef,
             String pathPrefix) {
         List<ValidationWarningDto> warnings = new ArrayList<>();
 
@@ -264,6 +276,27 @@ public class SuiteValidationService {
                         "Request template content type '" + body.getContentType()
                                 + "' does not match endpoint schema content type '" + schemaDto.getContentType()
                                 + "'",
+                        ValidationWarningCode.TYPE));
+            }
+        }
+
+        // Anthropic Messages model/deploymentRef consistency (soft, best-effort literal check)
+        if (template != null
+                && endpoint != null
+                && DialCoreUrlBuilder.ANTHROPIC_MESSAGES_URL.equals(endpoint.getRelativeUrlPattern())
+                && template.getBody() instanceof JsonRequestBodyDto jsonBody
+                && jsonBody.getContent() != null) {
+            Object modelValue = jsonBody.getContent().get("model");
+            if (modelValue instanceof String model
+                    && !templateVariableExtractor.isPlaceholder(model)
+                    && deploymentRef != null
+                    && !model.equals(deploymentRef.getId())) {
+                warnings.add(warning(
+                        "model",
+                        warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
+                        "Request body 'model' value '" + model
+                                + "' does not match the suite's configured deploymentRef.id '"
+                                + deploymentRef.getId() + "'",
                         ValidationWarningCode.TYPE));
             }
         }

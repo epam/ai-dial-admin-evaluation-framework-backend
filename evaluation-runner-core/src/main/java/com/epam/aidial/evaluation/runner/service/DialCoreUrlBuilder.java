@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 public class DialCoreUrlBuilder {
 
     private static final Set<String> OPENAI_STANDARD_PATHS = Set.of("/chat/completions", "/embeddings");
+    public static final String ANTHROPIC_MESSAGES_URL = "/anthropic/v1/messages";
 
     /**
      * Builds the full path for DIAL Core invocation.
@@ -27,6 +28,9 @@ public class DialCoreUrlBuilder {
     public String buildUrl(String deploymentId, String resolvedUrl) {
         if (OPENAI_STANDARD_PATHS.contains(resolvedUrl)) {
             return "/openai/deployments/" + deploymentId + resolvedUrl;
+        }
+        if (ANTHROPIC_MESSAGES_URL.equals(resolvedUrl)) {
+            return resolvedUrl;
         }
         return "/v1/deployments/" + deploymentId + "/route" + resolvedUrl;
     }

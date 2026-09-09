@@ -94,8 +94,15 @@ public class RunOrchestrationService {
 
             final TestCaseRunner runner =
                     testCaseRunnerFactory.create(context, context.getSnapshotResponseColumns(), csvWriter);
-            runner.submit(inputs);
-            runner.awaitCompletion();
+            try {
+                final boolean accepted = runner.submit(inputs);
+                if (!accepted) {
+                    log.debug("Run {}: executor rejected submission for one or more test cases", context.getRunId());
+                }
+                runner.awaitCompletion();
+            } finally {
+                context.getExecutor().shutdownNow();
+            }
             csvWriter.flush();
 
         } catch (IOException e) {

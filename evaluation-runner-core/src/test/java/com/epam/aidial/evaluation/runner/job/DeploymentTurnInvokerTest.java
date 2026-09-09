@@ -22,7 +22,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -247,7 +247,7 @@ class DeploymentTurnInvokerTest {
                 .retryBackoffMultiplier(2.0)
                 .maxRetryDelayMs(1_000L)
                 .maxResponseSizeBytes(5_242_880L)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .createdAtMs(System.currentTimeMillis());
     }
 }

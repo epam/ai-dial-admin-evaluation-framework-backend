@@ -239,26 +239,55 @@ public class MetaTestDataHelper {
 
     @Transactional("metaTransactionManager")
     public TestSuiteRun createPendingRun(UUID suiteId, String testRunName) {
+        return createRunWithStatus(suiteId, RunStatus.PENDING, testRunName);
+    }
+
+    @Transactional("metaTransactionManager")
+    public TestSuiteRun createRunningRun(UUID suiteId, String testRunName) {
+        return createRunWithStatus(suiteId, RunStatus.RUNNING, testRunName);
+    }
+
+    /**
+     * Inserts a run with an arbitrary {@link RunStatus} and a generated {@code testRunName}, without
+     * requiring the suite to be bound to a dataset. Used by repository guard tests and reconciliation
+     * tests that need a fixture row in a specific (including transient, e.g. CANCELLING) status.
+     */
+    @Transactional("metaTransactionManager")
+    public TestSuiteRun createRunWithStatus(UUID suiteId, RunStatus status) {
+        return createRunWithStatus(suiteId, status, "run-" + UUID.randomUUID());
+    }
+
+    @Transactional("metaTransactionManager")
+    public TestSuiteRun createRunWithStatus(UUID suiteId, RunStatus status, String testRunName) {
         TestSuiteRun run = TestSuiteRun.builder()
                 .testSuiteId(suiteId)
                 .testRunName(testRunName)
-                .status(RunStatus.PENDING.name())
+                .status(status.name())
                 .runConfig("{\"numberOfRuns\":1}")
                 .numberOfTestCases(0)
                 .build();
         return testSuiteRunRepository.save(run);
     }
 
+    /**
+     * Wraps {@link TestSuiteRunRepository#markCancelling} in a {@code @Transactional} method so its
+     * internal {@code TransactionTimestampContext.getTimestamp()} read (see {@code design.md} decision D4)
+     * has an initialized timestamp when called directly from a repository guard test, rather than through
+     * {@code TestSuiteRunService.cancelRun}.
+     */
     @Transactional("metaTransactionManager")
-    public TestSuiteRun createRunningRun(UUID suiteId, String testRunName) {
-        TestSuiteRun run = TestSuiteRun.builder()
-                .testSuiteId(suiteId)
-                .testRunName(testRunName)
-                .status(RunStatus.RUNNING.name())
-                .runConfig("{\"numberOfRuns\":1}")
-                .numberOfTestCases(0)
-                .build();
-        return testSuiteRunRepository.save(run);
+    public int markCancelling(UUID runId) {
+        return testSuiteRunRepository.markCancelling(runId);
+    }
+
+    /**
+     * Wraps {@link TestSuiteRunRepository#cancelOrphanedCancellingRuns} in a {@code @Transactional} method
+     * for the same reason as {@link #markCancelling(UUID)}, when called directly from a repository guard
+     * test rather than through {@code TestSuiteRunReconciliation}.
+     */
+    @Transactional("metaTransactionManager")
+    public int cancelOrphanedCancellingRuns() {
+        return testSuiteRunRepository.cancelOrphanedCancellingRuns();
     }
 
     @Transactional("metaTransactionManager")

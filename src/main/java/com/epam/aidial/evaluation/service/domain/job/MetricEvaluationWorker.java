@@ -47,7 +47,7 @@ public class MetricEvaluationWorker {
      * @param tsmd              the aggregated metric definition
      * @param result            the test case run result providing data for binding resolution
      * @param providerSemaphore semaphore controlling concurrency for this provider
-     * @param context           metric evaluation context with retry config and cancellation signal
+     * @param context           metric evaluation context with retry config
      * @return evaluation response from the metric provider
      * @throws RuntimeException on transport failure after retries exhausted
      * @throws InterruptedException if cancelled during backoff sleep
@@ -110,10 +110,6 @@ public class MetricEvaluationWorker {
 
         Exception lastException = null;
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
-            if (context.getCancellationSignal().get()) {
-                throw new InterruptedException("Metric evaluation cancelled");
-            }
-
             if (attempt > 0) {
                 long delay = computeBackoffDelay(attempt, retryConfig);
                 log.debug(
@@ -122,7 +118,7 @@ public class MetricEvaluationWorker {
                         attempt,
                         maxRetries,
                         delay);
-                sleepWithCancellation(delay, context);
+                Thread.sleep(delay);
             }
 
             try {
@@ -180,18 +176,6 @@ public class MetricEvaluationWorker {
                 .config(config)
                 .input(input)
                 .build();
-    }
-
-    private void sleepWithCancellation(long delayMs, MetricEvaluationContext context) throws InterruptedException {
-        long remaining = delayMs;
-        long step = Math.min(remaining, 500L);
-        while (remaining > 0) {
-            if (context.getCancellationSignal().get()) {
-                throw new InterruptedException("Metric evaluation cancelled during backoff");
-            }
-            Thread.sleep(Math.min(step, remaining));
-            remaining -= step;
-        }
     }
 
     private long computeBackoffDelay(int attempt, MetricEvaluationProperties.Retry retryConfig) {

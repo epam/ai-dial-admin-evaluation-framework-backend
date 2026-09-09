@@ -56,18 +56,13 @@ public class InProcessEvaluationExecutor implements EvaluationExecutor {
 
         try {
             int offset = 0;
+            boolean accepting;
             List<TestCaseRunInput> page;
             do {
-                if (context.getCancellationSignal().get()) {
-                    break;
-                }
-
                 page = fetchPage(context, useInputsTable, offset);
-                testCaseRunner.submit(page);
-
+                accepting = testCaseRunner.submit(page);
                 offset += PAGE_SIZE;
-            } while (page.size() == PAGE_SIZE
-                    && !context.getCancellationSignal().get());
+            } while (accepting && page.size() == PAGE_SIZE);
 
             testCaseRunner.awaitCompletion();
         } catch (Exception e) {

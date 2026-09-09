@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -22,14 +23,15 @@ import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -86,8 +88,6 @@ class InProcessEvaluationExecutorTest {
                 .maxRetryDelayMs(1000L)
                 .resultBatchSize(100)
                 .maxResponseSizeBytes(5242880L)
-                .cancellationGracePeriodMs(5000L)
-                .cancellationSignal(new AtomicBoolean(false))
                 .token("test-token")
                 .createdAtMs(System.currentTimeMillis())
                 .snapshotResponseColumns(List.of());
@@ -254,5 +254,30 @@ class InProcessEvaluationExecutorTest {
         verify(testCaseRunner, never()).awaitCompletion();
         // Best-effort flush invoked (catch + finally — at least once).
         verify(writer, atLeastOnce()).flush();
+    }
+
+    @Test
+    @DisplayName("Stops paging and awaits completion before flushing when submit reports rejection")
+    void shouldStopPagingAndAwaitBeforeFlush_whenSubmitReportsRejection() {
+        List<TestCaseRunInput> fullPage = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            fullPage.add(buildInput());
+        }
+        EvaluationContext context = buildContext(SUITE_ID, 1, 100);
+        stubCreateWriter();
+        stubCreateRunner(context);
+
+        when(testCaseRunInputRepository.existsByRunId(context.getRunId())).thenReturn(true);
+        when(testCaseRunInputRepository.findByRunId(context.getRunId(), 0, 100)).thenReturn(fullPage);
+        when(testCaseRunner.submit(fullPage)).thenReturn(false);
+
+        executor.execute(context);
+
+        verify(testCaseRunInputRepository, times(1)).findByRunId(context.getRunId(), 0, 100);
+        verify(testCaseRunner).submit(fullPage);
+
+        InOrder inOrder = inOrder(testCaseRunner, writer);
+        inOrder.verify(testCaseRunner).awaitCompletion();
+        inOrder.verify(writer).flush();
     }
 }

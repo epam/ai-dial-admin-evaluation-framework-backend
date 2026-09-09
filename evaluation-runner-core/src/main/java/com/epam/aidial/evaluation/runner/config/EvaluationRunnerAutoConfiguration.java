@@ -7,9 +7,15 @@ import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperti
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
 import com.epam.aidial.evaluation.runner.config.properties.McpClientProperties;
 import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
+import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.thread.Threading;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.core.env.Environment;
 
 /**
  * Contributes every shared bean in {@code com.epam.aidial.evaluation.runner} to any consumer
@@ -18,6 +24,7 @@ import org.springframework.context.annotation.ComponentScan;
  * declaring the {@code evaluation-runner-core} dependency (see Decision 6 in the
  * {@code evaluation-runner-core-module} change's {@code design.md}).
  */
+@Slf4j
 @AutoConfiguration
 @LogExecution
 @ComponentScan("com.epam.aidial.evaluation.runner")
@@ -29,4 +36,18 @@ import org.springframework.context.annotation.ComponentScan;
     DialFileStorageProperties.class,
     JsonataProperties.class
 })
-public class EvaluationRunnerAutoConfiguration {}
+public class EvaluationRunnerAutoConfiguration {
+
+    /**
+     * Reads Spring Boot's {@code spring.threads.virtual.enabled} switch so the run thread mode
+     * (see {@link RunExecutorFactory}) follows the same JVM-wide setting Boot uses for its own
+     * executors. A consumer application may define its own {@link RunExecutorFactory} bean to override.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public RunExecutorFactory runExecutorFactory(Environment environment) {
+        final boolean virtualThreads = Threading.VIRTUAL.isActive(environment);
+        log.info("Virtual threads: {}", virtualThreads);
+        return new RunExecutorFactory(virtualThreads);
+    }
+}

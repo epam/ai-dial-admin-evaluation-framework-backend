@@ -43,7 +43,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -168,8 +168,7 @@ class TurnLoopExecutorTest {
                 .maxRetryDelayMs(1000L)
                 .resultBatchSize(100)
                 .maxResponseSizeBytes(5_000_000L)
-                .cancellationGracePeriodMs(5000L)
-                .cancellationSignal(new AtomicBoolean(false))
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .createdAtMs(FIXED_CLOCK.millis())
                 .snapshotDeploymentRef(DeploymentReferenceDto.builder()
                         .id("gpt-4")
@@ -511,31 +510,6 @@ class TurnLoopExecutorTest {
         assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(row.getExtractedColumns()).contains("\"errMsg\":\"boom\"");
         assertThat(row.getExtractedColumns()).isNotEqualTo("{}");
-    }
-
-    @Test
-    @DisplayName("Cancellation before the first turn produces no rows")
-    void cancellationBeforeFirstTurn_producesNoRows() {
-        TestCaseRunInput input =
-                baseInputBuilder().testCaseName("cancelled").testCaseData("{}").build();
-        EvaluationContext context = baseContextBuilder()
-                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("messages", List.of())))
-                .snapshotInputBindings(List.of())
-                .snapshotTestCaseSchema(List.of())
-                .cancellationSignal(new AtomicBoolean(true))
-                .build();
-
-        List<TestCaseRunResult> results = executor.execute(
-                        input,
-                        context,
-                        0,
-                        singleRequestSpec(context, List.of()),
-                        Map.of(),
-                        "trace-6",
-                        FIXED_CLOCK.millis())
-                .rows();
-
-        assertThat(results).isEmpty();
     }
 
     @Test

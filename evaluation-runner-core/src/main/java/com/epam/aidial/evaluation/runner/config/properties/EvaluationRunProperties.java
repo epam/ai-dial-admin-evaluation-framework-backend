@@ -66,10 +66,6 @@ public class EvaluationRunProperties {
         private Long maxResponseSizeBytes;
 
         @NotNull
-        @Min(1000)
-        private Long cancellationGracePeriodMs;
-
-        @NotNull
         private List<String> headerBlacklist;
     }
 

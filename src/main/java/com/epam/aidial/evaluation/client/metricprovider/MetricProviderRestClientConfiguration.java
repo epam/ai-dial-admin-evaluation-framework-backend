@@ -4,12 +4,13 @@ import com.epam.aidial.evaluation.client.dialcore.DialCoreClientConfiguration;
 import com.epam.aidial.evaluation.configuration.properties.metricprovider.MetricProviderProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import io.opentelemetry.api.OpenTelemetry;
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -36,8 +37,12 @@ public class MetricProviderRestClientConfiguration {
 
     private static RestClient buildRestClient(
             String baseUrl, int connectTimeoutMs, int readTimeoutMs, OpenTelemetry openTelemetry) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeoutMs));
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofMillis(connectTimeoutMs))
+                .build();
+
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
         return RestClient.builder()
                 .baseUrl(baseUrl)

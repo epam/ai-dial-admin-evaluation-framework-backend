@@ -29,7 +29,6 @@ class ExecutionSettingsValidatorTest {
         exec.setDefaultRateLimitRps(null);
         exec.setResultBatchSize(100);
         exec.setMaxResponseSizeBytes(10485760L);
-        exec.setCancellationGracePeriodMs(5000L);
         exec.setHeaderBlacklist(List.of("Authorization"));
         props.setExecution(exec);
 

@@ -160,7 +160,7 @@ EF's `DialFileClient` (using the service API key) continues to handle EF-interna
 | Risk | Mitigation |
 |------|-----------|
 | DIAL Core adds max-duration TTL to PRKs in future | Monitor DIAL Core changelog; heartbeat signals active use; engage DIAL team to confirm long-running connection support |
-| Connection drop (DIAL Core → EF) mid-eval | EF detects `IOException` on SSE write, cancels eval via existing `AtomicBoolean` cancellation signal, removes PRK from store, marks run FAILED |
+| Connection drop (DIAL Core → EF) mid-eval | EF detects `IOException` on SSE write, tears the run down via `ActiveRunRegistry.cancel(runId)` and marks it FAILED with a guarded `updateToFailed`, removes PRK from store |
 | Pod restart loses PRK store | Run fails — same failure mode as today's JWT expiry. DB run status preserved; operator can cancel/restart |
 | N concurrent runs = N open SSE connections | Java 21 virtual threads handle this; SSE connections are I/O-bound and cheap |
 | Internal endpoint exposed accidentally | Kubernetes NetworkPolicy + Spring Security `permitAll` on `/internal/**` (no JWT filter). Network-level isolation is primary; PRK verification is secondary |

@@ -111,6 +111,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Typed SQL DSL (jOOQ)](docs/patterns/jooq-typed-sql-dsl.md) | Codegen pipeline, drift guard, DSLContext config, RecordMapper convention |
 | [Dataset Entity](docs/patterns/dataset-entity.md) | `DatasetSchemaProvider`, `dataset.id` vs `suite.id`, visibility rules, exclusion via `testCaseFilter` |
 | [Suite Run Snapshot Phase](docs/patterns/suite-run-snapshot.md) | Snapshot tx, `40001` retry, inconsistent-snapshot guard, version handling |
+| [Run cancellation](docs/patterns/run-cancellation.md) | Per-run executor teardown + guarded status writes; never interrupt the job thread; keep worker HTTP clients interruptible (JDK factory); thread mode (virtual default, platform opt-out) comes from `RunExecutorFactory` |
 | [Selective Column Projection (TOAST)](docs/patterns/selective-column-projection.md) | Column-tier constants to avoid TOAST decompression on bulk queries |
 | [MCP Tool Invocation](docs/patterns/mcp-tool-invocation.md) | Per-call `McpSyncClient` via DIAL Core MCP proxy |
 | [Slash-containing path values](docs/patterns/slash-path-values.md) | `/**` mapping + `WildcardPathResolver`; decode exactly once, never `URLDecoder` |
@@ -148,8 +149,9 @@ Full package-by-package map of all three modules (main app, `evaluation-runner-c
 2. **Enable SQL logging**: Set `logging.level.org.jooq.impl=DEBUG` (jOOQ) or `logging.level.org.springframework.jdbc=DEBUG` (Spring JDBC, health indicators)
 3. **Regenerate jOOQ sources**: Run `./gradlew generateJooq` after schema changes; commit the result
 4. **Check Flyway**: Meta migrations in `resources/db/migration/meta/POSTGRES/`; analytics migrations in `resources/db/migration/analytics/POSTGRES/`
-4. **Correlation ID**: Look for `X-Correlation-Id` header in requests/responses
-5. **Swagger UI**: Available at `http://localhost:8080/swagger-ui.html`
+5. **Correlation ID**: Look for `X-Correlation-Id` header in requests/responses
+6. **Swagger UI**: Available at `http://localhost:8080/swagger-ui.html`
+7. **Profile on platform threads**: `VIRTUAL_THREADS_ENABLED=false` switches the run job executor and every run's worker executor (plus Boot's own executors) to platform threads so sampling profilers / `jcmd Thread.print` can see hotspots; behaviour otherwise identical
 
 ## Design Documentation
 

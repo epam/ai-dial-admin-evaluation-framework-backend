@@ -225,17 +225,11 @@ public class EvaluationWorker {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             if (attempt > 0) {
-                if (context.getCancellationSignal().get()) {
-                    break;
-                }
                 long delay = Math.min((long) (retryDelayMs * Math.pow(multiplier, attempt - 1)), maxRetryDelay);
                 try {
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    break;
-                }
-                if (context.getCancellationSignal().get()) {
                     break;
                 }
             }

@@ -10,6 +10,7 @@ This document is the operator-facing reference for every configurable property o
    - [Actuator](#22-actuator)
    - [OpenAPI](#23-openapi)
    - [Logging](#24-logging)
+   - [Threading](#25-threading)
 3. [Security](#3-security)
    - [Mode](#31-mode)
    - [Identity Providers](#32-identity-providers)
@@ -28,20 +29,19 @@ This document is the operator-facing reference for every configurable property o
    - [DIAL MCP Client](#54-dial-mcp-client)
    - [DIAL ADAS Client](#55-dial-adas-client)
 6. [Evaluation Engine](#6-evaluation-engine)
-   - [Test Suite Run — Executor](#61-test-suite-run--executor)
-   - [Test Suite Run — SSE](#62-test-suite-run--sse)
-   - [Test Suite Run — Execution Settings](#63-test-suite-run--execution-settings)
-   - [Test Suite Run — Retry Settings](#64-test-suite-run--retry-settings)
-   - [Test Suite Run — Run Config](#65-test-suite-run--run-config)
-   - [Test Suite Run — Concurrency Limits](#66-test-suite-run--concurrency-limits)
-   - [Test Suite Run — Run Inputs](#67-test-suite-run--run-inputs)
-   - [Analytics Results Batch Write](#68-analytics-results-batch-write)
-   - [Analytics Eval Summaries Batch Write](#69-analytics-eval-summaries-batch-write)
-   - [Metric Providers](#610-metric-providers)
-   - [Metric Evaluation](#611-metric-evaluation)
-   - [SSE Event Processing](#612-sse-event-processing)
-   - [Analytics Run Comparison](#613-analytics-run-comparison)
-   - [JSONata Evaluation](#614-jsonata-evaluation)
+   - [Test Suite Run — SSE](#61-test-suite-run--sse)
+   - [Test Suite Run — Execution Settings](#62-test-suite-run--execution-settings)
+   - [Test Suite Run — Retry Settings](#63-test-suite-run--retry-settings)
+   - [Test Suite Run — Run Config](#64-test-suite-run--run-config)
+   - [Test Suite Run — Concurrency Limits](#65-test-suite-run--concurrency-limits)
+   - [Test Suite Run — Run Inputs](#66-test-suite-run--run-inputs)
+   - [Analytics Results Batch Write](#67-analytics-results-batch-write)
+   - [Analytics Eval Summaries Batch Write](#68-analytics-eval-summaries-batch-write)
+   - [Metric Providers](#69-metric-providers)
+   - [Metric Evaluation](#610-metric-evaluation)
+   - [SSE Event Processing](#611-sse-event-processing)
+   - [Analytics Run Comparison](#612-analytics-run-comparison)
+   - [JSONata Evaluation](#613-jsonata-evaluation)
 7. [Data Management](#7-data-management)
    - [Pagination](#71-pagination)
    - [CSV Export](#72-csv-export)
@@ -145,6 +145,12 @@ Example `logging.levels.json`:
 #### 2.4.3 Correlation ID
 
 Every HTTP request is assigned a correlation ID that appears in access logs, application logs, and the response headers. If the inbound request carries a valid `X-Correlation-Id` header (16–32 alphanumeric characters) it is reused; otherwise a new ID is generated from the OpenTelemetry trace ID when present, or randomly when not.
+
+### 2.5 Threading
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `spring.threads.virtual.enabled` | `VIRTUAL_THREADS_ENABLED` | `true` | No | - | JVM-wide thread mode for Spring Boot's own executors, the test-suite-run job executor, and every run's worker executor. Set `false` to run them on platform threads instead of virtual threads so a sampling profiler or thread dump can attribute CPU hotspots to real OS threads (virtual threads are invisible to samplers) — a troubleshooting opt-out, not a recommended production setting. Cancellation behaviour (interrupt-driven `shutdownNow()`) is identical in both modes. |
 
 ---
 
@@ -355,22 +361,14 @@ Configuration for dial-adas, an external analytics service queried for `GET /api
 
 ## 6. Evaluation Engine
 
-### 6.1 Test Suite Run — Executor
-
-| Property | Environment Variable | Default | Required | Applied when | Description |
-|---|---|---|---|---|---|
-| `test-suite-run.executor.core-pool-size` | `TEST_SUITE_RUN_EXECUTOR_CORE_POOL_SIZE` | `5` | No | - | Core thread pool size for async run execution. |
-| `test-suite-run.executor.max-pool-size` | `TEST_SUITE_RUN_EXECUTOR_MAX_POOL_SIZE` | `10` | No | - | Maximum thread pool size. |
-| `test-suite-run.executor.queue-capacity` | `TEST_SUITE_RUN_EXECUTOR_QUEUE_CAPACITY` | `50` | No | - | Queue capacity before new submissions are rejected. |
-
-### 6.2 Test Suite Run — SSE
+### 6.1 Test Suite Run — SSE
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `test-suite-run.sse.timeout-minutes` | `TEST_SUITE_RUN_SSE_TIMEOUT_MINUTES` | `30` | No | - | SSE client connection timeout in minutes. |
 | `test-suite-run.sse.cleanup-interval-ms` | `TEST_SUITE_RUN_SSE_CLEANUP_INTERVAL_MS` | `300000` | No | - | Interval at which stale SSE emitters are pruned, in milliseconds. |
 
-### 6.3 Test Suite Run — Execution Settings
+### 6.2 Test Suite Run — Execution Settings
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
@@ -380,10 +378,9 @@ Configuration for dial-adas, an external analytics service queried for `GET /api
 | `test-suite-run.execution.max-request-timeout-ms` | `TEST_SUITE_RUN_EXECUTION_MAX_REQUEST_TIMEOUT_MS` | `600000` | No | - | Upper bound on per-request timeout. |
 | `test-suite-run.execution.result-batch-size` | `TEST_SUITE_RUN_EXECUTION_RESULT_BATCH_SIZE` | `100` | No | - | Number of results buffered before flushing to the analytics database. |
 | `test-suite-run.execution.max-response-size-bytes` | `TEST_SUITE_RUN_EXECUTION_MAX_RESPONSE_SIZE_BYTES` | `5242880` | No | - | Maximum captured response body size in bytes before truncation (5 MB default). |
-| `test-suite-run.execution.cancellation-grace-period-ms` | `TEST_SUITE_RUN_EXECUTION_CANCELLATION_GRACE_PERIOD_MS` | `30000` | No | - | Time in milliseconds to wait for in-flight calls to drain AFTER a run is cancelled, before calling `shutdownNow()` to interrupt remaining workers. Applies ONLY when cancellation is requested; it is NOT an overall evaluation timeout. A run that takes longer than this value without being cancelled continues to completion. Per-call wall-clock bounding is the responsibility of `request-timeout-ms`. |
 | `test-suite-run.execution.header-blacklist` | `TEST_SUITE_RUN_EXECUTION_HEADER_BLACKLIST` | `[Authorization, Host, Content-Length, Transfer-Encoding, Connection, traceparent, tracestate]` | No | - | HTTP headers silently stripped from evaluation requests before they are forwarded. |
 
-### 6.4 Test Suite Run — Retry Settings
+### 6.3 Test Suite Run — Retry Settings
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
@@ -394,26 +391,26 @@ Configuration for dial-adas, an external analytics service queried for `GET /api
 | `test-suite-run.retry.default-retry-backoff-multiplier` | `TEST_SUITE_RUN_RETRY_DEFAULT_RETRY_BACKOFF_MULTIPLIER` | `2.0` | No | - | Default exponential backoff multiplier. |
 | `test-suite-run.retry.max-retry-backoff-multiplier` | `TEST_SUITE_RUN_RETRY_MAX_RETRY_BACKOFF_MULTIPLIER` | `10.0` | No | - | Upper bound on backoff multiplier. |
 
-### 6.5 Test Suite Run — Run Config
+### 6.4 Test Suite Run — Run Config
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `test-suite-run.run-config.max-number-of-runs` | `TEST_SUITE_RUN_RUN_CONFIG_MAX_NUMBER_OF_RUNS` | `64` | No | - | Maximum value accepted for the `numberOfRuns` field of a test suite run request. |
 
-### 6.6 Test Suite Run — Concurrency Limits
+### 6.5 Test Suite Run — Concurrency Limits
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `test-suite-run.limits.max-concurrent-runs-global` | `TEST_SUITE_RUN_LIMITS_MAX_CONCURRENT_RUNS_GLOBAL` | `20` | No | - | Maximum test suite runs that may execute concurrently across all suites. |
 | `test-suite-run.limits.max-concurrent-runs-per-suite` | `TEST_SUITE_RUN_LIMITS_MAX_CONCURRENT_RUNS_PER_SUITE` | `5` | No | - | Maximum concurrent runs for a single test suite. |
 
-### 6.7 Test Suite Run — Run Inputs
+### 6.6 Test Suite Run — Run Inputs
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `test-suite-run.run-inputs.retention-days` | `TEST_SUITE_RUN_RUN_INPUTS_RETENTION_DAYS` | `1` | No | - | Number of days to retain `test_case_run_inputs` rows after the parent run reaches a terminal state (COMPLETED or FAILED). Rows older than this threshold are deleted by the daily retention cleanup job. |
 
-### 6.8 Analytics Results Batch Write
+### 6.7 Analytics Results Batch Write
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
@@ -421,14 +418,14 @@ Configuration for dial-adas, an external analytics service queried for `GET /api
 | `analytics.results.batch.max-request-size-bytes` | `ANALYTICS_RESULTS_BATCH_MAX_REQUEST_SIZE_BYTES` | `10485760` | No | - | Maximum request body size in bytes for a batch write (10 MB). Also enforced by `server.tomcat.max-http-post-size`. |
 | `analytics.results.csv-import.max-file-size` | `ANALYTICS_RESULTS_CSV_IMPORT_MAX_FILE_SIZE` | `10MB` | No | - | Maximum CSV file size for the eval-results import endpoint (`POST /api/v1/test-suites/{id}/runs/import`). Requests exceeding this limit are rejected with HTTP 400 before parsing begins. |
 
-### 6.9 Analytics Eval Summaries Batch Write
+### 6.8 Analytics Eval Summaries Batch Write
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `analytics.eval-summaries.batch.max-items` | `ANALYTICS_EVAL_SUMMARIES_BATCH_MAX_ITEMS` | `10000` | No | - | Maximum number of items per eval summary batch write request. |
 | `analytics.eval-summaries.batch.max-request-size-bytes` | `ANALYTICS_EVAL_SUMMARIES_BATCH_MAX_REQUEST_SIZE_BYTES` | `10485760` | No | - | Maximum request body size in bytes for a batch write (10 MB). Also enforced by `server.tomcat.max-http-post-size`. |
 
-### 6.10 Metric Providers
+### 6.9 Metric Providers
 
 Metric declarations can be synced from one or more external metric provider services (each exposing `GET /metrics`). Providers are configured as a map keyed by provider id.
 
@@ -491,7 +488,7 @@ Entries under the `providers` map are fully addressable via environment variable
 
 To register a third or further provider without touching YAML, use env vars keyed by upper-cased provider id — both `METRIC_PROVIDERS_CUSTOM_BASE_URL` **and** `METRIC_PROVIDERS_CUSTOM_ENABLED` for a provider keyed `custom` (`enabled` is `@NotNull`, so omitting it fails startup validation).
 
-### 6.11 Metric Evaluation
+### 6.10 Metric Evaluation
 
 Configuration for the in-process metric evaluation phase of test suite runs. After deployment evaluation completes, the system calls each configured metric provider's `/evaluate` endpoint.
 
@@ -507,7 +504,7 @@ Configuration for the in-process metric evaluation phase of test suite runs. Aft
 
 ---
 
-### 6.12 SSE Event Processing
+### 6.11 SSE Event Processing
 
 Global, path-agnostic cap for SSE stream parsing. The per-path idle (inactivity) timeout — `requestTimeoutMs` on the evaluation path and `dial.components.core.try-out.read-timeout-ms` on the Try It Out path — bounds gaps between lines; this absolute cap bounds the total stream duration so a server that heartbeats forever still terminates. Shared by both streaming paths.
 
@@ -515,7 +512,7 @@ Global, path-agnostic cap for SSE stream parsing. The per-path idle (inactivity)
 |---|---|---|---|---|---|
 | `sse-event-processing.max-total-duration-ms` | `SSE_EVENT_PROCESSING_MAX_TOTAL_DURATION_MS` | `3600000` | No | - | Absolute maximum wall-clock time in milliseconds to spend parsing a single SSE stream, regardless of activity. Crossing it stops parsing with `TIMEOUT` and returns the events accumulated so far. Set high (default 1 hour) so it acts as a safety ceiling, not a working timeout. Minimum `1000`. |
 
-### 6.13 Analytics Run Comparison
+### 6.12 Analytics Run Comparison
 
 Bound for `GET /api/v1/analytics/metric-scores/comparison`, which recomputes metric-score statistics over only the eval-summary rows two runs have in common and returns the ids of the rows that did **not** match, so a client can reproduce that population by excluding them.
 
@@ -523,7 +520,7 @@ Bound for `GET /api/v1/analytics/metric-scores/comparison`, which recomputes met
 |---|---|---|---|---|---|
 | `analytics.comparison.max-unmatched-rows` | `ANALYTICS_COMPARISON_MAX_UNMATCHED_ROWS` | `5000` | No | - | Maximum number of non-matching eval-summary rows a single run comparison may report **per run**; exceeding it fails the request with HTTP 409 naming both the count and this limit. Bounds the returned exclusion id list, the `IN` bind count (an overflow of the database parameter ceiling would otherwise surface as HTTP 500) and the worst-case response size — about 0.35 MB at the default, and reached only at *low* overlap, since two runs that match completely report an empty exclusion list. Minimum `1`. |
 
-### 6.14 JSONata Evaluation
+### 6.13 JSONata Evaluation
 
 Runtime bounds applied to every JSONata expression evaluation (request-template body evaluation and response-column/condition evaluation) via `Frame.setRuntimeBounds`, protecting worker threads from a runaway or unbounded-recursion JSONata expression.
 

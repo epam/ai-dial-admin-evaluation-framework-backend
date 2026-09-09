@@ -1,6 +1,6 @@
 # Suite Run Snapshot Phase
 
-When a run starts (`executeRunAsync`), a snapshot phase runs before the `RUNNING` state transition, for **every** run regardless of `skipDeploymentPhase` (including CSV-imported runs, dispatched with `skipDeploymentPhase=true`):
+When a run starts (`TestSuiteEvaluationJob.dispatch`), a snapshot phase runs before the `RUNNING` state transition, for **every** run regardless of `skipDeploymentPhase` (including CSV-imported runs, dispatched with `skipDeploymentPhase=true`):
 
 1. Opens a `TransactionTemplate` with `ISOLATION_REPEATABLE_READ` on meta datasource
 2. Reads the live `TestSuite` and builds `SuiteSnapshotDto` via `SuiteSnapshotBuilder`

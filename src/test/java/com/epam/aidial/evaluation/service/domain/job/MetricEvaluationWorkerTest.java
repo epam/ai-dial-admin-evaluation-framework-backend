@@ -23,7 +23,6 @@ import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -108,14 +107,19 @@ class MetricEvaluationWorkerTest {
     }
 
     @Test
-    @DisplayName("Should throw InterruptedException when cancelled during backoff")
-    void shouldThrowWhenCancelledDuringBackoff() {
-        AtomicBoolean cancellation = new AtomicBoolean(true);
-        MetricEvaluationContext context = buildContextWithCancellation(1, cancellation);
-
-        assertThatThrownBy(() -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), context))
-                .isInstanceOf(InterruptedException.class)
-                .hasMessageContaining("cancelled");
+    @DisplayName("Should throw InterruptedException when interrupted during backoff")
+    void shouldThrowInterrupted_whenInterruptedDuringBackoff() {
+        // The provider semaphore's acquire() observes the interrupt before any provider call is made,
+        // so metricProviderClient is never invoked — no stubbing needed here.
+        Thread.currentThread().interrupt();
+        try {
+            assertThatThrownBy(() -> worker.evaluate(buildTsmd(), buildResult(), new Semaphore(5), buildContext(1)))
+                    .isInstanceOf(InterruptedException.class);
+        } finally {
+            // Clear the interrupt flag left by the propagated InterruptedException so it does not leak
+            // into subsequent tests running on this thread.
+            Thread.interrupted();
+        }
     }
 
     private AggregatedMetricDefinition buildTsmd() {
@@ -154,10 +158,6 @@ class MetricEvaluationWorkerTest {
     }
 
     private MetricEvaluationContext buildContext(int maxRetries) {
-        return buildContextWithCancellation(maxRetries, new AtomicBoolean(false));
-    }
-
-    private MetricEvaluationContext buildContextWithCancellation(int maxRetries, AtomicBoolean cancellation) {
         MetricEvaluationProperties.Retry retryConfig = new MetricEvaluationProperties.Retry();
         retryConfig.setMaxRetries(maxRetries);
         retryConfig.setRetryDelayMs(100L);
@@ -167,7 +167,6 @@ class MetricEvaluationWorkerTest {
         return MetricEvaluationContext.builder()
                 .testSuiteRunId(UUID.randomUUID())
                 .testSuiteId(UUID.randomUUID())
-                .cancellationSignal(cancellation)
                 .retryConfig(retryConfig)
                 .build();
     }
@@ -223,7 +222,6 @@ class MetricEvaluationWorkerTest {
             MetricEvaluationContext context = MetricEvaluationContext.builder()
                     .testSuiteRunId(testSuiteRunId)
                     .testSuiteId(testSuiteId)
-                    .cancellationSignal(new AtomicBoolean(false))
                     .retryConfig(retryConfig)
                     .build();
 

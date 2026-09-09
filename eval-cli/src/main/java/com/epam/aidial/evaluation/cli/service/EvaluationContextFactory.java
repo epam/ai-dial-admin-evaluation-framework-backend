@@ -5,12 +5,14 @@ import com.epam.aidial.evaluation.cli.config.properties.TargetProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +31,7 @@ public class EvaluationContextFactory {
     private final EvalCliProperties cliProperties;
     private final TargetProperties targetProperties;
     private final Clock clock;
+    private final RunExecutorFactory runExecutorFactory;
 
     /**
      * Creates a new {@link EvaluationContext} for the given suite and test-case count.
@@ -75,17 +78,16 @@ public class EvaluationContextFactory {
                 // System settings from CLI config
                 .resultBatchSize(run.getResultBatchSize())
                 .maxResponseSizeBytes(run.getMaxResponseSizeBytes())
-                .cancellationGracePeriodMs(run.getCancellationGracePeriodMs())
-                // Cancellation signal — never flipped in this change; wired for TestCaseRunner compatibility
-                .cancellationSignal(new AtomicBoolean(false))
+                // Worker executor for this run; thread mode follows spring.threads.virtual.enabled
+                // (VIRTUAL_THREADS_ENABLED); owned and shut down by RunOrchestrationService
+                .executor(runExecutorFactory.newWorkerExecutor())
                 // Auth token for per-worker propagation
                 .token(targetProperties.getApiKey())
                 .createdAtMs(clock.millis())
                 // Suite type from suite config
                 .suiteType(
                         suite.getSuiteType() != null
-                                ? com.epam.aidial.evaluation.runner.model.SuiteType.valueOf(
-                                        suite.getSuiteType().name())
+                                ? SuiteType.valueOf(suite.getSuiteType().name())
                                 : null)
                 // Target deployment ref override (replaces source-side ref)
                 .snapshotDeploymentRef(targetDeploymentRef)
@@ -105,8 +107,7 @@ public class EvaluationContextFactory {
                 .build();
     }
 
-    private com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto mapMcpDeploymentRef(
-            TestSuiteResponseDto suite) {
+    private McpDeploymentReferenceDto mapMcpDeploymentRef(TestSuiteResponseDto suite) {
         // The McpDeploymentReferenceDto is already the runner type (reused in our local DTO)
         return suite.getMcpDeploymentRef();
     }

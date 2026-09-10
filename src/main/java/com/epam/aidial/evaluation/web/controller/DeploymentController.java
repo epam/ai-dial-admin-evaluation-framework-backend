@@ -113,17 +113,13 @@ public class DeploymentController {
     @GetMapping(value = "/all/**", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Get deployment by ID across all types",
-            description = "Returns a single deployment by ID without the caller supplying its type. "
+            description = "Returns a single deployment by ID without the caller supplying its type, resolved "
+                    + "via a single request to DIAL Core's unified deployment-lookup endpoint. "
                     + "Everything after the 'all' segment is the deployment ID, so IDs containing slashes "
                     + "are supported as-is (e.g. /api/v1/deployments/all/applications/public/my-app__0.0.1) "
                     + "and percent-encoded characters are decoded once — exactly as on the by-type endpoint. "
-                    + "Deployment IDs are globally unique in DIAL Core across models, applications and "
-                    + "toolsets, so all three are probed in parallel and the one that resolves is returned; "
-                    + "the response body is identical to what the by-type endpoint returns for the same "
-                    + "deployment, and its '$type' discriminator tells you which type was found. "
-                    + "When the ID resolves nowhere, the probe failures are reported as a single upstream "
-                    + "error whose code reflects the most significant failure (an auth or upstream error is "
-                    + "never masked as not-found).")
+                    + "The response body is identical to what the by-type endpoint returns for the same "
+                    + "deployment, and its '$type' discriminator tells you which type was found.")
     @ApiResponse(
             responseCode = "200",
             description = "Deployment found; '$type' identifies whether it is a model, application or toolset",
@@ -134,10 +130,10 @@ public class DeploymentController {
     @ApiResponse(responseCode = "400", description = "Empty deployment ID, or malformed percent-encoding in the ID")
     @ApiResponse(responseCode = "401", description = "Unauthorized (missing or invalid token to this service)")
     @ApiResponse(responseCode = "403", description = "Forbidden (no access to this deployment in DIAL Core)")
+    @ApiResponse(responseCode = "404", description = "No deployment exists with this ID")
     @ApiResponse(
             responseCode = "502",
-            description = "Upstream (DIAL Core) error; check errorCode for UPSTREAM_AUTH_ERROR, "
-                    + "UPSTREAM_NOT_FOUND (the ID resolved in none of the three deployment types), or UPSTREAM_ERROR")
+            description = "Upstream (DIAL Core) error; check errorCode for UPSTREAM_AUTH_ERROR or UPSTREAM_ERROR")
     public DeploymentInfoDto getDeploymentById(HttpServletRequest request) {
         final String deploymentId = wildcardPathResolver.resolveTail(request);
         validateId(deploymentId);

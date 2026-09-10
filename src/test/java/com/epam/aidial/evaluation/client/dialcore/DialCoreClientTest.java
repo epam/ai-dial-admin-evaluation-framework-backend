@@ -8,8 +8,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreApplicationListResponseDto;
+import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreDeploymentDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreModelListResponseDto;
+import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
+import com.epam.aidial.evaluation.client.dialcore.dto.InterfaceType;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,6 +117,106 @@ class DialCoreClientTest {
 
         assertThat(app).isNotNull();
         assertThat(app.getId()).isEqualTo("EntityExtractor");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getDeploymentById resolves a model deployment via the unified endpoint")
+    void getDeploymentByIdResolvesModel() {
+        String json = """
+                {"object":"model","id":"gpt-5","display_name":"GPT-5","display_version":"2025","owner":"org",\
+                "created_at":1000,"updated_at":2000,"interfaces":["chat","mcp"]}
+                """;
+        RequestMatcher getDeployment =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/gpt-5");
+        server.expect(getDeployment).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+
+        DialCoreDeploymentDto deployment = client.getDeploymentById("gpt-5");
+
+        assertThat(deployment).isInstanceOf(DialCoreModelDto.class);
+        assertThat(deployment.getId()).isEqualTo("gpt-5");
+        assertThat(deployment.getInterfaces()).containsExactly(InterfaceType.CHAT, InterfaceType.MCP);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getDeploymentById resolves an application deployment via the unified endpoint")
+    void getDeploymentByIdResolvesApplication() {
+        String json = """
+                {"object":"application","id":"EntityExtractor","display_name":"Entity Extractor","owner":"org",\
+                "created_at":1000,"updated_at":2000}
+                """;
+        RequestMatcher getDeployment =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/EntityExtractor");
+        server.expect(getDeployment).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+
+        DialCoreDeploymentDto deployment = client.getDeploymentById("EntityExtractor");
+
+        assertThat(deployment).isInstanceOf(DialCoreApplicationDto.class);
+        assertThat(deployment.getId()).isEqualTo("EntityExtractor");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getDeploymentById resolves a toolset deployment via the unified endpoint")
+    void getDeploymentByIdResolvesToolset() {
+        String json = """
+                {"object":"toolset","id":"my-toolset","display_name":"My Toolset","owner":"org",\
+                "created_at":1000,"updated_at":2000}
+                """;
+        RequestMatcher getDeployment =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/my-toolset");
+        server.expect(getDeployment).andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+
+        DialCoreDeploymentDto deployment = client.getDeploymentById("my-toolset");
+
+        assertThat(deployment).isInstanceOf(DialCoreToolsetDto.class);
+        assertThat(deployment.getId()).isEqualTo("my-toolset");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getDeploymentById throws DialCoreClientException carrying the raw status on 404")
+    void getDeploymentByIdThrowsOn404() {
+        RequestMatcher getDeployment =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/missing");
+        server.expect(getDeployment).andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThatThrownBy(() -> client.getDeploymentById("missing"))
+                .isInstanceOf(DialCoreClientException.class)
+                .satisfies(e -> assertThat(
+                                ((DialCoreClientException) e).getStatusCode().value())
+                        .isEqualTo(404));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getDeploymentById throws DialCoreClientException carrying the raw status on 403")
+    void getDeploymentByIdThrowsOn403() {
+        RequestMatcher getDeployment =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/forbidden");
+        server.expect(getDeployment).andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertThatThrownBy(() -> client.getDeploymentById("forbidden"))
+                .isInstanceOf(DialCoreClientException.class)
+                .satisfies(e -> assertThat(
+                                ((DialCoreClientException) e).getStatusCode().value())
+                        .isEqualTo(403));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("getDeploymentById throws DialCoreClientException carrying the raw status on 400")
+    void getDeploymentByIdThrowsOn400() {
+        RequestMatcher getDeployment =
+                request -> assertThat(request.getURI().getPath()).isEqualTo("/v1/deployments/bad-id");
+        server.expect(getDeployment).andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+        assertThatThrownBy(() -> client.getDeploymentById("bad-id"))
+                .isInstanceOf(DialCoreClientException.class)
+                .satisfies(e -> assertThat(
+                                ((DialCoreClientException) e).getStatusCode().value())
+                        .isEqualTo(400));
         server.verify();
     }
 

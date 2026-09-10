@@ -2,6 +2,8 @@ package com.epam.aidial.evaluation.service.domain.dto.deployment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.client.dialcore.dto.InterfaceType;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.core.JacksonException;
@@ -53,5 +55,21 @@ class DeploymentInfoDtoSerializationTest {
         assertThat(model.getDeploymentId()).isEqualTo("m1");
         assertThat(app).isInstanceOf(DialApplicationInfoDto.class);
         assertThat(app.getDeploymentId()).isEqualTo("a1");
+    }
+
+    @Test
+    @DisplayName("round-trips interfaces on a DialModelInfoDto")
+    void roundTripsInterfaces() throws JacksonException {
+        DialModelInfoDto dto = DialModelInfoDto.builder()
+                .deploymentId("gpt-5")
+                .displayName("GPT-5")
+                .interfaces(List.of(InterfaceType.CHAT, InterfaceType.MCP))
+                .build();
+
+        String json = objectMapper.writeValueAsString(dto);
+        DeploymentInfoDto result = objectMapper.readValue(json, DeploymentInfoDto.class);
+
+        assertThat(result).isInstanceOf(DialModelInfoDto.class);
+        assertThat(result.getInterfaces()).containsExactly(InterfaceType.CHAT, InterfaceType.MCP);
     }
 }

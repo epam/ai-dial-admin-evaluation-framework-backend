@@ -56,6 +56,7 @@ public interface DeploymentMapper {
             nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
     @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "interfaces", ignore = true)
     DialModelInfoDto toDialModelInfoDto(DialCoreModelDto source);
 
     @Mapping(source = "id", target = "deploymentId")
@@ -71,6 +72,7 @@ public interface DeploymentMapper {
     @Mapping(target = "routes", source = "routes", qualifiedByName = "mapRoutes")
     @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
     @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "interfaces", ignore = true)
     DialApplicationInfoDto toDialApplicationInfoDto(DialCoreApplicationDto source);
 
     @Named("mapRoutes")
@@ -110,6 +112,7 @@ public interface DeploymentMapper {
     @Mapping(source = "transport", target = "transport", qualifiedByName = "dialTransportToMcp")
     @Mapping(target = "displayName", source = "displayName", qualifiedByName = "mapMultilingual")
     @Mapping(target = "description", source = "description", qualifiedByName = "mapMultilingual")
+    @Mapping(target = "interfaces", ignore = true)
     ToolsetInfoDto toToolsetInfoDto(DialCoreToolsetDto source);
 
     @Named("mapMultilingual")
@@ -146,12 +149,14 @@ public interface DeploymentMapper {
                         .deploymentId(model.getId())
                         .displayName(mapMultilingual(model.getDisplayName()))
                         .description(mapMultilingual(model.getDescription()))
+                        .interfaces(model.getInterfaces())
                         .build();
             case DialCoreApplicationDto app ->
                 DialApplicationInfoDto.builder()
                         .deploymentId(app.getId())
                         .displayName(mapMultilingual(app.getDisplayName()))
                         .description(mapMultilingual(app.getDescription()))
+                        .interfaces(app.getInterfaces())
                         .build();
             case DialCoreToolsetDto toolset ->
                 ToolsetInfoDto.builder()
@@ -159,6 +164,7 @@ public interface DeploymentMapper {
                         .displayName(mapMultilingual(toolset.getDisplayName()))
                         .description(mapMultilingual(toolset.getDescription()))
                         .transport(dialTransportToMcp(toolset.getTransport()))
+                        .interfaces(toolset.getInterfaces())
                         .build();
             // Unknown object type (or null entry) — return null so the caller can log and skip
             case null, default -> null;

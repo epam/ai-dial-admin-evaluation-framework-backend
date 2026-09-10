@@ -3,12 +3,14 @@
     "$type": "dial-model",
     "deploymentId": "gpt-5-mini-2025-08-07",
     "displayName": "GPT-5 mini",
-    "description": "GPT-5 mini - powers real-time experiences for apps and agents."
+    "description": "GPT-5 mini - powers real-time experiences for apps and agents.",
+    "interfaces": ["chat", "openaiChatCompletions"]
   },
   {
     "$type": "dial-application",
     "deploymentId": "EntityExtractor",
     "displayName": "Entity Extractor",
-    "description": ""
+    "description": "",
+    "interfaces": ["chat"]
   }
 ]

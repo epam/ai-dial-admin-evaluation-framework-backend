@@ -11,7 +11,6 @@ import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
-import com.epam.aidial.evaluation.runner.util.TokenPropagationHelper;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentType;
@@ -19,23 +18,15 @@ import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationI
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialModelInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ToolDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ToolsetInfoDto;
+import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapper;
 import io.modelcontextprotocol.spec.McpSchema;
-import io.opentelemetry.context.Context;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -55,7 +46,6 @@ public class DeploymentService {
     private final SchemaRouteExtractor schemaRouteExtractor;
     private final McpToolInvoker mcpToolInvoker;
     private final ObjectMapper objectMapper;
-    private final DeploymentProbeCollapser deploymentProbeCollapser;
 
     /**
      * Fetches all deployments from DIAL Core (models, applications, and toolsets)
@@ -89,34 +79,19 @@ public class DeploymentService {
     }
 
     /**
-     * Fetches a single deployment by ID alone, without the caller knowing its type.
+     * Fetches a single deployment by ID alone, without the caller knowing its type, via DIAL
+     * Core's unified {@code GET /v1/deployments/{id}} endpoint, which resolves the type itself.
      *
-     * <p>Probes all three DIAL Core deployment endpoints concurrently — deployment IDs are globally
-     * unique across models, applications and toolsets, so the type is derivable — and collapses the
-     * outcomes via {@link DeploymentProbeCollapser}: the winning payload is mapped exactly as the
-     * by-type path maps it, and a lookup that resolves nowhere raises one unified upstream failure.
+     * <p>An upstream 404 is translated to {@link EntityNotFoundException} so this endpoint alone
+     * returns a real {@code 404} instead of the generic {@code 502} the shared
+     * {@code DialCoreErrorMapper} produces for every other {@code DialCoreClient} consumer; any
+     * other status is rethrown unchanged and flows through the normal shared handler.
      */
     public DeploymentInfoDto getDeployment(String deploymentId) {
-        // Captured on the request thread: AuthorizationTokenHolder is a ThreadLocal and does not
-        // cross into the probe threads by itself.
-        final String token = AuthorizationTokenHolder.getToken();
-        final List<DeploymentProbe> probes;
-        try (ExecutorService executor = Context.taskWrapping(Executors.newVirtualThreadPerTaskExecutor())) {
-            final List<CompletableFuture<DeploymentProbe>> futures = List.of(
-                    probeAsync(DeploymentType.DIAL_MODEL, () -> dialCoreClient.getModel(deploymentId), token, executor),
-                    probeAsync(
-                            DeploymentType.DIAL_APPLICATION,
-                            () -> dialCoreClient.getApplication(deploymentId),
-                            token,
-                            executor),
-                    probeAsync(
-                            DeploymentType.DIAL_TOOLSET,
-                            () -> dialCoreClient.getToolset(deploymentId),
-                            token,
-                            executor));
-            probes = futures.stream().map(DeploymentService::awaitProbe).toList();
-        }
-        return toDeploymentInfoDto(deploymentProbeCollapser.collapse(deploymentId, probes));
+        DialCoreDeploymentDto deployment = getDeploymentByIdOrThrow(deploymentId);
+        DeploymentInfoDto dto = toDeploymentInfoDto(deployment);
+        dto.setInterfaces(deployment.getInterfaces());
+        return dto;
     }
 
     /**
@@ -133,66 +108,15 @@ public class DeploymentService {
         };
     }
 
-    private static CompletableFuture<DeploymentProbe> probeAsync(
-            DeploymentType type, Supplier<DialCoreDeploymentDto> fetch, String token, Executor executor) {
-        return CompletableFuture.supplyAsync(
-                TokenPropagationHelper.withToken(token, () -> probe(type, fetch)), executor);
-    }
-
-    private static DeploymentProbe probe(DeploymentType type, Supplier<DialCoreDeploymentDto> fetch) {
+    private DialCoreDeploymentDto getDeploymentByIdOrThrow(String deploymentId) {
         try {
-            return DeploymentProbe.completed(type, fetch.get());
+            return dialCoreClient.getDeploymentById(deploymentId);
         } catch (DialCoreClientException e) {
-            logProbeFailure(type, e.getStatusCode(), e);
-            return DeploymentProbe.failed(type, e);
-        } catch (RestClientException e) {
-            // DialCoreClient.withRetry translates only RestClientResponseException, so transport
-            // failures (connect/read timeout, connection reset) and message-conversion failures
-            // escape it raw. Recorded as an upstream failure rather than propagated: one unreachable
-            // endpoint must not discard a sibling probe's hit.
-            logProbeFailure(type, HttpStatus.BAD_GATEWAY, e);
-            return DeploymentProbe.failed(
-                    type,
-                    new DialCoreClientException(
-                            HttpStatus.BAD_GATEWAY, "Probe of " + type.getValue() + " failed: " + e.getMessage(), e));
+            if (e.getStatusCode() != null && e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                throw new EntityNotFoundException("Deployment not found: " + deploymentId);
+            }
+            throw e;
         }
-    }
-
-    /**
-     * A 404 is the expected outcome on two of three probe legs, so it stays at DEBUG; any other
-     * status is an anomaly worth seeing even when the lookup as a whole succeeds.
-     */
-    private static void logProbeFailure(DeploymentType type, HttpStatusCode status, RuntimeException cause) {
-        if (status != null && status.isSameCodeAs(HttpStatus.NOT_FOUND)) {
-            log.debug("Deployment lookup probe '{}' found nothing: {}", type.getValue(), cause.getMessage(), cause);
-        } else {
-            log.warn(
-                    "Deployment lookup probe '{}' failed with unexpected status {}: {}",
-                    type.getValue(),
-                    status,
-                    cause.getMessage(),
-                    cause);
-        }
-    }
-
-    private static DeploymentProbe awaitProbe(CompletableFuture<DeploymentProbe> future) {
-        try {
-            return future.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new DialCoreClientException(HttpStatus.BAD_GATEWAY, "Interrupted while looking up deployment", e);
-        } catch (ExecutionException e) {
-            throw asDialCoreClientException(e.getCause());
-        }
-    }
-
-    private static DialCoreClientException asDialCoreClientException(Throwable cause) {
-        if (cause instanceof DialCoreClientException dialCoreClientException) {
-            return dialCoreClientException;
-        }
-        final String detail = cause != null ? cause.getMessage() : "unknown cause";
-        log.warn("Deployment lookup probe failed unexpectedly: {}", detail, cause);
-        return new DialCoreClientException(HttpStatus.BAD_GATEWAY, "Deployment lookup failed: " + detail, cause);
     }
 
     /**

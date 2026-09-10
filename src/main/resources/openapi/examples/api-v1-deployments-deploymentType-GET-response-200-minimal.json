@@ -10,7 +10,6 @@
   "updatedAt": 1768856213216,
   "descriptionKeywords": ["Text Generation", "Continue Supported", "Image Recognition"],
   "inputAttachmentTypes": ["*/*"],
-  "interfaces": ["chat", "openaiChatCompletions", "openaiResponses"],
   "features": {
     "rate": true,
     "tokenize": true,

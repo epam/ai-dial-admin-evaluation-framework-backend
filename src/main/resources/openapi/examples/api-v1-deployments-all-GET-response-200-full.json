@@ -10,7 +10,6 @@
   "updatedAt": 1769194293867,
   "descriptionKeywords": [],
   "inputAttachmentTypes": null,
-  "interfaces": ["chat", "custom_ui"],
   "features": {
     "rate": false,
     "tokenize": false,

@@ -300,8 +300,6 @@ At startup the application validates that the meta and analytics datasources do 
 
 ### 5.1 DIAL Core Client
 
-> TODO: state the minimum DIAL Core version required (e.g. for `GET /v1/deployments/{id}`) once confirmed.
-
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `dial.components.core.base-url` | `DIAL_CORE_URL` | `http://localhost:8085` | No | - | Base URL for DIAL Core API. |

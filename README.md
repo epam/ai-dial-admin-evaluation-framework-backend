@@ -23,6 +23,7 @@ model evaluations, including test suite authoring, execution tracking, and metri
 - **Database**: PostgreSQL with Flyway migrations — JDBC-based (no JPA), queries via the typed jOOQ DSL
 - **Dual Datasource**: Separate **meta** (domain) and **analytics** datasources/schemas
 - **DIAL Core Integration**: Model/deployment discovery, deployment invocation, and file storage
+  <!-- TODO: state the minimum DIAL Core version required (e.g. for GET /v1/deployments/{id}) once confirmed -->
 - **MCP**: Model Context Protocol tool invocation via the DIAL Core MCP proxy
 - **API Documentation**: OpenAPI/Swagger UI
 - **Health Checks**: Custom health indicators for database and dependencies (liveness/readiness probes)

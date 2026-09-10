@@ -70,6 +70,11 @@ public class DialCoreClient {
                 APPLICATIONS_PATH + "/" + id, () -> get(APPLICATIONS_PATH + "/" + id, DialCoreApplicationDto.class));
     }
 
+    public DialCoreDeploymentDto getDeploymentById(String id) {
+        String path = DEPLOYMENTS_PATH + "/" + id;
+        return withRetry(path, () -> get(path, DialCoreDeploymentDto.class));
+    }
+
     public List<DialCoreDeploymentDto> getDeployments(String interfaceType) {
         String path;
         if (interfaceType != null) {

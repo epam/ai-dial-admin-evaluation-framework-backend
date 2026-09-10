@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteResponseDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreSchemaRouteUpstreamDto;
 import com.epam.aidial.evaluation.client.dialcore.dto.DialCoreToolsetDto;
+import com.epam.aidial.evaluation.client.dialcore.dto.InterfaceType;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DialApplicationInfoDto;
@@ -338,5 +339,48 @@ class DeploymentMapperTest {
         assertThat(result.getCapabilities()).isNull();
         assertThat(result.getLimits()).isNull();
         assertThat(result.getPricing()).isNull();
+    }
+
+    @Test
+    @DisplayName("toDeploymentInfoShortDto maps interfaces for every subtype")
+    void toDeploymentInfoShortDtoMapsInterfaces() {
+        DialModelInfoDto model = (DialModelInfoDto) mapper.toDeploymentInfoShortDto(DialCoreModelDto.builder()
+                .id("gpt-5-mini")
+                .interfaces(List.of(InterfaceType.CHAT))
+                .build());
+        DialApplicationInfoDto application =
+                (DialApplicationInfoDto) mapper.toDeploymentInfoShortDto(DialCoreApplicationDto.builder()
+                        .id("app")
+                        .interfaces(List.of(InterfaceType.CHAT, InterfaceType.MCP))
+                        .build());
+        ToolsetInfoDto toolset = (ToolsetInfoDto) mapper.toDeploymentInfoShortDto(DialCoreToolsetDto.builder()
+                .id("toolset")
+                .interfaces(List.of(InterfaceType.MCP))
+                .build());
+
+        assertThat(model.getInterfaces()).containsExactly(InterfaceType.CHAT);
+        assertThat(application.getInterfaces()).containsExactly(InterfaceType.CHAT, InterfaceType.MCP);
+        assertThat(toolset.getInterfaces()).containsExactly(InterfaceType.MCP);
+    }
+
+    @Test
+    @DisplayName("toDialModelInfoDto/toDialApplicationInfoDto/toToolsetInfoDto leave interfaces null")
+    void byTypeAndByIdMappersIgnoreInterfaces() {
+        DialModelInfoDto model = mapper.toDialModelInfoDto(DialCoreModelDto.builder()
+                .id("gpt-5-mini")
+                .interfaces(List.of(InterfaceType.CHAT))
+                .build());
+        DialApplicationInfoDto application = mapper.toDialApplicationInfoDto(DialCoreApplicationDto.builder()
+                .id("app")
+                .interfaces(List.of(InterfaceType.CHAT))
+                .build());
+        ToolsetInfoDto toolset = mapper.toToolsetInfoDto(DialCoreToolsetDto.builder()
+                .id("toolset")
+                .interfaces(List.of(InterfaceType.MCP))
+                .build());
+
+        assertThat(model.getInterfaces()).isNull();
+        assertThat(application.getInterfaces()).isNull();
+        assertThat(toolset.getInterfaces()).isNull();
     }
 }

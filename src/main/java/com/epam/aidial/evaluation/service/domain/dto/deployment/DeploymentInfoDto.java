@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto.deployment;
 
+import com.epam.aidial.evaluation.client.dialcore.dto.InterfaceType;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -58,8 +59,8 @@ public abstract class DeploymentInfoDto {
     @Schema(description = "Reference to use for opening the application")
     private String reference;
 
-    @Schema(description = "Interfaces supported by the deployment")
-    private List<String> interfaces;
+    @Schema(description = "Invocation APIs supported by this deployment")
+    private List<InterfaceType> interfaces;
 
     @Schema(description = "Features supported by the deployment")
     private Map<String, Object> features;

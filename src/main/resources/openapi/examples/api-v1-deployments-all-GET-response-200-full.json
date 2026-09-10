@@ -3,7 +3,7 @@
   "deploymentId": "applications/public/Quick App with RAG__0.0.1",
   "displayName": "Quick App with RAG",
   "version": "0.0.1",
-  "description": "Resolved by ID alone: the applications probe answered, the models and toolsets probes returned 404.",
+  "description": "Resolved by ID alone via DIAL Core's unified deployment-lookup endpoint, which identified the type as an application.",
   "owner": "organization-owner",
   "reference": "applications/public/Quick App with RAG__0.0.1",
   "createdAt": 1769192823293,
@@ -29,6 +29,7 @@
   },
   "applicationTypeSchemaId": "https://dial-quick-apps.example.com/",
   "applicationProperties": {},
+  "interfaces": ["chat"],
   "routes": {
     "v1": {
       "name": "v1",

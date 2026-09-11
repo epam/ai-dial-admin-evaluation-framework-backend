@@ -4,7 +4,7 @@
 
 The shared deployment execution engine SHALL perform resolved request model validation after request-body resolution and before serialization for invocation. On failure it SHALL skip the HTTP call, persist an `ERROR` result for the current request/turn with a `REQUEST_BODY_VALIDATION_ERROR` response envelope, preserve the resolved request body in the result for diagnostics, and apply the existing fail-fast request-chain semantics. Other test cases SHALL continue independently.
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Invalid model produces an error row without invocation
 
@@ -32,4 +32,4 @@ Status: **Planned**
 
 ## Implementation notes
 
-Planned. `TurnLoopExecutor` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.job`) calls the shared `RequestModelValidator` after `RequestResolver.resolveForRun` and before URL construction/serialization, catching `RequestBodyValidationException` and emitting the new `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` outcome. The `createRun` guard referenced above is guard #3 in `com.epam.aidial.evaluation.service.domain.TestSuiteRunService` (see `docs/patterns/suite-validity-and-run-guards.md`).
+Implemented. `TurnLoopExecutor` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.job`) calls the shared `RequestModelValidator` after `RequestResolver.resolveForRun` and before URL construction/serialization, catching `RequestBodyValidationException` and emitting the new `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` outcome. The `createRun` guard referenced above is guard #3 in `com.epam.aidial.evaluation.service.domain.TestSuiteRunService` (see `docs/patterns/suite-validity-and-run-guards.md`).

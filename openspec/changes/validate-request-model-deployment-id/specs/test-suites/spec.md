@@ -62,4 +62,4 @@ Status: **Implemented**
 
 ## Implementation notes
 
-Planned. Static rule lives in `com.epam.aidial.evaluation.service.domain.SuiteValidationService`, which replaces its Anthropic-only literal check with the shared `RequestModelValidator` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service`) and the canonical-path constants that `DialCoreUrlBuilder` also consumes. The new warning code `REQUEST_BODY_VALIDATION_ERROR` is added to `ValidationWarningCode`.
+Implemented. Static rule lives in `com.epam.aidial.evaluation.service.domain.SuiteValidationService`, which replaces its Anthropic-only literal check with the shared `RequestModelValidator` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service`) and the canonical-path constants that `DialCoreUrlBuilder` also consumes. The new warning code `REQUEST_BODY_VALIDATION_ERROR` is added to `ValidationWarningCode`.

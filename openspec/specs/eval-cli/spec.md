@@ -150,6 +150,34 @@ The CLI SHALL authenticate its calls to the source EF and to the target environm
 - **WHEN** the CLI invokes the configured target deployment during the `run` command
 - **THEN** the invocation includes an `Api-Key: <dial.components.core.api-key>` header
 
+### Requirement: CLI execution validates against the effective target deployment
+
+The CLI `run` and `evaluate` commands SHALL apply the shared resolved request model validation using the effective target deployment ID. When `--deployment-id` is supplied, that override SHALL be the expected `model`; otherwise the fetched suite's recorded deployment ID SHALL be expected. A validation failure SHALL produce the normal execution-result row with `ERROR` status and a `REQUEST_BODY_VALIDATION_ERROR` response envelope without invoking the target for that request.
+
+The CLI's `SuiteContractValidator` SHALL retain its structural preflight scope and SHALL NOT duplicate static request-model validation. The shared execution-time check is authoritative because it sees both the resolved body and the effective target override.
+
+**NOTE**: this behavior is inherited from the shared `evaluation-runner-core` execution engine rather than implemented in CLI-local code. The only CLI-local contribution is placing the effective target (the `--deployment-id` override, else the fetched suite's recorded deployment) into `EvaluationContext.snapshotDeploymentRef`; the validation, the `ERROR` row, and the `REQUEST_BODY_VALIDATION_ERROR` envelope all come from the shared engine, so CLI-side coverage is a target-plumbing assertion plus the engine's own tests.
+
+Status: **Implemented**
+
+#### Scenario: Override deployment requires a matching resolved model
+
+- **WHEN** `--deployment-id target-model` overrides a fetched suite and a canonical fixed-path request resolves `model` to a different value
+- **THEN** the CLI SHALL write an `ERROR` result containing `REQUEST_BODY_VALIDATION_ERROR`
+- **AND** it SHALL not invoke the target for that request
+
+#### Scenario: Override deployment matches
+
+- **WHEN** `--deployment-id target-model` is effective and the resolved body contains `"model": "target-model"`
+- **THEN** the CLI SHALL invoke the target normally
+
+#### Scenario: Recorded deployment is used without an override
+
+- **WHEN** no override is supplied for a canonical fixed-path request
+- **THEN** the resolved `model` SHALL be validated against the fetched suite's recorded deployment ID
+
 ## Implementation notes
 
 The `eval-cli` Gradle subproject consumes `evaluation-runner-core`'s `TestCaseRunnerFactory`/`TestCaseRunner` batch execution path via `RunOrchestrationService`, with `CloneService`/`FetchService`/`ImportService` implementing the clone/fetch/import steps and `EvaluateCommand` chaining clone → fetch → run → import for each configured suite. `CsvResultBatchWriter` implements `evaluation-runner-core`'s `ResultBatchWriter`, writing the CSV export contract described above. Shared `evaluation-runner-core` DTOs (plus one deliberate local subset, `TestSuiteUpdateResultDto`, under `client/source/dto`) are used for the source EF's existing `test-suite-clone`, `test-cases`, and `test-suite-runs` (`runs/import`) REST endpoints. See `design.md` for the full technical approach.
+
+Resolved request-model validation for the two fixed-path model-selecting APIs is inherited from `evaluation-runner-core` (`RequestModelValidator`, applied by `TurnLoopExecutor`); the CLI's only contribution is `EvaluationContextFactory` placing the effective target — the `--deployment-id` override, else the fetched suite's recorded `deploymentRef` resolved by `RunOrchestrationService` — into `EvaluationContext.snapshotDeploymentRef`. `SuiteContractValidator` is unchanged.

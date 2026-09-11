@@ -4,7 +4,7 @@
 
 Before executing a request whose resolved URL is exactly `/openai/v1/responses` or `/anthropic/v1/messages`, the system SHALL validate the resolved JSON body. Its `model` field MUST be a string and MUST exactly equal the effective deployment ID selected for that execution. This runtime rule SHALL apply identically whether the template was authored as plain `content` or `jsonataContent`; it SHALL not apply to non-canonical URLs.
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Resolved model matches
 
@@ -30,7 +30,7 @@ Status: **Planned**
 
 A resolved request model failure SHALL be represented by the execution error code `REQUEST_BODY_VALIDATION_ERROR`, distinct from JSONata evaluation failures and general request-resolution failures. The diagnostic message SHALL identify the invalid `model` condition and expected deployment ID without sending the request.
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Validation error remains distinct from evaluation error
 
@@ -45,4 +45,4 @@ Status: **Planned**
 
 ## Implementation notes
 
-Planned. `RequestModelValidator` and `RequestBodyValidationException` in `evaluation-runner-core` (`com.epam.aidial.evaluation.runner.service`), sharing canonical-path constants with `DialCoreUrlBuilder`. Consumers: `TurnLoopExecutor` (runs and CLI), `com.epam.aidial.evaluation.service.domain.TryItOutService`, and `SuiteValidationService` for the static plain-`content` variant. Error codes: `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` and the matching `ValidationWarningCode`.
+Implemented. `RequestModelValidator` and `RequestBodyValidationException` in `evaluation-runner-core` (`com.epam.aidial.evaluation.runner.service`), sharing canonical-path constants with `DialCoreUrlBuilder`. Consumers: `TurnLoopExecutor` (runs and CLI), `com.epam.aidial.evaluation.service.domain.TryItOutService`, and `SuiteValidationService` for the static plain-`content` variant. Error codes: `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` and the matching `ValidationWarningCode`.

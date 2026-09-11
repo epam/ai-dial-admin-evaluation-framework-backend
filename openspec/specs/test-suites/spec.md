@@ -802,7 +802,9 @@ Status: **Implemented**
 - **THEN** each item SHALL carry `additionalRequests` and `requestName` consistently with the other suite configuration fields
 
 ### Requirement: Per-request soft validation with indexed warning paths
-Suite-level soft validation (`isValid` + `validationWarnings`) SHALL run the existing per-request checks — required `endpointRef` / `urlTemplate`, template variable extraction, binding validation against the dataset's `testCaseSchema`, file-reference ownership, content-type/multipart consistency, blacklisted headers, and (for requests whose `endpointRef.relativeUrlPattern` is `/anthropic/v1/messages`) literal `model`-field consistency against the suite's `deploymentRef.id` — for **every** request in the chain, and SHALL aggregate all resulting warnings into the single suite-level `validationWarnings` list. A suite SHALL be `isValid = false` when any request in the chain produces a blocking warning.
+Suite-level soft validation (`isValid` + `validationWarnings`) SHALL run the existing per-request checks — required `endpointRef` / `urlTemplate`, template variable extraction, binding validation against the dataset's `testCaseSchema`, file-reference ownership, content-type/multipart consistency, blacklisted headers, and (for requests whose `endpointRef.relativeUrlPattern` is exactly `/openai/v1/responses` or `/anthropic/v1/messages`) literal `model`-field consistency against the suite's `deploymentRef.id` — for **every** request in the chain, and SHALL aggregate all resulting warnings into the single suite-level `validationWarnings` list. A suite SHALL be `isValid = false` when any request in the chain produces a warning that affects validity.
+
+For a request whose `endpointRef.relativeUrlPattern` is exactly `/openai/v1/responses` or `/anthropic/v1/messages` and whose JSON body is authored as plain `content`, fixed-path request-model validation SHALL require `content.model` to be a string literal, contain no substring matching the `${{...}}` placeholder grammar, and exactly equal the suite's `deploymentRef.id`. A missing, null, non-string, placeholder-containing, or mismatched value SHALL add a `REQUEST_BODY_VALIDATION_ERROR` warning and make the suite invalid. This remains soft validation: create and update SHALL persist the invalid suite rather than reject the operation. A `jsonataContent` body SHALL skip this static model check while retaining the existing JSONata syntax validation.
 
 Warning paths for the suite's own request SHALL remain byte-identical to today's values (e.g. `$.urlTemplate`, `$.requestTemplate.body`, `$.requestTemplate.headers`, `$.endpointRef`, `$.inputBindings`) so existing clients and stored `validation_warnings` blobs stay valid. Warnings for additional requests SHALL carry an indexed path rooted at the list element — `$.additionalRequests[i].requestTemplate.urlTemplate`, `$.additionalRequests[i].requestTemplate.body`, `$.additionalRequests[i].requestTemplate.headers`, `$.additionalRequests[i].endpointRef`, `$.additionalRequests[i].inputBindings` — where `i` is the 0-based index within `additionalRequests`. The configured maximum-warnings cap SHALL apply to the aggregated chain-wide list.
 
@@ -831,15 +833,33 @@ Status: **Implemented**
 
 #### Scenario: Anthropic Messages model field mismatch produces a warning
 - **WHEN** a request's `endpointRef.relativeUrlPattern` is `/anthropic/v1/messages` and its JSON body is a literal `content` template whose `model` field is a `String` that does not equal the suite's `deploymentRef.id`
-- **THEN** a non-blocking warning SHALL be added at the request's body path (`$.requestTemplate.body` for the suite's own request, or `$.additionalRequests[i].requestTemplate.body` for an additional request), and the suite SHALL be `isValid = false`
+- **THEN** a warning SHALL be added at the request's body path (`$.requestTemplate.body` for the suite's own request, or `$.additionalRequests[i].requestTemplate.body` for an additional request), and the suite SHALL be `isValid = false`
+- **AND** the create/update operation SHALL still persist the suite rather than be rejected
+
+#### Scenario: Matching literal model is valid
+- **WHEN** a canonical fixed-path request has plain JSON `content.model` equal to `deploymentRef.id`
+- **THEN** static model validation SHALL add no warning
+
+#### Scenario: Invalid plain model shapes make the suite invalid
+- **WHEN** a canonical fixed-path request's plain JSON `content.model` is missing, JSON null, non-string, contains a substring matching the `${{...}}` placeholder grammar, or differs from `deploymentRef.id`
+- **THEN** a `REQUEST_BODY_VALIDATION_ERROR` warning SHALL be added at that request's body path (`$.requestTemplate.body` for the suite's own request, or `$.additionalRequests[i].requestTemplate.body` for an additional request) and the suite SHALL be `isValid=false`
+- **AND** the create/update operation SHALL still persist the suite rather than be rejected
 
 #### Scenario: Anthropic Messages model field that cannot be statically checked is skipped
-- **WHEN** a request's `endpointRef.relativeUrlPattern` is `/anthropic/v1/messages`, and either its body uses `jsonataContent` instead of a literal `content` map, or its literal `content.model` value is a `${{...}}` placeholder, or the `model` key is absent from `content`
-- **THEN** no warning SHALL be added for this check — the value cannot be determined without executing the template, so the check degrades to a no-op rather than a false positive
+- **WHEN** a canonical fixed-path request's body uses `jsonataContent` instead of a plain `content` map (JSONata model validation is deferred to run time)
+- **THEN** static model validation SHALL add no model warning regardless of the expression's eventual `model` value
+- **AND** the existing write-time JSONata syntax validation SHALL still apply
+- **BUT** a missing, null, non-string, or `${{...}}`-placeholder `model` in a plain `content` body SHALL NOT be skipped — it produces the `REQUEST_BODY_VALIDATION_ERROR` warning described above, superseding the earlier no-op degradation
 
 #### Scenario: A non-Anthropic request's literal model-like field is not checked
-- **WHEN** a request's `endpointRef.relativeUrlPattern` is anything other than `/anthropic/v1/messages` (e.g. `/chat/completions`) and its literal body happens to contain a `model` field whose value differs from `deploymentRef.id`
-- **THEN** no warning SHALL be added for this check — the model/deploymentRef consistency check is scoped to `/anthropic/v1/messages` requests only
+- **WHEN** a request's `endpointRef.relativeUrlPattern` is neither exactly `/openai/v1/responses` nor exactly `/anthropic/v1/messages` (e.g. `/chat/completions`, a subresource of the Responses path, or a case variant) and its literal body happens to contain a `model` field differing from `deploymentRef.id`
+- **THEN** no warning SHALL be added for this check — exact endpoint matching limits the rule to the two canonical model-selecting paths
+- **AND** `/openai/v1/responses` SHALL receive the same check as `/anthropic/v1/messages`, superseding the earlier Anthropic-only scoping
+
+#### Scenario: Additional request uses indexed warning path
+- **WHEN** `additionalRequests[i]` targets a canonical fixed-path API and has an invalid plain `model`
+- **THEN** its warning path SHALL be `$.additionalRequests[i].requestTemplate.body`
+- **AND** validation of other requests in the chain SHALL remain independent
 
 ## Implementation Notes
 - REST API: `com.epam.aidial.evaluation.web.controller.TestSuiteController`
@@ -860,6 +880,7 @@ Status: **Implemented**
 - Now captured into `SuiteSnapshotDto.overallScoreThreshold` by `SuiteSnapshotBuilder` at run-start (see `suite-run-snapshot`) and used to derive each row's `passed` (see `eval-summary-scoring`). The suite's *live* threshold remains editable independently of any already-started run.
 - `testCaseOverallScore` (per-suite): DTO field `TestSuiteRequestDto.testCaseOverallScore` (`OverallScoreDefinition`, `@Valid`, no `example`/response-DTO split noted beyond the discriminated-type shape shared with `overallScore`), per the JSONB-as-object convention; conversion via `JsonbMapper.mapTestCaseOverallScore(OverallScoreDefinition)` (write) / `mapTestCaseOverallScore(String)` (read). Mapping in `TestSuiteMapper` `toEntity` / `toDto` / `toRequestDto` / `toCloneEntity` (raw JSONB string copied verbatim, same as `overallScore`). Model field: `TestSuite.testCaseOverallScore` (`String`, raw JSON); record mapping in `TestSuiteRecordMapper`. New column: `V1.31__AddTestCaseOverallScoreToTestSuites.sql` (`test_case_overall_score JSONB`), then `./gradlew generateJooq`. Not referenced anywhere in `SuiteValidationService` — exempt from `isValid`/`validationWarnings` exactly like `overallScore`.
 - Now captured into `SuiteSnapshotDto.testCaseOverallScore` by `SuiteSnapshotBuilder` at run-start (see `suite-run-snapshot`); `TestSuiteEvaluationJob.buildMetricEvaluationContext` resolves the fallback once, per run, before Phase 2 starts: `snapshot.getTestCaseOverallScore() != null ? ... : snapshot.getOverallScore()`. Phase 3's `MetricScoreComputationContext` always uses `snapshot.getOverallScore()` directly — the fallback is a Phase-2-only concern (see `eval-summary-scoring`).
+- Fixed-path request-model validation: `SuiteValidationService.validateFixedPathRequestModel` delegates to `RequestModelValidator` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service`) for requests whose `endpointRef.relativeUrlPattern` is exactly `ModelSelectingEndpointPaths.OPENAI_RESPONSES` or `ANTHROPIC_MESSAGES` and whose body is a plain `JsonRequestBodyDto.content`; failures become `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR` warnings. `jsonataContent` bodies are deferred to the run-time check in `TurnLoopExecutor` (see `request-template`).
 
 ## Open Questions / TODO
 - Add explicit validation rules for `name`/`description` in DTOs (current behavior depends on DTO constraints).

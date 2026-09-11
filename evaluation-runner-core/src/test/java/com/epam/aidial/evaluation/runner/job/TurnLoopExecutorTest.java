@@ -1,9 +1,13 @@
 package com.epam.aidial.evaluation.runner.job;
 
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.ANTHROPIC_MESSAGES;
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.OPENAI_RESPONSES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
@@ -28,6 +32,7 @@ import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
 import com.epam.aidial.evaluation.runner.service.JsonataSourcePreprocessor;
 import com.epam.aidial.evaluation.runner.service.RequestBodyEvaluator;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
+import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnTypeReconciler;
@@ -118,6 +123,7 @@ class TurnLoopExecutorTest {
         executor = new TurnLoopExecutor(
                 requestResolver,
                 urlBuilder,
+                new RequestModelValidator(),
                 serializerRegistry,
                 responseColumnExtractor,
                 evaluationRunProperties,
@@ -657,5 +663,266 @@ class TurnLoopExecutorTest {
 
         assertThat(result.aborted()).isTrue();
         assertThat(result.rows()).hasSize(2);
+    }
+
+    private RequestTemplateDto fixedPathJsonBodyTemplate(String urlTemplate, Map<String, Object> content) {
+        return RequestTemplateDto.builder()
+                .urlTemplate(urlTemplate)
+                .body(JsonRequestBodyDto.builder().content(content).build())
+                .build();
+    }
+
+    private RequestTemplateDto fixedPathJsonataBodyTemplate(String urlTemplate, String jsonataContent) {
+        return RequestTemplateDto.builder()
+                .urlTemplate(urlTemplate)
+                .body(JsonRequestBodyDto.builder()
+                        .jsonataContent(jsonataContent)
+                        .build())
+                .build();
+    }
+
+    @Test
+    @DisplayName("Anthropic Messages: a mismatched resolved model produces a validation ERROR row and never invokes")
+    void anthropicMismatchedResolvedModel_producesValidationErrorRowWithoutInvocation() {
+        // No stubCommonInfra(): validation runs before url building, header assembly and serialization.
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("model-mismatch")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(fixedPathJsonBodyTemplate(
+                        ANTHROPIC_MESSAGES, Map.of("model", "other-deployment", "messages", List.of())))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-model-1",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(1);
+        TestCaseRunResult row = results.getFirst();
+        assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(row.getResponseBody())
+                .contains("REQUEST_BODY_VALIDATION_ERROR")
+                .contains("other-deployment")
+                .contains("gpt-4");
+        assertThat(row.getLogDetails()).contains("Request body validation failed");
+        assertThat(row.getRequestBody()).contains("other-deployment");
+        verify(deploymentTurnInvoker, never()).invoke(any(), any(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("OpenAI Responses: a resolved model equal to the deployment ID is invoked normally")
+    void openAiResponsesMatchingResolvedModel_invokesNormally() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("model-match")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(
+                        fixedPathJsonBodyTemplate(OPENAI_RESPONSES, Map.of("model", "gpt-4", "input", "hi")))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"output\":[]}", 0, null));
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-model-2",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        verify(deploymentTurnInvoker).invoke(any(), any(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("A JSONata body that evaluates to a mismatched model fails validation, not evaluation")
+    void jsonataResolvedModelMismatch_producesValidationErrorNotEvaluationError() {
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("jsonata-model-mismatch")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(fixedPathJsonataBodyTemplate(
+                        OPENAI_RESPONSES, "{\"model\": \"other-deployment\", \"input\": \"hi\"}"))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-model-3",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(1);
+        TestCaseRunResult row = results.getFirst();
+        assertThat(row.getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(row.getResponseBody())
+                .contains("REQUEST_BODY_VALIDATION_ERROR")
+                .doesNotContain("REQUEST_BODY_EVALUATION_ERROR");
+        verify(deploymentTurnInvoker, never()).invoke(any(), any(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("A non-canonical URL is not required to carry a matching model")
+    void nonCanonicalUrl_bypassesResolvedModelValidation() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("non-canonical")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(jsonBodyTemplate(Map.of("model", "some-other-value", "messages", "hi")))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"choices\":[]}", 0, null));
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-model-4",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+    }
+
+    @Test
+    @DisplayName("Validation failure aborts the turn loop: later turns of the request never execute")
+    void resolvedModelValidationFailure_abortsRemainingTurns() {
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("model-mismatch-multi-turn")
+                .testCaseData(null)
+                .multiTurnData("[{\"prompt\":\"q0\"},{\"prompt\":\"q1\"},{\"prompt\":\"q2\"}]")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotRequestTemplate(fixedPathJsonBodyTemplate(
+                        ANTHROPIC_MESSAGES,
+                        Map.of("model", "other-deployment", "messages", List.of(Map.of("content", "${{prompt}}")))))
+                .snapshotInputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .snapshotTestCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .perTurn(true)
+                        .build()))
+                .build();
+
+        RequestExecutionResult result = executor.execute(
+                input,
+                context,
+                0,
+                singleRequestSpec(context, List.of()),
+                Map.of(),
+                "trace-model-5",
+                FIXED_CLOCK.millis());
+
+        assertThat(result.aborted()).isTrue();
+        assertThat(result.rows()).hasSize(1);
+        assertThat(result.rows().getFirst().getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(result.rows().getFirst().getResponseBody()).contains("REQUEST_BODY_VALIDATION_ERROR");
+        verify(deploymentTurnInvoker, never()).invoke(any(), any(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("CLI target override: a resolved model matching the source suite but not the override fails")
+    void cliDeploymentOverrideMismatch_producesValidationErrorWithoutInvocation() {
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("cli-override-mismatch")
+                .testCaseData("{}")
+                .build();
+        // The CLI's --deployment-id override is what EvaluationContextFactory puts into
+        // snapshotDeploymentRef, so the body's authored "gpt-4" no longer selects the effective target.
+        EvaluationContext context = baseContextBuilder()
+                .snapshotDeploymentRef(DeploymentReferenceDto.builder()
+                        .id("cli-target")
+                        .name("CLI Target")
+                        .build())
+                .snapshotRequestTemplate(
+                        fixedPathJsonBodyTemplate(ANTHROPIC_MESSAGES, Map.of("model", "gpt-4", "messages", List.of())))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-model-6",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().getExecutionStatus()).isEqualTo(ExecutionStatus.ERROR);
+        assertThat(results.getFirst().getResponseBody())
+                .contains("REQUEST_BODY_VALIDATION_ERROR")
+                .contains("cli-target");
+        verify(deploymentTurnInvoker, never()).invoke(any(), any(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("CLI target override: a resolved model equal to the override is invoked normally")
+    void cliDeploymentOverrideMatch_invokesNormally() {
+        stubCommonInfra();
+        TestCaseRunInput input = baseInputBuilder()
+                .testCaseName("cli-override-match")
+                .testCaseData("{}")
+                .build();
+        EvaluationContext context = baseContextBuilder()
+                .snapshotDeploymentRef(DeploymentReferenceDto.builder()
+                        .id("cli-target")
+                        .name("CLI Target")
+                        .build())
+                .snapshotRequestTemplate(fixedPathJsonBodyTemplate(
+                        ANTHROPIC_MESSAGES, Map.of("model", "cli-target", "messages", List.of())))
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"content\":[]}", 0, null));
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-model-7",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        verify(deploymentTurnInvoker).invoke(any(), any(), anyString(), any(), any(), any());
     }
 }

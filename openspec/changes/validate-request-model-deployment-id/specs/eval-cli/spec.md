@@ -8,7 +8,7 @@ The CLI's `SuiteContractValidator` SHALL retain its structural preflight scope a
 
 **NOTE**: this behavior is inherited from the shared `evaluation-runner-core` execution engine rather than implemented in CLI-local code. The only CLI-local contribution is placing the effective target (the `--deployment-id` override, else the fetched suite's recorded deployment) into `EvaluationContext.snapshotDeploymentRef`; the validation, the `ERROR` row, and the `REQUEST_BODY_VALIDATION_ERROR` envelope all come from the shared engine, so CLI-side coverage is a target-plumbing assertion plus the engine's own tests.
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Override deployment requires a matching resolved model
 
@@ -28,4 +28,4 @@ Status: **Planned**
 
 ## Implementation notes
 
-Planned. Target selection: `com.epam.aidial.evaluation.cli.service.EvaluationContextFactory` (sets `snapshotDeploymentRef` from `--deployment-id` or the fetched suite). Enforcement is inherited from `evaluation-runner-core`: `RequestModelValidator` + `RequestBodyValidationException` in `com.epam.aidial.evaluation.runner.service`, applied by `TurnLoopExecutor`. `SuiteContractValidator` is unchanged.
+Implemented. Target selection: `com.epam.aidial.evaluation.cli.service.EvaluationContextFactory` (sets `snapshotDeploymentRef` from `--deployment-id` or the fetched suite). Enforcement is inherited from `evaluation-runner-core`: `RequestModelValidator` + `RequestBodyValidationException` in `com.epam.aidial.evaluation.runner.service`, applied by `TurnLoopExecutor`. `SuiteContractValidator` is unchanged.

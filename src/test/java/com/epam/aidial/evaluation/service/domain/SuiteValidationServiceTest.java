@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.ANTHROPIC_MESSAGES;
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.OPENAI_RESPONSES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -25,9 +27,11 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,6 +40,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpMethod;
@@ -71,7 +77,8 @@ class SuiteValidationServiceTest {
                 bindingValidator,
                 new McpArgumentValidator(
                         templateVariableExtractor, new JsonSchemaPropertyExtractor(new ObjectMapper())),
-                jsonbMapper);
+                jsonbMapper,
+                new RequestModelValidator());
         lenient().when(evaluationRunProperties.getExecution()).thenReturn(execution);
         lenient().when(execution.getHeaderBlacklist()).thenReturn(List.of());
     }
@@ -612,15 +619,16 @@ class SuiteValidationServiceTest {
     }
 
     @Nested
-    @DisplayName("Anthropic Messages model/deploymentRef consistency")
-    class AnthropicModelDeploymentRefConsistency {
+    @DisplayName("Fixed-path model-selecting API request-model validation")
+    class FixedPathRequestModelValidation {
 
         private static final UUID SUITE_ID = UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
 
-        @Test
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
         @DisplayName("Literal model matching deploymentRef.id produces no warning")
-        void modelMatchesDeploymentRef_noWarning() {
-            TestSuiteRequestDto dto = buildMessagesSuite("claude-3-5-sonnet-v2", "claude-3-5-sonnet-v2", null);
+        void modelMatchesDeploymentRef_noWarning(String relativeUrl) {
+            TestSuiteRequestDto dto = buildFixedPathSuite(relativeUrl, "gpt-4o", Map.of("model", "gpt-4o"), null);
 
             ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
 
@@ -628,19 +636,117 @@ class SuiteValidationServiceTest {
             assertThat(result.getWarnings()).isEmpty();
         }
 
-        @Test
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
         @DisplayName("Mismatched literal model on request #0 produces a warning at $.requestTemplate.body")
-        void modelMismatchOnRequestZero_warns() {
-            TestSuiteRequestDto dto = buildMessagesSuite("claude-3-5-sonnet-v2", "claude-3-opus", null);
+        void modelMismatchOnRequestZero_warns(String relativeUrl) {
+            TestSuiteRequestDto dto =
+                    buildFixedPathSuite(relativeUrl, "claude-3-5-sonnet-v2", Map.of("model", "claude-3-opus"), null);
 
             ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
 
             assertThat(result.isValid()).isFalse();
             assertThat(result.getWarnings())
-                    .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR
                             && "$.requestTemplate.body".equals(w.getPath())
+                            && "model".equals(w.getFieldName())
                             && w.getMessage().contains("claude-3-opus")
                             && w.getMessage().contains("claude-3-5-sonnet-v2"));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
+        @DisplayName("Missing model key produces a REQUEST_BODY_VALIDATION_ERROR warning")
+        void modelMissing_warns(String relativeUrl) {
+            TestSuiteRequestDto dto = buildFixedPathSuite(relativeUrl, "gpt-4o", Map.of("input", "hi"), null);
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR
+                            && "$.requestTemplate.body".equals(w.getPath()));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
+        @DisplayName("JSON null model produces a REQUEST_BODY_VALIDATION_ERROR warning")
+        void modelNull_warns(String relativeUrl) {
+            Map<String, Object> content = new HashMap<>();
+            content.put("model", null);
+            TestSuiteRequestDto dto = buildFixedPathSuite(relativeUrl, "gpt-4o", content, null);
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR
+                            && "$.requestTemplate.body".equals(w.getPath()));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
+        @DisplayName("Non-string model produces a REQUEST_BODY_VALIDATION_ERROR warning")
+        void modelNonString_warns(String relativeUrl) {
+            TestSuiteRequestDto dto = buildFixedPathSuite(relativeUrl, "gpt-4o", Map.of("model", 42), null);
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR
+                            && "$.requestTemplate.body".equals(w.getPath()));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
+        @DisplayName("Model containing an embedded ${{...}} placeholder produces a warning")
+        void modelWithEmbeddedPlaceholder_warns(String relativeUrl) {
+            TestSuiteRequestDto dto =
+                    buildFixedPathSuite(relativeUrl, "gpt-4o", Map.of("model", "prefix-${{model}}"), null);
+            dto.setInputBindings(List.of(InputBindingDto.builder()
+                    .templateVariable("model")
+                    .constantValue("gpt-4o")
+                    .build()));
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isFalse();
+            assertThat(result.getWarnings())
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR
+                            && "$.requestTemplate.body".equals(w.getPath()));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
+        @DisplayName("jsonataContent body is deferred to run time and produces no model warning")
+        void jsonataContentBody_deferred(String relativeUrl) {
+            TestSuiteRequestDto dto = buildFixedPathSuite(
+                    relativeUrl, "claude-3-5-sonnet-v2", null, "{ \"model\": \"claude-3-opus\", \"messages\": [] }");
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isTrue();
+            assertThat(result.getWarnings()).isEmpty();
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+                strings = {
+                    "/chat/completions",
+                    "/openai/v1/responses/sub",
+                    "/OpenAI/v1/Responses",
+                    "/anthropic/v1/Messages"
+                })
+        @DisplayName("Non-canonical endpoint with a mismatched literal model is not checked")
+        void nonCanonicalEndpoint_notChecked(String relativeUrl) {
+            TestSuiteRequestDto dto =
+                    buildFixedPathSuite(relativeUrl, "gpt-4o", Map.of("model", "some-unrelated-value"), null);
+
+            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
+
+            assertThat(result.isValid()).isTrue();
+            assertThat(result.getWarnings()).isEmpty();
         }
 
         @Test
@@ -673,10 +779,10 @@ class SuiteValidationServiceTest {
                                     .name("second-extra")
                                     .endpointRef(EndpointContractDto.builder()
                                             .method(HttpMethod.POST)
-                                            .relativeUrlPattern("/anthropic/v1/messages")
+                                            .relativeUrlPattern(OPENAI_RESPONSES)
                                             .build())
                                     .requestTemplate(RequestTemplateDto.builder()
-                                            .urlTemplate("/anthropic/v1/messages")
+                                            .urlTemplate(OPENAI_RESPONSES)
                                             .body(JsonRequestBodyDto.builder()
                                                     .content(Map.of("model", "claude-3-opus"))
                                                     .build())
@@ -688,70 +794,45 @@ class SuiteValidationServiceTest {
 
             assertThat(result.isValid()).isFalse();
             assertThat(result.getWarnings())
-                    .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE
+                    .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR
                             && "$.additionalRequests[1].requestTemplate.body".equals(w.getPath()));
         }
 
         @Test
-        @DisplayName("Placeholder model value is skipped (not statically checkable)")
-        void modelIsPlaceholder_skipped() {
-            TestSuiteRequestDto dto = buildMessagesSuite("claude-3-5-sonnet-v2", "${{model}}", null);
-            dto.setInputBindings(List.of(InputBindingDto.builder()
-                    .templateVariable("model")
-                    .constantValue("claude-3-opus")
+        @DisplayName("A valid request #0 and an invalid additional request are validated independently")
+        void chainRequestsValidatedIndependently() {
+            TestSuiteRequestDto dto = buildFixedPathSuite(
+                    ANTHROPIC_MESSAGES, "claude-3-5-sonnet-v2", Map.of("model", "claude-3-5-sonnet-v2"), null);
+            dto.setAdditionalRequests(List.of(RequestDefinitionDto.builder()
+                    .name("extra")
+                    .endpointRef(EndpointContractDto.builder()
+                            .method(HttpMethod.POST)
+                            .relativeUrlPattern(OPENAI_RESPONSES)
+                            .build())
+                    .requestTemplate(RequestTemplateDto.builder()
+                            .urlTemplate(OPENAI_RESPONSES)
+                            .body(JsonRequestBodyDto.builder()
+                                    .content(Map.of("model", "gpt-4o"))
+                                    .build())
+                            .build())
                     .build()));
 
             ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
 
+            assertThat(result.isValid()).isFalse();
             assertThat(result.getWarnings())
-                    .noneMatch(w ->
-                            w.getCode() == ValidationWarningCode.TYPE && "$.requestTemplate.body".equals(w.getPath()));
+                    .filteredOn(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR)
+                    .extracting(ValidationWarningDto::getPath)
+                    .containsExactly("$.additionalRequests[0].requestTemplate.body");
         }
 
-        @Test
-        @DisplayName("jsonataContent body is skipped (not statically checkable)")
-        void jsonataContentBody_skipped() {
-            TestSuiteRequestDto dto = buildMessagesSuite(
-                    "claude-3-5-sonnet-v2", null, "{ \"model\": \"claude-3-opus\", \"messages\": [] }");
-
-            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
-
-            assertThat(result.isValid()).isTrue();
-            assertThat(result.getWarnings()).isEmpty();
-        }
-
-        @Test
-        @DisplayName("Non-/messages endpoint with an unrelated literal model is not checked")
-        void nonMessagesEndpoint_notChecked() {
-            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
-                    .name("Suite")
-                    .suiteType(SuiteType.DEPLOYMENT)
-                    .deploymentRef(DeploymentReferenceDto.builder().id("gpt-4").build())
-                    .endpointRef(EndpointContractDto.builder()
-                            .method(HttpMethod.POST)
-                            .relativeUrlPattern("/chat/completions")
-                            .build())
-                    .requestTemplate(RequestTemplateDto.builder()
-                            .urlTemplate("/chat/completions")
-                            .body(JsonRequestBodyDto.builder()
-                                    .content(Map.of("model", "some-unrelated-value"))
-                                    .build())
-                            .build())
-                    .build();
-
-            ValidationResult result = service.validateSuite(dto, SUITE_ID, List.of());
-
-            assertThat(result.isValid()).isTrue();
-            assertThat(result.getWarnings()).isEmpty();
-        }
-
-        private TestSuiteRequestDto buildMessagesSuite(
-                String deploymentRefId, String literalModel, String jsonataContent) {
+        private TestSuiteRequestDto buildFixedPathSuite(
+                String relativeUrl, String deploymentRefId, Map<String, Object> content, String jsonataContent) {
             JsonRequestBodyDto.JsonRequestBodyDtoBuilder bodyBuilder = JsonRequestBodyDto.builder();
             if (jsonataContent != null) {
                 bodyBuilder.jsonataContent(jsonataContent);
             } else {
-                bodyBuilder.content(Map.of("model", literalModel));
+                bodyBuilder.content(content);
             }
             return TestSuiteRequestDto.builder()
                     .name("Suite")
@@ -760,10 +841,10 @@ class SuiteValidationServiceTest {
                             DeploymentReferenceDto.builder().id(deploymentRefId).build())
                     .endpointRef(EndpointContractDto.builder()
                             .method(HttpMethod.POST)
-                            .relativeUrlPattern("/anthropic/v1/messages")
+                            .relativeUrlPattern(relativeUrl)
                             .build())
                     .requestTemplate(RequestTemplateDto.builder()
-                            .urlTemplate("/anthropic/v1/messages")
+                            .urlTemplate(relativeUrl)
                             .body(bodyBuilder.build())
                             .build())
                     .build();

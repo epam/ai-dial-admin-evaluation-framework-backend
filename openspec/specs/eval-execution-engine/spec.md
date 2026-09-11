@@ -785,6 +785,36 @@ Status: **Implemented**
 - **WHEN** `TestCaseRunResultRecordMapper.from(TestCaseRunResult result)` is called in the EF backend
 - **THEN** it SHALL produce a `TestCaseRunResultsRecord` by reading fields from `com.epam.aidial.evaluation.runner.model.TestCaseRunResult` — no data conversion, only field mapping
 
+### Requirement: Execution engine rejects invalid resolved deployment models
+
+The shared deployment execution engine SHALL perform resolved request model validation after request-body resolution and before serialization for invocation. On failure it SHALL skip the HTTP call, persist an `ERROR` result for the current request/turn with a `REQUEST_BODY_VALIDATION_ERROR` response envelope, preserve the resolved request body in the result for diagnostics, and apply the existing fail-fast request-chain semantics. Other test cases SHALL continue independently.
+
+Status: **Implemented**
+
+#### Scenario: Invalid model produces an error row without invocation
+
+- **WHEN** a backend run resolves an invalid `model` for a canonical fixed-path request
+- **THEN** the current request/turn SHALL persist one `ERROR` row whose response body contains `REQUEST_BODY_VALIDATION_ERROR`
+- **AND** its resolved request body SHALL be persisted in `requestBody`
+- **AND** the deployment SHALL not be invoked for that request/turn
+
+#### Scenario: Failure aborts the remaining chain for that case
+
+- **WHEN** resolved model validation fails at a request/turn in a multi-request or multi-turn execution
+- **THEN** later turns of that request and later requests in that test case's chain SHALL not execute
+- **AND** earlier completed rows SHALL remain unchanged
+
+#### Scenario: Non-target requests retain existing behavior
+
+- **WHEN** the resolved URL is not one of the two canonical model-selecting paths
+- **THEN** execution SHALL not require its JSON body to contain a matching `model`
+
+#### Scenario: Backend run guard limits which static failures can execute
+
+- **WHEN** a newly saved plain-content suite has a static model-validation warning and is therefore `isValid=false`
+- **THEN** the existing backend run-creation guard SHALL reject the run before Phase 1 execution
+- **AND** runtime model validation SHALL protect JSONata-resolved bodies and previously persisted suites that reach execution
+
 ## Implementation Notes
 - Executor interface: `com.epam.aidial.evaluation.service.domain.job.EvaluationExecutor` (unmoved — EF backend)
 - In-process executor: `com.epam.aidial.evaluation.service.domain.job.InProcessEvaluationExecutor` (unmoved — EF backend)
@@ -812,3 +842,4 @@ Status: **Implemented**
 - MCP field loading chain: `TestSuiteEvaluationJob` deserializes MCP fields from the suite's JSONB strings and passes them into `EvaluationContext.builder()` as typed objects (conditionally for `MCP_TOOL` suites only). `inputBindings` is loaded alongside other MCP fields.
 - MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `context.getInputBindings()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
 - DTOs: `ExecutionSettingsDto`, `RetryPolicyDto` (in `service.domain.dto`)
+- Resolved request-model validation: `TurnLoopExecutor.runOneTurn` calls `RequestModelValidator.validateForExecution(resolved.getUrl(), resolvedBody, deploymentId)` after `RequestResolver.resolveForRun` and before URL construction / header assembly / serialization, with `deploymentId` taken from `EvaluationContext.snapshotDeploymentRef` (the frozen backend deployment or the CLI-selected target). A `RequestBodyValidationException` becomes `buildBodyValidationErrorOutcome` — an `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` envelope returned via `TurnStepResult.abortBeforeRequest` with the resolved body retained in `requestBody`, so the existing fail-fast path aborts the rest of the turn loop and the request chain.

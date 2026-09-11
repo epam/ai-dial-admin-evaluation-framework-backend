@@ -11,11 +11,13 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
+import com.epam.aidial.evaluation.runner.exception.RequestBodyValidationException;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
+import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
@@ -84,6 +86,7 @@ public class TurnLoopExecutor {
 
     private final RequestResolver requestResolver;
     private final DialCoreUrlBuilder urlBuilder;
+    private final RequestModelValidator requestModelValidator;
     private final RequestBodySerializerRegistry serializerRegistry;
     private final ResponseColumnExtractor responseColumnExtractor;
     private final EvaluationRunProperties evaluationRunProperties;
@@ -341,6 +344,19 @@ public class TurnLoopExecutor {
         final ResolvedBodyDto resolvedBody = resolved.getBody();
         final String requestBodyJson = serializeResolvedBodyForAnalytics(resolvedBody);
 
+        try {
+            requestModelValidator.validateForExecution(resolved.getUrl(), resolvedBody, deploymentId);
+        } catch (RequestBodyValidationException e) {
+            log.warn(
+                    "Turn {} for test case {} failed resolved request-model validation: {}",
+                    turnIndex,
+                    testCaseId,
+                    e.getMessage(),
+                    e);
+            return TurnStepResult.abortBeforeRequest(
+                    ExecutionStatus.ERROR, requestBodyJson, buildBodyValidationErrorOutcome(e));
+        }
+
         final String path = urlBuilder.buildUrl(deploymentId, resolved.getUrl());
         final HttpHeaders headers = buildHeaders(resolved.getHeaders());
         final MultiValueMap<String, String> queryParams =
@@ -364,6 +380,19 @@ public class TurnLoopExecutor {
                 extraction.extractedColumns(),
                 extraction.extractionWarnings(),
                 extraction.values());
+    }
+
+    /**
+     * Abort-before-request outcome for a resolved body whose {@code model} does not select the effective
+     * deployment on a fixed-path model-selecting API — kept distinct from
+     * {@link ExecutionErrorCodes#REQUEST_BODY_EVALUATION_ERROR} so a JSONata expression that evaluated
+     * fine but named the wrong model is diagnosable as a validation failure, not an evaluation failure.
+     */
+    private TurnOutcome buildBodyValidationErrorOutcome(RequestBodyValidationException e) {
+        final String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR, e.getMessage(), objectMapper);
+        final String logDetails = buildErrorLogDetails("Request body validation failed: " + e.getMessage());
+        return new TurnOutcome(ExecutionStatus.ERROR, null, errorBody, 0, logDetails);
     }
 
     private TurnOutcome buildBodyEvaluationErrorOutcome(RequestBodyEvaluationException e) {

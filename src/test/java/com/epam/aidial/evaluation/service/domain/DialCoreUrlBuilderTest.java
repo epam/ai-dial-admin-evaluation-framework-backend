@@ -40,6 +40,20 @@ class DialCoreUrlBuilderTest {
     }
 
     @Test
+    @DisplayName("Responses path routes to itself without deployment id spliced in")
+    void responsesRoutesToItself() {
+        final String url = urlBuilder.buildUrl("gpt-4", "/openai/v1/responses");
+        assertThat(url).isEqualTo("/openai/v1/responses");
+    }
+
+    @Test
+    @DisplayName("Responses path preserves case-insensitive prefix routing")
+    void responsesCaseVariantSubpathRoutesToItself() {
+        final String url = urlBuilder.buildUrl("gpt-4", "/OPENAI/v1/RESPONSES/resp-1");
+        assertThat(url).isEqualTo("/OPENAI/v1/RESPONSES/resp-1");
+    }
+
+    @Test
     @DisplayName("Anthropic Messages path routes to itself without deployment id spliced in")
     void anthropicMessagesRoutesToItself() {
         String url = urlBuilder.buildUrl("claude-3-5-sonnet", "/anthropic/v1/messages");

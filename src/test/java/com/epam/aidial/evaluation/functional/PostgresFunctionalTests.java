@@ -42,6 +42,7 @@ import com.epam.aidial.evaluation.functional.tests.EvaluationMultipartFunctional
 import com.epam.aidial.evaluation.functional.tests.ExecutionSettingsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.FileFieldFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.FileFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.FixedPathRequestModelValidationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.GrafanaDisabledFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.GrafanaEnabledFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.HeaderBlacklistFunctionalTests;
@@ -321,6 +322,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class MultiRequestSuiteValidationTests extends MultiRequestSuiteValidationFunctionalTests {}
+
+    @Nested
+    class FixedPathRequestModelValidationTests extends FixedPathRequestModelValidationFunctionalTests {}
 
     @Nested
     class TestCaseTests extends TestCaseFunctionalTests {}

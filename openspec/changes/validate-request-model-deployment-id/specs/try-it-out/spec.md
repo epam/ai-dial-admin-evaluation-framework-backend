@@ -4,7 +4,7 @@
 
 All deployment Try-It-Out modes SHALL validate the resolved body for canonical OpenAI Responses and Anthropic Messages requests against the suite's deployment ID immediately before invocation. A failure SHALL expose `REQUEST_BODY_VALIDATION_ERROR`, include the resolved request for diagnosis, and SHALL not call DIAL Core.
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Single-invocation Try-It-Out rejects an invalid model
 
@@ -80,4 +80,4 @@ Status: **Implemented**
 
 ## Implementation notes
 
-Planned. `TryItOutService` gains a `RequestBodyValidationException` catch clause in `runChain` alongside the existing `RequestBodyEvaluationException` clause, reusing `buildEvaluationFailureResult`'s status-code-zero envelope; the single-invocation paths convert the same exception into the established HTTP 400 `TryItOutValidationException` with a `REQUEST_BODY_VALIDATION_ERROR` warning. The check itself is the shared `RequestModelValidator` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service`) invoked at the pre-invocation boundary — deliberately NOT inside `validateResolutionResult`, which is shared with the single-invocation path.
+Implemented. `TryItOutService` gains a `RequestBodyValidationException` catch clause in `runChain` alongside the existing `RequestBodyEvaluationException` clause, reusing `buildEvaluationFailureResult`'s status-code-zero envelope; the single-invocation paths convert the same exception into the established HTTP 400 `TryItOutValidationException` with a `REQUEST_BODY_VALIDATION_ERROR` warning. The check itself is the shared `RequestModelValidator` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service`) invoked at the pre-invocation boundary — deliberately NOT inside `validateResolutionResult`, which is shared with the single-invocation path.

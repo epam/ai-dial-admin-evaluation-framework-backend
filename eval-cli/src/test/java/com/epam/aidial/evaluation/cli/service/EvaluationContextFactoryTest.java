@@ -71,6 +71,10 @@ class EvaluationContextFactoryTest {
         final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
                 .id(suiteId)
                 .datasetId(datasetId)
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("source-model")
+                        .name("Source Model")
+                        .build())
                 .responseColumns(List.of())
                 .inputBindings(List.of())
                 .build();
@@ -82,9 +86,34 @@ class EvaluationContextFactoryTest {
 
         final EvaluationContext context = factory.create(suite, 5, targetRef, null);
 
-        // Target deployment ref is applied, not the source suite's ref
+        // The --deployment-id override becomes the effective target the shared engine validates the
+        // resolved request "model" against — the source suite's own ref is deliberately discarded.
         assertThat(context.getSnapshotDeploymentRef()).isEqualTo(targetRef);
         assertThat(context.getSnapshotDeploymentRef().getId()).isEqualTo("target-model");
+    }
+
+    @Test
+    @DisplayName("the fetched suite's recorded deployment ref becomes the effective target without an override")
+    void createsContextWithSuiteRecordedDeploymentRefWhenNoOverride() {
+        final DeploymentReferenceDto suiteRef = DeploymentReferenceDto.builder()
+                .id("suite-model")
+                .name("Suite Model")
+                .build();
+        final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
+                .id(UUID.randomUUID())
+                .datasetId(UUID.randomUUID())
+                .deploymentRef(suiteRef)
+                .responseColumns(List.of())
+                .inputBindings(List.of())
+                .build();
+
+        // RunOrchestrationService resolves the absent --deployment-id to the suite's recorded ref
+        // (see RunOrchestrationServiceTest#fallsBackToSuiteDeploymentRefWhenTargetRefAbsent) and hands
+        // it here as the target, so the engine validates against "suite-model".
+        final EvaluationContext context = factory.create(suite, 1, suiteRef, null);
+
+        assertThat(context.getSnapshotDeploymentRef()).isEqualTo(suiteRef);
+        assertThat(context.getSnapshotDeploymentRef().getId()).isEqualTo("suite-model");
     }
 
     @Test

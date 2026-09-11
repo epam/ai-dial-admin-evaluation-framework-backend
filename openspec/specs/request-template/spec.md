@@ -775,6 +775,49 @@ The endpoint SHALL accept an optional `requestIndex` query parameter (integer, d
 - **WHEN** client previews an additional request whose body references a response column produced by an earlier request
 - **THEN** system SHALL return a best-effort resolved request with that reference unresolved and a validation warning, and SHALL NOT execute any request
 
+### Requirement: Resolved request model matches the effective deployment
+
+Before executing a request whose resolved URL is exactly `/openai/v1/responses` or `/anthropic/v1/messages`, the system SHALL validate the resolved JSON body. Its `model` field MUST be a string and MUST exactly equal the effective deployment ID selected for that execution. This runtime rule SHALL apply identically whether the template was authored as plain `content` or `jsonataContent`; it SHALL not apply to non-canonical URLs.
+
+Status: **Implemented**
+
+#### Scenario: Resolved model matches
+
+- **WHEN** a canonical fixed-path request resolves to a JSON body whose string `model` equals the effective deployment ID
+- **THEN** execution SHALL proceed normally
+
+#### Scenario: Resolved body or model is invalid
+
+- **WHEN** a canonical fixed-path request resolves without a JSON body, with a non-JSON body, without `model`, with JSON null, or with a non-string `model`
+- **THEN** validation SHALL fail before any HTTP request is sent
+
+#### Scenario: Resolved model differs
+
+- **WHEN** a canonical fixed-path request resolves to a string `model` different from the effective deployment ID
+- **THEN** validation SHALL fail before any HTTP request is sent
+
+#### Scenario: JSONata is checked after evaluation
+
+- **WHEN** a `jsonataContent` expression evaluates successfully to a JSON object for a canonical fixed-path request
+- **THEN** the model rule SHALL validate that evaluated object rather than the source expression
+
+### Requirement: Dedicated runtime model validation error
+
+A resolved request model failure SHALL be represented by the execution error code `REQUEST_BODY_VALIDATION_ERROR`, distinct from JSONata evaluation failures and general request-resolution failures. The diagnostic message SHALL identify the invalid `model` condition and expected deployment ID without sending the request.
+
+Status: **Implemented**
+
+#### Scenario: Validation error remains distinct from evaluation error
+
+- **WHEN** JSONata evaluation succeeds but its resulting `model` is invalid
+- **THEN** the failure code SHALL be `REQUEST_BODY_VALIDATION_ERROR`
+- **AND** it SHALL not be reported as `REQUEST_BODY_EVALUATION_ERROR`
+
+#### Scenario: Resolved-request preview remains non-executing
+
+- **WHEN** a client only retrieves the resolved-request preview without invoking Try-It-Out or a run
+- **THEN** the new runtime execution failure SHALL not be raised by that preview operation
+
 ## Implementation Notes
 
 - Shared binding validation logic extracted into a `BindingValidator` `@Component` in `service.domain` — injected by `SuiteValidationService`. Method: `validate(variables, bindings, schema, suiteId)` returning `List<ValidationWarningDto>`
@@ -785,3 +828,4 @@ The endpoint SHALL accept an optional `requestIndex` query parameter (integer, d
 - Warning codes and paths are consistent between deployment and MCP paths for frontend uniformity
 - JSON request-body evaluation seam (`service.domain`): `JsonataSourcePreprocessor` (textual `${{}}` placeholder substitution into raw body-text per the three substitution modes), `TemplateContentResolver` (Map `content` structural-resolution path and `jsonataContent` preprocess-only path converge on one body-text output), `RequestBodyEvaluator` (JSONata-evaluates the resolved body text via `JsonataEvaluationService`/`DashjoinJsonataEvaluationService`, enforces the JSON-object runtime contract). `TestSuiteRequestValidator` rejects an invalid `jsonataContent` JSONata source and a body with both `content` and `jsonataContent` set, as well as a `responseColumns[i].name` colliding with `JsonataReservedNames` (see `response-columns` spec) at suite create/update time. `ResolvedRequestService`'s preview path is wired through `RequestBodyEvaluator` so `GET .../resolved-request` reflects the JSONata-evaluated body.
 - `JsonataProperties` (`@ConfigurationProperties(prefix = "jsonata")`: `evaluationTimeoutMs`, `maxRecursionDepth`) bounds JSONata evaluation via `Frame.setRuntimeBounds`; defaults live in `application.yml`, documented in `docs/configuration.md`.
+- Resolved request-model validation (fixed-path model-selecting APIs): `RequestModelValidator` and `RequestBodyValidationException` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service` / `.exception`), with the canonical paths in `runner.constants.ModelSelectingEndpointPaths` — also consumed by `DialCoreUrlBuilder`. `validateContent` serves `SuiteValidationService`'s static plain-`content` check; `validateForExecution` throws for consumers at the pre-invocation boundary (`TurnLoopExecutor` for runs and CLI, `TryItOutService` for Try-It-Out). Error codes: `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` and `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR`. Placeholder detection reuses `TemplateContentResolver.PLACEHOLDER_PATTERN` with `find()` semantics. The `GET .../resolved-request` preview does not run this check.

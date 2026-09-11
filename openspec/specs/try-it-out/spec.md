@@ -47,19 +47,17 @@ Status: **Implemented**
 - **AND** the response SHALL be identical in shape to a single-turn test case's response (no `history`)
 
 #### Scenario: Turn failure stops the sequence
-- **WHEN** executing a multi-turn test case and a turn's invocation resolves to a non-2xx DIAL Core status, or fails request-body JSONata evaluation (`RequestBodyEvaluationException`)
+- **WHEN** executing a multi-turn test case and a turn's invocation resolves to a non-2xx DIAL Core status, fails request-body JSONata evaluation (`RequestBodyEvaluationException`), or fails resolved request-model validation (`RequestBodyValidationException`)
 - **THEN** the system SHALL stop executing further turns (fail-fast)
 - **AND** the failed turn's resolved request and error response SHALL be returned as the `resolvedRequest`/`response`, and as the last entry of `history`
 - **NOTE**: a transport-level failure during a turn's invocation (timeout, connection refused, unreachable deployment) is NOT caught by this mechanism — it propagates uncaught exactly as in the single-turn path, producing the pre-existing plain 502/504 error response.
-- **NOTE**: `ValidationException` (null resolved URL) or `TryItOutValidationException` (unresolved REQUIRED template variables) thrown by `validateResolutionResult` for turns after the first are ALSO not caught by this mechanism — `runTurnSequence`'s catch clause only catches `RequestBodyEvaluationException`. These propagate uncaught exactly like transport-level failures.
+- **NOTE**: `ValidationException` (null resolved URL) or `TryItOutValidationException` (unresolved REQUIRED template variables) thrown by `validateResolutionResult` for turns after the first remain uncaught. `runChain` catches only `RequestBodyEvaluationException` and the new `RequestBodyValidationException`; other validation failures propagate exactly like transport-level failures.
 
 #### Scenario: MCP suite rejects multi-turn test case
 - **WHEN** the test suite has `suiteType = MCP_TOOL` and the test case has non-null `multiTurnData`
 - **THEN** the system SHALL return HTTP 409 with error code `INVALID_OPERATION`, without invoking the MCP tool
 - **AND** the error message SHALL indicate that MCP suites do not support multi-turn test cases (consistent with the existing rejection of MCP + multi-turn at run creation)
 - **NOTE**: the check is a coarse presence check (`multiTurnData != null`), not a `PerTurnBindingDetector`-based collapse check — it rejects even when the data would collapse to a single turn, matching the existing run-creation guard's coarseness.
-
----
 
 ### Requirement: Try it out with variables
 The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/try-it-out` accepting a `variables` map (`Map<String, Object>`) in the request body. Each entry maps a template variable name to its constant value. The system SHALL resolve the suite's request template by treating each variable as a constant-value binding, send the resolved request to the DIAL Core deployment, and return the response.
@@ -464,6 +462,31 @@ The variables-based try-it-out endpoint (`POST /api/v1/test-suites/{testSuiteId}
 
 ---
 
+### Requirement: Try-It-Out validates the resolved deployment model
+
+All deployment Try-It-Out modes SHALL validate the resolved body for canonical OpenAI Responses and Anthropic Messages requests against the suite's deployment ID immediately before invocation. A failure SHALL expose `REQUEST_BODY_VALIDATION_ERROR`, include the resolved request for diagnosis, and SHALL not call DIAL Core.
+
+Status: **Implemented**
+
+#### Scenario: Single-invocation Try-It-Out rejects an invalid model
+
+- **WHEN** a single-invocation test-case or variables Try-It-Out resolves an invalid `model`
+- **THEN** the endpoint SHALL return HTTP 400 with outer error code `VALIDATION_ERROR`
+- **AND** the error details' resolved request SHALL carry a `REQUEST_BODY_VALIDATION_ERROR` warning
+- **AND** DIAL Core SHALL not be invoked
+
+#### Scenario: Chained Try-It-Out reports an invalid model as the failed invocation
+
+- **WHEN** model validation fails during a multi-request or multi-turn Try-It-Out
+- **THEN** the returned failed invocation SHALL contain a status-code-zero error response with code `REQUEST_BODY_VALIDATION_ERROR`
+- **AND** its resolved request SHALL be retained in the top-level response and history
+- **AND** no later invocation in the chain SHALL run
+
+#### Scenario: Matching model invokes normally
+
+- **WHEN** the resolved `model` matches the suite's deployment ID
+- **THEN** Try-It-Out SHALL invoke DIAL Core using its existing response contract
+
 ## Implementation Notes
 
 - Modified: `TryItOutService` — branch by `suiteType`: HTTP flow (existing) or MCP flow (new)
@@ -471,3 +494,4 @@ The variables-based try-it-out endpoint (`POST /api/v1/test-suites/{testSuiteId}
 - MCP variables flow: `convertVariablesToBindings(variables)` → `McpRequestResolver.resolveWithVariables(argumentTemplate, convertedBindings, variables)` → same invocation chain
 - MCP transport propagation: `TryItOutService` reads `mcpDeploymentRef.transport`, defaults to `McpTransport.STREAMABLE_HTTP` when null, passes to `McpToolInvoker`
 - Reuse `TryItOutResponseDto` structure — `resolvedRequest.body` contains arguments as JSON, `response.body` contains serialized MCP response
+- Resolved request-model validation: `TryItOutService.invokeTurn` calls `RequestModelValidator.validateForExecution` before building the URL — deliberately not inside `validateResolutionResult`, which the single-invocation path shares. `invokeAndBuildResponse` converts the resulting `RequestBodyValidationException` into the established HTTP 400 via `toTryItOutValidationException`, which appends a `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR` warning to the returned `resolvedRequest`; `runChain` catches it separately from `RequestBodyEvaluationException` and builds the status-code-zero `buildModelValidationFailureResult` envelope that retains the resolved request in both the top-level response and `history`, stopping the chain.

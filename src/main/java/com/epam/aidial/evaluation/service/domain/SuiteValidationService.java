@@ -19,7 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
-import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
+import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
@@ -46,6 +46,7 @@ public class SuiteValidationService {
     private final BindingValidator bindingValidator;
     private final McpArgumentValidator mcpArgumentValidator;
     private final JsonbMapper jsonbMapper;
+    private final RequestModelValidator requestModelValidator;
 
     /**
      * Validates suite configuration: requestTemplate, inputBindings, testCaseSchema.
@@ -280,26 +281,7 @@ public class SuiteValidationService {
             }
         }
 
-        // Anthropic Messages model/deploymentRef consistency (soft, best-effort literal check)
-        if (template != null
-                && endpoint != null
-                && DialCoreUrlBuilder.ANTHROPIC_MESSAGES_URL.equals(endpoint.getRelativeUrlPattern())
-                && template.getBody() instanceof JsonRequestBodyDto jsonBody
-                && jsonBody.getContent() != null) {
-            Object modelValue = jsonBody.getContent().get("model");
-            if (modelValue instanceof String model
-                    && !templateVariableExtractor.isPlaceholder(model)
-                    && deploymentRef != null
-                    && !model.equals(deploymentRef.getId())) {
-                warnings.add(warning(
-                        "model",
-                        warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
-                        "Request body 'model' value '" + model
-                                + "' does not match the suite's configured deploymentRef.id '"
-                                + deploymentRef.getId() + "'",
-                        ValidationWarningCode.TYPE));
-            }
-        }
+        warnings.addAll(validateFixedPathRequestModel(endpoint, template, deploymentRef, pathPrefix));
 
         // Header blacklist validation (deployment-specific)
         if (template != null && template.getHeaders() != null) {
@@ -321,6 +303,35 @@ public class SuiteValidationService {
         }
 
         return warnings;
+    }
+
+    /**
+     * Static plain-{@code content} model check for the fixed-path, model-selecting APIs
+     * ({@code /openai/v1/responses}, {@code /anthropic/v1/messages}), where the body's {@code model}
+     * field — not the URL — selects the deployment. {@code jsonataContent} bodies are deliberately
+     * deferred to the run-time check in {@code TurnLoopExecutor}; their syntax validation is unaffected.
+     */
+    private List<ValidationWarningDto> validateFixedPathRequestModel(
+            EndpointContractDto endpoint,
+            RequestTemplateDto template,
+            DeploymentReferenceDto deploymentRef,
+            String pathPrefix) {
+        if (template == null
+                || endpoint == null
+                || deploymentRef == null
+                || deploymentRef.getId() == null
+                || !(template.getBody() instanceof JsonRequestBodyDto jsonBody)
+                || jsonBody.getJsonataContent() != null) {
+            return List.of();
+        }
+        return requestModelValidator
+                .validateContent(endpoint.getRelativeUrlPattern(), jsonBody.getContent(), deploymentRef.getId())
+                .map(message -> List.of(warning(
+                        "model",
+                        warningPath(pathPrefix, "$.requestTemplate.body", ".requestTemplate.body"),
+                        message,
+                        ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR)))
+                .orElseGet(List::of);
     }
 
     /**

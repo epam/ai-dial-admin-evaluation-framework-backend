@@ -15,6 +15,9 @@ public final class ExecutionErrorCodes {
     /** The request body's JSONata expression failed to evaluate, or evaluated to a non-object. */
     public static final String REQUEST_BODY_EVALUATION_ERROR = "REQUEST_BODY_EVALUATION_ERROR";
 
+    /** The resolved request body is invalid for the selected deployment. */
+    public static final String REQUEST_BODY_VALIDATION_ERROR = "REQUEST_BODY_VALIDATION_ERROR";
+
     /** The deployment HTTP call failed at transport level (network error or timeout). */
     public static final String INVOCATION_ERROR = "INVOCATION_ERROR";
 

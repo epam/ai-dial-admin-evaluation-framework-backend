@@ -1,7 +1,9 @@
 package com.epam.aidial.evaluation.functional.tests;
 
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.ANTHROPIC_MESSAGES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -235,6 +237,52 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
                 .contains("content and jsonataContent are mutually exclusive");
     }
 
+    @Test
+    @DisplayName("A JSONata body resolving to a mismatched model persists REQUEST_BODY_VALIDATION_ERROR without "
+            + "invoking DIAL Core")
+    void jsonataResolvedModelMismatch_persistsValidationErrorWithoutInvokingCore() {
+        // The suite is statically valid (jsonataContent defers the model check), so createRun guard #3
+        // lets it through — plain-content mismatches never reach a run at all.
+        TestSuiteResponseDto suite = createAnthropicJsonataSuite("MT anthropic model mismatch", "other-deployment");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createSingleTurnCase(datasetId, "single-model-mismatch", Map.of("prompt", "hello"));
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(1);
+        Map<String, Object> result = results.get(0);
+        assertThat(String.valueOf(result.get("execution_status"))).isEqualTo("ERROR");
+        assertThat(String.valueOf(result.get("response_body")))
+                .contains("REQUEST_BODY_VALIDATION_ERROR")
+                .contains("other-deployment")
+                .contains("deployment-1");
+        // The resolved body is preserved for diagnostics even though it was never sent.
+        assertThat(String.valueOf(result.get("request_body"))).contains("other-deployment");
+
+        verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("A JSONata body resolving to the suite's deployment ID runs normally on /anthropic/v1/messages")
+    void jsonataResolvedModelMatch_invokesCoreNormally() {
+        TestSuiteResponseDto suite = createAnthropicJsonataSuite("MT anthropic model match", "deployment-1");
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createSingleTurnCase(datasetId, "single-model-match", Map.of("prompt", "hello"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(chatReply("anthropic-answer"));
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 30);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(run.getId());
+        assertThat(results).hasSize(1);
+        assertThat(String.valueOf(results.get(0).get("execution_status"))).isEqualTo("SUCCESS");
+        verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
+    }
+
     // -------------------- fixtures --------------------
 
     /**
@@ -413,6 +461,58 @@ public abstract class JsonataRequestTemplateFunctionalTests extends AbstractMult
         ResponseEntity<TestSuiteResponseDto> response =
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    /**
+     * DEPLOYMENT suite targeting the fixed-path Anthropic Messages API with a {@code jsonataContent} body
+     * whose {@code model} is a literal chosen by the caller. Because the body is JSONata, static suite
+     * validation defers the model check to run time, so this suite persists as valid whether or not
+     * {@code modelValue} matches {@code deploymentRef.id}.
+     */
+    private TestSuiteResponseDto createAnthropicJsonataSuite(String name, String modelValue) {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name(name + " " + UUID.randomUUID())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern(ANTHROPIC_MESSAGES)
+                        .requestBodySchema(JsonRequestBodySchemaDto.builder()
+                                .schema(Map.of("type", "object", "properties", Map.of()))
+                                .build())
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate(ANTHROPIC_MESSAGES)
+                        .body(JsonRequestBodyDto.builder()
+                                .jsonataContent("{\"model\": \"" + modelValue + "\", \"messages\": "
+                                        + "[{\"role\": \"user\", \"content\": \"${{prompt}}\"}]}")
+                                .build())
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("prompt")
+                        .dataField("prompt")
+                        .build()))
+                .responseColumns(List.of(ResponseColumnDefinitionDto.builder()
+                        .name("answer")
+                        .expression("choices[0].message.content")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isValid()).isTrue();
         return response.getBody();
     }
 }

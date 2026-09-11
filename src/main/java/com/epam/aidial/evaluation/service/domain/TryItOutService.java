@@ -29,6 +29,7 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
+import com.epam.aidial.evaluation.runner.exception.RequestBodyValidationException;
 import com.epam.aidial.evaluation.runner.job.DeploymentInvocationSupport;
 import com.epam.aidial.evaluation.runner.job.ExecutionErrorCodes;
 import com.epam.aidial.evaluation.runner.job.RequestExecutionSpec;
@@ -42,6 +43,7 @@ import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
+import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
@@ -98,6 +100,7 @@ public class TryItOutService {
     private final McpRequestResolver mcpRequestResolver;
     private final McpResponseSerializer mcpResponseSerializer;
     private final DialCoreUrlBuilder urlBuilder;
+    private final RequestModelValidator requestModelValidator;
     private final JsonbMapper jsonbMapper;
     private final ObjectMapper objectMapper;
     private final RequestBodySerializerRegistry serializerRegistry;
@@ -200,9 +203,9 @@ public class TryItOutService {
             for (int turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
                 final Map<String, Object> turnData = requestPlan.turnDataList().get(turnIndex);
                 boolean failed;
+                ResolvedRequestDto resolved = null;
                 try {
-                    final ResolvedRequestDto resolved =
-                            requestResolver.resolveForRun(spec.requestTemplate(), bindings, turnData, frame);
+                    resolved = requestResolver.resolveForRun(spec.requestTemplate(), bindings, turnData, frame);
                     validateResolutionResult(resolved);
                     current = invokeTurn(
                             resolved, deploymentRef, spec.endpointRef().getMethod(), testSuiteId);
@@ -212,6 +215,11 @@ public class TryItOutService {
                     failed = current.status() != ExecutionStatus.SUCCESS;
                 } catch (RequestBodyEvaluationException e) {
                     current = buildEvaluationFailureResult(e);
+                    failed = true;
+                } catch (RequestBodyValidationException e) {
+                    // Unlike an evaluation failure there IS a resolved request here — it is retained so
+                    // the caller can see the body whose 'model' did not select the suite's deployment.
+                    current = buildModelValidationFailureResult(e, resolved);
                     failed = true;
                 }
 
@@ -316,6 +324,41 @@ public class TryItOutService {
             return null;
         }
         return objectMapper.writeValueAsString(value);
+    }
+
+    /**
+     * Status-code-zero envelope for a resolved body whose {@code model} does not select the suite's
+     * deployment on a fixed-path model-selecting API — the chain's in-band counterpart to the
+     * single-invocation HTTP 400 built by {@link #toTryItOutValidationException}.
+     */
+    private TurnInvocationResult buildModelValidationFailureResult(
+            RequestBodyValidationException e, ResolvedRequestDto resolved) {
+        final String errorBody = DeploymentInvocationSupport.buildErrorEnvelope(
+                ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR, e.getMessage(), objectMapper);
+        final TryItOutCoreResponseDto response = TryItOutCoreResponseDto.builder()
+                .statusCode(0)
+                .body(objectMapper.readTree(errorBody))
+                .build();
+        return new TurnInvocationResult(resolved, response, 0L, null, ExecutionStatus.ERROR, null);
+    }
+
+    /**
+     * Converts a pre-invocation model validation failure into the single-invocation contract: HTTP 400
+     * {@code VALIDATION_ERROR} whose {@code resolvedRequest} carries a {@code REQUEST_BODY_VALIDATION_ERROR}
+     * warning, so the caller sees both the rejected body and why it was rejected.
+     */
+    private TryItOutValidationException toTryItOutValidationException(
+            RequestBodyValidationException e, ResolvedRequestDto resolved) {
+        final List<ValidationWarningDto> warnings =
+                new ArrayList<>(resolved.getWarnings() != null ? resolved.getWarnings() : List.of());
+        warnings.add(ValidationWarningDto.builder()
+                .fieldName("model")
+                .path("$.requestTemplate.body")
+                .message(e.getMessage())
+                .code(ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR)
+                .build());
+        resolved.setWarnings(warnings);
+        return new TryItOutValidationException(e.getMessage(), resolved);
     }
 
     private TurnInvocationResult buildEvaluationFailureResult(RequestBodyEvaluationException e) {
@@ -598,7 +641,12 @@ public class TryItOutService {
             HttpMethod method,
             UUID testSuiteId,
             List<ResponseColumnDefinitionDto> responseColumns) {
-        final TurnInvocationResult result = invokeTurn(resolved, deploymentRef, method, testSuiteId);
+        final TurnInvocationResult result;
+        try {
+            result = invokeTurn(resolved, deploymentRef, method, testSuiteId);
+        } catch (RequestBodyValidationException e) {
+            throw toTryItOutValidationException(e, resolved);
+        }
         ResponseColumnExtractor.ExtractionResult extraction = null;
         if (responseColumns != null && !responseColumns.isEmpty() && result.status() == ExecutionStatus.SUCCESS) {
             extraction = extractColumns(responseColumns, result);
@@ -616,6 +664,11 @@ public class TryItOutService {
 
     private TurnInvocationResult invokeTurn(
             ResolvedRequestDto resolved, DeploymentReferenceDto deploymentRef, HttpMethod method, UUID testSuiteId) {
+        // Pre-invocation boundary for the fixed-path model-selecting APIs, deliberately here rather than
+        // in validateResolutionResult: the chain path needs an in-band status-zero failure, while the
+        // single-invocation callers convert the same exception into their HTTP 400 contract.
+        requestModelValidator.validateForExecution(resolved.getUrl(), resolved.getBody(), deploymentRef.getId());
+
         String fullPath = urlBuilder.buildUrl(deploymentRef.getId(), resolved.getUrl());
         HttpHeaders headers = toHttpHeaders(resolved.getHeaders());
         MultiValueMap<String, String> queryParams = toQueryParams(resolved.getQueryParams());

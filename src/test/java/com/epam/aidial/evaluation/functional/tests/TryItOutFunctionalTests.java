@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.functional.tests;
 
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.ANTHROPIC_MESSAGES;
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.OPENAI_RESPONSES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
@@ -32,6 +34,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -187,6 +191,71 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         // warning into this 400.
         assertThat(response.getBody()).contains("REQUEST_BODY_EVALUATION_ERROR");
         verifyNoInteractions(deploymentInvoker);
+    }
+
+    // --- fixed-path model-selecting APIs: resolved-model validation ---
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
+    @DisplayName("Should return 400 with REQUEST_BODY_VALIDATION_ERROR and never invoke DIAL Core when a plain "
+            + "resolved model mismatches the suite's deployment")
+    void shouldReturn400AndNeverInvokeCoreWhenPlainResolvedModelMismatches(String relativeUrl) {
+        TestSuiteResponseDto suite = createFixedPathSuite(relativeUrl, Map.of("model", "other-deployment"), null);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("promptField", "irrelevant"));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .contains("REQUEST_BODY_VALIDATION_ERROR")
+                .contains("other-deployment")
+                .contains("deployment-1");
+        verifyNoInteractions(deploymentInvoker);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
+    @DisplayName("Should return 400 with REQUEST_BODY_VALIDATION_ERROR and never invoke DIAL Core when a "
+            + "JSONata-resolved model mismatches the suite's deployment")
+    void shouldReturn400AndNeverInvokeCoreWhenJsonataResolvedModelMismatches(String relativeUrl) {
+        TestSuiteResponseDto suite =
+                createFixedPathSuite(relativeUrl, null, "{\"model\": \"other-deployment\", \"messages\": []}");
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("promptField", "irrelevant"));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .contains("REQUEST_BODY_VALIDATION_ERROR")
+                .doesNotContain("REQUEST_BODY_EVALUATION_ERROR");
+        verifyNoInteractions(deploymentInvoker);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {ANTHROPIC_MESSAGES, OPENAI_RESPONSES})
+    @DisplayName("Should invoke DIAL Core normally when the resolved model matches the suite's deployment")
+    void shouldInvokeCoreWhenResolvedModelMatches(String relativeUrl) {
+        TestSuiteResponseDto suite = createFixedPathSuite(relativeUrl, Map.of("model", "deployment-1"), null);
+        TestCaseResponseDto tc = createTestCase(suite.getId(), "TC1", Map.of("promptField", "irrelevant"));
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(200, false, Map.of("id", "ok"), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + tc.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getResponse().getStatusCode()).isEqualTo(200);
+        verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
     }
 
     // --- 6.5 Suite-level try-it-out with variables ---
@@ -800,6 +869,42 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         ResponseEntity<TestSuiteResponseDto> res =
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return res.getBody();
+    }
+
+    /**
+     * Suite on one of the two fixed-path model-selecting APIs, authored either as plain {@code content}
+     * or as {@code jsonataContent}. A plain body whose {@code model} mismatches makes the suite invalid
+     * (soft validation), which is fine for Try-It-Out — unlike run creation it has no validity guard.
+     */
+    private TestSuiteResponseDto createFixedPathSuite(
+            String relativeUrl, Map<String, Object> content, String jsonataContent) {
+        JsonRequestBodyDto.JsonRequestBodyDtoBuilder bodyBuilder = JsonRequestBodyDto.builder();
+        if (jsonataContent != null) {
+            bodyBuilder.jsonataContent(jsonataContent);
+        } else {
+            bodyBuilder.content(content);
+        }
+        TestSuiteRequestDto req = TestSuiteRequestDto.builder()
+                .name("Fixed Path Model Suite " + UUID.randomUUID())
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern(relativeUrl)
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("promptField")
+                        .type(SchemaFieldType.STRING)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate(relativeUrl)
+                        .body(bodyBuilder.build())
+                        .build())
+                .build();
+        ResponseEntity<TestSuiteResponseDto> res =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(res.getBody()).isNotNull();
         return res.getBody();
     }
 

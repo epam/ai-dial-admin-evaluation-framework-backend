@@ -180,8 +180,8 @@ public abstract class SuiteValidationBindingFunctionalTests extends BaseFunction
     }
 
     @Test
-    @DisplayName(
-            "DEPLOYMENT suite targeting /anthropic/v1/messages with a mismatched literal model produces a TYPE warning")
+    @DisplayName("DEPLOYMENT suite targeting /anthropic/v1/messages with a mismatched literal model produces a "
+            + "REQUEST_BODY_VALIDATION_ERROR warning")
     void messagesSuiteWithMismatchedModel_producesWarning() {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name("Suite-anthropic-model-mismatch-" + UUID.randomUUID())
@@ -210,7 +210,7 @@ public abstract class SuiteValidationBindingFunctionalTests extends BaseFunction
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isValid()).isFalse();
         assertThat(response.getBody().getValidationWarnings())
-                .anyMatch(w -> w.getCode() == ValidationWarningCode.TYPE
+                .anyMatch(w -> w.getCode() == ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR
                         && "$.requestTemplate.body".equals(w.getPath())
                         && w.getMessage() != null
                         && w.getMessage().contains("claude-3-opus")

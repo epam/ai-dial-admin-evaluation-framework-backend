@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.ANTHROPIC_MESSAGES;
+import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.OPENAI_RESPONSES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +51,7 @@ import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
+import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
@@ -70,6 +73,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -172,6 +176,7 @@ class TryItOutServiceTest {
                 mcpRequestResolver,
                 mcpResponseSerializer,
                 urlBuilder,
+                new RequestModelValidator(),
                 jsonbMapper,
                 objectMapperMock,
                 serializerRegistry,
@@ -233,6 +238,21 @@ class TryItOutServiceTest {
         return EndpointContractDto.builder()
                 .method(HttpMethod.POST)
                 .relativeUrlPattern("/chat/completions")
+                .build();
+    }
+
+    /**
+     * A resolved request on one of the two fixed-path model-selecting APIs, whose body carries the given
+     * {@code model} — the shape {@link RequestModelValidator} checks right before invocation.
+     */
+    private ResolvedRequestDto fixedPathResolvedRequest(String url, String model) {
+        return ResolvedRequestDto.builder()
+                .url(url)
+                .headers(List.of())
+                .queryParams(List.of())
+                .body(ResolvedJsonBodyDto.builder()
+                        .content(Map.of("model", model, "messages", List.of()))
+                        .build())
                 .build();
     }
 
@@ -420,6 +440,50 @@ class TryItOutServiceTest {
 
             verifyNoInteractions(deploymentInvoker);
             verify(resolvedRequestService, never()).planChain(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("should throw TryItOutValidationException carrying a REQUEST_BODY_VALIDATION_ERROR warning and "
+                + "never invoke DIAL Core when the resolved model does not match the suite's deployment")
+        void shouldAbortWithoutInvokingDeploymentForMismatchedResolvedModel() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID))
+                    .thenReturn(fixedPathResolvedRequest(ANTHROPIC_MESSAGES, "other-deployment"));
+
+            assertThatThrownBy(() -> service.tryWithTestCase(SUITE_ID, TEST_CASE_ID))
+                    .isInstanceOf(TryItOutValidationException.class)
+                    .hasMessageContaining("other-deployment")
+                    .hasMessageContaining("gpt-4")
+                    .asInstanceOf(InstanceOfAssertFactories.type(TryItOutValidationException.class))
+                    .extracting(TryItOutValidationException::getResolvedRequest)
+                    .satisfies(resolved -> assertThat(resolved.getWarnings()).anySatisfy(warning -> {
+                        assertThat(warning.getCode()).isEqualTo(ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR);
+                        assertThat(warning.getFieldName()).isEqualTo("model");
+                    }));
+
+            verifyNoInteractions(deploymentInvoker);
+        }
+
+        @Test
+        @DisplayName("should invoke DIAL Core normally when the resolved model equals the suite's deployment ID")
+        void shouldInvokeDeploymentForMatchingResolvedModel() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID))
+                    .thenReturn(fixedPathResolvedRequest(OPENAI_RESPONSES, "gpt-4"));
+            when(urlBuilder.buildUrl("gpt-4", OPENAI_RESPONSES)).thenReturn(OPENAI_RESPONSES);
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
         }
     }
 
@@ -833,6 +897,40 @@ class TryItOutServiceTest {
         }
 
         @Test
+        @DisplayName("maps a mid-chain resolved-model validation failure to a status-code-zero "
+                + "REQUEST_BODY_VALIDATION_ERROR entry that retains the resolved request and aborts the chain")
+        void shouldMapModelValidationFailureToStatusZeroEntryAndAbortChain() {
+            setUpDeploymentSuite();
+            // objectMapperMock.createObjectNode() — use the real mapper to build the error envelope
+            when(objectMapperMock.createObjectNode()).thenAnswer(inv -> realObjectMapper.createObjectNode());
+            when(resolvedRequestService.planChain(eq(SUITE_ID), eq(TEST_CASE_ID), any()))
+                    .thenReturn(twoRequestPlan(HttpMethod.POST, HttpMethod.POST, List.of(), List.of()));
+
+            // Request #0 succeeds on a non-canonical path; request #1 targets Anthropic Messages with a
+            // model that does not select the suite's deployment.
+            when(requestResolver.resolveForRun(eq(template0), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
+            when(requestResolver.resolveForRun(eq(template1), any(), any(), any()))
+                    .thenReturn(fixedPathResolvedRequest(ANTHROPIC_MESSAGES, "other-deployment"));
+            when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("turn", 0)));
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            assertThat(result.getHistory()).hasSize(2);
+            TryItOutResponseDto failed = result.getHistory().get(1);
+            assertThat(failed.getResponse().getStatusCode()).isZero();
+            assertThat(failed.getResponse().getBody().toString()).contains("REQUEST_BODY_VALIDATION_ERROR");
+            assertThat(failed.getResolvedRequest().getUrl()).isEqualTo(ANTHROPIC_MESSAGES);
+            // Top level mirrors the failing invocation, resolved request included.
+            assertThat(result.getResponse().getStatusCode()).isZero();
+            assertThat(result.getResolvedRequest().getUrl()).isEqualTo(ANTHROPIC_MESSAGES);
+            // Only request #0 ever reached DIAL Core.
+            verify(deploymentInvoker, times(1)).invokeWithStreaming(any(), any(), any(), any(), any());
+        }
+
+        @Test
         @DisplayName("stamps requestIndex/totalRequests/requestName on both entries of a two-request chain, "
                 + "omitting turnIndex/totalTurns for its single-turn requests")
         void shouldStampIdentityOnTwoRequestChain() {
@@ -1106,6 +1204,35 @@ class TryItOutServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
             assertThat(result.getResponse().getStreaming()).isNull();
+        }
+
+        @Test
+        @DisplayName("should throw TryItOutValidationException with a REQUEST_BODY_VALIDATION_ERROR warning and "
+                + "never invoke DIAL Core when the variables-mode resolved model mismatches")
+        void shouldAbortVariablesModeForMismatchedResolvedModel() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            when(jsonbMapper.mapRequestTemplate("{}"))
+                    .thenReturn(RequestTemplateDto.builder()
+                            .urlTemplate(ANTHROPIC_MESSAGES)
+                            .body(JsonRequestBodyDto.builder()
+                                    .content(Map.of("model", "other-deployment"))
+                                    .build())
+                            .build());
+            when(requestResolver.resolve(any(), anyList(), anyMap()))
+                    .thenReturn(fixedPathResolvedRequest(ANTHROPIC_MESSAGES, "other-deployment"));
+
+            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello")))
+                    .isInstanceOf(TryItOutValidationException.class)
+                    .asInstanceOf(InstanceOfAssertFactories.type(TryItOutValidationException.class))
+                    .extracting(TryItOutValidationException::getResolvedRequest)
+                    .satisfies(resolved -> assertThat(resolved.getWarnings())
+                            .extracting(ValidationWarningDto::getCode)
+                            .contains(ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR));
+
+            verifyNoInteractions(deploymentInvoker);
         }
 
         @Test

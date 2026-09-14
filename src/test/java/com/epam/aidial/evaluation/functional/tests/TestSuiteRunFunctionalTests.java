@@ -597,6 +597,35 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should cascade-delete run metric snapshots on run deletion while leaving analytics rows untouched")
+    void shouldCascadeDeleteRunMetricSnapshotsButRetainAnalyticsRowsOnRunDeletion() {
+        TestSuiteResponseDto suite = createTestSuite("Suite For Snapshot Cascade");
+        UUID suiteId = suite.getId();
+        UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
+        UUID computationId = UUID.randomUUID();
+
+        metaTestDataHelper.createRunMetricSnapshot(runId, computationId, "Accuracy", "{}", 1_000L);
+        analyticsTestDataHelper.createTestRunResult(runId, suiteId, UUID.randomUUID(), "case-a", "{}", "{}", 1_000L);
+        analyticsTestDataHelper.createEvalSummary(suiteId, runId, computationId, "case-a", "SUCCESS", 100L, 1_000L);
+
+        // Preconditions: the fixture actually wrote the rows both cascade claims below depend on.
+        assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(runId)).hasSize(1);
+        assertThat(analyticsTestDataHelper.findResultsByRunId(runId)).hasSize(1);
+        assertThat(analyticsTestDataHelper.findEvalSummariesByRunId(runId)).hasSize(1);
+
+        ResponseEntity<Void> deleteResponse =
+                restTemplate.exchange(apiUrl("/test-suite-runs/" + runId), HttpMethod.DELETE, null, Void.class);
+        assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        // The FK's ON DELETE CASCADE removes the run's meta-resident snapshot rows.
+        assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(runId)).isEmpty();
+        // No cross-database FK exists, so run deletion does not reclaim analytics storage — callers
+        // must not rely on it for that (per the test-suite-runs delta's deliberate limitation).
+        assertThat(analyticsTestDataHelper.findResultsByRunId(runId)).hasSize(1);
+        assertThat(analyticsTestDataHelper.findEvalSummariesByRunId(runId)).hasSize(1);
+    }
+
+    @Test
     @DisplayName("Should return 409 when delete non-terminal run")
     void shouldReturn409WhenDeleteNonTerminal() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Del NonTerm");
@@ -852,7 +881,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         assertThat((String) failedSummary.get("metric_values")).isEqualTo("{}");
 
         // Assert: run metric snapshots exist
-        List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
+        List<Map<String, Object>> snapshots = metaTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
         assertThat(snapshots).hasSize(1);
         assertThat(snapshots.get(0).get("tsmd_name")).isEqualTo("Accuracy");
 
@@ -891,7 +920,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         });
 
         // No metrics ⇒ no run metric snapshots and no Phase-3 metric scores.
-        assertThat(analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId()))
+        assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(run.getId()))
                 .isEmpty();
         UUID computationId = UUID.fromString((String) summaries.get(0).get("computation_id"));
         assertThat(metricScoreResultRepository.findByRunAndComputation(run.getId(), computationId))
@@ -1094,7 +1123,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
-        List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
+        List<Map<String, Object>> snapshots = metaTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
         assertThat(snapshots).hasSize(1);
         UUID computationId = UUID.fromString((String) snapshots.get(0).get("computation_id"));
 
@@ -1240,7 +1269,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
         // Run-level: overallScore (roc_auc) still drives metric_score_result's "overall" row, unaffected
         // by testCaseOverallScore.
-        List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
+        List<Map<String, Object>> snapshots = metaTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
         assertThat(snapshots).hasSize(1);
         UUID computationId = UUID.fromString((String) snapshots.get(0).get("computation_id"));
         List<MetricScoreResult> results =
@@ -1626,7 +1655,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     private MetricScoreResult fetchOverallResult(TestSuiteRunResponseDto run) {
-        List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
+        List<Map<String, Object>> snapshots = metaTestDataHelper.findRunMetricSnapshotsByRunId(run.getId());
         assertThat(snapshots).hasSize(2);
         UUID computationId = UUID.fromString((String) snapshots.get(0).get("computation_id"));
 

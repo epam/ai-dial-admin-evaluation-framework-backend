@@ -10,7 +10,7 @@ Status: **Implemented**
 
 #### Scenario: UNIQUE constraint
 - **WHEN** the migration is applied
-- **THEN** a UNIQUE constraint SHALL exist on `(computation_id, tsmd_id)`
+- **THEN** a UNIQUE index (`CREATE UNIQUE INDEX`, not a table constraint) SHALL exist on `(computation_id, tsmd_id)`
 
 #### Scenario: Index for run lookup
 - **WHEN** the migration is applied
@@ -87,3 +87,12 @@ Status: **Implemented**
 - Meta table created by `src/main/resources/db/migration/meta/POSTGRES/V1.32__CreateRunMetricSnapshotsTable.sql`.
 - Repository: `data.db.repository.PostgresRunMetricSnapshotRepository` (`@Qualifier("metaDsl")`); service: `service.domain.RunMetricSnapshotService` (`@Transactional("metaTransactionManager")`).
 - Canonical controller: `web.controller.RunMetricSnapshotController`; deprecated alias: a separate `@Deprecated(forRemoval = true)` controller delegating to the same service, so springdoc can mark only the alias deprecated and emit distinct operationIds.
+- Filter whitelist: `data.db.repository.sql.FilterWhitelists.RUN_METRIC_SNAPSHOTS` backs the required `runId eq <uuid>` filter on both the canonical and deprecated `GET` endpoints; both paths are registered in `OpenApiQueryParamCustomizer`'s `REGISTRY` against this same whitelist.
+
+The following bullets in the baseline `openspec/specs/metrics-storage/spec.md` Implementation Notes are now stale and MUST be replaced with the text given here when this change is archived (see `tasks.md` 8.7):
+
+- **Supersedes** the "Service:" bullet's `RunMetricSnapshotService` reference: it moves from `service.domain.analytics` to `service.domain`.
+- **Supersedes** the "Repository:" bullet's `PostgresRunMetricSnapshotRepository — same qualifier` (whose antecedent is `analyticsDsl`): the qualifier is now `metaDsl`, and the class moves from `data.db.analytics.repository` to `data.db.repository`.
+- **Supersedes** the "Model:" bullet's `RunMetricSnapshot` reference: it moves from `data.db.analytics.model` to `data.db.model`; bindings remain `String` (raw JSON).
+- **Supersedes** the "DTOs:" bullet's `RunMetricSnapshotResponseDto`, `RunMetricSnapshotBatchWriteRequestDto` reference: both move from `service.domain.dto.analytics` to `service.domain.dto`.
+- **Supersedes** the "Migrations:" bullet's `V1.6__CreateRunMetricSnapshotsTable.sql` entry: that analytics migration is now frozen and unread — retained only so analytics `V1.8` and `V1.12` still apply on a fresh install. The live table is meta `V1.32__CreateRunMetricSnapshotsTable.sql`, backfilled once from the analytics copy by meta `V1_33__CopyRunMetricSnapshotsFromAnalytics.java`.

@@ -8,6 +8,7 @@ import org.jooq.SQLDialect;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -57,6 +58,9 @@ public class DslContextSmokeTest {
     @Qualifier("analyticsDsl")
     private DSLContext analyticsDsl;
 
+    @Autowired
+    private ConfigurableListableBeanFactory beanFactory;
+
     @Test
     void metaDslContextIsPresent() {
         assertThat(metaDsl).isNotNull();
@@ -67,5 +71,14 @@ public class DslContextSmokeTest {
     void analyticsDslContextIsPresent() {
         assertThat(analyticsDsl).isNotNull();
         assertThat(analyticsDsl.dialect()).isEqualTo(SQLDialect.POSTGRES);
+    }
+
+    // A bare "context boots successfully" assertion passes equally under an incidental
+    // construction order, so this asserts the explicit bean dependency itself (the
+    // `analyticsFlywayMigration` bean parameter on `metaFlywayMigration`), proving meta Flyway
+    // is ordered after analytics Flyway by declaration rather than by chance (design D3).
+    @Test
+    void metaFlywayMigrationDependsOnAnalyticsFlywayMigration() {
+        assertThat(beanFactory.getDependenciesForBean("metaFlywayMigration")).contains("analyticsFlywayMigration");
     }
 }

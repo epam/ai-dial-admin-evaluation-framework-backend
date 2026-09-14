@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.Datasets;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarationVersions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarations;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RevalidationTasks;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RunMetricSnapshots;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteMetricDefinitions;
@@ -17,6 +18,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.DatasetsRecor
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.MetricDeclarationVersionsRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.MetricDeclarationsRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.RevalidationTasksRecord;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.RunMetricSnapshotsRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestCaseRunInputsRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestCasesRecord;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuiteMetricDefinitionsRecord;
@@ -46,6 +48,7 @@ public class Keys {
     public static final UniqueKey<MetricDeclarationVersionsRecord> METRIC_DECLARATION_VERSIONS_PKEY = Internal.createUniqueKey(MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS, DSL.name("metric_declaration_versions_pkey"), new TableField[] { MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS.ID }, true);
     public static final UniqueKey<MetricDeclarationsRecord> METRIC_DEFINITIONS_PKEY = Internal.createUniqueKey(MetricDeclarations.METRIC_DECLARATIONS, DSL.name("metric_definitions_pkey"), new TableField[] { MetricDeclarations.METRIC_DECLARATIONS.ID }, true);
     public static final UniqueKey<RevalidationTasksRecord> REVALIDATION_TASKS_PKEY = Internal.createUniqueKey(RevalidationTasks.REVALIDATION_TASKS, DSL.name("revalidation_tasks_pkey"), new TableField[] { RevalidationTasks.REVALIDATION_TASKS.ID }, true);
+    public static final UniqueKey<RunMetricSnapshotsRecord> RUN_METRIC_SNAPSHOTS_PKEY = Internal.createUniqueKey(RunMetricSnapshots.RUN_METRIC_SNAPSHOTS, DSL.name("run_metric_snapshots_pkey"), new TableField[] { RunMetricSnapshots.RUN_METRIC_SNAPSHOTS.ID }, true);
     public static final UniqueKey<TestCaseRunInputsRecord> TEST_CASE_RUN_INPUTS_PKEY = Internal.createUniqueKey(TestCaseRunInputs.TEST_CASE_RUN_INPUTS, DSL.name("test_case_run_inputs_pkey"), new TableField[] { TestCaseRunInputs.TEST_CASE_RUN_INPUTS.RUN_ID, TestCaseRunInputs.TEST_CASE_RUN_INPUTS.POSITION }, true);
     public static final UniqueKey<TestCasesRecord> TEST_CASES_PKEY = Internal.createUniqueKey(TestCases.TEST_CASES, DSL.name("test_cases_pkey"), new TableField[] { TestCases.TEST_CASES.ID }, true);
     public static final UniqueKey<TestSuiteMetricDefinitionsRecord> TEST_SUITE_METRIC_DEFINITIONS_PKEY = Internal.createUniqueKey(TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS, DSL.name("test_suite_metric_definitions_pkey"), new TableField[] { TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS.ID }, true);
@@ -59,6 +62,7 @@ public class Keys {
 
     public static final ForeignKey<MetricDeclarationVersionsRecord, MetricDeclarationsRecord> METRIC_DECLARATION_VERSIONS__FK_METRIC_DECLARATION_VERSIONS_DECLARATION = Internal.createForeignKey(MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS, DSL.name("fk_metric_declaration_versions_declaration"), new TableField[] { MetricDeclarationVersions.METRIC_DECLARATION_VERSIONS.METRIC_DECLARATION_ID }, Keys.METRIC_DEFINITIONS_PKEY, new TableField[] { MetricDeclarations.METRIC_DECLARATIONS.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<RevalidationTasksRecord, DatasetsRecord> REVALIDATION_TASKS__FK_REVALIDATION_TASKS_DATASET_ID = Internal.createForeignKey(RevalidationTasks.REVALIDATION_TASKS, DSL.name("fk_revalidation_tasks_dataset_id"), new TableField[] { RevalidationTasks.REVALIDATION_TASKS.DATASET_ID }, Keys.DATASETS_PKEY, new TableField[] { Datasets.DATASETS.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
+    public static final ForeignKey<RunMetricSnapshotsRecord, TestSuiteRunsRecord> RUN_METRIC_SNAPSHOTS__FK_RUN_METRIC_SNAPSHOTS_RUN = Internal.createForeignKey(RunMetricSnapshots.RUN_METRIC_SNAPSHOTS, DSL.name("fk_run_metric_snapshots_run"), new TableField[] { RunMetricSnapshots.RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID }, Keys.TEST_SUITE_RUNS_PKEY, new TableField[] { TestSuiteRuns.TEST_SUITE_RUNS.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<TestCaseRunInputsRecord, TestSuiteRunsRecord> TEST_CASE_RUN_INPUTS__TEST_CASE_RUN_INPUTS_RUN_ID_FKEY = Internal.createForeignKey(TestCaseRunInputs.TEST_CASE_RUN_INPUTS, DSL.name("test_case_run_inputs_run_id_fkey"), new TableField[] { TestCaseRunInputs.TEST_CASE_RUN_INPUTS.RUN_ID }, Keys.TEST_SUITE_RUNS_PKEY, new TableField[] { TestSuiteRuns.TEST_SUITE_RUNS.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<TestCasesRecord, DatasetsRecord> TEST_CASES__FK_TEST_CASES_DATASET_ID = Internal.createForeignKey(TestCases.TEST_CASES, DSL.name("fk_test_cases_dataset_id"), new TableField[] { TestCases.TEST_CASES.DATASET_ID }, Keys.DATASETS_PKEY, new TableField[] { Datasets.DATASETS.ID }, true, ForeignKeyRule.CASCADE, ForeignKeyRule.NO_ACTION);
     public static final ForeignKey<TestSuiteMetricDefinitionsRecord, MetricDeclarationsRecord> TEST_SUITE_METRIC_DEFINITIONS__FK_TSMD_METRIC_DECLARATION = Internal.createForeignKey(TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS, DSL.name("fk_tsmd_metric_declaration"), new TableField[] { TestSuiteMetricDefinitions.TEST_SUITE_METRIC_DEFINITIONS.METRIC_DECLARATION_ID }, Keys.METRIC_DEFINITIONS_PKEY, new TableField[] { MetricDeclarations.METRIC_DECLARATIONS.ID }, true, ForeignKeyRule.NO_ACTION, ForeignKeyRule.NO_ACTION);

@@ -9,7 +9,8 @@ context: |
   - Spring Boot 4.0.6
   - Build: Gradle 9.7.1
   - Database: PostgreSQL via JDBC only (NO JPA/Hibernate)
-  - Migrations: Flyway (src/main/resources/db/migration/POSTGRES/), naming: V{major}.{minor}__{Description}.sql
+  - Migrations: Flyway (src/main/resources/db/migration/POSTGRES/), naming: V{major}.{minor}__{Description}.sql for SQL,
+    V{major}_{minor}__{Description}.java for Java migrations (data movement only — never DDL)
   - Security: OIDC/JWT multi-issuer (configurable; can be disabled for local/tests)
   - API docs: OpenAPI/Swagger UI (springdoc)
   - Testing: JUnit 5 + Testcontainers (Postgres); run with `./gradlew test`
@@ -83,6 +84,13 @@ context: |
   - Use specialized libraries for data formats (e.g., CSV processing)
   - Prefer constructor injection over field injection
   - Use file reference aliases (@ef, public prefixes) for cross-environment portability; DialFileRefResolver translates at runtime
+  - Flyway migrations MAY be SQL or Java, but ALL schema DDL MUST stay in SQL — `generateJooq` and `JooqSchemaDriftTest` build their own Flyway from the SQL
+    migration directories and never see a Java migration, so DDL introduced in Java would be invisible to codegen and to the drift guard. Java migrations are
+    restricted to data movement and data fixes, are registered explicitly via `Flyway.configure()...javaMigrations(new ...)` (not classpath-scanned, so they can
+    be constructor-injected with collaborators such as the other datasource), and write through the connection Flyway supplies so their effects commit atomically
+    with the history entry. The meta Flyway bean runs AFTER the analytics one (`metaFlywayMigration` takes the analytics `Flyway` bean as a parameter), so a meta
+    migration may read a fully migrated analytics database; a cross-datasource read skips with a log, rather than failing, when its source table is absent
+    (see docs/patterns/dual-datasource.md)
   - Run cancellation is interrupt-driven: each run owns one thread-per-task executor built by `RunExecutorFactory` (virtual by default, `spring.threads.virtual.enabled=false` → platform threads) (`RunHandle`, held in the per-JVM `ActiveRunRegistry`); cancel = `shutdownNow()`; the orchestrating job thread is never interrupted and decides the terminal status via guarded DB writes (affected-row counts). Never add polled cancellation flags or grace-period drains (see docs/patterns/run-cancellation.md)
 
   # Naming Conventions
@@ -164,7 +172,8 @@ context: |
   - Full build (includes tests + checkstyle): `./gradlew clean build`
   - Docker: `docker build -t dial-eval-backend .`
   - Docker (eval-cli): `docker build -f eval-cli/Dockerfile -t eval-cli:local .` — build context is the repo root (needs `evaluation-runner-core/` alongside `eval-cli/`). Not published by CI; consumers clone the repo at a pinned ref and build the image themselves (see eval-cli/README.md)
-  - Flyway: auto-applied on application start; meta migrations in src/main/resources/db/migration/meta/POSTGRES/, analytics migrations in src/main/resources/db/migration/analytics/POSTGRES/
+  - Flyway: auto-applied on application start; meta migrations in src/main/resources/db/migration/meta/POSTGRES/, analytics migrations in src/main/resources/db/migration/analytics/POSTGRES/;
+    meta migrates after analytics; Java migrations are registered explicitly in MetaFlywayConfiguration and so do not appear in the migration directories
   - jOOQ codegen: `./gradlew generateJooq` — boots Zonky EmbeddedPostgres, applies both migration sets, writes generated sources to src/main/java-generated/; run and commit after any schema migration change
 
   # Code Examples — Good vs Bad

@@ -1,6 +1,6 @@
-package com.epam.aidial.evaluation.data.db.analytics.repository;
+package com.epam.aidial.evaluation.data.db.repository;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;

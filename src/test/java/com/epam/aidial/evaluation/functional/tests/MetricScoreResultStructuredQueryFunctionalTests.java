@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.within;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
+import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
@@ -64,6 +65,9 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
 
     @Autowired
     private AnalyticsTestDataHelper analyticsTestDataHelper;
+
+    @Autowired
+    private MetaTestDataHelper metaTestDataHelper;
 
     @Autowired
     private MetricScoreResultSchemaProvider schemaProvider;
@@ -221,14 +225,16 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
     @Test
     @DisplayName("resolves the computation_id eq \"latest\" sentinel to the run's latest computation")
     void resolvesLatestSentinel() {
-        UUID runId = UUID.randomUUID();
+        UUID suiteId = metaTestDataHelper
+                .createTestSuite("mscq-suite-" + UUID.randomUUID())
+                .getId();
+        UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
         UUID older = UUID.randomUUID();
         UUID newer = UUID.randomUUID();
-        analyticsTestDataHelper.createRunMetricSnapshot(runId, older, "Relevancy", OUTPUT_SCHEMA, 1_000L);
-        analyticsTestDataHelper.createRunMetricSnapshot(runId, newer, "Relevancy", OUTPUT_SCHEMA, 2_000L);
+        metaTestDataHelper.createRunMetricSnapshot(runId, older, "Relevancy", OUTPUT_SCHEMA, 1_000L);
+        metaTestDataHelper.createRunMetricSnapshot(runId, newer, "Relevancy", OUTPUT_SCHEMA, 2_000L);
         // "latest" is resolved from eval summaries, so each computation needs readable rows —
         // with the same computed_at_ms as its snapshot so the newer computation still wins.
-        UUID suiteId = UUID.randomUUID();
         analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
                 .suiteId(suiteId)
                 .runId(runId)

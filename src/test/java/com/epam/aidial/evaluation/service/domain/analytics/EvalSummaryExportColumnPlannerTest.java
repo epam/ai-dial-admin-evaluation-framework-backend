@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;

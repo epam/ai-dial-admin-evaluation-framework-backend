@@ -1,14 +1,14 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
@@ -20,8 +20,8 @@ import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.TestCaseEvalScoreService;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
 import java.time.Clock;
 import java.util.ArrayList;

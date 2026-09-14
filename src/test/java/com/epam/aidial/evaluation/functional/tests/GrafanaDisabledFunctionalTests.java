@@ -13,14 +13,14 @@ import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseRunResultResponseDto;
 import java.util.List;
 import java.util.Map;
@@ -54,7 +54,7 @@ public abstract class GrafanaDisabledFunctionalTests extends AbstractGrafanaFunc
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
-        analyticsTestDataHelper.cleanupRunMetricSnapshots();
+        metaTestDataHelper.cleanupRunMetricSnapshots();
         analyticsTestDataHelper.cleanupResults();
         testSuiteId =
                 metaTestDataHelper.createTestSuite("Grafana Disabled Suite").getId();
@@ -152,7 +152,7 @@ public abstract class GrafanaDisabledFunctionalTests extends AbstractGrafanaFunc
                         .build()))
                 .build();
         restTemplate.postForEntity(
-                apiUrl("/analytics/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
+                apiUrl("/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
     }
 
     private void insertEvalSummary(UUID suiteId, UUID runId, UUID computationId) {

@@ -2,7 +2,7 @@ package com.epam.aidial.evaluation.query.service.metricscore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;

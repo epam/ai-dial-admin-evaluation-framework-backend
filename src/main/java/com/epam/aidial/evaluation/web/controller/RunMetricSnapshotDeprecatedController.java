@@ -22,26 +22,40 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Deprecated alias for {@link RunMetricSnapshotController}, kept at the pre-move path so existing
+ * clients keep working while they migrate to {@code /api/v1/run-metric-snapshots}. Delegates every
+ * call to the same {@link RunMetricSnapshotService} methods as the canonical controller, with no
+ * logic of its own. This entire file is removed once the UI has migrated.
+ */
 @RestController
 @LogExecution
 @Validated
-@RequestMapping("/api/v1/run-metric-snapshots")
+@Deprecated(forRemoval = true)
+@RequestMapping("/api/v1/analytics/run-metric-snapshots")
 @RequiredArgsConstructor
 @Tag(name = "Run Metric Snapshots", description = "Metric binding snapshot endpoints")
-public class RunMetricSnapshotController {
+public class RunMetricSnapshotDeprecatedController {
 
     private final RunMetricSnapshotService snapshotService;
 
     @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Batch write run metric snapshots")
+    @Operation(
+            summary = "Batch write run metric snapshots (deprecated)",
+            description = "Deprecated. Use POST /api/v1/run-metric-snapshots instead.",
+            deprecated = true)
     @ResponseStatus(HttpStatus.CREATED)
-    public BatchWriteResponseDto batchCreate(@Valid @RequestBody RunMetricSnapshotBatchWriteRequestDto request) {
+    public BatchWriteResponseDto batchCreateRunMetricSnapshotsDeprecated(
+            @Valid @RequestBody RunMetricSnapshotBatchWriteRequestDto request) {
         return snapshotService.batchCreate(request);
     }
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "List run metric snapshots by run ID")
-    public List<RunMetricSnapshotResponseDto> list(
+    @Operation(
+            summary = "List run metric snapshots by run ID (deprecated)",
+            description = "Deprecated. Use GET /api/v1/run-metric-snapshots instead.",
+            deprecated = true)
+    public List<RunMetricSnapshotResponseDto> listRunMetricSnapshotsDeprecated(
             @Parameter(description = "Filter conditions") @FilterParam List<String> filter) {
         return snapshotService.listByFilter(filter);
     }

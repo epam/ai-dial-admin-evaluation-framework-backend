@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.service.domain.dto.analytics;
+package com.epam.aidial.evaluation.service.domain.dto;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;

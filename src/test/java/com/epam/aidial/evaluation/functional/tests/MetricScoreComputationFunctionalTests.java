@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.configuration.JsonMapperConfiguration;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputationExecutor;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
@@ -74,13 +75,18 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     private AnalyticsTestDataHelper analyticsTestDataHelper;
 
     @Autowired
+    private MetaTestDataHelper metaTestDataHelper;
+
+    @Autowired
     private MetricScoreResultRepository resultRepository;
 
     @Test
     @DisplayName("computes AVG/P10/P90/MIN/MAX per metric field plus overall, under the run's computation")
     void computesStatisticsForRun() {
-        final UUID suiteId = UUID.randomUUID();
-        final UUID runId = UUID.randomUUID();
+        final UUID suiteId = metaTestDataHelper
+                .createTestSuite("mscf-suite-" + UUID.randomUUID())
+                .getId();
+        final UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
         final UUID computationId = UUID.randomUUID();
         final long createdAt = 1_700_000_000_000L;
         final long computedAt = 1_700_000_500_000L;
@@ -115,8 +121,10 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     @Test
     @DisplayName("computes per-metric statistics but no default overall when the run has multiple metric fields")
     void skipsDefaultOverallForMultipleMetrics() {
-        final UUID suiteId = UUID.randomUUID();
-        final UUID runId = UUID.randomUUID();
+        final UUID suiteId = metaTestDataHelper
+                .createTestSuite("mscf-suite-" + UUID.randomUUID())
+                .getId();
+        final UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
         final UUID computationId = UUID.randomUUID();
         final long createdAt = 1_700_000_000_000L;
         final long computedAt = 1_700_000_500_000L;
@@ -134,8 +142,10 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     @Test
     @DisplayName("custom overall referencing one of two metrics computes that metric's average end-to-end")
     void computesCustomOverallForOneOfTwoMetrics() {
-        final UUID suiteId = UUID.randomUUID();
-        final UUID runId = UUID.randomUUID();
+        final UUID suiteId = metaTestDataHelper
+                .createTestSuite("mscf-suite-" + UUID.randomUUID())
+                .getId();
+        final UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
         final UUID computationId = UUID.randomUUID();
         final long createdAt = 1_700_000_000_000L;
         final long computedAt = 1_700_000_500_000L;
@@ -155,8 +165,10 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     @Test
     @DisplayName("custom overall computes ROC AUC over a classifier's label/probability outputs end-to-end")
     void computesCustomOverallRocAuc() {
-        final UUID suiteId = UUID.randomUUID();
-        final UUID runId = UUID.randomUUID();
+        final UUID suiteId = metaTestDataHelper
+                .createTestSuite("mscf-suite-" + UUID.randomUUID())
+                .getId();
+        final UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
         final UUID computationId = UUID.randomUUID();
         final long createdAt = 1_700_000_000_000L;
         final long computedAt = 1_700_000_500_000L;
@@ -174,8 +186,10 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     @DisplayName(
             "weighted mean coalesces a metric missing from the run's data to zero instead of nulling the whole overall")
     void computesWeightedMeanWithMissingMetricAsZero() {
-        final UUID suiteId = UUID.randomUUID();
-        final UUID runId = UUID.randomUUID();
+        final UUID suiteId = metaTestDataHelper
+                .createTestSuite("mscf-suite-" + UUID.randomUUID())
+                .getId();
+        final UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
         final UUID computationId = UUID.randomUUID();
         final long createdAt = 1_700_000_000_000L;
         final long computedAt = 1_700_000_500_000L;
@@ -194,7 +208,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     }
 
     private void seedClassifierRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
-        analyticsTestDataHelper.createRunMetricSnapshot(
+        metaTestDataHelper.createRunMetricSnapshot(
                 runId, computationId, "Classifier", CLASSIFIER_OUTPUT_SCHEMA, computedAt);
         seedClassifierSummary(suiteId, runId, computationId, "case-a", createdAt, 0, 0.1);
         seedClassifierSummary(suiteId, runId, computationId, "case-b", createdAt, 0, 0.4);
@@ -223,7 +237,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     }
 
     private void seedRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
-        analyticsTestDataHelper.createRunMetricSnapshot(runId, computationId, "Relevancy", OUTPUT_SCHEMA, computedAt);
+        metaTestDataHelper.createRunMetricSnapshot(runId, computationId, "Relevancy", OUTPUT_SCHEMA, computedAt);
         analyticsTestDataHelper.createEvalSummary(
                 suiteId,
                 runId,
@@ -257,8 +271,8 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
     }
 
     private void seedTwoMetricRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
-        analyticsTestDataHelper.createRunMetricSnapshot(runId, computationId, "Relevancy", OUTPUT_SCHEMA, computedAt);
-        analyticsTestDataHelper.createRunMetricSnapshot(runId, computationId, "Accuracy", OUTPUT_SCHEMA, computedAt);
+        metaTestDataHelper.createRunMetricSnapshot(runId, computationId, "Relevancy", OUTPUT_SCHEMA, computedAt);
+        metaTestDataHelper.createRunMetricSnapshot(runId, computationId, "Accuracy", OUTPUT_SCHEMA, computedAt);
         seedTwoMetricSummary(suiteId, runId, computationId, "case-a", createdAt, 0.0, 0.6);
         seedTwoMetricSummary(suiteId, runId, computationId, "case-b", createdAt, 0.5, 0.7);
         seedTwoMetricSummary(suiteId, runId, computationId, "case-c", createdAt, 1.0, 0.8);

@@ -2,9 +2,9 @@ package com.epam.aidial.evaluation.query.service.metricscore;
 
 import com.epam.aidial.evaluation.configuration.properties.analytics.RunComparisonProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
@@ -81,22 +81,36 @@ public class RunComparisonService {
         final OverallScoreDefinition firstOverallScoreDef = overallScoreDefinition(first);
         final OverallScoreDefinition secondOverallScoreDef = overallScoreDefinition(second);
 
-        // ComputationResolver requires an ambient analytics transaction (its own contract), and one
-        // transaction also gives every aggregate query a consistent snapshot. @Transactional on a
-        // self-invoked helper would open none at all, so the template is explicit.
-        return analyticsTransactionTemplate.execute(status -> {
-            final UUID firstComputation = requireComputation(first.getId());
-            final UUID secondComputation = requireComputation(second.getId());
+        // ComputationResolver requires an ambient analytics transaction (its own contract). Resolving
+        // both computations up front keeps that contract satisfied without extending it to the meta
+        // read below, which does not need it.
+        final ComputationIds computationIds = analyticsTransactionTemplate.execute(
+                status -> new ComputationIds(requireComputation(first.getId()), requireComputation(second.getId())));
 
+        // Meta read, ahead of the analytics transaction below: a metaDsl query issued inside an
+        // analytics transaction would not join it and would silently run in autocommit on a
+        // different connection (design D9).
+        final List<RunMetricSnapshot> firstSnapshots =
+                runMetricSnapshotRepository.findByRunIdAndComputationId(first.getId(), computationIds.first());
+        final List<RunMetricSnapshot> secondSnapshots =
+                runMetricSnapshotRepository.findByRunIdAndComputationId(second.getId(), computationIds.second());
+
+        // This transaction gives the aggregate queries below a consistent snapshot with each other,
+        // but not with computation resolution above: that ran in its own, earlier transaction (see
+        // the comment on computationIds), so a computation could resolve to "latest" there and a
+        // newer one land before this transaction starts. Computations are append-only, so the worst
+        // case is aggregating against a slightly stale "latest", never a torn or inconsistent read.
+        // @Transactional on a self-invoked helper would open none at all, so the template is explicit.
+        return analyticsTransactionTemplate.execute(status -> {
             final AggregationInputs firstInputs =
-                    resolveInputs(first.getId(), firstComputation, second.getId(), secondComputation);
+                    resolveInputs(first.getId(), computationIds.first(), second.getId(), computationIds.second());
             final AggregationInputs secondInputs =
-                    resolveInputs(second.getId(), secondComputation, first.getId(), firstComputation);
+                    resolveInputs(second.getId(), computationIds.second(), first.getId(), computationIds.first());
 
             return RunComparisonResponseDto.builder()
                     .runs(List.of(
-                            aggregateScores(firstInputs, firstOverallScoreDef),
-                            aggregateScores(secondInputs, secondOverallScoreDef)))
+                            aggregateScores(firstInputs, firstOverallScoreDef, firstSnapshots),
+                            aggregateScores(secondInputs, secondOverallScoreDef, secondSnapshots)))
                     .build();
         });
     }
@@ -111,10 +125,9 @@ public class RunComparisonService {
         return new AggregationInputs(runId, computationId, stats, unmatchedIds);
     }
 
-    private RunComparisonRunDto aggregateScores(AggregationInputs inputs, OverallScoreDefinition overallScoreDef) {
+    private RunComparisonRunDto aggregateScores(
+            AggregationInputs inputs, OverallScoreDefinition overallScoreDef, List<RunMetricSnapshot> snapshots) {
         final EvalSummaryMatchStats stats = inputs.stats();
-        final List<RunMetricSnapshot> snapshots =
-                runMetricSnapshotRepository.findByRunIdAndComputationId(inputs.runId(), inputs.computationId());
         final List<MetricScoreValueDto> scores = stats.matchedRows() == 0
                 // Nothing matched: every aggregate would be NULL and therefore omitted, so skip the queries
                 // rather than binding the entire run for a guaranteed-empty result.
@@ -193,4 +206,7 @@ public class RunComparisonService {
     /** One side's resolved inputs, so the two directions are aggregated symmetrically. */
     private record AggregationInputs(
             UUID runId, UUID computationId, EvalSummaryMatchStats stats, List<UUID> unmatchedIds) {}
+
+    /** Both runs' resolved computation ids, kept together since every downstream read needs both. */
+    private record ComputationIds(UUID first, UUID second) {}
 }

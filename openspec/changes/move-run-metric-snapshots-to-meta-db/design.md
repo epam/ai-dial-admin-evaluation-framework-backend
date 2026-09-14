@@ -2,7 +2,7 @@
 
 See `proposal.md` — Why. Constraints that shape the approach:
 
-- **Meta and analytics are separate databases**, not schemas in one database (`postgres.meta.datasource.url` = `evaluation_db`, `postgres.analytics.datasource.url` = `evaluation_analytics_db`; `DatasourceValidationConfiguration` enforces they differ). Cross-database SQL is therefore impossible, and any data copy must move rows through the JVM. Note that `generateJooq` is the exception: it boots one embedded Postgres with `meta` and `analytics` as two schemas, purely so one codegen run can see both.
+- **Meta and analytics are configured as separate databases in this deployment**, but that is not an enforced invariant. `postgres.meta.datasource.url` = `evaluation_db`, `postgres.analytics.datasource.url` = `evaluation_analytics_db` today, but `DatasourceValidationConfiguration` only *fails* startup when host, port, database, **and** schema all match (`DatasourceValidationConfiguration.java:50-57`); when host/port/database match but the schemas differ, it logs and lets startup proceed (`:59-66`). Same-database/different-schema is a supported topology (`database-and-migrations` spec, "Same database with different schemas allowed", `spec.md:69-71`). **Consequence:** a cross-datasource `information_schema.tables` existence check (D5) MUST filter by `table_schema` bound to the analytics schema — `information_schema.tables` lists every schema visible to the connecting role, not only the one on the connection's search_path, so an unqualified check would silently match the meta database's own same-named table in a shared-database deployment. Cross-database *SQL* (a join, or an unqualified reference resolved by search_path) is impossible only when the two are genuinely separate databases; when they share one, they still cannot be joined without schema-qualifying every reference, so any data copy must still move rows through the JVM either way. Note that `generateJooq` is a separate case: it boots one embedded Postgres with `meta` and `analytics` as two schemas, purely so one codegen run can see both.
 - **Flyway is hand-wired.** `MetaFlywayConfiguration` and `AnalyticsFlywayConfiguration` each build a `Flyway` and call `.migrate()` inside the bean method; Boot's autoconfiguration is off. Migration therefore happens during bean construction, before any repository or service exists.
 - **Zero SQL-level coupling to unwind.** Every reader of `run_metric_snapshots` goes through `RunMetricSnapshotRepository` and joins in the JVM. `EvalSummaryRepository` and `ComputationResolver` name the table only in javadoc. Nothing in the analytics query layer joins it.
 - **Two historical analytics migrations reference the table** — `V1.8__NormalizeErrorShapedMetricValues.sql` joins `output_schema`, and `V1.12__AddSuiteAndTimestampToMetricScoreResult.sql` backfills `computed_at_ms` from it. Both must still apply against a fresh database, which constrains when the analytics table may be dropped.
@@ -39,15 +39,17 @@ Meta `V1.32__CreateRunMetricSnapshotsTable.sql` holds the table, the unique inde
 
 ### D2: Register the Java migration explicitly, not by classpath scanning
 
-`MetaFlywayConfiguration` gains the analytics `DataSource` as a bean parameter and passes a constructed instance:
+`MetaFlywayConfiguration` gains the analytics `DataSource` (and the analytics **schema**, `postgres.analytics.datasource.schema` — not the vendor string; the migration's schema-qualified existence check in D5 needs the schema, and both constructor parameters are typed `String` so passing the vendor by mistake compiles cleanly and silently) as bean parameters and passes a constructed instance:
 
 ```java
 Flyway.configure()
         .dataSource(metaDataSource)
         .locations(location)
-        .javaMigrations(new V1_33__CopyRunMetricSnapshotsFromAnalytics(analyticsDataSource, analyticsVendor))
+        .javaMigrations(new V1_33__CopyRunMetricSnapshotsFromAnalytics(analyticsDataSource, analyticsSchema))
         ...
 ```
+
+The real bean method (`MetaFlywayConfiguration.java:19-31`) also takes the analytics `Flyway` bean as an explicitly `@Qualifier("analyticsFlywayMigration")`-annotated parameter, purely for ordering — see D3.
 
 **Why:** Flyway instantiates scanned migrations reflectively via a no-arg constructor, which would force the analytics `DataSource` to arrive through static mutable state. Explicit registration keeps it constructor-injected and makes the migration directly unit-testable — which matters, because it cannot be exercised through an application boot (D6).
 
@@ -55,11 +57,11 @@ Flyway.configure()
 
 ### D3: Order the meta Flyway bean after the analytics Flyway bean
 
-`metaFlywayMigration` takes the analytics `Flyway` bean as a parameter.
+`metaFlywayMigration` takes the analytics `Flyway` bean as an explicitly `@Qualifier("analyticsFlywayMigration")`-annotated parameter.
 
 **Why:** today both beans depend only on `DatasourceValidationResult` and nothing orders them relative to each other. The copy reads a table created by analytics `V1.6`; if meta migrated first on a fresh install, the source would not exist. The skip guard (D5) already makes that case correct rather than fatal, but relying on a guard for something we can make deterministic is worse than just making it deterministic.
 
-**Why a bean parameter over `@DependsOn("analyticsFlywayMigration")`:** the parameter is type-checked and survives a bean rename; the string annotation does not.
+**Why a bean parameter over `@DependsOn("analyticsFlywayMigration")`:** not because it is "type-checked" — it isn't, in any way `@DependsOn` is not. Both `metaFlywayMigration` and `analyticsFlywayMigration` are unqualified beans of type `Flyway`, so a bare `Flyway` parameter on the meta bean method is, in the general case, exactly as name-based as `@DependsOn`'s bean-name string; adding the explicit `@Qualifier("analyticsFlywayMigration")` makes that name-based resolution visible instead of implicit, and keeps it correct if a third `Flyway`-typed bean is ever introduced. The real reason to prefer the bean-parameter form is call-site readability: the ordering dependency sits in the method signature next to a comment explaining why, right beside the code that actually uses the analytics datasource, rather than in an annotation attribute with no other reference to analytics anywhere in the method.
 
 ### D4: Write through Flyway's connection, read on a separate connection
 
@@ -67,13 +69,17 @@ The migration reads from a connection it opens off the injected analytics `DataS
 
 **Why:** writing on Flyway's own connection puts the inserts inside the migration's transaction, so a failure mid-copy rolls back the data *and* the history entry together — the migration re-runs cleanly next boot. The read connection is read-only and independently closed; it must not be Flyway's, which belongs to the other database.
 
-### D5: Skip, do not fail, when the source is absent
+### D5: Skip, do not fail, when the source table is absent
 
-Before reading, the migration checks `information_schema.tables` for `run_metric_snapshots` on the analytics side, and checks that `datasource.analytics.vendor` is `POSTGRES`. Either miss logs and returns without error.
+Before reading, the migration checks `information_schema.tables` — **schema-qualified** (`table_schema = ?` bound to the analytics schema; see the Context section's consequence note) — for `run_metric_snapshots` on the analytics side. A miss logs and returns without error.
 
-**Why:** a fresh installation migrates both databases from empty. There is nothing to copy and no reason to fail. An unreachable analytics database is a different matter and still fails the boot — but that is pre-existing behavior, since `analyticsFlywayMigration` already calls `.migrate()` during bean construction. This change adds no new startup dependency.
+**Why no vendor check inside the migration:** `DatasourceValidationConfiguration` already hard-fails startup for any `datasource.analytics.vendor` other than `POSTGRES` (`DatasourceValidationConfiguration.java:17,33-38`), and both Flyway `@Bean` methods take its `DatasourceValidationResult` marker as a required parameter — so the application cannot boot far enough to construct either Flyway bean, let alone run this migration, with an unsupported vendor configured. A vendor branch inside the migration would be unreachable dead code; the migration relies on the existing startup validation instead of duplicating it.
 
-### D6: Guard orphans per row inside the INSERT
+**Why skip absent-table rather than fail:** a fresh installation migrates both databases from empty. There is nothing to copy and no reason to fail. An unreachable analytics database is a different matter and still fails the boot — but that is pre-existing behavior, since `analyticsFlywayMigration` already calls `.migrate()` during bean construction. This change adds no new startup dependency.
+
+### D6: Guard orphans via an explicit existence check, not the insert's outcome
+
+For each batch of up to 1000 source rows, the migration first collects the batch's distinct `test_suite_run_id`s and queries which of them exist in meta (`SELECT id FROM test_suite_runs WHERE id = ANY (?)`). Rows whose run is not in that result are counted as orphans and dropped before any `INSERT` is attempted for them. Only the remaining, run-verified rows are batched into:
 
 ```sql
 INSERT INTO run_metric_snapshots (id, computation_id, test_suite_run_id, ...)
@@ -82,9 +88,13 @@ WHERE EXISTS (SELECT 1 FROM test_suite_runs WHERE id = ?)
 ON CONFLICT (computation_id, tsmd_id) DO NOTHING
 ```
 
-Batched via `addBatch` / `executeBatch` every 1000 rows. Rows whose run is gone insert zero rows rather than raising a constraint violation; the migration sums the batch update counts, compares against rows attempted, and logs the difference as dropped orphans.
+via `addBatch` / `executeBatch`. The migration reports three counts, summed across all batches: `copied` (positive update counts from `executeBatch()`), `orphaned` (from the existence check above), and `alreadyPresent` (the run-verified rows minus `copied` — rows that passed the existence check but were skipped by `ON CONFLICT DO NOTHING`, i.e. a retry over an already-copied target).
 
-**Why not pre-load all run ids into a `Set` and filter in Java:** run counts are unbounded and this runs during startup. The `WHERE EXISTS` costs one index probe on the primary key per row and keeps memory flat.
+**Why not derive the orphan count from `attempted - inserted`:** `ON CONFLICT DO NOTHING` also yields a zero update count for a row that already exists in the target, and pgjdbc MAY collapse a batch's per-statement outcomes to `SUCCESS_NO_INFO` — both indistinguishable from an orphan by update count alone. Deriving orphans that way would, on a second run over a partially-copied target, misreport every already-copied row as a fresh orphan. The explicit existence check keeps the orphan count accurate on every run, including retries, not just the first — so the Migration Plan's verification step below can rely on it unconditionally.
+
+**Why also keep the `WHERE EXISTS` clause in the INSERT:** defense-in-depth against a run being deleted between the batch's existence check and its insert (the migration is not holding a lock on `test_suite_runs`); it costs one extra index probe per row and never changes the outcome the existence check already determined.
+
+**Why not pre-load all run ids into a `Set` and filter in Java:** run counts are unbounded and this runs during startup. The batch-scoped existence check costs one indexed `= ANY(?)` lookup per batch, not one query per row, and keeps memory flat regardless of table size.
 
 **Why `ON CONFLICT DO NOTHING` as well:** makes a partial previous attempt harmless and matches the existing write path's semantics.
 
@@ -130,8 +140,8 @@ A side effect worth naming: `RunMetricSnapshotService.batchCreate` currently ope
 
 **Deploy:** ordinary rolling deploy. On startup, analytics Flyway runs first (D3), then meta Flyway applies `V1.32` (DDL) and `V1.33` (copy) in order. No manual step, no downtime window, no configuration change.
 
-**Verification after deploy:** compare `SELECT count(*) FROM run_metric_snapshots` across both databases. The meta count will be lower by exactly the orphan count the migration logged.
+**Verification after deploy:** compare `SELECT count(*) FROM run_metric_snapshots` across both databases. The meta count will be lower than the analytics count by exactly the orphan count the migration logged — accurate on every run, including a retry after a partial previous copy, because the orphan count comes from D6's explicit existence check rather than from the insert's own update counts.
 
 **Rollback:** redeploy the previous artifact. The analytics table was never modified and still holds every row, so the old code reads its original source unchanged. The meta table and its two history rows are left behind, inert — a re-upgrade re-applies nothing (the history entries already exist) and reads the meta table it already populated. This clean rollback is the entire reason the analytics table is kept (proposal D4).
 
-**Testing approach:** the copy cannot be exercised by a normal `@PostgresFunctionalTests` boot, because Flyway runs during bean construction — long before any test fixture exists, so there is never anything in the source to copy. The migration class is therefore driven directly against two Testcontainers datasources, covering: a populated copy, re-running against an already-copied target (idempotent), a row whose run is absent from meta (dropped and logged, migration succeeds), and an absent source table (skipped, migration succeeds). Everything else is covered by the existing functional suites once their helpers and REST paths are repointed, plus a new test asserting the renamed OpenAPI examples appear in `/v3/api-docs`.
+**Testing approach:** the copy cannot be exercised by a normal `@PostgresFunctionalTests` boot, because Flyway runs during bean construction — long before any test fixture exists, so there is never anything in the source to copy. The migration class is therefore driven directly against two Testcontainers datasources, covering: a populated copy, re-running against an already-copied target (idempotent), a row whose run is absent from meta (dropped and logged, migration succeeds), an absent source table (skipped, migration succeeds), and a **forced mid-copy failure** (e.g. a row that violates the target schema partway through a batch) verifying that no `run_metric_snapshots` rows land in meta and no `flyway_schema_history` row for `V1.33` is recorded — the rollback-atomicity guarantee D1/D4 claim (the copy and its history entry commit or roll back together), otherwise never exercised by any of the other cases. Everything else is covered by the existing functional suites once their helpers and REST paths are repointed, plus a new test asserting the renamed OpenAPI examples appear in `/v3/api-docs`.

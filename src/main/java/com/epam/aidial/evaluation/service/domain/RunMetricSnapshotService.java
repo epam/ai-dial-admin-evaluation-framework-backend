@@ -1,13 +1,13 @@
-package com.epam.aidial.evaluation.service.domain.analytics;
+package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
@@ -31,7 +31,7 @@ public class RunMetricSnapshotService {
     private final RunMetricSnapshotMapper snapshotMapper;
     private final FilterParser filterParser;
 
-    @Transactional("analyticsTransactionManager")
+    @Transactional("metaTransactionManager")
     public BatchWriteResponseDto batchCreate(RunMetricSnapshotBatchWriteRequestDto request) {
         runRepository
                 .findById(request.getTestSuiteRunId())
@@ -51,7 +51,7 @@ public class RunMetricSnapshotService {
                 .build();
     }
 
-    @Transactional(value = "analyticsTransactionManager", readOnly = true)
+    @Transactional(value = "metaTransactionManager", readOnly = true)
     public List<RunMetricSnapshotResponseDto> listByFilter(List<String> filterParams) {
         List<FilterCondition> filters = filterParser.parse(filterParams);
         UUID runId = filters.stream()
@@ -62,14 +62,14 @@ public class RunMetricSnapshotService {
         return listByRunId(runId);
     }
 
-    @Transactional(value = "analyticsTransactionManager", readOnly = true)
+    @Transactional(value = "metaTransactionManager", readOnly = true)
     public List<RunMetricSnapshotResponseDto> listByRunId(UUID runId) {
         return snapshotRepository.findByRunId(runId).stream()
                 .map(snapshotMapper::toDto)
                 .toList();
     }
 
-    @Transactional(value = "analyticsTransactionManager", readOnly = true)
+    @Transactional(value = "metaTransactionManager", readOnly = true)
     public Optional<UUID> findLatestComputationId(UUID runId) {
         return snapshotRepository.findLatestComputationId(runId);
     }

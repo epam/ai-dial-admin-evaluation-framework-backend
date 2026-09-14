@@ -7,6 +7,7 @@ package com.epam.aidial.evaluation.data.db.jooq.meta.tables;
 import com.epam.aidial.evaluation.data.db.jooq.meta.Indexes;
 import com.epam.aidial.evaluation.data.db.jooq.meta.Keys;
 import com.epam.aidial.evaluation.data.db.jooq.meta.Meta;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RunMetricSnapshots.RunMetricSnapshotsPath;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs.TestCaseRunInputsPath;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuites.TestSuitesPath;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuiteRunsRecord;
@@ -223,6 +224,19 @@ public class TestSuiteRuns extends TableImpl<TestSuiteRunsRecord> {
             _testSuites = new TestSuitesPath(this, Keys.TEST_SUITE_RUNS__TEST_SUITE_RUNS_TEST_SUITE_ID_FKEY, null);
 
         return _testSuites;
+    }
+
+    private transient RunMetricSnapshotsPath _runMetricSnapshots;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>meta.run_metric_snapshots</code> table
+     */
+    public RunMetricSnapshotsPath runMetricSnapshots() {
+        if (_runMetricSnapshots == null)
+            _runMetricSnapshots = new RunMetricSnapshotsPath(this, null, Keys.RUN_METRIC_SNAPSHOTS__FK_RUN_METRIC_SNAPSHOTS_RUN.getInverseKey());
+
+        return _runMetricSnapshots;
     }
 
     private transient TestCaseRunInputsPath _testCaseRunInputs;

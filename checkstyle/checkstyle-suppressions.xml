@@ -3,8 +3,13 @@
         "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
         "https://checkstyle.org/dtds/suppressions_1_2.dtd">
 <suppressions>
-    <!-- ignore every class that sits below db/migration/... -->
-    <suppress files="src[\\/]main[\\/]java[\\/]db[\\/]migration[\\/].*" checks="(PackageName|TypeName)"/>
     <suppress files="build[\\/]generated[\\/].*" checks=".*"/>
     <suppress files="src[\\/]main[\\/]java-generated[\\/].*" checks=".*"/>
+    <!-- Flyway Java migration class names follow Flyway's V<major>_<minor>__<Description>
+         convention (underscore = version separator), which TypeName's default
+         "^[A-Z][a-zA-Z0-9]*$" pattern rejects. Scoped to this one file rather than loosening
+         the project-wide rule. -->
+    <suppress
+            files="src[\\/]main[\\/]java[\\/]com[\\/]epam[\\/]aidial[\\/]evaluation[\\/]configuration[\\/]datasource[\\/]migration[\\/]V1_33__CopyRunMetricSnapshotsFromAnalytics\.java"
+            checks="TypeName"/>
 </suppressions>

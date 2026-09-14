@@ -58,7 +58,6 @@ public class PostgresTestPersistenceService implements TestPersistenceService {
 
     private void cleanupAnalyticsTables() {
         analyticsJdbcTemplate.update("DELETE FROM test_case_eval_summaries", new MapSqlParameterSource());
-        analyticsJdbcTemplate.update("DELETE FROM run_metric_snapshots", new MapSqlParameterSource());
         analyticsJdbcTemplate.update("DELETE FROM test_case_run_results", new MapSqlParameterSource());
     }
 

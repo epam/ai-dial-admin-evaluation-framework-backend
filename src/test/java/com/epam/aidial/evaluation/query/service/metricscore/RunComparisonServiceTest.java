@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.configuration.properties.analytics.RunComparisonProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;

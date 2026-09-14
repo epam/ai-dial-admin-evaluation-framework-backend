@@ -13,7 +13,7 @@ Status: **Implemented**
 - **THEN** those snapshot rows SHALL be deleted by database CASCADE, leaving no snapshot row referencing a non-existent run
 
 #### Scenario: Analytics result rows are not removed with the run
-- **WHEN** a run holding analytics rows (`test_case_run_results`, `test_case_eval_summaries`, `metric_score_results`) is deleted
+- **WHEN** a run holding analytics rows (`test_case_run_results`, `test_case_eval_summaries`, `metric_score_result`) is deleted
 - **THEN** those rows SHALL remain, because no foreign key can span the meta and analytics databases. Callers MUST NOT rely on run deletion to reclaim analytics storage.
 
 #### Scenario: Delete RUNNING run rejected

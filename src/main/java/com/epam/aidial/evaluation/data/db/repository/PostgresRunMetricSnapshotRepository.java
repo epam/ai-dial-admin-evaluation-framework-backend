@@ -1,9 +1,9 @@
-package com.epam.aidial.evaluation.data.db.analytics.repository;
+package com.epam.aidial.evaluation.data.db.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.RUN_METRIC_SNAPSHOTS;
+import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.RUN_METRIC_SNAPSHOTS;
 
-import com.epam.aidial.evaluation.data.db.analytics.mapper.RunMetricSnapshotRecordMapper;
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.mapper.RunMetricSnapshotRecordMapper;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.List;
 import java.util.Optional;
@@ -21,10 +21,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 @LogExecution
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES")
+@ConditionalOnProperty(name = "datasource.meta.vendor", havingValue = "POSTGRES")
 public class PostgresRunMetricSnapshotRepository implements RunMetricSnapshotRepository {
 
-    @Qualifier("analyticsDsl")
+    @Qualifier("metaDsl")
     private final DSLContext dsl;
 
     private final RunMetricSnapshotRecordMapper recordMapper;

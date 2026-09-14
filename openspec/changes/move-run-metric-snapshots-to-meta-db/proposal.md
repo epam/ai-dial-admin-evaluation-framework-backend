@@ -27,7 +27,7 @@ Now, because the enriched listing should be built against the final data shape r
 
 ### Explicitly not fixed
 
-The new FK cascades snapshots only. `deleteRun` still orphans `test_case_eval_summaries`, `test_case_run_results`, and `metric_score_results` in analytics, because no cross-database FK is possible. Stated so the cascade is not mistaken for a general fix.
+The new FK cascades snapshots only. `deleteRun` still orphans `test_case_eval_summaries`, `test_case_run_results`, and `metric_score_result` in analytics, because no cross-database FK is possible. Stated so the cascade is not mistaken for a general fix.
 
 ## Capabilities
 
@@ -40,8 +40,11 @@ None. This relocates an existing capability's storage and adjusts its API surfac
 - `metrics-storage`: the `run_metric_snapshots` table moves from the analytics database to the meta database and gains a cascading FK to `test_suite_runs`; the batch-write and list endpoints move to `/api/v1/run-metric-snapshots` with the old paths retained as deprecated aliases.
 - `database-and-migrations`: Flyway Java migrations become a supported migration type alongside SQL, with the constraint that schema DDL stays in SQL; the meta Flyway instance is ordered after the analytics instance and may read the analytics datasource during migration.
 - `test-suite-runs`: deleting a run now cascades to its `run_metric_snapshots` rows. The current spec hedges this as "any future related resources via CASCADE" (spec.md:322); it becomes concrete.
+- `metric-evaluation`: RunMetricSnapshots and EvalSummary records now write to two different databases (meta and analytics, respectively) instead of one; the pre-evaluation ordering guarantee — snapshots written before any `/evaluate` call — is unchanged.
+- `typed-sql-dsl`: the analytics jOOQ generator gains a permanent exclusion for `run_metric_snapshots`, so its canonical generated binding lives only under `jooq.meta.Tables` even though the frozen table still physically exists in the live analytics schema.
+- `openapi-examples`: adds the requirement that a response media type (`produces = MediaType.APPLICATION_JSON_VALUE`) must be declared for `OpenApiExampleCustomizer` to have anywhere to attach response examples — discovered while giving the moved endpoint its first-ever examples (both new controllers needed it, not just correctly named example files).
 
-Not modified, despite referencing the table: `eval-summary-export`, `query-schema-discovery`, `metric-evaluation`, and `metrics-system` all name `run_metric_snapshots` in requirements but never state which database holds it. Their observable behavior is unchanged, so they take no delta.
+Not modified, despite referencing the table: `eval-summary-export`, `query-schema-discovery`, and `metrics-system` all name `run_metric_snapshots` in requirements but never state which database holds it. Their observable behavior is unchanged, so they take no delta.
 
 ## Impact
 
@@ -55,7 +58,7 @@ Not modified, despite referencing the table: `eval-summary-export`, `query-schem
 
 **jOOQ.** Keeping the analytics table means `RUN_METRIC_SNAPSHOTS` would generate into both `jooq.meta` and `jooq.analytics` — the repository's first duplicate generated table name, where a wrong static import compiles clean and queries the wrong database. Prevented by excluding it from the analytics generator (`build.gradle:325`), regenerating, and deleting the stale analytics sources. `JooqSchemaDriftTest:92` moves the table between its two lists.
 
-**Boot behavior.** The meta migration now reads the analytics datasource. This adds no new failure mode: `analyticsFlywayMigration` already calls `.migrate()` in its bean method, so the application already fails to start when analytics is unreachable. (`DatasourceValidationResult` only parses JDBC URLs; it never connects.) The migration skips rather than fails when `datasource.analytics.vendor != POSTGRES` or the source table is absent, which covers fresh installs.
+**Boot behavior.** The meta migration now reads the analytics datasource. This adds no new failure mode: `analyticsFlywayMigration` already calls `.migrate()` in its bean method, so the application already fails to start when analytics is unreachable. (`DatasourceValidationResult` only parses JDBC URLs; it never connects.) The migration skips rather than fails only when the analytics source table is absent, which covers fresh installs. There is no `datasource.analytics.vendor` branch: `DatasourceValidationConfiguration` already hard-fails startup for any analytics vendor other than `POSTGRES`, and both Flyway `@Bean` methods require its `DatasourceValidationResult` marker, so the application cannot boot far enough to run this migration with an unsupported vendor configured — a vendor check inside the migration would be unreachable dead code (see design D5).
 
 **Tests.** Snapshot helpers move from `AnalyticsTestDataHelper` to `MetaTestDataHelper`; the `PostgresTestPersistenceService:61` truncate moves to the meta side; roughly 14 functional classes take helper and import churn; 7 REST call sites move to the new path with coverage retained on the deprecated alias. A dedicated migration test is required because Flyway runs at context startup before fixtures exist — it drives the migration class directly against two Testcontainers datasources.
 

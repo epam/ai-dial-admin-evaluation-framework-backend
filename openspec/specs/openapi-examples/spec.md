@@ -83,7 +83,26 @@ Implementation notes:
 - **WHEN** a mapping's path shape changes such that its example key no longer matches its files
 - **THEN** the test asserting examples in the generated OpenAPI document SHALL fail, rather than the endpoint silently shipping without examples
 
+### Requirement: A response media type MUST be declared for response examples to attach
+
+An endpoint's mapping annotation MUST declare `produces = MediaType.APPLICATION_JSON_VALUE` (or otherwise pin its response content type to `application/json`) for any response example to attach. `OpenApiExampleCustomizer` injects response examples by looking up the operation's `application/json` media type on the generated `ApiResponse` content (`OpenApiExampleCustomizer.MEDIA_TYPE_JSON`). Springdoc only creates that media-type entry when the mapping declares `produces` accordingly; without it springdoc documents the response under `*/*`, the customizer's lookup finds no `application/json` entry, and the operation ships with no response examples — even when the example JSON files exist and are named exactly per the `{pathKey}-{method}-response-{status}-{name}.json` convention. A correctly named example file is therefore necessary but not sufficient.
+
+Status: **Implemented**
+
+Implementation notes:
+- `RunMetricSnapshotController` and `RunMetricSnapshotDeprecatedController` both declare `produces = MediaType.APPLICATION_JSON_VALUE` on their `@GetMapping`/`@PostMapping` methods specifically so their response examples attach; renaming the example JSON files to the customizer's convention alone would not have sufficed.
+- This requirement is additive guidance for future endpoints; it does not change the filename convention specified in "Example files SHALL resolve for trailing-wildcard endpoint mappings".
+
+#### Scenario: Endpoint gains response examples via produces attribute
+- **WHEN** a controller method returns a response body and its mapping annotation declares `produces = MediaType.APPLICATION_JSON_VALUE`
+- **THEN** springdoc SHALL register the `application/json` media type on that operation's response, and `OpenApiExampleCustomizer` SHALL find and inject matching example files there
+
+#### Scenario: Missing produces attribute silently drops examples
+- **WHEN** a controller method returns a response body but its mapping annotation omits `produces`
+- **THEN** springdoc SHALL document the response under `*/*` with no `application/json` media-type entry, and `OpenApiExampleCustomizer` SHALL find no place to attach response examples, regardless of whether correctly named example files exist on the classpath
+
 ## Implementation Notes
+
 - SpringDoc OpenAPI (springdoc-openapi-starter-webmvc-ui) generates spec from annotations. DTO-level examples use @Schema(example = …). Operation-level request/response examples (minimal + full) are stored as JSON files under `src/main/resources/openapi/examples/` and injected into the spec by `OpenApiExampleCustomizer`. File naming: `{pathKey}-{method}-request-{name}.json` or `{pathKey}-{method}-response-{status}-{name}.json` (pathKey = registered path with a trailing '/**' dropped, then '/' → '-', braces stripped; name = "minimal" or "full"). Controllers declare only schema in @Content/@RequestBody; the customizer adds examples from classpath.
 - OpenSpec global rule in openspec/config.yaml (rules.global) and this spec together define the "update examples on change" requirement for enforcement by AI agents and reviewers.
 - AGENTS.md documents the conventions, the minimal+full rule with the simple-endpoint exception, and the resource-based example location/naming.

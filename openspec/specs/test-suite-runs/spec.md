@@ -314,12 +314,20 @@ Status: **Implemented**
 - **THEN** system SHALL respond with HTTP 404 and error code `NOT_FOUND`
 
 ### Requirement: Delete a test suite run
-The service SHALL provide `DELETE /api/v1/test-suite-runs/{id}` to delete a run and its related resources. Only runs in a terminal status (COMPLETED, FAILED, CANCELLED) MAY be deleted. PENDING and RUNNING runs MUST be cancelled first; a CANCELLING run MUST finish cancelling first.
+The service SHALL provide `DELETE /api/v1/test-suite-runs/{id}` to delete a run and its related resources. Only runs in a terminal status (COMPLETED, FAILED, CANCELLED) MAY be deleted. PENDING and RUNNING runs MUST be cancelled first; a CANCELLING run MUST finish cancelling first. Deleting a run SHALL also delete its `run_metric_snapshots` rows via database CASCADE.
 Status: **Implemented**
 
 #### Scenario: Delete terminal run
 - **WHEN** client calls `DELETE /api/v1/test-suite-runs/{id}` for a run with status COMPLETED, FAILED, or CANCELLED
-- **THEN** system SHALL delete the run record (and any future related resources via CASCADE) and return HTTP 204 No Content
+- **THEN** system SHALL delete the run record (and any further related resources via CASCADE) and return HTTP 204 No Content
+
+#### Scenario: Run metric snapshots are removed with the run
+- **WHEN** a run holding `run_metric_snapshots` rows is deleted
+- **THEN** those snapshot rows SHALL be deleted by database CASCADE, leaving no snapshot row referencing a non-existent run
+
+#### Scenario: Analytics result rows are not removed with the run
+- **WHEN** a run holding analytics rows (`test_case_run_results`, `test_case_eval_summaries`, `metric_score_result`) is deleted
+- **THEN** those rows SHALL remain, because no foreign key can span the meta and analytics databases. Callers MUST NOT rely on run deletion to reclaim analytics storage.
 
 #### Scenario: Delete RUNNING run rejected
 - **WHEN** client calls `DELETE /api/v1/test-suite-runs/{id}` for a run with status RUNNING
@@ -339,7 +347,7 @@ Status: **Implemented**
 
 #### Scenario: Cascade delete on test suite removal
 - **WHEN** a test suite is deleted via `DELETE /api/v1/test-suites/{id}`
-- **THEN** all associated test suite runs SHALL be deleted automatically via database CASCADE
+- **THEN** all associated test suite runs SHALL be deleted automatically via database CASCADE, and each deleted run's `run_metric_snapshots` rows SHALL be deleted in turn
 
 ### Requirement: SSE status stream
 The service SHALL provide `GET /api/v1/test-suite-runs/status-stream` as a Server-Sent Events endpoint for real-time run status updates. Clients MAY filter which updates they receive via query parameters.
@@ -716,3 +724,5 @@ Status: **Implemented**
 - Multi-instance deployments: the registry is per-JVM, so a cancel served by another instance only writes
   `CANCELLING`; the owning job finalizes `CANCELLED` when it finishes (guarded terminal write). Same single-instance
   assumption as startup reconciliation.
+- Deleting a run cascades to its `run_metric_snapshots` rows through the meta foreign key declared in `V1.32__CreateRunMetricSnapshotsTable.sql` (`ON DELETE CASCADE`); `TestSuiteRunService.deleteRun` needs no extra cleanup call.
+- The cascade covers snapshots only. A run's analytics rows (`test_case_run_results`, `test_case_eval_summaries`, `metric_score_result`) survive deletion, because no foreign key can span the meta and analytics databases — run deletion MUST NOT be relied on to reclaim analytics storage.

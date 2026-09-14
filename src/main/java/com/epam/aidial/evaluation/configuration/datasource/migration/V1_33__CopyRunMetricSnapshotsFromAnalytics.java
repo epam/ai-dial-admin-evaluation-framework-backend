@@ -126,13 +126,13 @@ public class V1_33__CopyRunMetricSnapshotsFromAnalytics extends BaseJavaMigratio
         long orphaned = 0;
         long alreadyPresent = 0;
 
-        List<SnapshotRow> batch = new ArrayList<>(BATCH_SIZE);
+        final List<SnapshotRow> batch = new ArrayList<>(BATCH_SIZE);
         while (sourceRows.next()) {
             batch.add(readRow(sourceRows));
             attempted++;
 
             if (batch.size() == BATCH_SIZE) {
-                BatchOutcome outcome = processBatch(batch, writeConnection);
+                final BatchOutcome outcome = processBatch(batch, writeConnection);
                 copied += outcome.copied();
                 orphaned += outcome.orphaned();
                 alreadyPresent += outcome.alreadyPresent();
@@ -140,7 +140,7 @@ public class V1_33__CopyRunMetricSnapshotsFromAnalytics extends BaseJavaMigratio
             }
         }
         if (!batch.isEmpty()) {
-            BatchOutcome outcome = processBatch(batch, writeConnection);
+            final BatchOutcome outcome = processBatch(batch, writeConnection);
             copied += outcome.copied();
             orphaned += outcome.orphaned();
             alreadyPresent += outcome.alreadyPresent();
@@ -161,13 +161,13 @@ public class V1_33__CopyRunMetricSnapshotsFromAnalytics extends BaseJavaMigratio
     // "run gone" from "row already copied", which is why the copy count is not simply
     // attempted-minus-inserted.
     private BatchOutcome processBatch(List<SnapshotRow> batch, Connection writeConnection) throws SQLException {
-        Set<String> candidateRunIds = new HashSet<>();
+        final Set<String> candidateRunIds = new HashSet<>();
         for (SnapshotRow row : batch) {
             candidateRunIds.add(row.testSuiteRunId());
         }
-        Set<String> existingRunIds = existingRunIds(writeConnection, candidateRunIds);
+        final Set<String> existingRunIds = existingRunIds(writeConnection, candidateRunIds);
 
-        List<SnapshotRow> eligibleRows = new ArrayList<>(batch.size());
+        final List<SnapshotRow> eligibleRows = new ArrayList<>(batch.size());
         long orphaned = 0;
         for (SnapshotRow row : batch) {
             if (existingRunIds.contains(row.testSuiteRunId())) {
@@ -177,8 +177,8 @@ public class V1_33__CopyRunMetricSnapshotsFromAnalytics extends BaseJavaMigratio
             }
         }
 
-        long copied = insertRows(eligibleRows, writeConnection);
-        long alreadyPresent = eligibleRows.size() - copied;
+        final long copied = insertRows(eligibleRows, writeConnection);
+        final long alreadyPresent = eligibleRows.size() - copied;
         return new BatchOutcome(copied, orphaned, alreadyPresent);
     }
 
@@ -186,11 +186,11 @@ public class V1_33__CopyRunMetricSnapshotsFromAnalytics extends BaseJavaMigratio
         if (candidateRunIds.isEmpty()) {
             return Set.of();
         }
-        Array runIdArray = connection.createArrayOf("varchar", candidateRunIds.toArray());
+        final Array runIdArray = connection.createArrayOf("varchar", candidateRunIds.toArray());
         try (PreparedStatement statement = connection.prepareStatement(SELECT_EXISTING_RUN_IDS)) {
             statement.setArray(1, runIdArray);
             try (ResultSet result = statement.executeQuery()) {
-                Set<String> existingIds = new HashSet<>();
+                final Set<String> existingIds = new HashSet<>();
                 while (result.next()) {
                     existingIds.add(result.getString(1));
                 }

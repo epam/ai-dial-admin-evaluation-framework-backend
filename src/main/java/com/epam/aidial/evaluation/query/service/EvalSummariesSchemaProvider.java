@@ -41,7 +41,7 @@ import org.springframework.stereotype.Component;
  * from that run's {@link SuiteSnapshotDto} ({@code data::<field>} from the snapshot's test-case
  * schema, {@code response::<column>} from the suite-wide response-column union — the snapshot's own
  * {@code responseColumns} followed by each {@code additionalRequests[i].responseColumns}, via
- * {@link ResponseColumnUnionResolver}) and the run's analytics
+ * {@link ResponseColumnUnionResolver}) and the run's
  * {@link RunMetricSnapshot} rows for the latest computation ({@code metric::<name>::<field>}, always
  * numeric — metric values are numbers by nature; {@code metricInfo::<name>}, an opaque object holding
  * any non-numeric per-metric info/error, split by metric name only). These mirror the CSV export

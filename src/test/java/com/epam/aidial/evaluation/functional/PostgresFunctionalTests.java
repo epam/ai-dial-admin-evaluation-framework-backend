@@ -95,6 +95,7 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteRunStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TryItOutFunctionalTests;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
@@ -544,6 +545,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestSuiteStructuredQueryTests extends TestSuiteStructuredQueryFunctionalTests {}
+
+    @Nested
+    class TestSuiteRunStructuredQueryTests extends TestSuiteRunStructuredQueryFunctionalTests {}
 
     @Nested
     class EvalSummaryStructuredQueryTests extends EvalSummaryStructuredQueryFunctionalTests {}

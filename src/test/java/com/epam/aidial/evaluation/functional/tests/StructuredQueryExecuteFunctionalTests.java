@@ -18,6 +18,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * End-to-end coverage of the unified execute endpoint ({@code POST /api/v1/queries/execute}): the
@@ -35,6 +39,9 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
 
     @Autowired
     private MetricScoreService metricScoreService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     private String executeUrl() {
         return baseUrl() + "/api/v1/queries/execute";
@@ -427,5 +434,32 @@ public abstract class StructuredQueryExecuteFunctionalTests extends BaseFunction
         assertThat(body.rows()).hasSize(1);
         assertThat(body.rows().get(0).get("id")).isEqualTo(target.getId().toString());
         assertThat(body.rows().get(0).get("deployment_ref::name")).isEqualTo("Exec App");
+    }
+
+    @Test
+    @DisplayName("referencing an excluded test_suite_runs column at the REST layer returns HTTP 400")
+    void rejectsExcludedTestSuiteRunColumnAtRestLayer() {
+        ObjectNode body = JsonNodeFactory.instance.objectNode();
+        body.put("entity", "test_suite_runs");
+        body.put("mode", "row");
+
+        ObjectNode filter = body.putObject("filter");
+        filter.put("op", "eq");
+        ArrayNode args = filter.putArray("args");
+
+        ObjectNode fieldArg = args.addObject();
+        fieldArg.put("type", "field");
+        fieldArg.put("name", "suite_snapshot");
+
+        ObjectNode valueArg = args.addObject();
+        valueArg.put("type", "value");
+        valueArg.put("value_type", "string");
+        valueArg.put("value", "x");
+
+        String json = objectMapper.writeValueAsString(body);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(executeUrl(), jsonEntity(json), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 }

@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-09-14 (meta V1.33, analytics V1.19)
+> **Last sync**: 2026-09-15 (meta V1.34, analytics V1.19)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -672,7 +672,7 @@ Deleting a run — directly, or via the CASCADE from deleting its suite — ther
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
 | `uq_run_metric_snapshots_computation_tsmd` | `(computation_id, tsmd_id)` | UNIQUE (BTREE) | One snapshot per metric definition per computation batch; the write path relies on it for `ON CONFLICT DO NOTHING` |
-| `idx_run_metric_snapshots_run` | `(test_suite_run_id)` | BTREE | Lookup by test suite run |
+| `idx_run_metric_snapshots_run_computed_at` | `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)` | BTREE | Serves all by-run lookups via the leading column, and the latest-computation `ORDER BY computed_at_ms DESC, computation_id DESC LIMIT 1` (`findLatestComputationId`, the `test_suite_runs` query entity's `metric_names` subquery) without a sort |
 
 ### JSONB Column Schemas
 
@@ -1000,6 +1000,7 @@ When used as a suite's `overallScore` and computed per row (`test_case_eval_scor
 | V1.31 | `V1.31__AddTestCaseOverallScoreToTestSuites.sql` | Added nullable `test_case_overall_score` JSONB column to test_suites (optional per-suite definition overriding `overall_score` for per-test-case scoring only; NULL = falls back to `overall_score`) |
 | V1.32 | `V1.32__CreateRunMetricSnapshotsTable.sql` | Created the meta `run_metric_snapshots` table (column set mirrors analytics V1.6) with UNIQUE index `uq_run_metric_snapshots_computation_tsmd` on `(computation_id, tsmd_id)`, index `idx_run_metric_snapshots_run`, and FK `test_suite_run_id → test_suite_runs(id) ON DELETE CASCADE`. The analytics table of the same name is frozen from this point on. |
 | V1.33 | `V1_33__CopyRunMetricSnapshotsFromAnalytics.java` | **Java migration** — copies historical snapshot rows from the analytics database into the meta table. Registered explicitly in `MetaFlywayConfiguration` via `.javaMigrations(...)` (it is constructor-injected with the analytics `DataSource`), so it is NOT present in this migration directory. Skips rows whose run no longer exists in meta (logging the dropped count), and skips entirely when the analytics source table is absent (fresh install). There is no vendor branch: `DatasourceValidationConfiguration` already hard-fails startup for any `datasource.analytics.vendor` other than `POSTGRES`, before either Flyway bean can even be constructed, which would make a vendor check inside the migration unreachable. |
+| V1.34 | `V1.34__ReplaceRunMetricSnapshotsRunIndex.sql` | Replaced the single-column `idx_run_metric_snapshots_run` on `run_metric_snapshots` with composite index `idx_run_metric_snapshots_run_computed_at` on `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)`, for the `test_suite_runs` query entity's `metric_names` lookup and `findLatestComputationId`; the old index was a strict prefix of the new one, so every existing `WHERE test_suite_run_id = ?` reader remains served. |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

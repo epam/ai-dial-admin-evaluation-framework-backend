@@ -84,7 +84,7 @@ public class PostgresRunMetricSnapshotRepository implements RunMetricSnapshotRep
         return dsl.select(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID)
                 .from(RUN_METRIC_SNAPSHOTS)
                 .where(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .orderBy(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS.desc())
+                .orderBy(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS.desc(), RUN_METRIC_SNAPSHOTS.COMPUTATION_ID.desc())
                 .limit(1)
                 .fetchOptional(r -> UUID.fromString(r.getValue(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID)));
     }

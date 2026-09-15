@@ -25,8 +25,8 @@ See proposal.md — Why. Relevant current state:
 
 ### D1. `table()` is a derived table over `test_suite_runs`, not the bare table
 `PostgresTestSuiteRunEntityResolver.table()` returns
-`DSL.select(<10 plain columns>, <9 snapshot extractions>, <metric_names scalar subquery>).from(TEST_SUITE_RUNS).asTable("tsr")`,
-and every binding points at `tsr.field(...)`.
+`DSL.select(<10 plain columns>, <9 snapshot extractions: 1 single-level `suite_type` + 8 two-level ref sub-fields>, <metric_names scalar subquery>).from(TEST_SUITE_RUNS).asTable("tsr")`,
+and every binding points at `tsr.field(...)`. Every snapshot extraction and the `metric_names` subquery is explicitly aliased inside the derived select (`.as(DSL.name("deployment_ref::id"))`, …) so that `tsr.field(<binding name>)` resolves and `table.fields()` emits exactly the spec'd keys; an unaliased expression would get a generated name and break both.
 
 *Why:* row mode with empty `select` projects `table.fields()`; only a derived table can make that projection omit `suite_snapshot`, `run_config`, `error_details` (spec: they must not appear and must be rejected as unknown). Postgres pulls this derived table up into the outer query (no aggregate/limit/distinct at its top level), so filters on plain columns still hit the `test_suite_runs` indexes and `count(*)` collapses to a count over the base table. `countRows` (`select count(*) from tsr where …`) therefore costs the same as today's REST count.
 
@@ -71,7 +71,7 @@ The inner `LIMIT 1` becomes an index-only range scan with no sort (column order 
 New `query.service.TestSuiteRunQueryFields` (package-private or public final constants class): the excluded column names, the `suite_type` field, the two `(fieldPrefix, snapshotKey, subKeys[])` ref descriptors, the `metric_names` name/type, and the source labels (`suite_snapshot`, `run_metric_snapshots`). `TestSuiteRunsSchemaProvider.baseSchema()` = `schemaResolver.resolve(TEST_SUITE_RUNS)` minus excluded + virtual entries; the resolver builds bindings from the same descriptors. A unit test asserts `schema field names == binding keys` (set equality) and `types` agree per field.
 
 ### D7. Types
-Plain columns take `JooqTableSchemaResolver` inference (`id`/`test_suite_id` → `uuid`, `status`/`test_run_name`/`error_message` → `string`, `number_of_test_cases` → `integer`, `*_ms` → `long`). Virtual ref fields → `STRING`. `metric_names` → `ARRAY` (JSONB), which is what unlocks containment `co`/`nc` in `FilterTranslator` unchanged.
+Plain columns take `JooqTableSchemaResolver` inference (`id`/`test_suite_id` → `uuid`, `status`/`test_run_name`/`error_message` → `string`, `number_of_test_cases` → `integer`, `*_ms` → `long`). Virtual ref fields → `STRING`. `metric_names` → `ARRAY` (JSONB), which is what unlocks containment `co`/`nc` in `FilterTranslator` unchanged. Do NOT build bindings/schema wholesale via `schemaResolver.bindings(tsr)` / `resolve(tsr)` (the `eval_summaries` habit): a computed field has no DDL default, so inference yields `OBJECT` for `metric_names` and silently disables containment. Plain-column types come from `resolve(TEST_SUITE_RUNS)`; the 10 virtual fields are typed explicitly.
 
 ### D8. Layering
 Both new classes live in `query.service` / `query.service.repository` exactly like the `test_suites` pair; the resolver carries `@Repository @LogExecution @ConditionalOnProperty(name = "datasource.meta.vendor", havingValue = "POSTGRES")` and `@Qualifier("metaDsl")`. Execution/transaction handling stays in `StructuredQueryExecutor`/`StructuredQueryService` (already routes by `resolver.dsl()`); no new transaction boundary. Error handling: unknown/excluded fields → existing `ValidationException` 400 from `ExprTranslator`; SQL errors → existing executor mapping.
@@ -81,13 +81,15 @@ Both new classes live in `query.service` / `query.service.repository` exactly li
 - `docs/database-schema.md`: index table of `run_metric_snapshots`, migration history row V1.34, "Last sync" line.
 - `openspec/specs/README.md`: new `test-suite-runs-query-entity` entry; `query-schema-discovery`/`metrics-storage` summaries if they enumerate entities/indexes.
 - `docs/patterns/query-dsl-entity-resolution.md`: one paragraph noting `test_suite_runs` as the "fully derived table" precedent.
+- `docs/patterns/computation-versioning.md`: one clause noting the snapshot-based `computed_at_ms DESC, computation_id DESC` tiebreak shared by `findLatestComputationId` and `metric_names`.
 - No `docs/configuration.md` change (no properties). No `config.yaml` change (feature follows existing patterns).
 
 ## Risks / Trade-offs
 
 - [Planner does not postpone the `metric_names` SubPlan past a required sort, evaluating it for every filter-matching run] → Verify with `EXPLAIN (ANALYZE)` during implementation on a paged `ORDER BY created_at_ms DESC` query and a non-indexed sort (`test_run_name`); record plans in the pattern doc. Even in the worst case each evaluation is two index probes, and the run table is small (thousands), so it degrades to the plain table's own cost class rather than a scan of snapshots.
 - [Pull-up fails because of the SubLink in the derived target list, leaving a `SubqueryScan` that hides `test_suite_runs` indexes from the outer filter] → Same EXPLAIN check; if it happens, fall back to a resolver-side `SubqueryScan`-free shape by moving the extraction fields into bindings and keeping only the plain columns in the derived table. Spec unaffected.
-- [`jsonb_agg(DISTINCT … ORDER BY …)` not expressible in jOOQ 3.21] → `DSL.aggregateDistinct("jsonb_agg", JSONB.class, field).orderBy(field)` is the escape hatch; still typed DSL, no string SQL.
+- [`jsonb_agg(DISTINCT … ORDER BY …)` expressibility] → verified against jOOQ 3.21.6: `DSL.coalesce(DSL.jsonbArrayAggDistinct(n).orderBy(n), DSL.inline(JSONB.valueOf("[]")))` renders `coalesce(jsonb_agg(distinct "rms"."tsmd_name" order by "rms"."tsmd_name"), cast('[]' as jsonb))`. No fallback needed (`DSL.aggregateDistinct(...)` has no `orderBy`).
+- [Sort order of `metric_names` follows the meta DB's default text collation] → accepted; the spec promises ascending order under the database collation, not a byte-wise order, so mixed-case names may interleave on `en_US` locales.
 - [Extracting from `suite_snapshot` detoasts every visited run's snapshot] → Accepted (same as the enriched-listing design in GH #197); bounded by page size and the DSL's `MAX_LIMIT = 1000`. Filtering/sorting on ref fields is a seq-scan-with-detoast over runs; acceptable at current run counts, documented in the pattern doc.
 - [Dropping `idx_run_metric_snapshots_run` regresses a query] → Every reader was audited (three repository methods + FK cascade), all prefix-served. Rollback: recreate the single-column index.
 - [Tiebreak changes which computation `EvalSummariesSchemaProvider` picks] → Only for same-millisecond computations, where the previous behaviour was undefined; pinned by a functional test.

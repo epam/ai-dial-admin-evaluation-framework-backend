@@ -74,7 +74,7 @@ Status: **Planned**
 - **THEN** only runs whose snapshot deployment id is `deploy-001` are returned, ordered by the snapshot deployment name
 
 ### Requirement: Latest-computation metric names
-`metric_names` SHALL be a JSON array of the distinct `tsmd_name` values of the run's **latest computation** in `run_metric_snapshots`, sorted alphabetically (ascending, case-sensitive). "Latest" SHALL be the computation with the greatest `computed_at_ms` for that run, ties broken by the greatest `computation_id`. A run with no snapshot rows SHALL yield an empty array `[]`, never null. Names SHALL be the full metric names as captured on the run (the TSMD name), not metric output-field names.
+`metric_names` SHALL be a JSON array of the distinct `tsmd_name` values of the run's **latest computation** in `run_metric_snapshots`, sorted ascending under the meta database's default text collation. "Latest" SHALL be the computation with the greatest `computed_at_ms` for that run, ties broken by the greatest `computation_id`. A run with no snapshot rows SHALL yield an empty array `[]`, never null. Names SHALL be the full metric names as captured on the run (the TSMD name), not metric output-field names.
 Status: **Planned**
 
 #### Scenario: Latest computation wins
@@ -115,7 +115,7 @@ Status: **Planned**
 
 #### Scenario: Paged query touches only its page
 - **WHEN** a `row` query sorted by `created_at_ms DESC` with `page: {"offset":0,"limit":25}` is executed against a database with many runs and snapshots
-- **THEN** the execution plan reads snapshot rows only for the runs emitted in that page (nested-loop lateral evaluation against the composite index), not for every run
+- **THEN** the execution plan reads snapshot rows only for the runs emitted in that page (a correlated SubPlan evaluated only for the rows the page emits, against the composite index), not for every run
 
 ### Requirement: Existing run listing is unchanged
 Onboarding `test_suite_runs` as a query entity SHALL NOT alter the request or response contract of `GET /api/v1/test-suite-runs`, `GET /api/v1/test-suite-runs/{id}`, or any other test-suite-run REST endpoint.

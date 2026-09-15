@@ -179,7 +179,9 @@ public class TestSuiteRunController {
             summary = "Get average test-case and metric-evaluation cost for a run",
             description = "Queries dial-adas usage logs for the run and returns the average per-call price "
                     + "for test-case execution calls and metric-evaluation (judge model) calls. A phase with "
-                    + "no matching usage-log rows returns null for that average.")
+                    + "no matching usage-log rows returns null for that average. Kept as a backward-compatible "
+                    + "alias for `GET /api/v1/costs/test-suite-run/{id}` (the canonical cost-API route); both "
+                    + "delegate to the same CostService computation.")
     @ApiResponse(responseCode = "200", description = "Costs computed")
     @ApiResponse(responseCode = "404", description = "Run not found")
     @ApiResponse(responseCode = "502", description = "dial-adas unreachable or returned an error")

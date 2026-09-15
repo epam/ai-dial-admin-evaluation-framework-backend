@@ -349,6 +349,37 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should get run costs via the canonical costs API route")
+    void shouldGetRunCostsViaCostsApi() {
+        TestSuiteResponseDto suite = createTestSuite("Suite For Costs API");
+        TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);
+        when(dialAdasClient.executeAggregate(any(StructuredQuery.class)))
+                .thenReturn(AdasAggregateResponseDto.builder()
+                        .rows(List.of(AdasAggregateRowDto.builder()
+                                .count(1L)
+                                .avgCost(0.0007125)
+                                .build()))
+                        .build());
+
+        ResponseEntity<RunCostsResponseDto> response = restTemplate.getForEntity(
+                apiUrl("/costs/test-suite-run/" + created.getId()), RunCostsResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getAvgTestCaseCost()).isEqualTo(0.0007125);
+        assertThat(response.getBody().getAvgMetricEvalCost()).isEqualTo(0.0007125);
+    }
+
+    @Test
+    @DisplayName("Should return 404 when getting costs via the costs API route for unknown run")
+    void shouldReturn404WhenGettingCostsViaCostsApiForUnknownRun() {
+        ResponseEntity<String> response =
+                restTemplate.getForEntity(apiUrl("/costs/test-suite-run/" + UUID.randomUUID()), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     @DisplayName("Should get deployment costs for a time range")
     void shouldGetDeploymentCosts() {
         when(dialAdasClient.executeAggregate(any(StructuredQuery.class)))

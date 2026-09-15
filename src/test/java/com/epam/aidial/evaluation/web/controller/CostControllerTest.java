@@ -10,8 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.epam.aidial.evaluation.service.domain.CostService;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.web.handler.DefaultExceptionHandler;
 import com.epam.aidial.evaluation.web.path.WildcardPathResolver;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,7 +21,7 @@ import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-@DisplayName("CostController.getDeploymentCosts")
+@DisplayName("CostController")
 class CostControllerTest {
 
     private CostService costService;
@@ -73,5 +75,22 @@ class CostControllerTest {
     void returns400WhenToMissing() throws Exception {
         mockMvc.perform(get("/api/v1/costs/deployment/app").param("from", "1000"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("getRunCosts delegates to CostService")
+    void getRunCostsDelegatesToCostService() throws Exception {
+        UUID runId = UUID.randomUUID();
+        RunCostsResponseDto dto = RunCostsResponseDto.builder()
+                .avgTestCaseCost(0.0007125)
+                .avgMetricEvalCost(0.000231)
+                .build();
+        when(costService.getRunCosts(runId)).thenReturn(dto);
+
+        mockMvc.perform(get("/api/v1/costs/test-suite-run/" + runId))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"avgTestCaseCost\":0.0007125,\"avgMetricEvalCost\":0.000231}"));
+
+        verify(costService).getRunCosts(eq(runId));
     }
 }

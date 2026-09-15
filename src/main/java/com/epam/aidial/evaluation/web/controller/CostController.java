@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.web.controller;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.CostService;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.path.WildcardPathResolver;
 import io.swagger.v3.oas.annotations.Operation;
@@ -10,9 +11,11 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -54,6 +57,22 @@ public class CostController {
         final String deploymentId = wildcardPathResolver.resolveTail(request);
         validateId(deploymentId);
         return costService.getDeploymentCosts(deploymentId, from, to);
+    }
+
+    @GetMapping("/test-suite-run/{id}")
+    @Operation(
+            summary = "Get average test-case and metric-evaluation cost for a run",
+            description = "Queries dial-adas usage logs for the run and returns the average per-call price "
+                    + "for test-case execution calls and metric-evaluation (judge model) calls. A phase with "
+                    + "no matching usage-log rows returns null for that average. This is the canonical "
+                    + "cost-API route for run costs; `GET /api/v1/test-suite-runs/{id}/costs` is kept as a "
+                    + "backward-compatible alias backed by the same computation.")
+    @ApiResponse(responseCode = "200", description = "Costs computed")
+    @ApiResponse(responseCode = "404", description = "Run not found")
+    @ApiResponse(responseCode = "502", description = "dial-adas unreachable or returned an error")
+    @ApiResponse(responseCode = "504", description = "dial-adas request timed out")
+    public RunCostsResponseDto getRunCosts(@Parameter(description = "Run ID") @PathVariable UUID id) {
+        return costService.getRunCosts(id);
     }
 
     private static void validateId(String deploymentId) {

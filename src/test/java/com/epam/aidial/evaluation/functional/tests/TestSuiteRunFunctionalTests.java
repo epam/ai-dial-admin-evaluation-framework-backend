@@ -54,6 +54,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
 import java.math.BigDecimal;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -359,7 +360,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                         .build());
 
         ResponseEntity<DeploymentCostsResponseDto> response = restTemplate.getForEntity(
-                apiUrl("/costs?deploymentId=applications/public/my-app&from=1000&to=2000"),
+                URI.create(apiUrl("/costs/deployment/applications/public/my-app?from=1000&to=2000")),
                 DeploymentCostsResponseDto.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -372,7 +373,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     @DisplayName("Should return 400 when getting deployment costs with from > to")
     void shouldReturn400WhenDeploymentCostsFromAfterTo() {
         ResponseEntity<String> response = restTemplate.getForEntity(
-                apiUrl("/costs?deploymentId=applications/public/my-app&from=2000&to=1000"), String.class);
+                URI.create(apiUrl("/costs/deployment/applications/public/my-app?from=2000&to=1000")), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }

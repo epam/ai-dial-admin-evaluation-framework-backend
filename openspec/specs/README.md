@@ -72,7 +72,9 @@ Specs for external service integrations.
 - **[toolset-listing](toolset-listing/spec.md)** — Implemented
   Toolset deployment type extension — ToolsetInfoDto, `type`/`interface` query param filtering on deployment listing, tool discovery endpoint (`GET /deployments/tools?deploymentId=&transport=`), InterfaceType enum, DeploymentType extended for toolsets.
 - **[test-suite-run-costs](test-suite-run-costs/spec.md)** — Implemented
-  `GET /api/v1/test-suite-runs/{id}/costs` — average test-case execution cost and average metric-evaluation cost for a run, computed from dial-adas usage-log aggregate queries correlated by the run's OTel baggage (`eval.run.id`, `eval.phase`). `DialAdasClient` (query-execute HTTP client), `RunCostQueryBuilder` (aggregate query construction, built as a real `StructuredQuery` — dial-adas shares the same query DSL grammar). Related: test-suite-runs, grafana-deep-links, observability-and-logging, structured-query-model.
+  `GET /api/v1/test-suite-runs/{id}/costs` — average test-case execution cost and average metric-evaluation cost for a run, computed from dial-adas usage-log aggregate queries correlated by the run's OTel baggage (`eval.run.id`, `eval.phase`). `DialAdasClient` (query-execute HTTP client), `AdasCostQueryBuilder` (aggregate query construction, built as a real `StructuredQuery` — dial-adas shares the same query DSL grammar). Related: test-suite-runs, grafana-deep-links, observability-and-logging, structured-query-model.
+- **[deployment-costs](deployment-costs/spec.md)** — Implemented
+  `GET /api/v1/costs` — total test-case execution cost and total metric-evaluation cost for a deployment over an arbitrary `[from, to]` time range, computed from dial-adas usage-log aggregate queries correlated by `deployment`, `request_time`, and OTel baggage `eval.phase`. `CostController`, `CostService`, `AdasCostQueryBuilder.buildDeploymentAggregateQuery`, `DeploymentCostsResponseDto`. Related: test-suite-run-costs, structured-query-model.
 
 ### Try It Out
 

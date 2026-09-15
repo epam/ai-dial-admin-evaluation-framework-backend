@@ -4,12 +4,12 @@
   `AdasCostQueryBuilder.java`; rename `buildAggregateQuery(UUID, String)` → `buildRunAggregateQuery(UUID, String)`
   (method body unchanged); update the class javadoc to describe both the run-scoped and deployment-scoped
   query shapes.
-- [x] 1.2 Fix `REQUEST_TAGS_FIELD` from `"request_tags"` to the correct dial-adas path
-  `"dial_usage_log_payload.request_tags"` (design.md Decision 1a — this changes the outbound query used by
+- [x] 1.2 Fix the baggage field to dial-adas's direct, queryable `usage_request_baggage.baggage` field
+  (design.md Decision 1a — this changes the outbound query used by
   both the existing run-costs query and the new deployment-costs query, not any response contract).
 - [x] 1.3 Add `DEPLOYMENT_FIELD = "deployment"` / `REQUEST_TIME_FIELD = "request_time"` constants and
   `buildDeploymentAggregateQuery(String deploymentId, long fromMs, long toMs, String phase)`, reusing
-  `jsonExtractBaggage()`/`baggageContains()` for the `eval.phase` filter and new `eq`/`ge`/`le` helper
+  `baggageField()`/`baggageContains()` for the `eval.phase` filter and new `eq`/`ge`/`le` helper
   methods for `deployment`/`request_time` (design.md Decision 1).
 - [x] 1.4 Update `TestSuiteRunService`'s call site to the renamed `AdasCostQueryBuilder`/`buildRunAggregateQuery`.
 
@@ -17,8 +17,9 @@
 
 - [x] 2.1 Rename `RunCostQueryBuilderTest.java` → `AdasCostQueryBuilderTest.java`; update references to the
   renamed class/method.
-- [x] 2.2 Update the existing `serializesToDialAdasWireShape` assertion to the corrected
-  `"name": "dial_usage_log_payload.request_tags"` field value.
+- [x] 2.2 Update the existing `serializesToDialAdasWireShape` assertion to the flattened
+  `{"type": "field", "name": "usage_request_baggage.baggage"}` shape, removing the `json_extract_string`
+  `fn` wrapper entirely.
 - [x] 2.3 Add unit tests for `buildDeploymentAggregateQuery`: structural `StructuredQuery`/filter-tree
   assertion (`eq(deployment)`, `ge(request_time)`, `le(request_time)`, `co` baggage-phase) and a full
   JSON wire-shape assertion confirming `value_type: "timestamp"` and epoch-millis-as-string values.
@@ -68,7 +69,7 @@
 - [x] 7.2 Run the new functional test class/nested group and confirm it passes — this boots the full Spring
   context, required because `CostController`/`CostService` are new beans with constructor injection.
 - [x] 7.3 Re-run the existing `shouldGetRunCosts` functional test and confirm it still passes with the
-  corrected `dial_usage_log_payload.request_tags` field wired through end-to-end.
+  corrected `usage_request_baggage.baggage` field wired through end-to-end.
 
 ## 8. Docs and spec index
 

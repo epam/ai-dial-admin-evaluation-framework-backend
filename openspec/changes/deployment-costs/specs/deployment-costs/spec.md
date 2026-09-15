@@ -47,14 +47,14 @@ The system SHALL query dial-adas's `dial_usage_log` entity via its query DSL
 `deployment` field against the requested `deploymentId`, a direct `ge`/`le` range match of the
 `request_time` field (typed `"timestamp"`, values passed as epoch-millisecond strings) against the
 requested `[from, to]`, and a match on the relevant execution phase as `eval.phase=execution` or
-`eval.phase=metric-evaluation` within `dial_usage_log_payload.request_tags.baggage` — the same
+`eval.phase=metric-evaluation` within `usage_request_baggage.baggage` — the same
 baggage-phase technique used by the existing run-scoped cost query. Status: Planned.
 
 #### Scenario: Query is scoped to a single deployment, time range, and phase
 - **WHEN** the system computes the execution-phase total for deployment `D` over `[from, to]`
 - **THEN** the dial-adas query filter requires a `deployment == D` match, a `request_time >= from` match,
   a `request_time <= to` match, and an `eval.phase=execution` match within
-  `dial_usage_log_payload.request_tags.baggage`, so
+  `usage_request_baggage.baggage`, so
   usage-log rows from other deployments, outside the time range, or from the metric-evaluation phase are
   excluded
 

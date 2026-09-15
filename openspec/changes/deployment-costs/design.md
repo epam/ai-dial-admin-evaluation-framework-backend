@@ -4,7 +4,7 @@
 `TestSuiteRunService#getRunCosts`) already answers "what did this run cost" by issuing two dial-adas
 `StructuredQuery` aggregate queries against the `dial_usage_log` entity — one per `eval.phase`
 (`execution`, `metric-evaluation`) — filtered by `eval.run.id` via a `co` (contains) match against the
-comma-joined `dial_usage_log_payload.request_tags.baggage` string (`eval.run.id` and `eval.phase` are OTel baggage entries, not
+`usage_request_baggage.baggage` string field (`eval.run.id` and `eval.phase` are OTel baggage entries, not
 first-class ADAS columns; `RunCostQueryBuilder` is the only component that knows this). The query builder
 constructs the typed AST directly (package `com.epam.aidial.evaluation.query.model`); `DialAdasClient`
 posts it verbatim to dial-adas and deserializes the `count`/`avg_cost` aggregate row.
@@ -12,8 +12,8 @@ posts it verbatim to dial-adas and deserializes the `count`/`avg_cost` aggregate
 We need a second way to ask the same cost question — by **deployment id** and an **arbitrary time
 range** — since a run-scoped endpoint has no notion of "this month's spend on deployment X". Unlike
 `eval.run.id`, dial-adas exposes `deployment` and `request_time` as real top-level columns, so this
-query shape differs structurally (direct `eq`/`ge`/`le` comparisons, no baggage `co`/`json_extract_string`
-wrapping) even though it reuses the same entity and the same `eval.phase` baggage filter. The select list
+query shape differs structurally (direct `eq`/`ge`/`le` comparisons, no baggage `co` wrapping)
+even though it reuses the same entity and the same `eval.phase` baggage filter. The select list
 diverges from the run query: the deployment-scoped query sums `total_price` (`count()`/`sum(total_price)`,
 aliased `total_cost`) instead of averaging it, since callers want total spend over the window, not a
 per-call average — the run-scoped query is unchanged and still selects `count()`/`avg(total_price)`
@@ -37,7 +37,7 @@ per-call average — the run-scoped query is unchanged and still selects `count(
 - No server-side time-range presets ("this month", "previous month") — the client computes bounds and
   passes them; this keeps the endpoint's contract simple and avoids introducing timezone-dependent logic.
 - No change to the existing run-costs endpoint's *response contract* to API clients — `{avgTestCaseCost,
-  avgMetricEvalCost}` is unaffected. The one exception is the outbound dial-adas field name fix in
+  avgMetricEvalCost}` is unaffected. The one exception is the outbound dial-adas baggage-field fix in
   Decision 1a: the internal query sent *to* dial-adas is corrected, but what the endpoint returns to
   callers does not change.
 
@@ -48,20 +48,24 @@ per-call average — the run-scoped query is unchanged and still selects `count(
 `ComparisonNode(EQ, [FieldExpr("deployment"), ValueExpr(STRING, deploymentId)])` and two
 `ComparisonNode`s (`GE`/`LE`) on `FieldExpr("request_time")` with `ValueExpr(TIMESTAMP,
 String.valueOf(epochMillis))` — directly matching the user-supplied DSL example. `eval.phase` keeps
-using the existing `co`-over-`json_extract_string(dial_usage_log_payload.request_tags, "baggage")`
-technique unchanged, since that part of the ADAS schema hasn't changed. Alternative considered: wrap
-`deployment` in the same baggage-`co` machinery for filter-shape consistency — rejected, since
-`deployment` is not actually in baggage and forcing it through `json_extract_string` would be both wrong
-and slower (real column vs. string-contains scan).
+using the existing `co`-over-baggage-field technique unchanged, since that part of the ADAS schema
+hasn't changed structurally (only the field name backing it — see Decision 1a). Alternative
+considered: wrap `deployment` in the same baggage-`co` machinery for filter-shape consistency —
+rejected, since `deployment` is not actually in baggage and forcing it through the baggage field would
+be both wrong and slower (real column vs. string-contains scan).
 
-**1a. Fix `REQUEST_TAGS_FIELD` to the correct dial-adas field path.** The field is
-`dial_usage_log_payload.request_tags`, not bare `request_tags` — the constant in the class being renamed
-(`RunCostQueryBuilder`/`AdasCostQueryBuilder`) currently holds the wrong value, so this fix applies to the
-shared `jsonExtractBaggage()` helper and therefore to the *existing* run-costs query as well as the new
-deployment-costs query. `AdasCostQueryBuilderTest`'s existing wire-shape assertion
-(`serializesToDialAdasWireShape`) must be updated to the corrected `"name": "dial_usage_log_payload.request_tags"`
-value alongside the rename, and `TestSuiteRunFunctionalTests`'s `shouldGetRunCosts` re-verification still
-covers the end-to-end path with the corrected field.
+**1a. Baggage is a direct queryable field (`usage_request_baggage.baggage`), not a `json_extract_string`
+unwrap of `dial_usage_log_payload.request_tags`.** dial-adas's schema changed after this design was
+first written: `eval.run.id`/`eval.phase` baggage matching no longer needs
+`json_extract_string(dial_usage_log_payload.request_tags, "baggage")` wrapping — dial-adas now exposes
+the same comma-joined baggage string directly as `usage_request_baggage.baggage`, so the shared
+`baggageField()` helper (formerly `jsonExtractBaggage()`) in `AdasCostQueryBuilder` returns a plain
+`FieldExpr("usage_request_baggage.baggage")`. This applies to both the existing run-costs query and the
+new deployment-costs query, since both reuse the same helper. `AdasCostQueryBuilderTest`'s wire-shape
+assertions (`serializesToDialAdasWireShape`, `serializesDeploymentQueryToDialAdasWireShape`) assert the
+flattened `{"type": "field", "name": "usage_request_baggage.baggage"}` shape with no `fn` wrapper, and
+`TestSuiteRunFunctionalTests`'s `shouldGetRunCosts` re-verification still covers the end-to-end path
+with the corrected field.
 
 **2. Rename `RunCostQueryBuilder` → `AdasCostQueryBuilder`; add `buildDeploymentAggregateQuery` beside
 the renamed `buildRunAggregateQuery`.** The class is small (75 lines) and is already the single owner of
@@ -119,9 +123,9 @@ two services have no other reason to share a base class or utility.
   because — unlike runs — there's no owned entity to check against without an extra DIAL Core round trip
   on every cost lookup.
 - **[Risk] Renaming `RunCostQueryBuilder` touches a file with existing production usage and tests, and
-  bundles in the `dial_usage_log_payload.request_tags` field-name fix (Decision 1a)** → a rename done
-  carelessly could silently break `TestSuiteRunService`'s existing call site, and the field-name fix
-  changes the *outbound* query dial-adas actually receives for the already-shipped run-costs endpoint.
+  bundles in the baggage-field fix (Decision 1a)** → a rename done carelessly could silently break
+  `TestSuiteRunService`'s existing call site, and the field fix changes the *outbound* query dial-adas
+  actually receives for the already-shipped run-costs endpoint.
   **Mitigation**: the rename is mechanical (class name, one method name); `AdasCostQueryBuilderTest`
   retains and adapts every existing assertion (structural AST equality + exact wire-shape JSON) updated to
   the corrected field name, so a broken call site or an unintended shape change fails a test immediately,

@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 /**
  * Builds dial-adas {@code "mode": "aggregate"} queries against the {@code dial_usage_log} entity for a
  * given execution phase, either scoped to a single run ({@link #buildRunAggregateQuery}, filtering on
- * {@code dial_usage_log_payload.request_tags.baggage} containing both {@code eval.run.id=<runId>} and
+ * {@code usage_request_baggage.baggage} containing both {@code eval.run.id=<runId>} and
  * {@code eval.phase=<phase>}) or scoped to a deployment and time range
  * ({@link #buildDeploymentAggregateQuery}, filtering on the real {@code deployment}/{@code request_time}
  * columns plus the same {@code eval.phase} baggage match). Reuses the internal {@link StructuredQuery}
@@ -34,8 +34,7 @@ import org.springframework.stereotype.Component;
 public class AdasCostQueryBuilder {
 
     private static final String ENTITY = "dial_usage_log";
-    private static final String REQUEST_TAGS_FIELD = "dial_usage_log_payload.request_tags";
-    private static final String BAGGAGE_KEY = "baggage";
+    private static final String BAGGAGE_FIELD = "usage_request_baggage.baggage";
     private static final String TOTAL_PRICE_FIELD = "total_price";
     private static final String AVG_COST_ALIAS = "avg_cost";
     private static final String TOTAL_COST_ALIAS = "total_cost";
@@ -43,7 +42,7 @@ public class AdasCostQueryBuilder {
     private static final String REQUEST_TIME_FIELD = "request_time";
 
     public StructuredQuery buildRunAggregateQuery(UUID runId, String phase) {
-        Expr baggageValue = jsonExtractBaggage();
+        Expr baggageValue = baggageField();
 
         FilterNode filter = new LogicalNode(
                 LogicalOp.AND,
@@ -56,7 +55,7 @@ public class AdasCostQueryBuilder {
     }
 
     public StructuredQuery buildDeploymentAggregateQuery(String deploymentId, long fromMs, long toMs, String phase) {
-        Expr baggageValue = jsonExtractBaggage();
+        Expr baggageValue = baggageField();
 
         FilterNode filter = new LogicalNode(
                 LogicalOp.AND,
@@ -87,9 +86,8 @@ public class AdasCostQueryBuilder {
         return new ComparisonNode(ComparisonOp.CO, List.of(baggageValue, stringValue(substring)));
     }
 
-    private static Expr jsonExtractBaggage() {
-        return new FnExpr(
-                "json_extract_string", false, List.of(new FieldExpr(REQUEST_TAGS_FIELD), stringValue(BAGGAGE_KEY)));
+    private static Expr baggageField() {
+        return new FieldExpr(BAGGAGE_FIELD);
     }
 
     private static FilterNode eq(String field, Expr value) {

@@ -21,9 +21,10 @@ query so callers can track spend per deployment over any window they choose.
   method (`buildDeploymentAggregateQuery`) alongside its existing one (renamed
   `buildRunAggregateQuery`), since it becomes the shared place that knows the `dial_usage_log` ADAS
   entity shape for both query shapes.
-- Fixes the baggage-extraction field name from `request_tags` to the correct dial-adas path
-  `dial_usage_log_payload.request_tags`. This is bundled into the same rename because the field is read
-  by the shared `jsonExtractBaggage()` helper both query shapes use, so it also corrects the *existing*,
+- Fixes the baggage-extraction field to dial-adas's direct, queryable `usage_request_baggage.baggage`
+  field (previously read via `json_extract_string(dial_usage_log_payload.request_tags, "baggage")`, now
+  a plain `FieldExpr` match). This is bundled into the same rename because the field is read
+  by the shared `baggageField()` helper both query shapes use, so it also corrects the *existing*,
   already-shipped run-costs endpoint's outbound query to dial-adas. The run-costs endpoint's response
   contract to API clients (`{avgTestCaseCost, avgMetricEvalCost}`) is unchanged.
 - `400 VALIDATION_ERROR` when `from > to` or `deploymentId` is blank. No existence check against DIAL
@@ -37,9 +38,10 @@ query so callers can track spend per deployment over any window they choose.
   over an arbitrary caller-supplied time range, backed by dial-adas.
 
 ### Modified Capabilities
-- `test-suite-run-costs`: the dial-adas correlation requirement now specifies the correct field path
-  (`dial_usage_log_payload.request_tags.baggage`) instead of `request_tags.baggage`. The endpoint's
-  response contract and scenarios are otherwise unchanged — this is a field-name correction to the
+- `test-suite-run-costs`: the dial-adas correlation requirement now specifies the correct field
+  (`usage_request_baggage.baggage`, a direct queryable field) instead of the earlier
+  `dial_usage_log_payload.request_tags.baggage` unwrap. The endpoint's
+  response contract and scenarios are otherwise unchanged — this is a field correction to the
   outbound query, not a behavior change.
 
 ## Impact
@@ -48,10 +50,10 @@ query so callers can track spend per deployment over any window they choose.
   (service.domain.dto). `RunCostQueryBuilder` → `AdasCostQueryBuilder` rename (service.domain), with a
   new `buildDeploymentAggregateQuery` method alongside the existing (renamed) `buildRunAggregateQuery`.
 - **Existing code touched**: `TestSuiteRunService`'s call site updates to the renamed
-  `AdasCostQueryBuilder`/`buildRunAggregateQuery`; the `REQUEST_TAGS_FIELD` constant is corrected to
-  `dial_usage_log_payload.request_tags`, changing the outbound dial-adas query for the existing run-costs
+  `AdasCostQueryBuilder`/`buildRunAggregateQuery`; the baggage field is corrected to a direct
+  `usage_request_baggage.baggage` `FieldExpr`, changing the outbound dial-adas query for the existing run-costs
   endpoint (not its response contract); `RunCostQueryBuilderTest` renamed to `AdasCostQueryBuilderTest`
-  and extended, with its wire-shape assertion updated to the corrected field name.
+  and extended, with its wire-shape assertion updated to the corrected field.
 - **API surface**: adds `GET /api/v1/costs?deploymentId=&from=&to=`. No changes to any existing endpoint
   contract.
 - **External dependency**: reuses the existing `DialAdasClient`/`dial-adas` integration and

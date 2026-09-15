@@ -90,20 +90,14 @@ class AdasCostQueryBuilderTest {
                       {
                         "op": "co",
                         "args": [
-                          { "type": "fn", "name": "json_extract_string", "distinct": false, "args": [
-                              { "type": "field", "name": "dial_usage_log_payload.request_tags" },
-                              { "type": "value", "value_type": "string", "value": "baggage" }
-                          ] },
+                          { "type": "field", "name": "usage_request_baggage.baggage" },
                           { "type": "value", "value_type": "string", "value": "eval.run.id=1f810de3-cb9b-4e50-b9c5-794c41d99f6c" }
                         ]
                       },
                       {
                         "op": "co",
                         "args": [
-                          { "type": "fn", "name": "json_extract_string", "distinct": false, "args": [
-                              { "type": "field", "name": "dial_usage_log_payload.request_tags" },
-                              { "type": "value", "value_type": "string", "value": "baggage" }
-                          ] },
+                          { "type": "field", "name": "usage_request_baggage.baggage" },
                           { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
                         ]
                       }
@@ -232,10 +226,7 @@ class AdasCostQueryBuilderTest {
                       {
                         "op": "co",
                         "args": [
-                          { "type": "fn", "name": "json_extract_string", "distinct": false, "args": [
-                              { "type": "field", "name": "dial_usage_log_payload.request_tags" },
-                              { "type": "value", "value_type": "string", "value": "baggage" }
-                          ] },
+                          { "type": "field", "name": "usage_request_baggage.baggage" },
                           { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
                         ]
                       }
@@ -255,13 +246,6 @@ class AdasCostQueryBuilderTest {
     private static ComparisonNode baggageContains(String substring) {
         return new ComparisonNode(
                 ComparisonOp.CO,
-                List.of(
-                        new FnExpr(
-                                "json_extract_string",
-                                false,
-                                List.of(
-                                        new FieldExpr("dial_usage_log_payload.request_tags"),
-                                        new ValueExpr(ValueType.STRING, "baggage"))),
-                        new ValueExpr(ValueType.STRING, substring)));
+                List.of(new FieldExpr("usage_request_baggage.baggage"), new ValueExpr(ValueType.STRING, substring)));
     }
 }

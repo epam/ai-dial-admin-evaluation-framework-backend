@@ -13,25 +13,18 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateRowDto;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
-import com.epam.aidial.evaluation.query.model.QueryMode;
-import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
-import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
-import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
@@ -105,12 +98,6 @@ class TestSuiteRunServiceTest {
     private EvalResultsCsvParser evalResultsCsvParser;
 
     @Mock
-    private DialAdasClient dialAdasClient;
-
-    @Mock
-    private RunCostQueryBuilder runCostQueryBuilder;
-
-    @Mock
     private PlatformTransactionManager metaTransactionManager;
 
     private TestSuiteRunService service;
@@ -141,8 +128,6 @@ class TestSuiteRunServiceTest {
                 new ObjectMapper(),
                 evalResultsImportService,
                 evalResultsCsvParser,
-                dialAdasClient,
-                runCostQueryBuilder,
                 metaTransactionManager);
 
         testSuiteId = UUID.randomUUID();
@@ -421,48 +406,19 @@ class TestSuiteRunServiceTest {
     }
 
     @Nested
-    @DisplayName("getRunCosts")
-    class GetRunCosts {
+    @DisplayName("ensureRunExists")
+    class EnsureRunExists {
 
-        private final UUID runId = UUID.randomUUID();
-        private final StructuredQuery executionQuery =
-                new StructuredQuery("execution-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
-        private final StructuredQuery metricEvalQuery = new StructuredQuery(
-                "metric-eval-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
-
-        private void stubExistingRunAndQueries() {
+        @Test
+        @DisplayName("does not throw when the run exists")
+        void doesNotThrowWhenRunExists() {
+            UUID runId = UUID.randomUUID();
             when(testSuiteRunRepository.findById(runId))
                     .thenReturn(Optional.of(TestSuiteRun.builder().id(runId).build()));
-            when(runCostQueryBuilder.buildAggregateQuery(runId, TracingConstants.PHASE_EXECUTION))
-                    .thenReturn(executionQuery);
-            when(runCostQueryBuilder.buildAggregateQuery(runId, TracingConstants.PHASE_METRIC_EVALUATION))
-                    .thenReturn(metricEvalQuery);
-        }
 
-        @Test
-        @DisplayName("returns both averages when both phases have usage-log rows")
-        void returnsBothAveragesWhenBothPhasesHaveData() {
-            stubExistingRunAndQueries();
-            when(dialAdasClient.executeAggregate(executionQuery)).thenReturn(aggregateResponse(120L, 0.0007125));
-            when(dialAdasClient.executeAggregate(metricEvalQuery)).thenReturn(aggregateResponse(60L, 0.000231));
+            service.ensureRunExists(runId);
 
-            RunCostsResponseDto costs = service.getRunCosts(runId);
-
-            assertThat(costs.getAvgTestCaseCost()).isEqualTo(0.0007125);
-            assertThat(costs.getAvgMetricEvalCost()).isEqualTo(0.000231);
-        }
-
-        @Test
-        @DisplayName("returns null for a phase with zero matching usage-log rows")
-        void returnsNullForPhaseWithNoData() {
-            stubExistingRunAndQueries();
-            when(dialAdasClient.executeAggregate(executionQuery)).thenReturn(aggregateResponse(0L, null));
-            when(dialAdasClient.executeAggregate(metricEvalQuery)).thenReturn(aggregateResponse(60L, 0.000231));
-
-            RunCostsResponseDto costs = service.getRunCosts(runId);
-
-            assertThat(costs.getAvgTestCaseCost()).isNull();
-            assertThat(costs.getAvgMetricEvalCost()).isEqualTo(0.000231);
+            verify(testSuiteRunRepository).findById(runId);
         }
 
         @Test
@@ -471,16 +427,7 @@ class TestSuiteRunServiceTest {
             UUID unknownRunId = UUID.randomUUID();
             when(testSuiteRunRepository.findById(unknownRunId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.getRunCosts(unknownRunId)).isInstanceOf(EntityNotFoundException.class);
-        }
-
-        private AdasAggregateResponseDto aggregateResponse(long count, Double avgCost) {
-            return AdasAggregateResponseDto.builder()
-                    .rows(List.of(AdasAggregateRowDto.builder()
-                            .count(count)
-                            .avgCost(avgCost)
-                            .build()))
-                    .build();
+            assertThatThrownBy(() -> service.ensureRunExists(unknownRunId)).isInstanceOf(EntityNotFoundException.class);
         }
     }
 }

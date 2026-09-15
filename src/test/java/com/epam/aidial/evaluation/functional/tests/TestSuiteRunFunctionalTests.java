@@ -47,6 +47,7 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunReconciliation;
+import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -344,6 +345,36 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
                 restTemplate.getForEntity(apiUrl("/test-suite-runs/" + UUID.randomUUID() + "/costs"), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Should get deployment costs for a time range")
+    void shouldGetDeploymentCosts() {
+        when(dialAdasClient.executeAggregate(any(StructuredQuery.class)))
+                .thenReturn(AdasAggregateResponseDto.builder()
+                        .rows(List.of(AdasAggregateRowDto.builder()
+                                .count(1L)
+                                .totalCost(0.0007125)
+                                .build()))
+                        .build());
+
+        ResponseEntity<DeploymentCostsResponseDto> response = restTemplate.getForEntity(
+                apiUrl("/costs?deploymentId=applications/public/my-app&from=1000&to=2000"),
+                DeploymentCostsResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getTotalTestCaseCost()).isEqualTo(0.0007125);
+        assertThat(response.getBody().getTotalMetricEvalCost()).isEqualTo(0.0007125);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when getting deployment costs with from > to")
+    void shouldReturn400WhenDeploymentCostsFromAfterTo() {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                apiUrl("/costs?deploymentId=applications/public/my-app&from=2000&to=1000"), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test

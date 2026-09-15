@@ -30,6 +30,17 @@ public abstract class OidcSecurityStartupSmokeTest extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should serve the query-DSL demo page without a token")
+    void shouldServeQueryDslDemoPage() {
+        ResponseEntity<String> page = restTemplate.getForEntity(baseUrl() + "/query-dsl-demo.html", String.class);
+
+        assertThat(page.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(page.getBody())
+                .as("demo console should target the structured-query execute endpoint")
+                .contains("/api/v1/queries");
+    }
+
+    @Test
     @DisplayName("Should reject protected API access without token")
     void shouldRejectProtectedApiWithoutToken() {
         ResponseEntity<String> response =

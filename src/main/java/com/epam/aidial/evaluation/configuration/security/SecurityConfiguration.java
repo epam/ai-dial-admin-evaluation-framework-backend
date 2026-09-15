@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.configuration.security;
 
+import static com.epam.aidial.evaluation.constants.SecurityConstants.QUERY_DSL_DEMO_PAGE;
+
 import com.epam.aidial.evaluation.configuration.properties.security.JwtProvidersProperties;
 import com.epam.aidial.evaluation.web.security.IssuerToDecoderMapFactory;
 import com.epam.aidial.evaluation.web.security.JwtAuthenticationConverterFactory;
@@ -142,8 +144,11 @@ public class SecurityConfiguration {
     }
 
     protected String[] publicPathPatterns() {
-        var swaggerPaths =
-                disableSwaggerAuthorization ? List.of("/swagger-ui/**", "/v3/api-docs/**") : List.<String>of();
+        // The throwaway query-DSL demo page is a developer tool like Swagger UI, so it rides the same
+        // switch. Only the page itself is public; its API calls go through normal authentication.
+        var swaggerPaths = disableSwaggerAuthorization
+                ? List.of("/swagger-ui/**", "/v3/api-docs/**", QUERY_DSL_DEMO_PAGE)
+                : List.<String>of();
         var unsecuredPaths = List.of("/api/v1/health/**");
 
         return Stream.of(swaggerPaths, unsecuredPaths)

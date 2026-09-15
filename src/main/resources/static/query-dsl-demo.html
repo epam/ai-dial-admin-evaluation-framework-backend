@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<!--
+  THROWAWAY DEMO PAGE - not part of the product surface.
+
+  A zero-dependency console for the unified structured-query DSL
+  (POST /api/v1/queries/execute + the schema discovery endpoints), built to demo the
+  test_suite_runs query entity. Served statically by the backend; reachable at
+  /query-dsl-demo.html and whitelisted alongside Swagger UI (i.e. only when
+  config.rest.security.disable-swagger-authorization=true, or security mode=none).
+  The API calls themselves still go through normal authentication - paste a bearer
+  token below when running against a secured deployment.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Query DSL demo console</title>
+    <style>
+        :root {
+            --bg: #10131a;
+            --panel: #181c26;
+            --panel-2: #1f2430;
+            --line: #2c3342;
+            --fg: #e4e8f1;
+            --muted: #8d97ab;
+            --accent: #5b9cff;
+            --ok: #4bbf7a;
+            --err: #ff6b6b;
+            --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+
+        header {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-end;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--line);
+            background: var(--panel);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+
+        h1 {
+            font-size: 15px;
+            margin: 0 16px 0 0;
+            font-weight: 600;
+            letter-spacing: .2px;
+        }
+
+        h1 small {
+            display: block;
+            color: var(--muted);
+            font-weight: 400;
+            font-size: 11px;
+        }
+
+        .field { display: flex; flex-direction: column; gap: 4px; }
+        .field > label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+
+        input, select, textarea, button {
+            font-family: inherit;
+            font-size: 12px;
+            color: var(--fg);
+            background: var(--panel-2);
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            padding: 5px 7px;
+        }
+
+        input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+        textarea { font-family: var(--mono); resize: vertical; }
+        select[multiple] { min-height: 132px; }
+
+        button {
+            cursor: pointer;
+            background: var(--panel-2);
+        }
+
+        button:hover { border-color: var(--accent); }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #06101f;
+            font-weight: 600;
+            padding: 6px 14px;
+        }
+
+        button.icon { padding: 3px 8px; color: var(--muted); }
+
+        main {
+            display: grid;
+            grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr);
+            gap: 14px;
+            padding: 14px 18px;
+            align-items: start;
+        }
+
+        @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+        section {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+        }
+
+        section > h2 {
+            margin: 0;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .7px;
+            color: var(--muted);
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        section > .body { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+
+        .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+        .row > .grow { flex: 1 1 130px; min-width: 0; }
+        .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        .clause {
+            display: grid;
+            grid-template-columns: minmax(0, 2.2fr) 78px 92px minmax(0, 2fr) auto;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .sort-clause { grid-template-columns: minmax(0, 1fr) 78px 96px auto; }
+        .agg-clause { grid-template-columns: 116px minmax(0, 1fr) minmax(0, 1fr) auto; }
+
+        .hint { color: var(--muted); font-size: 11px; }
+        .hint code { font-family: var(--mono); color: var(--fg); }
+
+        #json { width: 100%; min-height: 330px; }
+
+        .full { grid-column: 1 / -1; }
+
+        #status { font-size: 12px; }
+        #status.ok { color: var(--ok); }
+        #status.err { color: var(--err); }
+
+        pre.error {
+            margin: 0;
+            padding: 10px;
+            background: #2a1618;
+            border: 1px solid #5c2b2f;
+            border-radius: 6px;
+            color: #ffc9c9;
+            font-family: var(--mono);
+            font-size: 11px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .table-wrap { overflow: auto; max-height: 60vh; }
+
+        table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 11px; }
+
+        th, td {
+            border: 1px solid var(--line);
+            padding: 4px 7px;
+            text-align: left;
+            vertical-align: top;
+            max-width: 360px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: pre-wrap;
+        }
+
+        th { background: var(--panel-2); position: sticky; top: 0; color: var(--muted); font-weight: 600; }
+        td.null { color: var(--muted); font-style: italic; }
+        tbody tr:hover td { background: #1c2230; }
+
+        .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+
+        .chip {
+            font-family: var(--mono);
+            font-size: 10px;
+            padding: 2px 6px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .chip:hover { border-color: var(--accent); color: var(--fg); }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Query DSL demo console<small>POST /api/v1/queries/execute &mdash; throwaway demo page</small></h1>
+    <div class="field">
+        <label for="entity">Entity</label>
+        <select id="entity"></select>
+    </div>
+    <div class="field" id="instance-field" hidden>
+        <label for="instance-id" id="instance-label">Instance id</label>
+        <input id="instance-id" size="34" placeholder="uuid - loads the detailed schema">
+    </div>
+    <div class="field">
+        <label for="token">Bearer token (optional)</label>
+        <input id="token" type="password" size="26" placeholder="pasted JWT / api key">
+    </div>
+    <button id="reload">Reload schema</button>
+    <button id="run" class="primary">Run query &#9654;</button>
+    <span id="status"></span>
+</header>
+
+<main>
+    <section>
+        <h2>Builder <span class="hint" id="field-count"></span></h2>
+        <div class="body">
+            <div class="row">
+                <div class="field">
+                    <label for="mode">Mode</label>
+                    <select id="mode">
+                        <option value="row">row</option>
+                        <option value="aggregate">aggregate</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="distinct">Distinct</label>
+                    <select id="distinct">
+                        <option value="false">false</option>
+                        <option value="true">true</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="offset">Offset</label>
+                    <input id="offset" type="number" min="0" value="0" style="width:80px">
+                </div>
+                <div class="field">
+                    <label for="limit">Limit</label>
+                    <input id="limit" type="number" min="1" value="25" style="width:80px">
+                </div>
+                <div class="field">
+                    <label for="include-total">Total count</label>
+                    <select id="include-total">
+                        <option value="true">include</option>
+                        <option value="false">skip</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="cols">
+                <div class="field" id="select-field">
+                    <label for="select">Select (row mode &mdash; none = all fields)</label>
+                    <select id="select" multiple></select>
+                </div>
+                <div class="field" id="group-field" hidden>
+                    <label for="group-by">Group by</label>
+                    <select id="group-by" multiple></select>
+                </div>
+            </div>
+
+            <div id="agg-block" hidden>
+                <div class="field">
+                    <label>Aggregate columns</label>
+                    <div id="agg-list" style="display:flex;flex-direction:column;gap:6px"></div>
+                </div>
+                <button id="add-agg" style="margin-top:6px">+ aggregate column</button>
+                <p class="hint" style="margin:6px 0 0">
+                    Two-argument functions (<code>percentile_cont</code>, <code>roc_auc</code>,
+                    <code>divide</code>, &hellip;) and <code>count(distinct x)</code>: edit the request JSON.
+                </p>
+            </div>
+
+            <div class="field">
+                <label for="combinator">Filter (<span id="clause-count">0</span> clauses)</label>
+                <div class="row">
+                    <select id="combinator" style="width:90px">
+                        <option value="and">and</option>
+                        <option value="or">or</option>
+                    </select>
+                    <button id="add-clause">+ condition</button>
+                    <span class="hint">null-safe negation: <code>ne</code>/<code>nc</code> also match nulls</span>
+                </div>
+                <div id="clause-list" style="display:flex;flex-direction:column;gap:6px;margin-top:8px"></div>
+            </div>
+
+            <div class="field">
+                <label>Sort</label>
+                <div id="sort-list" style="display:flex;flex-direction:column;gap:6px"></div>
+                <button id="add-sort" style="align-self:flex-start;margin-top:2px">+ sort key</button>
+            </div>
+
+            <div class="field">
+                <label>Presets</label>
+                <div class="chips" id="presets"></div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>
+            Request JSON
+            <span>
+                <button class="icon" id="rebuild">regenerate from builder</button>
+            </span>
+        </h2>
+        <div class="body">
+            <textarea id="json" spellcheck="false"></textarea>
+            <p class="hint">
+                Edited by hand? <b>Run query</b> always posts exactly what is in this box; the builder
+                only regenerates it when you change a control above (or hit <i>regenerate</i>).
+            </p>
+        </div>
+    </section>
+
+    <section class="full">
+        <h2>Result <span class="hint" id="result-meta"></span></h2>
+        <div class="body" id="result-body">
+            <p class="hint">No query run yet.</p>
+        </div>
+    </section>
+
+    <section class="full">
+        <h2>Entity schema</h2>
+        <div class="body">
+            <div class="table-wrap" id="schema-body"></div>
+        </div>
+    </section>
+</main>
+
+<script>
+    const API = '/api/v1/queries';
+    const OPS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'co', 'nc', 'in'];
+    const VALUE_TYPES = ['string', 'integer', 'long', 'decimal', 'boolean', 'date', 'timestamp', 'uuid', 'null'];
+    // Single-field aggregates only. Two-argument functions (percentile_cont/_disc, roc_auc,
+    // subtract, divide, coalesce) and COUNT(DISTINCT x) are reachable by editing the request JSON.
+    const AGG_FNS = ['count', 'sum', 'avg', 'min', 'max'];
+
+    const el = (id) => document.getElementById(id);
+    let schema = [];          // [{name, type, source}]
+    let entities = [];        // [{name, complex, schemaIdField}]
+
+    const typeOf = (name) => (schema.find((f) => f.name === name) || {}).type || 'string';
+
+    /** Literal value_type a field's declared schema type maps to (JSONB fields compare as strings). */
+    function defaultValueType(fieldName) {
+        const t = typeOf(fieldName);
+        return t === 'object' || t === 'array' ? 'string' : t;
+    }
+
+    function headers() {
+        const h = {'Content-Type': 'application/json'};
+        const token = el('token').value.trim();
+        if (token) {
+            h['Authorization'] = token.toLowerCase().startsWith('bearer ') ? token : 'Bearer ' + token;
+        }
+        return h;
+    }
+
+    function setStatus(text, kind) {
+        const s = el('status');
+        s.textContent = text;
+        s.className = kind || '';
+    }
+
+    function fieldSelect(selected) {
+        const s = document.createElement('select');
+        schema.forEach((f) => {
+            const o = document.createElement('option');
+            o.value = f.name;
+            o.textContent = f.name + '  (' + f.type + ')';
+            s.appendChild(o);
+        });
+        if (selected) {
+            s.value = selected;
+        }
+        return s;
+    }
+
+    function pick(options, selected) {
+        const s = document.createElement('select');
+        options.forEach((v) => {
+            const o = document.createElement('option');
+            o.value = v;
+            o.textContent = v;
+            s.appendChild(o);
+        });
+        if (selected) {
+            s.value = selected;
+        }
+        return s;
+    }
+
+    function removeButton(node) {
+        const b = document.createElement('button');
+        b.className = 'icon';
+        b.textContent = '✕';
+        b.title = 'remove';
+        b.onclick = () => {
+            node.remove();
+            rebuild();
+        };
+        return b;
+    }
+
+    // ---------------------------------------------------------------- filter clauses
+
+    function addClause(preset) {
+        const row = document.createElement('div');
+        row.className = 'clause';
+
+        const field = fieldSelect(preset && preset.field);
+        const op = pick(OPS, (preset && preset.op) || 'eq');
+        const valueType = pick(VALUE_TYPES, (preset && preset.valueType) || defaultValueType(field.value));
+        const value = document.createElement('input');
+        value.placeholder = 'value (comma-separated for in)';
+        value.value = (preset && preset.value) || '';
+
+        field.onchange = () => {
+            valueType.value = defaultValueType(field.value);
+            rebuild();
+        };
+        [op, valueType].forEach((c) => (c.onchange = rebuild));
+        value.oninput = rebuild;
+
+        row.append(field, op, valueType, value, removeButton(row));
+        el('clause-list').appendChild(row);
+        rebuild();
+    }
+
+    function clauseNodes() {
+        return [...el('clause-list').children].map((row) => {
+            const [field, op, valueType, value] = row.children;
+            return {field: field.value, op: op.value, valueType: valueType.value, value: value.value};
+        });
+    }
+
+    function clauseToJson(c) {
+        const left = {type: 'field', name: c.field};
+        if (c.valueType === 'null') {
+            return {op: c.op, args: [left, {type: 'value', value_type: 'null'}]};
+        }
+        if (c.op === 'in') {
+            const items = c.value.split(',').map((v) => v.trim()).filter((v) => v.length > 0);
+            return {
+                op: 'in',
+                args: [left, {type: 'array', items: items.map((v) => ({type: 'value', value_type: c.valueType, value: v}))}]
+            };
+        }
+        return {op: c.op, args: [left, {type: 'value', value_type: c.valueType, value: c.value}]};
+    }
+
+    // ---------------------------------------------------------------- sort keys
+
+    function addSort(preset) {
+        const row = document.createElement('div');
+        row.className = 'clause sort-clause';
+        const field = fieldSelect(preset && preset.field);
+        const dir = pick(['asc', 'desc'], (preset && preset.dir) || 'desc');
+        const nulls = pick(['default', 'first', 'last'], (preset && preset.nulls) || 'default');
+        [field, dir, nulls].forEach((c) => (c.onchange = rebuild));
+        row.append(field, dir, nulls, removeButton(row));
+        el('sort-list').appendChild(row);
+        rebuild();
+    }
+
+    function sortJson() {
+        return [...el('sort-list').children].map((row) => {
+            const [field, dir, nulls] = row.children;
+            const item = {field: field.value, dir: dir.value};
+            if (nulls.value !== 'default') {
+                item.nulls = nulls.value;
+            }
+            return item;
+        });
+    }
+
+    // ---------------------------------------------------------------- aggregate columns
+
+    function addAgg(preset) {
+        const row = document.createElement('div');
+        row.className = 'clause agg-clause';
+        const fn = pick(AGG_FNS, (preset && preset.fn) || 'count');
+        const field = fieldSelect(preset && preset.field);
+        const alias = document.createElement('input');
+        alias.placeholder = 'alias (required)';
+        alias.value = (preset && preset.alias) || ((preset && preset.fn) || 'count') + '_value';
+        fn.onchange = rebuild;
+        field.onchange = rebuild;
+        alias.oninput = rebuild;
+        row.append(fn, field, alias, removeButton(row));
+        el('agg-list').appendChild(row);
+        rebuild();
+    }
+
+    function aggJson() {
+        return [...el('agg-list').children].map((row) => {
+            const [fn, field, alias] = row.children;
+            const args = fn.value === 'count' ? [] : [{type: 'field', name: field.value}];
+            return {expr: {type: 'fn', name: fn.value, args: args}, as: alias.value || fn.value};
+        });
+    }
+
+    // ---------------------------------------------------------------- query assembly
+
+    const multi = (id) => [...el(id).selectedOptions].map((o) => o.value);
+
+    function buildQuery() {
+        const mode = el('mode').value;
+        const clauses = clauseNodes();
+        const query = {
+            entity: el('entity').value,
+            mode: mode,
+            distinct: el('distinct').value === 'true'
+        };
+
+        if (clauses.length === 1) {
+            query.filter = clauseToJson(clauses[0]);
+        } else if (clauses.length > 1) {
+            query.filter = {op: el('combinator').value, args: clauses.map(clauseToJson)};
+        }
+
+        if (mode === 'aggregate') {
+            const groupBy = multi('group-by');
+            query.group_by = groupBy;
+            query.select = groupBy.map((f) => ({expr: {type: 'field', name: f}})).concat(aggJson());
+        } else {
+            const selected = multi('select');
+            if (selected.length > 0) {
+                query.select = selected.map((f) => ({expr: {type: 'field', name: f}}));
+            }
+        }
+
+        const sort = sortJson();
+        if (sort.length > 0) {
+            query.sort = sort;
+        }
+
+        query.page = {
+            type: 'offset',
+            offset: Number(el('offset').value || 0),
+            limit: Number(el('limit').value || 25)
+        };
+        if (mode === 'row' && el('include-total').value === 'true') {
+            query.page.include_total = true;
+        }
+        return query;
+    }
+
+    function rebuild() {
+        el('clause-count').textContent = el('clause-list').children.length;
+        el('json').value = JSON.stringify(buildQuery(), null, 2);
+    }
+
+    // ---------------------------------------------------------------- execution
+
+    async function run() {
+        const body = el('json').value;
+        try {
+            JSON.parse(body);
+        } catch (e) {
+            renderError('Request body is not valid JSON:\n' + e.message);
+            setStatus('invalid JSON', 'err');
+            return;
+        }
+        setStatus('running…');
+        const startedAt = performance.now();
+        let response;
+        try {
+            response = await fetch(API + '/execute', {method: 'POST', headers: headers(), body: body});
+        } catch (e) {
+            renderError('Network error: ' + e.message);
+            setStatus('failed', 'err');
+            return;
+        }
+        const took = Math.round(performance.now() - startedAt);
+        const text = await response.text();
+        if (!response.ok) {
+            renderError('HTTP ' + response.status + ' ' + response.statusText + '\n\n' + prettify(text));
+            setStatus('HTTP ' + response.status + ' · ' + took + ' ms', 'err');
+            return;
+        }
+        const result = JSON.parse(text);
+        renderRows(result);
+        setStatus('200 OK · ' + took + ' ms', 'ok');
+        el('result-meta').textContent =
+            result.rows.length + ' row(s)' + (result.totalCount != null ? ' of ' + result.totalCount + ' total' : '');
+    }
+
+    function prettify(text) {
+        try {
+            return JSON.stringify(JSON.parse(text), null, 2);
+        } catch (e) {
+            return text;
+        }
+    }
+
+    function renderError(message) {
+        const pre = document.createElement('pre');
+        pre.className = 'error';
+        pre.textContent = message;
+        el('result-body').replaceChildren(pre);
+        el('result-meta').textContent = '';
+    }
+
+    function cellText(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        return typeof value === 'object' ? JSON.stringify(value) : String(value);
+    }
+
+    function renderRows(result) {
+        if (result.rows.length === 0) {
+            const p = document.createElement('p');
+            p.className = 'hint';
+            p.textContent = 'Query succeeded, 0 rows matched.';
+            el('result-body').replaceChildren(p);
+            return;
+        }
+        const columns = [...new Set(result.rows.flatMap((r) => Object.keys(r)))];
+        const table = document.createElement('table');
+        const thead = table.createTHead().insertRow();
+        columns.forEach((c) => {
+            const th = document.createElement('th');
+            th.textContent = c;
+            thead.appendChild(th);
+        });
+        const tbody = table.createTBody();
+        result.rows.forEach((row) => {
+            const tr = tbody.insertRow();
+            columns.forEach((c) => {
+                const td = tr.insertCell();
+                const text = cellText(row[c]);
+                if (text === null) {
+                    td.textContent = 'null';
+                    td.className = 'null';
+                } else {
+                    td.textContent = text;
+                    td.title = text;
+                }
+            });
+        });
+        const wrap = document.createElement('div');
+        wrap.className = 'table-wrap';
+        wrap.appendChild(table);
+        el('result-body').replaceChildren(wrap);
+    }
+
+    // ---------------------------------------------------------------- schema loading
+
+    function renderSchema() {
+        const table = document.createElement('table');
+        const head = table.createTHead().insertRow();
+        ['field', 'type', 'source'].forEach((h) => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            head.appendChild(th);
+        });
+        const tbody = table.createTBody();
+        schema.forEach((f) => {
+            const tr = tbody.insertRow();
+            tr.insertCell().textContent = f.name;
+            tr.insertCell().textContent = f.type;
+            tr.insertCell().textContent = f.source || '';
+        });
+        el('schema-body').replaceChildren(table);
+        el('field-count').textContent = schema.length + ' fields';
+    }
+
+    function fillFieldPickers() {
+        ['select', 'group-by'].forEach((id) => {
+            const s = el(id);
+            s.replaceChildren();
+            schema.forEach((f) => {
+                const o = document.createElement('option');
+                o.value = f.name;
+                o.textContent = f.name + '  (' + f.type + ')';
+                s.appendChild(o);
+            });
+        });
+    }
+
+    async function getJson(url) {
+        const response = await fetch(url, {headers: headers()});
+        const text = await response.text();
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status + ' on ' + url + '\n' + prettify(text));
+        }
+        return JSON.parse(text);
+    }
+
+    function currentEntity() {
+        return entities.find((e) => e.name === el('entity').value) || {};
+    }
+
+    async function loadSchema() {
+        const entity = currentEntity();
+        el('instance-field').hidden = !entity.complex;
+        el('instance-label').textContent = entity.schemaIdField || 'Instance id';
+        const instanceId = el('instance-id').value.trim();
+        const url = entity.complex && instanceId
+            ? API + '/entities/schema/' + encodeURIComponent(entity.name) + '/detailed?'
+                + encodeURIComponent(entity.schemaIdField) + '=' + encodeURIComponent(instanceId)
+            : API + '/entities/schema/' + encodeURIComponent(entity.name);
+        setStatus('loading schema…');
+        try {
+            schema = (await getJson(url)).fields || [];
+        } catch (e) {
+            renderError(e.message);
+            setStatus('schema load failed', 'err');
+            return;
+        }
+        renderSchema();
+        fillFieldPickers();
+        el('clause-list').replaceChildren();
+        el('sort-list').replaceChildren();
+        el('agg-list').replaceChildren();
+        renderPresets();
+        applyPreset(PRESETS[el('entity').value] ? el('entity').value : null);
+        setStatus('schema loaded · ' + schema.length + ' fields', 'ok');
+    }
+
+    async function loadEntities() {
+        try {
+            entities = await getJson(API + '/entities');
+        } catch (e) {
+            renderError(e.message);
+            setStatus('could not list entities', 'err');
+            return;
+        }
+        const select = el('entity');
+        select.replaceChildren();
+        entities.forEach((entity) => {
+            const o = document.createElement('option');
+            o.value = entity.name;
+            o.textContent = entity.name + (entity.complex ? ' (complex)' : '');
+            select.appendChild(o);
+        });
+        if (entities.some((e) => e.name === 'test_suite_runs')) {
+            select.value = 'test_suite_runs';
+        }
+        await loadSchema();
+    }
+
+    // ---------------------------------------------------------------- presets
+
+    const PRESETS = {
+        test_suite_runs: [
+            {
+                label: 'latest runs',
+                apply: () => {
+                    el('mode').value = 'row';
+                    syncMode();
+                    selectFields('select', ['id', 'test_run_name', 'status', 'suite_type', 'metric_names', 'created_at_ms']);
+                    addSort({field: 'created_at_ms', dir: 'desc'});
+                }
+            },
+            {
+                label: 'failed runs of a deployment',
+                apply: () => {
+                    el('mode').value = 'row';
+                    syncMode();
+                    selectFields('select', ['id', 'test_run_name', 'status', 'deployment_ref::name', 'error_message']);
+                    addClause({field: 'status', op: 'eq', valueType: 'string', value: 'FAILED'});
+                    addClause({field: 'deployment_ref::name', op: 'eq', valueType: 'string', value: 'gpt-4o'});
+                    addSort({field: 'created_at_ms', dir: 'desc'});
+                }
+            },
+            {
+                label: 'runs carrying a metric (metric_names co)',
+                apply: () => {
+                    el('mode').value = 'row';
+                    syncMode();
+                    selectFields('select', ['id', 'test_run_name', 'metric_names']);
+                    addClause({field: 'metric_names', op: 'co', valueType: 'string', value: 'Accuracy'});
+                    addSort({field: 'created_at_ms', dir: 'desc'});
+                }
+            },
+            {
+                label: 'run count by status',
+                apply: () => {
+                    el('mode').value = 'aggregate';
+                    syncMode();
+                    selectFields('group-by', ['status']);
+                    addAgg({fn: 'count', alias: 'runs'});
+                    addSort({field: 'runs', dir: 'desc'});
+                }
+            },
+            {
+                label: 'avg duration by suite_type',
+                apply: () => {
+                    el('mode').value = 'aggregate';
+                    syncMode();
+                    selectFields('group-by', ['suite_type']);
+                    addAgg({fn: 'count', alias: 'runs'});
+                    addAgg({fn: 'avg', field: 'number_of_test_cases', alias: 'avg_test_cases'});
+                    addSort({field: 'runs', dir: 'desc'});
+                }
+            }
+        ],
+        test_suites: [
+            {
+                label: 'valid suites, newest first',
+                apply: () => {
+                    el('mode').value = 'row';
+                    syncMode();
+                    selectFields('select', ['id', 'name', 'is_valid', 'created_at_ms']);
+                    addClause({field: 'is_valid', op: 'eq', valueType: 'boolean', value: 'true'});
+                    addSort({field: 'created_at_ms', dir: 'desc'});
+                }
+            }
+        ],
+        eval_summaries: [
+            {
+                label: 'status breakdown of a run',
+                apply: () => {
+                    el('mode').value = 'aggregate';
+                    syncMode();
+                    selectFields('group-by', ['execution_status']);
+                    addAgg({fn: 'count', alias: 'rows_count'});
+                    addClause({
+                        field: 'test_suite_run_id',
+                        op: 'eq',
+                        valueType: 'uuid',
+                        value: el('instance-id').value.trim() || '00000000-0000-0000-0000-000000000000'
+                    });
+                }
+            }
+        ]
+    };
+
+    function selectFields(id, names) {
+        const select = el(id);
+        [...select.options].forEach((o) => (o.selected = names.includes(o.value)));
+    }
+
+    function renderPresets() {
+        const list = PRESETS[el('entity').value] || [];
+        const box = el('presets');
+        box.replaceChildren();
+        if (list.length === 0) {
+            const span = document.createElement('span');
+            span.className = 'hint';
+            span.textContent = 'no presets for this entity';
+            box.appendChild(span);
+            return;
+        }
+        list.forEach((preset, index) => {
+            const chip = document.createElement('span');
+            chip.className = 'chip';
+            chip.textContent = preset.label;
+            chip.onclick = () => applyPresetAt(index);
+            box.appendChild(chip);
+        });
+    }
+
+    function applyPresetAt(index) {
+        const list = PRESETS[el('entity').value] || [];
+        if (!list[index]) {
+            return;
+        }
+        el('clause-list').replaceChildren();
+        el('sort-list').replaceChildren();
+        el('agg-list').replaceChildren();
+        selectFields('select', []);
+        selectFields('group-by', []);
+        list[index].apply();
+        rebuild();
+    }
+
+    /** Applies the first preset of `entityName`, or just regenerates the JSON when there is none. */
+    function applyPreset(entityName) {
+        if (entityName) {
+            applyPresetAt(0);
+        } else {
+            rebuild();
+        }
+    }
+
+    // ---------------------------------------------------------------- wiring
+
+    function syncMode() {
+        const aggregate = el('mode').value === 'aggregate';
+        el('agg-block').hidden = !aggregate;
+        el('group-field').hidden = !aggregate;
+        el('select-field').hidden = aggregate;
+        el('include-total').disabled = aggregate;
+    }
+
+    el('mode').onchange = () => {
+        syncMode();
+        rebuild();
+    };
+    ['distinct', 'offset', 'limit', 'include-total', 'combinator', 'select', 'group-by'].forEach(
+        (id) => (el(id).onchange = rebuild)
+    );
+    el('add-clause').onclick = () => addClause();
+    el('add-sort').onclick = () => addSort();
+    el('add-agg').onclick = () => addAgg();
+    el('rebuild').onclick = rebuild;
+    el('run').onclick = run;
+    el('reload').onclick = loadSchema;
+    el('entity').onchange = loadSchema;
+    el('instance-id').onchange = loadSchema;
+    el('token').onchange = () => {
+        try {
+            localStorage.setItem('query-dsl-demo-token', el('token').value);
+        } catch (e) {
+            // Private browsing / blocked storage - the token simply is not remembered.
+        }
+    };
+
+    try {
+        el('token').value = localStorage.getItem('query-dsl-demo-token') || '';
+    } catch (e) {
+        // ignored, see above
+    }
+
+    syncMode();
+    loadEntities();
+</script>
+</body>
+</html>

@@ -128,14 +128,13 @@ public class PostgresTestSuiteRunEntityResolver implements StructuredQueryEntity
                 .orderBy(latest.COMPUTED_AT_MS.desc(), latest.COMPUTATION_ID.desc())
                 .limit(1));
 
-        final Field<JSONB> metricNames = DSL.field(DSL.select(DSL.coalesce(
+        return DSL.field(DSL.select(DSL.coalesce(
                                 DSL.jsonbArrayAggDistinct(rms.TSMD_NAME).orderBy(rms.TSMD_NAME),
                                 DSL.inline(JSONB.valueOf("[]"))))
                         .from(rms)
                         .where(rms.TEST_SUITE_RUN_ID.eq(TEST_SUITE_RUNS.ID))
                         .and(rms.COMPUTATION_ID.eq(latestComputationId)))
                 .as(DSL.name(METRIC_NAMES_FIELD));
-        return metricNames;
     }
 
     private static Map<String, QueryFieldBinding> buildBindings(JooqTableSchemaResolver schemaResolver, Table<?> tsr) {

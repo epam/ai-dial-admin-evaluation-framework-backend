@@ -57,6 +57,7 @@ public abstract class GrafanaEnabledFunctionalTests extends AbstractGrafanaFunct
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         metaTestDataHelper.cleanupRunMetricSnapshots();
         analyticsTestDataHelper.cleanupResults();
         testSuiteId = metaTestDataHelper.createTestSuite("Grafana Suite").getId();

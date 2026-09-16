@@ -64,6 +64,8 @@ import com.epam.aidial.evaluation.functional.tests.MultiTurnRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MultiTurnSharedDataFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
+import com.epam.aidial.evaluation.functional.tests.PassRateFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.PassRateRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseRunInputRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestSuiteRunRepositoryFunctionalTests;
@@ -530,6 +532,12 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class PostgresTestSuiteRunRepositoryTests extends PostgresTestSuiteRunRepositoryFunctionalTests {}
+
+    @Nested
+    class PassRateRepositoryTests extends PassRateRepositoryFunctionalTests {}
+
+    @Nested
+    class PassRateTests extends PassRateFunctionalTests {}
 
     @Nested
     class PostgresTestCaseRunInputRepositoryTests extends PostgresTestCaseRunInputRepositoryFunctionalTests {}

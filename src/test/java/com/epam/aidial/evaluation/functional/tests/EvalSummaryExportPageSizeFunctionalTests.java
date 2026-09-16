@@ -46,6 +46,7 @@ public abstract class EvalSummaryExportPageSizeFunctionalTests extends BaseFunct
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         metaTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId =
                 metaTestDataHelper.createTestSuite("Export Page Size Suite").getId();

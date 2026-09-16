@@ -431,7 +431,7 @@ Status: **Implemented**
 - **THEN** `analytics.eval-summaries.batch.max-request-size-bytes` SHALL be configurable with a default of 10485760 (10 MB)
 
 ### Requirement: Computation versioning model
-Metric computations SHALL be versioned via `computation_id` with no mutable `is_latest` flag. "Latest" SHALL be resolved at query time, from the table the caller reads.
+Metric computations SHALL be versioned via `computation_id` with no mutable `is_latest` flag. "Latest" SHALL be resolved at query time, from the table the caller reads. When two computations of one run share the greatest `computed_at_ms`, the greater `computation_id` SHALL be the latest, where "greater" is the canonical lowercase 36-character UUID string compared lexicographically (text ordering, matching the `VARCHAR(36)` storage and equivalent to SQL `ORDER BY computation_id DESC`) — **not** `java.util.UUID.compareTo`, which orders signed 64-bit halves and disagrees with text order for some UUID pairs; every latest-resolution path SHALL apply this same tie-break.
 Status: **Implemented**
 
 #### Scenario: Recalculation creates new computation
@@ -440,7 +440,11 @@ Status: **Implemented**
 
 #### Scenario: Latest resolution
 - **WHEN** the API needs to determine the latest computation for a run
-- **THEN** it SHALL query `test_case_eval_summaries` for the maximum `computed_at_ms` for that run and use the corresponding `computation_id`
+- **THEN** it SHALL query `test_case_eval_summaries` for the maximum `computed_at_ms` for that run and use the corresponding `computation_id`, breaking a tie on `computed_at_ms` by the greatest `computation_id`. The same tie-break rule applies identically when latest resolution instead queries `run_metric_snapshots` (e.g. metric-catalog lookups).
+
+#### Scenario: Latest resolution is deterministic under equal timestamps
+- **WHEN** two computations of one run share the same greatest `computed_at_ms`
+- **THEN** resolution SHALL return the `computation_id` that is greater under lexicographic (text) comparison of its canonical UUID string — not under `java.util.UUID.compareTo` ordering — and SHALL return the same id on every call
 
 #### Scenario: Latest resolution is independent of a run's row count
 - **WHEN** the latest computation of a run is resolved and the run has many eval summary rows spread across more than one computation

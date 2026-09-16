@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.web.controller;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryExportService;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalSummaryService;
+import com.epam.aidial.evaluation.service.domain.analytics.PassRateService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteResponseDto;
@@ -11,15 +12,19 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryExport
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricAggregationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ResultCountResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.SuitePassRateResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.pagination.FilterParam;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.util.List;
@@ -50,6 +55,7 @@ public class EvalSummaryController {
     private final EvalSummaryService evalSummaryService;
     private final EvalSummaryExportService evalSummaryExportService;
     private final PaginationParamResolver paginationParamResolver;
+    private final PassRateService passRateService;
 
     @PostMapping
     @Operation(summary = "Batch write evaluation summaries")
@@ -148,5 +154,44 @@ public class EvalSummaryController {
                     String computation,
             @Parameter(description = "Filter conditions") @FilterParam List<String> filter) {
         return evalSummaryExportService.previewAsJson(runId, computation, filter);
+    }
+
+    @GetMapping(value = "/test-case-pass-rate/{testSuiteId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+            summary = "Get a suite's test-case pass-rate breakdown over its most recent runs",
+            description = "Each count is one eval-summary row - one test case x repetition (run_index) x "
+                    + "request (request_index) x turn (turn_index), not one test case. Returns the "
+                    + "pass-rate breakdown for the suite's most recent `lastN` runs of any status, "
+                    + "newest-first by run creation time; when `lastN` is omitted, "
+                    + "`analytics.pass-rate.default-last-n` applies, and a value above "
+                    + "`analytics.pass-rate.max-last-n` is rejected. A run with no eval-summary rows yet "
+                    + "is omitted from `runs`, so the list may be shorter than `lastN`. A `RUNNING` run's "
+                    + "counts are partial and grow across calls as Phase 2 flushes eval-summary batches. "
+                    + "Each run's rows partition into `failedCount` (execution_status is not SUCCESS: "
+                    + "FAILED, TIMEOUT, or ERROR), `successPassedCount` (SUCCESS with passed = true), "
+                    + "`successNotPassedCount` (SUCCESS with passed = false), and `successNoVerdictCount` "
+                    + "(every SUCCESS row with no verdict available - a score row with passed = NULL because "
+                    + "no overallScoreThreshold is configured on the suite or the score itself is null, or no "
+                    + "score row at all because the suite has no overallScore definition, its score write "
+                    + "failed and was swallowed, or a RUNNING run's flush hasn't reached the row yet), "
+                    + "summing to `totalCount`.")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Pass-rate breakdown",
+            content =
+                    @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = SuitePassRateResponseDto.class)))
+    @ApiResponse(responseCode = "400", description = "lastN is not positive or exceeds analytics.pass-rate.max-last-n")
+    @ApiResponse(responseCode = "404", description = "Test suite not found")
+    public SuitePassRateResponseDto getPassRate(
+            @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId,
+            @Parameter(
+                            description = "Number of most recent runs to consider (defaults to "
+                                    + "analytics.pass-rate.default-last-n, capped at analytics.pass-rate.max-last-n)")
+                    @RequestParam(required = false)
+                    @Min(1)
+                    Integer lastN) {
+        return passRateService.getPassRate(testSuiteId, lastN);
     }
 }

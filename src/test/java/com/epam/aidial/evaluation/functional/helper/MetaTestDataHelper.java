@@ -376,6 +376,19 @@ public class MetaTestDataHelper {
         return tsmdRepository.count(testSuiteId);
     }
 
+    /**
+     * Counts a suite's {@code test_suite_runs} rows. Used by "nothing is written" assertions around
+     * read-only endpoints (e.g. the pass-rate endpoint), where the count must be identical before and
+     * after the call.
+     */
+    public long countTestSuiteRuns(UUID testSuiteId) {
+        Long count = metaDsl.selectCount()
+                .from(TEST_SUITE_RUNS)
+                .where(TEST_SUITE_RUNS.TEST_SUITE_ID.eq(testSuiteId.toString()))
+                .fetchOne(0, Long.class);
+        return count != null ? count : 0L;
+    }
+
     public Optional<TestSuiteMetricDefinition> findMetricDefinition(UUID id) {
         return tsmdRepository.findById(id);
     }

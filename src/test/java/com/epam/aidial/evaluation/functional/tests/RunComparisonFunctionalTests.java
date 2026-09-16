@@ -66,6 +66,7 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         metaTestDataHelper.cleanupRunMetricSnapshots();
 
         suiteId = metaTestDataHelper

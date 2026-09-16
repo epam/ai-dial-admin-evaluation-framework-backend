@@ -6,6 +6,7 @@ import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUN
 import com.epam.aidial.evaluation.data.db.mapper.TestSuiteRunRecordMapper;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.data.db.model.TestSuiteRunRef;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
@@ -105,6 +106,19 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
                 .orderBy(TEST_SUITE_RUNS.CREATED_AT_MS.desc(), TEST_SUITE_RUNS.ID.desc())
                 .limit(1)
                 .fetchOptional(recordMapper::map);
+    }
+
+    @Override
+    public List<TestSuiteRunRef> findRecentByTestSuiteId(UUID testSuiteId, int limit) {
+        return dsl.select(TEST_SUITE_RUNS.ID, TEST_SUITE_RUNS.STATUS, TEST_SUITE_RUNS.CREATED_AT_MS)
+                .from(TEST_SUITE_RUNS)
+                .where(TEST_SUITE_RUNS.TEST_SUITE_ID.eq(testSuiteId.toString()))
+                .orderBy(TEST_SUITE_RUNS.CREATED_AT_MS.desc(), TEST_SUITE_RUNS.ID.desc())
+                .limit(limit)
+                .fetch(record -> new TestSuiteRunRef(
+                        UUID.fromString(record.get(TEST_SUITE_RUNS.ID)),
+                        record.get(TEST_SUITE_RUNS.STATUS),
+                        record.get(TEST_SUITE_RUNS.CREATED_AT_MS)));
     }
 
     @Override

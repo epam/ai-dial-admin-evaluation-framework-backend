@@ -1,0 +1,16 @@
+{
+  "testSuiteId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "runs": [
+    {
+      "testSuiteRunId": "1c8b4f2a-7d61-4c9e-8a35-6f0e2b91d4a7",
+      "computationId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "status": "COMPLETED",
+      "runCreatedAtMs": 1737000000000,
+      "failedCount": 2,
+      "successPassedCount": 38,
+      "successNotPassedCount": 5,
+      "successNoVerdictCount": 0,
+      "totalCount": 45
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRu
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.data.db.model.TestSuiteRunRef;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
@@ -334,6 +335,16 @@ public class TestSuiteRunService {
                 .findLatestByTestSuiteId(suiteId)
                 .orElseThrow(() -> new EntityNotFoundException("No runs found for test suite with id: " + suiteId));
         return mapper.toDto(run);
+    }
+
+    /**
+     * Selective-projection view of a suite's newest {@code limit} runs of any status, newest-first. Used by
+     * {@code PassRateService} to resolve the run window before the analytics aggregate; deliberately does
+     * not fetch {@code suite_snapshot}.
+     */
+    @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<TestSuiteRunRef> findRecentRuns(UUID suiteId, int limit) {
+        return testSuiteRunRepository.findRecentByTestSuiteId(suiteId, limit);
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)

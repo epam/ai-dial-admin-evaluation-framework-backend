@@ -101,6 +101,7 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
                 EMPTY_OUTPUT_SCHEMA_VERSION_ID.toString(), SEED_ACCURACY_ID.toString(), 3, "{}", "{}", "{}");
         testSuite = metaTestDataHelper.createTestSuite("tsmd-suite-" + UUID.randomUUID());
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
     }
 
     private String tsmdUrl() {

@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.functional.helper;
 
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
@@ -69,8 +70,38 @@ public class AnalyticsTestDataHelper {
         analyticsDsl.deleteFrom(TEST_CASE_EVAL_SUMMARIES).execute();
     }
 
+    @Transactional("analyticsTransactionManager")
+    public void cleanupEvalScores() {
+        analyticsDsl.deleteFrom(TEST_CASE_EVAL_SCORES).execute();
+    }
+
+    /**
+     * Inserts a {@code test_case_eval_scores} row for an existing eval summary. {@code score} /
+     * {@code passed} may be {@code null} to exercise the "no verdict" bucket.
+     */
+    @Transactional("analyticsTransactionManager")
+    public void createEvalScore(UUID evalSummaryId, Double score, Boolean passed, long computedAtMs) {
+        analyticsDsl
+                .insertInto(TEST_CASE_EVAL_SCORES)
+                .set(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID, evalSummaryId.toString())
+                .set(TEST_CASE_EVAL_SCORES.SCORE, score)
+                .set(TEST_CASE_EVAL_SCORES.PASSED, passed)
+                .set(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS, computedAtMs)
+                .execute();
+    }
+
     public long countEvalSummaries() {
         Long count = analyticsDsl.selectCount().from(TEST_CASE_EVAL_SUMMARIES).fetchOne(0, Long.class);
+        return count != null ? count : 0L;
+    }
+
+    /**
+     * Counts all {@code test_case_eval_scores} rows. Used by "nothing is written" assertions around
+     * read-only endpoints (e.g. the pass-rate endpoint), where the count must be identical before and
+     * after the call.
+     */
+    public long countEvalScores() {
+        Long count = analyticsDsl.selectCount().from(TEST_CASE_EVAL_SCORES).fetchOne(0, Long.class);
         return count != null ? count : 0L;
     }
 

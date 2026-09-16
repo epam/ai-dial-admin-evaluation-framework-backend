@@ -7,13 +7,15 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Response body for dial-adas {@code POST /v1/queries/execute} in {@code "mode": "aggregate"}.
+ * Response body for dial-adas {@code POST /v1/queries/execute} in {@code "mode": "aggregate"}. Generic
+ * over the row shape, since each {@code AdasCostQueryBuilder} query selects a different set of aliases —
+ * see {@link AdasRunAvgCostRowDto}, {@link AdasDeploymentCostRowDto}, {@link AdasBatchRunCostRowDto}.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AdasAggregateResponseDto {
+public class AdasAggregateResponseDto<T> {
 
-    private List<AdasAggregateRowDto> rows;
+    private List<T> rows;
 }

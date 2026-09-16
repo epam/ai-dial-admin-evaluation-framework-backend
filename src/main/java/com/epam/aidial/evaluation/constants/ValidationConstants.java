@@ -15,6 +15,8 @@ public final class ValidationConstants {
     public static final int MAX_DATASET_NAME_LENGTH = 263;
     /** Maximum number of columns in an EvalSummary CSV export request and in the planner's derived manifest. */
     public static final int MAX_EXPORT_COLUMNS = 512;
+    /** Maximum number of run ids in a batch run-costs request. Matches {@code pagination.max-size}. */
+    public static final int MAX_BATCH_RUN_IDS = 1000;
 
     /** Minimum allowed value for {@code TestSuiteRequestDto.overallScoreThreshold} (inclusive). */
     public static final String MIN_OVERALL_SCORE_THRESHOLD = "0.0";

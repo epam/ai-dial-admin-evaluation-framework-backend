@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.query.service.translate;
 
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
+import com.epam.aidial.evaluation.query.model.CaseExpr;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.FnExpr;
@@ -35,6 +36,8 @@ import org.springframework.stereotype.Component;
  *       (e.g. submitted to the paramless public execute endpoint);
  *   <li>{@link ArrayExpr} → rejected here (only meaningful as the right operand of {@code in},
  *       handled by {@link FilterTranslator}).
+ *   <li>{@link CaseExpr} → rejected here; supported only for {@code dial_usage_log} queries built
+ *       directly by {@code AdasCostQueryBuilder}, which never routes through this translator.
  * </ul>
  *
  * <p>This translator is parameter-agnostic; parameter binding is resolved in a single pre-pass by
@@ -98,6 +101,7 @@ public class ExprTranslator {
             case ArrayExpr _ ->
                 throw new ValidationException("array expressions are only valid as the right operand of 'in'");
             case SubqueryExpr subquery -> subqueryField(compileSubqueryMembership(subquery));
+            case CaseExpr _ -> throw new ValidationException("case expressions are not supported for entity queries");
         };
     }
 

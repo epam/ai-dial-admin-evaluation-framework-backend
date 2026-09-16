@@ -1,22 +1,33 @@
 package com.epam.aidial.evaluation.web.controller;
 
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClientException;
+import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.service.domain.CostService;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.handler.DefaultExceptionHandler;
 import com.epam.aidial.evaluation.web.path.WildcardPathResolver;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -36,6 +47,75 @@ class CostControllerTest {
                 .setControllerAdvice(new DefaultExceptionHandler())
                 .setMessageConverters(new JacksonJsonHttpMessageConverter())
                 .build();
+    }
+
+    @Test
+    @DisplayName("getTotalRunCosts delegates to CostService and returns the results")
+    void getTotalRunCostsDelegatesToCostService() throws Exception {
+        UUID runId1 = UUID.randomUUID();
+        UUID runId2 = UUID.randomUUID();
+        List<TotalRunCostResponseDto> dto = List.of(
+                TotalRunCostResponseDto.builder().runId(runId1).totalCost(0.05).build(),
+                TotalRunCostResponseDto.builder().runId(runId2).totalCost(null).build());
+        when(costService.getTotalRunCosts(List.of(runId1, runId2))).thenReturn(dto);
+
+        mockMvc.perform(post("/api/v1/costs/test-suite-runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runIds\":[\"" + runId1 + "\",\"" + runId2 + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(content()
+                        .json("[" + "{\"runId\":\"" + runId1 + "\",\"totalCost\":0.05}," + "{\"runId\":\"" + runId2
+                                + "\",\"totalCost\":null}" + "]"));
+
+        verify(costService).getTotalRunCosts(eq(List.of(runId1, runId2)));
+    }
+
+    @Test
+    @DisplayName("getTotalRunCosts returns 502 when the underlying dial-adas call fails")
+    void getTotalRunCostsReturns502OnDialAdasFailure() throws Exception {
+        UUID runId = UUID.randomUUID();
+        when(costService.getTotalRunCosts(List.of(runId))).thenThrow(new DialAdasClientException(502, "boom"));
+
+        mockMvc.perform(post("/api/v1/costs/test-suite-runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runIds\":[\"" + runId + "\"]}"))
+                .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    @DisplayName("getTotalRunCosts returns 400 when the request body is missing")
+    void getTotalRunCostsReturns400WhenBodyMissing() throws Exception {
+        mockMvc.perform(post("/api/v1/costs/test-suite-runs").contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest());
+
+        verify(costService, never()).getTotalRunCosts(anyList());
+    }
+
+    @Test
+    @DisplayName("getTotalRunCosts returns 400 when runIds is empty")
+    void getTotalRunCostsReturns400WhenRunIdsEmpty() throws Exception {
+        when(costService.getTotalRunCosts(List.of())).thenThrow(new ValidationException("runIds must not be empty"));
+
+        mockMvc.perform(post("/api/v1/costs/test-suite-runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runIds\":[]}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("getTotalRunCosts returns 400 when runIds exceeds MAX_BATCH_RUN_IDS")
+    void getTotalRunCostsReturns400WhenOverLimit() throws Exception {
+        String tooManyIds = IntStream.range(0, ValidationConstants.MAX_BATCH_RUN_IDS + 1)
+                .mapToObj(i -> "\"" + UUID.randomUUID() + "\"")
+                .collect(Collectors.joining(","));
+        when(costService.getTotalRunCosts(anyList()))
+                .thenThrow(new ValidationException(
+                        "runIds must not exceed " + ValidationConstants.MAX_BATCH_RUN_IDS + " entries"));
+
+        mockMvc.perform(post("/api/v1/costs/test-suite-runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"runIds\":[" + tooManyIds + "]}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

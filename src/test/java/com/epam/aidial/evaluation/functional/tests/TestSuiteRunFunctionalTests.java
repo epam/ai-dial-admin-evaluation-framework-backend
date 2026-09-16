@@ -1,18 +1,23 @@
 package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClientException;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateRowDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasBatchRunCostRowDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
+import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
@@ -53,6 +58,8 @@ import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunUpdateDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.util.ArrayList;
@@ -61,10 +68,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -322,9 +332,9 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     void shouldGetRunCosts() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Costs");
         TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);
-        when(dialAdasClient.executeAggregate(any(StructuredQuery.class)))
-                .thenReturn(AdasAggregateResponseDto.builder()
-                        .rows(List.of(AdasAggregateRowDto.builder()
+        when(dialAdasClient.<AdasRunAvgCostRowDto>executeAggregate(any(StructuredQuery.class), any()))
+                .thenReturn(AdasAggregateResponseDto.<AdasRunAvgCostRowDto>builder()
+                        .rows(List.of(AdasRunAvgCostRowDto.builder()
                                 .count(1L)
                                 .avgCost(0.0007125)
                                 .build()))
@@ -353,9 +363,9 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     void shouldGetRunCostsViaCostsApi() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Costs API");
         TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);
-        when(dialAdasClient.executeAggregate(any(StructuredQuery.class)))
-                .thenReturn(AdasAggregateResponseDto.builder()
-                        .rows(List.of(AdasAggregateRowDto.builder()
+        when(dialAdasClient.<AdasRunAvgCostRowDto>executeAggregate(any(StructuredQuery.class), any()))
+                .thenReturn(AdasAggregateResponseDto.<AdasRunAvgCostRowDto>builder()
+                        .rows(List.of(AdasRunAvgCostRowDto.builder()
                                 .count(1L)
                                 .avgCost(0.0007125)
                                 .build()))
@@ -382,9 +392,9 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("Should get deployment costs for a time range")
     void shouldGetDeploymentCosts() {
-        when(dialAdasClient.executeAggregate(any(StructuredQuery.class)))
-                .thenReturn(AdasAggregateResponseDto.builder()
-                        .rows(List.of(AdasAggregateRowDto.builder()
+        when(dialAdasClient.<AdasDeploymentCostRowDto>executeAggregate(any(StructuredQuery.class), any()))
+                .thenReturn(AdasAggregateResponseDto.<AdasDeploymentCostRowDto>builder()
+                        .rows(List.of(AdasDeploymentCostRowDto.builder()
                                 .count(1L)
                                 .totalCost(0.0007125)
                                 .build()))
@@ -405,6 +415,77 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     void shouldReturn400WhenDeploymentCostsFromAfterTo() {
         ResponseEntity<String> response = restTemplate.getForEntity(
                 URI.create(apiUrl("/costs/deployment/applications/public/my-app?from=2000&to=1000")), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should get batch run costs, preserving requested order and distinguishing NO_DATA")
+    void shouldGetBatchRunCosts() {
+        TestSuiteResponseDto suite = createTestSuite("Suite For Batch Costs");
+        TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);
+        UUID noDataRunId = UUID.randomUUID();
+        when(dialAdasClient.<AdasBatchRunCostRowDto>executeAggregate(any(StructuredQuery.class), any()))
+                .thenReturn(AdasAggregateResponseDto.<AdasBatchRunCostRowDto>builder()
+                        .rows(List.of(AdasBatchRunCostRowDto.builder()
+                                .runId(created.getId().toString())
+                                .totalCost(0.042)
+                                .build()))
+                        .build());
+
+        ResponseEntity<List<TotalRunCostResponseDto>> response = restTemplate.exchange(
+                apiUrl("/costs/test-suite-runs"),
+                HttpMethod.POST,
+                new HttpEntity<>(TotalRunCostRequestDto.builder()
+                        .runIds(List.of(created.getId(), noDataRunId))
+                        .build()),
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody())
+                .extracting(TotalRunCostResponseDto::getRunId, TotalRunCostResponseDto::getTotalCost)
+                .containsExactly(tuple(created.getId(), 0.042), tuple(noDataRunId, null));
+    }
+
+    @Test
+    @DisplayName("Should return 502 when the underlying dial-adas call fails")
+    void shouldReturn502WhenDialAdasCallFails() {
+        UUID runId1 = UUID.randomUUID();
+        UUID runId2 = UUID.randomUUID();
+        when(dialAdasClient.executeAggregate(any(StructuredQuery.class), any()))
+                .thenThrow(new DialAdasClientException(502, "boom"));
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/costs/test-suite-runs"),
+                TotalRunCostRequestDto.builder().runIds(List.of(runId1, runId2)).build(),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when batch run costs runIds is empty")
+    void shouldReturn400WhenBatchRunCostsRunIdsEmpty() {
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/costs/test-suite-runs"),
+                TotalRunCostRequestDto.builder().runIds(List.of()).build(),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when batch run costs runIds exceeds MAX_BATCH_RUN_IDS")
+    void shouldReturn400WhenBatchRunCostsOverLimit() {
+        List<UUID> tooMany = IntStream.range(0, ValidationConstants.MAX_BATCH_RUN_IDS + 1)
+                .mapToObj(i -> UUID.randomUUID())
+                .collect(Collectors.toList());
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/costs/test-suite-runs"),
+                TotalRunCostRequestDto.builder().runIds(tooMany).build(),
+                String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }

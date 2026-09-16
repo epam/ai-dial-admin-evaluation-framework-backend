@@ -3,15 +3,15 @@ package com.epam.aidial.evaluation.service.domain.analytics;
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvExportProperties;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.data.db.exception.InvalidFilterException;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestSuiteRunRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
@@ -218,7 +218,8 @@ public class EvalSummaryExportService {
                         + run.getStatus() + "); exports are only permitted for COMPLETED/FAILED/CANCELLED runs");
             }
             SuiteSnapshotDto snapshot = resolveSnapshot(run);
-            return new MetaSetup(run, snapshot);
+            List<RunMetricSnapshot> metricSnapshots = runMetricSnapshotRepository.findByRunId(run.getId());
+            return new MetaSetup(run, snapshot, metricSnapshots);
         }));
 
         return analyticsTransactionTemplate.execute(status -> {
@@ -229,10 +230,9 @@ public class EvalSummaryExportService {
                             + " (computation="
                             + (computation == null ? LATEST_SENTINEL : computation) + ")"));
 
-            List<RunMetricSnapshot> metricSnapshots =
-                    runMetricSnapshotRepository.findByRunId(metaSetup.run().getId()).stream()
-                            .filter(s -> computationId.equals(s.getComputationId()))
-                            .toList();
+            List<RunMetricSnapshot> metricSnapshots = metaSetup.metricSnapshots().stream()
+                    .filter(s -> computationId.equals(s.getComputationId()))
+                    .toList();
 
             // An explicit computation exists if it produced eval summaries — not if it produced metric
             // snapshots. A metric-less run legitimately has none, and exports a metric-free manifest.
@@ -336,7 +336,7 @@ public class EvalSummaryExportService {
         return String.valueOf(value);
     }
 
-    private record MetaSetup(TestSuiteRun run, SuiteSnapshotDto snapshot) {}
+    private record MetaSetup(TestSuiteRun run, SuiteSnapshotDto snapshot, List<RunMetricSnapshot> metricSnapshots) {}
 
     private record ExportContext(UUID computationId, Long runCreatedAtMs, List<ColumnDescriptor> fullManifest) {}
 }

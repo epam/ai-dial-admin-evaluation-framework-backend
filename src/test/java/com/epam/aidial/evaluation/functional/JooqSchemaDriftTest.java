@@ -73,6 +73,7 @@ class JooqSchemaDriftTest {
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.METRIC_DECLARATIONS,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.METRIC_DECLARATION_VERSIONS,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.REVALIDATION_TASKS,
+                com.epam.aidial.evaluation.data.db.jooq.meta.Tables.RUN_METRIC_SNAPSHOTS,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASE_RUN_INPUTS,
                 com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_METRIC_DEFINITIONS,
@@ -87,8 +88,7 @@ class JooqSchemaDriftTest {
         DSLContext dsl = DSL.using(analyticsDataSource, SQLDialect.POSTGRES);
         Meta dbMeta = dsl.meta();
 
-        List<Table<?>> jooqTables =
-                List.of(Tables.TEST_CASE_EVAL_SUMMARIES, Tables.TEST_CASE_RUN_RESULTS, Tables.RUN_METRIC_SNAPSHOTS);
+        List<Table<?>> jooqTables = List.of(Tables.TEST_CASE_EVAL_SUMMARIES, Tables.TEST_CASE_RUN_RESULTS);
 
         verifyTablesExistInDb(dsl, jooqTables, dbMeta);
     }

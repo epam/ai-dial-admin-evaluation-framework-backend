@@ -1,8 +1,8 @@
 package com.epam.aidial.evaluation.service.domain.mapper;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotResponseDto;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotResponseDto;
 import java.util.UUID;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;

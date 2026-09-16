@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-08-17 (meta V1.29, analytics V1.18)
+> **Last sync**: 2026-09-14 (meta V1.33, analytics V1.19)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -23,6 +23,7 @@ This document describes the current database schema as implemented by Flyway mig
 | `metric_declarations` | Metric declarations (catalog; synced from metric providers) | `id` (VARCHAR(36)) |
 | `metric_declaration_versions` | Schema versions per metric declaration | `id` (VARCHAR(36)) |
 | `test_suite_metric_definitions` | Metric applications within a test suite | `id` (VARCHAR(36)) |
+| `run_metric_snapshots` | Metric definition snapshots per computation batch; FK to `test_suite_runs` with CASCADE | `id` (VARCHAR(36)) |
 
 ### Analytics Database
 
@@ -31,7 +32,7 @@ This document describes the current database schema as implemented by Flyway mig
 | `test_case_run_results` | Test case execution results | `(created_at_ms, id)` (composite) |
 | `test_case_eval_summaries` | Metric-enriched test case results (denormalized) | `(created_at_ms, id)` (composite) |
 | `test_case_eval_scores` | Per-row overall score/pass-fail, computed via SQL and joined into the eval-summary read surface | `eval_summary_id` (VARCHAR(36)) |
-| `run_metric_snapshots` | Metric definition snapshots per computation batch | `id` (VARCHAR(36)) |
+| `run_metric_snapshots` | **FROZEN** — superseded by the meta table of the same name; not read or written by any code path | `id` (VARCHAR(36)) |
 
 ---
 
@@ -636,6 +637,72 @@ The `source` field is polymorphic, discriminated by `$type`:
 
 ---
 
+## Table: `run_metric_snapshots`
+
+Metric definition snapshots captured at computation time. Each row records the metric declaration version, bindings, and output schema used for a specific metric computation batch of a run. Created in the meta database by V1.32; the pre-existing rows were copied over from the analytics database by the Java migration V1.33. The analytics database still contains a same-named table — it is frozen and unread, see the section further down.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
+| `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
+| `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | FK to `test_suite_runs.id` (CASCADE DELETE) |
+| `tsmd_id` | VARCHAR(36) | NOT NULL | - | Reference to test suite metric definition (no FK — the TSMD may be edited or deleted after the computation; the row is a snapshot) |
+| `tsmd_name` | VARCHAR(255) | NOT NULL | - | TSMD name at computation time |
+| `metric_declaration_id` | VARCHAR(36) | NOT NULL | - | Reference to metric declaration (no FK, same snapshot reason) |
+| `metric_declaration_version_id` | VARCHAR(36) | NOT NULL | - | Reference to metric declaration version (no FK, same snapshot reason) |
+| `config_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Config binding snapshot |
+| `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Input binding snapshot |
+| `output_schema` | JSONB | NOT NULL | `'{}'::jsonb` | Output schema snapshot |
+| `computed_at_ms` | BIGINT | NOT NULL | - | Metric computation timestamp |
+
+### Primary Key
+
+`id`
+
+### Foreign Keys
+
+| Column | References | On Delete |
+|--------|------------|-----------|
+| `test_suite_run_id` | `test_suite_runs(id)` | CASCADE |
+
+Deleting a run — directly, or via the CASCADE from deleting its suite — therefore deletes that run's snapshot rows. It does **not** delete the run's analytics rows (`test_case_run_results`, `test_case_eval_summaries`, `metric_score_result`): no foreign key can span the meta and analytics databases, so those rows remain and must not be assumed reclaimed.
+
+### Indexes
+
+| Index Name | Columns | Type | Notes |
+|------------|---------|------|-------|
+| `uq_run_metric_snapshots_computation_tsmd` | `(computation_id, tsmd_id)` | UNIQUE (BTREE) | One snapshot per metric definition per computation batch; the write path relies on it for `ON CONFLICT DO NOTHING` |
+| `idx_run_metric_snapshots_run` | `(test_suite_run_id)` | BTREE | Lookup by test suite run |
+
+### JSONB Column Schemas
+
+**`config_bindings`** / **`input_bindings`** (List of MetricParameterBindingDto):
+```json
+[
+  {
+    "property": "string (metric parameter name)",
+    "source": {
+      "$type": "TestCase|Response|Constant",
+      "columnName": "string (for TestCase and Response types)",
+      "value": "any (for Constant type)"
+    }
+  }
+]
+```
+
+**`output_schema`** (JSON Schema):
+```json
+{
+  "type": "object",
+  "properties": {
+    "score": {"type": "number"},
+    "explanation": {"type": "string"}
+  }
+}
+```
+
+---
+
 ## Table: `test_case_run_results` (Analytics DB)
 
 Test case execution results stored in the analytics database. Each row represents one test case execution within a test suite run.
@@ -839,72 +906,14 @@ No denormalized run/computation/test-case context: every read goes through a joi
 
 ---
 
-## Table: `run_metric_snapshots` (Analytics DB)
+## Table: `run_metric_snapshots` (Analytics DB) — FROZEN
 
-Metric definition snapshots captured at computation time. Each row records the metric declaration version, bindings, and output schema used for a specific metric computation batch.
+> **FROZEN as of meta V1.32. Do not read, write, or trust this table.**
+> `run_metric_snapshots` now lives in the **meta database** (see the `run_metric_snapshots` section above). No code path reads or writes this analytics copy any more; every reader and writer goes to the meta table. These rows stopped being updated at the upgrade that applied meta V1.32/V1.33, so they are a frozen snapshot of the data as of that moment and will diverge from meta from the first computation onward. Any row count, join, or ad-hoc query against this table is answering a question about the past, not about the system.
 
-> **Note:** This table resides in the **analytics database**. Foreign key references to meta DB entities (test suite runs, TSMDs, metric declarations) are soft FKs — no physical constraint.
+The table is kept — rather than dropped in the same change — solely to preserve a clean rollback path to the pre-V1.32 artifact, and because analytics `V1.8` and `V1.12` reference it and must still apply against a fresh database. Its removal is deferred to a later change, which MUST be ordered after meta V1.33 so the copy is never dropped before it runs.
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | VARCHAR(36) | NOT NULL | - | Primary key (UUID) |
-| `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
-| `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | Reference to test suite run (soft FK) |
-| `tsmd_id` | VARCHAR(36) | NOT NULL | - | Reference to test suite metric definition (soft FK) |
-| `tsmd_name` | VARCHAR(255) | NOT NULL | - | TSMD name at computation time |
-| `metric_declaration_id` | VARCHAR(36) | NOT NULL | - | Reference to metric declaration (soft FK) |
-| `metric_declaration_version_id` | VARCHAR(36) | NOT NULL | - | Reference to metric declaration version (soft FK) |
-| `config_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Config binding snapshot |
-| `input_bindings` | JSONB | NOT NULL | `'[]'::jsonb` | Input binding snapshot |
-| `output_schema` | JSONB | NOT NULL | `'{}'::jsonb` | Output schema snapshot |
-| `computed_at_ms` | BIGINT | NOT NULL | - | Metric computation timestamp |
-
-### Constraints
-
-| Constraint Name | Type | Columns | Notes |
-|-----------------|------|---------|-------|
-| `uq_run_metric_snapshots_comp_tsmd` | UNIQUE | `(computation_id, tsmd_id)` | One snapshot per metric definition per computation batch |
-
-### Indexes
-
-| Index Name | Columns | Type | Notes |
-|------------|---------|------|-------|
-| `idx_run_metric_snapshots_run` | `(test_suite_run_id)` | BTREE | Lookup by test suite run |
-
-### JSONB Column Schemas
-
-**`config_bindings`** / **`input_bindings`** (List of MetricParameterBindingDto):
-```json
-[
-  {
-    "property": "string (metric parameter name)",
-    "source": {
-      "$type": "TestCase|Response|Constant",
-      "columnName": "string (for TestCase and Response types)",
-      "value": "any (for Constant type)"
-    }
-  }
-]
-```
-
-**`output_schema`** (JSON Schema):
-```json
-{
-  "type": "object",
-  "properties": {
-    "score": {"type": "number"},
-    "explanation": {"type": "string"}
-  }
-}
-```
-
----
-
-## Metric-score statistics (code-defined)
-
-The per-metric statistics (AVG, P10, P90, MIN, MAX) are defined in code as typed `StructuredQuery` objects in `BuiltInMetricStatistics` (package `query.service.metricscore`), each a single-`value` aggregate over `eval_summaries` parameterized with `:runId`/`:computationId` plus `:metricField`. The run-level **`overall`** is a per-suite property (`test_suites.overall_score`), snapshotted per run; when unset, Phase 3 uses the built-in default — the single metric's average (`avg(:metricField)`), computed only for single-metric runs. Phase-3 computation runs these queries via `StructuredQueryService` and writes results to the analytics `metric_score_result` table below.
-
-The same `overallScore` definition also drives a per-row score (Phase 2, `test_case_eval_scores` above): `EvalSummaryRowScoreComputer` reuses `OverallScoreDefinitionResolver`'s output unchanged, grafting an `id IN (:rowIds)` filter and `GROUP BY id` so the run-level aggregate becomes one value per row, in one query per batch. Both computations share the same resolved query — there is no second implementation that could drift.
+Shape, for archaeology only: the column set is exactly that of the meta table above minus the foreign key (created by analytics `V1.6`; no analytics migration has altered it since), with a UNIQUE index (not a table constraint) `uq_run_metric_snapshots_computation_tsmd` on `(computation_id, tsmd_id)` and a BTREE index `idx_run_metric_snapshots_run` on `(test_suite_run_id)`. Excluded from analytics jOOQ codegen (`build.gradle`), so there is no `jooq.analytics.Tables.RUN_METRIC_SNAPSHOTS` to import by accident — the only generated binding is the meta one.
 
 ---
 
@@ -961,6 +970,7 @@ When used as a suite's `overallScore` and computed per row (`test_case_eval_scor
 | V1.1 | `V1.1__InitTestSuitesTable.sql` | Initial test_suites table |
 | V1.2 | `V1.2__TestSuiteAggregateTables.sql` | Added aggregate model, test_cases, revalidation_tasks, metric_definitions |
 | V1.3 | `V1.3__TestCaseValidationWarningsJsonb.sql` | Changed validation_warnings from TEXT[] to JSONB |
+| V1.4 | `V1.4__AddUniqueIndexesForMetaNames.sql` | Pruned case-insensitive duplicate test_suites/test_cases rows (oldest kept), dropped `idx_test_suites_name`, added UNIQUE functional indexes `uq_test_suites_name` on `LOWER(name)` and `uq_test_cases_suite_name` on `(test_suite_id, LOWER(test_case_name))` |
 | V1.5 | `V1.5__RequestTemplateRestructure.sql` | Request template restructure: drop old columns, add test_case_schema, request_template, input_bindings, data, overrides |
 | V1.6 | `V1.6__CreateTestSuiteRunsTable.sql` | Added test_suite_runs table, indexes, unique constraint, run name sequence |
 | V1.7 | `V1.7__RenameMetricDefinitionsToMetricDeclarations.sql` | Renamed metric_definitions to metric_declarations |
@@ -988,6 +998,8 @@ When used as a suite's `overallScore` and computed per row (`test_case_eval_scor
 | V1.29 | `V1.29__AddAdditionalRequestsToTestSuites.sql` | Added `additional_requests` JSONB NOT NULL DEFAULT `'[]'::jsonb` (ordered chain of requests 1..N, List of RequestDefinitionDto) and nullable `request_name` VARCHAR(255) (label for request #0) to test_suites, for multi-request suites |
 | V1.30 | `V1.30__AddUniqueIndexToMetricDeclarationVersions.sql` | Replaced `idx_metric_declaration_versions_declaration_version` with UNIQUE INDEX `uq_metric_declaration_versions_declaration_version` on `(metric_declaration_id, schema_version DESC)` — enforces one row per (declaration, schema_version) while keeping the DESC ordering the latest-version `DISTINCT ON` query needs |
 | V1.31 | `V1.31__AddTestCaseOverallScoreToTestSuites.sql` | Added nullable `test_case_overall_score` JSONB column to test_suites (optional per-suite definition overriding `overall_score` for per-test-case scoring only; NULL = falls back to `overall_score`) |
+| V1.32 | `V1.32__CreateRunMetricSnapshotsTable.sql` | Created the meta `run_metric_snapshots` table (column set mirrors analytics V1.6) with UNIQUE index `uq_run_metric_snapshots_computation_tsmd` on `(computation_id, tsmd_id)`, index `idx_run_metric_snapshots_run`, and FK `test_suite_run_id → test_suite_runs(id) ON DELETE CASCADE`. The analytics table of the same name is frozen from this point on. |
+| V1.33 | `V1_33__CopyRunMetricSnapshotsFromAnalytics.java` | **Java migration** — copies historical snapshot rows from the analytics database into the meta table. Registered explicitly in `MetaFlywayConfiguration` via `.javaMigrations(...)` (it is constructor-injected with the analytics `DataSource`), so it is NOT present in this migration directory. Skips rows whose run no longer exists in meta (logging the dropped count), and skips entirely when the analytics source table is absent (fresh install). There is no vendor branch: `DatasourceValidationConfiguration` already hard-fails startup for any `datasource.analytics.vendor` other than `POSTGRES`, before either Flyway bean can even be constructed, which would make a vendor check inside the migration unreachable. |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 
@@ -998,7 +1010,7 @@ When used as a suite's `overallScore` and computed per row (`test_case_eval_scor
 | V1.3 | `V1.3__AddStreamingTimingToTestCaseRunResults.sql` | Added time_to_first_token_ms and time_to_last_token_ms nullable BIGINT columns |
 | V1.4 | `V1.4__DropTimingAddRetryColumns.sql` | Dropped time_to_first_token_ms and time_to_last_token_ms; added retry_count (INTEGER NOT NULL DEFAULT 0) and log_details (JSONB nullable) |
 | V1.5 | `V1.5__CreateTestCaseEvalSummariesTable.sql` | Created test_case_eval_summaries table with composite PK, unique constraint, indexes |
-| V1.6 | `V1.6__CreateRunMetricSnapshotsTable.sql` | Created run_metric_snapshots table with unique constraint on (computation_id, tsmd_id) |
+| V1.6 | `V1.6__CreateRunMetricSnapshotsTable.sql` | Created run_metric_snapshots table with unique constraint on (computation_id, tsmd_id). **Frozen as of meta V1.32** — the table is retained but no longer read or written; the live table is the meta one. |
 | V1.7 | `V1.7__AddExtractionWarningsToEvalSummaries.sql` | Added extraction_warnings JSONB NOT NULL DEFAULT '[]' to test_case_eval_summaries |
 | V1.8 | `V1.8__NormalizeErrorShapedMetricValues.sql` | Normalized transport-failure metric_values from synthetic `{"error": null}` to real output field names; updated corresponding metric_infos entries |
 | V1.10 | `V1.10__CreateMetricScoreResultTable.sql` | Created metric_score_result table (`id` PK, natural-key unique constraint, append-only per computation) |

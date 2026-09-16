@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
-import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.query.service.dto.QueryEntitySchemaDto;
@@ -37,9 +36,6 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
     @Autowired
     private MetaTestDataHelper metaTestDataHelper;
 
-    @Autowired
-    private AnalyticsTestDataHelper analyticsTestDataHelper;
-
     private String queriesUrl(String path) {
         return baseUrl() + "/api/v1/queries" + path;
     }
@@ -49,7 +45,7 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
         TestSuite suite = metaTestDataHelper.createTestSuite("query-schema-suite-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createLegacyTestSuiteRun(suite.getId());
         metaTestDataHelper.setRunSuiteSnapshot(run.getId(), SNAPSHOT_JSON);
-        analyticsTestDataHelper.createRunMetricSnapshot(
+        metaTestDataHelper.createRunMetricSnapshot(
                 run.getId(), UUID.randomUUID(), "Accuracy", ACCURACY_OUTPUT_SCHEMA, 1_000L);
         return run;
     }

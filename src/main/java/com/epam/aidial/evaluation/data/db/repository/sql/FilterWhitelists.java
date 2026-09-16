@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSumm
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.Datasets;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarations;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RunMetricSnapshots;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteMetricDefinitions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteRuns;
@@ -335,6 +336,13 @@ public final class FilterWhitelists {
                             TestCaseRunResults.TEST_CASE_RUN_RESULTS.TEST_CASE_DATA,
                             FilterFieldType.JSONB_STRING,
                             EnumSet.of(FilterOperator.EQ, FilterOperator.NE, FilterOperator.CO)))));
+
+    public static final FilterSpec RUN_METRIC_SNAPSHOTS = FilterSpec.of(Map.of(
+            "runId",
+            FilterFieldDefinition.of(
+                    RunMetricSnapshots.RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID,
+                    FilterFieldType.UUID,
+                    EnumSet.of(FilterOperator.EQ))));
 
     private FilterWhitelists() {}
 }

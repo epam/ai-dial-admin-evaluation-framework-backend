@@ -21,9 +21,9 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDt
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;

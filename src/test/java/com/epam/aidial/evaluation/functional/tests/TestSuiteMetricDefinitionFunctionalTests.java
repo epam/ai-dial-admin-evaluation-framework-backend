@@ -1041,7 +1041,7 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
         assertThat(summaries)
                 .allSatisfy(summary ->
                         assertThat((String) summary.get("metric_values")).isEqualTo("{}"));
-        assertThat(analyticsTestDataHelper.findRunMetricSnapshotsByRunId(completedRun.getId()))
+        assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(completedRun.getId()))
                 .isEmpty();
     }
 

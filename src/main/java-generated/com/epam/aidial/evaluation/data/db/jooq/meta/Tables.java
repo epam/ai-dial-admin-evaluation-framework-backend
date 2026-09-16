@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.data.db.jooq.meta.tables.Datasets;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarationVersions;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.MetricDeclarations;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RevalidationTasks;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.RunMetricSnapshots;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCaseRunInputs;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestCases;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.TestSuiteMetricDefinitions;
@@ -40,6 +41,11 @@ public class Tables {
      * The table <code>meta.revalidation_tasks</code>.
      */
     public static final RevalidationTasks REVALIDATION_TASKS = RevalidationTasks.REVALIDATION_TASKS;
+
+    /**
+     * The table <code>meta.run_metric_snapshots</code>.
+     */
+    public static final RunMetricSnapshots RUN_METRIC_SNAPSHOTS = RunMetricSnapshots.RUN_METRIC_SNAPSHOTS;
 
     /**
      * The table <code>meta.test_case_run_inputs</code>.

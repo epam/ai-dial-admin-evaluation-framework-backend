@@ -322,7 +322,7 @@ tasks.register('generateJooq') {
                                     .withDatabase(new org.jooq.meta.jaxb.Database()
                                             .withName("org.jooq.meta.postgres.PostgresDatabase")
                                             .withInputSchema("analytics")
-                                            .withExcludes("flyway_schema_history")
+                                            .withExcludes("flyway_schema_history|run_metric_snapshots")
                                             .withIncludes(".*"))
                                     .withGenerate(new org.jooq.meta.jaxb.Generate()
                                             .withPojos(false)

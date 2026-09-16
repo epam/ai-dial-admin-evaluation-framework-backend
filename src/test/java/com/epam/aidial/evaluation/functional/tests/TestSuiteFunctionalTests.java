@@ -1056,6 +1056,32 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should transitively cascade-delete a suite's runs and their run metric snapshots")
+    void shouldCascadeDeleteRunsAndSnapshotsOnSuiteDeletion() {
+        // Given: a suite with a run that carries a run metric snapshot.
+        TestSuiteResponseDto created = createTestSuite("Suite For Snapshot Cascade Delete");
+        UUID suiteId = created.getId();
+        UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
+        metaTestDataHelper.createRunMetricSnapshot(runId, UUID.randomUUID(), "Accuracy", "{}", 1_000L);
+
+        // Preconditions: the run and its snapshot exist before the cascade delete claims below.
+        assertThat(metaTestDataHelper.findRun(runId)).isPresent();
+        assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(runId)).hasSize(1);
+
+        // When
+        ResponseEntity<TestSuiteDeleteResponseDto> deleteResponse = restTemplate.exchange(
+                apiUrl("/test-suites/" + suiteId),
+                HttpMethod.DELETE,
+                HttpEntity.EMPTY,
+                TestSuiteDeleteResponseDto.class);
+
+        // Then: the suite-to-run FK cascades to the run, and the run-to-snapshot FK cascades transitively.
+        assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(metaTestDataHelper.findRun(runId)).isEmpty();
+        assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(runId)).isEmpty();
+    }
+
+    @Test
     @DisplayName("Should return 400 for invalid request body")
     void shouldReturn400ForInvalidRequestBody() {
         // Given - name is required

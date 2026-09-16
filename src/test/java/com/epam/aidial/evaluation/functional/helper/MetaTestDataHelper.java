@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.functional.helper;
 
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.DATASETS;
+import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.RUN_METRIC_SNAPSHOTS;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_CASES;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITES;
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_METRIC_DEFINITIONS;
@@ -22,12 +23,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.jooq.DSLContext;
 import org.jooq.JSONB;
+import org.jooq.Record;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
@@ -421,6 +425,77 @@ public class MetaTestDataHelper {
     @Transactional("metaTransactionManager")
     public void deleteRun(UUID id) {
         testSuiteRunRepository.deleteById(id);
+    }
+
+    @Transactional("metaTransactionManager")
+    public void cleanupRunMetricSnapshots() {
+        metaDsl.deleteFrom(RUN_METRIC_SNAPSHOTS).execute();
+    }
+
+    public long countRunMetricSnapshots() {
+        Long count = metaDsl.selectCount().from(RUN_METRIC_SNAPSHOTS).fetchOne(0, Long.class);
+        return count != null ? count : 0L;
+    }
+
+    /**
+     * Inserts a minimal {@code run_metric_snapshots} row for a run/computation. Identity columns not
+     * exposed as parameters ({@code tsmd_id}, {@code metric_declaration_id},
+     * {@code metric_declaration_version_id}) get random UUIDs; {@code config_bindings}/
+     * {@code input_bindings} are left to their DB defaults.
+     *
+     * @return the inserted run metric snapshot ID
+     */
+    @Transactional("metaTransactionManager")
+    public UUID createRunMetricSnapshot(
+            UUID suiteRunId, UUID computationId, String tsmdName, String outputSchemaJson, long computedAtMs) {
+        UUID id = UUID.randomUUID();
+        metaDsl.insertInto(RUN_METRIC_SNAPSHOTS)
+                .set(RUN_METRIC_SNAPSHOTS.ID, id.toString())
+                .set(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID, computationId.toString())
+                .set(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID, suiteRunId.toString())
+                .set(RUN_METRIC_SNAPSHOTS.TSMD_ID, UUID.randomUUID().toString())
+                .set(RUN_METRIC_SNAPSHOTS.TSMD_NAME, tsmdName)
+                .set(
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_ID,
+                        UUID.randomUUID().toString())
+                .set(
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_VERSION_ID,
+                        UUID.randomUUID().toString())
+                .set(RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA, JSONB.valueOf(outputSchemaJson))
+                .set(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS, computedAtMs)
+                .execute();
+        return id;
+    }
+
+    public List<Map<String, Object>> findRunMetricSnapshotsByRunId(UUID runId) {
+        return metaDsl.select(
+                        RUN_METRIC_SNAPSHOTS.ID,
+                        RUN_METRIC_SNAPSHOTS.COMPUTATION_ID,
+                        RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID,
+                        RUN_METRIC_SNAPSHOTS.TSMD_ID,
+                        RUN_METRIC_SNAPSHOTS.TSMD_NAME,
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_ID,
+                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_VERSION_ID,
+                        RUN_METRIC_SNAPSHOTS.CONFIG_BINDINGS,
+                        RUN_METRIC_SNAPSHOTS.INPUT_BINDINGS,
+                        RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA)
+                .from(RUN_METRIC_SNAPSHOTS)
+                .where(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .fetch(MetaTestDataHelper::recordToMap);
+    }
+
+    /**
+     * Converts a jOOQ {@link Record} to a {@link Map}, unwrapping {@link JSONB} values to their
+     * raw JSON strings so that test assertions can use plain {@code String} casts.
+     */
+    private static Map<String, Object> recordToMap(Record record) {
+        Map<String, Object> map = new HashMap<>();
+        for (int i = 0; i < record.size(); i++) {
+            String fieldName = record.field(i).getName();
+            Object value = record.get(i);
+            map.put(fieldName, value instanceof JSONB jsonb ? jsonb.data() : value);
+        }
+        return map;
     }
 
     @Transactional("metaTransactionManager")

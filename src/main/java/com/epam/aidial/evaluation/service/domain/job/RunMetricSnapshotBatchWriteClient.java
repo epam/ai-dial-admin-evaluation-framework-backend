@@ -1,9 +1,9 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
-import com.epam.aidial.evaluation.service.domain.analytics.RunMetricSnapshotService;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;
+import com.epam.aidial.evaluation.service.domain.RunMetricSnapshotService;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteRequestDto;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;

@@ -43,7 +43,7 @@ Status: **Implemented**
 - **THEN** `findAllEnabledAndValidAggregatedByTestSuiteId` SHALL NOT include it in the result
 
 ### Requirement: Metric evaluation executor orchestration
-`MetricEvaluationExecutor` is an interface; `InProcessMetricEvaluationExecutor` is the in-process implementation (mirroring the `EvaluationExecutor` / `InProcessEvaluationExecutor` pattern for deployment evaluation). The implementation SHALL capture RunMetricSnapshots, iterate all `TestCaseRunResult` records for the run using cursor-based pagination, dispatch metric evaluations concurrently per provider, assemble EvalSummary records, and batch-write them to the analytics DB. The set of TSMDs loaded into `MetricEvaluationContext` SHALL be limited to those that are both enabled and valid (`is_enabled = true AND is_valid = true`).
+`MetricEvaluationExecutor` is an interface; `InProcessMetricEvaluationExecutor` is the in-process implementation (mirroring the `EvaluationExecutor` / `InProcessEvaluationExecutor` pattern for deployment evaluation). The implementation SHALL capture RunMetricSnapshots (written to the **meta** database, see `metrics-storage`), iterate all `TestCaseRunResult` records for the run using cursor-based pagination, dispatch metric evaluations concurrently per provider, assemble EvalSummary records, and batch-write the EvalSummary records to the **analytics** DB. The set of TSMDs loaded into `MetricEvaluationContext` SHALL be limited to those that are both enabled and valid (`is_enabled = true AND is_valid = true`).
 
 The executor SHALL write one EvalSummary per `TestCaseRunResult` row **regardless of how many TSMDs the context carries, including zero** — `test_case_eval_summaries` is the single surface from which run results are read, so a run whose suite has no enabled+valid TSMDs SHALL still produce readable rows. Such a row SHALL have `metric_values = {}` and no `metric_infos` value at all (the column is nullable and receives JSON `null`, matching what the metric output mapper already produces when it has no metric information to record). `run_metric_snapshots` SHALL receive rows only for the TSMDs actually present, so an empty TSMD list writes no snapshot rows. Consequently the absence of eval summaries SHALL NOT be used to signal "this suite has no metrics"; the signals for that are an empty `run_metric_snapshots` set for the computation and empty `metric_values` on the rows.
 Status: **Implemented**
@@ -391,7 +391,7 @@ Status: **Implemented**
 
 #### Scenario: Snapshots written before evaluation starts
 - **WHEN** the metric evaluation executor starts execution
-- **THEN** RunMetricSnapshots SHALL be written to the analytics DB BEFORE any `/evaluate` calls are made
+- **THEN** RunMetricSnapshots SHALL be written to the **meta** DB BEFORE any `/evaluate` calls are made. EvalSummary records for the same run SHALL still be written to the analytics DB — the two writes now target different databases, but the ordering guarantee (snapshots before any provider call) is unchanged.
 
 ### Requirement: MetricProviderClient evaluate method
 The `MetricProviderClient` SHALL support calling `POST /evaluate` on metric providers.
@@ -526,3 +526,5 @@ Status: **Implemented**
 - `MetricEvaluationContext` carries `overallScoreDefinition` (`OverallScoreDefinition`) and `overallScoreThreshold` (`Double`), sourced from the run's snapshot (`snapshot.getOverallScore()` / `snapshot.getOverallScoreThreshold()`) in `TestSuiteEvaluationJob.buildMetricEvaluationContext`.
 - `InProcessMetricEvaluationExecutor.buildItem` generates `EvalSummaryBatchWriteItemDto.id` via `UUID.randomUUID()` (replacing the id-generation that previously happened inside `EvalSummaryMapper.toEntity`); `EvalSummaryMapper.toEntity` now falls back to generating one only when the item's `id` is absent, preserving the external batch-write API's existing contract.
 - `writeRowScores` (new private method on `InProcessMetricEvaluationExecutor`) computes `passed = (score != null && threshold != null) ? score >= threshold : null` in Java after receiving `EvalSummaryRowScoreComputer`'s `Map<UUID, Double>`.
+- RunMetricSnapshot writes target the **meta** database: `RunMetricSnapshotService.batchCreate()` runs under `@Transactional("metaTransactionManager")` against meta `run_metric_snapshots` (see `metrics-storage`). EvalSummary writes are unchanged and continue against the analytics database via `EvalSummaryBatchWriteClient` → `EvalSummaryService.batchCreate()`.
+- `InProcessMetricEvaluationExecutor`'s call order is unchanged — the snapshot batch-write still precedes the first `/evaluate` dispatch; it simply lands in a different database.

@@ -66,7 +66,7 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
-        analyticsTestDataHelper.cleanupRunMetricSnapshots();
+        metaTestDataHelper.cleanupRunMetricSnapshots();
 
         suiteId = metaTestDataHelper
                 .createTestSuite("comparison-" + UUID.randomUUID())
@@ -324,8 +324,8 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         // JSONB — its aggregate is NULL, which must be omitted rather than fail the numeric cast.
         final String mixedSchema =
                 "{\"properties\":{\"score\":{\"type\":\"number\"},\"reason\":{\"type\":\"string\"}}}";
-        analyticsTestDataHelper.createRunMetricSnapshot(runA, computationA, METRIC, mixedSchema, COMPUTED_AT_MS);
-        analyticsTestDataHelper.createRunMetricSnapshot(runB, computationB, METRIC, mixedSchema, COMPUTED_AT_MS);
+        metaTestDataHelper.createRunMetricSnapshot(runA, computationA, METRIC, mixedSchema, COMPUTED_AT_MS);
+        metaTestDataHelper.createRunMetricSnapshot(runB, computationB, METRIC, mixedSchema, COMPUTED_AT_MS);
         seedScore(runA, computationA, "Case", 0.5);
         seedScore(runB, computationB, "Case", 0.5);
 
@@ -345,8 +345,8 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         // Two metrics are declared but only one carries data. The mean must still divide by 2, with the
         // empty metric's average coalesced to 0 — not silently become the surviving metric's average.
         metaTestDataHelper.setRunSuiteSnapshot(runA, snapshotWithMeanOverall());
-        analyticsTestDataHelper.createRunMetricSnapshot(runA, computationA, METRIC, OUTPUT_SCHEMA, COMPUTED_AT_MS);
-        analyticsTestDataHelper.createRunMetricSnapshot(runA, computationA, "Ghost", OUTPUT_SCHEMA, COMPUTED_AT_MS);
+        metaTestDataHelper.createRunMetricSnapshot(runA, computationA, METRIC, OUTPUT_SCHEMA, COMPUTED_AT_MS);
+        metaTestDataHelper.createRunMetricSnapshot(runA, computationA, "Ghost", OUTPUT_SCHEMA, COMPUTED_AT_MS);
         seedSnapshot(runB, computationB);
         seedScore(runA, computationA, "Case", 0.5);
         seedScore(runB, computationB, "Case", 0.5);
@@ -583,7 +583,7 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     private void seedSnapshot(UUID runId, UUID computationId) {
-        analyticsTestDataHelper.createRunMetricSnapshot(runId, computationId, METRIC, OUTPUT_SCHEMA, COMPUTED_AT_MS);
+        metaTestDataHelper.createRunMetricSnapshot(runId, computationId, METRIC, OUTPUT_SCHEMA, COMPUTED_AT_MS);
     }
 
     private void seedScore(UUID runId, UUID computationId, String testCaseName, double score) {

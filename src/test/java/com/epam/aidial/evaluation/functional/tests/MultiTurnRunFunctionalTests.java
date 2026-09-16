@@ -265,7 +265,7 @@ public abstract class MultiTurnRunFunctionalTests extends AbstractMultiTurnFunct
         });
         assertThat(summaries.stream().map(s -> ((Number) s.get("turn_index")).intValue()))
                 .containsExactlyInAnyOrder(0, 1);
-        assertThat(analyticsTestDataHelper.findRunMetricSnapshotsByRunId(run.getId()))
+        assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(run.getId()))
                 .isEmpty();
     }
 

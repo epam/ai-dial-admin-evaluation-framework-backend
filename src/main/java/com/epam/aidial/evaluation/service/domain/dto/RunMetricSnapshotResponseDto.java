@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.service.domain.dto.analytics;
+package com.epam.aidial.evaluation.service.domain.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.Map;

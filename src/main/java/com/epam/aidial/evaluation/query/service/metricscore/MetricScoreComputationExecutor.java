@@ -2,8 +2,8 @@ package com.epam.aidial.evaluation.query.service.metricscore;
 
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;

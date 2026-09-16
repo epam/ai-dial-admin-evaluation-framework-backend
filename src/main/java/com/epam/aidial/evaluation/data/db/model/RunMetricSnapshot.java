@@ -1,4 +1,4 @@
-package com.epam.aidial.evaluation.data.db.analytics.model;
+package com.epam.aidial.evaluation.data.db.model;
 
 import java.util.UUID;
 import lombok.AllArgsConstructor;

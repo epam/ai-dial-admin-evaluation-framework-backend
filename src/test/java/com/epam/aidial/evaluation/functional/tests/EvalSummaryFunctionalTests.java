@@ -7,6 +7,8 @@ import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.CursorPageResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
@@ -15,8 +17,6 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchW
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryDetailResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricAggregationResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.ResultCountResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +53,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
-        analyticsTestDataHelper.cleanupRunMetricSnapshots();
+        metaTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId = metaTestDataHelper.createTestSuite("EvalSummary Suite").getId();
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(testSuiteId);
         testSuiteRunId = run.getId();
@@ -1023,7 +1023,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
                         .build()))
                 .build();
         restTemplate.postForEntity(
-                apiUrl("/analytics/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
+                apiUrl("/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
     }
 
     private void insertRunMetricSnapshotsWithTimestamp(UUID runId, UUID computationId, long computedAtMs) {
@@ -1039,7 +1039,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
                         .build()))
                 .build();
         restTemplate.postForEntity(
-                apiUrl("/analytics/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
+                apiUrl("/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
     }
 
     /**

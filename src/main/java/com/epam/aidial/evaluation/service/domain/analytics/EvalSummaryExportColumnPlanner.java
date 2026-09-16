@@ -2,7 +2,7 @@ package com.epam.aidial.evaluation.service.domain.analytics;
 
 import com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;

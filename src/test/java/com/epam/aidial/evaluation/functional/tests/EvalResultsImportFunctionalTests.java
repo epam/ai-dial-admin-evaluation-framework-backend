@@ -163,7 +163,7 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         List<Map<String, Object>> evalSummaries = analyticsTestDataHelper.findEvalSummariesByRunId(runId);
         assertThat(evalSummaries).hasSize(2);
 
-        List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(runId);
+        List<Map<String, Object>> snapshots = metaTestDataHelper.findRunMetricSnapshotsByRunId(runId);
         assertThat(snapshots).hasSize(1);
         assertThat(snapshots.get(0).get("tsmd_name")).isEqualTo("Accuracy");
     }
@@ -293,7 +293,7 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         assertThat(awaitRunTerminal(runId, 15).getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
         // Phase 2 runs unconditionally on the import path too, so the imported rows are readable.
-        assertThat(analyticsTestDataHelper.findRunMetricSnapshotsByRunId(runId)).isEmpty();
+        assertThat(metaTestDataHelper.findRunMetricSnapshotsByRunId(runId)).isEmpty();
 
         var listResponse = restTemplate.exchange(
                 apiUrl("/analytics/eval-summaries?filter=runId:eq:" + runId + "&size=10"),
@@ -806,7 +806,7 @@ public abstract class EvalResultsImportFunctionalTests extends BaseFunctionalTes
         List<Map<String, Object>> results = analyticsTestDataHelper.findResultsByRunId(runId);
         assertThat(results).hasSize(1);
 
-        List<Map<String, Object>> snapshots = analyticsTestDataHelper.findRunMetricSnapshotsByRunId(runId);
+        List<Map<String, Object>> snapshots = metaTestDataHelper.findRunMetricSnapshotsByRunId(runId);
         assertThat(snapshots).hasSize(1);
         assertThat(snapshots.get(0).get("tsmd_name")).isEqualTo("Accuracy");
     }

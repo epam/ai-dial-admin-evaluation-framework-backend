@@ -88,7 +88,23 @@ public class OpenApiQueryParamCustomizer implements OpenApiCustomizer {
                     new EndpointParamConfig(FilterWhitelists.EVAL_SUMMARIES, null, PaginationType.CURSOR)),
             Map.entry(
                     "/api/v1/analytics/eval-summaries/export/preview",
-                    new EndpointParamConfig(FilterWhitelists.EVAL_SUMMARIES, null, PaginationType.NONE)));
+                    new EndpointParamConfig(FilterWhitelists.EVAL_SUMMARIES, null, PaginationType.NONE)),
+            Map.entry(
+                    "/api/v1/run-metric-snapshots",
+                    new EndpointParamConfig(
+                            FilterWhitelists.RUN_METRIC_SNAPSHOTS,
+                            null,
+                            PaginationType.NONE,
+                            "Note: `runId` is required — the endpoint returns HTTP 400 without it.")),
+            // Deprecated alias (forRemoval) of the canonical endpoint above; kept a genuine drop-in
+            // for clients reading the docs, so it reuses the exact same config.
+            Map.entry(
+                    "/api/v1/analytics/run-metric-snapshots",
+                    new EndpointParamConfig(
+                            FilterWhitelists.RUN_METRIC_SNAPSHOTS,
+                            null,
+                            PaginationType.NONE,
+                            "Note: `runId` is required — the endpoint returns HTTP 400 without it.")));
 
     @Override
     public void customise(OpenAPI openApi) {

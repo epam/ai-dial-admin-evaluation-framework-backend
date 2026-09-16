@@ -5,13 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricAggregationResponseDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -40,7 +40,7 @@ public abstract class EvalSummaryAggregationFunctionalTests extends BaseFunction
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
-        analyticsTestDataHelper.cleanupRunMetricSnapshots();
+        metaTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId = metaTestDataHelper.createTestSuite("Aggregation Suite").getId();
         testSuiteRunId = metaTestDataHelper.createTestSuiteRun(testSuiteId).getId();
     }
@@ -163,7 +163,7 @@ public abstract class EvalSummaryAggregationFunctionalTests extends BaseFunction
                         .build()))
                 .build();
         restTemplate.postForEntity(
-                apiUrl("/analytics/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
+                apiUrl("/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
     }
 
     private void insertEvalSummariesWithScores(UUID computationId, List<Double> scores) {

@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.functional.helper;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.RUN_METRIC_SNAPSHOTS;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
@@ -70,18 +69,8 @@ public class AnalyticsTestDataHelper {
         analyticsDsl.deleteFrom(TEST_CASE_EVAL_SUMMARIES).execute();
     }
 
-    @Transactional("analyticsTransactionManager")
-    public void cleanupRunMetricSnapshots() {
-        analyticsDsl.deleteFrom(RUN_METRIC_SNAPSHOTS).execute();
-    }
-
     public long countEvalSummaries() {
         Long count = analyticsDsl.selectCount().from(TEST_CASE_EVAL_SUMMARIES).fetchOne(0, Long.class);
-        return count != null ? count : 0L;
-    }
-
-    public long countRunMetricSnapshots() {
-        Long count = analyticsDsl.selectCount().from(RUN_METRIC_SNAPSHOTS).fetchOne(0, Long.class);
         return count != null ? count : 0L;
     }
 
@@ -310,55 +299,6 @@ public class AnalyticsTestDataHelper {
                     createdAtMs);
         }
         batch.execute();
-    }
-
-    /**
-     * Inserts a minimal {@code run_metric_snapshots} row for a run/computation. Identity columns not
-     * exposed as parameters ({@code tsmd_id}, {@code metric_declaration_id},
-     * {@code metric_declaration_version_id}) get random UUIDs; {@code config_bindings}/
-     * {@code input_bindings} are left to their DB defaults.
-     *
-     * @return the inserted run metric snapshot ID
-     */
-    @Transactional("analyticsTransactionManager")
-    public UUID createRunMetricSnapshot(
-            UUID suiteRunId, UUID computationId, String tsmdName, String outputSchemaJson, long computedAtMs) {
-        UUID id = UUID.randomUUID();
-        analyticsDsl
-                .insertInto(RUN_METRIC_SNAPSHOTS)
-                .set(RUN_METRIC_SNAPSHOTS.ID, id.toString())
-                .set(RUN_METRIC_SNAPSHOTS.COMPUTATION_ID, computationId.toString())
-                .set(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID, suiteRunId.toString())
-                .set(RUN_METRIC_SNAPSHOTS.TSMD_ID, UUID.randomUUID().toString())
-                .set(RUN_METRIC_SNAPSHOTS.TSMD_NAME, tsmdName)
-                .set(
-                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_ID,
-                        UUID.randomUUID().toString())
-                .set(
-                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_VERSION_ID,
-                        UUID.randomUUID().toString())
-                .set(RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA, JSONB.valueOf(outputSchemaJson))
-                .set(RUN_METRIC_SNAPSHOTS.COMPUTED_AT_MS, computedAtMs)
-                .execute();
-        return id;
-    }
-
-    public List<Map<String, Object>> findRunMetricSnapshotsByRunId(UUID runId) {
-        return analyticsDsl
-                .select(
-                        RUN_METRIC_SNAPSHOTS.ID,
-                        RUN_METRIC_SNAPSHOTS.COMPUTATION_ID,
-                        RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID,
-                        RUN_METRIC_SNAPSHOTS.TSMD_ID,
-                        RUN_METRIC_SNAPSHOTS.TSMD_NAME,
-                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_ID,
-                        RUN_METRIC_SNAPSHOTS.METRIC_DECLARATION_VERSION_ID,
-                        RUN_METRIC_SNAPSHOTS.CONFIG_BINDINGS,
-                        RUN_METRIC_SNAPSHOTS.INPUT_BINDINGS,
-                        RUN_METRIC_SNAPSHOTS.OUTPUT_SCHEMA)
-                .from(RUN_METRIC_SNAPSHOTS)
-                .where(RUN_METRIC_SNAPSHOTS.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .fetch(AnalyticsTestDataHelper::recordToMap);
     }
 
     /**

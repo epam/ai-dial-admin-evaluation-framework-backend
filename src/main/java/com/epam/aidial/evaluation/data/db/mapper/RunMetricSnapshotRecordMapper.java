@@ -1,7 +1,7 @@
-package com.epam.aidial.evaluation.data.db.analytics.mapper;
+package com.epam.aidial.evaluation.data.db.mapper;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
-import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.RunMetricSnapshotsRecord;
+import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.RunMetricSnapshotsRecord;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.UUID;
 import org.jooq.JSONB;

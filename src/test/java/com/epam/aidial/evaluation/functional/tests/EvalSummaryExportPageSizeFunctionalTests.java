@@ -6,12 +6,12 @@ import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryExportRequestDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteItemDto;
-import com.epam.aidial.evaluation.service.domain.dto.analytics.RunMetricSnapshotBatchWriteRequestDto;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -46,7 +46,7 @@ public abstract class EvalSummaryExportPageSizeFunctionalTests extends BaseFunct
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
-        analyticsTestDataHelper.cleanupRunMetricSnapshots();
+        metaTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId =
                 metaTestDataHelper.createTestSuite("Export Page Size Suite").getId();
     }
@@ -91,7 +91,7 @@ public abstract class EvalSummaryExportPageSizeFunctionalTests extends BaseFunct
                         .build()))
                 .build();
         restTemplate.postForEntity(
-                apiUrl("/analytics/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
+                apiUrl("/run-metric-snapshots"), jsonEntity(snapshotRequest), BatchWriteResponseDto.class);
     }
 
     private void seedSummaries(UUID suiteId, UUID runId, UUID computationId, int count) {

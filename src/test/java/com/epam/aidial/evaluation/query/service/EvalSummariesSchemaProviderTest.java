@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-import com.epam.aidial.evaluation.data.db.analytics.model.RunMetricSnapshot;
-import com.epam.aidial.evaluation.data.db.analytics.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.query.service.dto.QuerySchemaFieldDto;

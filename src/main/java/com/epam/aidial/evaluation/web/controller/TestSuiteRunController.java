@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.constants.TestSuiteRunConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.service.domain.CostService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
@@ -45,6 +46,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class TestSuiteRunController {
 
     private final TestSuiteRunService testSuiteRunService;
+    private final CostService costService;
     private final PaginationParamResolver paginationParamResolver;
     private final CsvDelimiterParser csvDelimiterParser;
 
@@ -177,13 +179,15 @@ public class TestSuiteRunController {
             summary = "Get average test-case and metric-evaluation cost for a run",
             description = "Queries dial-adas usage logs for the run and returns the average per-call price "
                     + "for test-case execution calls and metric-evaluation (judge model) calls. A phase with "
-                    + "no matching usage-log rows returns null for that average.")
+                    + "no matching usage-log rows returns null for that average. Kept as a backward-compatible "
+                    + "alias for `GET /api/v1/costs/test-suite-run/{id}` (the canonical cost-API route); both "
+                    + "delegate to the same CostService computation.")
     @ApiResponse(responseCode = "200", description = "Costs computed")
     @ApiResponse(responseCode = "404", description = "Run not found")
     @ApiResponse(responseCode = "502", description = "dial-adas unreachable or returned an error")
     @ApiResponse(responseCode = "504", description = "dial-adas request timed out")
     public RunCostsResponseDto getRunCosts(@Parameter(description = "Run ID") @PathVariable UUID id) {
-        return testSuiteRunService.getRunCosts(id);
+        return costService.getRunCosts(id);
     }
 
     @PatchMapping("/api/v1/test-suite-runs/{id}")

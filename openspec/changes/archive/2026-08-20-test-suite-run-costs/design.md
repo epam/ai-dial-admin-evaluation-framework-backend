@@ -75,6 +75,18 @@ A small `@Component @LogExecution` class, `RunCostQueryBuilder.buildAggregateQue
 
 `GET /api/v1/test-suite-runs/{id}/costs`, same `@PathVariable UUID id` / `@Operation`/`@ApiResponse` shape as `getRun`/`cancelRun`, documenting 200/404/502/504.
 
+**Amendment: canonical route added on `CostController`, this route kept as a backward-compatible
+alias.** After `deployment-costs` introduced `CostController` (`/api/v1/costs`, see
+`openspec/changes/archive/2026-09-15-deployment-costs/`), cost-related endpoints started consolidating
+under that resource. Rather than have `TestSuiteRunController#getRunCosts` call a `CostController`
+method directly — which would be a controller-to-controller dependency, against the project's layering
+rule that controllers depend only on the service layer — `CostController` gained its own
+`GET /api/v1/costs/test-suite-run/{id}`, calling `costService.getRunCosts(id)` exactly like
+`TestSuiteRunController#getRunCosts` already did. Both routes now delegate to the same
+`CostService.getRunCosts` method, so there is no duplicated logic and no risk of the two responses
+drifting; `TestSuiteRunController`'s route is kept, unmodified, as a compatibility alias for existing
+clients rather than removed, since dropping it would be a breaking change with no functional benefit.
+
 ### 6. Exception handling: extend `DefaultExceptionHandler`
 
 Add `@ExceptionHandler(DialAdasClientException.class)` mirroring `handleMcpInvocationException` verbatim in structure: resolve `HttpStatus` from the exception's status code (default `BAD_GATEWAY` if unresolved), map to `ErrorCode.UPSTREAM_TIMEOUT` (504) or `ErrorCode.UPSTREAM_ERROR` (else) — both codes already exist and already describe "upstream service error/timeout" generically, so no new `ErrorCode` enum value is introduced.

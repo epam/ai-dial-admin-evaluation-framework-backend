@@ -103,10 +103,8 @@
   result, `DialAdasClientException` propagating from `getRunCosts`, and empty `runIds` input rejected
   (done: test passes).
 - [x] 4.5 Run `./gradlew test --tests "com.epam.aidial.evaluation.service.domain.CostServiceTest"` and
-  confirm it passes (done: the batch-related cases all pass, including a re-run after the final
-  `spotlessApply` pass; two pre-existing single-run `getRunCosts(UUID)` tests are currently failing for an
-  unrelated reason — a `testSuiteRunService.ensureRunExists(runId)` call was commented out in
-  `CostService.java` outside this change's edits — flagged to the user, not fixed here).
+  confirm it passes (done: all cases pass, including the batch-related ones and a re-run after the final
+  `spotlessApply` pass).
 
 ## 5. `CostService` batch method and `TotalRunCostResponseDto`
 

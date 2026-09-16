@@ -420,7 +420,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should get batch run costs, preserving requested order and distinguishing NO_DATA")
+    @DisplayName("Should get batch run costs, preserving requested order and distinguishing a run with no usage data")
     void shouldGetBatchRunCosts() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Batch Costs");
         TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);

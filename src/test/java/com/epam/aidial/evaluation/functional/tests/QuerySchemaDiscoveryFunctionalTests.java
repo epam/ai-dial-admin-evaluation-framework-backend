@@ -5,12 +5,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.query.model.FieldExpr;
+import com.epam.aidial.evaluation.query.model.OffsetPage;
+import com.epam.aidial.evaluation.query.model.OutputColumn;
+import com.epam.aidial.evaluation.query.model.QueryMode;
+import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.query.service.dto.QueryEntitySchemaDto;
 import com.epam.aidial.evaluation.query.service.dto.QueryFieldType;
 import com.epam.aidial.evaluation.query.service.dto.QuerySchemaFieldDto;
+import com.epam.aidial.evaluation.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.query.service.repository.StructuredQueryExecutor;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +44,9 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
 
     @Autowired
     private MetaTestDataHelper metaTestDataHelper;
+
+    @Autowired
+    private StructuredQueryExecutor queryRepository;
 
     private String queriesUrl(String path) {
         return baseUrl() + "/api/v1/queries" + path;
@@ -62,6 +74,7 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
                         new QueryEntityDto("eval_summaries", true, "test_suite_run_id"),
                         new QueryEntityDto("metric_score_results", false, null),
                         new QueryEntityDto("test_cases", true, "dataset_id"),
+                        new QueryEntityDto("test_suite_runs", false, null),
                         new QueryEntityDto("test_suites", false, null));
     }
 
@@ -230,5 +243,71 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
                                 "mcp_deployment_ref::name", QueryFieldType.STRING, "mcp_deployment_ref"),
                         new QuerySchemaFieldDto(
                                 "mcp_deployment_ref::type", QueryFieldType.STRING, "mcp_deployment_ref"));
+    }
+
+    @Test
+    @DisplayName("returns the flat base schema of the simple test_suite_runs entity, excluding heavy JSONB columns")
+    void shouldReturnTestSuiteRunsBaseSchema() {
+        ResponseEntity<QueryEntitySchemaDto> response =
+                restTemplate.getForEntity(queriesUrl("/entities/schema/test_suite_runs"), QueryEntitySchemaDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        QueryEntitySchemaDto schema = response.getBody();
+        assertThat(schema).isNotNull();
+        assertThat(schema.entity()).isEqualTo("test_suite_runs");
+        assertThat(schema.complex()).isFalse();
+        assertThat(schema.schemaIdField()).isNull();
+        assertThat(schema.fields())
+                .contains(
+                        new QuerySchemaFieldDto("id", QueryFieldType.UUID, "id"),
+                        new QuerySchemaFieldDto("test_suite_id", QueryFieldType.UUID, "test_suite_id"),
+                        new QuerySchemaFieldDto("test_run_name", QueryFieldType.STRING, "test_run_name"),
+                        new QuerySchemaFieldDto("status", QueryFieldType.STRING, "status"),
+                        new QuerySchemaFieldDto("number_of_test_cases", QueryFieldType.INTEGER, "number_of_test_cases"),
+                        new QuerySchemaFieldDto("started_at_ms", QueryFieldType.LONG, "started_at_ms"),
+                        new QuerySchemaFieldDto("completed_at_ms", QueryFieldType.LONG, "completed_at_ms"),
+                        new QuerySchemaFieldDto("error_message", QueryFieldType.STRING, "error_message"),
+                        new QuerySchemaFieldDto("created_at_ms", QueryFieldType.LONG, "created_at_ms"),
+                        new QuerySchemaFieldDto("updated_at_ms", QueryFieldType.LONG, "updated_at_ms"),
+                        new QuerySchemaFieldDto("suite_type", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("deployment_ref::id", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("deployment_ref::name", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("deployment_ref::version", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("deployment_ref::type", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("mcp_deployment_ref::id", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("mcp_deployment_ref::name", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("mcp_deployment_ref::type", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto(
+                                "mcp_deployment_ref::transport", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("metric_names", QueryFieldType.ARRAY, "run_metric_snapshots"))
+                .noneMatch(field -> field.name().equals("suite_snapshot"))
+                .noneMatch(field -> field.name().equals("run_config"))
+                .noneMatch(field -> field.name().equals("error_details"));
+    }
+
+    @Test
+    @DisplayName("test_suite_runs base schema field names all execute in a row select with matching row keys")
+    void shouldMatchTestSuiteRunsSchemaToExecutor() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("query-schema-run-" + UUID.randomUUID());
+        metaTestDataHelper.createTestSuiteRun(suite.getId());
+
+        ResponseEntity<QueryEntitySchemaDto> response =
+                restTemplate.getForEntity(queriesUrl("/entities/schema/test_suite_runs"), QueryEntitySchemaDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        QueryEntitySchemaDto schema = response.getBody();
+        assertThat(schema).isNotNull();
+
+        Set<String> fieldNames =
+                schema.fields().stream().map(QuerySchemaFieldDto::name).collect(Collectors.toSet());
+        List<OutputColumn> select = fieldNames.stream()
+                .map(name -> new OutputColumn(new FieldExpr(name), name))
+                .toList();
+        StructuredQuery query = new StructuredQuery(
+                "test_suite_runs", null, QueryMode.ROW, false, select, null, null, null, new OffsetPage(0, 10, false));
+
+        QueryResultPage page = queryRepository.execute(query);
+
+        assertThat(page.rows()).isNotEmpty();
+        assertThat(page.rows().get(0).keySet()).isEqualTo(fieldNames);
     }
 }

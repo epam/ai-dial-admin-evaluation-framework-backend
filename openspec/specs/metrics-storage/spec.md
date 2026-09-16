@@ -101,8 +101,8 @@ Status: **Implemented**
 - **THEN** a UNIQUE index (`CREATE UNIQUE INDEX`, not a table constraint) SHALL exist on `(computation_id, tsmd_id)`
 
 #### Scenario: Index for run lookup
-- **WHEN** the migration is applied
-- **THEN** an index SHALL exist on `(test_suite_run_id)` for listing snapshots by run
+- **WHEN** the meta migrations up to and including V1.34 are applied
+- **THEN** exactly one non-unique index SHALL exist with `test_suite_run_id` as its leading column: `idx_run_metric_snapshots_run_computed_at` on `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)`. It SHALL serve every lookup by run (including the FK cascade) through its leading column and SHALL let the latest-computation lookup (`ORDER BY computed_at_ms DESC, computation_id DESC LIMIT 1` for one run) complete without a sort step. The former single-column index `idx_run_metric_snapshots_run` SHALL NOT exist (it is a strict prefix of the composite index).
 
 #### Scenario: Foreign key to test suite runs
 - **WHEN** the migration is applied
@@ -451,8 +451,8 @@ Status: **Implemented**
 - **THEN** latest resolution SHALL NOT select that computation, and SHALL select the run's most recent computation that does have eval summaries
 
 #### Scenario: Metric-catalog lookups stay on run metric snapshots
-- **WHEN** a caller needs the metric column families of a run's latest computation rather than its readable rows (Query DSL detailed schema discovery)
-- **THEN** it SHALL resolve that computation from `run_metric_snapshots` and SHALL return no metric families for a run that has none
+- **WHEN** a caller needs the metric column families or metric names of a run's latest computation rather than its readable rows (Query DSL detailed schema discovery, the `test_suite_runs` query entity's `metric_names`)
+- **THEN** it SHALL resolve that computation from `run_metric_snapshots` as the row with the greatest `computed_at_ms` for the run, ties broken by the greatest `computation_id`, so that two computations captured in the same millisecond resolve deterministically; and SHALL return no metric families / an empty name list for a run that has none
 
 #### Scenario: Comparison between computations
 - **WHEN** client provides two computation UUIDs

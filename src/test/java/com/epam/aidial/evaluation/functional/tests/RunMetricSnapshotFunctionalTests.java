@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
@@ -11,6 +12,7 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.BatchWriteRespons
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +36,9 @@ public abstract class RunMetricSnapshotFunctionalTests extends BaseFunctionalTes
 
     @Autowired
     private AnalyticsTestDataHelper analyticsTestDataHelper;
+
+    @Autowired
+    private RunMetricSnapshotRepository runMetricSnapshotRepository;
 
     private UUID testSuiteId;
     private UUID testSuiteRunId;
@@ -186,6 +191,23 @@ public abstract class RunMetricSnapshotFunctionalTests extends BaseFunctionalTes
         assertThat(newerSnapshot.get("tsmdName")).isEqualTo("MetricB");
         assertThat(olderSnapshot.get("computationId")).isEqualTo(computationId1.toString());
         assertThat(olderSnapshot.get("tsmdName")).isEqualTo("MetricA");
+    }
+
+    @Test
+    @DisplayName("findLatestComputationId breaks a computed_at_ms tie by the greater computation_id")
+    void findLatestComputationIdBreaksTieByGreaterComputationId() {
+        long sameComputedAtMs = System.currentTimeMillis();
+        UUID lowerComputationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID higherComputationId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+
+        metaTestDataHelper.createRunMetricSnapshot(
+                testSuiteRunId, higherComputationId, "MetricA", "{}", sameComputedAtMs);
+        metaTestDataHelper.createRunMetricSnapshot(
+                testSuiteRunId, lowerComputationId, "MetricB", "{}", sameComputedAtMs);
+
+        Optional<UUID> latest = runMetricSnapshotRepository.findLatestComputationId(testSuiteRunId);
+
+        assertThat(latest).contains(higherComputationId);
     }
 
     @Test

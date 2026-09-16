@@ -185,7 +185,7 @@ public class RunMetricSnapshots extends TableImpl<RunMetricSnapshotsRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_RUN_METRIC_SNAPSHOTS_RUN, Indexes.UQ_RUN_METRIC_SNAPSHOTS_COMPUTATION_TSMD);
+        return Arrays.asList(Indexes.IDX_RUN_METRIC_SNAPSHOTS_RUN_COMPUTED_AT, Indexes.UQ_RUN_METRIC_SNAPSHOTS_COMPUTATION_TSMD);
     }
 
     @Override

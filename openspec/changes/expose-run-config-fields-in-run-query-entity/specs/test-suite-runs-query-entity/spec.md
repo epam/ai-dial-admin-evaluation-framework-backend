@@ -4,7 +4,7 @@
 `number_of_runs` SHALL be the run's configured repetitions per test case, read in-database from the run's own `run_config` payload (key `numberOfRuns`) as a flat `integer` field — the value the run was created with. A run whose `run_config` lacks the key SHALL yield null and the query SHALL still succeed.
 
 The field SHALL be usable wherever any other plain `integer` field is usable: `filter`, `sort`, `select`, `group_by`. `run_config` itself SHALL remain a non-exposed column; no other run-configuration member SHALL be exposed.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Value matches the run's configuration
 - **WHEN** a run created with 3 repetitions per test case is selected via a `row` query with `number_of_runs`

@@ -1,21 +1,34 @@
 package com.epam.aidial.evaluation.web.controller;
 
+import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.CostService;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.path.WildcardPathResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.http.MediaType;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/costs")
 @LogExecution
+@Validated
 @RequiredArgsConstructor
 @Tag(name = "Costs", description = "Cost analytics endpoints backed by dial-adas usage logs")
 public class CostController {
@@ -73,6 +87,56 @@ public class CostController {
     @ApiResponse(responseCode = "504", description = "dial-adas request timed out")
     public RunCostsResponseDto getRunCosts(@Parameter(description = "Run ID") @PathVariable UUID id) {
         return costService.getRunCosts(id);
+    }
+
+    @PostMapping(
+            value = "/test-suite-runs",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+            summary = "Get total cost for a batch of runs in one call",
+            description = "Computes total cost (both test-case execution and metric-evaluation phases combined) "
+                    + "for up to " + ValidationConstants.MAX_BATCH_RUN_IDS + " runs in a single dial-adas call, "
+                    + "returned in the order the run ids were given. `totalCost` is null when dial-adas has no "
+                    + "matching usage-log rows for that run id — including an unknown/nonexistent run id, which "
+                    + "is indistinguishable from a real run with no usage. Unlike `GET "
+                    + "/api/v1/costs/test-suite-run/{id}`, run ids are not validated against existing runs. "
+                    + "POST (with the run ids in the body) rather than GET, since a page's worth of run ids "
+                    + "would otherwise make for an unwieldy query string. If the underlying dial-adas call "
+                    + "itself fails, the whole request fails with 502/504 — there is no per-run partial result, "
+                    + "since one call computes the entire batch.")
+    @RequestBody(
+            description = "Run ids to compute total cost for",
+            content =
+                    @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = TotalRunCostRequestDto.class),
+                            examples = {
+                                @ExampleObject(
+                                        name = "minimal",
+                                        summary = "Single run id",
+                                        value = "{\"runIds\":[\"3fa85f64-5717-4562-b3fc-2c963f66afa6\"]}"),
+                                @ExampleObject(
+                                        name = "full",
+                                        summary = "Multiple run ids",
+                                        value = "{\"runIds\":[\"3fa85f64-5717-4562-b3fc-2c963f66afa6\","
+                                                + "\"9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d\"]}")
+                            }))
+    @ApiResponse(
+            responseCode = "200",
+            description = "One entry per requested run id, in the requested order",
+            content =
+                    @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            array = @ArraySchema(schema = @Schema(implementation = TotalRunCostResponseDto.class))))
+    @ApiResponse(
+            responseCode = "400",
+            description = "`runIds` is empty, absent, or exceeds " + ValidationConstants.MAX_BATCH_RUN_IDS + " entries")
+    @ApiResponse(responseCode = "502", description = "dial-adas unreachable or returned an error")
+    @ApiResponse(responseCode = "504", description = "dial-adas request timed out")
+    public List<TotalRunCostResponseDto> getTotalRunCosts(
+            @Valid @org.springframework.web.bind.annotation.RequestBody TotalRunCostRequestDto request) {
+        return costService.getTotalRunCosts(request.getRunIds());
     }
 
     private static void validateId(String deploymentId) {

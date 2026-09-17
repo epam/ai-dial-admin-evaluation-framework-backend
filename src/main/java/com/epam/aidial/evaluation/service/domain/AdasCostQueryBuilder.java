@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import com.epam.aidial.evaluation.query.model.CaseExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.Expr;
@@ -13,8 +14,10 @@ import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.model.ValueType;
+import com.epam.aidial.evaluation.query.model.WhenClause;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -25,9 +28,11 @@ import org.springframework.stereotype.Component;
  * {@code usage_request_baggage.baggage} containing both {@code eval.run.id=<runId>} and
  * {@code eval.phase=<phase>}) or scoped to a deployment and time range
  * ({@link #buildDeploymentAggregateQuery}, filtering on the real {@code deployment}/{@code request_time}
- * columns plus the same {@code eval.phase} baggage match). Reuses the internal {@link StructuredQuery}
- * model — dial-adas's own query DSL is the same wire contract, so this is the canonical shape, not a
- * lookalike we're guessing at.
+ * columns plus the same {@code eval.phase} baggage match), or scoped to a page of runs at once
+ * ({@link #buildPageTotalCostQuery}, one {@code or}-filtered/{@code case}-grouped call for many run ids,
+ * no {@code eval.phase} predicate). Reuses the internal {@link StructuredQuery} model — dial-adas's own
+ * query DSL is the same wire contract, so this is the canonical shape, not a lookalike we're guessing
+ * at.
  */
 @Component
 @LogExecution
@@ -40,6 +45,8 @@ public class AdasCostQueryBuilder {
     private static final String TOTAL_COST_ALIAS = "total_cost";
     private static final String DEPLOYMENT_FIELD = "deployment";
     private static final String REQUEST_TIME_FIELD = "request_time";
+    private static final String RUN_ID_ALIAS = "run_id";
+    private static final String OTHER_RUN_ID = "other";
 
     public StructuredQuery buildRunAggregateQuery(UUID runId, String phase) {
         Expr baggageValue = baggageField();
@@ -67,6 +74,44 @@ public class AdasCostQueryBuilder {
 
         return new StructuredQuery(
                 ENTITY, filter, QueryMode.AGGREGATE, false, selectCountAndSumCost(), List.of(), null, null, null);
+    }
+
+    /**
+     * Builds a single aggregate query totaling cost across {@code runIds}, spanning both {@code
+     * eval.phase} values (unlike every other query this builder produces). Filters on an {@code or} of
+     * per-run baggage-contains predicates (unwrapped to the bare predicate when {@code runIds} has
+     * exactly one entry); groups by a {@code run_id} alias re-derived per row via a {@code case}
+     * expression that maps each row back to the run id whose baggage predicate matched it, falling back
+     * to the {@code "other"} sentinel for rows matched by none (unreachable in practice, since the
+     * select's own filter already restricts to matching rows).
+     */
+    public StructuredQuery buildPageTotalCostQuery(Collection<UUID> runIds) {
+        Expr baggageValue = baggageField();
+
+        List<FilterNode> runPredicates = runIds.stream()
+                .map(id -> baggageContains(baggageValue, runIdBaggageValue(id)))
+                .toList();
+        FilterNode filter =
+                runPredicates.size() == 1 ? runPredicates.getFirst() : new LogicalNode(LogicalOp.OR, runPredicates);
+
+        List<WhenClause> whenClauses = runIds.stream()
+                .map(id -> new WhenClause(
+                        baggageContains(baggageValue, runIdBaggageValue(id)), stringValue(id.toString())))
+                .toList();
+        OutputColumn runIdColumn = new OutputColumn(new CaseExpr(whenClauses, stringValue(OTHER_RUN_ID)), RUN_ID_ALIAS);
+
+        List<OutputColumn> select = List.of(
+                runIdColumn,
+                new OutputColumn(new FnExpr("count", false, List.of()), null),
+                new OutputColumn(
+                        new FnExpr("sum", false, List.of(new FieldExpr(TOTAL_PRICE_FIELD))), TOTAL_COST_ALIAS));
+
+        return new StructuredQuery(
+                ENTITY, filter, QueryMode.AGGREGATE, false, select, List.of(RUN_ID_ALIAS), null, null, null);
+    }
+
+    private static String runIdBaggageValue(UUID runId) {
+        return TracingConstants.EVAL_RUN_ID + "=" + runId;
     }
 
     private static List<OutputColumn> selectCountAndAvgCost() {

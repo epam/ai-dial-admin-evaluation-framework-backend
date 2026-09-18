@@ -7,17 +7,14 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * One row of a dial-adas aggregate query response for {@code AdasCostQueryBuilder#buildAvgCostPerTestCaseSql}
- * — {@code count} and {@code avg_cost}.
+ * Request body for dial-adas {@code POST /v1/queries/execute-sql} — a single raw SQL statement.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AdasRunAvgCostRowDto {
+public class AdasExecuteSqlRequestDto {
 
-    private Long count;
-
-    @JsonProperty("avg_cost")
-    private Double avgCost;
+    @JsonProperty("sql")
+    private String sql;
 }

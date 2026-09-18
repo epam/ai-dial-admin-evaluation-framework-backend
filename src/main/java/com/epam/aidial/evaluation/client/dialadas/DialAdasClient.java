@@ -6,7 +6,9 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.net.SocketTimeoutException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.reflect.TypeUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -31,19 +33,21 @@ public class DialAdasClient {
     @Qualifier("dialAdasRestClient")
     private final RestClient dialAdasRestClient;
 
-    public AdasAggregateResponseDto executeAggregate(StructuredQuery query) {
+    public <T> AdasAggregateResponseDto<T> executeAggregate(StructuredQuery query, Class<T> rowType) {
         if (log.isDebugEnabled()) {
             log.debug("dial-adas request: POST {} -> {}", QUERIES_EXECUTE_PATH, query);
         }
+        ParameterizedTypeReference<AdasAggregateResponseDto<T>> responseType =
+                ParameterizedTypeReference.forType(TypeUtils.parameterize(AdasAggregateResponseDto.class, rowType));
         try {
-            AdasAggregateResponseDto response = dialAdasRestClient
+            AdasAggregateResponseDto<T> response = dialAdasRestClient
                     .post()
                     .uri(QUERIES_EXECUTE_PATH)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(query)
                     .retrieve()
-                    .body(AdasAggregateResponseDto.class);
+                    .body(responseType);
             if (log.isDebugEnabled() && response != null) {
                 log.debug("dial-adas response: POST {} -> {}", QUERIES_EXECUTE_PATH, response);
             }

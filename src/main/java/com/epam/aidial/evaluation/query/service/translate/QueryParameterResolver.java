@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.query.service.translate;
 
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
+import com.epam.aidial.evaluation.query.model.CaseExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
@@ -12,6 +13,7 @@ import com.epam.aidial.evaluation.query.model.ParamExpr;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.model.SubqueryExpr;
 import com.epam.aidial.evaluation.query.model.ValueExpr;
+import com.epam.aidial.evaluation.query.model.WhenClause;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.HashSet;
@@ -85,6 +87,13 @@ public class QueryParameterResolver {
             case ArrayExpr(var items) -> new ArrayExpr(mapList(items, item -> resolveExpr(item, params, resolving)));
             // A subquery is a nested query: resolve params within it (its own recursive pass).
             case SubqueryExpr(var subquery) -> new SubqueryExpr(resolve(subquery, params));
+            case CaseExpr(var when, var elseExpr) ->
+                new CaseExpr(
+                        mapList(
+                                when,
+                                wc -> new WhenClause(
+                                        resolveFilter(wc.when(), params), resolveExpr(wc.then(), params, resolving))),
+                        resolveExpr(elseExpr, params, resolving));
         };
     }
 

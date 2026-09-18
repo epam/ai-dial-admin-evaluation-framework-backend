@@ -27,4 +27,9 @@ public class PostgresJsonPathAccessor implements JsonPathAccessor {
         return DSL.jsonbGetAttributeAsText(DSL.jsonbGetAttribute(column, key1), key2)
                 .cast(SQLDataType.NUMERIC);
     }
+
+    @Override
+    public Field<Integer> jsonbAtAsInteger(Field<JSONB> column, Field<String> key) {
+        return DSL.jsonbGetAttributeAsText(column, key).cast(SQLDataType.INTEGER);
+    }
 }

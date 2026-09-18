@@ -17,7 +17,14 @@ public final class TestSuiteRunQueryFields {
     public static final String FIELD_SEPARATOR = "::";
 
     public static final String SUITE_SNAPSHOT_COLUMN = "suite_snapshot";
+
+    /**
+     * The {@code run_config} column stays in {@link #EXCLUDED_COLUMNS} (never projected as a column
+     * or accepted in {@code filter}/{@code select}/{@code sort}/{@code group_by}), but it is also the
+     * published {@code source} of {@link #NUMBER_OF_RUNS_FIELD}, a single scalar read from it.
+     */
     public static final String RUN_CONFIG_COLUMN = "run_config";
+
     public static final String ERROR_DETAILS_COLUMN = "error_details";
 
     /** Columns of the generated {@code TEST_SUITE_RUNS} table not exposed by this entity. */
@@ -29,6 +36,15 @@ public final class TestSuiteRunQueryFields {
 
     /** Key of {@code suiteType} inside {@code suite_snapshot}. */
     public static final String SUITE_TYPE_SNAPSHOT_KEY = "suiteType";
+
+    /**
+     * Flat field extracting {@code (run_config ->> 'numberOfRuns')::integer}. {@code run_config}
+     * itself remains excluded (see {@link #RUN_CONFIG_COLUMN}); only this one scalar is published.
+     */
+    public static final String NUMBER_OF_RUNS_FIELD = "number_of_runs";
+
+    /** Key of {@code numberOfRuns} inside {@code run_config}. */
+    public static final String NUMBER_OF_RUNS_CONFIG_KEY = "numberOfRuns";
 
     /** Flat field carrying the run's latest-computation metric names. */
     public static final String METRIC_NAMES_FIELD = "metric_names";

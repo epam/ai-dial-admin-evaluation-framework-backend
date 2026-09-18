@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
@@ -40,7 +41,7 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Structured Query → jOOQ translation (test_suite_runs) Tests")
 public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFunctionalTest {
 
-    /** Exactly the 20 fields of the {@code test_suite_runs} entity (spec's field table). */
+    /** Exactly the 21 fields of the {@code test_suite_runs} entity (spec's field table). */
     private static final Set<String> ALL_FIELDS = Set.of(
             "id",
             "test_suite_id",
@@ -52,6 +53,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
             "error_message",
             "created_at_ms",
             "updated_at_ms",
+            "number_of_runs",
             "suite_type",
             "deployment_ref::id",
             "deployment_ref::name",
@@ -143,7 +145,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
     // ---- field set / snapshot refs (task 3.2) ----
 
     @Test
-    @DisplayName("empty select projects exactly the 20 entity fields and none of the excluded columns")
+    @DisplayName("empty select projects exactly the 21 entity fields and none of the excluded columns")
     void emptySelectProjectsExactlyTheEntityFields() {
         TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-fields-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
@@ -419,6 +421,74 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
                 .containsExactly(metricLess.getId().toString());
     }
 
+    // ---- number_of_runs (task 4.3) ----
+
+    @Test
+    @DisplayName("number_of_runs reflects the value the run was created with")
+    void numberOfRunsMatchesRunConfiguration() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-runs-value-" + UUID.randomUUID());
+        TestSuiteRun run =
+                metaTestDataHelper.createTestSuiteRun(suite.getId(), RunStatus.COMPLETED, "{\"numberOfRuns\":3}");
+
+        QueryResultPage page =
+                queryRepository.execute(rowQuery(eqUuid("id", run.getId()), List.of(col("number_of_runs"))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(((Number) page.rows().get(0).get("number_of_runs")).intValue())
+                .isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("a run whose run_config lacks numberOfRuns yields a null number_of_runs and the query succeeds")
+    void numberOfRunsIsNullWhenConfigKeyMissing() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-runs-missing-" + UUID.randomUUID());
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId(), RunStatus.COMPLETED, "{}");
+
+        QueryResultPage page =
+                queryRepository.execute(rowQuery(eqUuid("id", run.getId()), List.of(col("number_of_runs"))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(page.rows().get(0).get("number_of_runs")).isNull();
+    }
+
+    @Test
+    @DisplayName("number_of_runs is filterable with gt, groupable and sortable, aggregated by count")
+    void numberOfRunsIsFilterableGroupableAndSortable() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-runs-agg-" + UUID.randomUUID());
+        metaTestDataHelper.createTestSuiteRun(suite.getId(), RunStatus.COMPLETED, "{\"numberOfRuns\":1}");
+        metaTestDataHelper.createTestSuiteRun(suite.getId(), RunStatus.COMPLETED, "{\"numberOfRuns\":2}");
+        metaTestDataHelper.createTestSuiteRun(suite.getId(), RunStatus.COMPLETED, "{\"numberOfRuns\":2}");
+        metaTestDataHelper.createTestSuiteRun(suite.getId(), RunStatus.COMPLETED, "{\"numberOfRuns\":3}");
+
+        FilterNode filter = and(
+                eqUuid("test_suite_id", suite.getId()),
+                new ComparisonNode(
+                        ComparisonOp.GT,
+                        List.of(new FieldExpr("number_of_runs"), new ValueExpr(ValueType.INTEGER, "1"))));
+        StructuredQuery query = new StructuredQuery(
+                "test_suite_runs",
+                filter,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(
+                        new OutputColumn(new FieldExpr("number_of_runs"), "number_of_runs"),
+                        new OutputColumn(new FnExpr("count", false, List.of()), "runs")),
+                List.of("number_of_runs"),
+                null,
+                List.of(new SortItem("number_of_runs", SortDir.ASC, null)),
+                new OffsetPage(0, 100, false));
+
+        QueryResultPage page = queryRepository.execute(query);
+
+        assertThat(page.rows()).hasSize(2);
+        assertThat(((Number) page.rows().get(0).get("number_of_runs")).intValue())
+                .isEqualTo(2);
+        assertThat(((Number) page.rows().get(0).get("runs")).longValue()).isEqualTo(2L);
+        assertThat(((Number) page.rows().get(1).get("number_of_runs")).intValue())
+                .isEqualTo(3);
+        assertThat(((Number) page.rows().get(1).get("runs")).longValue()).isEqualTo(1L);
+    }
+
     // ---- aggregate mode (task 3.4) ----
 
     @Test
@@ -491,6 +561,39 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
     @DisplayName("referencing run_config in a filter is rejected as an unknown field")
     void rejectsRunConfigInFilter() {
         StructuredQuery query = rowQuery(eq("run_config", ValueType.STRING, "anything"), null);
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing run_config in select is rejected as an unknown field")
+    void rejectsRunConfigInSelect() {
+        StructuredQuery query = rowQuery(null, List.of(col("run_config")));
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing run_config in sort is rejected as an unknown field")
+    void rejectsRunConfigInSort() {
+        StructuredQuery query = rowQuery(null, null, List.of(new SortItem("run_config", SortDir.ASC, null)));
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing run_config in group_by is rejected as an unknown field")
+    void rejectsRunConfigInGroupBy() {
+        StructuredQuery query = new StructuredQuery(
+                "test_suite_runs",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(new FnExpr("count", false, List.of()), "runs")),
+                List.of("run_config"),
+                null,
+                null,
+                new OffsetPage(0, 100, false));
 
         assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
     }

@@ -7,20 +7,17 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * One row of a dial-adas aggregate query response, matching the {@code count} and {@code avg_cost}/
- * {@code total_cost} aliases emitted by {@code AdasCostQueryBuilder}.
+ * One row of a dial-adas aggregate query response for {@code AdasCostQueryBuilder#buildRunAggregateQuery}
+ * — {@code count} and {@code avg_cost}.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AdasAggregateRowDto {
+public class AdasRunAvgCostRowDto {
 
     private Long count;
 
     @JsonProperty("avg_cost")
     private Double avgCost;
-
-    @JsonProperty("total_cost")
-    private Double totalCost;
 }

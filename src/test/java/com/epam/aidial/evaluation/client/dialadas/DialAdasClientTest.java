@@ -9,6 +9,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
+import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import java.io.IOException;
@@ -53,7 +54,8 @@ class DialAdasClientTest {
                         "{\"rows\":[{\"count\":29159,\"avg_cost\":0.004220310571493558}]}",
                         MediaType.APPLICATION_JSON));
 
-        AdasAggregateResponseDto response = client.executeAggregate(query);
+        AdasAggregateResponseDto<AdasRunAvgCostRowDto> response =
+                client.executeAggregate(query, AdasRunAvgCostRowDto.class);
 
         assertThat(response).isNotNull();
         assertThat(response.getRows()).hasSize(1);
@@ -69,7 +71,7 @@ class DialAdasClientTest {
                 new StructuredQuery("dial_usage_log", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
         server.expect(requestTo("http://dial-adas.local/v1/queries/execute")).andRespond(withServerError());
 
-        assertThatThrownBy(() -> client.executeAggregate(query))
+        assertThatThrownBy(() -> client.executeAggregate(query, AdasRunAvgCostRowDto.class))
                 .isInstanceOf(DialAdasClientException.class)
                 .extracting(ex -> ((DialAdasClientException) ex).getStatusCode())
                 .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
@@ -86,7 +88,7 @@ class DialAdasClientTest {
         StructuredQuery query =
                 new StructuredQuery("dial_usage_log", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
 
-        assertThatThrownBy(() -> timeoutBoundClient.executeAggregate(query))
+        assertThatThrownBy(() -> timeoutBoundClient.executeAggregate(query, AdasRunAvgCostRowDto.class))
                 .isInstanceOf(DialAdasClientException.class)
                 .extracting(ex -> ((DialAdasClientException) ex).getStatusCode())
                 .isEqualTo(HttpStatus.GATEWAY_TIMEOUT.value());

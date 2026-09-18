@@ -11,4 +11,6 @@ public interface JsonPathAccessor {
     Field<String> jsonbAtAsText(Field<JSONB> column, Field<String> key);
 
     Field<BigDecimal> jsonbAtAsNumeric(Field<JSONB> column, Field<String> key1, Field<String> key2);
+
+    Field<Integer> jsonbAtAsInteger(Field<JSONB> column, Field<String> key);
 }

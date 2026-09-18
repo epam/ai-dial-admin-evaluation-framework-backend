@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.epam.aidial.evaluation.query.model.ArrayExpr;
+import com.epam.aidial.evaluation.query.model.CaseExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.Expr;
@@ -17,6 +18,7 @@ import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.model.ValueType;
+import com.epam.aidial.evaluation.query.model.WhenClause;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +99,31 @@ class QueryParameterResolverTest {
         FnExpr fn = (FnExpr) selectExpr(resolved);
         assertThat(fn.args().getFirst()).isInstanceOf(ArrayExpr.class);
         assertThat(((ArrayExpr) fn.args().getFirst()).items()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("substitutes params inside a case expression's when filter, then, and else")
+    void substitutesParamsInsideCaseExpression() {
+        CaseExpr caseExpr = new CaseExpr(
+                List.of(new WhenClause(
+                        new ComparisonNode(ComparisonOp.EQ, List.of(new FieldExpr("id"), new ParamExpr("target"))),
+                        new ParamExpr("thenVal"))),
+                new ParamExpr("elseVal"));
+        StructuredQuery query = selecting(caseExpr);
+
+        StructuredQuery resolved = resolver.resolve(
+                query,
+                Map.of(
+                        "target", new ValueExpr(ValueType.STRING, "x"),
+                        "thenVal", new ValueExpr(ValueType.STRING, "A"),
+                        "elseVal", new ValueExpr(ValueType.STRING, "B")));
+
+        CaseExpr resolvedCase = (CaseExpr) selectExpr(resolved);
+        WhenClause whenClause = resolvedCase.when().getFirst();
+        ComparisonNode when = (ComparisonNode) whenClause.when();
+        assertThat(((ValueExpr) when.args().get(1)).value()).isEqualTo("x");
+        assertThat(((ValueExpr) whenClause.then()).value()).isEqualTo("A");
+        assertThat(((ValueExpr) resolvedCase.elseExpr()).value()).isEqualTo("B");
     }
 
     @Test

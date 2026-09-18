@@ -202,6 +202,16 @@ public class MetaTestDataHelper {
      */
     @Transactional("metaTransactionManager")
     public TestSuiteRun createTestSuiteRun(UUID suiteId, RunStatus status) {
+        return createTestSuiteRun(suiteId, status, "{\"numberOfRuns\":1}");
+    }
+
+    /**
+     * Variant with an explicit {@code run_config} JSON string, for tests exercising the
+     * {@code number_of_runs} structured-query field (e.g. a run created with
+     * {@code {"numberOfRuns":3}}, or one whose {@code run_config} omits the key entirely).
+     */
+    @Transactional("metaTransactionManager")
+    public TestSuiteRun createTestSuiteRun(UUID suiteId, RunStatus status, String runConfigJson) {
         TestSuite suite = testSuiteRepository.findById(suiteId).orElseThrow();
         Dataset dataset = datasetRepository.findById(suite.getDatasetId()).orElseThrow();
         String snapshotJson = String.format(
@@ -217,7 +227,7 @@ public class MetaTestDataHelper {
                 .testSuiteId(suiteId)
                 .testRunName("run-" + UUID.randomUUID())
                 .status(status.name())
-                .runConfig("{\"numberOfRuns\":1}")
+                .runConfig(runConfigJson)
                 .numberOfTestCases(0)
                 .suiteSnapshot(snapshotJson)
                 .build();

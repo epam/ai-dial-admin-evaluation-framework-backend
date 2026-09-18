@@ -4,6 +4,8 @@ import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.RUN_METRIC_SNA
 import static com.epam.aidial.evaluation.data.db.jooq.meta.Tables.TEST_SUITE_RUNS;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.EXCLUDED_COLUMNS;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.METRIC_NAMES_FIELD;
+import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.NUMBER_OF_RUNS_CONFIG_KEY;
+import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.NUMBER_OF_RUNS_FIELD;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.REF_DESCRIPTORS;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SUITE_TYPE_FIELD;
 import static com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields.SUITE_TYPE_SNAPSHOT_KEY;
@@ -36,7 +38,8 @@ import org.springframework.stereotype.Repository;
  * Resolves the {@code test_suite_runs} entity to a derived table over {@code TEST_SUITE_RUNS} on the
  * meta datasource ({@code metaDsl}). The derived table ({@code tsr}) projects exactly the fields of
  * {@link TestSuiteRunQueryFields}: the run's own plain columns (minus the heavy/opaque
- * {@link TestSuiteRunQueryFields#EXCLUDED_COLUMNS}), the {@code suite_snapshot}-backed
+ * {@link TestSuiteRunQueryFields#EXCLUDED_COLUMNS}), a {@code run_config}-backed
+ * {@code number_of_runs} scalar extraction, the {@code suite_snapshot}-backed
  * {@code suite_type}/{@code deployment_ref::*}/{@code mcp_deployment_ref::*} text extractions, and a
  * correlated {@code metric_names} scalar subquery over {@code run_metric_snapshots} restricted to the
  * run's latest computation. Only a derived table can make the row-mode "empty select" projection
@@ -97,6 +100,9 @@ public class PostgresTestSuiteRunEntityResolver implements StructuredQueryEntity
             }
         }
         projection.add(jsonPathAccessor
+                .jsonbAtAsInteger(TEST_SUITE_RUNS.RUN_CONFIG, DSL.val(NUMBER_OF_RUNS_CONFIG_KEY))
+                .as(DSL.name(NUMBER_OF_RUNS_FIELD)));
+        projection.add(jsonPathAccessor
                 .jsonbAtAsText(TEST_SUITE_RUNS.SUITE_SNAPSHOT, DSL.val(SUITE_TYPE_SNAPSHOT_KEY))
                 .as(DSL.name(SUITE_TYPE_FIELD)));
         projection.addAll(buildRefFields(jsonPathAccessor));
@@ -150,6 +156,10 @@ public class PostgresTestSuiteRunEntityResolver implements StructuredQueryEntity
             bindings.put(name, new QueryFieldBinding(name, requireField(tsr, name), type));
         }
 
+        bindings.put(
+                NUMBER_OF_RUNS_FIELD,
+                new QueryFieldBinding(
+                        NUMBER_OF_RUNS_FIELD, requireField(tsr, NUMBER_OF_RUNS_FIELD), QueryFieldType.INTEGER));
         bindings.put(SUITE_TYPE_FIELD, stringBinding(tsr, SUITE_TYPE_FIELD));
         for (final RefDescriptor ref : REF_DESCRIPTORS) {
             for (final String subKey : ref.subKeys()) {

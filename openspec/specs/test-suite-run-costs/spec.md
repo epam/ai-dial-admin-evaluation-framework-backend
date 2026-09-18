@@ -86,10 +86,12 @@ a two-level aggregation (sum `total_price` per `testcase.id`, then average those
 are aliased `avg_cost`/`count` to match `AdasRunAvgCostRowDto` — the same row DTO used for
 `buildDeploymentAggregateQuery`'s and `buildPageTotalCostQuery`'s `StructuredQuery`-based calls, which are
 unaffected by this change since summing is identical whether computed as one flat sum or a sum of
-per-test-case sums. `runId` (a `UUID`) and `phase` (restricted to the two known `TracingConstants` values)
-are the only interpolated values in the SQL template, so this raw-SQL construction carries no injection
-surface. See the `fix-avg-test-case-cost` change's `design.md` for the full decision record, including why
-a SQL builder library (e.g. jOOQ) was not used.
+per-test-case sums. `runId` (a `UUID`) and `phase` (a typed `EvalPhase` enum — `EXECUTION` or
+`METRIC_EVALUATION` — rather than a raw `String`, so an unsupported phase is a compile error, not a
+runtime `IllegalArgumentException`; each constant carries the corresponding `TracingConstants` wire value
+via `EvalPhase.getValue()`) are the only interpolated values in the SQL template, so this raw-SQL
+construction carries no injection surface. See the `fix-avg-test-case-cost` change's `design.md` for the
+full decision record, including why a SQL builder library (e.g. jOOQ) was not used.
 
 The two `StructuredQuery`-based builders (`buildDeploymentAggregateQuery`, `buildPageTotalCostQuery`) still
 build the outbound query as a real `com.epam.aidial.evaluation.query.model.StructuredQuery` (the same typed

@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.epam.aidial.evaluation.query.model.CaseExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
@@ -38,7 +37,7 @@ class AdasCostQueryBuilderTest {
     @Test
     @DisplayName("builds the execution-phase per-test-case average-cost SQL query")
     void buildsAvgCostPerTestCaseSqlForExecutionPhase() {
-        String sql = builder.buildAvgCostPerTestCaseSql(RUN_ID, TracingConstants.PHASE_EXECUTION);
+        String sql = builder.buildAvgCostPerTestCaseSql(RUN_ID, EvalPhase.EXECUTION);
 
         assertThat(sql).isEqualTo(expectedAvgCostPerTestCaseSql(RUN_ID, TracingConstants.PHASE_EXECUTION));
     }
@@ -46,16 +45,9 @@ class AdasCostQueryBuilderTest {
     @Test
     @DisplayName("builds the metric-evaluation-phase per-test-case average-cost SQL query with a different phase tag")
     void buildsAvgCostPerTestCaseSqlForMetricEvaluationPhase() {
-        String sql = builder.buildAvgCostPerTestCaseSql(RUN_ID, TracingConstants.PHASE_METRIC_EVALUATION);
+        String sql = builder.buildAvgCostPerTestCaseSql(RUN_ID, EvalPhase.METRIC_EVALUATION);
 
         assertThat(sql).isEqualTo(expectedAvgCostPerTestCaseSql(RUN_ID, TracingConstants.PHASE_METRIC_EVALUATION));
-    }
-
-    @Test
-    @DisplayName("rejects a phase value other than the two known TracingConstants phases")
-    void rejectsUnrecognizedPhase() {
-        assertThatThrownBy(() -> builder.buildAvgCostPerTestCaseSql(RUN_ID, "bogus-phase"))
-                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static String expectedAvgCostPerTestCaseSql(UUID runId, String phase) {
@@ -82,7 +74,7 @@ class AdasCostQueryBuilderTest {
     @DisplayName("builds the execution-phase deployment-scoped aggregate query as a typed StructuredQuery")
     void buildsDeploymentExecutionPhaseQuery() {
         StructuredQuery query =
-                builder.buildDeploymentAggregateQuery(DEPLOYMENT_ID, FROM_MS, TO_MS, TracingConstants.PHASE_EXECUTION);
+                builder.buildDeploymentAggregateQuery(DEPLOYMENT_ID, FROM_MS, TO_MS, EvalPhase.EXECUTION);
 
         assertThat(query.entity()).isEqualTo("dial_usage_log");
         assertThat(query.mode()).isEqualTo(QueryMode.AGGREGATE);
@@ -119,8 +111,8 @@ class AdasCostQueryBuilderTest {
     @DisplayName(
             "builds the deployment-scoped metric-evaluation-phase query with the same shape but a different phase value")
     void buildsDeploymentMetricEvaluationPhaseQuery() {
-        StructuredQuery query = builder.buildDeploymentAggregateQuery(
-                DEPLOYMENT_ID, FROM_MS, TO_MS, TracingConstants.PHASE_METRIC_EVALUATION);
+        StructuredQuery query =
+                builder.buildDeploymentAggregateQuery(DEPLOYMENT_ID, FROM_MS, TO_MS, EvalPhase.METRIC_EVALUATION);
 
         assertThat(query.filter())
                 .isEqualTo(new LogicalNode(
@@ -155,7 +147,7 @@ class AdasCostQueryBuilderTest {
                 .build();
 
         StructuredQuery query =
-                builder.buildDeploymentAggregateQuery(DEPLOYMENT_ID, FROM_MS, TO_MS, TracingConstants.PHASE_EXECUTION);
+                builder.buildDeploymentAggregateQuery(DEPLOYMENT_ID, FROM_MS, TO_MS, EvalPhase.EXECUTION);
         JsonNode actual = objectMapper.valueToTree(query);
 
         JsonNode expected = objectMapper.readTree("""

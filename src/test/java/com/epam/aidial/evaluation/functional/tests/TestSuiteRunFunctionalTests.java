@@ -332,7 +332,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     void shouldGetRunCosts() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Costs");
         TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);
-        when(dialAdasClient.<AdasRunAvgCostRowDto>executeAggregate(any(StructuredQuery.class), any()))
+        when(dialAdasClient.<AdasRunAvgCostRowDto>executeSql(anyString(), any()))
                 .thenReturn(AdasAggregateResponseDto.<AdasRunAvgCostRowDto>builder()
                         .rows(List.of(AdasRunAvgCostRowDto.builder()
                                 .count(1L)
@@ -363,7 +363,7 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     void shouldGetRunCostsViaCostsApi() {
         TestSuiteResponseDto suite = createTestSuite("Suite For Costs API");
         TestSuiteRunResponseDto created = createRunAndAwaitTerminal(suite.getId(), 1, null);
-        when(dialAdasClient.<AdasRunAvgCostRowDto>executeAggregate(any(StructuredQuery.class), any()))
+        when(dialAdasClient.<AdasRunAvgCostRowDto>executeSql(anyString(), any()))
                 .thenReturn(AdasAggregateResponseDto.<AdasRunAvgCostRowDto>builder()
                         .rows(List.of(AdasRunAvgCostRowDto.builder()
                                 .count(1L)

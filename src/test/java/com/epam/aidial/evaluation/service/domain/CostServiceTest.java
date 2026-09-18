@@ -19,7 +19,6 @@ import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
-import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
@@ -80,11 +79,10 @@ class CostServiceTest {
                 "metric-eval-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
 
         private void stubQueries() {
-            when(adasCostQueryBuilder.buildDeploymentAggregateQuery(
-                            deploymentId, fromMs, toMs, TracingConstants.PHASE_EXECUTION))
+            when(adasCostQueryBuilder.buildDeploymentAggregateQuery(deploymentId, fromMs, toMs, EvalPhase.EXECUTION))
                     .thenReturn(executionQuery);
             when(adasCostQueryBuilder.buildDeploymentAggregateQuery(
-                            deploymentId, fromMs, toMs, TracingConstants.PHASE_METRIC_EVALUATION))
+                            deploymentId, fromMs, toMs, EvalPhase.METRIC_EVALUATION))
                     .thenReturn(metricEvalQuery);
         }
 
@@ -154,9 +152,9 @@ class CostServiceTest {
         private final String metricEvalSql = "metric-eval-sql";
 
         private void stubQueries() {
-            when(adasCostQueryBuilder.buildAvgCostPerTestCaseSql(runId, TracingConstants.PHASE_EXECUTION))
+            when(adasCostQueryBuilder.buildAvgCostPerTestCaseSql(runId, EvalPhase.EXECUTION))
                     .thenReturn(executionSql);
-            when(adasCostQueryBuilder.buildAvgCostPerTestCaseSql(runId, TracingConstants.PHASE_METRIC_EVALUATION))
+            when(adasCostQueryBuilder.buildAvgCostPerTestCaseSql(runId, EvalPhase.METRIC_EVALUATION))
                     .thenReturn(metricEvalSql);
         }
 

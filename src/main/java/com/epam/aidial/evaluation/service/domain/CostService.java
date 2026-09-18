@@ -7,7 +7,6 @@ import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
-import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
@@ -32,8 +31,8 @@ public class CostService {
     public RunCostsResponseDto getRunCosts(UUID runId) {
         testSuiteRunService.ensureRunExists(runId);
 
-        Double avgTestCaseCost = fetchAvgCost(runId, TracingConstants.PHASE_EXECUTION);
-        Double avgMetricEvalCost = fetchAvgCost(runId, TracingConstants.PHASE_METRIC_EVALUATION);
+        Double avgTestCaseCost = fetchAvgCost(runId, EvalPhase.EXECUTION);
+        Double avgMetricEvalCost = fetchAvgCost(runId, EvalPhase.METRIC_EVALUATION);
         return RunCostsResponseDto.builder()
                 .avgTestCaseCost(avgTestCaseCost)
                 .avgMetricEvalCost(avgMetricEvalCost)
@@ -91,7 +90,7 @@ public class CostService {
         }
     }
 
-    private Double fetchAvgCost(UUID runId, String phase) {
+    private Double fetchAvgCost(UUID runId, EvalPhase phase) {
         AdasAggregateResponseDto<AdasRunAvgCostRowDto> response = dialAdasClient.executeSql(
                 adasCostQueryBuilder.buildAvgCostPerTestCaseSql(runId, phase), AdasRunAvgCostRowDto.class);
         if (response == null || response.getRows() == null || response.getRows().isEmpty()) {
@@ -109,16 +108,15 @@ public class CostService {
             throw new ValidationException("from must be <= to");
         }
 
-        Double totalTestCaseCost = fetchTotalCost(deploymentId, fromMs, toMs, TracingConstants.PHASE_EXECUTION);
-        Double totalMetricEvalCost =
-                fetchTotalCost(deploymentId, fromMs, toMs, TracingConstants.PHASE_METRIC_EVALUATION);
+        Double totalTestCaseCost = fetchTotalCost(deploymentId, fromMs, toMs, EvalPhase.EXECUTION);
+        Double totalMetricEvalCost = fetchTotalCost(deploymentId, fromMs, toMs, EvalPhase.METRIC_EVALUATION);
         return DeploymentCostsResponseDto.builder()
                 .totalTestCaseCost(totalTestCaseCost)
                 .totalMetricEvalCost(totalMetricEvalCost)
                 .build();
     }
 
-    private Double fetchTotalCost(String deploymentId, long fromMs, long toMs, String phase) {
+    private Double fetchTotalCost(String deploymentId, long fromMs, long toMs, EvalPhase phase) {
         AdasAggregateResponseDto<AdasDeploymentCostRowDto> response = dialAdasClient.executeAggregate(
                 adasCostQueryBuilder.buildDeploymentAggregateQuery(deploymentId, fromMs, toMs, phase),
                 AdasDeploymentCostRowDto.class);

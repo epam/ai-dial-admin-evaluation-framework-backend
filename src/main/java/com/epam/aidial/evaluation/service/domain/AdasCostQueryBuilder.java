@@ -70,21 +70,17 @@ public class AdasCostQueryBuilder {
      * one call. Output columns are aliased {@code avg_cost}/{@code count} to match
      * {@link com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto} exactly, the same row DTO
      * used by the structured-query-based builders in this class. {@code runId} is a {@link UUID} (hex
-     * digits and hyphens only) and {@code phase} is restricted to the two known
-     * {@link TracingConstants} phase values, so this literal SQL construction carries no injection surface.
+     * digits and hyphens only) and {@code phase} is a typed {@link EvalPhase}, so this literal SQL
+     * construction carries no injection surface.
      */
-    public String buildAvgCostPerTestCaseSql(UUID runId, String phase) {
-        if (!TracingConstants.PHASE_EXECUTION.equals(phase)
-                && !TracingConstants.PHASE_METRIC_EVALUATION.equals(phase)) {
-            throw new IllegalArgumentException("Unsupported phase: " + phase);
-        }
+    public String buildAvgCostPerTestCaseSql(UUID runId, EvalPhase phase) {
         return AVG_COST_PER_TEST_CASE_SQL_TEMPLATE.formatted(
                 TracingConstants.EVAL_RUN_ID + "=" + runId,
-                TracingConstants.EVAL_PHASE + "=" + phase,
+                TracingConstants.EVAL_PHASE + "=" + phase.getValue(),
                 TracingConstants.TESTCASE_ID + "=");
     }
 
-    public StructuredQuery buildDeploymentAggregateQuery(String deploymentId, long fromMs, long toMs, String phase) {
+    public StructuredQuery buildDeploymentAggregateQuery(String deploymentId, long fromMs, long toMs, EvalPhase phase) {
         Expr baggageValue = baggageField();
 
         FilterNode filter = new LogicalNode(
@@ -93,7 +89,7 @@ public class AdasCostQueryBuilder {
                         eq(DEPLOYMENT_FIELD, stringValue(deploymentId)),
                         ge(REQUEST_TIME_FIELD, timestampValue(fromMs)),
                         le(REQUEST_TIME_FIELD, timestampValue(toMs)),
-                        baggageContains(baggageValue, TracingConstants.EVAL_PHASE + "=" + phase)));
+                        baggageContains(baggageValue, TracingConstants.EVAL_PHASE + "=" + phase.getValue())));
 
         return new StructuredQuery(
                 ENTITY, filter, QueryMode.AGGREGATE, false, selectCountAndSumCost(), List.of(), null, null, null);

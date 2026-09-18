@@ -1,9 +1,4 @@
-# Test Suite Run Costs
-
-## Purpose
-This spec describes the test suite run cost-reporting endpoint: an on-demand average cost per test case for a run's test-case execution and metric-evaluation phases, sourced from dial-adas usage-log data correlated by the run's id, OTel baggage phase tag, and each usage-log row's `testcase.id` baggage tag. It does not persist cost data — costs are computed live from dial-adas on each request.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Get average costs for a test suite run
 The system SHALL expose `GET /api/v1/costs/test-suite-run/{id}` as the canonical route, and
@@ -70,35 +65,3 @@ average across test cases) cannot be expressed by dial-adas's structured JSON qu
 - **THEN** it issues a single SQL query that performs the sum-per-test-case and average-across-test-cases
   computation entirely within dial-adas, rather than fetching individual usage-log rows (or per-test-case
   sums) and aggregating them in application code
-
-## Implementation notes
-Introduces `com.epam.aidial.evaluation.client.dialadas` (client, config properties, exception), an `AdasCostQueryBuilder` domain component, `CostService.getRunCosts`, and a new endpoint on the existing `TestSuiteRunController`. See `design.md` in `openspec/changes/archive/2026-08-20-test-suite-run-costs/` for the original technical decisions, including the amendment adding the canonical `CostController` route.
-
-Both routes call `CostService.getRunCosts(id)` directly — `TestSuiteRunController#getRunCosts` is not
-called by `CostController#getRunCosts` (or vice versa); each controller depends only on the shared
-service, per the project's layering rule that controllers do not call other controllers.
-
-`CostService.fetchAvgCost` computes each phase's average via `AdasCostQueryBuilder.buildAvgCostPerTestCaseSql`
-+ `DialAdasClient.executeSql` — a raw SQL string sent to dial-adas's `POST /v1/queries/execute-sql`, rather
-than a `StructuredQuery` sent to `/v1/queries/execute`, because the correct per-test-case average requires
-a two-level aggregation (sum `total_price` per `testcase.id`, then average those sums) that
-`StructuredQuery`'s single `GROUP BY` + aggregate `select` shape cannot express. The SQL's output columns
-are aliased `avg_cost`/`count` to match `AdasRunAvgCostRowDto` — the same row DTO used for
-`buildDeploymentAggregateQuery`'s and `buildPageTotalCostQuery`'s `StructuredQuery`-based calls, which are
-unaffected by this change since summing is identical whether computed as one flat sum or a sum of
-per-test-case sums. `runId` (a `UUID`) and `phase` (restricted to the two known `TracingConstants` values)
-are the only interpolated values in the SQL template, so this raw-SQL construction carries no injection
-surface. See the `fix-avg-test-case-cost` change's `design.md` for the full decision record, including why
-a SQL builder library (e.g. jOOQ) was not used.
-
-The two `StructuredQuery`-based builders (`buildDeploymentAggregateQuery`, `buildPageTotalCostQuery`) still
-build the outbound query as a real `com.epam.aidial.evaluation.query.model.StructuredQuery` (the same typed
-AST used for this service's own `POST /api/v1/queries/execute`), rather than hand-rolled `ObjectNode`s —
-dial-adas's query DSL is the same wire grammar, confirmed against a real deployment, so this is the
-canonical shape rather than a coincidentally similar one. `DialAdasClient.executeAggregate` accepts a
-`StructuredQuery` directly; Spring's shared `JsonMapper` bean (`NON_NULL` inclusion) serializes it, dropping
-the unset `having`/`sort`/`page` fields. The one field dial-adas doesn't show in examples but does accept is
-`distinct: false` (a required primitive on `StructuredQuery`/`FnExpr`) — harmless, since it's a legitimate
-field in their own shared schema. See [Query DSL patterns](../../../docs/patterns/README.md) for the
-underlying model; this was the first reuse of that model as an *outbound* client payload rather than an
-inbound request parsed by this service.

@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.epam.aidial.evaluation.query.model.CaseExpr;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
@@ -35,85 +36,46 @@ class AdasCostQueryBuilderTest {
     private final AdasCostQueryBuilder builder = new AdasCostQueryBuilder();
 
     @Test
-    @DisplayName("builds the execution-phase run-scoped aggregate query as a typed StructuredQuery")
-    void buildsRunExecutionPhaseQuery() {
-        StructuredQuery query = builder.buildRunAggregateQuery(RUN_ID, TracingConstants.PHASE_EXECUTION);
+    @DisplayName("builds the execution-phase per-test-case average-cost SQL query")
+    void buildsAvgCostPerTestCaseSqlForExecutionPhase() {
+        String sql = builder.buildAvgCostPerTestCaseSql(RUN_ID, TracingConstants.PHASE_EXECUTION);
 
-        assertThat(query.entity()).isEqualTo("dial_usage_log");
-        assertThat(query.mode()).isEqualTo(QueryMode.AGGREGATE);
-        assertThat(query.groupBy()).isEmpty();
-        assertThat(query.filter())
-                .isEqualTo(new LogicalNode(
-                        LogicalOp.AND,
-                        List.of(
-                                baggageContains(TracingConstants.EVAL_RUN_ID + "=" + RUN_ID),
-                                baggageContains(
-                                        TracingConstants.EVAL_PHASE + "=" + TracingConstants.PHASE_EXECUTION))));
-        assertThat(query.select())
-                .containsExactly(
-                        new OutputColumn(new FnExpr("count", false, List.of()), null),
-                        new OutputColumn(new FnExpr("avg", false, List.of(new FieldExpr("total_price"))), "avg_cost"));
+        assertThat(sql).isEqualTo(expectedAvgCostPerTestCaseSql(RUN_ID, TracingConstants.PHASE_EXECUTION));
     }
 
     @Test
-    @DisplayName("builds the run-scoped metric-evaluation-phase query with the same shape but a different phase value")
-    void buildsRunMetricEvaluationPhaseQuery() {
-        StructuredQuery query = builder.buildRunAggregateQuery(RUN_ID, TracingConstants.PHASE_METRIC_EVALUATION);
+    @DisplayName("builds the metric-evaluation-phase per-test-case average-cost SQL query with a different phase tag")
+    void buildsAvgCostPerTestCaseSqlForMetricEvaluationPhase() {
+        String sql = builder.buildAvgCostPerTestCaseSql(RUN_ID, TracingConstants.PHASE_METRIC_EVALUATION);
 
-        assertThat(query.filter())
-                .isEqualTo(new LogicalNode(
-                        LogicalOp.AND,
-                        List.of(
-                                baggageContains(TracingConstants.EVAL_RUN_ID + "=" + RUN_ID),
-                                baggageContains(TracingConstants.EVAL_PHASE + "="
-                                        + TracingConstants.PHASE_METRIC_EVALUATION))));
+        assertThat(sql).isEqualTo(expectedAvgCostPerTestCaseSql(RUN_ID, TracingConstants.PHASE_METRIC_EVALUATION));
     }
 
     @Test
-    @DisplayName("run-scoped query serializes to the exact JSON dial-adas expects on the wire")
-    void serializesToDialAdasWireShape() {
-        // Mirrors the production JsonMapper bean's default inclusion (JsonMapperConfiguration.createJsonMapper).
-        JsonMapper objectMapper = JsonMapper.builder()
-                .changeDefaultPropertyInclusion(
-                        v -> JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.NON_NULL))
-                .build();
+    @DisplayName("rejects a phase value other than the two known TracingConstants phases")
+    void rejectsUnrecognizedPhase() {
+        assertThatThrownBy(() -> builder.buildAvgCostPerTestCaseSql(RUN_ID, "bogus-phase"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 
-        StructuredQuery query = builder.buildRunAggregateQuery(RUN_ID, TracingConstants.PHASE_EXECUTION);
-        JsonNode actual = objectMapper.valueToTree(query);
-
-        JsonNode expected = objectMapper.readTree("""
-                {
-                  "entity": "dial_usage_log",
-                  "mode": "aggregate",
-                  "distinct": false,
-                  "filter": {
-                    "op": "and",
-                    "args": [
-                      {
-                        "op": "co",
-                        "args": [
-                          { "type": "field", "name": "usage_request_baggage.baggage" },
-                          { "type": "value", "value_type": "string", "value": "eval.run.id=1f810de3-cb9b-4e50-b9c5-794c41d99f6c" }
-                        ]
-                      },
-                      {
-                        "op": "co",
-                        "args": [
-                          { "type": "field", "name": "usage_request_baggage.baggage" },
-                          { "type": "value", "value_type": "string", "value": "eval.phase=execution" }
-                        ]
-                      }
-                    ]
-                  },
-                  "group_by": [],
-                  "select": [
-                    { "expr": { "type": "fn", "name": "count", "distinct": false, "args": [] } },
-                    { "expr": { "type": "fn", "name": "avg", "distinct": false, "args": [ { "type": "field", "name": "total_price" } ] }, "as": "avg_cost" }
-                  ]
-                }
-                """);
-
-        assertThat(actual).isEqualTo(expected);
+    private static String expectedAvgCostPerTestCaseSql(UUID runId, String phase) {
+        return String.join(
+                "\n",
+                "WITH tagged AS (",
+                "  SELECT total_price, array_join(split_string(\"usage_request_baggage.baggage\", ',')) AS"
+                        + " testcase_tag",
+                "  FROM dial_usage_log",
+                "  WHERE contains(\"usage_request_baggage.baggage\", 'eval.run.id=" + runId + "')",
+                "    AND contains(\"usage_request_baggage.baggage\", 'eval.phase=" + phase + "')",
+                "),",
+                "per_testcase AS (",
+                "  SELECT testcase_tag, sum(total_price) AS case_cost",
+                "  FROM tagged",
+                "  WHERE starts_with(testcase_tag, 'testcase.id=')",
+                "  GROUP BY testcase_tag",
+                ")",
+                "SELECT avg(case_cost) AS avg_cost, count(*) AS count",
+                "FROM per_testcase");
     }
 
     @Test

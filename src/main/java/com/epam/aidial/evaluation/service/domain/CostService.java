@@ -92,8 +92,8 @@ public class CostService {
     }
 
     private Double fetchAvgCost(UUID runId, String phase) {
-        AdasAggregateResponseDto<AdasRunAvgCostRowDto> response = dialAdasClient.executeAggregate(
-                adasCostQueryBuilder.buildRunAggregateQuery(runId, phase), AdasRunAvgCostRowDto.class);
+        AdasAggregateResponseDto<AdasRunAvgCostRowDto> response = dialAdasClient.executeSql(
+                adasCostQueryBuilder.buildAvgCostPerTestCaseSql(runId, phase), AdasRunAvgCostRowDto.class);
         if (response == null || response.getRows() == null || response.getRows().isEmpty()) {
             return null;
         }

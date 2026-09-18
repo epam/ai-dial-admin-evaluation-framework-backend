@@ -150,16 +150,14 @@ class CostServiceTest {
     class GetRunCosts {
 
         private final UUID runId = UUID.randomUUID();
-        private final StructuredQuery executionQuery =
-                new StructuredQuery("execution-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
-        private final StructuredQuery metricEvalQuery = new StructuredQuery(
-                "metric-eval-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
+        private final String executionSql = "execution-sql";
+        private final String metricEvalSql = "metric-eval-sql";
 
         private void stubQueries() {
-            when(adasCostQueryBuilder.buildRunAggregateQuery(runId, TracingConstants.PHASE_EXECUTION))
-                    .thenReturn(executionQuery);
-            when(adasCostQueryBuilder.buildRunAggregateQuery(runId, TracingConstants.PHASE_METRIC_EVALUATION))
-                    .thenReturn(metricEvalQuery);
+            when(adasCostQueryBuilder.buildAvgCostPerTestCaseSql(runId, TracingConstants.PHASE_EXECUTION))
+                    .thenReturn(executionSql);
+            when(adasCostQueryBuilder.buildAvgCostPerTestCaseSql(runId, TracingConstants.PHASE_METRIC_EVALUATION))
+                    .thenReturn(metricEvalSql);
         }
 
         private AdasAggregateResponseDto<AdasRunAvgCostRowDto> avgAggregateResponse(long count, Double avgCost) {
@@ -175,9 +173,9 @@ class CostServiceTest {
         @DisplayName("verifies the run exists, then returns both averages when both phases have usage-log rows")
         void returnsBothAveragesWhenBothPhasesHaveData() {
             stubQueries();
-            when(dialAdasClient.executeAggregate(executionQuery, AdasRunAvgCostRowDto.class))
+            when(dialAdasClient.executeSql(executionSql, AdasRunAvgCostRowDto.class))
                     .thenReturn(avgAggregateResponse(120L, 0.0007125));
-            when(dialAdasClient.executeAggregate(metricEvalQuery, AdasRunAvgCostRowDto.class))
+            when(dialAdasClient.executeSql(metricEvalSql, AdasRunAvgCostRowDto.class))
                     .thenReturn(avgAggregateResponse(60L, 0.000231));
 
             RunCostsResponseDto costs = service.getRunCosts(runId);
@@ -191,9 +189,9 @@ class CostServiceTest {
         @DisplayName("returns null for a phase with zero matching usage-log rows")
         void returnsNullForPhaseWithNoData() {
             stubQueries();
-            when(dialAdasClient.executeAggregate(executionQuery, AdasRunAvgCostRowDto.class))
+            when(dialAdasClient.executeSql(executionSql, AdasRunAvgCostRowDto.class))
                     .thenReturn(avgAggregateResponse(0L, null));
-            when(dialAdasClient.executeAggregate(metricEvalQuery, AdasRunAvgCostRowDto.class))
+            when(dialAdasClient.executeSql(metricEvalSql, AdasRunAvgCostRowDto.class))
                     .thenReturn(avgAggregateResponse(60L, 0.000231));
 
             RunCostsResponseDto costs = service.getRunCosts(runId);
@@ -212,7 +210,7 @@ class CostServiceTest {
 
             assertThatThrownBy(() -> service.getRunCosts(unknownRunId)).isInstanceOf(EntityNotFoundException.class);
 
-            verify(dialAdasClient, never()).executeAggregate(any(), any());
+            verify(dialAdasClient, never()).executeSql(any(), any());
         }
     }
 

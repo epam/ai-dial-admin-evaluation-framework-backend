@@ -54,6 +54,13 @@ class TestSuiteRunsSchemaProviderTest {
     }
 
     @Test
+    @DisplayName("base schema includes number_of_runs sourced from run_config")
+    void shouldIncludeNumberOfRuns() {
+        assertThat(provider.baseSchema())
+                .contains(new QuerySchemaFieldDto("number_of_runs", QueryFieldType.INTEGER, "run_config"));
+    }
+
+    @Test
     @DisplayName("base schema includes suite_type and the deployment_ref/mcp_deployment_ref virtual "
             + "sub-fields sourced from suite_snapshot")
     void shouldIncludeSnapshotVirtualFields() {

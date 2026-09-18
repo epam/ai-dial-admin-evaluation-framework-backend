@@ -269,6 +269,7 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
                         new QuerySchemaFieldDto("error_message", QueryFieldType.STRING, "error_message"),
                         new QuerySchemaFieldDto("created_at_ms", QueryFieldType.LONG, "created_at_ms"),
                         new QuerySchemaFieldDto("updated_at_ms", QueryFieldType.LONG, "updated_at_ms"),
+                        new QuerySchemaFieldDto("number_of_runs", QueryFieldType.INTEGER, "run_config"),
                         new QuerySchemaFieldDto("suite_type", QueryFieldType.STRING, "suite_snapshot"),
                         new QuerySchemaFieldDto("deployment_ref::id", QueryFieldType.STRING, "suite_snapshot"),
                         new QuerySchemaFieldDto("deployment_ref::name", QueryFieldType.STRING, "suite_snapshot"),

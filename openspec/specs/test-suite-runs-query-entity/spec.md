@@ -27,7 +27,7 @@ The `test_suite_runs` entity SHALL expose exactly the following flat fields, and
 |---|---|---|---|
 | `id` | `uuid` | `id` | |
 | `test_suite_id` | `uuid` | `test_suite_id` | |
-| `test_run_name` | `string` | `test_run_name` | |
+| `test_run_name` | `string` | `test_run_name` | user-provided or auto-generated run name |
 | `status` | `string` | `status` | |
 | `number_of_test_cases` | `integer` | `number_of_test_cases` | |
 | `started_at_ms` | `long` | `started_at_ms` | nullable |
@@ -35,6 +35,7 @@ The `test_suite_runs` entity SHALL expose exactly the following flat fields, and
 | `error_message` | `string` | `error_message` | nullable |
 | `created_at_ms` | `long` | `created_at_ms` | |
 | `updated_at_ms` | `long` | `updated_at_ms` | |
+| `number_of_runs` | `integer` | `run_config` | `run_config ->> 'numberOfRuns'`; see "Repetition count is derived from the run's stored run configuration" |
 | `suite_type` | `string` | `suite_snapshot` | `suite_snapshot ->> 'suiteType'` |
 | `deployment_ref::id` | `string` | `suite_snapshot` | `suite_snapshot -> 'deploymentRef' ->> 'id'` |
 | `deployment_ref::name` | `string` | `suite_snapshot` | |
@@ -46,7 +47,7 @@ The `test_suite_runs` entity SHALL expose exactly the following flat fields, and
 | `mcp_deployment_ref::transport` | `string` | `suite_snapshot` | |
 | `metric_names` | `array` | `run_metric_snapshots` | see "Latest-computation metric names" |
 
-The columns `suite_snapshot`, `run_config` and `error_details` SHALL NOT be exposed as fields, SHALL NOT be accepted in `filter`/`select`/`sort`/`group_by`, and SHALL NOT be part of the row projection when `select` is empty. The entity SHALL carry no field that is derived outside the database (e.g. the REST listing's `grafanaExploreUrl`).
+The columns `suite_snapshot`, `run_config` and `error_details` SHALL NOT be exposed as fields, SHALL NOT be accepted in `filter`/`select`/`sort`/`group_by`, and SHALL NOT be part of the row projection when `select` is empty — this holds for `run_config` even though `number_of_runs` is derived from it. The entity SHALL carry no field that is derived outside the database (e.g. the REST listing's `grafanaExploreUrl`).
 Status: **Implemented**
 
 #### Scenario: Empty select projects the whole entity and nothing more
@@ -60,6 +61,24 @@ Status: **Implemented**
 #### Scenario: Base schema matches the executable field set
 - **WHEN** `GET /api/v1/queries/entities/schema/test_suite_runs` is called
 - **THEN** the returned fields are exactly the rows of the table above, with the listed types and sources
+
+### Requirement: Repetition count is derived from the run's stored run configuration
+`number_of_runs` SHALL be the run's configured repetitions per test case, read in-database from the run's own `run_config` payload (key `numberOfRuns`) as a flat `integer` field — the value the run was created with. A run whose `run_config` lacks the key SHALL yield null and the query SHALL still succeed.
+
+The field SHALL be usable wherever any other plain `integer` field is usable: `filter`, `sort`, `select`, `group_by`. `run_config` itself SHALL remain a non-exposed column; no other run-configuration member SHALL be exposed.
+Status: **Implemented**
+
+#### Scenario: Value matches the run's configuration
+- **WHEN** a run created with 3 repetitions per test case is selected via a `row` query with `number_of_runs`
+- **THEN** the returned value is `3`
+
+#### Scenario: Filterable, sortable and groupable as an integer
+- **WHEN** an `aggregate` query filters `{"op":"gt","args":[{"field":"number_of_runs"},{"type":"integer","value":1}]}`, groups by `number_of_runs`, selects `count`, and sorts on `number_of_runs`
+- **THEN** the response has one row per distinct repetition count greater than 1, ordered by that count, each with the number of matching runs
+
+#### Scenario: Missing configuration key yields null
+- **WHEN** a run's `run_config` does not contain `numberOfRuns`
+- **THEN** `number_of_runs` is null for that run and the query succeeds
 
 ### Requirement: Deployment reference fields come from the run's own snapshot only
 `suite_type`, `deployment_ref::*` and `mcp_deployment_ref::*` SHALL be read from the run's `suite_snapshot` — the configuration the run actually executed against — and SHALL NOT fall back to the current `test_suites` row. A run whose `suite_snapshot` is null (legacy run, or a run that has not reached the snapshot phase) SHALL yield null for all of these fields. A `DEPLOYMENT` run SHALL yield nulls for `mcp_deployment_ref::*` and an `MCP` run SHALL yield nulls for `deployment_ref::*`.
@@ -131,9 +150,10 @@ Status: **Implemented**
 
 ## Implementation notes
 
-- Entity resolver (derived table `tsr`, correlated `metric_names` scalar subquery): `src/main/java/com/epam/aidial/evaluation/query/service/repository/PostgresTestSuiteRunEntityResolver.java`
+- Entity resolver (derived table `tsr`, `run_config` scalar extraction, correlated `metric_names` scalar subquery): `src/main/java/com/epam/aidial/evaluation/query/service/repository/PostgresTestSuiteRunEntityResolver.java`
 - Base schema provider: `src/main/java/com/epam/aidial/evaluation/query/service/TestSuiteRunsSchemaProvider.java`
-- Shared field vocabulary (entity name, excluded columns, ref descriptors, `metric_names`): `src/main/java/com/epam/aidial/evaluation/query/service/TestSuiteRunQueryFields.java`
+- Shared field vocabulary (entity name, excluded columns, ref descriptors, `number_of_runs`, `metric_names`): `src/main/java/com/epam/aidial/evaluation/query/service/TestSuiteRunQueryFields.java`
+- JSONB scalar extraction SPI (`jsonbAtAsInteger`): `src/main/java/com/epam/aidial/evaluation/data/db/repository/sql/json/JsonPathAccessor.java` / `PostgresJsonPathAccessor.java`
 - Composite index serving the latest-computation lookup: `src/main/resources/db/migration/meta/POSTGRES/V1.34__ReplaceRunMetricSnapshotsRunIndex.sql`
 - Functional coverage: `src/test/java/com/epam/aidial/evaluation/functional/tests/TestSuiteRunStructuredQueryFunctionalTests.java` (nested `TestSuiteRunStructuredQueryTests` in `PostgresFunctionalTests`), plus `QuerySchemaDiscoveryFunctionalTests` and `StructuredQueryExecuteFunctionalTests`
 - Pattern doc with EXPLAIN evidence: `docs/patterns/test-suite-runs-query-entity.md`

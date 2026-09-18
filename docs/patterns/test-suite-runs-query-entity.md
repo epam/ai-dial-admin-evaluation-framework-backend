@@ -4,10 +4,10 @@
 
 ## Why a fully derived `table()`
 
-Row-mode with an empty `select` projects `table().fields()`. `TEST_SUITE_RUNS` carries three heavy/opaque columns — `suite_snapshot`, `run_config`, `error_details` — that must never appear in that projection and must 400 as unknown fields if referenced. Filtering them out in `StructuredQueryBuilder` would be a builder change (a Non-Goal). Instead `table()` returns
+Row-mode with an empty `select` projects `table().fields()`. `TEST_SUITE_RUNS` carries three heavy/opaque columns — `suite_snapshot`, `run_config`, `error_details` — that must never appear in that projection and must 400 as unknown fields if referenced directly. (A scalar derived *from* one of them may still be published under its own name without putting the column itself back in the projection — see `number_of_runs` below.) Filtering them out in `StructuredQueryBuilder` would be a builder change (a Non-Goal). Instead `table()` returns
 
 ```java
-DSL.select(<10 plain columns>, <9 snapshot extractions>, <metric_names subquery>)
+DSL.select(<10 plain columns>, <number_of_runs run_config extraction>, <9 snapshot extractions>, <metric_names subquery>)
    .from(TEST_SUITE_RUNS)
    .asTable("tsr")
 ```
@@ -107,6 +107,10 @@ Full untrimmed plans are preserved in git history (`openspec/changes/add-test-su
 
 `suite_type`, `deployment_ref::*`, `mcp_deployment_ref::*` are extracted only from `test_suite_runs.suite_snapshot` via `JsonPathAccessor` two-level text extraction (`suite_snapshot ->> 'suiteType'`; `suite_snapshot -> 'deploymentRef' ->> '<subKey>'`). `->`/`->>` on a NULL snapshot or a missing key yield NULL — no `CASE`, no exception path. There is **no fallback to `test_suites`**: a run's refs are run-time truth pinned at snapshot time; a later suite edit must not rewrite a completed run's history. Legacy/pre-snapshot runs (`suite_snapshot IS NULL`) simply read all nine fields as null.
 
+## `number_of_runs`: scalar extracted from `run_config`
+
+Unlike the snapshot-only group above, `number_of_runs` reads `test_suite_runs.run_config`, not `suite_snapshot`. `run_config` itself stays in `EXCLUDED_COLUMNS` and out of the projection and out of `filter`/`select`/`sort`/`group_by`; only the derived scalar `(run_config ->> 'numberOfRuns')::integer` — built as `jsonPathAccessor.jsonbAtAsInteger(TEST_SUITE_RUNS.RUN_CONFIG, DSL.val("numberOfRuns"))` — is published, aliased `number_of_runs`, typed `integer`. A missing key yields null (`->>` on a missing key is NULL, cast of NULL is NULL); a non-numeric value makes the cast raise and the whole query fail — deliberate fail-fast, not a `CASE`/guard, since `run_config` is the run's immutable execution contract and bean validation on the write path (`RunConfigDto.numberOfRuns` is `@NotNull @Min(1)`) makes a non-numeric value unreachable via the API. Filtering/sorting on it is not index-served — same cost class as the `suite_type` snapshot extraction; an expression index on `((run_config ->> 'numberOfRuns')::int)` is deferred until a measured need. Field order: after the plain columns, before `suite_type`. Despite the similar name, `number_of_runs` (repetitions per test case, sourced from `run_config`) and `number_of_test_cases` (a plain column) are unrelated counts.
+
 ## Latest-computation tiebreak
 
 Two computations of the same run can share `computed_at_ms` (one `Clock` read per computation, fast recomputation). Both the `metric_names` inner subquery and `PostgresRunMetricSnapshotRepository.findLatestComputationId` order by `computed_at_ms DESC, computation_id DESC` — without the tiebreak, `metric_names` and the schema-discovery endpoint could disagree or flip between calls for the same run. `ComputationResolver` (eval-summaries-based "latest" for analytics) is untouched — different table, different resolution path; see [Computation Versioning](computation-versioning.md).
@@ -115,4 +119,4 @@ Migration `V1.34__ReplaceRunMetricSnapshotsRunIndex.sql` replaces `idx_run_metri
 
 ## Shared constants class as the anti-drift mechanism
 
-`TestSuiteRunQueryFields` (excluded columns, `suite_type` + its snapshot key, the two `RefDescriptor`s for `deployment_ref`/`mcp_deployment_ref`, `metric_names` name/source) is the single source both `PostgresTestSuiteRunEntityResolver.bindings()` and `TestSuiteRunsSchemaProvider.baseSchema()` build from. A unit test on each class asserts the schema's field-name set equals the resolver's binding-key set and that types agree per field — the two cannot silently diverge.
+`TestSuiteRunQueryFields` (excluded columns, `suite_type` + its snapshot key, the two `RefDescriptor`s for `deployment_ref`/`mcp_deployment_ref`, `metric_names` name/source, `number_of_runs` name/config-key) is the single source both `PostgresTestSuiteRunEntityResolver.bindings()` and `TestSuiteRunsSchemaProvider.baseSchema()` build from. `number_of_runs`'s `source` deliberately reuses the `run_config` `EXCLUDED_COLUMNS` constant — the same column name is both excluded and published as a source, which is intended. A unit test on each class asserts the schema's field-name set equals the resolver's binding-key set and that types agree per field — the two cannot silently diverge.

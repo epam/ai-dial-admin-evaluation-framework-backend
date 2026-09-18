@@ -32,6 +32,7 @@ class PostgresTestSuiteRunEntityResolverTest {
             "error_message",
             "created_at_ms",
             "updated_at_ms",
+            "number_of_runs",
             "suite_type",
             "deployment_ref::id",
             "deployment_ref::name",
@@ -53,7 +54,7 @@ class PostgresTestSuiteRunEntityResolverTest {
     }
 
     @Test
-    @DisplayName("bindings contain exactly the 20 spec'd field names and none of the excluded columns")
+    @DisplayName("bindings contain exactly the 21 spec'd field names and none of the excluded columns")
     void shouldExposeExactlyTheSpecFieldSet() {
         final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
 
@@ -88,6 +89,7 @@ class PostgresTestSuiteRunEntityResolverTest {
         assertThat(bindings.get("error_message").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("created_at_ms").type()).isEqualTo(QueryFieldType.LONG);
         assertThat(bindings.get("updated_at_ms").type()).isEqualTo(QueryFieldType.LONG);
+        assertThat(bindings.get("number_of_runs").type()).isEqualTo(QueryFieldType.INTEGER);
         assertThat(bindings.get("suite_type").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("deployment_ref::id").type()).isEqualTo(QueryFieldType.STRING);
         assertThat(bindings.get("deployment_ref::name").type()).isEqualTo(QueryFieldType.STRING);
@@ -101,7 +103,7 @@ class PostgresTestSuiteRunEntityResolverTest {
     }
 
     @Test
-    @DisplayName("derived table projects exactly the 20 spec'd field names")
+    @DisplayName("derived table projects exactly the 21 spec'd field names")
     void shouldProjectExactlyTheSpecFieldSet() {
         final List<String> fieldNames =
                 List.of(resolver.table().fields()).stream().map(Field::getName).toList();
@@ -110,9 +112,11 @@ class PostgresTestSuiteRunEntityResolverTest {
     }
 
     @Test
-    @DisplayName("rendered SQL uses a correlated latest-computation metric_names subquery and excludes "
-            + "run_config/error_details from the projection (suite_snapshot legitimately appears as extraction source)")
-    void shouldRenderCorrelatedMetricNamesSubqueryAndExcludeRunConfigAndErrorDetails() {
+    @DisplayName("rendered SQL uses a correlated latest-computation metric_names subquery, extracts "
+            + "number_of_runs from run_config, and excludes error_details from the projection (suite_snapshot "
+            + "and run_config legitimately appear only as extraction sources, never projected as their own "
+            + "column)")
+    void shouldRenderCorrelatedMetricNamesSubqueryAndExcludeRunConfigAndErrorDetailsColumns() {
         final DSLContext postgres = DSL.using(SQLDialect.POSTGRES);
         final String sql =
                 postgres.render(postgres.selectFrom(resolver.table())).toLowerCase(Locale.ROOT);
@@ -127,7 +131,10 @@ class PostgresTestSuiteRunEntityResolverTest {
                 .contains("fetch next")
                 .contains("rows only")
                 .contains("coalesce(")
-                .doesNotContain("run_config")
+                .contains("\"run_config\"->>")
+                .contains("as \"number_of_runs\"")
+                .doesNotContain("\"tsr\".\"run_config\"")
+                .doesNotContain("as \"run_config\"")
                 .doesNotContain("error_details");
     }
 }

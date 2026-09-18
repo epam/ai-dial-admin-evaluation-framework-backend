@@ -25,5 +25,5 @@
 ## 5. Docs and verification
 
 - [x] 5.1 `docs/patterns/test-suite-runs-query-entity.md`: note the one scalar read from `run_config` while the column stays unexposed, the fail-fast cast, no index. Done: doc no longer reads as "`run_config` is never touched".
-- [ ] 5.2 `/opsx:sync` delta into `openspec/specs/test-suite-runs-query-entity/spec.md`. Done: `openspec validate --changes` passes. No `specs/README.md` or `config.yaml` change needed.
+- [x] 5.2 `/opsx:sync` delta into `openspec/specs/test-suite-runs-query-entity/spec.md`. Done: `openspec validate --changes` passes. No `specs/README.md` or `config.yaml` change needed.
 - [x] 5.3 `./gradlew spotlessApply && ./gradlew build`. Done: green.

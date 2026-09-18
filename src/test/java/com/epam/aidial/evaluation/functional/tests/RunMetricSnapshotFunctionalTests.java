@@ -46,6 +46,7 @@ public abstract class RunMetricSnapshotFunctionalTests extends BaseFunctionalTes
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         metaTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId = metaTestDataHelper.createTestSuite("Snapshot Suite").getId();
         testSuiteRunId = metaTestDataHelper.createTestSuiteRun(testSuiteId).getId();

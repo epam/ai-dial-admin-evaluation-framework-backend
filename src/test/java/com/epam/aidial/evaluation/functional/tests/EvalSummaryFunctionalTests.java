@@ -53,6 +53,7 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         metaTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId = metaTestDataHelper.createTestSuite("EvalSummary Suite").getId();
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(testSuiteId);

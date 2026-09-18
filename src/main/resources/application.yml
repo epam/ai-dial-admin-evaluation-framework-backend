@@ -108,6 +108,9 @@ analytics:
       max-request-size-bytes: 10485760  # 10MB
   comparison:
     max-unmatched-rows: ${ANALYTICS_COMPARISON_MAX_UNMATCHED_ROWS:5000}
+  pass-rate:
+    default-last-n: ${ANALYTICS_PASS_RATE_DEFAULT_LAST_N:10}
+    max-last-n: ${ANALYTICS_PASS_RATE_MAX_LAST_N:100}
 
 # Test suite run configuration
 test-suite-run:

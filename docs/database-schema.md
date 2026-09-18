@@ -861,7 +861,7 @@ Composite: `(created_at_ms, id)` — `created_at_ms` as leading column for futur
 | `idx_eval_summaries_run_computation` | `(test_suite_run_id, computation_id)` | BTREE | Lookup by run and computation batch |
 | `idx_eval_summaries_computation` | `(computation_id)` | BTREE | Lookup by computation batch |
 | `idx_eval_summaries_id` | `(id)` | BTREE | Standalone index for efficient `findById` lookups (PK has `created_at_ms` as leading column) |
-| `idx_eval_summaries_run_computed_at` | `(test_suite_run_id, computed_at_ms DESC, computation_id)` | BTREE | Latest-computation resolution (V1.15): serves `WHERE test_suite_run_id = ? ORDER BY computed_at_ms DESC LIMIT 1` as a top-1 descent with `computation_id` available from the index tuple |
+| `idx_eval_summaries_run_computed_at` | `(test_suite_run_id, computed_at_ms DESC, computation_id)` | BTREE | Latest-computation resolution (V1.15): serves `WHERE test_suite_run_id = ? ORDER BY computed_at_ms DESC, computation_id DESC LIMIT 1`. The third column is ascending, so it cannot also satisfy the `computation_id DESC` tie-break for free — Postgres does a bounded index scan on the `(test_suite_run_id, computed_at_ms DESC)` prefix and sorts the newest `computed_at_ms`'s rows by `computation_id` (index-only, over at most a handful of rows), not a pure top-1 descent. Accepted cost; a follow-up could flip the third column to `DESC` to restore one |
 
 ### JSONB Column Schemas
 

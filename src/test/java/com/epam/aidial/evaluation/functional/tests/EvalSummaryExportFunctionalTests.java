@@ -42,6 +42,7 @@ public abstract class EvalSummaryExportFunctionalTests extends BaseFunctionalTes
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         metaTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId = metaTestDataHelper.createTestSuite("Export Suite").getId();
     }

@@ -42,6 +42,7 @@ public abstract class RunComparisonRepositoryFunctionalTests extends BaseFunctio
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         suiteId = UUID.randomUUID();
         runA = UUID.randomUUID();
         runB = UUID.randomUUID();

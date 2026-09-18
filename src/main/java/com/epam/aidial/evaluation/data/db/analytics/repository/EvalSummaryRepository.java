@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
+import com.epam.aidial.evaluation.data.db.analytics.model.RunPassRateStats;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
@@ -82,4 +83,14 @@ public interface EvalSummaryRepository {
      * exclusion is needed.
      */
     List<UUID> findUnmatchedIds(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId);
+
+    /**
+     * One row per run id (of those given) that has at least one eval summary, carrying the pass-rate
+     * bucket counts for that run's <strong>latest</strong> computation — the same "max
+     * {@code computed_at_ms}, tie broken by greater {@code computation_id} under text ordering" rule as
+     * {@link #findLatestComputationId}. A run id with no eval summaries is simply absent from the result.
+     *
+     * @return {@code List.of()} without a query when {@code runIds} is empty
+     */
+    List<RunPassRateStats> countPassRateByLatestComputation(List<UUID> runIds);
 }

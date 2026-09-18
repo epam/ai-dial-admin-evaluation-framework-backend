@@ -41,7 +41,8 @@ This document is the operator-facing reference for every configurable property o
    - [Metric Evaluation](#610-metric-evaluation)
    - [SSE Event Processing](#611-sse-event-processing)
    - [Analytics Run Comparison](#612-analytics-run-comparison)
-   - [JSONata Evaluation](#613-jsonata-evaluation)
+   - [Analytics Pass Rate](#613-analytics-pass-rate)
+   - [JSONata Evaluation](#614-jsonata-evaluation)
 7. [Data Management](#7-data-management)
    - [Pagination](#71-pagination)
    - [CSV Export](#72-csv-export)
@@ -520,7 +521,16 @@ Bound for `GET /api/v1/analytics/metric-scores/comparison`, which recomputes met
 |---|---|---|---|---|---|
 | `analytics.comparison.max-unmatched-rows` | `ANALYTICS_COMPARISON_MAX_UNMATCHED_ROWS` | `5000` | No | - | Maximum number of non-matching eval-summary rows a single run comparison may report **per run**; exceeding it fails the request with HTTP 409 naming both the count and this limit. Bounds the returned exclusion id list, the `IN` bind count (an overflow of the database parameter ceiling would otherwise surface as HTTP 500) and the worst-case response size — about 0.35 MB at the default, and reached only at *low* overlap, since two runs that match completely report an empty exclusion list. Minimum `1`. |
 
-### 6.13 JSONata Evaluation
+### 6.13 Analytics Pass Rate
+
+Bounds for `GET /api/v1/analytics/eval-summaries/test-case-pass-rate/{testSuiteId}`, which returns per-run pass/fail counts over the most recent test-suite runs.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `analytics.pass-rate.default-last-n` | `ANALYTICS_PASS_RATE_DEFAULT_LAST_N` | `10` | No | - | Number of most-recent test-suite runs considered when the client does not supply `lastN`. Minimum `1`; must not exceed `max-last-n` (validated at startup). |
+| `analytics.pass-rate.max-last-n` | `ANALYTICS_PASS_RATE_MAX_LAST_N` | `100` | No | - | Upper bound on the client-supplied `lastN`; requests above this are rejected with HTTP 400. Also bounds the number of run ids bound into the analytics `IN` clause used to fetch pass-rate statistics. Minimum `1`. The bound counts runs, not rows — each run contributes all eval-summary rows of its latest computation to one aggregate query, so lower it for suites with very large runs. |
+
+### 6.14 JSONata Evaluation
 
 Runtime bounds applied to every JSONata expression evaluation (request-template body evaluation and response-column/condition evaluation) via `Frame.setRuntimeBounds`, protecting worker threads from a runaway or unbounded-recursion JSONata expression.
 

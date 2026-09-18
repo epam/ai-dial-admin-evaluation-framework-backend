@@ -40,6 +40,7 @@ public abstract class EvalSummaryAggregationFunctionalTests extends BaseFunction
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         metaTestDataHelper.cleanupRunMetricSnapshots();
         testSuiteId = metaTestDataHelper.createTestSuite("Aggregation Suite").getId();
         testSuiteRunId = metaTestDataHelper.createTestSuiteRun(testSuiteId).getId();

@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.data.db.repository;
 
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.data.db.model.TestSuiteRunRef;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.pagination.Page;
 import com.epam.aidial.evaluation.data.db.model.pagination.PageRequest;
@@ -15,6 +16,16 @@ public interface TestSuiteRunRepository {
     Optional<TestSuiteRun> findById(UUID id);
 
     Optional<TestSuiteRun> findLatestByTestSuiteId(UUID testSuiteId);
+
+    /**
+     * Selective projection ({@code id}, {@code status}, {@code created_at_ms} only — no
+     * {@code suite_snapshot}) of a suite's newest {@code limit} runs of any status, ordered
+     * {@code created_at_ms DESC, id DESC} (newest-first, same ordering as
+     * {@link #findLatestByTestSuiteId}).
+     *
+     * <p>{@code limit} must be &ge; 1; callers validate the bound.
+     */
+    List<TestSuiteRunRef> findRecentByTestSuiteId(UUID testSuiteId, int limit);
 
     Page<TestSuiteRun> findAll(PageRequest pageRequest, List<FilterCondition> filters, boolean includeTotalCount);
 

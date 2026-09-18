@@ -54,6 +54,7 @@ public abstract class GrafanaDisabledFunctionalTests extends AbstractGrafanaFunc
     @BeforeEach
     void setUp() {
         analyticsTestDataHelper.cleanupEvalSummaries();
+        analyticsTestDataHelper.cleanupEvalScores();
         metaTestDataHelper.cleanupRunMetricSnapshots();
         analyticsTestDataHelper.cleanupResults();
         testSuiteId =

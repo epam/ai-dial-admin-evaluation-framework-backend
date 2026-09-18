@@ -1,0 +1,38 @@
+{
+  "testSuiteId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "runs": [
+    {
+      "testSuiteRunId": "d9e4b3a7-2c15-4f68-b0d3-7a5c9e1f4826",
+      "computationId": "c2f4e6a8-91b3-4d57-8e02-5a7c3b1f9d64",
+      "status": "RUNNING",
+      "runCreatedAtMs": 1737003000000,
+      "failedCount": 1,
+      "successPassedCount": 3,
+      "successNotPassedCount": 1,
+      "successNoVerdictCount": 4,
+      "totalCount": 9
+    },
+    {
+      "testSuiteRunId": "1c8b4f2a-7d61-4c9e-8a35-6f0e2b91d4a7",
+      "computationId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "status": "COMPLETED",
+      "runCreatedAtMs": 1737002000000,
+      "failedCount": 2,
+      "successPassedCount": 40,
+      "successNotPassedCount": 6,
+      "successNoVerdictCount": 2,
+      "totalCount": 50
+    },
+    {
+      "testSuiteRunId": "7f3d1e90-4b2c-4a68-9d51-0c8e6a2b3f47",
+      "computationId": "b5a2c7e1-8f34-4d92-a06b-1e7d9c4f2058",
+      "status": "COMPLETED",
+      "runCreatedAtMs": 1737001000000,
+      "failedCount": 3,
+      "successPassedCount": 42,
+      "successNotPassedCount": 5,
+      "successNoVerdictCount": 0,
+      "totalCount": 50
+    }
+  ]
+}

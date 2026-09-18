@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResult;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
+import com.epam.aidial.evaluation.data.db.analytics.model.RunPassRateStats;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
@@ -52,6 +53,12 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     private static final String MATCHED_ROWS = "matched_rows";
     private static final String MATCHED_SUCCESS_ROWS = "matched_success_rows";
     private static final String AVG_EXEC_DURATION_MS = "avg_exec_duration_ms";
+    private static final String LATEST_PER_RUN_TABLE = "latest";
+    private static final String FAILED = "failed";
+    private static final String SUCCESS_PASSED = "success_passed";
+    private static final String SUCCESS_NOT_PASSED = "success_not_passed";
+    private static final String SUCCESS_NO_VERDICT = "success_no_verdict";
+    private static final String TOTAL = "total";
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -184,10 +191,14 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
 
     @Override
     public Optional<UUID> findLatestComputationId(UUID runId) {
+        // Tie-break: greater computation_id under TEXT (lexicographic) ordering of the canonical
+        // VARCHAR(36) UUID string, NOT java.util.UUID.compareTo order. Ties are theoretical (one
+        // computed_at_ms per computation), but this must stay the same rule as
+        // countPassRateByLatestComputation's DISTINCT ON ordering.
         return dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .orderBy(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc())
+                .orderBy(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.desc())
                 .limit(1)
                 .fetchOptional(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)));
     }
@@ -295,6 +306,64 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
                         TEST_CASE_EVAL_SUMMARIES.ID)
                 .fetch(r -> UUID.fromString(r.value1()));
+    }
+
+    @Override
+    public List<RunPassRateStats> countPassRateByLatestComputation(List<UUID> runIds) {
+        if (runIds == null || runIds.isEmpty()) {
+            return List.of();
+        }
+        final List<String> runIdStrings = runIds.stream().map(UUID::toString).toList();
+
+        final Table<?> latest = dsl.select(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID, TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
+                .distinctOn(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID)
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.in(runIdStrings))
+                .orderBy(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(),
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.desc())
+                .asTable(LATEST_PER_RUN_TABLE);
+
+        final Field<String> latestRunId = latest.field(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID);
+        final Field<String> latestComputationId = latest.field(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID);
+
+        final Condition success = TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS.eq(ExecutionStatus.SUCCESS.name());
+
+        return dsl.select(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
+                        DSL.count()
+                                .filterWhere(
+                                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS.ne(ExecutionStatus.SUCCESS.name()))
+                                .as(FAILED),
+                        DSL.count()
+                                .filterWhere(success.and(TEST_CASE_EVAL_SCORES.PASSED.isTrue()))
+                                .as(SUCCESS_PASSED),
+                        DSL.count()
+                                .filterWhere(success.and(TEST_CASE_EVAL_SCORES.PASSED.isFalse()))
+                                .as(SUCCESS_NOT_PASSED),
+                        DSL.count()
+                                .filterWhere(success.and(TEST_CASE_EVAL_SCORES.PASSED.isNull()))
+                                .as(SUCCESS_NO_VERDICT),
+                        DSL.count().as(TOTAL))
+                .from(latest)
+                .join(TEST_CASE_EVAL_SUMMARIES)
+                .on(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(latestRunId),
+                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(latestComputationId))
+                .leftJoin(TEST_CASE_EVAL_SCORES)
+                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
+                .groupBy(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID, TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
+                .fetch(r -> new RunPassRateStats(
+                        UUID.fromString(r.get(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID)),
+                        UUID.fromString(r.get(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)),
+                        r.get(FAILED, long.class),
+                        r.get(SUCCESS_PASSED, long.class),
+                        r.get(SUCCESS_NOT_PASSED, long.class),
+                        r.get(SUCCESS_NO_VERDICT, long.class),
+                        r.get(TOTAL, long.class)));
     }
 
     /**

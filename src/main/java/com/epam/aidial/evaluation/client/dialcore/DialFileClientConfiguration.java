@@ -4,6 +4,7 @@ import com.epam.aidial.evaluation.configuration.properties.dial.DialProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import io.opentelemetry.api.OpenTelemetry;
 import java.time.Duration;
 import org.springframework.context.annotation.Bean;
@@ -45,7 +46,7 @@ public class DialFileClientConfiguration {
 
     static ClientHttpRequestInterceptor apiKeyInterceptor(DialProperties properties) {
         return (HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {
-            request.getHeaders().set("Api-Key", properties.getApiKey());
+            request.getHeaders().set(CallerCredential.API_KEY_HEADER, properties.getApiKey());
             return execution.execute(request, body);
         };
     }

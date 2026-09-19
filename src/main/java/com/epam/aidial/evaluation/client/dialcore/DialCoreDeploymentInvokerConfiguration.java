@@ -35,7 +35,7 @@ public class DialCoreDeploymentInvokerConfiguration {
         return RestClient.builder()
                 .baseUrl(properties.getBaseUrl())
                 .requestFactory(requestFactory)
-                .requestInterceptor(DialCoreClientConfiguration.authorizationTokenInterceptor())
+                .requestInterceptor(DialCoreClientConfiguration.callerCredentialInterceptor())
                 .requestInterceptor(DialCoreClientConfiguration.tracingInterceptor(openTelemetry))
                 .build();
     }

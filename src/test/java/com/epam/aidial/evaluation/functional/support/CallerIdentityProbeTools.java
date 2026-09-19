@@ -1,8 +1,10 @@
 package com.epam.aidial.evaluation.functional.support;
 
 import com.epam.aidial.evaluation.mcp.support.McpCallerContext;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.AuthorResolver;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.mcp.annotation.McpTool;
@@ -32,15 +34,16 @@ public class CallerIdentityProbeTools {
             name = PROBE_TOOL_NAME,
             description = "Test-only probe returning the caller identity as seen by tool code.")
     public McpSchema.CallToolResult probeCallerIdentity() {
-        Map<String, Object> payload = Map.of(
-                "threadName",
-                Thread.currentThread().getName(),
-                "authenticationPresent",
-                callerContext.authentication() != null,
-                "createdBy",
-                authorResolver.getCreatedBy(callerContext.jwt()),
-                "bearerTokenPresent",
-                callerContext.bearerToken() != null);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("threadName", Thread.currentThread().getName());
+        payload.put("authenticationPresent", callerContext.authentication() != null);
+        payload.put("createdBy", authorResolver.getCreatedBy(callerContext.jwt()));
+
+        CallerCredential credential = callerContext.callerCredential();
+        if (credential != null) {
+            payload.put("credentialKind", credential.kind().name());
+        }
+
         return McpSchema.CallToolResult.builder()
                 .addTextContent(JSON_MAPPER.writeValueAsString(payload))
                 .build();

@@ -75,4 +75,4 @@ Status: **Planned**
 
 ## Implementation notes
 
-Planned touch points: `com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker` (both transport builders currently hardcode `Authorization: Bearer ` + token) and its callers `service.domain.DeploymentService#listTools`, `service.domain.TryItOutService`, and `runner.job.EvaluationWorker`, which pass the credential through.
+Planned touch points: `com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker` (both transport builders currently hardcode `Authorization: Bearer ` + token) and its callers `service.domain.DeploymentService#listTools`, `service.domain.TryItOutService`, and `runner.job.EvaluationWorker`, which pass the credential through. `tools/list` and `tools/call` share one package-private `applyCredentialHeader`; header selection per kind is asserted on that helper (`McpToolInvokerTest`), not per method.

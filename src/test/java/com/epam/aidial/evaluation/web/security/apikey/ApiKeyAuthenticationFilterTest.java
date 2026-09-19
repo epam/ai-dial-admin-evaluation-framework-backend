@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import jakarta.servlet.FilterChain;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -59,7 +60,7 @@ class ApiKeyAuthenticationFilterTest {
     void shouldPassThroughWhenAuthorizationHeaderPresent() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer some-jwt");
-        request.addHeader(CoreApiKeyIntrospector.API_KEY_HEADER, "key-1");
+        request.addHeader(CallerCredential.API_KEY_HEADER, "key-1");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -90,7 +91,7 @@ class ApiKeyAuthenticationFilterTest {
         when(introspector.introspect("key-2"))
                 .thenReturn(new IntrospectionResult("my-project", List.of("admin"), true));
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(CoreApiKeyIntrospector.API_KEY_HEADER, "key-2");
+        request.addHeader(CallerCredential.API_KEY_HEADER, "key-2");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -110,7 +111,7 @@ class ApiKeyAuthenticationFilterTest {
         when(introspector.introspect("key-3"))
                 .thenReturn(new IntrospectionResult("user-1", List.of("ConfigAdmin"), false));
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(CoreApiKeyIntrospector.API_KEY_HEADER, "key-3");
+        request.addHeader(CallerCredential.API_KEY_HEADER, "key-3");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -129,11 +130,11 @@ class ApiKeyAuthenticationFilterTest {
         FilterChain chain = mock(FilterChain.class);
 
         MockHttpServletRequest firstRequest = new MockHttpServletRequest();
-        firstRequest.addHeader(CoreApiKeyIntrospector.API_KEY_HEADER, "key-4");
+        firstRequest.addHeader(CallerCredential.API_KEY_HEADER, "key-4");
         filter.doFilter(firstRequest, new MockHttpServletResponse(), chain);
 
         MockHttpServletRequest secondRequest = new MockHttpServletRequest();
-        secondRequest.addHeader(CoreApiKeyIntrospector.API_KEY_HEADER, "key-4");
+        secondRequest.addHeader(CallerCredential.API_KEY_HEADER, "key-4");
         filter.doFilter(secondRequest, new MockHttpServletResponse(), chain);
 
         verify(introspector, times(1)).introspect("key-4");
@@ -144,7 +145,7 @@ class ApiKeyAuthenticationFilterTest {
     void shouldReturn401OnBadCredentials() throws Exception {
         when(introspector.introspect("bad-key")).thenThrow(new BadCredentialsException("Invalid API key"));
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(CoreApiKeyIntrospector.API_KEY_HEADER, "bad-key");
+        request.addHeader(CallerCredential.API_KEY_HEADER, "bad-key");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -162,7 +163,7 @@ class ApiKeyAuthenticationFilterTest {
         when(introspector.introspect("unreachable-core-key"))
                 .thenThrow(new AuthenticationServiceException("Core down"));
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(CoreApiKeyIntrospector.API_KEY_HEADER, "unreachable-core-key");
+        request.addHeader(CallerCredential.API_KEY_HEADER, "unreachable-core-key");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -180,7 +181,7 @@ class ApiKeyAuthenticationFilterTest {
         when(introspector.introspect("key-5"))
                 .thenReturn(new IntrospectionResult("my-project", List.of("unknown-role"), true));
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(CoreApiKeyIntrospector.API_KEY_HEADER, "key-5");
+        request.addHeader(CallerCredential.API_KEY_HEADER, "key-5");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 

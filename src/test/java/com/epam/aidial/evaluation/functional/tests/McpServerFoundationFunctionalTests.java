@@ -105,7 +105,8 @@ public abstract class McpServerFoundationFunctionalTests extends BaseFunctionalT
     }
 
     @Test
-    @DisplayName("probe_caller_identity reports the anonymous, unauthenticated caller in none mode")
+    @DisplayName(
+            "probe_caller_identity reports the anonymous, unauthenticated caller with no credentialKind in none mode")
     void probeReportsAnonymousUnauthenticatedCallerInNoneMode() {
         McpFunctionalTestSupport support = support();
         client = support.client(Map.of());
@@ -117,6 +118,7 @@ public abstract class McpServerFoundationFunctionalTests extends BaseFunctionalT
         assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
         assertThat(probe.get("createdBy").asString()).isEqualTo("anonymous");
         assertThat(probe.get("authenticationPresent").asBoolean()).isFalse();
+        assertThat(probe.get("credentialKind")).isNull();
     }
 
     // --- session behaviour (task 4.4) ---

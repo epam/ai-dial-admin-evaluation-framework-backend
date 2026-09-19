@@ -48,6 +48,7 @@ import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
 import com.epam.aidial.evaluation.runner.service.SerializedBody;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
 import com.epam.aidial.evaluation.service.domain.dto.SseEventDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutCoreResponseDto;
@@ -586,12 +587,12 @@ public class TryItOutService {
                 .startSpan();
         String traceId = span.getSpanContext().isValid() ? span.getSpanContext().getTraceId() : null;
         try (Scope scope = span.makeCurrent()) {
-            String token = AuthorizationTokenHolder.getToken();
+            CallerCredential credential = AuthorizationTokenHolder.getCredential();
             McpTransport transport =
                     mcpRef.getTransport() != null ? mcpRef.getTransport() : McpTransport.STREAMABLE_HTTP;
             long startMs = clock.millis();
             CallToolResult result =
-                    mcpToolInvoker.callTool(mcpRef.getId(), toolRef.getName(), resolvedArgs, token, transport);
+                    mcpToolInvoker.callTool(mcpRef.getId(), toolRef.getName(), resolvedArgs, credential, transport);
             long durationMs = clock.millis() - startMs;
 
             String serializedResponse = mcpResponseSerializer.serialize(result);

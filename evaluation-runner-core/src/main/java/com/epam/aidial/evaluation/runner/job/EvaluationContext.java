@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -55,8 +56,8 @@ public class EvaluationContext {
      */
     private final ExecutorService executor;
 
-    // Token for propagation to workers
-    private final String token;
+    // Caller credential for propagation to workers
+    private final CallerCredential credential;
 
     // Created-at timestamp for analytics results (from the run)
     private final long createdAtMs;

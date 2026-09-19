@@ -8,6 +8,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jspecify.annotations.Nullable;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
@@ -30,6 +33,12 @@ public class AuthorResolver {
      * In oidc mode a valid JWT with the configured claim is required (401 if missing).
      * In none mode JWT is null and "anonymous" is returned.
      *
+     * <p>When {@code jwt} is {@code null}, the current {@link Authentication} is inspected as a
+     * fallback: an authenticated, non-anonymous principal that is not itself a {@link Jwt} (e.g. an
+     * API-key caller's introspected project/user principal) is attributed by its
+     * {@link Authentication#getName()}, skipping display-name resolution since that principal is
+     * not necessarily a user. Otherwise {@code "anonymous"} is returned, as today.
+     *
      * <p>When {@code security.jwt.resolve-user-name} is enabled, DIAL Core's user-info endpoint is
      * consulted for a human-readable {@code userDisplayName}; the raw claim value remains the
      * fallback when the name is absent or Core is unreachable. Graceful degradation is acceptable
@@ -37,7 +46,8 @@ public class AuthorResolver {
      */
     public String getCreatedBy(Jwt jwt) {
         if (jwt == null) {
-            return ANONYMOUS;
+            final String principalName = nonJwtPrincipalName();
+            return principalName != null ? principalName : ANONYMOUS;
         }
 
         final String claim = jwtSecurityProperties.getUserClaim();
@@ -53,6 +63,23 @@ public class AuthorResolver {
 
         final String displayName = resolveDisplayName(userId);
         return displayName != null ? displayName : userId;
+    }
+
+    /**
+     * Returns the name of a non-JWT, authenticated, non-anonymous {@link Authentication} principal
+     * currently in {@link SecurityContextHolder}, or {@code null} when no such principal is
+     * present (no authentication, unauthenticated, anonymous, or a {@link Jwt} principal — the
+     * caller is expected to have already handled the {@code jwt != null} case itself).
+     */
+    private @Nullable String nonJwtPrincipalName() {
+        final Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null
+                || !authentication.isAuthenticated()
+                || authentication instanceof AnonymousAuthenticationToken
+                || authentication.getPrincipal() instanceof Jwt) {
+            return null;
+        }
+        return authentication.getName();
     }
 
     private String resolveDisplayName(String userId) {

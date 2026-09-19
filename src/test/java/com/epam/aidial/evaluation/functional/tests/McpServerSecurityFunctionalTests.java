@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.functional.support.CallerIdentityProbeTools;
 import com.epam.aidial.evaluation.functional.support.McpFunctionalTestSupport;
 import com.epam.aidial.evaluation.functional.support.StaticJwtTestConfiguration;
 import com.epam.aidial.evaluation.mcp.constants.McpToolNames;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.web.security.apikey.CoreApiKeyIntrospector;
 import com.epam.aidial.evaluation.web.security.apikey.IntrospectionResult;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -113,24 +114,24 @@ public abstract class McpServerSecurityFunctionalTests extends BaseFunctionalTes
         JsonNode probe = support.readJson(callProbe(support));
 
         assertThat(probe.get("createdBy").asString()).isEqualTo("alice");
-        assertThat(probe.get("bearerTokenPresent").asBoolean()).isTrue();
+        assertThat(probe.get("credentialKind").asString()).isEqualTo("BEARER");
         assertThat(probe.get("authenticationPresent").asBoolean()).isTrue();
     }
 
     @Test
-    @DisplayName("an Api-Key caller resolves to anonymous createdBy, matching REST parity")
-    void apiKeyCallerResolvesToAnonymous() {
+    @DisplayName("an Api-Key caller is attributed to the introspected project principal with an API-key credential")
+    void apiKeyCallerIsAttributedToProjectPrincipalWithApiKeyCredential() {
         when(coreApiKeyIntrospector.introspect("valid-key"))
                 .thenReturn(new IntrospectionResult("my-project", List.of("admin"), true));
 
         McpFunctionalTestSupport support = support();
-        client = support.client(Map.of(CoreApiKeyIntrospector.API_KEY_HEADER, "valid-key"));
+        client = support.client(Map.of(CallerCredential.API_KEY_HEADER, "valid-key"));
         client.initialize();
 
         JsonNode probe = support.readJson(callProbe(support));
 
-        assertThat(probe.get("createdBy").asString()).isEqualTo("anonymous");
-        assertThat(probe.get("bearerTokenPresent").asBoolean()).isFalse();
+        assertThat(probe.get("createdBy").asString()).isEqualTo("my-project");
+        assertThat(probe.get("credentialKind").asString()).isEqualTo("API_KEY");
         assertThat(probe.get("authenticationPresent").asBoolean()).isTrue();
     }
 
@@ -156,6 +157,7 @@ public abstract class McpServerSecurityFunctionalTests extends BaseFunctionalTes
             JsonNode aliceProbe =
                     support.readJson(support.callTool(aliceClient, CallerIdentityProbeTools.PROBE_TOOL_NAME, Map.of()));
             assertThat(aliceProbe.get("createdBy").asString()).isEqualTo("alice");
+            assertThat(aliceProbe.get("credentialKind").asString()).isEqualTo("BEARER");
         } finally {
             aliceClient.closeGracefully();
         }
@@ -163,7 +165,7 @@ public abstract class McpServerSecurityFunctionalTests extends BaseFunctionalTes
         when(coreApiKeyIntrospector.introspect("valid-key"))
                 .thenReturn(new IntrospectionResult("my-project", List.of("admin"), true));
 
-        McpSyncClient apiKeyClient = support.client(Map.of(CoreApiKeyIntrospector.API_KEY_HEADER, "valid-key"));
+        McpSyncClient apiKeyClient = support.client(Map.of(CallerCredential.API_KEY_HEADER, "valid-key"));
         try {
             apiKeyClient.initialize();
             JsonNode apiKeyDeployments =
@@ -171,7 +173,8 @@ public abstract class McpServerSecurityFunctionalTests extends BaseFunctionalTes
             assertThat(apiKeyDeployments.get("total").asInt()).isEqualTo(1);
             JsonNode apiKeyProbe = support.readJson(
                     support.callTool(apiKeyClient, CallerIdentityProbeTools.PROBE_TOOL_NAME, Map.of()));
-            assertThat(apiKeyProbe.get("createdBy").asString()).isEqualTo("anonymous");
+            assertThat(apiKeyProbe.get("createdBy").asString()).isEqualTo("my-project");
+            assertThat(apiKeyProbe.get("credentialKind").asString()).isEqualTo("API_KEY");
         } finally {
             apiKeyClient.closeGracefully();
         }

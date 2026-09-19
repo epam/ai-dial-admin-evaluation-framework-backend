@@ -24,25 +24,25 @@ Constraints: `evaluation-runner-core` must not depend on the main app or on Spri
 **Non-Goals**
 
 - Persisting a credential with a run (a run keeps using the dispatching caller's in-memory credential, exactly as it does with a bearer token today).
-- Reworking `DialFileClientConfiguration` / the CLI's static-key client *logic* (they keep sending their configured key; only the header-name literal is centralised).
+- Reworking `DialFileClientConfiguration` / the CLI's static-key client *behaviour* (they keep sending their configured key as `Api-Key`; the header-name literal is centralised and the CLI interceptor merely gains a kind check).
 - Any new configuration property.
 
 ## Decisions
 
-### D1. One `ThreadLocal<CallerCredential>`; `getToken()` returns the value regardless of kind
+### D1. One `ThreadLocal<CallerCredential>`; no kind-blind accessor survives
 
 Add to `evaluation-runner-core` `runner.util`:
 
 - `enum CredentialKind { BEARER, API_KEY }`
 - `record CallerCredential(String value, CredentialKind kind)` with factories `bearer(String)` / `apiKey(String)`
-- `AuthorizationTokenHolder` keeps a **single** `ThreadLocal<CallerCredential>` with `setCredential(CallerCredential)` / `getCredential()` (nullable) / `clearToken()`. `setToken(String s)` stores `CallerCredential.bearer(s)`. There is no `getCredentialKind()` — callers that need the kind read `getCredential()`.
-- `getToken()` is specified to return the **credential value regardless of kind** (`getCredential() == null ? null : getCredential().value()`). It is deliberately kind-blind so the CLI's static-key interceptor keeps working verbatim; every in-app consumer that turns the value into a header is migrated to `getCredential()` (audit below).
+- `AuthorizationTokenHolder` keeps a **single** `ThreadLocal<CallerCredential>` with `setCredential(CallerCredential)` / `getCredential()` (nullable) / `clearToken()`. The legacy `String`-based `setToken(String)` / `getToken()` are **removed**: once the CLI interceptor reads the credential (audit below) no production caller remains, and keeping an accessor that returns a value without its kind is exactly the footgun this change closes. There is no `getCredentialKind()` — callers that need the kind read `getCredential()`.
+- Header selection lives on the record: `headerName()` (`Authorization` / `Api-Key`) and `headerValue()` (`Bearer <value>` / `<value>`) are exhaustive switch expressions, so a future `CredentialKind` fails to compile at exactly one place. `toString()` redacts the value (`CallerCredential[kind=API_KEY, value=***]`) because the opt-in `@LogExecution` trace advisor renders method arguments and return values.
 
-`CallerCredential.bearer(null/blank)` and `apiKey(null/blank)` return `null` — an absent credential is represented by `null`, never by a record with a blank value, and no exception is thrown (capture points must not fail a request over a missing header). `setCredential(null)` clears. `TokenPropagationHelper` gains `withCredential(CallerCredential, …)` for the three functional shapes; a `null` credential is skipped exactly as `withToken(null, …)` is today, and every variant clears in `finally`. A `null` `EvaluationContext#credential` therefore means "no caller credential" and every outbound call for that run omits the auth header — the same behaviour a `null` token produces today.
+`CallerCredential.bearer(null/blank)` and `apiKey(null/blank)` return `null` — an absent credential is represented by `null`, never by a record with a blank value, and no exception is thrown (capture points must not fail a request over a missing header). `setCredential(null)` clears. `TokenPropagationHelper` exposes `withCredential(CallerCredential, …)` for the three functional shapes and the bearer-only `withToken*` variants are removed (they had no production caller); a `null` credential is not set, and every variant clears in `finally`. Blank values collapse to absent everywhere, since every entry point goes through the factories. A `null` `EvaluationContext#credential` therefore means "no caller credential" and every outbound call for that run omits the auth header — the same behaviour a `null` token produces today.
 
 *Alternatives rejected.* (a) A sibling `ApiKeyHolder`: every capture point, propagation call site and interceptor would have to reconcile two ThreadLocals that can disagree ("both set" is representable but meaningless). (b) A second `ThreadLocal<CredentialKind>` beside the string: the two can drift out of sync; one record cannot. (c) Renaming the holder class: churn across three modules and their tests for no behavioral gain; the javadoc is updated instead.
 
-**`getToken()` consumer audit** — every reader, and its fate:
+**Legacy `getToken()` consumer audit** — every reader, and its fate:
 
 | Consumer | Change |
 |---|---|
@@ -51,13 +51,13 @@ Add to `evaluation-runner-core` `runner.util`:
 | `service/domain/DeploymentService.java:153` | → `getCredential()`, passed to `McpToolInvoker#listTools` |
 | `service/domain/TryItOutService.java:589` | → `getCredential()`, passed to `McpToolInvoker#callTool` |
 | `service/domain/TestSuiteRunService.java:133` | → `getCredential()`, passed to `dispatchEvaluation` |
-| `runner/util/TokenPropagationHelper.java:44,66,87` (`setToken`) | kept; the `withToken` variants delegate to `withCredential` with `bearer(...)` |
+| `runner/util/TokenPropagationHelper.java:44,66,87` (`setToken`) | `withToken*` variants removed; tests re-express the same bearer scenarios via `withCredential*` / `setCredential(bearer(...))` |
 | `runner/job/TestCaseRunner.java:69` and `runner/job/EvaluationWorker.java:283` (`EvaluationContext#getToken()`) | → `EvaluationContext#getCredential()` (D4) |
-| `eval-cli` `TargetDialCoreClientConfiguration.java:85` | **unchanged** — kind-blind `getToken()` plus an unconditional `Api-Key` header is correct for its static target key |
+| `eval-cli` `TargetDialCoreClientConfiguration.java:85` | → `getCredential()`, emits `Api-Key` only for an `API_KEY` credential (a bearer credential on a CLI thread yields no header rather than a JWT inside `Api-Key`) |
 
 `McpCallerContext#bearerToken()` is the one reader that must not survive: a tool that asks for "the bearer token" and receives an API key would emit `Authorization: Bearer <api-key>`. It becomes `callerCredential()`, and the test-only `CallerIdentityProbeTools` payload reports `credentialKind` instead of `bearerTokenPresent` (with `McpCallerContextTest` and `McpServerSecurityFunctionalTests` following).
 
-**CLI impact, precisely:** the CLI's interceptor logic and behaviour are unchanged, and no CLI change is needed to keep it working. Two CLI files are still touched by this change: `EvaluationContextFactory.java:85` because the `EvaluationContext` field is renamed and re-typed (`.token(apiKey)` → `.credential(CallerCredential.apiKey(apiKey))`), and the two CLI client configs when the `"Api-Key"` literal moves to the shared constant (S4/D7). The re-typing has a bonus effect: CLI runs that invoke MCP tools will send `Api-Key` instead of today's `Authorization: Bearer <api-key>`.
+**CLI impact, precisely:** the CLI's observable behaviour is unchanged — it still sends its static target key as `Api-Key`. Three CLI files are touched: `EvaluationContextFactory.java:85` because the `EvaluationContext` field is renamed and re-typed (`.token(apiKey)` → `.credential(CallerCredential.apiKey(apiKey))`), `TargetDialCoreClientConfiguration#apiKeyInterceptor` which now reads `getCredential()` and checks the kind, and the two CLI client configs when the `"Api-Key"` literal moves to the shared constant (S4/D7). The re-typing has a bonus effect: CLI runs that invoke MCP tools will send `Api-Key` instead of today's `Authorization: Bearer <api-key>`.
 
 ### D2. Capture in `AuthorizationHeaderInterceptor`, mirroring the filter's precedence
 
@@ -75,13 +75,13 @@ Capture is deliberately **not** gated on the api-key feature flag: like the bear
 
 ### D3. One kind-aware interceptor factory for the REST clients
 
-`DialCoreClientConfiguration#authorizationTokenInterceptor()` becomes `callerCredentialInterceptor()`: it reads `getCredential()` and sets `Authorization: Bearer`, `Api-Key`, or nothing when absent. All three consumers (`dialCoreRestClient`, `dialCoreTryOutRestClient`, `dialAdasRestClient`) inherit it with no per-client logic, which is why the `dial-core-client` delta states the rule once as a cross-cutting requirement.
+`DialCoreClientConfiguration#authorizationTokenInterceptor()` becomes `callerCredentialInterceptor()`: it reads `getCredential()` and, when present, sets `credential.headerName()` to `credential.headerValue()` — `Authorization: Bearer`, `Api-Key`, or nothing when absent; no switch (and no dead `default`) at the call site. All three consumers (`dialCoreRestClient`, `dialCoreTryOutRestClient`, `dialAdasRestClient`) inherit it with no per-client logic, which is why the `dial-core-client` delta states the rule once as a cross-cutting requirement.
 
 `dial-adas` receives the caller's credential uniformly. Today an API-key caller reaches dial-adas with **no** credential and is rejected outright, so forwarding `Api-Key` cannot regress any working case; and keeping dial-adas bearer-only would mean inventing a second interceptor for the one client that is guaranteed to fail today. If dial-adas later turns out to reject `Api-Key`, the fix is local (a bearer-only interceptor for that one bean) and changes neither the requirement nor the task breakdown.
 
 ### D4. Thread the credential through the MCP invoker and the run context as a value object
 
-`McpToolInvoker#callTool` / `#listTools` take `CallerCredential` in place of `String token`, and both transport builders apply the header through one **package-private** helper (`applyCredentialHeader`), so a unit test can assert header selection per kind without standing up an MCP server. Explicit parameters keep the invoker free of ThreadLocal reads, matching its current style. `EvaluationContext#token` becomes `CallerCredential credential`, so a run's worker threads re-establish both value and kind; `TestSuiteRunService` captures `getCredential()` and `dispatchEvaluation(runId, credential, …)` carries it.
+`McpToolInvoker#callTool` / `#listTools` take `CallerCredential` in place of `String token`, and both transport builders apply the header through one **package-private** helper (`applyCredentialHeader`), so a unit test can assert header selection per kind without standing up an MCP server. Explicit parameters keep the invoker free of ThreadLocal reads, matching its current style. `EvaluationContext#token` becomes `CallerCredential credential`, so a run's worker threads re-establish both value and kind; `TestSuiteRunService` captures `getCredential()` and `dispatchEvaluation(runId, credential, …)` carries it — and the rest of that dispatch chain (`TestSuiteEvaluationJob#dispatch`/`#run`/`#buildContext`) is re-typed from `String token` to `CallerCredential credential`. `applyCredentialHeader` uses the same `headerName()`/`headerValue()` pair as D3.
 
 ### D5. Attribution fallback keyed on the `Authentication` shape
 
@@ -99,12 +99,12 @@ Note (scope of verification): the MCP attribution path is **test-verified only**
 
 ### D7. One `Api-Key` header-name constant
 
-The header name lives next to `CredentialKind` in runner-core `runner.util` (e.g. `CallerCredential.API_KEY_HEADER`), because runner-core is the lowest module all three consumers can see; `CoreApiKeyIntrospector.API_KEY_HEADER` in `.web` cannot be referenced from `.client`, `.service` or `eval-cli` without breaking layering. The main app (`DialFileClientConfiguration`, `CoreApiKeyIntrospector`, the new interceptor) and both CLI configs reference it instead of the literal.
+The header name lives next to `CredentialKind` in runner-core `runner.util` (e.g. `CallerCredential.API_KEY_HEADER`), because runner-core is the lowest module all three consumers can see; `CoreApiKeyIntrospector.API_KEY_HEADER` in `.web` cannot be referenced from `.client`, `.service` or `eval-cli` without breaking layering. The main app (`DialFileClientConfiguration`, `CoreApiKeyIntrospector`, `ApiKeyAuthenticationFilter`, the new interceptor) and both CLI configs reference it directly; `CoreApiKeyIntrospector`'s own `API_KEY_HEADER` constant is deleted rather than kept as an alias (one definition per constant).
 
 ## Risks / Trade-offs
 
-- **The raw API key becomes in-process request state** → never logged (no new log statements carry it; `ApiKeyCache` keeps hashing its key), cleared in `afterCompletion`, in `afterConcurrentHandlingStarted`, and in every `TokenPropagationHelper` variant's `finally`, exactly as the bearer token is today.
-- **`getToken()` stays kind-blind** → a future consumer could format an API key as a bearer header. Mitigated by the audit in D1 (every in-app header-forming consumer moves to `getCredential()`, and `bearerToken()` is removed so no API exists that *promises* a bearer), plus javadoc on `getToken()` stating it returns the value of whatever kind was captured.
+- **The raw API key becomes in-process request state** → never logged (no new log statements carry it; `CallerCredential#toString()` redacts the value so the opt-in `@LogExecution` trace advisor cannot print it; `ApiKeyCache` keeps hashing its key), cleared in `afterCompletion`, in `afterConcurrentHandlingStarted`, and in every `TokenPropagationHelper` variant's `finally`, exactly as the bearer token is today.
+- **A future consumer formats an API key as a bearer header** → no kind-blind accessor exists (`getToken()`/`setToken()`/`withToken*`/`bearerToken()` are all removed), and header formation is centralised in `CallerCredential#headerName()`/`headerValue()`.
 - **Kind silently lost on a thread hop, reverting to unauthenticated calls** → unit tests assert kind survival through all three helper variants and through `EvaluationContext`; the existing run functional tests exercise the dispatch path.
 - **`dial-adas` receives `Api-Key` without confirmed support** → strictly better than today's no-credential call for those callers; JWT callers are unaffected, and the fallback is a one-bean interceptor swap (D3).
 - **A run outliving its credential** → a revoked/rotated key fails mid-run exactly as an expired bearer token does today; no new behaviour.

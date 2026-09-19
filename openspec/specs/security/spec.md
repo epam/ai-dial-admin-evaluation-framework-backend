@@ -3,7 +3,7 @@
 ## Purpose
 This spec describes authentication/authorization behavior for the REST API.
 
-Status: **Implemented** (OIDC/JWT modes, DIAL API-Key authentication, author attribution with opt-in display-name resolution), **Planned** (fine-grained permissions per resource).
+Status: **Implemented** (OIDC/JWT modes, DIAL API-Key authentication, caller-credential capture and forwarding to DIAL Core, author attribution with opt-in display-name resolution), **Planned** (fine-grained permissions per resource).
 
 ## Key Terms
 - **Security mode**: operational mode controlling whether auth is enforced.
@@ -11,6 +11,9 @@ Status: **Implemented** (OIDC/JWT modes, DIAL API-Key authentication, author att
 - **DIAL API-Key authentication**: an alternative to OIDC/JWT bearer tokens where a caller
   authenticates via an `Api-Key` header, validated by delegating to DIAL Core's
   `GET /v1/user/info`, active only in `oidc` security mode.
+- **Caller credential**: the credential the current caller presented — a bearer JWT or a DIAL
+  API key — captured request-scoped together with its *kind*, so downstream calls made on the
+  caller's behalf can present it in the header that kind requires.
 
 ## Requirements
 
@@ -149,13 +152,77 @@ Status: **Implemented**
 - **WHEN** `config.rest.security.api-key.enabled=true` and either roles-mapping property is not valid JSON
 - **THEN** the service SHALL fail to start, naming the offending property
 
+### Requirement: Capture the caller's credential with its kind
+The service SHALL capture the credential presented by the current caller together with its kind — bearer JWT or DIAL API key — and make it available for the duration of that caller's request, so that calls made downstream on the caller's behalf can present the same credential in its native header. An `Api-Key` credential SHALL be captured only when the request's `Authorization` header is absent or blank — any non-blank `Authorization` header suppresses it, matching exactly the precedence already applied when authenticating an API-key caller. The captured credential SHALL be discarded when the request completes, SHALL never be written to logs, and SHALL be visible to MCP tool code exactly as it is to REST handlers.
+Status: **Implemented**
+
+#### Scenario: Bearer caller
+- **WHEN** a request carries `Authorization: Bearer <jwt>`
+- **THEN** the service SHALL capture `<jwt>` with kind *bearer*, regardless of whether an `Api-Key` header is also present
+
+#### Scenario: Non-bearer Authorization header alongside an Api-Key header
+- **WHEN** a request carries a non-blank `Authorization` header that is not a `Bearer` token (for example `Authorization: Basic …`) together with a non-blank `Api-Key` header
+- **THEN** the service SHALL capture no credential, and SHALL forward neither header upstream — the same request is not API-key-authenticated either
+
+#### Scenario: API-key caller
+- **WHEN** a request carries a non-blank `Api-Key` header and no `Authorization: Bearer` header
+- **THEN** the service SHALL capture the key with kind *API key*
+
+#### Scenario: No caller credential
+- **WHEN** a request carries neither header (for example security mode `none`)
+- **THEN** no credential SHALL be captured, and downstream calls SHALL be made without a caller credential, as today
+
+#### Scenario: Credential is request-scoped
+- **WHEN** a request completes, successfully or with an error
+- **THEN** the captured credential SHALL no longer be readable on that execution thread, so it cannot leak into an unrelated request served by the same pooled thread
+
+#### Scenario: Request handling goes async
+- **WHEN** handling of a request is handed off to an asynchronous dispatch, releasing the original request thread back to the pool before the request completes
+- **THEN** the captured credential SHALL be cleared from that thread at hand-off, not only at final completion
+
+#### Scenario: MCP caller parity
+- **WHEN** an MCP client authenticates with either credential kind and a tool body executes
+- **THEN** the tool body SHALL observe the same captured credential and kind that a REST handler would observe for an equivalently authenticated request
+
+### Requirement: Forward the caller's credential to DIAL Core in its native header
+Every call the service makes on behalf of a caller to DIAL Core, or to a service reached with the caller's own credential, SHALL present that caller's captured credential in the header that credential kind requires: `Authorization: Bearer <jwt>` for a bearer caller, `Api-Key: <key>` for an API-key caller. This SHALL hold for deployment and toolset metadata reads, user-info lookups, try-out and run-execution deployment invocations, and MCP `tools/list` / `tools/call` requests routed through DIAL Core's MCP proxy, whether the call originates from a REST request, an MCP tool call, or a run's worker threads. Calls the service makes for its own account (for example file-storage access authenticated with the configured service-account key) SHALL be unaffected.
+Status: **Implemented**
+
+#### Scenario: API-key caller reaching DIAL Core
+- **WHEN** an API-key-authenticated caller triggers any DIAL Core call listed above
+- **THEN** the outgoing request SHALL carry `Api-Key: <the caller's key>` and SHALL NOT carry an `Authorization` header
+
+#### Scenario: Bearer caller reaching DIAL Core
+- **WHEN** a bearer-authenticated caller triggers any DIAL Core call listed above
+- **THEN** the outgoing request SHALL carry `Authorization: Bearer <the caller's token>` and SHALL NOT carry an `Api-Key` header
+
+#### Scenario: Run execution on worker threads
+- **WHEN** a run dispatched by an API-key caller invokes deployments or MCP tools from its own worker threads
+- **THEN** those requests SHALL carry the dispatching caller's `Api-Key` credential
+
+#### Scenario: Structured-query service call
+- **WHEN** an API-key-authenticated caller triggers a structured-query (DSL) call to the dial-adas service, which is reached with the caller's own credential
+- **THEN** that request SHALL carry `Api-Key: <the caller's key>`, instead of today's request with no credential at all
+
+#### Scenario: Absent credential
+- **WHEN** no caller credential was captured for the current request or run
+- **THEN** the outgoing request SHALL carry neither an `Authorization` nor an `Api-Key` header, and SHALL NOT carry a placeholder value
+
+#### Scenario: Service-account calls unchanged
+- **WHEN** the service accesses DIAL Core file storage
+- **THEN** it SHALL continue to use the configured service-account key, independent of the caller's credential
+
 ### Requirement: Author attribution for created entities
-The service SHALL derive the `createdBy` value stored on newly created or cloned entities (test suites, datasets) from the caller's identity. By default the value is the caller's configured JWT claim (`security.jwt.user-claim`, default `sub`); when `security.jwt.resolve-user-name` is `true` the service SHALL instead attempt to resolve a human-readable display name from DIAL Core `GET /v1/user/info`, using the caller's own bearer token, and SHALL fall back to the claim value whenever a display name cannot be obtained. Attribution failures SHALL never fail the calling request.
+The service SHALL derive the `createdBy` value stored on newly created or cloned entities (test suites, datasets) from the caller's identity. For a bearer caller the value is by default the caller's configured JWT claim (`security.jwt.user-claim`, default `sub`); when `security.jwt.resolve-user-name` is `true` the service SHALL instead attempt to resolve a human-readable display name from DIAL Core `GET /v1/user/info`, using the caller's own bearer token, and SHALL fall back to the claim value whenever a display name cannot be obtained. For an API-key caller the value SHALL be the principal established by API-key introspection — the DIAL Core project name for a project key, or the configured user-identity claim for a JWT-rooted per-request key — and display-name resolution SHALL NOT be attempted, since that principal is not necessarily a user. Attribution SHALL be resolved identically for REST requests and MCP tool calls, and attribution failures SHALL never fail the calling request.
 Status: **Implemented**
 
 #### Scenario: No JWT present
-- **WHEN** an entity is created without an authenticated JWT (security mode `none`, or an API-key caller)
+- **WHEN** an entity is created with no authenticated caller at all (security mode `none`)
 - **THEN** the service SHALL store `createdBy = "anonymous"` and SHALL NOT call DIAL Core, regardless of `security.jwt.resolve-user-name`
+
+#### Scenario: API-key caller
+- **WHEN** an entity is created by a caller authenticated with an `Api-Key` whose introspected principal is `my-project`
+- **THEN** the service SHALL store `createdBy = "my-project"` and SHALL NOT attempt display-name resolution, regardless of `security.jwt.resolve-user-name`
 
 #### Scenario: Configured claim missing from JWT
 - **WHEN** an authenticated JWT does not carry the claim named by `security.jwt.user-claim`
@@ -198,10 +265,32 @@ Status: **Implemented**
   - `com.epam.aidial.evaluation.web.security.apikey.ApiKeyCache` (Caffeine, SHA-256-hashed cache key)
   - `com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties`
   - `com.epam.aidial.evaluation.client.apikey.ApiKeyIntrospectionClientConfiguration` (dedicated `RestClient` bean)
+- Caller-credential capture (request-scoped, mirrors the `ApiKeyAuthenticationFilter` precedence rule;
+  registered in `configuration.logging.WebMvcConfig` ahead of the MCP streamable-HTTP router function,
+  and clearing in both `afterCompletion` and `afterConcurrentHandlingStarted`):
+  - `com.epam.aidial.evaluation.configuration.security.AuthorizationHeaderInterceptor` (unit coverage `AuthorizationHeaderInterceptorTest`)
+  - `com.epam.aidial.evaluation.runner.util.CallerCredential` (`evaluation-runner-core`; `headerName()`/`headerValue()` per kind, redacting `toString()`, `API_KEY_HEADER` constant) and `runner.util.CredentialKind`
+  - `com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder` (single `ThreadLocal<CallerCredential>`) and `runner.util.TokenPropagationHelper` (`withCredential`/`withCredentialCallable`/`withCredentialRunnable`)
+  - `com.epam.aidial.evaluation.mcp.support.McpCallerContext#callerCredential()` exposes it to MCP tool code (unit coverage `McpCallerContextTest`)
+- Caller-credential forwarding (one header per call, chosen from the kind):
+  - `com.epam.aidial.evaluation.client.dialcore.DialCoreClientConfiguration#callerCredentialInterceptor()` — shared by `dialCoreRestClient`, `client.dialcore.DialCoreDeploymentInvokerConfiguration`'s `dialCoreTryOutRestClient` and `client.dialadas.DialAdasClientConfiguration`'s `dialAdasRestClient` (unit coverage `DialCoreClientConfigurationTest`)
+  - `com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker#applyCredentialHeader` (`evaluation-runner-core`; unit coverage `McpToolInvokerTest`)
+  - `com.epam.aidial.evaluation.client.dialcore.DialFileClientConfiguration` is deliberately excluded — it keeps sending the configured service-account key
+  - `eval-cli` `cli.client.target.TargetDialCoreClientConfiguration` emits `Api-Key` only for an `API_KEY` credential (unit coverage `TargetDialCoreClientConfigurationTest`)
+  - Functional coverage: `functional.tests.ApiKeyAuthenticationFunctionalTests`, `functional.tests.McpServerSecurityFunctionalTests`
 - See `docs/configuration.md` (Security Configuration section) for property surface.
 - Author attribution (`createdBy`), incl. opt-in display-name resolution via DIAL Core `GET /v1/user/info`
   (gated by `security.jwt.resolve-user-name`, default `false`):
-  - `com.epam.aidial.evaluation.service.domain.AuthorResolver` (resolution + fallback logic; unit coverage `AuthorResolverTest`)
+  - `com.epam.aidial.evaluation.service.domain.AuthorResolver` (resolution + fallback logic; unit coverage `AuthorResolverTest`).
+    With no `Jwt`, it keys the fallback on the current `Authentication`'s shape — an authenticated,
+    non-anonymous token whose principal is not a `Jwt` (the introspected API-key principal) yields
+    `authentication.getName()`, skipping display-name resolution; otherwise `anonymous`. Keying on the
+    `Authentication` rather than on the captured credential avoids a `.web.security.apikey` import that
+    the layering test forbids.
+  - MCP attribution is exercised through the test-only `probe_caller_identity` tool
+    (`functional.support.CallerIdentityProbeTools`, `McpServerSecurityFunctionalTests`) until a mutating
+    MCP tool exists; the REST path is asserted against a created entity's stored `createdBy`
+    (`ApiKeyAuthenticationFunctionalTests`).
   - `com.epam.aidial.evaluation.configuration.properties.security.JwtSecurityProperties` (`userClaim`, `resolveUserName`)
   - `com.epam.aidial.evaluation.client.dialcore.DialCoreClient#getUserInfo()` (see dial-core-client spec)
 

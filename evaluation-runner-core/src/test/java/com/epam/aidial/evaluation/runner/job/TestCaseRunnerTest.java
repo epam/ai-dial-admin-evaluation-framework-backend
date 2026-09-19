@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Clock;
@@ -94,7 +95,7 @@ class TestCaseRunnerTest {
                 .resultBatchSize(100)
                 .maxResponseSizeBytes(5242880L)
                 .executor(executor)
-                .token("test-token")
+                .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(System.currentTimeMillis())
                 .snapshotResponseColumns(List.of());
     }

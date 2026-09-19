@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.mcp.support;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import org.jspecify.annotations.Nullable;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -17,11 +18,12 @@ import org.springframework.stereotype.Component;
  * are for a REST controller. No propagation machinery is added here; see
  * {@code docs/patterns/mcp-server.md}.
  *
- * <p>An {@code Api-Key} caller has a {@code String} principal (not a {@link Jwt}) and no
- * {@code Authorization: Bearer} header for {@code AuthorizationHeaderInterceptor} to capture, so
- * both {@link #jwt()} and {@link #bearerToken()} return {@code null} for it, {@code createdBy}
- * resolves to {@code anonymous}, and Core-backed tools call DIAL Core without caller credentials
- * for that caller — exactly as the REST controllers do today.
+ * <p>An {@code Api-Key} caller has a {@code String} principal (not a {@link Jwt}), so {@link #jwt()}
+ * returns {@code null} for it; {@code AuthorizationHeaderInterceptor} still captures the
+ * {@code Api-Key} header into {@link AuthorizationTokenHolder}, so {@link #callerCredential()}
+ * returns an {@code API_KEY}-kind credential, {@code createdBy} resolves to the introspected
+ * principal name via {@code AuthorResolver}, and Core-backed tools call DIAL Core with that
+ * credential in its native header — exactly as the REST controllers do today.
  *
  * <p>In {@code config.rest.security.mode=none}, Spring Security's {@code HttpSecurity} still wires
  * an {@code AnonymousAuthenticationFilter} by default, so the context always holds an
@@ -48,7 +50,7 @@ public class McpCallerContext {
         return principal instanceof Jwt jwt ? jwt : null;
     }
 
-    public @Nullable String bearerToken() {
-        return AuthorizationTokenHolder.getToken();
+    public @Nullable CallerCredential callerCredential() {
+        return AuthorizationTokenHolder.getCredential();
     }
 }

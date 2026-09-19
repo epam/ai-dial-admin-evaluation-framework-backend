@@ -3,6 +3,8 @@ package com.epam.aidial.evaluation.mcp.support;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
+import com.epam.aidial.evaluation.runner.util.CredentialKind;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -63,17 +65,31 @@ class McpCallerContextTest {
     }
 
     @Test
-    @DisplayName("bearerToken() reads the current request's token from AuthorizationTokenHolder")
-    void bearerTokenReadsFromAuthorizationTokenHolder() {
-        AuthorizationTokenHolder.setToken("alice-token");
+    @DisplayName("callerCredential() returns the bearer credential captured for this thread")
+    void callerCredentialReturnsBearerCredential() {
+        AuthorizationTokenHolder.setCredential(CallerCredential.bearer("alice-token"));
 
-        assertThat(callerContext.bearerToken()).isEqualTo("alice-token");
+        CallerCredential credential = callerContext.callerCredential();
+
+        assertThat(credential.kind()).isEqualTo(CredentialKind.BEARER);
+        assertThat(credential.value()).isEqualTo("alice-token");
     }
 
     @Test
-    @DisplayName("bearerToken() returns null when no token was set on this thread")
-    void bearerTokenReturnsNullWhenNotSet() {
-        assertThat(callerContext.bearerToken()).isNull();
+    @DisplayName("callerCredential() returns the API-key credential captured for this thread")
+    void callerCredentialReturnsApiKeyCredential() {
+        AuthorizationTokenHolder.setCredential(CallerCredential.apiKey("valid-key"));
+
+        CallerCredential credential = callerContext.callerCredential();
+
+        assertThat(credential.kind()).isEqualTo(CredentialKind.API_KEY);
+        assertThat(credential.value()).isEqualTo("valid-key");
+    }
+
+    @Test
+    @DisplayName("callerCredential() returns null when no credential was captured on this thread")
+    void callerCredentialReturnsNullWhenNotSet() {
+        assertThat(callerContext.callerCredential()).isNull();
     }
 
     private static Jwt jwt() {

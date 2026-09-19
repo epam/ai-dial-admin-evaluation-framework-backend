@@ -15,6 +15,7 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
+import com.epam.aidial.evaluation.runner.util.CredentialKind;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -135,7 +136,8 @@ class EvaluationContextFactoryTest {
         assertThat(context.getConcurrencyLevel()).isEqualTo(4);
         assertThat(context.getRequestTimeoutMs()).isEqualTo(3600000L);
         assertThat(context.getMaxRetries()).isEqualTo(3);
-        assertThat(context.getToken()).isEqualTo("my-token");
+        assertThat(context.getCredential().value()).isEqualTo("my-token");
+        assertThat(context.getCredential().kind()).isEqualTo(CredentialKind.API_KEY);
         assertThat(context.getCreatedAtMs()).isEqualTo(1700000000000L);
         assertThat(context.getExecutor().isShutdown()).isFalse();
 

@@ -31,6 +31,7 @@ import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
@@ -371,7 +372,7 @@ class TestSuiteEvaluationJobTest {
                     run,
                     invokeResolveSnapshot(run),
                     Executors.newVirtualThreadPerTaskExecutor(),
-                    "token");
+                    CallerCredential.bearer("token"));
 
             assertThat(context.getSnapshotRequestName()).isEqualTo("first");
             assertThat(context.getSnapshotAdditionalRequests()).isEqualTo(additionalRequests);
@@ -407,7 +408,7 @@ class TestSuiteEvaluationJobTest {
                     run,
                     invokeResolveSnapshot(run),
                     Executors.newVirtualThreadPerTaskExecutor(),
-                    "token");
+                    CallerCredential.bearer("token"));
 
             assertThat(context.getSnapshotRequestName()).isNull();
             assertThat(context.getSnapshotAdditionalRequests()).isNotNull().isEmpty();

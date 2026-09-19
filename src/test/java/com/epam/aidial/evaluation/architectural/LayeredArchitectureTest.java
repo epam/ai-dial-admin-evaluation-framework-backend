@@ -16,6 +16,7 @@ public class LayeredArchitectureTest {
     private static final String CONFIG_PACKAGE = "com.epam.aidial.evaluation.configuration..";
     private static final String QUERY_WEB_PACKAGE = "com.epam.aidial.evaluation.query.web..";
     private static final String QUERY_SERVICE_PACKAGE = "com.epam.aidial.evaluation.query.service..";
+    private static final String MCP_PACKAGE = "com.epam.aidial.evaluation.mcp..";
 
     private static final JavaClasses CLASSES = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())
@@ -29,6 +30,17 @@ public class LayeredArchitectureTest {
         // into `service`/`data` — the same access pattern `web`/`service` already have with each other.
         // `query.model` is deliberately layer-neutral: it is a pure carrier package (the typed query AST)
         // with no behaviour, reused as an outbound payload by clients such as `client.dialadas`.
+        //
+        // `mcp` (MCP server tools, MCP-owned models/mappers, tool support: executor, translator,
+        // encoding) is modeled as a peer of `web`, not as `web.mcp`, because it is a second, independent
+        // entry point into the application (the MCP transport) rather than a variant of the REST
+        // controller layer — it has its own request/response contract (CallToolResult, McpToolError)
+        // and its own conventions (D-F10), and must never be reachable from `web`. Outbound, `mcp` may
+        // depend on `service` (business logic), `configuration` (cross-cutting beans), `constants`,
+        // `utils`, `client.*.dto` (e.g. `InterfaceType`, a parameter type of `DeploymentService`) and
+        // `runner.*` (e.g. `AuthorizationTokenHolder`, `DialCoreClientException`); it must never depend
+        // on `web` or `data`. `service` is therefore extended to allow `mcp` as a caller, symmetric with
+        // `web`.
         layeredArchitecture()
                 .consideringAllDependencies()
                 .layer("web")
@@ -39,12 +51,16 @@ public class LayeredArchitectureTest {
                 .definedBy(DATA_PACKAGE)
                 .layer("configuration")
                 .definedBy(CONFIG_PACKAGE)
+                .layer("mcp")
+                .definedBy(MCP_PACKAGE)
                 .whereLayer("web")
                 .mayOnlyBeAccessedByLayers("configuration")
                 .whereLayer("service")
-                .mayOnlyBeAccessedByLayers("web", "configuration")
+                .mayOnlyBeAccessedByLayers("web", "mcp", "configuration")
                 .whereLayer("data")
                 .mayOnlyBeAccessedByLayers("service", "configuration")
+                .whereLayer("mcp")
+                .mayOnlyBeAccessedByLayers("configuration")
                 .check(CLASSES);
     }
 }

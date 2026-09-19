@@ -6,7 +6,7 @@ Defines the cross-cutting behaviour of the Evaluation Framework's MCP server: ho
 
 ### Requirement: MCP endpoint over Streamable HTTP
 The service SHALL expose a single MCP endpoint implementing the MCP Streamable HTTP transport (JSON-RPC over HTTP POST, optional SSE response streams, `Mcp-Session-Id` session management). The endpoint path SHALL be configurable and default to `/mcp`; the security rules of the `security` capability SHALL apply to whatever path is configured. The server SHALL advertise the `tools` capability and SHALL NOT advertise `resources` or `prompts` in this version. The server SHALL be disableable by configuration (`spring.ai.mcp.server.enabled=false`).
-Status: **Planned**
+Status: **Implemented** — delivered by `mcp-foundation`; `spring.ai.mcp.server.*` in `application.yml` (see `docs/configuration.md` §2.6), `SecurityConfiguration`'s matcher authenticates exactly the configured `mcp-endpoint` path (the one path both the `STREAMABLE` and `STATELESS` transports serve — neither serves a sub-path). The deprecated `SSE` transport (`/sse`, `/mcp/message`) is out of scope and unsupported by the matcher. Verified by `McpServerFoundationFunctionalTests` (`initialize`/`tools/list`) and `McpServerDisabledFunctionalTests`/`McpServerDisabledOidcFunctionalTests` (404 when disabled, in both `none` and `oidc` modes).
 
 #### Scenario: Initialize and list tools
 - **WHEN** an MCP client sends `initialize` followed by `tools/list` to the MCP endpoint
@@ -34,7 +34,9 @@ Status: **Planned**
 
 ### Requirement: Structured tool error contract
 When a tool cannot complete, the server SHALL return a tool result with `isError=true` and exactly one `text` content block whose text is a JSON object with `code` (stable machine-readable string), `message` (agent-readable) and optional `details` (array of strings with field-level messages). Codes SHALL be: `NOT_FOUND`, `VALIDATION_ERROR`, `INVALID_OPERATION`, `ACCESS_DENIED`, `VERSION_CONFLICT`, `UNIQUE_CONSTRAINT_VIOLATION`, `TOO_MANY_REQUESTS`, `RUN_NOT_TERMINAL`, `SUITE_HAS_NO_DATASET`, `PAYLOAD_TOO_LARGE`, `UPSTREAM_ERROR`, `UPSTREAM_TIMEOUT`, `UPSTREAM_AUTH_ERROR`, `NOT_SUPPORTED`, `INTERNAL_ERROR`. Where a code also exists in the REST `ErrorCode` vocabulary it SHALL carry the same meaning. Tool error content SHALL NOT include stack traces, SQL text or internal class names. The full exception SHALL be logged server-side.
-Status: **Planned**
+
+**Known limitation:** argument *type* mismatches (e.g. a JSON number where a string is declared) are rejected by Spring AI's own binding layer before a tool runs, and surface as Spring AI's plain-text `isError` result — outside this structured contract. Tool parameters are restricted to `String`/`Boolean`/`Integer`/`Long`/records so that only a type mismatch, never a value error, can take this path.
+Status: **Implemented** — `mcp.support.McpToolResults` (encoding), `mcp.support.McpToolErrorTranslator` (exception → code, every `DialCoreErrorCode` value plus `ResourceAccessException`), `mcp.model.McpErrorCode`/`McpToolError`; `McpErrorCodeAlignmentTest` asserts every code except `NOT_SUPPORTED` exists in `web.handler.ErrorCode`; verified end-to-end by `McpServerFoundationFunctionalTests`. `PayloadTooLargeException` has no row (checked exception, cannot reach the translator's `RuntimeException` catch) — see `design.md` D7 deviation note.
 
 #### Scenario: Entity not found
 - **WHEN** a tool is called with a `suiteId` that does not exist
@@ -126,7 +128,7 @@ Status: **Planned**
 
 ### Requirement: Agent guidance in server metadata
 The server's `instructions` (returned in the initialize response) SHALL describe the intended workflow: inspect deployments, create a suite, iterate with try-out and suite updates, add schema and test cases, add metrics, run, poll `get_run`, read results and summary. Server `name` and `version` SHALL be configurable.
-Status: **Planned**
+Status: **Implemented** — `spring.ai.mcp.server.{name,version,instructions}` in `application.yml`; verified by `McpServerFoundationFunctionalTests` asserting `initialize`'s `instructions` mentions `try_out` and `get_run`.
 
 #### Scenario: Instructions returned
 - **WHEN** a client completes `initialize`
@@ -134,7 +136,7 @@ Status: **Planned**
 
 ### Requirement: Authenticated principal visible inside tool execution
 Tool executions SHALL observe the same authenticated principal as a REST controller handling the same HTTP request, so that author attribution and downstream token propagation behave identically.
-Status: **Planned**
+Status: **Implemented** for a JWT caller — verified by `probe_caller_identity` in `McpServerSecurityFunctionalTests` (`createdBy=alice` under a JWT bearer caller, `createdBy=anonymous` under an Api-Key caller) and in `McpServerFoundationFunctionalTests` (`createdBy=anonymous` for the unauthenticated caller in `none` mode); the `create_test_suite` scenario is deferred to the `mcp-test-suites` child, which owns that tool. `Api-Key` caller attribution (currently `anonymous`, matching REST) and Core-credential forwarding for `Api-Key` callers are delivered by the child change `api-key-core-propagation`.
 
 #### Scenario: Suite created via MCP carries the caller identity
 - **WHEN** `create_test_suite` is called with a JWT whose configured user claim is `alice`

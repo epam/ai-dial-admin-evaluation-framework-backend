@@ -69,6 +69,8 @@ Specs for external service integrations.
   Application route resolution inherited from app type schemas via DIAL Core schema API, schema route DTOs, merge behavior.
 - **[mcp-tool-invocation](mcp-tool-invocation/spec.md)** — Implemented
   MCP SDK client integration — McpToolInvoker (tool call execution, tool discovery via `tools/list`), McpRequestResolver (argument template resolution), McpResponseSerializer (CallToolResult → JSON), configurable timeouts, error mapping.
+- **[mcp-tools-deployments](mcp-tools-deployments/spec.md)** — Implemented
+  The MCP **server**'s deployments tool group (`list_deployments`, `get_deployment`), letting an agent discover DIAL deployments and inspect one before creating a test suite. This is the inbound MCP surface — the application acting as an MCP server — and is distinct from the outbound MCP **client** specs above (`mcp-tool-invocation`, `toolset-listing`), which are this application calling out to DIAL Core's MCP proxy for `MCP_TOOL` suites. Delivered by the `mcp-foundation` change (`mcp.tools.deployment.DeploymentTools`, `mcp.mapper.DeploymentMcpMapper`); the delta spec lives at `openspec/changes/mcp-foundation/specs/mcp-tools-deployments/spec.md` pending sync into its own `openspec/specs/mcp-tools-deployments/` folder when the umbrella `add-mcp-server` change is archived.
 - **[toolset-listing](toolset-listing/spec.md)** — Implemented
   Toolset deployment type extension — ToolsetInfoDto, `type`/`interface` query param filtering on deployment listing, tool discovery endpoint (`GET /deployments/tools?deploymentId=&transport=`), InterfaceType enum, DeploymentType extended for toolsets.
 - **[test-suite-run-costs](test-suite-run-costs/spec.md)** — Implemented

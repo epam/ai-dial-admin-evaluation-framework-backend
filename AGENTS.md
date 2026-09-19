@@ -22,6 +22,8 @@ Strict layering, enforced by `LayeredArchitectureTest`. Dependencies point downw
 → `.data.db` (repository interfaces + Postgres impls, RecordMappers, models, pagination, transaction context)
 → PostgreSQL + Flyway.
 
+`.mcp` (MCP server tools, MCP-owned models/mappers, tool support) is a **peer of `.web`**, not a sub-package of it — a second, independent entry point (the MCP transport) with its own contract. It may call `.service`, `.configuration`, `.constants`, `.utils`, `client.*.dto`, `runner.*`; it must never depend on `.web` or `.data`; only `.configuration` may depend on `.mcp`.
+
 Package inventory: [docs/key-packages.md](docs/key-packages.md).
 
 ## Do's and Don'ts
@@ -131,6 +133,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Request-template JSONata seam](docs/patterns/jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](docs/patterns/evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
 | [Anthropic Messages API support](docs/patterns/anthropic-messages-api.md) | Deployment-less `/anthropic/v1/messages` + `/openai/v1/responses` URL passthrough; third `StreamingResponseAccumulator` mode; `model`-in-body must equal the effective deployment (static + pre-invocation `RequestModelValidator`) |
+| [MCP Server (inbound)](docs/patterns/mcp-server.md) | `mcp` layer as a peer of `web`; request-thread caller model on two library behaviours (+ D-F2c fallback); executor never throws; error table + binding-layer limitation; session limitation |
 
 ### Inline conventions
 

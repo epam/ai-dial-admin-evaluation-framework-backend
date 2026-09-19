@@ -22,6 +22,8 @@ Strict layering, enforced by `LayeredArchitectureTest`. Dependencies point downw
 → `.data.db` (repository interfaces + Postgres impls, RecordMappers, models, pagination, transaction context)
 → PostgreSQL + Flyway.
 
+`.mcp` (MCP server tools, MCP-owned models/mappers, tool support) is a **peer of `.web`**, not a sub-package of it — a second, independent entry point (the MCP transport) with its own contract. It may call `.service`, `.configuration`, `.constants`, `.utils`, `client.*.dto`, `runner.*`; it must never depend on `.web` or `.data`; only `.configuration` may depend on `.mcp`.
+
 Package inventory: [docs/key-packages.md](docs/key-packages.md).
 
 ## Do's and Don'ts
@@ -100,7 +102,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 
 | Pattern | Why it matters |
 |---------|----------------|
-| [TokenPropagationHelper](docs/patterns/token-propagation.md) | Propagate auth token across `CompletableFuture.supplyAsync` and other pooled-thread boundaries |
+| [TokenPropagationHelper](docs/patterns/token-propagation.md) | Propagate the caller's credential (bearer JWT or API key, with kind) across `CompletableFuture.supplyAsync` and other pooled-thread boundaries |
 | [TransactionTimestampContext + Aspect](docs/patterns/transaction-timestamp.md) | One shared `createdAt`/`updatedAt` per `@Transactional`; explicit-param repo signatures for `TransactionTemplate` callers |
 | [Dual Datasource (Meta + Analytics)](docs/patterns/dual-datasource.md) | Required `@Qualifier`s for DSLContext / tx manager / conditionals — getting these wrong silently uses the wrong DB; also the meta-after-analytics Flyway ordering and the SQL-only-DDL rule for Java migrations |
 | [CursorCodec & Keyset Pagination](docs/patterns/cursor-pagination.md) | Analytics layer; `LIMIT size+1` pattern + opaque Base64 cursor |
@@ -131,11 +133,12 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Request-template JSONata seam](docs/patterns/jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](docs/patterns/evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
 | [Anthropic Messages API support](docs/patterns/anthropic-messages-api.md) | Deployment-less `/anthropic/v1/messages` + `/openai/v1/responses` URL passthrough; third `StreamingResponseAccumulator` mode; `model`-in-body must equal the effective deployment (static + pre-invocation `RequestModelValidator`) |
+| [MCP Server (inbound)](docs/patterns/mcp-server.md) | `mcp` layer as a peer of `web`; request-thread caller model on two library behaviours (+ D-F2c fallback); executor never throws; error table + binding-layer limitation; session limitation |
 
 ### Inline conventions
 
 - **Bulk and export operations** — use paginated DB queries with streaming response, or batched parsing/persistence, for bulk/export (e.g. CSV). Never load full datasets into memory; respect pagination max size.
-- **AuthorResolver** (`service.domain.AuthorResolver`) — extracts user identity from JWT for `createdBy` fields. Uses configurable claim name (`security.jwt.user-claim`), not hardcoded `sub`. Returns `"anonymous"` when JWT is null (security mode `none`). With `security.jwt.resolve-user-name=true` it resolves `userDisplayName` via `DialCoreClient.getUserInfo()` (caller's bearer token) and falls back to the raw claim on missing name or any Core error — never fails the request.
+- **AuthorResolver** (`service.domain.AuthorResolver`) — extracts user identity for `createdBy` fields. JWT path: configurable claim name (`security.jwt.user-claim`), not hardcoded `sub`; with `security.jwt.resolve-user-name=true` resolves `userDisplayName` via `DialCoreClient.getUserInfo()` (caller's bearer token) and falls back to the raw claim on missing name or any Core error — never fails the request. When JWT is null, falls back to the current authenticated non-anonymous non-`Jwt` principal's name (e.g. an API-key caller's introspected project), skipping display-name resolution; `"anonymous"` only when neither is present.
 - **API Timestamp Convention** — all timestamps in REST APIs and DB models use **epoch milliseconds (Long)**. Do NOT convert to `Instant` or ISO 8601 strings in DTOs; MapStruct maps `Long → Long` automatically.
 - **ValidationWarningsSerializer** — injectable `@Component` for JSON ser/deser of validation warnings and maps. **Fail-fast** (throws) for serialization; **graceful degradation** (logs + empty) for deserialization. Inject instead of duplicating `ObjectMapper` logic.
 - **Exception Handling Pattern** — **fail-fast (throw)** for data integrity (serialization, writes); **graceful degradation (log + fallback)** only when data is regenerable. Document rationale in comment or log message. See also `config.yaml` global rules.

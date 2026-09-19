@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
 import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.DeploymentMapperImpl;
@@ -52,11 +53,12 @@ class DeploymentServiceTokenPropagationTest {
     void getAllDeploymentsPropagatesTokenToGetDeploymentsCall() {
         // Given: token is set in the current (request) thread
         String expectedToken = "test-jwt-token-12345";
-        AuthorizationTokenHolder.setToken(expectedToken);
+        AuthorizationTokenHolder.setCredential(CallerCredential.bearer(expectedToken));
 
         // Mock client to capture what token is visible during the call
         when(dialCoreClient.getDeployments(null)).thenAnswer(invocation -> {
-            capturedToken.set(AuthorizationTokenHolder.getToken());
+            CallerCredential credential = AuthorizationTokenHolder.getCredential();
+            capturedToken.set(credential == null ? null : credential.value());
             return List.of();
         });
 
@@ -77,7 +79,8 @@ class DeploymentServiceTokenPropagationTest {
         AuthorizationTokenHolder.clearToken();
 
         when(dialCoreClient.getDeployments(null)).thenAnswer(invocation -> {
-            capturedToken.set(AuthorizationTokenHolder.getToken());
+            CallerCredential credential = AuthorizationTokenHolder.getCredential();
+            capturedToken.set(credential == null ? null : credential.value());
             return List.of();
         });
 

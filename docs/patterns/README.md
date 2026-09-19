@@ -35,3 +35,4 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [Request-template JSONata seam](jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
 | [Anthropic Messages API support](anthropic-messages-api.md) | Deployment-less `/anthropic/v1/messages` + `/openai/v1/responses` URL passthrough; third `StreamingResponseAccumulator` mode; `model`-in-body must equal the effective deployment (static + pre-invocation `RequestModelValidator`) |
+| [MCP Server (inbound)](mcp-server.md) | `mcp` layer as a peer of `web`; request-thread caller model; executor never throws; error table + binding-layer limitation; session limitation |

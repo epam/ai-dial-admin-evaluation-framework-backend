@@ -6,7 +6,7 @@ context: |
 
   # Tech Stack
   - Java 25
-  - Spring Boot 4.0.6
+  - Spring Boot 4.1.1
   - Build: Gradle 9.7.1
   - Database: PostgreSQL via JDBC only (NO JPA/Hibernate)
   - Migrations: Flyway (src/main/resources/db/migration/POSTGRES/), naming: V{major}.{minor}__{Description}.sql for SQL,
@@ -65,6 +65,14 @@ context: |
        no manual @Import/@ComponentScan needed in the root app
      - Exists so a future standalone CI runner can share exact execution-logic parity with the EF backend
 
+  9. mcp (com.epam.aidial.evaluation.mcp) — MCP server tools (`mcp.tools.<group>`), MCP-owned
+     models/mappers (`mcp.model`, `mcp.mapper`), tool support (`mcp.support`: executor, caller context,
+     result/error encoding, error translator, unsupported-feature guard), MCP-only constants
+     (`mcp.constants`)
+     - A peer of `web` (a second, independent entry point — the MCP transport), not a sub-package of it
+     - May depend on service, configuration, constants, utils, client.*.dto, runner.*; must never depend
+       on web or data; only configuration may depend on mcp
+
   # Layering Principle (authoritative — all artifact rules defer to this)
 
   Layer responsibilities are strict:
@@ -74,6 +82,7 @@ context: |
   - SQL allowlisting/mapping belongs in repositories/builders, NEVER in service or web layer
   - Specialized components (Parser, Validator, Converter) MUST be top-level injectable classes, NOT private/inner methods
   - A domain service injects only its own domain's repository; cross-domain reads/writes go through the owning domain's service (e.g., DatasetService calls TestSuiteService.bindDataset, not TestSuiteRepository.save). Full requirement and scenarios in openspec/specs/best-practices/spec.md.
+  - mcp is a peer of web (not web.mcp): outbound it may use service, configuration, constants, utils, client.*.dto, runner.*; it must never use web or data; only configuration may access mcp. service is extended to allow mcp as a caller, symmetric with web. See docs/patterns/mcp-server.md.
 
   # Key Patterns
   - Use @Transactional in service layer for transaction boundaries
@@ -123,6 +132,7 @@ context: |
   - Test naming: shouldDoX() or shouldDoX_whenY() — BDD-style with "should" prefix
   - Unit tests for parsers, validators, mappers; functional tests for API endpoints and persistence
   - LayeredArchitectureTest enforces package dependency rules via ArchUnit
+  - MCP server functional tests drive the real MCP endpoint via `functional.support.McpFunctionalTestSupport` (`McpSyncClient` over Streamable HTTP against the booted app); `StaticJwtTestConfiguration` (`@Primary` `TokenDecoderFactory` under a different bean name) supplies a static JWT for `oidc`-mode MCP tests without a live identity provider; `CallerIdentityProbeTools` is a test-scope `@McpTool` proving the request-thread caller-identity model; `McpToolConventionTest` (ArchUnit) enforces the `@McpTool` method shape (return type, parameter annotations/types, snake_case names) across every tool group
 
   # Feature Surface
   For detailed feature specs, requirements, and API contracts see: openspec/specs/README.md
@@ -142,6 +152,9 @@ context: |
   DIAL File Storage (file upload/download proxy via DialFileClient, EF service key bucket management, alias-based file references).
   CLI Tools: `eval-cli` (standalone Spring Boot picocli CLI, DB-free, `clone`/`fetch`/`run`/`import`/`evaluate` commands,
   consumes `evaluation-runner-core`'s batch execution path and the EF backend's public REST API for cross-environment evaluation).
+  MCP Server (inbound): exposes this application as an MCP server (Streamable HTTP at `/mcp`, sync, tools capability
+  only) so an MCP-capable agent can drive it directly; first tool group is deployments (`list_deployments`,
+  `get_deployment`); protected identically to `/api/v1/**`.
   Vision/planned: Evaluation Runs, Runner & Jobs.
 
   # Design Documentation

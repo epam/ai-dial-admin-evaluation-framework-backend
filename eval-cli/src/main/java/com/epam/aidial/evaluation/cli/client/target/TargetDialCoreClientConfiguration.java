@@ -4,6 +4,8 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProperties;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
+import com.epam.aidial.evaluation.runner.util.CredentialKind;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import org.springframework.context.annotation.Bean;
@@ -75,16 +77,18 @@ public class TargetDialCoreClientConfiguration {
     }
 
     /**
-     * Reads the current API key from {@link AuthorizationTokenHolder} (populated per-worker-thread by
-     * {@link com.epam.aidial.evaluation.runner.util.TokenPropagationHelper}), which sources it from
+     * Reads the current credential from {@link AuthorizationTokenHolder} (populated per-worker-thread
+     * by {@link com.epam.aidial.evaluation.runner.util.TokenPropagationHelper}), which sources it from
      * {@code TargetProperties#getApiKey()} (env var {@code DIAL_CORE_API_KEY}) via
-     * {@link com.epam.aidial.evaluation.cli.service.EvaluationContextFactory}.
+     * {@link com.epam.aidial.evaluation.cli.service.EvaluationContextFactory}. Emits {@code Api-Key}
+     * only for an {@code API_KEY} credential; any other kind (or none at all) sends no header, since
+     * this module never has a bearer session to forward.
      */
     private static ClientHttpRequestInterceptor apiKeyInterceptor() {
         return (HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {
-            final String apiKey = AuthorizationTokenHolder.getToken();
-            if (apiKey != null) {
-                request.getHeaders().set("Api-Key", apiKey);
+            final CallerCredential credential = AuthorizationTokenHolder.getCredential();
+            if (credential != null && credential.kind() == CredentialKind.API_KEY) {
+                request.getHeaders().set(CallerCredential.API_KEY_HEADER, credential.value());
             }
             return execution.execute(request, body);
         };

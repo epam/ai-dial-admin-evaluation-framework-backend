@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.client.dialcore;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.context.Context;
 import java.time.Duration;
@@ -27,16 +28,16 @@ public class DialCoreClientConfiguration {
         return RestClient.builder()
                 .baseUrl(properties.getBaseUrl())
                 .requestFactory(requestFactory)
-                .requestInterceptor(authorizationTokenInterceptor())
+                .requestInterceptor(callerCredentialInterceptor())
                 .requestInterceptor(tracingInterceptor(openTelemetry))
                 .build();
     }
 
-    public static ClientHttpRequestInterceptor authorizationTokenInterceptor() {
+    public static ClientHttpRequestInterceptor callerCredentialInterceptor() {
         return (HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {
-            String token = AuthorizationTokenHolder.getToken();
-            if (token != null) {
-                request.getHeaders().setBearerAuth(token);
+            CallerCredential credential = AuthorizationTokenHolder.getCredential();
+            if (credential != null) {
+                request.getHeaders().set(credential.headerName(), credential.headerValue());
             }
             return execution.execute(request, body);
         };

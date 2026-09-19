@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.web.security.apikey;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.web.handler.ErrorCode;
 import com.epam.aidial.evaluation.web.handler.ErrorView;
 import jakarta.servlet.FilterChain;
@@ -50,7 +51,7 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        String apiKey = request.getHeader(CoreApiKeyIntrospector.API_KEY_HEADER);
+        String apiKey = request.getHeader(CallerCredential.API_KEY_HEADER);
         if (StringUtils.isBlank(apiKey)) {
             chain.doFilter(request, response);
             return;

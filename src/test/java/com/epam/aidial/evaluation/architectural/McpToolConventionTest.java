@@ -10,6 +10,7 @@ import com.tngtech.archunit.core.domain.JavaParameter;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.Set;
@@ -49,7 +50,7 @@ class McpToolConventionTest {
                 .that(ARE_MCP_TOOL_METHODS)
                 .should(new ArchCondition<JavaMethod>("return McpSchema.CallToolResult") {
                     @Override
-                    public void check(JavaMethod method, com.tngtech.archunit.lang.ConditionEvents events) {
+                    public void check(JavaMethod method, ConditionEvents events) {
                         boolean satisfied = method.getRawReturnType().isEquivalentTo(McpSchema.CallToolResult.class);
                         events.add(new SimpleConditionEvent(
                                 method,
@@ -73,7 +74,7 @@ class McpToolConventionTest {
                         new ArchCondition<JavaMethod>(
                                 "have every parameter annotated with @McpToolParam with a non-blank description") {
                             @Override
-                            public void check(JavaMethod method, com.tngtech.archunit.lang.ConditionEvents events) {
+                            public void check(JavaMethod method, ConditionEvents events) {
                                 for (JavaParameter parameter : method.getParameters()) {
                                     McpToolParam annotation = parameter.isAnnotatedWith(McpToolParam.class)
                                             ? parameter.getAnnotationOfType(McpToolParam.class)
@@ -104,7 +105,7 @@ class McpToolConventionTest {
                                 "have every parameter typed String, Boolean, Integer, Long, or a record in "
                                         + MCP_MODEL_PACKAGE) {
                             @Override
-                            public void check(JavaMethod method, com.tngtech.archunit.lang.ConditionEvents events) {
+                            public void check(JavaMethod method, ConditionEvents events) {
                                 for (JavaParameter parameter : method.getParameters()) {
                                     boolean satisfied = ALLOWED_SCALAR_PARAMETER_TYPES.stream()
                                                     .anyMatch(parameter.getRawType()::isEquivalentTo)
@@ -135,7 +136,7 @@ class McpToolConventionTest {
                 .that(ARE_MCP_TOOL_METHODS)
                 .should(new ArchCondition<JavaMethod>("have a snake_case @McpTool#name()") {
                     @Override
-                    public void check(JavaMethod method, com.tngtech.archunit.lang.ConditionEvents events) {
+                    public void check(JavaMethod method, ConditionEvents events) {
                         String name = method.getAnnotationOfType(McpTool.class).name();
                         boolean satisfied = name.matches(TOOL_NAME_PATTERN);
                         events.add(new SimpleConditionEvent(
@@ -144,6 +145,38 @@ class McpToolConventionTest {
                                 method.getFullName() + "'s @McpTool#name() '" + name + "' is not snake_case"));
                     }
                 });
+
+        rule.check(CLASSES);
+    }
+
+    @Test
+    @DisplayName("every @McpTool method declares annotations with a non-blank title and consistent "
+            + "readOnlyHint/destructiveHint and openWorldHint=false")
+    void everyMcpToolMethodDeclaresConsistentAndCompleteAnnotations() {
+        assertThat(mcpToolMethodCount()).isPositive();
+
+        ArchRule rule = methods()
+                .that(ARE_MCP_TOOL_METHODS)
+                .should(
+                        new ArchCondition<JavaMethod>("declare @McpTool#annotations() with a non-blank title and "
+                                + "readOnlyHint == !destructiveHint and openWorldHint == false") {
+                            @Override
+                            public void check(JavaMethod method, ConditionEvents events) {
+                                McpTool.McpAnnotations annotations = method.getAnnotationOfType(McpTool.class)
+                                        .annotations();
+                                boolean satisfied = !annotations.title().isBlank()
+                                        && annotations.readOnlyHint() != annotations.destructiveHint()
+                                        && !annotations.openWorldHint();
+                                events.add(new SimpleConditionEvent(
+                                        method,
+                                        satisfied,
+                                        method.getFullName() + "'s @McpTool#annotations() must have a non-blank "
+                                                + "title, readOnlyHint == !destructiveHint and openWorldHint == false, but title='"
+                                                + annotations.title() + "', readOnlyHint=" + annotations.readOnlyHint()
+                                                + ", destructiveHint=" + annotations.destructiveHint()
+                                                + ", openWorldHint=" + annotations.openWorldHint()));
+                            }
+                        });
 
         rule.check(CLASSES);
     }

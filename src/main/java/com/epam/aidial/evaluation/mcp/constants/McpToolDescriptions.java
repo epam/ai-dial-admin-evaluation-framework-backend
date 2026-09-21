@@ -51,5 +51,11 @@ public final class McpToolDescriptions {
                     + "and capabilities, toolset transport and allowed tools, or application schema id), so the "
                     + "agent can decide which request template to use in create_test_suite.";
 
+    /** Human-readable title of the {@code list_deployments} tool's {@code @McpTool.McpAnnotations}. */
+    public static final String LIST_DEPLOYMENTS_TITLE = "List deployments";
+
+    /** Human-readable title of the {@code get_deployment} tool's {@code @McpTool.McpAnnotations}. */
+    public static final String GET_DEPLOYMENT_TITLE = "Get deployment";
+
     private McpToolDescriptions() {}
 }

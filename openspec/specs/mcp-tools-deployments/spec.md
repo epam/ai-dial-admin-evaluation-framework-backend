@@ -29,6 +29,10 @@ Status: **Implemented** — `mcp.tools.deployment.DeploymentTools.listDeployment
 - **WHEN** an agent calls `list_deployments` with `type = model`
 - **THEN** the result SHALL be a tool error in the structured error format with `code = VALIDATION_ERROR` whose message lists the accepted values, and no upstream call SHALL be made
 
+#### Scenario: Read-only annotations advertised
+- **WHEN** an agent calls `tools/list`
+- **THEN** `list_deployments` SHALL carry `annotations` with a non-blank `title`, `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=false`
+
 #### Scenario: Filter schema and description advertise accepted values
 - **WHEN** an agent reads the `list_deployments` tool from `tools/list`
 - **THEN** the input schema SHALL declare `type` and `interfaceType` as optional string properties with non-empty descriptions, and each description SHALL contain every accepted value of that filter
@@ -52,6 +56,10 @@ Status: **Implemented** — `mcp.tools.deployment.DeploymentTools.getDeployment`
 #### Scenario: DIAL Core responds with a gateway timeout
 - **WHEN** DIAL Core answers `get_deployment`'s upstream request with HTTP 504
 - **THEN** the result SHALL be a tool error with `code = UPSTREAM_TIMEOUT`
+
+#### Scenario: Read-only annotations advertised for get_deployment
+- **WHEN** an agent calls `tools/list`
+- **THEN** `get_deployment` SHALL carry `annotations` with a non-blank `title`, `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`, `openWorldHint=false`
 
 #### Scenario: DIAL Core unreachable
 - **WHEN** the upstream connection for `get_deployment` fails or times out at the socket level

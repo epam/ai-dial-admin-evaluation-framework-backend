@@ -21,12 +21,17 @@ Status: **Implemented** — delivered by `mcp-foundation`; `spring.ai.mcp.server
 - **THEN** the service SHALL respond with HTTP 404 and SHALL NOT return an `InitializeResult`
 
 ### Requirement: Tool contract conventions
-Tool names SHALL be `snake_case`. Every tool SHALL take exactly one structured input object whose properties carry non-empty descriptions, and SHALL return its result as a single `text` content block containing a JSON document (object), additionally provided as `structuredContent` when the tool declares an output schema. Field names in inputs and outputs SHALL be `camelCase`; timestamps SHALL be epoch milliseconds; identifiers SHALL be UUID strings. Every tool description SHALL state its preconditions and, where applicable, the tool an agent is expected to call next. Tools that mutate state SHALL return the resulting entity. Tools SHALL be keyed by `suiteId` wherever an operation concerns a suite's request template, response columns, test cases, schema, metrics or runs.
-Status: **Planned**
+Tool names SHALL be `snake_case`. Every tool SHALL take exactly one structured input object whose properties carry non-empty descriptions, and SHALL return its result as a single `text` content block containing a JSON document (object), additionally provided as `structuredContent` when the tool declares an output schema. Field names in inputs and outputs SHALL be `camelCase`; timestamps SHALL be epoch milliseconds; identifiers SHALL be UUID strings. Every tool description SHALL state its preconditions and, where applicable, the tool an agent is expected to call next. Tools that mutate state SHALL return the resulting entity. Tools SHALL be keyed by `suiteId` wherever an operation concerns a suite's request template, response columns, test cases, schema, metrics or runs. Every tool SHALL declare its MCP tool annotations explicitly — `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — never relying on the protocol defaults (which advertise an unannotated tool as destructive and open-world): query tools SHALL declare `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`; mutating tools SHALL declare `readOnlyHint=false` and set `destructiveHint`/`idempotentHint` according to their effect; all tools SHALL declare `openWorldHint=false` (they operate on the closed domain of DIAL Core and this service). The declaration SHALL be enforced project-wide by `McpToolConventionTest`.
+Status: **Partially implemented** — the annotation rule is implemented for `list_deployments`/`get_deployment` (`McpToolConventionTest` enforces `readOnlyHint == !destructiveHint` and a non-blank `title` for every `@McpTool`; `McpServerFoundationFunctionalTests` asserts the advertised annotations); the remaining conventions are verified per tool group as the children land.
 
 #### Scenario: Tool metadata inspected
 - **WHEN** an agent calls `tools/list`
 - **THEN** each tool SHALL have a `snake_case` name, a non-empty description, and every input property SHALL have a non-empty description
+
+#### Scenario: Tool annotations declared explicitly
+- **WHEN** an agent calls `tools/list`
+- **THEN** every tool SHALL carry `annotations` with a non-blank `title`, `readOnlyHint` equal to the negation of `destructiveHint`, an explicit `idempotentHint`, and `openWorldHint=false`
+- **AND** `list_deployments` and `get_deployment` SHALL report `readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`
 
 #### Scenario: Successful tool result shape
 - **WHEN** any tool completes successfully

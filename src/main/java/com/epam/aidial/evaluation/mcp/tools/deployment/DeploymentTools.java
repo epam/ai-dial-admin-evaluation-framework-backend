@@ -38,7 +38,16 @@ public class DeploymentTools {
     private final DeploymentService deploymentService;
     private final DeploymentMcpMapper mapper;
 
-    @McpTool(name = McpToolNames.LIST_DEPLOYMENTS, description = McpToolDescriptions.LIST_DEPLOYMENTS)
+    @McpTool(
+            name = McpToolNames.LIST_DEPLOYMENTS,
+            description = McpToolDescriptions.LIST_DEPLOYMENTS,
+            annotations =
+                    @McpTool.McpAnnotations(
+                            title = McpToolDescriptions.LIST_DEPLOYMENTS_TITLE,
+                            readOnlyHint = true,
+                            destructiveHint = false,
+                            idempotentHint = true,
+                            openWorldHint = false))
     public CallToolResult listDeployments(
             @McpToolParam(description = McpToolDescriptions.DEPLOYMENT_TYPE_FILTER, required = false) @Nullable
                     String type,
@@ -52,7 +61,16 @@ public class DeploymentTools {
         });
     }
 
-    @McpTool(name = McpToolNames.GET_DEPLOYMENT, description = McpToolDescriptions.GET_DEPLOYMENT)
+    @McpTool(
+            name = McpToolNames.GET_DEPLOYMENT,
+            description = McpToolDescriptions.GET_DEPLOYMENT,
+            annotations =
+                    @McpTool.McpAnnotations(
+                            title = McpToolDescriptions.GET_DEPLOYMENT_TITLE,
+                            readOnlyHint = true,
+                            destructiveHint = false,
+                            idempotentHint = true,
+                            openWorldHint = false))
     public CallToolResult getDeployment(
             @McpToolParam(description = McpToolDescriptions.DEPLOYMENT_ID, required = true) String deploymentId) {
         return executor.execute(() -> {

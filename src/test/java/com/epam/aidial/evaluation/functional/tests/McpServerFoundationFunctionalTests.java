@@ -170,6 +170,35 @@ public abstract class McpServerFoundationFunctionalTests extends BaseFunctionalT
     }
 
     @Test
+    @DisplayName("tools/list annotations mark both deployment tools read-only, non-destructive, idempotent, "
+            + "closed-world, with a non-blank title")
+    void toolsListAnnotationsMarkDeploymentToolsReadOnlyNonDestructiveIdempotentClosedWorld() {
+        client = support().client(Map.of());
+        client.initialize();
+
+        List<McpSchema.Tool> productionToolList = productionTools(client);
+
+        assertThat(productionToolList).isNotEmpty();
+        for (McpSchema.Tool tool : productionToolList) {
+            McpSchema.ToolAnnotations annotations = tool.annotations();
+            assertThat(annotations).as("annotations of tool " + tool.name()).isNotNull();
+            assertThat(annotations.title()).as("title of tool " + tool.name()).isNotBlank();
+            assertThat(annotations.readOnlyHint())
+                    .as("readOnlyHint of tool " + tool.name())
+                    .isTrue();
+            assertThat(annotations.destructiveHint())
+                    .as("destructiveHint of tool " + tool.name())
+                    .isFalse();
+            assertThat(annotations.idempotentHint())
+                    .as("idempotentHint of tool " + tool.name())
+                    .isTrue();
+            assertThat(annotations.openWorldHint())
+                    .as("openWorldHint of tool " + tool.name())
+                    .isFalse();
+        }
+    }
+
+    @Test
     @DisplayName("tools/list descriptions are non-empty and every input property has a non-blank description")
     void toolsListDescriptionsAreNonEmptyAndEveryPropertyDescriptionIsNonBlank() {
         client = support().client(Map.of());

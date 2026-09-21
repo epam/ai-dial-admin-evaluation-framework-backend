@@ -36,6 +36,8 @@ See `proposal.md` for motivation. Constraints that shape the approach:
 Use `spring-ai-starter-mcp-server-webmvc` with the annotation scanner (`@McpTool`, `@McpToolParam` from `spring-ai-mcp-annotations`). One `@Component` per tool group; each public annotated method is a tool. Exclude the starter's transitive `spring-boot-starter-web` alias (root uses `spring-boot-starter-webmvc`). Extract the MCP SDK version into `gradle.properties` (`mcp_sdk_version=2.0.0`) and reference it from both `build.gradle` files so root and runner-core pin from one place.
 *Alternatives*: `@Tool` + `ToolCallbackProvider` (Spring AI generic tool model, an extra indirection); hand-built `McpServerFeatures.SyncToolSpecification` (most control, most glue). Annotations give MCP-native schema generation and descriptions with the least code.
 
+Every `@McpTool` also sets `annotations = @McpTool.McpAnnotations(title, readOnlyHint, destructiveHint, idempotentHint, openWorldHint)` explicitly. The MCP protocol treats a missing `destructiveHint`/`openWorldHint` as `true`, so an unannotated read-only tool is advertised to agents (and inspectors) as destructive and open-world. Query tools declare `readOnlyHint=true, destructiveHint=false, idempotentHint=true`; mutating tools declare `readOnlyHint=false` and the other two per effect; every tool declares `openWorldHint=false`. `McpToolConventionTest` enforces the declaration (`readOnlyHint == !destructiveHint`, non-blank `title`) so no later tool group can regress to the defaults.
+
 ### D2. Package layout and a fourth layer
 ```
 com.epam.aidial.evaluation.mcp

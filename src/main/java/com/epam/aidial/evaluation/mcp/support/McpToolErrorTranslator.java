@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.mcp.support;
 
+import com.epam.aidial.evaluation.mcp.constants.McpErrorMessages;
 import com.epam.aidial.evaluation.mcp.model.McpErrorCode;
 import com.epam.aidial.evaluation.mcp.model.McpToolError;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
@@ -63,8 +64,6 @@ public class McpToolErrorTranslator {
      * contains the DIAL Core URL.
      */
     private static final String DIAL_CORE_UNREACHABLE_MESSAGE = "DIAL Core is unreachable";
-
-    private static final String UNEXPECTED_SERVER_ERROR_MESSAGE = "Unexpected server error";
 
     private final JsonMapper objectMapper;
 
@@ -145,7 +144,7 @@ public class McpToolErrorTranslator {
             }
             default -> {
                 log.error("Unhandled MCP tool exception", e);
-                yield new McpToolError(McpErrorCode.INTERNAL_ERROR, UNEXPECTED_SERVER_ERROR_MESSAGE, null);
+                yield new McpToolError(McpErrorCode.INTERNAL_ERROR, McpErrorMessages.UNEXPECTED_SERVER_ERROR, null);
             }
         };
     }

@@ -4,7 +4,7 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 
 | Pattern | Summary |
 |---------|---------|
-| [TokenPropagationHelper](token-propagation.md) | Propagate auth token to async/pooled threads (`CompletableFuture.supplyAsync`) |
+| [TokenPropagationHelper](token-propagation.md) | Propagate the caller's credential (bearer JWT or API key, with kind) across `CompletableFuture.supplyAsync` and other pooled-thread boundaries |
 | [TransactionTimestampContext + Aspect](transaction-timestamp.md) | Consistent `createdAt`/`updatedAt` across one `@Transactional` call; explicit-param repo signatures |
 | [Dual Datasource (Meta + Analytics)](dual-datasource.md) | Required `@Qualifier`s for DSLContext / tx manager / conditionals on both datasources |
 | [CursorCodec & Keyset Pagination](cursor-pagination.md) | Analytics layer; `LIMIT size+1` pattern, opaque Base64 cursor encoding |

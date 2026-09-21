@@ -24,8 +24,8 @@
 
 - [ ] 3.1 Sync `mcp-server` and `security` delta specs to `openspec/specs/` via `/opsx:sync`; verify with `git diff` that main specs gained content and lost nothing
 - [ ] 3.2 Set `mcp-server` requirement statuses to Implemented with implementation notes pointing to existing code; verify every referenced path exists
-- [ ] 3.3 Update openspec/config.yaml per Config Maintenance Policy (done: re-reviewed after all children — Architecture list has the `mcp` package/layer, Layering Principle mentions `mcp → service` only, Feature Surface mentions the MCP server, Spring Boot version current)
-- [ ] 3.4 Update AGENTS.md per AGENTS.md Maintenance guidelines (done: re-reviewed after all children — Architecture Overview lists the `mcp` layer, Unique Patterns row links `docs/patterns/mcp-server.md`, `docs/key-packages.md` lists `mcp.*` and every tool group)
+- [ ] 3.3 Update openspec/config.yaml per Config Maintenance Policy (verify after all children: Architecture list has the `mcp` package/layer, Layering Principle mentions `mcp → service` only, Feature Surface mentions the MCP server, Spring Boot version current)
+- [ ] 3.4 Update AGENTS.md per AGENTS.md Maintenance guidelines (verify after all children: Architecture Overview lists the `mcp` layer, Unique Patterns row links `docs/patterns/mcp-server.md`, `docs/key-packages.md` lists `mcp.*` and every tool group)
 - [ ] 3.5 Refresh `docs/patterns/mcp-server.md` (written by `mcp-foundation`) so it covers the final state: layer rule, model isolation, result/error encoding, unsupported-feature guard, provisioning compensation, result cap, session limitation; verify it is linked from `docs/patterns/README.md`
-- [ ] 3.6 Update openspec/specs/README.md per Spec Index Maintenance Policy (done: index lists `mcp-server` and every `mcp-tools-<group>` spec with correct status, and disambiguates them from the existing MCP-client spec `mcp-tool-invocation`)
+- [ ] 3.6 Update openspec/specs/README.md per Spec Index Maintenance Policy (verify after all children: index lists `mcp-server` and every `mcp-tools-<group>` spec with correct status, and disambiguates them from the existing MCP-client spec `mcp-tool-invocation`)
 - [ ] 3.7 Run `./gradlew clean build` and archive this change via `/opsx:archive` following `rules.archive` in `openspec/config.yaml`

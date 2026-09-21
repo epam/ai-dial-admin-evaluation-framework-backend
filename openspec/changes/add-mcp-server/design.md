@@ -45,10 +45,10 @@ com.epam.aidial.evaluation.mcp
   mapper/    MapStruct <Group>McpMapper: service DTO/model <-> mcp.model
   support/   McpToolResults (JSON text-block encoding), McpToolErrorTranslator,
              UnsupportedFeatureGuard, UnsupportedFeatureException, McpCallerContext,
-             ResultRowLimiter, McpToolDescriptions
+             ResultRowLimiter
   tools/     deployment/, suite/, tryout/, testcase/, metric/, run/, result/
 com.epam.aidial.evaluation.configuration.mcp
-             McpServerSecurityCustomizer (see D3), McpToolResultProperties (`mcp-server.results.*`)
+             McpToolResultProperties (`mcp-server.results.*`)
 com.epam.aidial.evaluation.service.domain
              SuiteProvisioningService (see D5)
 ```

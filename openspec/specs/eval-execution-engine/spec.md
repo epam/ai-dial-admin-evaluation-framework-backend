@@ -7,7 +7,7 @@ Status: **Implemented**
 
 ## Key Terms
 - **EvaluationExecutor**: Interface for execution strategies (`execute(EvaluationContext)`). Currently implemented by `InProcessEvaluationExecutor`; designed for future K8s Job extraction.
-- **EvaluationContext**: Immutable context carrier for a run — carries runId, suiteId, execution settings, retry policy, the run's shared `ExecutorService`, and JWT token.
+- **EvaluationContext**: Immutable context carrier for a run — carries runId, suiteId, execution settings, retry policy, the run's shared `ExecutorService`, and the caller's `CallerCredential` (bearer JWT or API key, with kind).
 - **EvaluationWorker**: Single test case execution logic — resolves request, calls endpoint, captures response, tracks retries, extracts columns, builds `TestCaseRunResult`.
 - **StreamingResponseAccumulator**: Four-mode SSE accumulator — OpenAI chat-completions assembly, OpenAI Responses assembly, Anthropic Messages format assembly, or `{"events":[...]}` envelope for custom SSE formats. Delegates SSE wire format parsing to `SseEventParser`.
 - **ResultBatchWriter**: Thread-safe result buffer that flushes to analytics DB at configurable batch size thresholds, with SSE progress reporting.
@@ -477,17 +477,17 @@ Status: **Implemented**
 - **WHEN** a batch flush contains zero results (e.g., all calls pending)
 - **THEN** no progress event SHALL be emitted
 
-### Requirement: JWT token propagation to workers
-The executor SHALL propagate the initiating user's JWT token to all worker threads for DIAL Core deployment calls.
+### Requirement: Caller credential propagation to workers
+The executor SHALL propagate the initiating caller's credential (bearer JWT or API key, with kind) to all worker threads for DIAL Core deployment calls.
 Status: **Implemented**
 
-#### Scenario: Token available in workers
+#### Scenario: Credential available in workers
 - **WHEN** workers make HTTP calls to DIAL Core deployments
-- **THEN** the user's JWT SHALL be available via `AuthorizationTokenHolder.getToken()` in the worker thread, propagated via `TokenPropagationHelper`
+- **THEN** the caller's credential SHALL be available via `AuthorizationTokenHolder.getCredential()` in the worker thread, propagated via `TokenPropagationHelper`
 
-#### Scenario: Token captured before async dispatch
+#### Scenario: Credential captured before async dispatch
 - **WHEN** the run is dispatched to the `@Async` executor
-- **THEN** the token SHALL be captured in the calling thread (before `CompletableFuture.supplyAsync`) and propagated to the async thread and all worker threads spawned from it
+- **THEN** the credential SHALL be captured in the calling thread (before `CompletableFuture.supplyAsync`) and propagated to the async thread and all worker threads spawned from it
 
 ### Requirement: Execution configuration system defaults and validation
 The system SHALL define default and maximum values for all execution settings via `application.yml` properties. Per-run values in `RunConfigDto` SHALL be validated against these system maximums.
@@ -549,16 +549,16 @@ Status: **Implemented**
 - **WHEN** the request template defines query parameters
 - **THEN** the worker SHALL append all resolved query parameters to the request URL
 
-#### Scenario: Authorization header from JWT
+#### Scenario: Authorization header from caller credential
 - **WHEN** the worker makes a deployment call
-- **THEN** the `Authorization: Bearer <jwt>` header SHALL be set automatically via the token propagation mechanism (not from user-provided headers)
+- **THEN** the header the credential's kind requires (`Authorization: Bearer <jwt>` or `Api-Key`) SHALL be set automatically via the token propagation mechanism (not from user-provided headers)
 
 ### Requirement: Mock job replacement
 The `TestSuiteEvaluationJob` SHALL delegate to `EvaluationExecutor` instead of performing mock sleep and fake result generation. All mock-specific components (`MockResultsGenerator`, `MockResponseBodyBuilder`, `MockResultsBatchWriter`, `MockRequestBodyBuilder`) SHALL be removed. The worker uses `ResolvedRequestService` directly for full request resolution. Custom utility methods (`resolveInt`, `resolveLong`, `resolveDouble`) SHALL be replaced with `ObjectUtils.defaultIfNull` from Apache Commons Lang.
 Status: **Implemented**
 
 #### Scenario: Job delegates to executor
-- **WHEN** `TestSuiteEvaluationJob.dispatch(runId, token, skipDeploymentPhase)` runs
+- **WHEN** `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` runs
 - **THEN** it SHALL construct an `EvaluationContext` from the run's configuration and call `evaluationExecutor.execute(context)`
 
 #### Scenario: Mock components removed

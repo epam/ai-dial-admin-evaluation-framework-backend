@@ -1,6 +1,9 @@
 package com.epam.aidial.evaluation.mcp.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
@@ -68,6 +71,25 @@ class McpToolExecutorTest {
         assertThat(result.isError()).isTrue();
         JsonNode node = objectMapper.readTree(onlyTextContent(result).text());
         assertThat(node.get("code").asString()).isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("execute(Supplier) never lets a translator RuntimeException escape, and returns an"
+            + " INTERNAL_ERROR result that does not leak the translator failure's message")
+    void executeSupplierSwallowsTranslatorFailureAndReturnsInternalError() {
+        McpToolErrorTranslator failingTranslator = mock(McpToolErrorTranslator.class);
+        when(failingTranslator.translate(any())).thenThrow(new RuntimeException("translator broke"));
+        McpToolExecutor executorWithFailingTranslator =
+                new McpToolExecutor(callerContext, failingTranslator, new McpToolResults(objectMapper));
+
+        CallToolResult result = executorWithFailingTranslator.execute(() -> {
+            throw new IllegalStateException("body failed");
+        });
+
+        assertThat(result.isError()).isTrue();
+        JsonNode node = objectMapper.readTree(onlyTextContent(result).text());
+        assertThat(node.get("code").asString()).isEqualTo("INTERNAL_ERROR");
+        assertThat(node.get("message").asString()).doesNotContain("translator broke");
     }
 
     private static TextContent onlyTextContent(CallToolResult result) {

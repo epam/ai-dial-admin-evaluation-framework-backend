@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.mcp.support;
 
+import com.epam.aidial.evaluation.mcp.constants.McpErrorMessages;
 import com.epam.aidial.evaluation.mcp.model.McpErrorCode;
 import com.epam.aidial.evaluation.mcp.model.McpToolError;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -36,7 +37,7 @@ public class McpToolResults {
             json = objectMapper.writeValueAsString(payload);
         } catch (JacksonException e) {
             log.error("Failed to serialize MCP tool success payload of type {}", payloadType(payload), e);
-            return error(new McpToolError(McpErrorCode.INTERNAL_ERROR, "Unexpected server error", null));
+            return error(new McpToolError(McpErrorCode.INTERNAL_ERROR, McpErrorMessages.UNEXPECTED_SERVER_ERROR, null));
         }
         return CallToolResult.builder().addTextContent(json).isError(false).build();
     }
@@ -66,7 +67,7 @@ public class McpToolResults {
     private String fallbackInternalErrorJson() {
         ObjectNode node = objectMapper.createObjectNode();
         node.put("code", McpErrorCode.INTERNAL_ERROR.name());
-        node.put("message", "Unexpected server error");
+        node.put("message", McpErrorMessages.UNEXPECTED_SERVER_ERROR);
         return node.toString();
     }
 

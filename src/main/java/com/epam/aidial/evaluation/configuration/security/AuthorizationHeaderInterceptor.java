@@ -24,8 +24,9 @@ public class AuthorizationHeaderInterceptor implements AsyncHandlerInterceptor {
     @Override
     public boolean preHandle(
             @NotNull HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull Object handler) {
-        String authorizationHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
-        String apiKeyHeader = request.getHeader(CallerCredential.API_KEY_HEADER);
+        final String authorizationHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+        final String apiKeyHeader = request.getHeader(CallerCredential.API_KEY_HEADER);
+
         if (authorizationHeader != null && authorizationHeader.startsWith(BEARER_PREFIX)) {
             AuthorizationTokenHolder.setCredential(
                     CallerCredential.bearer(authorizationHeader.substring(BEARER_PREFIX.length())));

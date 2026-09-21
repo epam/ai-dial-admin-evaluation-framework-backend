@@ -24,7 +24,7 @@ spring:
         name: ai-dial-admin-evaluation-framework-backend
         version: "@project.version@"
         type: SYNC
-        protocol: STREAMABLE
+        protocol: ${SPRING_AI_MCP_SERVER_PROTOCOL:STATELESS}
         capabilities:
           tool: true
           resource: false

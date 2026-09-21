@@ -46,13 +46,23 @@ public class JsonMapperConfiguration {
      * Object value") before the MCP transport ever sees the body. Declining {@code String.class}
      * here lets {@code StringHttpMessageConverter} read the body verbatim, exactly as it does for
      * every other {@code String}-typed request body in the app.
+     *
+     * <p>The write side needs the same exclusion: the MCP {@code STATELESS} transport
+     * ({@code WebMvcStatelessServerTransport}) pre-serializes every JSON-RPC response to a
+     * {@code String} and returns it via {@code ServerResponse.body(String)} with
+     * {@code application/json}. A Jackson converter reports {@code canWrite=true} for
+     * {@code String.class} and would serialize that already-JSON text as a JSON string literal
+     * ({@code "{\"jsonrpc\":...}"}), which every MCP client rejects ("expected object, received
+     * string"). Declining {@code String.class} lets {@code StringHttpMessageConverter} write it
+     * verbatim. The {@code STREAMABLE} transport answers POSTs over SSE and never hit this path.
+     * Verified by {@code McpServerStatelessFunctionalTests}.
      */
     @Bean
     public JacksonJsonHttpMessageConverter jacksonJsonHttpMessageConverter(JsonMapper objectMapper) {
         return new JacksonJsonHttpMessageConverter(objectMapper) {
             @Override
             public boolean canWrite(ResolvableType targetType, Class<?> valueType, MediaType mediaType) {
-                if (byte[].class.equals(valueType)) {
+                if (byte[].class.equals(valueType) || String.class.equals(valueType)) {
                     return false;
                 }
                 return super.canWrite(targetType, valueType, mediaType);

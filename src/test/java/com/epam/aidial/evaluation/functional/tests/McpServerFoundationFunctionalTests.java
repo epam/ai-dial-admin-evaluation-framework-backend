@@ -37,7 +37,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
 
 /**
- * Foundation-level MCP server functional tests (security mode: none): the endpoint itself,
+ * Foundation-level MCP server functional tests (security mode: none, protocol pinned to
+ * {@code STREAMABLE} on the nested registration because the session tests below are
+ * streamable-specific; {@code McpServerStatelessFunctionalTests} covers {@code STATELESS}): the endpoint itself,
  * server metadata, the {@code tools/list} contract, the D-F2 request-thread caller identity
  * verification via the test-only probe tool, and the deployments tool group (D-F8) end to end
  * against a mocked {@link DialCoreClient}.

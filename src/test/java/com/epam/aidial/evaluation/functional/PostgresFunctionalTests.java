@@ -58,6 +58,7 @@ import com.epam.aidial.evaluation.functional.tests.McpServerDisabledFunctionalTe
 import com.epam.aidial.evaluation.functional.tests.McpServerDisabledOidcFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpServerFoundationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpServerSecurityFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpServerStatelessFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpTestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
@@ -518,8 +519,14 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class RunMetricSnapshotTests extends RunMetricSnapshotFunctionalTests {}
 
     @Nested
+    @TestPropertySource(properties = {"spring.ai.mcp.server.protocol=STREAMABLE"})
     @Import(CallerIdentityProbeTools.class)
     class McpServerFoundationTests extends McpServerFoundationFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(properties = {"spring.ai.mcp.server.protocol=STATELESS"})
+    @Import(CallerIdentityProbeTools.class)
+    class McpServerStatelessTests extends McpServerStatelessFunctionalTests {}
 
     @Nested
     @TestPropertySource(

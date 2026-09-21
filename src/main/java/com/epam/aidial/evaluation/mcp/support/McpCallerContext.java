@@ -12,8 +12,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Exposes the calling MCP client's identity to tool code. Tool bodies execute on the same HTTP
- * request thread as the security filter chain (Spring AI's servlet sync-server customizer sets
- * {@code immediateExecution(true)}, and the WebMVC streamable transport blocks on that thread), so
+ * request thread as the security filter chain (Spring AI's servlet sync-server autoconfiguration sets
+ * {@code immediateExecution(true)} for both the {@code STATELESS} and {@code STREAMABLE} protocols, and
+ * both WebMVC transports block on that thread), so
  * {@link SecurityContextHolder} and {@link AuthorizationTokenHolder} are populated exactly as they
  * are for a REST controller. No propagation machinery is added here; see
  * {@code docs/patterns/mcp-server.md}.

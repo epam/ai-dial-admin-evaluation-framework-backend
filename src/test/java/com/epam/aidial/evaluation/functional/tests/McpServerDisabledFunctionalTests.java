@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.functional.support.McpFunctionalTestSupport;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.mcp.server.webmvc.transport.WebMvcStatelessServerTransport;
 import org.springframework.ai.mcp.server.webmvc.transport.WebMvcStreamableServerTransportProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,8 +17,8 @@ import org.springframework.http.ResponseEntity;
 /**
  * MCP server disabled functional tests (security mode: none, {@code spring.ai.mcp.server.enabled=false}):
  * with no autoconfigured router function registered, a POST to the configured MCP endpoint falls
- * through to plain Spring MVC and 404s, and no {@link WebMvcStreamableServerTransportProvider} bean
- * exists in the context (see design D-F3, D-F9).
+ * through to plain Spring MVC and 404s, and neither a {@link WebMvcStatelessServerTransport} nor a
+ * {@link WebMvcStreamableServerTransportProvider} bean exists in the context (see design D-F3, D-F9).
  */
 @DisplayName("MCP server disabled (security mode: none)")
 public abstract class McpServerDisabledFunctionalTests extends BaseFunctionalTest {
@@ -42,8 +43,11 @@ public abstract class McpServerDisabledFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName("no Streamable HTTP transport-provider bean exists in the context when the MCP server is disabled")
+    @DisplayName(
+            "neither the stateless nor the streamable MCP transport bean exists in the context when the MCP server is disabled")
     void transportProviderBeanIsAbsentWhenDisabled() {
+        assertThat(applicationContext.getBeansOfType(WebMvcStatelessServerTransport.class))
+                .isEmpty();
         assertThat(applicationContext.getBeansOfType(WebMvcStreamableServerTransportProvider.class))
                 .isEmpty();
     }

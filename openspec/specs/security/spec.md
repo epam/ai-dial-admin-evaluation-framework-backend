@@ -266,7 +266,7 @@ Status: **Implemented**
   - `com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties`
   - `com.epam.aidial.evaluation.client.apikey.ApiKeyIntrospectionClientConfiguration` (dedicated `RestClient` bean)
 - Caller-credential capture (request-scoped, mirrors the `ApiKeyAuthenticationFilter` precedence rule;
-  registered in `configuration.logging.WebMvcConfig` ahead of the MCP streamable-HTTP router function,
+  registered in `configuration.logging.WebMvcConfig` ahead of the MCP transport router function,
   and clearing in both `afterCompletion` and `afterConcurrentHandlingStarted`):
   - `com.epam.aidial.evaluation.configuration.security.AuthorizationHeaderInterceptor` (unit coverage `AuthorizationHeaderInterceptorTest`)
   - `com.epam.aidial.evaluation.runner.util.CallerCredential` (`evaluation-runner-core`; `headerName()`/`headerValue()` per kind, redacting `toString()`, `API_KEY_HEADER` constant) and `runner.util.CredentialKind`

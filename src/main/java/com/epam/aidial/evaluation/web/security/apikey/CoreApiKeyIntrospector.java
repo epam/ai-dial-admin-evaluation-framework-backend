@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.web.security.apikey;
 
 import com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties;
 import com.epam.aidial.evaluation.configuration.properties.security.JwtSecurityProperties;
-import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import jakarta.annotation.PostConstruct;
 import java.util.HashMap;
@@ -22,9 +21,13 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+/**
+ * Deliberately NOT annotated with {@code @LogExecution}: its public methods take the plaintext API
+ * key, and the opt-in trace advisor renders method arguments verbatim, which would write the secret
+ * to the log. Guarded by {@code SecretHandlingLoggingTest}.
+ */
 @Slf4j
 @Component
-@LogExecution
 @RequiredArgsConstructor
 @ConditionalOnProperty(value = "config.rest.security.api-key.enabled", havingValue = "true")
 public class CoreApiKeyIntrospector {

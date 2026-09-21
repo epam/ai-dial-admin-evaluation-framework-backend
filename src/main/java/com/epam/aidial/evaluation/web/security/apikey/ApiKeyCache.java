@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.web.security.apikey;
 
 import com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties;
-import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.nio.charset.StandardCharsets;
@@ -20,10 +19,13 @@ import org.springframework.stereotype.Component;
  * API key so the plaintext key is never held as a cache key or logged. Uses Caffeine's
  * {@link Cache#get(Object, java.util.function.Function)} contract: a mapping function that
  * throws never populates the cache, so failed introspections are never cached.
+ *
+ * <p>Deliberately NOT annotated with {@code @LogExecution}: {@link #getOrAuthenticate} takes the
+ * plaintext key, and the opt-in trace advisor renders method arguments verbatim. Guarded by
+ * {@code SecretHandlingLoggingTest}.
  */
 @Slf4j
 @Component
-@LogExecution
 @ConditionalOnProperty(value = "config.rest.security.api-key.enabled", havingValue = "true")
 public class ApiKeyCache {
 

@@ -94,6 +94,53 @@ class DialAdasClientTest {
                 .isEqualTo(HttpStatus.GATEWAY_TIMEOUT.value());
     }
 
+    @Test
+    @DisplayName("executeSql posts the sql body and parses the aggregate response")
+    void executeSqlPostsSqlAndParsesResponse() {
+        server.expect(requestTo("http://dial-adas.local/v1/queries/execute-sql"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(content().json("{\"sql\":\"SELECT avg(case_cost) AS avg_cost\"}"))
+                .andRespond(
+                        withSuccess("{\"rows\":[{\"count\":4,\"avg_cost\":5.40875E-4}]}", MediaType.APPLICATION_JSON));
+
+        AdasAggregateResponseDto<AdasRunAvgCostRowDto> response =
+                client.executeSql("SELECT avg(case_cost) AS avg_cost", AdasRunAvgCostRowDto.class);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getRows()).hasSize(1);
+        assertThat(response.getRows().get(0).getCount()).isEqualTo(4L);
+        assertThat(response.getRows().get(0).getAvgCost()).isEqualTo(5.40875E-4);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("executeSql throws DialAdasClientException with 502 on 5xx response")
+    void executeSqlThrowsClientExceptionOn5xx() {
+        server.expect(requestTo("http://dial-adas.local/v1/queries/execute-sql"))
+                .andRespond(withServerError());
+
+        assertThatThrownBy(() -> client.executeSql("SELECT 1", AdasRunAvgCostRowDto.class))
+                .isInstanceOf(DialAdasClientException.class)
+                .extracting(ex -> ((DialAdasClientException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("executeSql throws DialAdasClientException with 504 on connection timeout")
+    void executeSqlThrowsClientExceptionOnTimeout() {
+        ClientHttpRequestInterceptor timeoutInterceptor = (request, body, execution) -> throwSocketTimeout();
+        RestClient timeoutClient =
+                builder.requestInterceptor(timeoutInterceptor).build();
+        DialAdasClient timeoutBoundClient = new DialAdasClient(timeoutClient);
+
+        assertThatThrownBy(() -> timeoutBoundClient.executeSql("SELECT 1", AdasRunAvgCostRowDto.class))
+                .isInstanceOf(DialAdasClientException.class)
+                .extracting(ex -> ((DialAdasClientException) ex).getStatusCode())
+                .isEqualTo(HttpStatus.GATEWAY_TIMEOUT.value());
+    }
+
     private static ClientHttpResponse throwSocketTimeout() throws IOException {
         throw new SocketTimeoutException("Read timed out");
     }

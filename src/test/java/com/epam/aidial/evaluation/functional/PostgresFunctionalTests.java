@@ -53,6 +53,7 @@ import com.epam.aidial.evaluation.functional.tests.LegacyDisabledTestCaseIdsFunc
 import com.epam.aidial.evaluation.functional.tests.MaxLimitsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpDeploymentFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpEvaluationRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpServerCustomEndpointOidcFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpServerDisabledFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpServerDisabledOidcFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpServerFoundationFunctionalTests;
@@ -562,6 +563,22 @@ public class PostgresFunctionalTests extends FunctionalTests {
             })
     @Import(StaticJwtTestConfiguration.class)
     class McpServerDisabledOidcTests extends McpServerDisabledOidcFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "spring.ai.mcp.server.streamable-http.mcp-endpoint=/agent/mcp/",
+                "config.rest.security.mode=oidc",
+                "config.rest.security.disable-swagger-authorization=true",
+                "providers.test.issuer=https://issuer.example.com",
+                "providers.test.jwkSetUri=https://issuer.example.com/.well-known/jwks.json",
+                "providers.test.audiences[0]=test-audience",
+                "providers.test.roleClaims[0]=roles",
+                "providers.test.allowedRoles[0]=admin",
+                "providers.test.principalClaim=sub"
+            })
+    @Import(StaticJwtTestConfiguration.class)
+    class McpServerCustomEndpointOidcTests extends McpServerCustomEndpointOidcFunctionalTests {}
 
     @Nested
     class McpDeploymentTests extends McpDeploymentFunctionalTests {}

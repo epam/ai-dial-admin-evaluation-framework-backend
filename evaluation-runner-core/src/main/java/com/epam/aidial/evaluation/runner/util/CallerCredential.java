@@ -10,7 +10,9 @@ import org.springframework.http.HttpHeaders;
  *
  * <p>Use {@link #bearer(String)} / {@link #apiKey(String)} to construct an instance; both return
  * {@code null} for a {@code null}/blank value rather than throwing, so a missing header never fails a
- * request. Outbound HTTP clients use {@link #headerName()} / {@link #headerValue()} to set exactly one
+ * request. The canonical constructor rejects a blank {@code value} or {@code null} {@code kind}, so an
+ * instance can never render a header such as {@code "Bearer null"}: "no credential" is always
+ * {@code null}, never a hollow instance. Outbound HTTP clients use {@link #headerName()} / {@link #headerValue()} to set exactly one
  * header ({@code Authorization: Bearer} or {@value #API_KEY_HEADER}).
  */
 public record CallerCredential(String value, CredentialKind kind) {
@@ -19,6 +21,15 @@ public record CallerCredential(String value, CredentialKind kind) {
     public static final String API_KEY_HEADER = "Api-Key";
 
     private static final String BEARER_PREFIX = "Bearer ";
+
+    public CallerCredential {
+        if (StringUtils.isBlank(value)) {
+            throw new IllegalArgumentException("Credential value must not be blank; use null for 'no credential'");
+        }
+        if (kind == null) {
+            throw new IllegalArgumentException("Credential kind must not be null");
+        }
+    }
 
     public static CallerCredential bearer(String value) {
         return StringUtils.isBlank(value) ? null : new CallerCredential(value, CredentialKind.BEARER);

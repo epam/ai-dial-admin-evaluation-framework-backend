@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
-import com.epam.aidial.evaluation.runner.util.CredentialKind;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,8 +29,7 @@ class AuthorizationHeaderInterceptorTest {
 
         interceptor.preHandle(request, new MockHttpServletResponse(), new Object());
 
-        assertThat(AuthorizationTokenHolder.getCredential())
-                .isEqualTo(new CallerCredential("abc123", CredentialKind.BEARER));
+        assertThat(AuthorizationTokenHolder.getCredential()).isEqualTo(CallerCredential.bearer("abc123"));
     }
 
     @Test
@@ -42,8 +40,7 @@ class AuthorizationHeaderInterceptorTest {
 
         interceptor.preHandle(request, new MockHttpServletResponse(), new Object());
 
-        assertThat(AuthorizationTokenHolder.getCredential())
-                .isEqualTo(new CallerCredential("my-key", CredentialKind.API_KEY));
+        assertThat(AuthorizationTokenHolder.getCredential()).isEqualTo(CallerCredential.apiKey("my-key"));
     }
 
     @Test
@@ -55,8 +52,7 @@ class AuthorizationHeaderInterceptorTest {
 
         interceptor.preHandle(request, new MockHttpServletResponse(), new Object());
 
-        assertThat(AuthorizationTokenHolder.getCredential())
-                .isEqualTo(new CallerCredential("abc123", CredentialKind.BEARER));
+        assertThat(AuthorizationTokenHolder.getCredential()).isEqualTo(CallerCredential.bearer("abc123"));
     }
 
     @Test

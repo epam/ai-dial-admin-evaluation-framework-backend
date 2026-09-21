@@ -101,17 +101,13 @@ public class SecurityConfiguration {
             Map<String, Set<String>> allowedRolesByIssuer,
             ObjectProvider<ApiKeyAuthenticationFilter> apiKeyAuthenticationFilter)
             throws Exception {
-        String normalizedMcpEndpoint = normalizeEndpoint(mcpEndpoint);
         http.csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(publicPathPatterns())
                         .permitAll()
                         .requestMatchers("/api/v1/**")
                         .authenticated()
-                        // The Streamable HTTP and stateless transports serve exactly this one path
-                        // (GET/POST/DELETE); the deprecated SSE transport (/sse, /mcp/message) is
-                        // deliberately unsupported and would need a matcher change.
-                        .requestMatchers(normalizedMcpEndpoint)
+                        .requestMatchers(mcpEndpoint)
                         .authenticated()
                         .anyRequest()
                         .denyAll())
@@ -148,10 +144,6 @@ public class SecurityConfiguration {
         apiKeyAuthenticationFilter.ifAvailable(
                 filter -> http.addFilterBefore(filter, BearerTokenAuthenticationFilter.class));
         return http.build();
-    }
-
-    private static String normalizeEndpoint(String endpoint) {
-        return endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
     }
 
     protected String[] publicPathPatterns() {

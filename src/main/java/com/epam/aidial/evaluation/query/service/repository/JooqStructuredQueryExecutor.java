@@ -27,7 +27,7 @@ import org.springframework.stereotype.Component;
 @Component
 @LogExecution
 @RequiredArgsConstructor
-class JooqStructuredQueryExecutor {
+class JooqStructuredQueryExecutor implements StructuredQueryExecutor {
 
     private final StructuredQueryBuilder queryBuilder;
     private final StructuredQueryEntityRegistry entityRegistry;
@@ -37,6 +37,7 @@ class JooqStructuredQueryExecutor {
      *     unsupported field/function/feature, or is rejected by the database as not type-checking
      *     against the data (e.g. aggregating a non-numeric JSONB field) — all client errors (HTTP 400)
      */
+    @Override
     public QueryResultPage execute(StructuredQuery rawQuery) {
         if (rawQuery == null) {
             throw new ValidationException("query must not be null");

@@ -8,7 +8,7 @@ Status: **Implemented**
 
 ## Key Terms
 
-- **McpToolInvoker**: Client-layer component wrapping the MCP Java SDK to execute `tools/call` against DIAL Core's MCP proxy.
+- **McpToolInvoker**: Component in `evaluation-runner-core` (`runner.client.mcp`) wrapping the MCP Java SDK to execute `tools/call` against DIAL Core's MCP proxy.
 - **McpRequestResolver**: Service-layer component (stateless transformer) that resolves a pre-loaded argument template by merging input bindings with test case data, producing a `Map<String, Object>` of tool arguments. Does NOT perform DB I/O — receives all inputs as method parameters.
 - **McpResponseSerializer**: Service-layer component that serializes MCP SDK's `CallToolResult` to a JSON string preserving the MCP envelope structure for JSONata extraction.
 - **ArgumentTemplate**: JSONB structure defining tool call arguments with `${{variable}}` placeholders and constant values, stored on MCP test suites.
@@ -18,7 +18,7 @@ Status: **Implemented**
 
 ### Requirement: McpToolInvoker executes tool calls via DIAL Core MCP proxy
 
-The system SHALL provide a `McpToolInvoker` component in the `client.mcp` package that executes MCP `tools/call` requests against DIAL Core's MCP proxy endpoint. The invoker SHALL use the official Java MCP SDK (`io.modelcontextprotocol.sdk:mcp`) with the transport protocol specified by the `McpTransport` parameter. A new MCP client transport instance SHALL be created per invocation. The user's JWT token SHALL be injected into the transport's HTTP headers.
+The system SHALL provide a `McpToolInvoker` component in the `runner.client.mcp` package that executes MCP `tools/call` requests against DIAL Core's MCP proxy endpoint. The invoker SHALL use the official Java MCP SDK (`io.modelcontextprotocol.sdk:mcp`) with the transport protocol specified by the `McpTransport` parameter. A new MCP client transport instance SHALL be created per invocation. The caller's credential SHALL be injected into the transport's HTTP headers in the header its kind requires — `Authorization: Bearer <token>` for a bearer caller, `Api-Key: <key>` for a DIAL API-key caller — and only that one header SHALL be set.
 
 - **STREAMABLE_HTTP** transport: Uses `HttpClientStreamableHttpTransport` targeting `{dialCoreBaseUrl}` with endpoint path `/v1/toolset/{deploymentId}/mcp`.
 - **SSE** transport: Uses `HttpClientSseClientTransport` targeting `{dialCoreBaseUrl}` with SSE endpoint path `/v1/toolset/{deploymentId}/sse`.
@@ -28,9 +28,9 @@ The deployment ID may contain slashes (e.g., `toolsets/public/my-tool`) and spec
 Status: **Implemented**
 
 #### Scenario: Successful tool call
-- **WHEN** `McpToolInvoker.callTool(deploymentId, toolName, arguments, token, transport)` is called with valid parameters
+- **WHEN** `McpToolInvoker.callTool(...)` is called with valid parameters and the caller's credential
 - **THEN** the invoker SHALL create an MCP client with the transport matching the `transport` parameter
-- **AND** set `Authorization: Bearer {token}` on the transport's HTTP headers
+- **AND** set the credential on the transport's HTTP headers as `Authorization: Bearer {token}` for a bearer credential or `Api-Key: {key}` for an API-key credential
 - **AND** execute `tools/call` with the given tool name and arguments
 - **AND** return the `CallToolResult` from the MCP SDK
 
@@ -45,6 +45,10 @@ Status: **Implemented**
 #### Scenario: URL-encoded slash (%2F) in deployment ID decoded to path separator
 - **WHEN** the deployment ID contains `%2F` (e.g., `my-org%2Fmy-toolset`)
 - **THEN** the invoker SHALL decode `%2F` to `/` and produce `/v1/toolset/my-org/my-toolset/mcp`
+
+#### Scenario: Tool call with no caller credential
+- **WHEN** `callTool` or `listTools` is invoked with no caller credential (for example a run dispatched without one)
+- **THEN** the transport SHALL carry neither an `Authorization` nor an `Api-Key` header, and SHALL NOT send a placeholder value such as `Bearer null`
 
 #### Scenario: Tool call returns isError
 - **WHEN** the MCP server returns a `CallToolResult` with `isError = true`
@@ -82,14 +86,18 @@ Status: **Implemented**
 
 ### Requirement: MCP tool discovery via tools/list
 
-The system SHALL provide a method on `McpToolInvoker` to call MCP `tools/list` for a given MCP-capable deployment (toolset or application), returning the list of available tools with their schemas.
+The system SHALL provide a method on `McpToolInvoker` to call MCP `tools/list` for a given MCP-capable deployment (toolset or application), returning the list of available tools with their schemas. The request SHALL carry the caller's credential in the header its kind requires, exactly as `tools/call` does.
 
 Status: **Implemented**
 
 #### Scenario: List tools for MCP deployment
-- **WHEN** `McpToolInvoker.listTools(deploymentId, token, transport)` is called
+- **WHEN** `McpToolInvoker.listTools(...)` is called with a deployment ID, the caller's credential, and a transport
 - **THEN** the invoker SHALL create an MCP client using the specified transport and execute `tools/list` via the MCP proxy
 - **AND** return a list of tool definitions including `name`, `description`, `inputSchema`, and optionally `outputSchema`
+
+#### Scenario: tools/list for an API-key caller
+- **WHEN** the caller authenticated with an `Api-Key` header
+- **THEN** the `tools/list` request to the MCP proxy SHALL carry `Api-Key: <the caller's key>` and no `Authorization` header
 
 #### Scenario: tools/list filtered by DIAL Core
 - **WHEN** the deployment has `allowed_tools` configured in DIAL Core
@@ -315,8 +323,8 @@ Status: **Implemented**
 - File resolution check: `if (SchemaFieldType.FILE.name().equalsIgnoreCase(typeHint) && resolved instanceof String resolvedRef)` — same pattern as `ResolvedRequestService`.
 - Only full-value placeholders trigger file resolution. Embedded placeholders use string concatenation and skip file ref transformation.
 - MCP SDK dependency: `io.modelcontextprotocol.sdk:mcp` in `build.gradle`
-- New package: `com.epam.aidial.evaluation.client.mcp`
-- New classes: `McpToolInvoker`, `McpClientConfiguration`, `McpClientProperties`, `McpInvocationException`
+- Package: `com.epam.aidial.evaluation.runner.client.mcp` in the `evaluation-runner-core` module (originally `com.epam.aidial.evaluation.client.mcp` in the main app)
+- Classes: `McpToolInvoker`, `McpClientConfiguration`, `McpClientProperties`, `McpInvocationException`
 - New service classes: `McpRequestResolver`, `McpResponseSerializer` in `service.domain`
 - New enum: `McpTransport` in `service.domain.dto` — `STREAMABLE_HTTP("streamable-http")`, `SSE("sse")`, fail-fast via `@JsonCreator`
 - New enum: `DialTransport` in `client.dialcore.dto` — `HTTP("HTTP")`, `SSE("SSE")` (maps to `McpTransport` via `DeploymentMapper`)
@@ -325,3 +333,4 @@ Status: **Implemented**
 - No-op `JsonSchemaValidator` provided to MCP client builder to avoid `NoClassDefFoundError` from `networknt/json-schema-validator` 1.x/2.x version conflict (MCP SDK 1.1.0 compiles against 2.x, project uses 1.x). Safe because schema validation is only active when `enableCallToolSchemaCaching=true` (off by default).
 - Config properties: `dial.mcp.connect-timeout-ms`, `dial.mcp.read-timeout-ms` in `application.yml`
 - `docs/configuration.md` must be updated with new MCP properties
+- Caller credential: `callTool`/`listTools` take a `runner.util.CallerCredential` (never a bare token string); both transport builders route through the package-private `applyCredentialHeader`, which sets exactly one header from `CallerCredential#headerName()`/`headerValue()` and none at all for a `null` credential. Header selection per kind is asserted on that helper in `McpToolInvokerTest`, not per method. Callers passing the credential through: `service.domain.DeploymentService#listTools`, `service.domain.TryItOutService`, and runner-core `runner.job.EvaluationWorker` (from `EvaluationContext#credential`).

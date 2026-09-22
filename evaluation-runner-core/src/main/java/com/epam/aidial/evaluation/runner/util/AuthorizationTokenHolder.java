@@ -3,23 +3,31 @@ package com.epam.aidial.evaluation.runner.util;
 import lombok.experimental.UtilityClass;
 
 /**
- * Thread-local storage for the JWT token from the current request.
- * Used to propagate the user's token to outbound services (e.g. DIAL Core) when making HTTP calls.
+ * Thread-local storage for the current request's caller credential (bearer token or API key).
+ * Used to propagate the caller's credential to outbound services (e.g. DIAL Core) when making HTTP
+ * calls. The holder stores a {@link CallerCredential}; any consumer that forms an outbound header
+ * must read {@link #getCredential()} (never just a raw value), so a bearer token can never be sent
+ * as an API key (or vice versa).
  */
 @UtilityClass
 public class AuthorizationTokenHolder {
 
-    private static final ThreadLocal<String> TOKEN_HOLDER = new ThreadLocal<>();
+    private static final ThreadLocal<CallerCredential> CREDENTIAL_HOLDER = new ThreadLocal<>();
 
-    public static String getToken() {
-        return TOKEN_HOLDER.get();
+    public static CallerCredential getCredential() {
+        return CREDENTIAL_HOLDER.get();
     }
 
-    public static void setToken(String token) {
-        TOKEN_HOLDER.set(token);
+    /** {@code null} clears the current credential. */
+    public static void setCredential(CallerCredential credential) {
+        if (credential == null) {
+            CREDENTIAL_HOLDER.remove();
+        } else {
+            CREDENTIAL_HOLDER.set(credential);
+        }
     }
 
     public static void clearToken() {
-        TOKEN_HOLDER.remove();
+        CREDENTIAL_HOLDER.remove();
     }
 }

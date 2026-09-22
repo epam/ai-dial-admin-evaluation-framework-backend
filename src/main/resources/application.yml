@@ -16,6 +16,41 @@ spring:
   threads:
     virtual:
       enabled: ${VIRTUAL_THREADS_ENABLED:true}
+  ai:
+    mcp:
+      server:
+        enabled: ${SPRING_AI_MCP_SERVER_ENABLED:true}
+        stdio: false
+        name: ai-dial-admin-evaluation-framework-backend
+        version: "@project.version@"
+        type: SYNC
+        protocol: ${SPRING_AI_MCP_SERVER_PROTOCOL:STATELESS}
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+        streamable-http:
+          mcp-endpoint: /mcp
+          disallow-delete: false
+        annotation-scanner:
+          enabled: true
+        instructions: |
+          This MCP server lets an agent set up and run evaluations against DIAL deployments end to end.
+
+          Typical workflow:
+          1. Discover deployments with list_deployments / get_deployment to pick a model,
+             application, or toolset to evaluate.
+          2. Create a test suite targeting the chosen deployment, then use try_out to send a sample
+             request and inspect the response before committing to a request template.
+          3. Iterate with try_out and update_suite until the request template and try_out results
+             look right.
+          4. Define the response schema and add test cases (rows of input data and, optionally,
+             expected values) to the suite.
+          5. Attach metrics to score each response against expectations.
+          6. Start a run of the suite.
+          7. Poll get_run for run status until it reaches a terminal state (succeeded/failed/cancelled).
+          8. Once terminal, fetch the run's results and summary for pass/fail outcomes and metric scores.
 
 # Auth configuration
 auth:

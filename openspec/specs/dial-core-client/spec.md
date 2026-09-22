@@ -19,7 +19,7 @@ Every other field SHALL be left null and therefore SHALL be absent from the JSON
 
 #### Scenario: Successful deployment listing
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments`
-- **THEN** system calls DIAL Core `GET /v1/deployments` with user's JWT token
+- **THEN** system calls DIAL Core `GET /v1/deployments` with the caller's credential (see *Token propagation*)
 - **AND** transforms responses to `DialModelInfoDto`, `DialApplicationInfoDto`, and `ToolsetInfoDto` based on entry type
 - **AND** maps each entry to the short projection (`deploymentId`, `displayName`, `description`, plus `transport` for toolsets)
 - **AND** returns merged list with HTTP 200
@@ -78,13 +78,13 @@ Status: **Implemented**
 
 #### Scenario: Successful model retrieval
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments/dial-model/{id}`
-- **THEN** system calls DIAL Core `/openai/models/{id}` with user's JWT token
+- **THEN** system calls DIAL Core `/openai/models/{id}` with the caller's credential (see *Token propagation*)
 - **AND** transforms response to `DialModelInfoDto`
 - **AND** returns with HTTP 200
 
 #### Scenario: Successful toolset retrieval
 - **WHEN** authenticated user sends GET request to `/api/v1/deployments/dial-toolset/{id}`
-- **THEN** system calls DIAL Core `/openai/toolsets/{id}` with user's JWT token
+- **THEN** system calls DIAL Core `/openai/toolsets/{id}` with the caller's credential (see *Token propagation*)
 - **AND** transforms response to `ToolsetInfoDto`
 - **AND** returns with HTTP 200
 
@@ -167,7 +167,7 @@ Status: **Implemented**
 
 #### Scenario: Model found by ID alone
 - **WHEN** an authenticated user sends GET request to `/api/v1/deployments/all/gpt-5`
-- **THEN** the system SHALL call DIAL Core `GET /v1/deployments/gpt-5` with the user's JWT token
+- **THEN** the system SHALL call DIAL Core `GET /v1/deployments/gpt-5` with the caller's credential (see *Token propagation*)
 - **AND** return HTTP 200 with the same body the typed model endpoint returns for `gpt-5`
 - **AND** the body's `$type` SHALL be `dial-model`
 
@@ -233,7 +233,7 @@ Status: **Implemented**
 
 #### Scenario: Successful deployment retrieval
 - **WHEN** `DialCoreClient.getDeploymentById(id)` is called with a valid deployment ID
-- **THEN** the client SHALL call `GET /v1/deployments/{id}` with the user's JWT
+- **THEN** the client SHALL call `GET /v1/deployments/{id}` with the caller's credential
 - **AND** return the deserialized `DialCoreDeploymentDto`, resolved to its concrete subtype via the `object` discriminator
 
 #### Scenario: Deployment not found
@@ -370,12 +370,12 @@ The system SHALL represent `routes` in `DialApplicationInfoDto` as `Map<String, 
 
 ### Requirement: Fetch deployments from DIAL Core unified endpoint
 
-The `DialCoreClient` SHALL provide a `getDeployments(interfaceType)` method that calls DIAL Core's `GET /v1/deployments` endpoint with the user's JWT token. When `interfaceType` is provided, the request SHALL include `?interface_type={value}`. The response SHALL be deserialized as a bare JSON array (`List<DialCoreDeploymentDto>`) — DIAL Core returns a top-level array, not a wrapped object. `DialCoreDeploymentListResponseDto` SHALL NOT exist; `DeploymentService` SHALL consume `List<DialCoreDeploymentDto>` directly without a `getData()` call.
+The `DialCoreClient` SHALL provide a `getDeployments(interfaceType)` method that calls DIAL Core's `GET /v1/deployments` endpoint with the caller's credential (see *Token propagation*). When `interfaceType` is provided, the request SHALL include `?interface_type={value}`. The response SHALL be deserialized as a bare JSON array (`List<DialCoreDeploymentDto>`) — DIAL Core returns a top-level array, not a wrapped object. `DialCoreDeploymentListResponseDto` SHALL NOT exist; `DeploymentService` SHALL consume `List<DialCoreDeploymentDto>` directly without a `getData()` call.
 Status: **Implemented**
 
 #### Scenario: Fetch all deployments
 - **WHEN** `DialCoreClient.getDeployments(null)` is called
-- **THEN** the client SHALL call `GET /v1/deployments` with the user's JWT
+- **THEN** the client SHALL call `GET /v1/deployments` with the caller's credential
 - **AND** return the list of deployment entries (models, applications, toolsets)
 
 #### Scenario: Fetch MCP-capable deployments
@@ -400,7 +400,7 @@ Status: **Implemented**
 
 ### Requirement: Fetch single toolset by ID
 
-The `DialCoreClient` SHALL provide a `getToolset(id)` method that calls DIAL Core's `GET /openai/toolsets/{id}` with the user's JWT token.
+The `DialCoreClient` SHALL provide a `getToolset(id)` method that calls DIAL Core's `GET /openai/toolsets/{id}` with the caller's credential (see *Token propagation*).
 Status: **Implemented**
 
 #### Scenario: Successful toolset retrieval
@@ -415,66 +415,94 @@ Status: **Implemented**
 
 ### Requirement: Token propagation
 
-The system SHALL propagate the user's JWT token from incoming requests to DIAL Core. The token MUST be extracted from the `Authorization: Bearer` header and forwarded to DIAL Core in the same format. This ensures DIAL Core filters deployments based on the user's access rights - each user sees only deployments they are authorized to access.
+The system SHALL propagate the caller's credential from the incoming request to DIAL Core, in the header that credential's kind requires: a credential taken from `Authorization: Bearer` SHALL be forwarded as `Authorization: Bearer <token>`, and a credential taken from the `Api-Key` header SHALL be forwarded as `Api-Key: <key>`. A request carrying both SHALL propagate the bearer credential only. This ensures DIAL Core filters deployments based on the caller's access rights - each caller sees only deployments they are authorized to access - for both credential kinds.
+
+This propagation rule governs every client the system invokes on the caller's behalf through the shared request interceptor: the DIAL Core metadata client, the DIAL Core deployment invoker used by try-out and run execution, and the dial-adas structured-query DSL client (a separate host, not DIAL Core, that shares the same interceptor). It does not govern clients that authenticate with the service's own configured key rather than the caller's credential, nor the metric-provider client, which carries no caller credential at all.
+
+Status: **Implemented**
 
 #### Scenario: Token is propagated to DIAL Core
 
-- **WHEN** user sends request with `Authorization: Bearer <token>` header
-- **THEN** system forwards the same token to DIAL Core in `Authorization: Bearer <token>` header
-- **AND** DIAL Core returns only deployments the user is authorized to access
+- **WHEN** a caller sends a request with an `Authorization: Bearer <token>` header
+- **THEN** the system forwards the same token to DIAL Core in an `Authorization: Bearer <token>` header
+- **AND** does not send an `Api-Key` header
+- **AND** DIAL Core returns only deployments the caller is authorized to access
+
+#### Scenario: API-key credential is propagated to DIAL Core
+
+- **WHEN** a caller sends a request with a non-blank `Api-Key` header and no `Authorization` header
+- **THEN** the system forwards the same key to DIAL Core in an `Api-Key: <key>` header
+- **AND** does not send an `Authorization` header
+- **AND** DIAL Core returns only deployments that key is authorized to access
+
+#### Scenario: Both headers present
+
+- **WHEN** a caller sends both `Authorization: Bearer <token>` and `Api-Key: <key>`
+- **THEN** the system forwards only `Authorization: Bearer <token>` to DIAL Core
 
 #### Scenario: Missing authorization header
 
-- **WHEN** user sends request without `Authorization` header
+- **WHEN** a caller sends a request with neither an `Authorization` nor an `Api-Key` header
 - **AND** security is enabled
-- **THEN** system rejects request with HTTP 401 before calling DIAL Core
+- **THEN** the system rejects the request with HTTP 401 before calling DIAL Core
 
 #### Scenario: User with limited access
 
-- **WHEN** user with restricted permissions requests deployments
-- **THEN** DIAL Core filters response to include only authorized deployments
-- **AND** system returns this filtered list without modification
+- **WHEN** a caller with restricted permissions requests deployments
+- **THEN** DIAL Core filters the response to include only authorized deployments
+- **AND** the system returns this filtered list without modification
 
 ---
 
 ### Requirement: TokenPropagationHelper for async operations
 
-The system SHALL provide a `TokenPropagationHelper` utility class for propagating the user's authorization token to new threads. When code executes asynchronously (e.g., via `CompletableFuture.supplyAsync()`), the new thread does not have access to the request thread's ThreadLocal token. This helper MUST be used whenever spawning async tasks that need user context.
+The system SHALL provide a `TokenPropagationHelper` utility class for propagating the caller's credential - both its value and its kind - to new threads. When code executes asynchronously (e.g., via `CompletableFuture.supplyAsync()`), the new thread does not have access to the request thread's ThreadLocal credential. This helper MUST be used whenever spawning async tasks that need caller context, and the propagated credential MUST reach the async thread with the same kind it was captured with, so that outbound calls from that thread select the same header the request thread would have.
+
+Status: **Implemented**
 
 #### Scenario: Async code needs user token
 
-- **WHEN** service spawns async tasks (e.g., `CompletableFuture.supplyAsync()`)
-- **AND** async code needs to make authenticated calls (e.g., to DIAL Core)
-- **THEN** service MUST capture token before spawning: `String token = AuthorizationTokenHolder.getToken()`
-- **AND** wrap async supplier with: `TokenPropagationHelper.withToken(token, () -> { ... })`
+- **WHEN** a service spawns async tasks (e.g., `CompletableFuture.supplyAsync()`)
+- **AND** the async code needs to make authenticated calls (e.g., to DIAL Core)
+- **THEN** the service MUST capture the credential in the request thread before spawning
+- **AND** wrap the async task with the helper so the credential and its kind are restored inside the task
+
+#### Scenario: Credential kind survives the thread hop
+
+- **WHEN** an API-key caller's credential is propagated to a worker thread
+- **THEN** a DIAL Core call made from that worker thread SHALL send `Api-Key`, not `Authorization: Bearer`
 
 #### Scenario: Token cleanup after async execution
 
-- **WHEN** wrapped async task completes (success or failure)
-- **THEN** `TokenPropagationHelper` clears the token from the async thread's ThreadLocal
-- **AND** prevents token leakage to subsequent tasks on pooled threads
+- **WHEN** a wrapped async task completes (success or failure)
+- **THEN** the helper clears the propagated credential from the async thread's state
+- **AND** prevents leakage to subsequent tasks on pooled threads
 
 #### Scenario: Usage pattern
 
-- **WHEN** implementing parallel async operations with user context
+- **WHEN** implementing parallel async operations with caller context
 - **THEN** follow this pattern:
 ```java
-// Capture token in request thread before spawning async tasks
-String token = AuthorizationTokenHolder.getToken();
+// Capture the caller's credential (value + kind) in the request thread before spawning async tasks
+CallerCredential credential = AuthorizationTokenHolder.getCredential();
 
-CompletableFuture.supplyAsync(TokenPropagationHelper.withToken(token, () -> {
-    // Token is available here via AuthorizationTokenHolder.getToken()
+CompletableFuture.supplyAsync(TokenPropagationHelper.withCredential(credential, () -> {
+    // The credential is available here via AuthorizationTokenHolder.getCredential()
     return dialCoreClient.getModels();
 }));
 ```
 
+#### Scenario: Absent credential
+
+- **WHEN** an async task is wrapped while no caller credential was captured (a `null` credential)
+- **THEN** the helper SHALL run the task with no credential established, without throwing
+- **AND** outbound calls from that task SHALL carry no caller credential header
+
 #### Scenario: Helper variants
 
 - **WHEN** different async patterns are needed
-- **THEN** `TokenPropagationHelper` provides:
-  - `withToken(token, Supplier<T>)` - for `CompletableFuture.supplyAsync()`
-  - `withTokenCallable(token, Callable<T>)` - for `ExecutorService.submit(Callable)`
-  - `withTokenRunnable(token, Runnable)` - for `ExecutorService.submit(Runnable)`
+- **THEN** `TokenPropagationHelper` provides a variant for each of `Supplier<T>` (`CompletableFuture.supplyAsync()`), `Callable<T>` (`ExecutorService.submit(Callable)`), and `Runnable` (`ExecutorService.submit(Runnable)`)
+- **AND** each variant accepts the captured credential including its kind
 
 ---
 
@@ -669,7 +697,7 @@ The invoker's `invoke()` method SHALL accept Spring/JDK types only: `HttpHeaders
 
 #### Scenario: Authorization token propagated
 - **WHEN** invoker sends a request to DIAL Core
-- **THEN** the user's JWT token from `AuthorizationTokenHolder` SHALL be included as `Authorization: Bearer` header (via RestClient interceptor)
+- **THEN** the caller's credential from `AuthorizationTokenHolder` SHALL be included in the header its kind requires — `Authorization: Bearer <token>` or `Api-Key: <key>` — via the shared RestClient interceptor
 
 #### Scenario: Content-Type for request body
 - **WHEN** invoker sends a request with a body (POST, PUT, PATCH)
@@ -708,12 +736,14 @@ The invoker's `invoke()` method SHALL accept Spring/JDK types only: `HttpHeaders
 ### Requirement: DialCoreDeploymentInvoker configuration
 The invoker SHALL use a separate configuration from the metadata client, allowing independent timeout tuning.
 
+Status: **Implemented**
+
 #### Scenario: Separate RestClient bean
 - **WHEN** the application starts
 - **THEN** a dedicated `RestClient` bean (e.g., `dialCoreTryOutRestClient`) SHALL be created with the try-it-out read timeout
-- **AND** it SHALL share the same base URL and authorization interceptor as the metadata client
+- **AND** it SHALL share the same base URL and caller-credential interceptor as the metadata client
 
-**Implementation note:** The authorization token interceptor logic (reading from `AuthorizationTokenHolder` and setting `Authorization: Bearer` header) is currently a package-private static method in `DialCoreClientConfiguration`. Both configuration classes are in `client.dialcore` and share this interceptor.
+**Implementation note:** The caller-credential interceptor logic (reading the caller's credential from `AuthorizationTokenHolder` and setting either `Authorization: Bearer` or `Api-Key` according to its kind) is a **public static** method `callerCredentialInterceptor()` on `DialCoreClientConfiguration`. `DialCoreClientConfiguration` and `DialCoreDeploymentInvokerConfiguration` are both in `client.dialcore`; `DialAdasClientConfiguration` in `client.dialadas` reuses the same method for `dialAdasRestClient`.
 
 #### Scenario: Default timeout
 - **WHEN** `dial.components.core.try-out.read-timeout-ms` is not set
@@ -864,7 +894,7 @@ Status: **Implemented**
 - **THEN** it deserializes to `DialCoreModelDto`, which has no `transport` field
 
 ### Requirement: Fetch caller user info from DIAL Core
-The DIAL Core client SHALL expose an operation that fetches `GET /v1/user/info` for the current caller, propagating the caller's bearer token, and returns the response body as a parsed JSON tree without imposing a fixed schema on it. The operation SHALL tolerate DIAL Core labelling the JSON body as `application/octet-stream`. Failures SHALL surface through the same upstream error type used by the client's other operations so callers can apply a uniform fallback.
+The DIAL Core client SHALL expose an operation that fetches `GET /v1/user/info` for the current caller, propagating the caller's credential in the header its kind requires (`Authorization: Bearer` or `Api-Key`), and returns the response body as a parsed JSON tree without imposing a fixed schema on it. The operation SHALL tolerate DIAL Core labelling the JSON body as `application/octet-stream`. Failures SHALL surface through the same upstream error type used by the client's other operations so callers can apply a uniform fallback.
 Status: **Implemented**
 
 #### Scenario: Successful fetch with octet-stream content type
@@ -905,5 +935,12 @@ Status: **Implemented**
 - Single-entity `/openai/{models|applications}/{id}` payloads rely on the `object` discriminator being present on the wire — DIAL Core always sends it, so polymorphic deserialization to the concrete subtype succeeds even when the static Java type at the call site is already the subtype
 
 ## Implementation Notes (User Info)
-- `com.epam.aidial.evaluation.client.dialcore.DialCoreClient#getUserInfo()` — reads the body as `String` via the shared `dialCoreRestClient` (bearer propagation via `AuthorizationTokenHolder`) and parses it with the shared `ObjectMapper`; wrapped in the client's existing `withRetry`.
+- `com.epam.aidial.evaluation.client.dialcore.DialCoreClient#getUserInfo()` — reads the body as `String` via the shared `dialCoreRestClient` (caller-credential propagation via `AuthorizationTokenHolder`, header chosen by `CallerCredential#headerName()`) and parses it with the shared `ObjectMapper`; wrapped in the client's existing `withRetry`.
 - Unit coverage: `DialCoreClientTest` (`getUserInfo*` cases).
+
+## Implementation Notes (Caller Credential Propagation)
+- `com.epam.aidial.evaluation.runner.util.CallerCredential` + `runner.util.CredentialKind` (`evaluation-runner-core`) — the request-scoped value object; `headerName()`/`headerValue()` are exhaustive switches over the kind and are the single place an outbound auth header is formed (shared with `runner.client.mcp.McpToolInvoker`). `toString()` redacts the value.
+- `com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder` — one `ThreadLocal<CallerCredential>` (`getCredential()`/`setCredential()`/`clearToken()`); no kind-blind accessor exists. `runner.util.TokenPropagationHelper` carries it across thread hops via `withCredential` / `withCredentialCallable` / `withCredentialRunnable`, clearing in `finally`.
+- Capture: `com.epam.aidial.evaluation.configuration.security.AuthorizationHeaderInterceptor` (an `AsyncHandlerInterceptor`) mirrors the `ApiKeyAuthenticationFilter` precedence — bearer wins, an `Api-Key` is captured only when `Authorization` is blank — and clears in both `afterCompletion` and `afterConcurrentHandlingStarted`.
+- Outbound: the shared factory `client.dialcore.DialCoreClientConfiguration#callerCredentialInterceptor()` (public static), reused by `client.dialcore.DialCoreDeploymentInvokerConfiguration` and `client.dialadas.DialAdasClientConfiguration`. `client.dialcore.DialFileClientConfiguration` keeps using the configured service-account key and is out of scope.
+- Coverage: `DialCoreClientConfigurationTest` (header per kind via `MockRestServiceServer`, plus that all three production `RestClient` beans register the interceptor), `AuthorizationHeaderInterceptorTest`, `TokenPropagationHelperTest`, `AuthorizationTokenHolderTest`, `ApiKeyAuthenticationFunctionalTests`.

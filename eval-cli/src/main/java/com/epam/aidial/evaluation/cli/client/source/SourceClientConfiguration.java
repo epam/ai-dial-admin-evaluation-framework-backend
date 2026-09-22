@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.cli.client.source;
 
 import com.epam.aidial.evaluation.cli.config.properties.SourceProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.time.Duration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -43,7 +44,7 @@ public class SourceClientConfiguration {
      */
     static ClientHttpRequestInterceptor staticApiKeyInterceptor(String apiKey) {
         return (HttpRequest request, byte[] body, ClientHttpRequestExecution execution) -> {
-            request.getHeaders().set("Api-Key", apiKey);
+            request.getHeaders().set(CallerCredential.API_KEY_HEADER, apiKey);
             return execution.execute(request, body);
         };
     }

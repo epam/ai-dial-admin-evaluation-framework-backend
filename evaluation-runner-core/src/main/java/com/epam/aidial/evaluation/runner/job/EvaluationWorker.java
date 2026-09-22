@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.runner.util.EvalBaggage;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.runner.util.TracingConstants;
@@ -280,13 +281,13 @@ public class EvaluationWorker {
             Map<String, Object> resolvedArgs) {
 
         long callStartMs = clock.millis();
-        String token = context.getToken();
+        CallerCredential credential = context.getCredential();
 
         try {
             McpTransport transport =
                     mcpRef.getTransport() != null ? mcpRef.getTransport() : McpTransport.STREAMABLE_HTTP;
             CallToolResult result =
-                    mcpToolInvoker.callTool(mcpRef.getId(), toolRef.getName(), resolvedArgs, token, transport);
+                    mcpToolInvoker.callTool(mcpRef.getId(), toolRef.getName(), resolvedArgs, credential, transport);
 
             String responseBody = mcpResponseSerializer.serialize(result);
 

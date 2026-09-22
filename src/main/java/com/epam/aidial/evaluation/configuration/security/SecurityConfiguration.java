@@ -47,6 +47,9 @@ public class SecurityConfiguration {
     @Value("${config.rest.security.disable-swagger-authorization}")
     protected boolean disableSwaggerAuthorization;
 
+    @Value("${spring.ai.mcp.server.streamable-http.mcp-endpoint}")
+    protected String mcpEndpoint;
+
     @Bean
     public Map<String, Set<String>> allowedRolesByIssuer() {
         Map<String, Set<String>> tmpRolesByIssuer = new HashMap<>();
@@ -103,6 +106,8 @@ public class SecurityConfiguration {
                         .requestMatchers(publicPathPatterns())
                         .permitAll()
                         .requestMatchers("/api/v1/**")
+                        .authenticated()
+                        .requestMatchers(mcpEndpoint)
                         .authenticated()
                         .anyRequest()
                         .denyAll())

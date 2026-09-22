@@ -16,6 +16,8 @@ import com.epam.aidial.evaluation.client.metricprovider.MetricProviderClient;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsDescriptionDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricsResponseDto;
 import com.epam.aidial.evaluation.functional.config.PostgresFunctionalTestConfiguration;
+import com.epam.aidial.evaluation.functional.support.CallerIdentityProbeTools;
+import com.epam.aidial.evaluation.functional.support.StaticJwtTestConfiguration;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultBatchWriteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultCountFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.AnalyticsResultGetByIdFunctionalTests;
@@ -51,6 +53,12 @@ import com.epam.aidial.evaluation.functional.tests.LegacyDisabledTestCaseIdsFunc
 import com.epam.aidial.evaluation.functional.tests.MaxLimitsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpDeploymentFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpEvaluationRunFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpServerCustomEndpointOidcFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpServerDisabledFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpServerDisabledOidcFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpServerFoundationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpServerSecurityFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.McpServerStatelessFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpTestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.McpTryItOutFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.MetricDeclarationFunctionalTests;
@@ -509,6 +517,75 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class RunMetricSnapshotTests extends RunMetricSnapshotFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(properties = {"spring.ai.mcp.server.protocol=STREAMABLE"})
+    @Import(CallerIdentityProbeTools.class)
+    class McpServerFoundationTests extends McpServerFoundationFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(properties = {"spring.ai.mcp.server.protocol=STATELESS"})
+    @Import(CallerIdentityProbeTools.class)
+    class McpServerStatelessTests extends McpServerStatelessFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "config.rest.security.mode=oidc",
+                "config.rest.security.disable-swagger-authorization=true",
+                "providers.test.issuer=https://issuer.example.com",
+                "providers.test.jwkSetUri=https://issuer.example.com/.well-known/jwks.json",
+                "providers.test.audiences[0]=test-audience",
+                "providers.test.roleClaims[0]=roles",
+                "providers.test.allowedRoles[0]=admin",
+                "providers.test.principalClaim=sub",
+                "config.rest.security.api-key.enabled=true",
+                "config.rest.security.api-key.core-url=http://localhost:1",
+                "config.rest.security.api-key.roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.startup-probe=false"
+            })
+    @Import({StaticJwtTestConfiguration.class, CallerIdentityProbeTools.class})
+    class McpServerSecurityTests extends McpServerSecurityFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(properties = {"spring.ai.mcp.server.enabled=false"})
+    class McpServerDisabledTests extends McpServerDisabledFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "spring.ai.mcp.server.enabled=false",
+                "config.rest.security.mode=oidc",
+                "config.rest.security.disable-swagger-authorization=true",
+                "providers.test.issuer=https://issuer.example.com",
+                "providers.test.jwkSetUri=https://issuer.example.com/.well-known/jwks.json",
+                "providers.test.audiences[0]=test-audience",
+                "providers.test.roleClaims[0]=roles",
+                "providers.test.allowedRoles[0]=admin",
+                "providers.test.principalClaim=sub",
+                "config.rest.security.api-key.enabled=true",
+                "config.rest.security.api-key.core-url=http://localhost:1",
+                "config.rest.security.api-key.roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.startup-probe=false"
+            })
+    @Import(StaticJwtTestConfiguration.class)
+    class McpServerDisabledOidcTests extends McpServerDisabledOidcFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "spring.ai.mcp.server.streamable-http.mcp-endpoint=/agent/mcp/",
+                "config.rest.security.mode=oidc",
+                "config.rest.security.disable-swagger-authorization=true",
+                "providers.test.issuer=https://issuer.example.com",
+                "providers.test.jwkSetUri=https://issuer.example.com/.well-known/jwks.json",
+                "providers.test.audiences[0]=test-audience",
+                "providers.test.roleClaims[0]=roles",
+                "providers.test.allowedRoles[0]=admin",
+                "providers.test.principalClaim=sub"
+            })
+    @Import(StaticJwtTestConfiguration.class)
+    class McpServerCustomEndpointOidcTests extends McpServerCustomEndpointOidcFunctionalTests {}
 
     @Nested
     class McpDeploymentTests extends McpDeploymentFunctionalTests {}

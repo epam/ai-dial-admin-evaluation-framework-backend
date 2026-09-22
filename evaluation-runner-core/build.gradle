@@ -95,7 +95,7 @@ dependencies {
     runtimeOnly 'io.grpc:grpc-netty-shaded'
 
     // MCP SDK (Model Context Protocol client)
-    implementation platform('io.modelcontextprotocol.sdk:mcp-bom:2.0.0')
+    implementation platform("io.modelcontextprotocol.sdk:mcp-bom:${mcp_sdk_version}")
     implementation 'io.modelcontextprotocol.sdk:mcp-core'
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson3'
 

@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.client.mcp.McpTransport;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.ApplicationRouteDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.deployment.DeploymentType;
@@ -150,9 +151,9 @@ public class DeploymentService {
      * If transport is null, STREAMABLE_HTTP is used as default.
      */
     public List<ToolDefinitionDto> listTools(String deploymentId, McpTransport transport) {
-        String token = AuthorizationTokenHolder.getToken();
+        CallerCredential credential = AuthorizationTokenHolder.getCredential();
         McpTransport effectiveTransport = transport != null ? transport : McpTransport.STREAMABLE_HTTP;
-        List<McpSchema.Tool> tools = mcpToolInvoker.listTools(deploymentId, token, effectiveTransport);
+        List<McpSchema.Tool> tools = mcpToolInvoker.listTools(deploymentId, credential, effectiveTransport);
         return tools.stream().map(this::toToolDefinitionDto).toList();
     }
 

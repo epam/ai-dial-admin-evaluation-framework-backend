@@ -4,7 +4,7 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 
 | Pattern | Summary |
 |---------|---------|
-| [TokenPropagationHelper](token-propagation.md) | Propagate auth token to async/pooled threads (`CompletableFuture.supplyAsync`) |
+| [TokenPropagationHelper](token-propagation.md) | Propagate the caller's credential (bearer JWT or API key, with kind) across `CompletableFuture.supplyAsync` and other pooled-thread boundaries |
 | [TransactionTimestampContext + Aspect](transaction-timestamp.md) | Consistent `createdAt`/`updatedAt` across one `@Transactional` call; explicit-param repo signatures |
 | [Dual Datasource (Meta + Analytics)](dual-datasource.md) | Required `@Qualifier`s for DSLContext / tx manager / conditionals on both datasources |
 | [CursorCodec & Keyset Pagination](cursor-pagination.md) | Analytics layer; `LIMIT size+1` pattern, opaque Base64 cursor encoding |
@@ -35,3 +35,4 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [Request-template JSONata seam](jsonata-evaluation-seam.md) | `content` vs `jsonataContent`; `$_request`/`$_response`; never `.` in a binding name |
 | [`evaluation-runner-core` module](evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
 | [Anthropic Messages API support](anthropic-messages-api.md) | Deployment-less `/anthropic/v1/messages` + `/openai/v1/responses` URL passthrough; third `StreamingResponseAccumulator` mode; `model`-in-body must equal the effective deployment (static + pre-invocation `RequestModelValidator`) |
+| [MCP Server (inbound)](mcp-server.md) | `mcp` layer as a peer of `web`; request-thread caller model; executor never throws; error table + binding-layer limitation; session limitation |

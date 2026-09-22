@@ -11,6 +11,7 @@ This document is the operator-facing reference for every configurable property o
    - [OpenAPI](#23-openapi)
    - [Logging](#24-logging)
    - [Threading](#25-threading)
+   - [MCP Server (inbound)](#26-mcp-server-inbound)
 3. [Security](#3-security)
    - [Mode](#31-mode)
    - [Identity Providers](#32-identity-providers)
@@ -151,6 +152,27 @@ Every HTTP request is assigned a correlation ID that appears in access logs, app
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `spring.threads.virtual.enabled` | `VIRTUAL_THREADS_ENABLED` | `true` | No | - | JVM-wide thread mode for Spring Boot's own executors, the test-suite-run job executor, and every run's worker executor. Set `false` to run them on platform threads instead of virtual threads so a sampling profiler or thread dump can attribute CPU hotspots to real OS threads (virtual threads are invisible to samplers) — a troubleshooting opt-out, not a recommended production setting. Cancellation behaviour (interrupt-driven `shutdownNow()`) is identical in both modes. |
+
+### 2.6 MCP Server (inbound)
+
+Spring AI's MCP server, exposed under root `spring.ai.mcp.server.*`. This is the **inbound** MCP endpoint agents connect to in order to drive this application (tool groups such as `list_deployments`/`get_deployment`) — distinct from [5.4 DIAL MCP Client](#54-dial-mcp-client), which configures this application as an **outbound** MCP client calling toolset deployments through DIAL Core's MCP proxy. See [`docs/patterns/mcp-server.md`](patterns/mcp-server.md) for the architecture (caller identity, result/error encoding, session model).
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `spring.ai.mcp.server.enabled` | `SPRING_AI_MCP_SERVER_ENABLED` | `true` | No | - | Enables the inbound MCP server. When `false`, the MCP transport endpoint (`/mcp`) answers HTTP 404 and no tool is reachable; REST is unaffected. |
+| `spring.ai.mcp.server.stdio` | `SPRING_AI_MCP_SERVER_STDIO` | `false` | No | `spring.ai.mcp.server.enabled=true` | Enables the stdio transport (for a locally-spawned MCP client). Left `false`; this application is reached over HTTP only. |
+| `spring.ai.mcp.server.name` | `SPRING_AI_MCP_SERVER_NAME` | `ai-dial-admin-evaluation-framework-backend` | No | `spring.ai.mcp.server.enabled=true` | Server name reported in the MCP `initialize` response. |
+| `spring.ai.mcp.server.version` | `SPRING_AI_MCP_SERVER_VERSION` | `@project.version@` (resolved at build time to the Gradle project version) | No | `spring.ai.mcp.server.enabled=true` | Server version reported in the MCP `initialize` response. |
+| `spring.ai.mcp.server.type` | `SPRING_AI_MCP_SERVER_TYPE` | `SYNC` | No | `spring.ai.mcp.server.enabled=true` | `SYNC` or `ASYNC` server implementation. `SYNC` is required for the request-thread caller-identity model (see the pattern doc) — Spring AI's servlet sync-server customizer sets `immediateExecution(true)`, running tool bodies on the HTTP request thread. |
+| `spring.ai.mcp.server.protocol` | `SPRING_AI_MCP_SERVER_PROTOCOL` | `STATELESS` | No | `spring.ai.mcp.server.enabled=true` | Supported: `STATELESS` (default; one `application/json` JSON-RPC response per POST, no sessions, replica-agnostic) and `STREAMABLE` (SSE responses, in-memory `Mcp-Session-Id` sessions per JVM — needs a single replica or sticky sessions). Both functionally tested. Both serve exactly the configured `mcp-endpoint` path, which the `SecurityConfiguration` authentication matcher authenticates. `SSE` is deprecated and unsupported by this application — the security matcher does not cover its endpoints (`/sse`, `/mcp/message`). |
+| `spring.ai.mcp.server.capabilities.tool` | `SPRING_AI_MCP_SERVER_CAPABILITIES_TOOL` | `true` | No | `spring.ai.mcp.server.enabled=true` | Advertises the `tools` MCP capability. |
+| `spring.ai.mcp.server.capabilities.resource` | `SPRING_AI_MCP_SERVER_CAPABILITIES_RESOURCE` | `false` | No | `spring.ai.mcp.server.enabled=true` | Advertises the `resources` MCP capability. Not used in this version — no resource is registered. |
+| `spring.ai.mcp.server.capabilities.prompt` | `SPRING_AI_MCP_SERVER_CAPABILITIES_PROMPT` | `false` | No | `spring.ai.mcp.server.enabled=true` | Advertises the `prompts` MCP capability. Not used in this version — no prompt is registered. |
+| `spring.ai.mcp.server.capabilities.completion` | `SPRING_AI_MCP_SERVER_CAPABILITIES_COMPLETION` | `false` | No | `spring.ai.mcp.server.enabled=true` | Advertises the `completions` MCP capability. Not used in this version. |
+| `spring.ai.mcp.server.streamable-http.mcp-endpoint` | `SPRING_AI_MCP_SERVER_STREAMABLE_HTTP_MCP_ENDPOINT` | `/mcp` | No | `spring.ai.mcp.server.enabled=true` | HTTP path of the MCP endpoint, served by both the `STATELESS` and `STREAMABLE` transports. Read by `SecurityConfiguration` via `@Value` to build the authentication matcher, so overriding this path can never leave the endpoint unauthenticated. |
+| `spring.ai.mcp.server.streamable-http.disallow-delete` | `SPRING_AI_MCP_SERVER_STREAMABLE_HTTP_DISALLOW_DELETE` | `false` | No | `spring.ai.mcp.server.enabled=true` | When `true`, disallows the `DELETE` method (session termination) on the endpoint. Only meaningful for `protocol=STREAMABLE`; `STATELESS` registers no `DELETE` route. |
+| `spring.ai.mcp.server.annotation-scanner.enabled` | `SPRING_AI_MCP_SERVER_ANNOTATION_SCANNER_ENABLED` | `true` | No | `spring.ai.mcp.server.enabled=true` | Enables Spring AI's `@McpTool` annotation scanner, which discovers every `@McpTool`-annotated method on any Spring bean (including a `@TestConfiguration` bean, used by the test harness's probe tool). |
+| `spring.ai.mcp.server.instructions` | `SPRING_AI_MCP_SERVER_INSTRUCTIONS` | multi-line workflow guidance (see `application.yml`) | No | `spring.ai.mcp.server.enabled=true` | Free-text guidance returned in the MCP `initialize` response, describing the intended agent workflow (discover deployments → create suite → try-out loop → schema/test cases → metrics → run → poll `get_run` → results/summary). Later tool groups are named by their planned tool names. |
 
 ---
 

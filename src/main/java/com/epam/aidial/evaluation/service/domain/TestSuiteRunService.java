@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorCategory;
@@ -130,11 +131,11 @@ public class TestSuiteRunService {
                 createAndSaveRun(testSuiteId, config.getTestRunName(), (int) numberOfTestCases, runConfigJson);
 
         UUID runId = run.getId();
-        String token = AuthorizationTokenHolder.getToken();
+        CallerCredential credential = AuthorizationTokenHolder.getCredential();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                dispatchEvaluation(runId, token, false, () -> {
+                dispatchEvaluation(runId, credential, false, () -> {
                     String errorDetails = evaluationJob.buildErrorDetails(
                             "EXECUTOR_REJECTED",
                             RunErrorCategory.RESOURCE_LIMIT,
@@ -297,9 +298,10 @@ public class TestSuiteRunService {
      * {@link TestSuiteEvaluationJob#dispatch}. If the executor rejects the submission, invokes
      * {@code onRejected} so each caller can apply its own failure-compensation logic.
      */
-    private void dispatchEvaluation(UUID runId, String token, boolean skipDeploymentPhase, Runnable onRejected) {
+    private void dispatchEvaluation(
+            UUID runId, CallerCredential credential, boolean skipDeploymentPhase, Runnable onRejected) {
         try {
-            evaluationJob.dispatch(runId, token, skipDeploymentPhase);
+            evaluationJob.dispatch(runId, credential, skipDeploymentPhase);
         } catch (RejectedExecutionException ex) {
             log.warn("Executor rejected job submission for run {}: {}", runId, ex.getMessage(), ex);
             onRejected.run();

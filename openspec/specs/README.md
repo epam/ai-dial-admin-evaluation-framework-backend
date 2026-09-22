@@ -64,11 +64,13 @@ Specs defining the primary business entities and their APIs.
 Specs for external service integrations.
 
 - **[dial-core-client](dial-core-client/spec.md)** — Implemented
-  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, caller user-info fetch (`/v1/user/info`), JWT propagation, upstream error mapping, deployment invocation.
+  DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, caller user-info fetch (`/v1/user/info`), caller-credential propagation (bearer JWT or `Api-Key`, chosen by credential kind), upstream error mapping, deployment invocation.
 - **[app-schema-route-resolution](app-schema-route-resolution/spec.md)** — Implemented
   Application route resolution inherited from app type schemas via DIAL Core schema API, schema route DTOs, merge behavior.
 - **[mcp-tool-invocation](mcp-tool-invocation/spec.md)** — Implemented
   MCP SDK client integration — McpToolInvoker (tool call execution, tool discovery via `tools/list`), McpRequestResolver (argument template resolution), McpResponseSerializer (CallToolResult → JSON), configurable timeouts, error mapping.
+- **[mcp-tools-deployments](mcp-tools-deployments/spec.md)** — Implemented
+  The MCP **server**'s deployments tool group (`list_deployments`, `get_deployment`), letting an agent discover DIAL deployments and inspect one before creating a test suite. This is the inbound MCP surface — the application acting as an MCP server — and is distinct from the outbound MCP **client** specs above (`mcp-tool-invocation`, `toolset-listing`), which are this application calling out to DIAL Core's MCP proxy for `MCP_TOOL` suites. Delivered by the `mcp-foundation` change (`mcp.tools.deployment.DeploymentTools`, `mcp.mapper.DeploymentMcpMapper`), archived 2026-09-18. `McpToolConventionTest`'s annotation requirement (non-blank `title`, `readOnlyHint == !destructiveHint`, `openWorldHint == false`) applies to this tool group.
 - **[toolset-listing](toolset-listing/spec.md)** — Implemented
   Toolset deployment type extension — ToolsetInfoDto, `type`/`interface` query param filtering on deployment listing, tool discovery endpoint (`GET /deployments/tools?deploymentId=&transport=`), InterfaceType enum, DeploymentType extended for toolsets.
 - **[test-suite-run-costs](test-suite-run-costs/spec.md)** — Implemented
@@ -102,7 +104,7 @@ Specs for behaviors that apply across multiple domain areas.
 - **[entity-filtering](entity-filtering/spec.md)** — Implemented
   Pagination and structured `filter` (whitelist, AND/`in` operators, HTTP 400 validation) on list endpoints.
 - **[security](security/spec.md)** — Implemented
-  OIDC/JWT multi-issuer authentication + configurable security modes; DIAL API-Key authentication via DIAL Core introspection as an alternative to bearer tokens; `createdBy` author attribution with opt-in display-name resolution via DIAL Core user info.
+  OIDC/JWT multi-issuer authentication + configurable security modes; DIAL API-Key authentication via DIAL Core introspection as an alternative to bearer tokens; request-scoped capture of the caller's credential with its kind and forwarding of an API-key caller's key to DIAL Core (and dial-adas / the MCP proxy) as `Api-Key`, bearer callers as `Authorization: Bearer`; `createdBy` author attribution for both JWT and API-key callers (API-key principal, no display-name resolution), with opt-in display-name resolution via DIAL Core user info for JWT callers.
 - **[openapi-examples](openapi-examples/spec.md)** — Implemented
   OpenAPI request/response examples (minimal + full), resource-based JSON, OpenApiExampleCustomizer.
 - **[openapi-query-param-docs](openapi-query-param-docs/spec.md)** — Implemented

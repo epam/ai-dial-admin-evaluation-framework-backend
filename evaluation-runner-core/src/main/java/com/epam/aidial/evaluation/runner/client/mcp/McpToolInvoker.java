@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.runner.client.mcp;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
@@ -14,6 +15,7 @@ import io.modelcontextprotocol.spec.McpSchema.Implementation;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -37,8 +39,12 @@ public class McpToolInvoker {
     private final McpClientConfiguration configuration;
 
     public CallToolResult callTool(
-            String deploymentId, String toolName, Map<String, Object> arguments, String token, McpTransport transport) {
-        McpSyncClient client = createClient(deploymentId, token, transport);
+            String deploymentId,
+            String toolName,
+            Map<String, Object> arguments,
+            CallerCredential credential,
+            McpTransport transport) {
+        McpSyncClient client = createClient(deploymentId, credential, transport);
         try {
             client.initialize();
             return client.callTool(
@@ -52,8 +58,8 @@ public class McpToolInvoker {
         }
     }
 
-    public List<McpSchema.Tool> listTools(String deploymentId, String token, McpTransport transport) {
-        McpSyncClient client = createClient(deploymentId, token, transport);
+    public List<McpSchema.Tool> listTools(String deploymentId, CallerCredential credential, McpTransport transport) {
+        McpSyncClient client = createClient(deploymentId, credential, transport);
         try {
             client.initialize();
             return client.listTools().tools();
@@ -66,14 +72,14 @@ public class McpToolInvoker {
         }
     }
 
-    private McpSyncClient createClient(String deploymentId, String token, McpTransport transport) {
+    private McpSyncClient createClient(String deploymentId, CallerCredential credential, McpTransport transport) {
         if (transport == McpTransport.SSE) {
-            return createSseClient(deploymentId, token);
+            return createSseClient(deploymentId, credential);
         }
-        return createStreamableHttpClient(deploymentId, token);
+        return createStreamableHttpClient(deploymentId, credential);
     }
 
-    private McpSyncClient createStreamableHttpClient(String deploymentId, String token) {
+    private McpSyncClient createStreamableHttpClient(String deploymentId, CallerCredential credential) {
         // HttpClientStreamableHttpTransport resolves the endpoint against the base URI using
         // standard URI resolution. The base must be the DIAL Core root URL, and the endpoint
         // must be the absolute path — otherwise Java URI.resolve() discards the toolset path.
@@ -85,8 +91,7 @@ public class McpToolInvoker {
                         configuration.getMcpProxyBaseUrl())
                 .endpoint(buildMcpEndpoint(deploymentId))
                 .clientBuilder(httpClientBuilder)
-                .httpRequestCustomizer((requestBuilder, _, _, _, _) -> requestBuilder
-                        .header("Authorization", "Bearer " + token)
+                .httpRequestCustomizer((requestBuilder, _, _, _, _) -> applyCredentialHeader(requestBuilder, credential)
                         .timeout(Duration.ofMillis(configuration.getReadTimeoutMs())))
                 .build();
 
@@ -97,7 +102,7 @@ public class McpToolInvoker {
                 .build();
     }
 
-    private McpSyncClient createSseClient(String deploymentId, String token) {
+    private McpSyncClient createSseClient(String deploymentId, CallerCredential credential) {
         // HttpClientSseClientTransport applies connectTimeout via the builder (not the HttpClient.Builder),
         // because its build() method calls clientBuilder.connectTimeout(this.connectTimeout) itself.
         @SuppressWarnings("deprecation")
@@ -105,8 +110,7 @@ public class McpToolInvoker {
                         configuration.getMcpProxyBaseUrl())
                 .sseEndpoint(buildSseEndpoint(deploymentId))
                 .connectTimeout(Duration.ofMillis(configuration.getConnectTimeoutMs()))
-                .httpRequestCustomizer((requestBuilder, _, _, _, _) -> requestBuilder
-                        .header("Authorization", "Bearer " + token)
+                .httpRequestCustomizer((requestBuilder, _, _, _, _) -> applyCredentialHeader(requestBuilder, credential)
                         .timeout(Duration.ofMillis(configuration.getReadTimeoutMs())))
                 .build();
 
@@ -115,6 +119,18 @@ public class McpToolInvoker {
                 .capabilities(ClientCapabilities.builder().build())
                 .jsonSchemaValidator(noOpSchemaValidator())
                 .build();
+    }
+
+    /**
+     * Sets exactly one outbound header from {@code credential}'s kind ({@code Authorization: Bearer}
+     * or {@link CallerCredential#API_KEY_HEADER}), or none at all when {@code credential} is
+     * {@code null} — never {@code Authorization: Bearer null}.
+     */
+    static HttpRequest.Builder applyCredentialHeader(HttpRequest.Builder requestBuilder, CallerCredential credential) {
+        if (credential == null) {
+            return requestBuilder;
+        }
+        return requestBuilder.header(credential.headerName(), credential.headerValue());
     }
 
     String buildMcpEndpoint(String deploymentId) {

@@ -39,6 +39,12 @@ The base schema SHALL be instance-independent and SHALL list JSONB-backed fields
 `object` or `array`, without flattening them. The schema SHALL be derived from the entity's generated
 jOOQ table so that it follows the physical database schema, with `VARCHAR(36)` columns typed `uuid`.
 
+The base schema SHALL publish exactly the entity's **queryable** field set — the fields accepted in
+`filter`, `select`, `sort` and `group_by`. A result row MAY carry additional extension-derived keys
+that have no schema entry (see `query-result-page-extension`); publishing such a key would advertise a
+field the executor rejects. Consumers of the schema SHALL therefore treat a row's key set as a
+superset of the published fields, not an exact match.
+
 For the `test_suites` entity, the base schema SHALL additionally include the following virtual
 sub-field entries sourced from the `deployment_ref` and `mcp_deployment_ref` JSONB columns. These
 entries SHALL appear alongside (not instead of) the opaque `object`-typed column entries:
@@ -62,6 +68,7 @@ sourced from the run's `suite_snapshot`, not from `test_suites`:
 | Field name | Type | Source |
 |---|---|---|
 | `suite_type` | `string` | `suite_snapshot` |
+| `number_of_runs` | `integer` | `run_config` |
 | `deployment_ref::id` | `string` | `suite_snapshot` |
 | `deployment_ref::name` | `string` | `suite_snapshot` |
 | `deployment_ref::version` | `string` | `suite_snapshot` |
@@ -94,15 +101,23 @@ Status: **Implemented**
 
 #### Scenario: test_suite_runs base schema excludes heavy JSONB columns and adds snapshot-derived fields
 - **WHEN** `GET /api/v1/queries/entities/schema/test_suite_runs` is called
-- **THEN** the response contains no `suite_snapshot`, `run_config` or `error_details` entry, contains
+- **THEN** the response contains no `suite_snapshot`, `run_config` or `error_details` entry of its own, contains
   `suite_type` and the eight `deployment_ref::*`/`mcp_deployment_ref::*` entries each typed `string`
-  with source `suite_snapshot`, and contains `metric_names` typed `array` with source
-  `run_metric_snapshots`
+  with source `suite_snapshot`, contains `number_of_runs` typed `integer` with source `run_config`
+  (a derived scalar, which is why the `run_config` column itself stays unpublished), and contains
+  `metric_names` typed `array` with source `run_metric_snapshots`
 
 #### Scenario: test_suite_runs base schema matches what the executor accepts
 - **WHEN** every field name returned by `GET /api/v1/queries/entities/schema/test_suite_runs` is used
   in the `select` of a `row` query against `test_suite_runs`
-- **THEN** the query executes successfully and each returned row has exactly those keys
+- **THEN** the query executes successfully and each returned row carries those keys, plus any
+  extension-derived keys that apply to it
+
+#### Scenario: A derived result key has no schema entry
+- **WHEN** an entity's result rows carry an extension-derived key and
+  `GET /api/v1/queries/entities/schema/{name}` is called for that entity
+- **THEN** the published field list contains no entry for that key, and referencing it in
+  `filter`/`select`/`sort`/`group_by` is rejected with HTTP 400 as an unknown field
 
 ### Requirement: Instance-specific detailed schema for complex entities
 The system SHALL expose, at `GET /api/v1/queries/entities/schema/{name}/detailed`, the flat schema of

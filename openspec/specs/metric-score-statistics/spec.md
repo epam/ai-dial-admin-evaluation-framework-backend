@@ -145,6 +145,8 @@ The system SHALL expose **persisted** metric-score results **only** as a queryab
 
 This prohibition governs **stored** results only. A REST endpoint MAY compute and return metric-score values derived on the fly over a row subset, provided it neither reads nor writes `metric_score_results` rows — the matched-row run-comparison endpoint (`GET /api/v1/analytics/metric-scores/comparison`) is such a case. Persisted results remain reachable exclusively through the Query API.
 
+A stored result value MAY additionally surface as an extension-derived key on another entity's result page, provided it is read server-side through this same `metric_score_results` entity — no bespoke SQL against the table, and no new REST read surface. The run-level `overall` value on a `test_suite_runs` row (`overall_score_value`) is such a case: it is a derived result key, not a queryable field, and does not make the underlying rows reachable by any other route.
+
 For a query that targets a single run (`test_suite_run_id eq X`), the sentinel `computation_id eq "latest"` (case-insensitive) SHALL be resolved to the run's most recent computation and the query scoped to it — the sentinel is rewritten to the resolved id before translation, so `"latest"` is never parsed as a UUID. Latest resolution is delegated to the shared `ComputationResolver` (the single authority for "latest"). An explicit `computation_id` with a real value (`eq <uuid>` or `in [...]`) SHALL be honored verbatim; **omitting** `computation_id` spans all of the run's computations (there is no implicit latest-defaulting on omission). Cross-computation reads (e.g. comparing the last N runs) SHALL be expressible by filtering `computation_id` with `in`.
 Status: **Implemented**
 
@@ -171,6 +173,10 @@ Status: **Implemented**
 #### Scenario: A derived computation endpoint does not read stored results
 - **WHEN** the matched-row run-comparison endpoint returns recomputed metric-score values for two runs
 - **THEN** no `metric_score_results` row is read or written, and the persisted values stay reachable only through `POST /api/v1/queries/execute`
+
+#### Scenario: A derived result key reads through the entity, not around it
+- **WHEN** a `test_suite_runs` result page carries the run-level `overall` value as `overall_score_value`
+- **THEN** that value was read through the `metric_score_results` entity, no new REST read surface exposes the stored rows, and `overall_score_value` remains unusable in `filter`/`select`/`sort`/`group_by`
 
 ### Requirement: Statistics are code-defined (no management API)
 The predefined per-metric statistics (`AVG`/`P10`/`P90`/`MIN`/`MAX`) SHALL be defined in code as typed structured-query objects (`BuiltInMetricStatistics`), and SHALL NOT be created, edited, or deleted through any HTTP endpoint; the system exposes no `metric-score-definitions` API. The Phase-3 computation reads these built-in statistics directly; only the computed results are exposed (via the `metric_score_results` Query DSL entity). The `overall` definition is a per-suite property (`test_suites.overall_score`) set through the suite create/update API (`overallScore` — see `test-suites`), not through a dedicated metric-score-definitions endpoint; when unset it stays null and `overall` uses the built-in default.

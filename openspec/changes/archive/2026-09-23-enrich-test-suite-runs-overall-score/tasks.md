@@ -40,7 +40,7 @@
 - [x] 6.3 Update `docs/patterns/{computation-versioning,test-suite-runs-query-entity,query-dsl-entity-resolution}.md` for the tiebreak convergence — `computation-versioning.md` currently documents `DESC` as the rule; verify no doc still states the greatest `computation_id` wins
 - [x] 6.4 Update AGENTS.md per AGENTS.md Maintenance guidelines (done: relevant sections reflect the change — new cross-cutting component pattern)
 - [x] 6.5 Update openspec/config.yaml per Config Maintenance Policy — **consciously skipped, no edit made.** Key Patterns holds only cross-subsystem conventions; the two comparable registry-driven SPIs in this same subsystem (`StructuredQueryEntityResolver`, the `QueryFunction` catalog) are documented via a `docs/patterns/` doc + AGENTS.md row and are likewise absent from `config.yaml`. The open key set spans entities within one endpoint, narrower than the policy's own API-wide trigger example. Re-checked at archive time per `rules.archive`.
-- [ ] 6.6 Update openspec/specs/README.md per Spec Index Maintenance Policy — **deferred to archive, mis-sequenced here.** `openspec/specs/query-result-page-extension/` does not exist until `/opsx:sync` promotes the delta spec; `rules.archive` performs the README sync inline after that. Adding a row now would link to a nonexistent path.
+- [x] 6.6 Update openspec/specs/README.md per Spec Index Maintenance Policy — done at archive time, after the delta sync created `openspec/specs/query-result-page-extension/`. Verified all 68 spec folders are listed and there are no phantom entries.
 
 ## 7. Verification
 

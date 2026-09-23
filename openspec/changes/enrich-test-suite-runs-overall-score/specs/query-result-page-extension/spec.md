@@ -29,7 +29,7 @@ Status: **Implemented**
 - **THEN** the published field list contains only the entity's queryable fields and no entry for the derived key
 
 ### Requirement: Extension is additive and order-preserving
-An extension SHALL only add keys to a row. It SHALL NOT remove or overwrite a key the row already carries, SHALL preserve the existing key order, SHALL omit a key whose value is unavailable rather than inserting null, and SHALL leave the page's total count unchanged.
+An extension SHALL only add keys to a row. It SHALL NOT remove or overwrite a key the row already carries, SHALL preserve the existing key order, SHALL omit a key whose value is unavailable rather than inserting null, and SHALL leave the page's total count unchanged. It SHALL always return a page — the input page unchanged is the correct "nothing to add" result — and SHALL NOT return null.
 Status: **Implemented**
 
 #### Scenario: Existing key wins over a derived key of the same name
@@ -45,7 +45,7 @@ Status: **Implemented**
 - **THEN** the reported total count is the value the query produced, unchanged by extension
 
 ### Requirement: An extension failure never fails the query
-A query that executed successfully SHALL NOT fail because a derived value could not be added. If an extension raises an error, the system SHALL log it with the exception, return the page without that extension's contribution, and still apply every other registered extension.
+A query that executed successfully SHALL NOT fail because a derived value could not be added. If an extension raises an error, or returns nothing where a page is required, the system SHALL log it, return the page without that extension's contribution, and still apply every other registered extension. A misbehaving extension SHALL be contained identically however it misbehaves: the obligations on an implementation are not enforceable, so the coordinator — not the implementation — owns this guarantee.
 Status: **Implemented**
 
 #### Scenario: Extension error degrades to an unextended page
@@ -55,3 +55,7 @@ Status: **Implemented**
 #### Scenario: One failing extension does not suppress another
 - **WHEN** two extensions apply to a page and the first fails
 - **THEN** the second is still applied and its keys are present on the rows
+
+#### Scenario: An extension returning no page is contained like a failure
+- **WHEN** an extension returns null instead of a page, in violation of its contract
+- **THEN** the response is HTTP 200 carrying the page as it stood before that extension, the violation is logged, every other registered extension is still applied, and no null page reaches the caller

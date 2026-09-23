@@ -127,7 +127,7 @@ class PostgresTestSuiteRunEntityResolverTest {
         assertThat(sql)
                 .contains("jsonb_agg(distinct \"rms\".\"tsmd_name\" order by \"rms\".\"tsmd_name\")")
                 .contains("\"computed_at_ms\" desc")
-                .contains("\"computation_id\" desc")
+                .contains("\"computation_id\" asc")
                 .contains("fetch next")
                 .contains("rows only")
                 .contains("coalesce(")

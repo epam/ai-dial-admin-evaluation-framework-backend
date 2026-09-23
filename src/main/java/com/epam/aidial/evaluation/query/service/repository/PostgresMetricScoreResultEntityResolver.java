@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.query.service.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
 
+import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
@@ -24,8 +25,6 @@ import org.springframework.stereotype.Repository;
 @ConditionalOnProperty(name = "datasource.analytics.vendor", havingValue = "POSTGRES")
 public class PostgresMetricScoreResultEntityResolver implements StructuredQueryEntityResolver {
 
-    private static final String ENTITY = "metric_score_results";
-
     private final DSLContext dsl;
     private final Map<String, QueryFieldBinding> bindings;
     private final MetricScoreLatestComputationDefaulter latestComputationDefaulter;
@@ -41,7 +40,7 @@ public class PostgresMetricScoreResultEntityResolver implements StructuredQueryE
 
     @Override
     public String entity() {
-        return ENTITY;
+        return MetricScoreConstants.ENTITY_METRIC_SCORE_RESULTS;
     }
 
     @Override

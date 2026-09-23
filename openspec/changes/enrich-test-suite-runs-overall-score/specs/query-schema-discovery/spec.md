@@ -36,6 +36,7 @@ sourced from the run's `suite_snapshot`, not from `test_suites`:
 | Field name | Type | Source |
 |---|---|---|
 | `suite_type` | `string` | `suite_snapshot` |
+| `number_of_runs` | `integer` | `run_config` |
 | `deployment_ref::id` | `string` | `suite_snapshot` |
 | `deployment_ref::name` | `string` | `suite_snapshot` |
 | `deployment_ref::version` | `string` | `suite_snapshot` |
@@ -68,10 +69,11 @@ Status: **Implemented**
 
 #### Scenario: test_suite_runs base schema excludes heavy JSONB columns and adds snapshot-derived fields
 - **WHEN** `GET /api/v1/queries/entities/schema/test_suite_runs` is called
-- **THEN** the response contains no `suite_snapshot`, `run_config` or `error_details` entry, contains
+- **THEN** the response contains no `suite_snapshot`, `run_config` or `error_details` entry of its own, contains
   `suite_type` and the eight `deployment_ref::*`/`mcp_deployment_ref::*` entries each typed `string`
-  with source `suite_snapshot`, and contains `metric_names` typed `array` with source
-  `run_metric_snapshots`
+  with source `suite_snapshot`, contains `number_of_runs` typed `integer` with source `run_config`
+  (a derived scalar, which is why the `run_config` column itself stays unpublished), and contains
+  `metric_names` typed `array` with source `run_metric_snapshots`
 
 #### Scenario: test_suite_runs base schema matches what the executor accepts
 - **WHEN** every field name returned by `GET /api/v1/queries/entities/schema/test_suite_runs` is used

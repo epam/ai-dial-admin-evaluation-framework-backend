@@ -3,6 +3,8 @@ package com.epam.aidial.evaluation.service.domain.analytics;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -54,5 +56,20 @@ public class ComputationResolver {
         } catch (IllegalArgumentException ex) {
             throw new ValidationException("Invalid computation ID: " + computation);
         }
+    }
+
+    /**
+     * Batch counterpart of {@link #resolve(String, UUID)}'s {@code "latest"} branch: resolves the
+     * latest computation for each of several runs in one round trip, by the identical ordering.
+     *
+     * <p>Short-circuits before touching the repository (and therefore the database) when {@code
+     * runIds} is {@code null} or empty. A run with no eval summaries is absent from the returned
+     * map — never mapped to {@code null}.
+     */
+    public Map<UUID, UUID> resolveLatest(Collection<UUID> runIds) {
+        if (runIds == null || runIds.isEmpty()) {
+            return Map.of();
+        }
+        return evalSummaryRepository.findLatestComputationIds(runIds);
     }
 }

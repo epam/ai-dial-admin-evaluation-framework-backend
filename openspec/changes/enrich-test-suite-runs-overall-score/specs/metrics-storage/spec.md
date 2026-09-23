@@ -3,7 +3,7 @@
 ### Requirement: Computation versioning model
 Metric computations SHALL be versioned via `computation_id` with no mutable `is_latest` flag. "Latest" SHALL be resolved at query time, from the table the caller reads.
 
-Every latest-computation lookup, on either table, SHALL order by `computed_at_ms DESC, computation_id ASC` and take the first row, so that two computations of one run captured in the same millisecond resolve to the same computation on every path and on repeated calls. Resolution SHALL also be available for a set of runs at once, returning at most one computation per run in a single statement; a run with no eval summaries SHALL be absent from the result rather than mapped to a null computation.
+Every latest-computation lookup, on either table, SHALL order by `computed_at_ms DESC, computation_id ASC` and take the first row, so that two computations of one run captured in the same millisecond resolve to the same computation on every path and on repeated calls. Resolution SHALL also be available for a set of runs at once, returning at most one computation per run in a single statement; a run with no eval summaries SHALL be absent from the result rather than mapped to a null computation. An empty set of runs SHALL resolve to an empty result without issuing any statement.
 Status: **Implemented**
 
 #### Scenario: Recalculation creates new computation
@@ -29,6 +29,10 @@ Status: **Implemented**
 #### Scenario: Latest resolution for a set of runs
 - **WHEN** the latest computation is resolved for a set of runs at once
 - **THEN** the result maps each run that has eval summaries to exactly one `computation_id`, resolved by the same ordering as the single-run lookup, and omits runs that have none
+
+#### Scenario: Empty run set resolves without a database round trip
+- **WHEN** the latest computation is resolved for an empty set of runs
+- **THEN** the result is empty and no statement is issued against the database
 
 #### Scenario: Metric-catalog lookups stay on run metric snapshots
 - **WHEN** a caller needs the metric column families or metric names of a run's latest computation rather than its readable rows (Query DSL detailed schema discovery, the `test_suite_runs` query entity's `metric_names`)

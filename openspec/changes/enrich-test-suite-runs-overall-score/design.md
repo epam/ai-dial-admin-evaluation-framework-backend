@@ -143,13 +143,24 @@ Four existing tests change (listed in proposal.md — Impact). Two carry reasoni
 
 New `docs/patterns/query-result-page-extension.md` (the seam, the open key set, the contract, why the value cannot be an entity field) with an AGENTS.md Unique Patterns row; updates to `docs/patterns/{computation-versioning,test-suite-runs-query-entity,query-dsl-entity-resolution}.md` for the tiebreak convergence; `openspec/specs/README.md` row for the new capability.
 
+### D11. Non-finite `value` is unreachable — investigated, no guard added
+
+Task 4.7 asked whether a `NaN`/`±Infinity` `value` could reach the overall row, since `MetricScoreComputationExecutor` gates on `value != null` but not on finiteness, and Jackson serializes `NaN` as the string `"NaN"` where the FE expects a number. Answer: **not reachable**, but not because of the null gate.
+
+Every numeric field in the computation pipeline — `JsonPathAccessor.jsonbAtAsNumeric` and every function in `BuiltInQueryFunctions` — is typed as jOOQ `Field<BigDecimal>`, and the Postgres driver has no `BigDecimal` representation for numeric `NaN`. Reading one throws `Bad value for type BigDecimal : NaN` during jOOQ's result-set-to-Java mapping, before any value is returned. Verified three ways, escalating: raw JDBC, a standalone jOOQ program reproducing the exact `Field<BigDecimal>` typing, and finally the real application wiring — an eval summary seeded with `metric_values = {"MyMetric":{"score":"NaN"}}` (a JSON *string* `"NaN"` is legal and casts to Postgres `numeric` NaN; a literal NaN *number* is not valid JSON) run through `structuredQueryService.execute` exactly as a `CustomFunction` would. All three threw. No guard was added: it would be dead code.
+
+Two incidental findings worth keeping:
+
+- `org.jooq.exception.DataAccessException` is a plain `RuntimeException`, **unrelated** to Spring's identically-named `org.springframework.dao.DataAccessException`. It is thrown during field type-coercion inside `.fetch()`, outside the statement-execution window `DefaultExceptionTranslatorExecuteListener` translates — so `JooqStructuredQueryExecutor`'s `catch (BadSqlGrammarException | DataIntegrityViolationException e)` never sees it. Confirmed by contrast in the same test run: a bad-SQL case *does* translate to `BadSqlGrammarException`, the NaN case does not.
+- Consequently a `CustomFunction` over data containing a stray `"NaN"`/`"Infinity"` string **aborts the whole Phase-3 computation for that run** rather than degrading. That is a loud failure, not silent corruption, so it is not this change's problem — but it is a pre-existing gap adjacent to it and is a candidate for its own issue.
+
 ## Risks / Trade-offs
 
 - **A slow or failing analytics database now costs every `test_suite_runs` listing two extra round trips.** → The coordinator catches per extender (D3) and returns the page unextended, so the listing degrades rather than fails; the queries are page-bounded and index-served (D5, D6).
 - **The tiebreak change alters resolution on four existing call paths.** → The new ordering is deterministic where the old one was not, and matches today's de-facto result whenever the index serves the query; functional coverage pins the cross-path invariant (a tied run's `metric_names` and `overall_score_value` resolve to the same computation).
 - **The snapshot path loses index-ordered tiebreaking.** → Tie group is a single run's metric catalog at one millisecond; a migration to restore it is held in reserve (D7).
 - **Result rows are no longer a closed key set, which can surprise strict clients.** → Stated once as a requirement rather than per key (D2), and the two tests asserting exact key equality move to containment.
-- **A non-finite value (`NaN`, `±Infinity`) is a `Number`, passes the writer's null gate, and would serialize as the string `"NaN"` where the FE expects a number.** → Confirm during implementation whether any path can produce one; add a guard only if reachable.
+- **A non-finite value (`NaN`, `±Infinity`) is a `Number`, passes the writer's null gate, and would serialize as the string `"NaN"` where the FE expects a number.** → Investigated during implementation (task 4.7) and found **not reachable**; no guard added. See D11.
 - **Single-implementation SPI risks being over-general.** → The second implementation (total run cost) is already specified and imminent; if it were not, a direct branch would be the right call.
 
 ## Migration Plan

@@ -19,8 +19,11 @@ import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +34,7 @@ import org.jooq.Field;
 import org.jooq.JSONB;
 import org.jooq.Query;
 import org.jooq.Record;
+import org.jooq.Record1;
 import org.jooq.SelectLimitStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -52,6 +56,10 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     private static final String MATCHED_ROWS = "matched_rows";
     private static final String MATCHED_SUCCESS_ROWS = "matched_success_rows";
     private static final String AVG_EXEC_DURATION_MS = "avg_exec_duration_ms";
+    private static final String RUN_IDS_TABLE = "run_ids";
+    private static final String RUN_ID_COLUMN = "run_id";
+    private static final String LATEST_TABLE = "latest";
+    private static final String COMPUTATION_ID_COLUMN = "computation_id";
 
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
@@ -187,9 +195,37 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         return dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .orderBy(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc())
+                .orderBy(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.asc())
                 .limit(1)
                 .fetchOptional(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)));
+    }
+
+    @Override
+    public Map<UUID, UUID> findLatestComputationIds(Collection<UUID> runIds) {
+        if (runIds == null || runIds.isEmpty()) {
+            return Map.of();
+        }
+
+        String[] ids = runIds.stream().distinct().map(UUID::toString).toArray(String[]::new);
+        Table<?> runIdsTable = DSL.unnest(ids).as(RUN_IDS_TABLE, RUN_ID_COLUMN);
+        Field<String> runIdField = runIdsTable.field(RUN_ID_COLUMN, String.class);
+
+        Table<Record1<String>> latestPerRun = DSL.lateral(dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
+                        .from(TEST_CASE_EVAL_SUMMARIES)
+                        .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runIdField))
+                        .orderBy(
+                                TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(),
+                                TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.asc())
+                        .limit(1))
+                .as(LATEST_TABLE, COMPUTATION_ID_COLUMN);
+        Field<String> latestComputationIdField = latestPerRun.field(COMPUTATION_ID_COLUMN, String.class);
+
+        Map<UUID, UUID> result = new HashMap<>();
+        dsl.select(runIdField, latestComputationIdField)
+                .from(runIdsTable)
+                .crossJoin(latestPerRun)
+                .forEach(r -> result.put(UUID.fromString(r.value1()), UUID.fromString(r.value2())));
+        return result;
     }
 
     @Override

@@ -194,8 +194,8 @@ public abstract class RunMetricSnapshotFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
-    @DisplayName("findLatestComputationId breaks a computed_at_ms tie by the greater computation_id")
-    void findLatestComputationIdBreaksTieByGreaterComputationId() {
+    @DisplayName("findLatestComputationId breaks a computed_at_ms tie by the smaller computation_id")
+    void findLatestComputationIdBreaksTieBySmallerComputationId() {
         long sameComputedAtMs = System.currentTimeMillis();
         UUID lowerComputationId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID higherComputationId = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -207,7 +207,7 @@ public abstract class RunMetricSnapshotFunctionalTests extends BaseFunctionalTes
 
         Optional<UUID> latest = runMetricSnapshotRepository.findLatestComputationId(testSuiteRunId);
 
-        assertThat(latest).contains(higherComputationId);
+        assertThat(latest).contains(lowerComputationId);
     }
 
     @Test

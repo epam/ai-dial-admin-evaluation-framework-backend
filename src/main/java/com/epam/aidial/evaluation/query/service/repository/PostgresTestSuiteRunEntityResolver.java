@@ -131,7 +131,7 @@ public class PostgresTestSuiteRunEntityResolver implements StructuredQueryEntity
         final Field<String> latestComputationId = DSL.field(DSL.select(latest.COMPUTATION_ID)
                 .from(latest)
                 .where(latest.TEST_SUITE_RUN_ID.eq(TEST_SUITE_RUNS.ID))
-                .orderBy(latest.COMPUTED_AT_MS.desc(), latest.COMPUTATION_ID.desc())
+                .orderBy(latest.COMPUTED_AT_MS.desc(), latest.COMPUTATION_ID.asc())
                 .limit(1));
 
         return DSL.field(DSL.select(DSL.coalesce(

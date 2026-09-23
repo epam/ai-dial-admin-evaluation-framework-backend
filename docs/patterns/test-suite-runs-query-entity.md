@@ -33,7 +33,7 @@ Postgres pulls this derived table up into the outer query — no aggregate/`LIMI
     AND rms.computation_id = (SELECT latest.computation_id
                                 FROM run_metric_snapshots latest
                                WHERE latest.test_suite_run_id = test_suite_runs.id
-                               ORDER BY latest.computed_at_ms DESC, latest.computation_id DESC
+                               ORDER BY latest.computed_at_ms DESC, latest.computation_id ASC
                                LIMIT 1)) AS metric_names
 ```
 
@@ -113,9 +113,9 @@ Unlike the snapshot-only group above, `number_of_runs` reads `test_suite_runs.ru
 
 ## Latest-computation tiebreak
 
-Two computations of the same run can share `computed_at_ms` (one `Clock` read per computation, fast recomputation). Both the `metric_names` inner subquery and `PostgresRunMetricSnapshotRepository.findLatestComputationId` order by `computed_at_ms DESC, computation_id DESC` — without the tiebreak, `metric_names` and the schema-discovery endpoint could disagree or flip between calls for the same run. `ComputationResolver` (eval-summaries-based "latest" for analytics) is untouched — different table, different resolution path; see [Computation Versioning](computation-versioning.md).
+Two computations of the same run can share `computed_at_ms` (one `Clock` read per computation, fast recomputation). Both the `metric_names` inner subquery and `PostgresRunMetricSnapshotRepository.findLatestComputationId` order by `computed_at_ms DESC, computation_id ASC` — without the tiebreak, `metric_names` and the schema-discovery endpoint could disagree or flip between calls for the same run. `ASC` (the **smallest** id wins) is the system-wide convention, converged with `PostgresEvalSummaryRepository.findLatestComputationId`'s own tiebreak in `enrich-test-suite-runs-overall-score` — see [Computation Versioning](computation-versioning.md) for the full rationale and why the direction is `ASC` rather than `DESC`. `ComputationResolver` (eval-summaries-based "latest" for analytics) is untouched by *this file's* subquery — different table, different resolution path — but now shares the same tiebreak direction.
 
-Migration `V1.34__ReplaceRunMetricSnapshotsRunIndex.sql` replaces `idx_run_metric_snapshots_run (test_suite_run_id)` with `idx_run_metric_snapshots_run_computed_at (test_suite_run_id, computed_at_ms DESC, computation_id DESC)`, whose column order and directions match the `ORDER BY` exactly, turning the tiebreak lookup into an index-only range scan with no sort. The dropped index was a strict prefix of the new one, so every existing `WHERE test_suite_run_id = ?` reader (`findByRunId`, `findByRunIdAndComputationId`, `findLatestComputationId`, FK cascade on run delete) stays served.
+Migration `V1.34__ReplaceRunMetricSnapshotsRunIndex.sql` replaces `idx_run_metric_snapshots_run (test_suite_run_id)` with `idx_run_metric_snapshots_run_computed_at (test_suite_run_id, computed_at_ms DESC, computation_id DESC)`. That index's third column stayed `DESC` even after the tiebreak convergence to `ASC` — see [Computation Versioning](computation-versioning.md) on why no index migration was taken — so the tiebreak lookup now takes a small incremental sort rather than being fully index-served; the dropped index was a strict prefix of the new one regardless, so every existing `WHERE test_suite_run_id = ?` reader (`findByRunId`, `findByRunIdAndComputationId`, `findLatestComputationId`, FK cascade on run delete) stays served.
 
 ## Shared constants class as the anti-drift mechanism
 

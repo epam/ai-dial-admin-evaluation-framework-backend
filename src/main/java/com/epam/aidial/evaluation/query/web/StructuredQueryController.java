@@ -40,7 +40,9 @@ public class StructuredQueryController {
             description = "Translates the structured query to SQL and runs it against the entity named in `entity`."
                     + " Returns the projected rows (JSONB columns as nested JSON) and, for row-mode offset paging"
                     + " with `include_total`, the total match count. Unknown entities, fields, functions, or"
-                    + " unsupported features are rejected with HTTP 400.")
+                    + " unsupported features are rejected with HTTP 400. A row may also carry extension-derived"
+                    + " keys not requested by the projection and not part of the entity's published schema — see"
+                    + " the `rows` field description.")
     @ApiResponse(
             responseCode = "200",
             description = "Query result",

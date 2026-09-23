@@ -672,7 +672,7 @@ Deleting a run — directly, or via the CASCADE from deleting its suite — ther
 | Index Name | Columns | Type | Notes |
 |------------|---------|------|-------|
 | `uq_run_metric_snapshots_computation_tsmd` | `(computation_id, tsmd_id)` | UNIQUE (BTREE) | One snapshot per metric definition per computation batch; the write path relies on it for `ON CONFLICT DO NOTHING` |
-| `idx_run_metric_snapshots_run_computed_at` | `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)` | BTREE | Serves all by-run lookups via the leading column, and the latest-computation `ORDER BY computed_at_ms DESC, computation_id DESC LIMIT 1` (`findLatestComputationId`, the `test_suite_runs` query entity's `metric_names` subquery) without a sort |
+| `idx_run_metric_snapshots_run_computed_at` | `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)` | BTREE | Serves all by-run lookups via the leading column. The latest-computation lookup (`findLatestComputationId`, the `test_suite_runs` query entity's `metric_names` subquery) now orders `computed_at_ms DESC, computation_id ASC` — the system-wide smallest-id tiebreak, see [Computation Versioning](patterns/computation-versioning.md) — which the index's `DESC` third column no longer serves; a small incremental sort is taken instead |
 
 ### JSONB Column Schemas
 

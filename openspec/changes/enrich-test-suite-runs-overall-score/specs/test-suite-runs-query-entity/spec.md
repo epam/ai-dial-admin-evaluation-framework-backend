@@ -30,6 +30,10 @@ Status: **Implemented**
 - **WHEN** a `row` query's `select` omits `id`
 - **THEN** no row carries `overall_score_value` and the query succeeds
 
+#### Scenario: Row whose `id` is not a UUID is untouched
+- **WHEN** a row's `id` value is not parseable as a UUID (for example a client aliased another column as `id`)
+- **THEN** that row carries no `overall_score_value`, no lookup is attempted for it, and the remaining rows are unaffected
+
 #### Scenario: Analytics unavailable degrades to an unextended page
 - **WHEN** the analytics lookup fails or the `metric_score_results` entity is not registered (non-Postgres analytics vendor)
 - **THEN** the response is HTTP 200 with the rows the query produced and no `overall_score_value` key

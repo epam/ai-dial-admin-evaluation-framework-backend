@@ -122,6 +122,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [Query DSL function catalog](docs/patterns/query-dsl-function-catalog.md) | Registry-driven `QueryFunction` SPI; stored-function delegation; no `mean` fn |
 | [Typed `OverallScoreDefinition`](docs/patterns/overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null; Phase 2 per-row `score`/`passed` (`test_case_eval_scores`) reuses the same resolved query via an `id IN (...)`/`GROUP BY id` graft — `roc_auc`-style population functions degenerate to null per row |
 | [Query DSL entity resolution](docs/patterns/query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check |
+| [Query result page extension](docs/patterns/query-result-page-extension.md) | `QueryResultPageExtender` SPI + `@Primary` coordinator; open key set; per-extender failure isolation |
 | [Query DSL subqueries](docs/patterns/query-dsl-subqueries.md) | Subquery-valued `in` and scalar subqueries; the one lazy-bean cycle break |
 | [Query DSL null polarity](docs/patterns/query-dsl-null-polarity.md) | `nc`/`ne`/`not` are total (null satisfies); positive ops stay unwrapped/sargable |
 | [`test_cases` query entity + `testCaseFilter`](docs/patterns/test-cases-query-entity.md) | Instance-aware bindings keyed by `dataset_id`; scope-aware ALL-turns-match |

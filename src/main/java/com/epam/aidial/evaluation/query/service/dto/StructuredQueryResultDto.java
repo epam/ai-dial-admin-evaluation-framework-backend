@@ -13,7 +13,15 @@ import java.util.Map;
 @Schema(description = "Rows produced by a structured query, plus an optional total row count.")
 public record StructuredQueryResultDto(
         @Schema(
-                description = "Projected rows as field-name → value maps, in field order.",
+                description = "Projected rows as field-name → value maps, in field order. A row may also carry"
+                        + " zero or more extension-derived keys the projection did not request, merged in after"
+                        + " the query ran and after paging; such a key is never part of the entity's published"
+                        + " schema (it is absent from `GET /api/v1/queries/entities/schema/{name}`) and cannot"
+                        + " be used in `filter`/`select`/`sort`/`group_by`. On `test_suite_runs` `row`-mode"
+                        + " results, the extension-derived `overall_score_value` key carries that run's latest"
+                        + " computation's run-level `overall` metric score when one is available for that"
+                        + " computation; a row for a run with no such score simply omits the key — it is never"
+                        + " present with a `null` value.",
                 example = "[{\"id\":\"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\"name\":\"my-suite\"}]")
         List<Map<String, Object>> rows,
 

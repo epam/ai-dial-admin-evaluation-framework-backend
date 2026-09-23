@@ -23,6 +23,7 @@ import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
@@ -268,7 +269,8 @@ class EvaluationWorkerTest {
                             .arguments(Map.of("query", "test"))
                             .warnings(List.of())
                             .build());
-            when(mcpToolInvoker.callTool(eq("my-toolset"), eq("search"), any(), eq("test-token"), any()))
+            when(mcpToolInvoker.callTool(
+                            eq("my-toolset"), eq("search"), any(), eq(CallerCredential.bearer("test-token")), any()))
                     .thenReturn(callResult);
             when(mcpResponseSerializer.serialize(callResult))
                     .thenReturn("{\"content\":[{\"type\":\"text\",\"text\":\"result text\"}]}");
@@ -402,7 +404,7 @@ class EvaluationWorkerTest {
                 .resultBatchSize(100)
                 .maxResponseSizeBytes(5242880L)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
-                .token("test-token")
+                .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(System.currentTimeMillis())
                 .build();
     }
@@ -432,7 +434,7 @@ class EvaluationWorkerTest {
                 .resultBatchSize(100)
                 .maxResponseSizeBytes(5242880L)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
-                .token("test-token")
+                .credential(CallerCredential.bearer("test-token"))
                 .createdAtMs(FIXED_CLOCK.millis())
                 .suiteType(SuiteType.MCP_TOOL)
                 .mcpDeploymentRefDto(McpDeploymentReferenceDto.builder()

@@ -21,6 +21,7 @@ import com.epam.aidial.evaluation.runner.job.TestCaseRunner;
 import com.epam.aidial.evaluation.runner.job.TestCaseRunnerFactory;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
@@ -105,7 +106,7 @@ class RunOrchestrationServiceTest {
                 .resultBatchSize(10)
                 .maxResponseSizeBytes(1048576L)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
-                .token("tok")
+                .credential(CallerCredential.bearer("tok"))
                 .createdAtMs(0L)
                 .snapshotDeploymentRef(targetRef)
                 .snapshotResponseColumns(List.of())
@@ -217,7 +218,7 @@ class RunOrchestrationServiceTest {
                 .resultBatchSize(10)
                 .maxResponseSizeBytes(1048576L)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
-                .token("tok")
+                .credential(CallerCredential.bearer("tok"))
                 .createdAtMs(0L)
                 .snapshotDeploymentRef(suiteDeploymentRef)
                 .snapshotResponseColumns(List.of())
@@ -455,7 +456,7 @@ class RunOrchestrationServiceTest {
                 .resultBatchSize(10)
                 .maxResponseSizeBytes(1048576L)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
-                .token("tok")
+                .credential(CallerCredential.bearer("tok"))
                 .createdAtMs(0L)
                 .snapshotDeploymentRef(targetRef)
                 .snapshotResponseColumns(List.of())

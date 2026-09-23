@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.runner.job;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.runner.util.TokenPropagationHelper;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
@@ -45,7 +46,7 @@ public class TestCaseRunner {
     private final EvaluationContext context;
     private final List<ResponseColumnDefinitionDto> responseColumns;
     private final ResultBatchWriter resultsWriter;
-    private final String token;
+    private final CallerCredential credential;
 
     private final Semaphore semaphore;
     private final ExecutorService executor;
@@ -66,7 +67,7 @@ public class TestCaseRunner {
         this.context = context;
         this.responseColumns = responseColumns;
         this.resultsWriter = resultsWriter;
-        this.token = context.getToken();
+        this.credential = context.getCredential();
         this.semaphore = new Semaphore(context.getConcurrencyLevel());
         this.executor = context.getExecutor();
         this.rateLimitBucket = createRateLimitBucket(context.getRateLimitRps());
@@ -101,7 +102,8 @@ public class TestCaseRunner {
 
                     try {
                         CompletableFuture<Void> future = CompletableFuture.runAsync(
-                                TokenPropagationHelper.withTokenRunnable(token, () -> runWorker(capturedInput, ri)),
+                                TokenPropagationHelper.withCredentialRunnable(
+                                        credential, () -> runWorker(capturedInput, ri)),
                                 executor);
                         futures.add(future);
                     } catch (RejectedExecutionException e) {

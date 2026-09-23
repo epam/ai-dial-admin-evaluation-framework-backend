@@ -15,31 +15,51 @@ class AuthorizationTokenHolderTest {
     }
 
     @Test
-    @DisplayName("getToken returns null when not set")
-    void getTokenReturnsNullWhenNotSet() {
-        assertThat(AuthorizationTokenHolder.getToken()).isNull();
+    @DisplayName("getCredential returns null when not set")
+    void getCredentialReturnsNullWhenNotSet() {
+        assertThat(AuthorizationTokenHolder.getCredential()).isNull();
     }
 
     @Test
-    @DisplayName("getToken returns value after setToken")
-    void getTokenReturnsValueAfterSet() {
-        AuthorizationTokenHolder.setToken("Bearer abc123");
-        assertThat(AuthorizationTokenHolder.getToken()).isEqualTo("Bearer abc123");
+    @DisplayName("getCredential returns the value set via setCredential")
+    void getCredentialReturnsValueAfterSet() {
+        AuthorizationTokenHolder.setCredential(CallerCredential.bearer("abc123"));
+
+        assertThat(AuthorizationTokenHolder.getCredential()).isEqualTo(CallerCredential.bearer("abc123"));
     }
 
     @Test
-    @DisplayName("clearToken removes stored token")
-    void clearTokenRemovesStoredToken() {
-        AuthorizationTokenHolder.setToken("Bearer xyz");
+    @DisplayName("clearToken removes stored credential")
+    void clearTokenRemovesStoredCredential() {
+        AuthorizationTokenHolder.setCredential(CallerCredential.bearer("xyz"));
         AuthorizationTokenHolder.clearToken();
-        assertThat(AuthorizationTokenHolder.getToken()).isNull();
+
+        assertThat(AuthorizationTokenHolder.getCredential()).isNull();
     }
 
     @Test
-    @DisplayName("setToken overwrites previous value")
-    void setTokenOverwritesPrevious() {
-        AuthorizationTokenHolder.setToken("first");
-        AuthorizationTokenHolder.setToken("second");
-        assertThat(AuthorizationTokenHolder.getToken()).isEqualTo("second");
+    @DisplayName("setCredential overwrites previous value")
+    void setCredentialOverwritesPrevious() {
+        AuthorizationTokenHolder.setCredential(CallerCredential.bearer("first"));
+        AuthorizationTokenHolder.setCredential(CallerCredential.bearer("second"));
+
+        assertThat(AuthorizationTokenHolder.getCredential()).isEqualTo(CallerCredential.bearer("second"));
+    }
+
+    @Test
+    @DisplayName("setCredential stores an API-key credential")
+    void setCredentialStoresApiKeyCredential() {
+        AuthorizationTokenHolder.setCredential(CallerCredential.apiKey("my-key"));
+
+        assertThat(AuthorizationTokenHolder.getCredential()).isEqualTo(CallerCredential.apiKey("my-key"));
+    }
+
+    @Test
+    @DisplayName("setCredential with null clears the stored credential")
+    void setCredentialWithNullClears() {
+        AuthorizationTokenHolder.setCredential(CallerCredential.bearer("abc123"));
+        AuthorizationTokenHolder.setCredential(null);
+
+        assertThat(AuthorizationTokenHolder.getCredential()).isNull();
     }
 }

@@ -3,8 +3,11 @@ package com.epam.aidial.evaluation.runner.client.mcp;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.io.IOException;
 import java.net.ConnectException;
+import java.net.URI;
+import java.net.http.HttpRequest;
 import java.net.http.HttpTimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -80,6 +83,49 @@ class McpToolInvokerTest {
         void idWithSpacesIsPercentEncodedInSsePath() {
             assertThat(invoker.buildSseEndpoint("toolsets/public/my tool"))
                     .isEqualTo("/v1/toolset/toolsets/public/my%20tool/sse");
+        }
+    }
+
+    @Nested
+    @DisplayName("applyCredentialHeader — exactly one outbound header per credential kind")
+    class ApplyCredentialHeaderTest {
+
+        @Test
+        @DisplayName("Bearer credential sets Authorization: Bearer <value> and no Api-Key")
+        void bearerCredentialSetsAuthorizationHeader() {
+            HttpRequest request = McpToolInvoker.applyCredentialHeader(
+                            HttpRequest.newBuilder(URI.create("http://localhost/mcp")),
+                            CallerCredential.bearer("jwt-1"))
+                    .build();
+
+            assertThat(request.headers().firstValue("Authorization")).contains("Bearer jwt-1");
+            assertThat(request.headers().firstValue(CallerCredential.API_KEY_HEADER))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("API-key credential sets Api-Key and no Authorization")
+        void apiKeyCredentialSetsApiKeyHeader() {
+            HttpRequest request = McpToolInvoker.applyCredentialHeader(
+                            HttpRequest.newBuilder(URI.create("http://localhost/mcp")),
+                            CallerCredential.apiKey("key-1"))
+                    .build();
+
+            assertThat(request.headers().firstValue(CallerCredential.API_KEY_HEADER))
+                    .contains("key-1");
+            assertThat(request.headers().firstValue("Authorization")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Absent credential sets neither header (never Bearer null)")
+        void absentCredentialSetsNoHeader() {
+            HttpRequest request = McpToolInvoker.applyCredentialHeader(
+                            HttpRequest.newBuilder(URI.create("http://localhost/mcp")), null)
+                    .build();
+
+            assertThat(request.headers().firstValue("Authorization")).isEmpty();
+            assertThat(request.headers().firstValue(CallerCredential.API_KEY_HEADER))
+                    .isEmpty();
         }
     }
 

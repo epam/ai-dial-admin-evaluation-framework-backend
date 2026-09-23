@@ -180,9 +180,16 @@ dependencies {
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.4'
 
     // MCP SDK (Model Context Protocol client)
-    implementation platform('io.modelcontextprotocol.sdk:mcp-bom:2.0.0')
+    implementation platform("io.modelcontextprotocol.sdk:mcp-bom:${mcp_sdk_version}")
     implementation 'io.modelcontextprotocol.sdk:mcp-core'
     implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson3'
+
+    // Spring AI MCP server (Streamable HTTP, tools capability only). The transitive
+    // spring-boot-starter-web alias is excluded because this project uses spring-boot-starter-webmvc.
+    implementation platform('org.springframework.ai:spring-ai-bom:2.0.1')
+    implementation('org.springframework.ai:spring-ai-starter-mcp-server-webmvc') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-web'
+    }
 
     // Rate limiting
     implementation 'com.bucket4j:bucket4j_jdk17-core:8.19.0'

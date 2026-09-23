@@ -23,6 +23,7 @@ import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.SuiteSnapshotBuilder;
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunSseService;
@@ -92,10 +93,10 @@ public class TestSuiteEvaluationJob {
      * If submission itself fails (executor rejection or any other exception), the handle is removed and
      * closed before the exception is rethrown, so callers keep their existing rejection-compensation logic.
      */
-    public void dispatch(UUID runId, String token, boolean skipDeploymentPhase) {
+    public void dispatch(UUID runId, CallerCredential credential, boolean skipDeploymentPhase) {
         RunHandle handle = registry.register(runId);
         try {
-            taskExecutor.execute(() -> run(runId, token, skipDeploymentPhase, handle));
+            taskExecutor.execute(() -> run(runId, credential, skipDeploymentPhase, handle));
         } catch (RuntimeException | Error e) {
             // Platform-mode thread exhaustion at task submission surfaces as OutOfMemoryError, not a
             // RuntimeException; without this branch it would leak the just-registered handle and strand
@@ -117,7 +118,7 @@ public class TestSuiteEvaluationJob {
      * {@link RejectedExecutionException} maps to CANCELLED; any other exception maps to CANCELLED only if
      * the handle was cancelled, otherwise FAILED.
      */
-    void run(UUID runId, String token, boolean skipDeploymentPhase, RunHandle handle) {
+    void run(UUID runId, CallerCredential credential, boolean skipDeploymentPhase, RunHandle handle) {
         log.info("Starting test suite run {}", runId);
         // True once a status write performed by this job actually affected a row — the terminal SSE
         // notification in finally fires only then, so a no-op status write (run already terminal via
@@ -168,7 +169,7 @@ public class TestSuiteEvaluationJob {
 
                 handle.throwIfCancelled();
                 // Phase 1: Deployment evaluation
-                EvaluationContext context = buildContext(run, snapshot.get(), handle.executor(), token);
+                EvaluationContext context = buildContext(run, snapshot.get(), handle.executor(), credential);
                 evaluationExecutor.execute(context);
             }
 
@@ -452,7 +453,7 @@ public class TestSuiteEvaluationJob {
     }
 
     private EvaluationContext buildContext(
-            TestSuiteRun run, SuiteSnapshotDto snapshot, ExecutorService executor, String token) {
+            TestSuiteRun run, SuiteSnapshotDto snapshot, ExecutorService executor, CallerCredential credential) {
         RunConfigDto config = parseRunConfig(run.getRunConfig(), run.getId());
         EvaluationRunProperties.Execution execProps = evaluationRunProperties.getExecution();
         EvaluationRunProperties.Retry retryProps = evaluationRunProperties.getRetry();
@@ -488,7 +489,7 @@ public class TestSuiteEvaluationJob {
                 .resultBatchSize(execProps.getResultBatchSize())
                 .maxResponseSizeBytes(execProps.getMaxResponseSizeBytes())
                 .executor(executor)
-                .token(token)
+                .credential(credential)
                 .createdAtMs(run.getCreatedAt())
                 .suiteType(suiteType)
                 .snapshotDeploymentRef(snapshot.getDeploymentRef())

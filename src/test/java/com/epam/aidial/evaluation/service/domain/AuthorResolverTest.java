@@ -9,7 +9,9 @@ import com.epam.aidial.evaluation.client.dialcore.DialCoreClient;
 import com.epam.aidial.evaluation.configuration.properties.security.JwtSecurityProperties;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,7 +19,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -40,13 +47,66 @@ class AuthorResolverTest {
         resolver = new AuthorResolver(properties, dialCoreClient);
     }
 
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
     @Test
-    @DisplayName("returns 'anonymous' and never calls Core when JWT is null")
+    @DisplayName("returns 'anonymous' and never calls Core when JWT is null and there is no authentication")
     void anonymousWhenJwtNull() {
+        SecurityContextHolder.clearContext();
         properties.setResolveUserName(true);
 
         assertThat(resolver.getCreatedBy(null)).isEqualTo("anonymous");
         verify(dialCoreClient, never()).getUserInfo();
+    }
+
+    @Test
+    @DisplayName("returns the non-JWT principal's name when JWT is null (e.g. an API-key caller)")
+    void projectPrincipalNameWhenJwtNull() {
+        SecurityContextHolder.getContext().setAuthentication(authenticatedToken("my-project"));
+
+        assertThat(resolver.getCreatedBy(null)).isEqualTo("my-project");
+    }
+
+    @Test
+    @DisplayName("does not call Core for a non-JWT principal even when resolve-user-name is enabled")
+    void projectPrincipalSkipsDisplayNameResolution() {
+        properties.setResolveUserName(true);
+        SecurityContextHolder.getContext().setAuthentication(authenticatedToken("my-project"));
+
+        assertThat(resolver.getCreatedBy(null)).isEqualTo("my-project");
+        verify(dialCoreClient, never()).getUserInfo();
+    }
+
+    @Test
+    @DisplayName("returns 'anonymous' when JWT is null and the context holds an AnonymousAuthenticationToken")
+    void anonymousWhenAnonymousAuthenticationToken() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new AnonymousAuthenticationToken(
+                        "key", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+
+        assertThat(resolver.getCreatedBy(null)).isEqualTo("anonymous");
+    }
+
+    @Test
+    @DisplayName("returns 'anonymous' when JWT is null and the context authentication is unauthenticated")
+    void anonymousWhenAuthenticationNotAuthenticated() {
+        TestingAuthenticationToken token = new TestingAuthenticationToken("my-project", null, "ROLE_X");
+        token.setAuthenticated(false);
+        SecurityContextHolder.getContext().setAuthentication(token);
+
+        assertThat(resolver.getCreatedBy(null)).isEqualTo("anonymous");
+    }
+
+    @Test
+    @DisplayName("returns 'anonymous' when JWT is null and the context authentication's principal is a Jwt")
+    void anonymousWhenContextPrincipalIsJwt() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new JwtAuthenticationToken(jwtWithSub("alice"), List.of()));
+
+        assertThat(resolver.getCreatedBy(null)).isEqualTo("anonymous");
     }
 
     @Test
@@ -130,5 +190,11 @@ class AuthorResolverTest {
 
     private static Jwt jwtWithClaims(Map<String, Object> claims) {
         return new Jwt("token-value", Instant.now(), Instant.now().plusSeconds(60), Map.of("alg", "none"), claims);
+    }
+
+    private static TestingAuthenticationToken authenticatedToken(String principal) {
+        TestingAuthenticationToken token = new TestingAuthenticationToken(principal, null, "ROLE_X");
+        token.setAuthenticated(true);
+        return token;
     }
 }

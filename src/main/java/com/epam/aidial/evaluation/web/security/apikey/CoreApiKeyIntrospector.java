@@ -2,7 +2,7 @@ package com.epam.aidial.evaluation.web.security.apikey;
 
 import com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties;
 import com.epam.aidial.evaluation.configuration.properties.security.JwtSecurityProperties;
-import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import jakarta.annotation.PostConstruct;
 import java.util.HashMap;
 import java.util.List;
@@ -21,14 +21,17 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+/**
+ * Deliberately NOT annotated with {@code @LogExecution}: its public methods take the plaintext API
+ * key, and the opt-in trace advisor renders method arguments verbatim, which would write the secret
+ * to the log. Guarded by {@code SecretHandlingLoggingTest}.
+ */
 @Slf4j
 @Component
-@LogExecution
 @RequiredArgsConstructor
 @ConditionalOnProperty(value = "config.rest.security.api-key.enabled", havingValue = "true")
 public class CoreApiKeyIntrospector {
 
-    public static final String API_KEY_HEADER = "Api-Key";
     private static final String USER_INFO_PATH = "/v1/user/info";
     private static final ParameterizedTypeReference<Map<String, Object>> STRING_OBJECT_MAP =
             new ParameterizedTypeReference<>() {};
@@ -48,7 +51,7 @@ public class CoreApiKeyIntrospector {
             apiKeyIntrospectionRestClient
                     .get()
                     .uri(USER_INFO_PATH)
-                    .header(API_KEY_HEADER, "dial-eval-startup-probe")
+                    .header(CallerCredential.API_KEY_HEADER, "dial-eval-startup-probe")
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .body(STRING_OBJECT_MAP);
@@ -107,7 +110,7 @@ public class CoreApiKeyIntrospector {
             body = apiKeyIntrospectionRestClient
                     .get()
                     .uri(USER_INFO_PATH)
-                    .header(API_KEY_HEADER, apiKey)
+                    .header(CallerCredential.API_KEY_HEADER, apiKey)
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .body(STRING_OBJECT_MAP);

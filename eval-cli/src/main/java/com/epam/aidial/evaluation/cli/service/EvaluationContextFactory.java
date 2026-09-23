@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
@@ -20,8 +21,8 @@ import org.springframework.stereotype.Component;
  * Builds an {@link EvaluationContext} from a fetched {@link TestSuiteResponseDto} and CLI configuration,
  * overriding the source suite's recorded deployment reference with the CLI-configured target deployment.
  *
- * <p>Token is sourced from {@link TargetProperties#getApiKey()} and timestamps from the injected
- * {@link Clock}.
+ * <p>The caller credential is an API key sourced from {@link TargetProperties#getApiKey()}, and
+ * timestamps come from the injected {@link Clock}.
  */
 @Component
 @LogExecution
@@ -81,8 +82,9 @@ public class EvaluationContextFactory {
                 // Worker executor for this run; thread mode follows spring.threads.virtual.enabled
                 // (VIRTUAL_THREADS_ENABLED); owned and shut down by RunOrchestrationService
                 .executor(runExecutorFactory.newWorkerExecutor())
-                // Auth token for per-worker propagation
-                .token(targetProperties.getApiKey())
+                // Caller credential for per-worker propagation: the CLI always authenticates to the
+                // target DIAL Core with a static API key
+                .credential(CallerCredential.apiKey(targetProperties.getApiKey()))
                 .createdAtMs(clock.millis())
                 // Suite type from suite config
                 .suiteType(

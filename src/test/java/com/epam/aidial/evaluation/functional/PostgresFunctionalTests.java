@@ -520,18 +520,25 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class RunMetricSnapshotTests extends RunMetricSnapshotFunctionalTests {}
 
     @Nested
-    @TestPropertySource(properties = {"spring.ai.mcp.server.protocol=STREAMABLE"})
+    @TestPropertySource(properties = {
+        "spring.ai.mcp.server.enabled=true",
+        "spring.ai.mcp.server.protocol=STREAMABLE"
+    })
     @Import(CallerIdentityProbeTools.class)
     class McpServerFoundationTests extends McpServerFoundationFunctionalTests {}
 
     @Nested
-    @TestPropertySource(properties = {"spring.ai.mcp.server.protocol=STATELESS"})
+    @TestPropertySource(properties = {
+        "spring.ai.mcp.server.enabled=true",
+        "spring.ai.mcp.server.protocol=STATELESS"
+    })
     @Import(CallerIdentityProbeTools.class)
     class McpServerStatelessTests extends McpServerStatelessFunctionalTests {}
 
     @Nested
     @TestPropertySource(
             properties = {
+                "spring.ai.mcp.server.enabled=true",
                 "config.rest.security.mode=oidc",
                 "config.rest.security.disable-swagger-authorization=true",
                 "providers.test.issuer=https://issuer.example.com",
@@ -575,6 +582,7 @@ public class PostgresFunctionalTests extends FunctionalTests {
     @Nested
     @TestPropertySource(
             properties = {
+                "spring.ai.mcp.server.enabled=true",
                 "spring.ai.mcp.server.streamable-http.mcp-endpoint=/agent/mcp/",
                 "config.rest.security.mode=oidc",
                 "config.rest.security.disable-swagger-authorization=true",

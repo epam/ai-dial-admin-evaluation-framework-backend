@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSui
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import io.opentelemetry.api.OpenTelemetry;
 import java.time.Duration;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestClient;
 
 @Configuration
 @LogExecution
+@Slf4j
 public class DialAdasClientConfiguration {
 
     @Bean("dialAdasRestClient")
@@ -48,7 +50,11 @@ public class DialAdasClientConfiguration {
             DialAdasProperties properties,
             OpenTelemetry openTelemetry,
             QueryDslTestSuiteRunCostExtensionProperties extensionProperties) {
-        Duration timeout = Duration.ofSeconds(extensionProperties.getTimeoutSec());
+        Integer timeoutSec = extensionProperties.getTimeoutSec();
+
+        log.debug("Cost extension client timeout: {}s", timeoutSec);
+
+        Duration timeout = Duration.ofSeconds(timeoutSec);
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(timeout);
         requestFactory.setReadTimeout(timeout);

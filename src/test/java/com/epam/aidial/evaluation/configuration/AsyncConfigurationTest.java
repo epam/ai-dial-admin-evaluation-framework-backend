@@ -10,10 +10,16 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
 
-@DisplayName("AsyncConfiguration.testSuiteRunExecutor")
+@DisplayName("AsyncConfiguration")
 class AsyncConfigurationTest {
 
     private final AsyncConfiguration configuration = new AsyncConfiguration();
@@ -83,5 +89,70 @@ class AsyncConfigurationTest {
         executor.close();
 
         assertThat(observedInterrupt.get(5, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    @DisplayName("taskExecutor, virtual thread mode: a submitted task runs on a virtual thread named async-*")
+    void taskExecutorVirtualModeRunsOnVirtualThread() throws Exception {
+        final AsyncTaskExecutor executor = configuration.taskExecutor(new RunExecutorFactory(true));
+
+        final ThreadInfo info = CompletableFuture.supplyAsync(AsyncConfigurationTest::captureThreadInfo, executor)
+                .get(5, TimeUnit.SECONDS);
+
+        assertThat(info.virtual()).isTrue();
+        assertThat(info.name()).startsWith("async-");
+    }
+
+    @Test
+    @DisplayName("taskExecutor, platform thread mode: a submitted task runs on a daemon platform thread named async-*")
+    void taskExecutorPlatformModeRunsOnDaemonPlatformThread() throws Exception {
+        final AsyncTaskExecutor executor = configuration.taskExecutor(new RunExecutorFactory(false));
+
+        final ThreadInfo info = CompletableFuture.supplyAsync(AsyncConfigurationTest::captureThreadInfo, executor)
+                .get(5, TimeUnit.SECONDS);
+
+        assertThat(info.virtual()).isFalse();
+        assertThat(info.daemon()).isTrue();
+        assertThat(info.name()).startsWith("async-");
+    }
+
+    @Test
+    @DisplayName("with several TaskExecutor beans in the context, @Async methods run on taskExecutor")
+    void asyncMethodsRunOnTaskExecutorDespiteSeveralExecutors() throws Exception {
+        try (AnnotationConfigApplicationContext context =
+                new AnnotationConfigApplicationContext(AsyncTestContext.class)) {
+            final ThreadInfo info = context.getBean(AsyncProbe.class).capture().get(5, TimeUnit.SECONDS);
+
+            assertThat(info.name()).startsWith("async-");
+        }
+    }
+
+    @Configuration
+    @EnableAsync
+    @Import(AsyncConfiguration.class)
+    static class AsyncTestContext {
+
+        @Bean
+        RunExecutorFactory runExecutorFactory() {
+            return new RunExecutorFactory(true);
+        }
+
+        @Bean
+        AsyncTaskExecutor otherExecutor() {
+            return new SimpleAsyncTaskExecutor("other-");
+        }
+
+        @Bean
+        AsyncProbe asyncProbe() {
+            return new AsyncProbe();
+        }
+    }
+
+    static class AsyncProbe {
+
+        @Async
+        public CompletableFuture<ThreadInfo> capture() {
+            return CompletableFuture.completedFuture(captureThreadInfo());
+        }
     }
 }

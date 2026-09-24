@@ -19,7 +19,7 @@ spring:
   ai:
     mcp:
       server:
-        enabled: ${SPRING_AI_MCP_SERVER_ENABLED:true}
+        enabled: ${SPRING_AI_MCP_SERVER_ENABLED:false}
         stdio: false
         name: ai-dial-admin-evaluation-framework-backend
         version: "@project.version@"

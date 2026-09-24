@@ -7,7 +7,9 @@ import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,6 +48,21 @@ public interface EvalSummaryRepository {
      * Returns empty when the run has no eval summaries.
      */
     Optional<UUID> findLatestComputationId(UUID runId);
+
+    /**
+     * Resolves the latest computation for each of several runs at once, by the same ordering as
+     * {@link #findLatestComputationId(UUID)} (breaking a {@code computed_at_ms} tie on the smallest
+     * {@code computation_id}) — one statement, bounded by the size of {@code runIds}.
+     *
+     * <p>The returned map holds exactly one entry per run that has at least one eval summary. A run
+     * with no eval summaries is <strong>absent</strong> from the map — never present with a {@code
+     * null} value — so callers use {@code Map.containsKey} / {@code Map.get} rather than {@code
+     * getOrDefault} with a null fallback to distinguish "unscored" from "resolution failed".
+     *
+     * @param runIds run ids to resolve; an empty or {@code null} collection returns an empty map
+     *     without touching the database
+     */
+    Map<UUID, UUID> findLatestComputationIds(Collection<UUID> runIds);
 
     /**
      * Tells whether the given computation produced any eval summary for the run, without

@@ -10,7 +10,10 @@ import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -86,5 +89,37 @@ class ComputationResolverTest {
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("not-a-uuid");
         verify(evalSummaryRepository, never()).findLatestComputationId(any());
+    }
+
+    @Test
+    @DisplayName("resolveLatest delegates to the repository's batch lookup")
+    void resolveLatestDelegatesToRepository() {
+        UUID otherRunId = UUID.fromString("33333333-3333-3333-3333-333333333333");
+        Set<UUID> runIds = Set.of(RUN_ID, otherRunId);
+        Map<UUID, UUID> expected = Map.of(RUN_ID, COMPUTATION_ID);
+        when(evalSummaryRepository.findLatestComputationIds(runIds)).thenReturn(expected);
+
+        Map<UUID, UUID> result = resolver.resolveLatest(runIds);
+
+        assertThat(result).isEqualTo(expected);
+        verify(evalSummaryRepository).findLatestComputationIds(runIds);
+    }
+
+    @Test
+    @DisplayName("resolveLatest short-circuits on a null collection without a DB round trip")
+    void resolveLatestShortCircuitsOnNullCollection() {
+        Map<UUID, UUID> result = resolver.resolveLatest(null);
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(evalSummaryRepository);
+    }
+
+    @Test
+    @DisplayName("resolveLatest short-circuits on an empty collection without a DB round trip")
+    void resolveLatestShortCircuitsOnEmptyCollection() {
+        Map<UUID, UUID> result = resolver.resolveLatest(List.of());
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(evalSummaryRepository);
     }
 }

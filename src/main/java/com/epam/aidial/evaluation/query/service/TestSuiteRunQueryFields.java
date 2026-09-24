@@ -52,6 +52,16 @@ public final class TestSuiteRunQueryFields {
     /** {@code source} label published for {@link #METRIC_NAMES_FIELD}. */
     public static final String METRIC_NAMES_SOURCE = "run_metric_snapshots";
 
+    /**
+     * Extension-only result key carrying the run's latest computation's run-level {@code overall}
+     * metric score (see {@code OverallScoreTestSuiteRunsPageExtender}). It is merged onto a row after
+     * SQL and after paging, from the analytics {@code metric_score_results} entity, and is
+     * deliberately absent from both {@link PostgresTestSuiteRunEntityResolver#bindings} and
+     * {@link TestSuiteRunsSchemaProvider}'s published schema: it is not a queryable field and MUST NOT
+     * be accepted in {@code filter}/{@code select}/{@code sort}/{@code group_by}.
+     */
+    public static final String OVERALL_SCORE_VALUE_FIELD = "overall_score_value";
+
     public static final RefDescriptor DEPLOYMENT_REF =
             new RefDescriptor("deployment_ref", "deploymentRef", List.of("id", "name", "version", "type"));
 

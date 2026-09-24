@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Query console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #e4e8e3;
+  --panel:     #fafbf9;
+  --panel-2:   #f1f4f0;
+  --ink:       #182019;
+  --ink-2:     #5c6a61;
+  --ink-3:     #8b978f;
+  --rule:      #cbd3cc;
+  --rule-soft: #dee4dd;
+  --accent:    #0d6b57;
+  --accent-bg: #d8e8e2;
+  --alert:     #96291c;
+  --alert-bg:  #f2dcd8;
+  --sel:       #cfe3db;
+  --sel-alpha: rgba(13, 107, 87, .24);
+  --tok-key:   #2b5d7d;
+  --tok-str:   #6a3d8f;
+  --tok-num:   #0d6b57;
+  --tok-lit:   #96291c;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+:root[data-theme="dark"] {
+  --bg:        #0f1311;
+  --panel:     #161b18;
+  --panel-2:   #1c2320;
+  --ink:       #dce4de;
+  --ink-2:     #8b9a91;
+  --ink-3:     #667369;
+  --rule:      #28312b;
+  --rule-soft: #212a24;
+  --accent:    #4fc7a5;
+  --accent-bg: #16302a;
+  --alert:     #f08579;
+  --alert-bg:  #35201d;
+  --sel:       #1e3a33;
+  --sel-alpha: rgba(79, 199, 165, .26);
+  --tok-key:   #7fb4d6;
+  --tok-str:   #c39ae8;
+  --tok-num:   #4fc7a5;
+  --tok-lit:   #f08579;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+::selection { background: var(--sel); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- shell ---------- */
+.shell { display: grid; grid-template-rows: auto 1fr; height: 100dvh; }
+
+header.bar {
+  display: flex; align-items: center; gap: 18px;
+  padding: 0 16px; height: 46px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--rule);
+  position: relative;
+}
+.wordmark { display: flex; align-items: baseline; gap: 9px; flex: none; }
+.wordmark b {
+  font-family: var(--sans); font-weight: 600; font-size: 14px; letter-spacing: -.01em;
+}
+.wordmark span { color: var(--ink-3); font-size: 11.5px; }
+.bar-spacer { flex: 1; }
+.bar .grp { display: flex; align-items: center; gap: 6px; }
+.bar label { font-family: var(--sans); font-size: 11.5px; color: var(--ink-2); }
+
+input[type=text], input[type=password], select {
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 4px 7px;
+  font-size: 12px;
+  min-width: 0;
+}
+/* Inputs and selects have a wide intrinsic width; without this they push the
+   fixed-width rail past its column and its right edge gets clipped. */
+input, select, button { min-width: 0; }
+input[type=text]::placeholder { color: var(--ink-3); }
+input:focus, select:focus { border-color: var(--accent); outline: none; }
+
+.iconbtn {
+  background: none; border: 1px solid transparent; border-radius: 2px;
+  padding: 4px 7px; cursor: pointer; color: var(--ink-2); font-size: 12px;
+  font-family: var(--sans);
+}
+.iconbtn:hover { color: var(--ink); background: var(--panel-2); border-color: var(--rule); }
+
+#progress {
+  position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  background: var(--accent); transform-origin: left; transform: scaleX(0);
+  opacity: 0;
+}
+#progress.on { animation: sweep 1.1s ease-in-out infinite; opacity: 1; }
+@keyframes sweep {
+  0%   { transform: translateX(0) scaleX(0); }
+  45%  { transform: translateX(0) scaleX(.55); }
+  100% { transform: translateX(100%) scaleX(.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #progress.on { animation: none; transform: scaleX(1); opacity: .45; }
+}
+
+/* ---------- body grid ---------- */
+.body { display: grid; grid-template-columns: 300px minmax(0,1fr); min-height: 0; }
+
+aside {
+  background: var(--panel);
+  border-right: 1px solid var(--rule);
+  /* head, entities, instance, tabs, panes — the panes row takes the slack. */
+  display: grid; grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  min-height: 0; min-width: 0;
+}
+aside > * { min-width: 0; }
+
+.rail-head {
+  font-family: var(--sans); font-size: 11px; color: var(--ink-3);
+  padding: 11px 14px 5px; letter-spacing: .02em;
+}
+
+/* entity list */
+.entities { padding: 0 8px 10px; }
+.entity {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 0; border-radius: 2px;
+  padding: 4px 6px 4px 9px; color: var(--ink-2);
+  position: relative;
+}
+.entity:hover { background: var(--panel-2); color: var(--ink); }
+.entity > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entity[aria-current="true"] { color: var(--ink); background: var(--accent-bg); font-weight: 500; }
+.entity[aria-current="true"]::before {
+  content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; background: var(--accent);
+}
+.entity em { font-style: normal; font-size: 10.5px; color: var(--ink-3); font-family: var(--sans); }
+
+/* instance box */
+.instance { padding: 8px 14px 12px; border-top: 1px solid var(--rule-soft); }
+.instance.hidden { display: none; }
+.instance .row { display: flex; gap: 5px; }
+.instance select { flex: none; width: 118px; }
+.instance input { flex: 1; min-width: 0; }
+.note {
+  margin-top: 9px; padding: 7px 9px;
+  background: var(--panel-2); border-left: 2px solid var(--accent);
+  font-size: 11.5px; line-height: 1.55; color: var(--ink-2);
+}
+.note code { color: var(--ink); }
+.note.hidden { display: none; }
+
+/* tabs */
+.tabs { display: flex; border-top: 1px solid var(--rule-soft); border-bottom: 1px solid var(--rule); }
+.tab {
+  flex: 1; background: none; border: 0; cursor: pointer;
+  font-family: var(--sans); font-size: 11.5px; color: var(--ink-3);
+  padding: 7px 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.panes { overflow: auto; min-height: 0; }
+.pane { display: none; padding: 10px 0 24px; }
+.pane[data-active] { display: block; }
+
+.filterbox { padding: 0 12px 8px; }
+.filterbox input { width: 100%; }
+
+/* schema field rows */
+.fieldrow {
+  display: flex; align-items: baseline; gap: 10px;
+  width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 0; padding: 2.5px 14px;
+  font-size: 12px; color: var(--ink);
+}
+.fieldrow:hover { background: var(--accent-bg); }
+.fieldrow .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fieldrow .nm i { font-style: normal; color: var(--ink-3); }
+.fieldrow .nm s { text-decoration: none; color: var(--rule); }
+.fieldrow .ty { flex: none; font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+.fieldrow.jsonb .ty { color: var(--accent); }
+.empty { padding: 10px 14px; color: var(--ink-3); font-size: 11.5px; }
+
+/* reference pane */
+.refsec { padding: 2px 14px 16px; }
+.refsec h3 {
+  font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--ink-3);
+  margin: 14px 0 6px; letter-spacing: .02em;
+}
+.refsec dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: baseline; }
+.refsec dt { color: var(--ink); font-weight: 500; font-size: 12px; }
+.refsec dd { margin: 0; color: var(--ink-2); font-size: 11.5px; line-height: 1.45; }
+/* Sample JSON in the reference has no spaces to break on. */
+.refsec dt, .refsec dd, .refsec p { overflow-wrap: anywhere; }
+.refsec p { margin: 6px 0 0; color: var(--ink-2); font-size: 11.5px; line-height: 1.5; }
+.refsec a { color: var(--accent); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip {
+  background: var(--panel-2); border: 1px solid var(--rule); border-radius: 2px;
+  padding: 2px 6px; font-size: 11.5px; cursor: pointer; color: var(--ink-2);
+}
+.chip:hover { border-color: var(--accent); color: var(--ink); background: var(--accent-bg); }
+
+/* history */
+.histitem {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 0; border-bottom: 1px solid var(--rule-soft);
+  padding: 7px 14px; color: var(--ink-2); font-size: 11.5px;
+}
+.histitem:hover { background: var(--panel-2); color: var(--ink); }
+.histitem b { font-weight: 500; color: var(--ink); }
+.histitem span { color: var(--ink-3); }
+
+/* ---------- main ---------- */
+main { display: grid; grid-template-rows: auto auto 6px 1fr; min-width: 0; min-height: 0; }
+
+.toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--rule-soft);
+}
+.run {
+  background: var(--accent); color: var(--panel); border: 0; border-radius: 2px;
+  padding: 5px 13px; cursor: pointer; font-family: var(--sans); font-weight: 600; font-size: 12px;
+}
+:root[data-theme="dark"] .run { color: #08130f; }
+.run:hover { filter: brightness(1.08); }
+.run:disabled { opacity: .5; cursor: default; filter: none; }
+.kbd {
+  font-size: 10.5px; color: var(--ink-3); border: 1px solid var(--rule);
+  border-radius: 2px; padding: 1px 4px;
+}
+.toolbar .sep { flex: 1; }
+#exampleSel { max-width: 152px; }
+.valid { font-size: 11.5px; color: var(--accent); }
+.valid.bad { color: var(--alert); }
+
+/* editor */
+.editor { position: relative; overflow: hidden; background: var(--panel); border-bottom: 1px solid var(--rule-soft); }
+.editor pre, .editor textarea {
+  margin: 0; padding: 12px 14px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.6;
+  tab-size: 2; white-space: pre; overflow: auto;
+  border: 0; width: 100%; height: 100%;
+}
+.editor pre { position: absolute; inset: 0; pointer-events: none; color: var(--ink); }
+.editor textarea {
+  position: relative; background: transparent; color: transparent;
+  caret-color: var(--ink); resize: none; outline: none;
+}
+/* The textarea's own text is transparent and the coloured copy sits underneath, so the
+   selection must be translucent — an opaque one would hide the text it is selecting. */
+.editor textarea::selection { background: var(--sel-alpha); color: transparent; }
+.t-key { color: var(--tok-key); }
+.t-str { color: var(--tok-str); }
+.t-num { color: var(--tok-num); }
+.t-lit { color: var(--tok-lit); font-weight: 500; }
+
+.grip { background: var(--bg); cursor: row-resize; border-bottom: 1px solid var(--rule); }
+.grip:hover { background: var(--accent-bg); }
+
+/* ---------- builder ---------- */
+.workarea { position: relative; min-height: 0; }
+.workarea > * { height: 100%; }
+[hidden] { display: none !important; }
+
+.builder { overflow: auto; background: var(--panel); padding: 12px 14px 32px; }
+.builder > * { max-width: 1020px; }
+.bsec { margin-bottom: 15px; }
+.bsec > h4 {
+  font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--ink-3);
+  margin: 0 0 6px; letter-spacing: .02em;
+}
+.brow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 5px; }
+.brow > label, .bhint { font-family: var(--sans); font-size: 11.5px; color: var(--ink-2); }
+.brow .sep { flex: 1; }
+.bhint { margin: 2px 0 0; }
+.brow input[type=text] { min-width: 120px; }
+/* Fixed-ish widths keep rows packed left and their controls in line with each other. */
+.brow .grow { flex: 0 1 240px; min-width: 130px; }
+.chk { display: flex; align-items: center; gap: 4px; font-family: var(--sans); font-size: 11.5px; color: var(--ink-2); }
+.chk input { accent-color: var(--accent); }
+
+.add {
+  background: none; border: 1px dashed var(--rule); border-radius: 2px;
+  padding: 3px 9px; cursor: pointer; color: var(--ink-2);
+  font-family: var(--sans); font-size: 11.5px;
+}
+.add:hover { border-color: var(--accent); color: var(--accent); border-style: solid; }
+.del {
+  background: none; border: 1px solid transparent; border-radius: 2px;
+  padding: 2px 7px; cursor: pointer; color: var(--ink-3); line-height: 1;
+}
+.del:hover { color: var(--alert); border-color: var(--rule); }
+
+/* Nesting depth is the one thing the filter tree must make obvious. */
+.group { border-left: 2px solid var(--rule); padding-left: 11px; margin: 5px 0 5px 1px; }
+.group.alt { border-left-color: var(--accent); }
+.group > .brow:first-child > select { font-weight: 500; }
+
+.adv {
+  flex: 0 1 380px; min-width: 0; background: var(--panel-2); border: 1px solid var(--rule);
+  border-radius: 2px; padding: 3px 7px; font-size: 11.5px; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.seg { display: flex; gap: 2px; }
+.seg button {
+  background: none; border: 1px solid transparent; border-radius: 2px;
+  padding: 4px 10px; cursor: pointer; font-family: var(--sans); font-size: 12px; color: var(--ink-3);
+}
+.seg button[aria-selected="true"] { color: var(--ink); background: var(--panel-2); border-color: var(--rule); }
+
+/* results */
+.result { display: grid; grid-template-rows: auto 1fr; min-height: 0; background: var(--panel); }
+.resbar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 7px 14px; border-bottom: 1px solid var(--rule-soft);
+  font-size: 11.5px; color: var(--ink-2);
+}
+.resbar .sep { flex: 1; }
+.resbar b { color: var(--ink); font-weight: 500; }
+.viewtabs { display: flex; gap: 2px; }
+.viewtabs button {
+  background: none; border: 1px solid transparent; border-radius: 2px;
+  padding: 2px 8px; cursor: pointer; font-size: 11.5px; color: var(--ink-3);
+  font-family: var(--sans);
+}
+.viewtabs button[aria-selected="true"] { color: var(--ink); background: var(--panel-2); border-color: var(--rule); }
+
+.resbody { overflow: auto; min-height: 0; }
+.placeholder { padding: 30px 16px; color: var(--ink-3); font-size: 12px; }
+.placeholder b { display: block; color: var(--ink-2); font-weight: 500; margin-bottom: 4px; }
+
+table { border-collapse: collapse; width: max-content; min-width: 100%; }
+th, td {
+  text-align: left; vertical-align: top;
+  padding: 4px 12px 4px 0; border-bottom: 1px solid var(--rule-soft);
+  font-size: 12px; max-width: 460px;
+}
+th:first-child, td:first-child { padding-left: 14px; }
+th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--panel-2); border-bottom: 1px solid var(--rule);
+  font-weight: 500; color: var(--ink-2); white-space: nowrap; padding-top: 6px; padding-bottom: 6px;
+}
+th.ext { color: var(--accent); }
+tbody tr:hover { background: var(--panel-2); }
+td.null { color: var(--ink-3); }
+td.num { color: var(--tok-num); }
+td.bool { color: var(--tok-key); }
+/* A td's max-width is only advisory, so the cap lives on this inner block. */
+td .v {
+  display: block; max-width: 440px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+td .v.more { cursor: pointer; }
+td .v.open { white-space: pre-wrap; overflow: visible; overflow-wrap: anywhere; }
+td .v.obj { color: var(--ink-2); }
+td .v.obj.open { color: var(--ink); }
+
+pre.raw { margin: 0; padding: 12px 14px; font-size: 12px; white-space: pre; overflow: auto; }
+
+.errbox {
+  margin: 12px 14px; padding: 10px 12px;
+  background: var(--alert-bg); border-left: 2px solid var(--alert);
+  font-size: 12px; line-height: 1.55;
+}
+.errbox b { color: var(--alert); font-weight: 600; }
+.errbox pre { margin: 6px 0 0; white-space: pre-wrap; font-size: 11.5px; color: var(--ink-2); }
+
+@media (max-width: 900px) {
+  .body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid var(--rule); max-height: 44vh; }
+  header.bar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 8px 12px; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="bar">
+    <div class="wordmark"><b>Query console</b><span>unified DSL</span></div>
+    <div class="bar-spacer"></div>
+    <div class="grp">
+      <label for="baseUrl">API base</label>
+      <input type="text" id="baseUrl" size="22" placeholder="same origin" autocomplete="off">
+    </div>
+    <div class="grp">
+      <label for="authScheme">Auth</label>
+      <select id="authScheme">
+        <option value="none">none</option>
+        <option value="bearer">Bearer</option>
+        <option value="apikey">Api-Key</option>
+      </select>
+      <input type="password" id="authToken" size="20" placeholder="token" autocomplete="off">
+    </div>
+    <button class="iconbtn" id="themeBtn" title="Switch theme">Dark</button>
+    <div id="progress"></div>
+  </header>
+
+  <div class="body">
+    <aside>
+      <div class="rail-head">Entities</div>
+      <div class="entities" id="entityList"><div class="empty">Loading…</div></div>
+
+      <div class="instance hidden" id="instanceBox">
+        <div class="row">
+          <select id="instanceField"></select>
+          <input type="text" id="instanceId" placeholder="uuid" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="note hidden" id="entityNote"></div>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-pane="schema" aria-selected="true">Schema</button>
+        <button class="tab" role="tab" data-pane="ref" aria-selected="false">DSL</button>
+        <button class="tab" role="tab" data-pane="hist" aria-selected="false">History</button>
+      </div>
+
+      <div class="panes">
+        <div class="pane" data-pane="schema" data-active>
+          <div class="filterbox"><input type="text" id="fieldFilter" placeholder="Filter fields" autocomplete="off"></div>
+          <div id="fieldList"><div class="empty">Pick an entity.</div></div>
+        </div>
+        <div class="pane" data-pane="ref"><div id="refBody"></div></div>
+        <div class="pane" data-pane="hist"><div id="histBody"><div class="empty">Queries you run land here.</div></div></div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="toolbar">
+        <button class="run" id="runBtn">Run query</button>
+        <span class="kbd" id="kbdHint">Cmd+Enter</span>
+        <div class="seg">
+          <button id="modeBuilder" aria-selected="false">Builder</button>
+          <button id="modeJson" aria-selected="true">JSON</button>
+        </div>
+        <button class="iconbtn" id="fmtBtn">Format</button>
+        <button class="iconbtn" id="resetBtn">Starter query</button>
+        <select id="exampleSel" title="Load an example"><option value="">Examples…</option></select>
+        <button class="iconbtn" id="curlBtn">Copy as curl</button>
+        <span class="sep"></span>
+        <span class="valid" id="validFlag">valid JSON</span>
+      </div>
+
+      <div class="workarea" id="workarea" style="height: 38vh">
+        <div class="editor" id="editorWrap">
+          <pre id="highlight" aria-hidden="true"></pre>
+          <textarea id="editor" spellcheck="false" wrap="off" aria-label="Structured query JSON"></textarea>
+        </div>
+        <div class="builder" id="builderWrap" hidden></div>
+      </div>
+
+      <div class="grip" id="grip" role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
+
+      <datalist id="fieldNames"></datalist>
+
+      <div class="result">
+        <div class="resbar">
+          <span id="resStat">No query run yet.</span>
+          <span class="sep"></span>
+          <button class="iconbtn" id="copyRes">Copy JSON</button>
+          <div class="viewtabs">
+            <button id="viewTable" aria-selected="true">Table</button>
+            <button id="viewJson" aria-selected="false">JSON</button>
+          </div>
+        </div>
+        <div class="resbody" id="resBody">
+          <div class="placeholder">
+            <b>Nothing to show yet.</b>
+            Pick an entity on the left, click a field to drop it into the query, then run it.
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================== constants ============================== */
+
+const LS = "queryConsole.v1";
+const EXECUTE = "/api/v1/queries/execute";
+const ENTITIES = "/api/v1/queries/entities";
+
+/** Entities whose detailed schema accepts an id field other than `schemaIdField`. */
+const ALT_ID_FIELDS = { eval_summaries: ["test_suite_id"] };
+
+/** Things the UI must tell you about an entity that no schema response carries. */
+const ENTITY_NOTES = {
+  test_cases:
+    'Every query needs a top-level <code>dataset_id eq &lt;uuid&gt;</code> filter — bare, or directly ' +
+    'under <code>and</code>. Nested under <code>or</code>/<code>not</code> it does not count. ' +
+    'The id above also selects which <code>data::</code> fields exist.',
+  eval_summaries:
+    'Set a run id to flatten <code>data::</code>, <code>response::</code>, <code>metric::&lt;name&gt;::&lt;field&gt;</code> ' +
+    'and <code>metricInfo::</code> fields from that run\'s snapshot. Pick <code>test_suite_id</code> to use the ' +
+    'suite\'s latest run instead.',
+  test_suite_runs:
+    '<code>suite_snapshot</code>, <code>run_config</code> and <code>error_details</code> are not queryable — using one is a 400. ' +
+    'Row-mode results may carry an extra <code>overall_score_value</code> key when the projection includes <code>id</code>; ' +
+    'it is read-only and cannot be filtered or sorted on.',
+  metric_score_results:
+    'You may pass the literal <code>"latest"</code> as <code>computation_id</code>, but only when the same query pins ' +
+    'exactly one <code>test_suite_run_id eq &lt;uuid&gt;</code>. Anything else leaves the sentinel in place and fails as an invalid uuid.',
+};
+
+const OPERATORS = [
+  ["eq", "equal; with a null literal becomes IS NULL"],
+  ["ne", "not equal; total — a null operand satisfies it"],
+  ["co", "contains. Scalar field: case-insensitive LIKE. Array field: whole-element JSONB containment"],
+  ["nc", "does not contain; total, same two shapes as co"],
+  ["lt", "less than"],
+  ["gt", "greater than"],
+  ["le", "less than or equal"],
+  ["ge", "greater than or equal"],
+  ["in", "member of an array of literals, or of a subquery's first column"],
+];
+
+const LOGICAL = [
+  ["and", "n children, at least one"],
+  ["or", "n children, at least one"],
+  ["not", "exactly one child; total — a null operand satisfies it"],
+];
+
+const EXPR_TYPES = [
+  ["field", '{"type":"field","name":"status"}'],
+  ["value", '{"type":"value","value_type":"decimal","value":"0.5"} — value is always a string'],
+  ["fn", '{"type":"fn","name":"avg","distinct":false,"args":[…]}'],
+  ["array", '{"type":"array","items":[…]} — only as in\'s right operand'],
+  ["subquery", '{"type":"subquery","query":{…}} — first select column is the value'],
+  ["param", "rejected on this endpoint; internal callers only"],
+  ["case", "rejected for every entity query"],
+];
+
+const VALUE_TYPES = ["string", "integer", "long", "decimal", "boolean", "date", "timestamp", "uuid", "null"];
+
+const FUNCTIONS = [
+  ["lower(x)", "text"], ["upper(x)", "text"], ["length(x)", "text → integer"],
+  ["trim(x)", "text"], ["abs(x)", "numeric"],
+  ["width_bucket(x, low, high, count)", "exactly 4 args"],
+  ["count()", "no args is COUNT(*); one arg honours distinct"],
+  ["sum(x)", "honours distinct"], ["avg(x)", "honours distinct"],
+  ["min(x)", ""], ["max(x)", ""],
+  ["percentile_cont(fraction, x)", "fraction is a numeric literal in [0,1]"],
+  ["percentile_disc(fraction, x)", "fraction is a numeric literal in [0,1]"],
+  ["roc_auc(label, probability)", "analytics only; null when one class"],
+  ["add(a, b, …)", "n-ary, at least one"], ["multiply(a, b, …)", "n-ary, at least one"],
+  ["subtract(a, b)", "exactly 2"], ["divide(a, b)", "exactly 2"],
+  ["coalesce(value, fallback)", "exactly 2, numeric"],
+];
+
+const SNIPPETS = [
+  ["eq leaf", '{ "op": "eq", "args": [ { "type": "field", "name": "" }, { "type": "value", "value_type": "string", "value": "" } ] }'],
+  ["and", '{ "op": "and", "args": [  ] }'],
+  ["or", '{ "op": "or", "args": [  ] }'],
+  ["not", '{ "op": "not", "args": [  ] }'],
+  ["in array", '{ "op": "in", "args": [ { "type": "field", "name": "" }, { "type": "array", "items": [ { "type": "value", "value_type": "string", "value": "" } ] } ] }'],
+  ["in subquery", '{ "op": "in", "args": [ { "type": "field", "name": "" }, { "type": "subquery", "query": { "entity": "", "mode": "row", "select": [ { "expr": { "type": "field", "name": "id" } } ], "page": { "type": "offset", "offset": 0, "limit": 100 } } } ] }'],
+  ["is null", '{ "op": "eq", "args": [ { "type": "field", "name": "" }, { "type": "value", "value_type": "null", "value": "" } ] }'],
+  ["field", '{ "type": "field", "name": "" }'],
+  ["value", '{ "type": "value", "value_type": "string", "value": "" }'],
+  ["fn", '{ "type": "fn", "name": "avg", "args": [ { "type": "field", "name": "" } ] }'],
+  ["count(*)", '{ "expr": { "type": "fn", "name": "count", "args": [] }, "as": "total" }'],
+  ["select entry", '{ "expr": { "type": "field", "name": "" } }'],
+  ["sort", '"sort": [ { "field": "", "dir": "desc", "nulls": "last" } ]'],
+  ["group_by", '"group_by": [ "" ]'],
+  ["having", '"having": { "op": "gt", "args": [ { "type": "field", "name": "total" }, { "type": "value", "value_type": "integer", "value": "1" } ] }'],
+  ["page", '"page": { "type": "offset", "offset": 0, "limit": 25, "include_total": true }'],
+];
+
+const EXAMPLES = [
+  ["Rows with a total count", {
+    entity: "test_suites", mode: "row",
+    filter: { op: "co", args: [{ type: "field", name: "name" }, { type: "value", value_type: "string", value: "suite" }] },
+    select: [{ expr: { type: "field", name: "id" } }, { expr: { type: "field", name: "name" } }, { expr: { type: "field", name: "is_valid" } }],
+    sort: [{ field: "created_at_ms", dir: "desc" }],
+    page: { type: "offset", offset: 0, limit: 25, include_total: true },
+  }],
+  ["Count by execution status", {
+    entity: "eval_summaries", mode: "aggregate",
+    filter: { op: "eq", args: [{ type: "field", name: "test_suite_run_id" }, { type: "value", value_type: "uuid", value: "00000000-0000-0000-0000-000000000000" }] },
+    group_by: ["execution_status"],
+    select: [{ expr: { type: "field", name: "execution_status" } }, { expr: { type: "fn", name: "count", args: [] }, as: "total" }],
+    sort: [{ field: "execution_status", dir: "asc" }],
+    page: { type: "offset", offset: 0, limit: 25 },
+  }],
+  ["Score histogram (width_bucket)", {
+    entity: "eval_summaries", mode: "aggregate",
+    filter: { op: "eq", args: [{ type: "field", name: "test_suite_run_id" }, { type: "value", value_type: "uuid", value: "00000000-0000-0000-0000-000000000000" }] },
+    group_by: ["bucket"],
+    select: [
+      { expr: { type: "fn", name: "width_bucket", args: [
+        { type: "field", name: "score" },
+        { type: "value", value_type: "decimal", value: "0" },
+        { type: "value", value_type: "decimal", value: "1" },
+        { type: "value", value_type: "integer", value: "5" }] }, as: "bucket" },
+      { expr: { type: "fn", name: "count", args: [] }, as: "cnt" }],
+    sort: [{ field: "bucket", dir: "asc" }],
+    page: { type: "offset", offset: 0, limit: 25 },
+  }],
+  ["Scores of the two latest runs (subquery)", {
+    entity: "metric_score_results", mode: "row",
+    filter: { op: "in", args: [
+      { type: "field", name: "test_suite_run_id" },
+      { type: "subquery", query: {
+        entity: "metric_score_results", mode: "aggregate",
+        filter: { op: "eq", args: [{ type: "field", name: "test_suite_id" }, { type: "value", value_type: "uuid", value: "00000000-0000-0000-0000-000000000000" }] },
+        select: [
+          { expr: { type: "field", name: "test_suite_run_id" }, as: "test_suite_run_id" },
+          { expr: { type: "fn", name: "max", args: [{ type: "field", name: "computed_at_ms" }] }, as: "recency" }],
+        group_by: ["test_suite_run_id"],
+        sort: [{ field: "recency", dir: "desc" }],
+        page: { type: "offset", offset: 0, limit: 2 },
+      } }] },
+    select: [
+      { expr: { type: "field", name: "test_suite_run_id" } },
+      { expr: { type: "field", name: "metric_score_name" } },
+      { expr: { type: "field", name: "metric_name" } },
+      { expr: { type: "field", name: "value" } }],
+    sort: [{ field: "computed_at_ms", dir: "desc" }],
+    page: { type: "offset", offset: 0, limit: 100 },
+  }],
+  ["Latest computation sentinel", {
+    entity: "metric_score_results", mode: "row",
+    filter: { op: "and", args: [
+      { op: "eq", args: [{ type: "field", name: "test_suite_run_id" }, { type: "value", value_type: "uuid", value: "00000000-0000-0000-0000-000000000000" }] },
+      { op: "eq", args: [{ type: "field", name: "computation_id" }, { type: "value", value_type: "string", value: "latest" }] }] },
+    page: { type: "offset", offset: 0, limit: 100, include_total: true },
+  }],
+  ["Test cases of a dataset", {
+    entity: "test_cases", mode: "row",
+    filter: { op: "and", args: [
+      { op: "eq", args: [{ type: "field", name: "dataset_id" }, { type: "value", value_type: "uuid", value: "00000000-0000-0000-0000-000000000000" }] },
+      { op: "eq", args: [{ type: "field", name: "is_valid" }, { type: "value", value_type: "boolean", value: "true" }] }] },
+    sort: [{ field: "created_at_ms", dir: "desc" }],
+    page: { type: "offset", offset: 0, limit: 50, include_total: true },
+  }],
+];
+
+/* ============================== state ============================== */
+
+const state = {
+  entities: [],
+  entity: null,       // QueryEntityDto
+  schema: null,       // QueryEntitySchemaDto
+  idField: null,
+  idValue: "",
+  query: null,        // the builder's live model, re-parsed from the editor on open
+  result: null,
+  error: null,
+  view: "table",
+  history: [],
+};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+/* ============================== persistence ============================== */
+
+function loadPrefs() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(LS) || "{}"); } catch { p = {}; }
+  $("baseUrl").value = p.baseUrl || "";
+  $("authScheme").value = p.authScheme || "none";
+  $("authToken").value = p.authToken || "";
+  state.history = Array.isArray(p.history) ? p.history : [];
+  if (p.editorHeight) $("workarea").style.height = p.editorHeight;
+  document.documentElement.dataset.theme = p.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  return p;
+}
+
+function savePrefs() {
+  const p = {
+    baseUrl: $("baseUrl").value.trim(),
+    authScheme: $("authScheme").value,
+    authToken: $("authToken").value,
+    theme: document.documentElement.dataset.theme,
+    editorHeight: $("workarea").style.height,
+    history: state.history.slice(0, 25),
+  };
+  try { localStorage.setItem(LS, JSON.stringify(p)); } catch { /* private mode */ }
+}
+
+/* ============================== http ============================== */
+
+function headers(json) {
+  const h = {};
+  if (json) h["Content-Type"] = "application/json";
+  const token = $("authToken").value.trim();
+  const scheme = $("authScheme").value;
+  if (token && scheme === "bearer") h["Authorization"] = "Bearer " + token;
+  if (token && scheme === "apikey") h["Api-Key"] = token;
+  return h;
+}
+
+const base = () => $("baseUrl").value.trim().replace(/\/+$/, "");
+
+let inFlight = 0;
+function busy(on) {
+  inFlight += on ? 1 : -1;
+  $("progress").classList.toggle("on", inFlight > 0);
+}
+
+async function api(path, init) {
+  busy(true);
+  try {
+    const res = await fetch(base() + path, { ...init, headers: { ...headers(!!(init && init.body)), ...((init && init.headers) || {}) } });
+    const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+    return { ok: res.ok, status: res.status, body };
+  } finally {
+    busy(false);
+  }
+}
+
+/* ============================== editor ============================== */
+
+const ta = $("editor");
+const hl = $("highlight");
+
+function highlight(src) {
+  return esc(src).replace(
+    /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    (m, str, colon, lit, num) => {
+      if (str) return colon ? `<span class="t-key">${str}</span>${colon}` : `<span class="t-str">${str}</span>`;
+      if (lit) return `<span class="t-lit">${lit}</span>`;
+      return `<span class="t-num">${num}</span>`;
+    });
+}
+
+function paint() {
+  hl.innerHTML = highlight(ta.value) + "\n";
+  hl.scrollTop = ta.scrollTop;
+  hl.scrollLeft = ta.scrollLeft;
+  const flag = $("validFlag");
+  if (!ta.value.trim()) { flag.textContent = "empty"; flag.className = "valid"; return; }
+  try { JSON.parse(ta.value); flag.textContent = "valid JSON"; flag.className = "valid"; }
+  catch (e) { flag.textContent = e.message.replace(/^JSON\.parse:\s*/i, "").slice(0, 70); flag.className = "valid bad"; }
+}
+
+function setEditor(value, fromBuilder) {
+  ta.value = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  paint();
+  // A builder edit already holds the right DOM; re-rendering would steal focus mid-keystroke.
+  if (!fromBuilder && !$("builderWrap").hidden) renderBuilder();
+}
+
+function insertAtCursor(text) {
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+  ta.selectionStart = ta.selectionEnd = s + text.length;
+  ta.focus();
+  paint();
+}
+
+ta.addEventListener("input", paint);
+ta.addEventListener("scroll", () => { hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; });
+ta.addEventListener("keydown", (e) => {
+  if (e.key === "Tab") { e.preventDefault(); insertAtCursor("  "); }
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); }
+});
+
+/* ============================== starter queries ============================== */
+
+function starter(entity, idField, idValue) {
+  const q = { entity: entity.name, mode: "row" };
+  if (entity.name === "test_cases") {
+    q.filter = { op: "eq", args: [
+      { type: "field", name: "dataset_id" },
+      { type: "value", value_type: "uuid", value: idValue || "00000000-0000-0000-0000-000000000000" }] };
+  } else if (idValue && idField) {
+    q.filter = { op: "eq", args: [
+      { type: "field", name: idField },
+      { type: "value", value_type: "uuid", value: idValue }] };
+  }
+  q.page = { type: "offset", offset: 0, limit: 25, include_total: true };
+  return q;
+}
+
+/* ============================== rail: entities ============================== */
+
+async function loadEntities() {
+  const r = await api(ENTITIES);
+  if (!r.ok) {
+    $("entityList").innerHTML = `<div class="empty">Could not reach ${esc(base() || "the API") }. Check the API base and that the backend is up.</div>`;
+    return;
+  }
+  state.entities = r.body || [];
+  $("entityList").innerHTML = "";
+  for (const e of state.entities) {
+    const b = document.createElement("button");
+    b.className = "entity";
+    b.type = "button";
+    b.setAttribute("aria-current", "false");
+    b.innerHTML = `<span>${esc(e.name)}</span>${e.complex ? "<em>instanced</em>" : ""}`;
+    b.addEventListener("click", () => selectEntity(e));
+    $("entityList").appendChild(b);
+  }
+  if (state.entities.length) selectEntity(state.entities[0]);
+}
+
+async function selectEntity(entity) {
+  state.entity = entity;
+  [...$("entityList").children].forEach((b, i) =>
+    b.setAttribute("aria-current", String(state.entities[i] === entity)));
+
+  const box = $("instanceBox");
+  const sel = $("instanceField");
+  const note = $("entityNote");
+
+  const ids = entity.complex
+    ? [entity.schemaIdField, ...(ALT_ID_FIELDS[entity.name] || [])]
+    : [];
+  box.classList.toggle("hidden", !entity.complex && !ENTITY_NOTES[entity.name]);
+  sel.style.display = ids.length ? "" : "none";
+  $("instanceId").style.display = ids.length ? "" : "none";
+  sel.innerHTML = ids.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join("");
+  state.idField = ids[0] || null;
+  state.idValue = "";
+  $("instanceId").value = "";
+
+  if (ENTITY_NOTES[entity.name]) { note.innerHTML = ENTITY_NOTES[entity.name]; note.classList.remove("hidden"); }
+  else note.classList.add("hidden");
+
+  setEditor(starter(entity, state.idField, ""));
+  await loadSchema();
+}
+
+async function loadSchema() {
+  const e = state.entity;
+  if (!e) return;
+  const detailed = e.complex && state.idValue.trim();
+  const path = detailed
+    ? `/api/v1/queries/entities/schema/${encodeURIComponent(e.name)}/detailed?${encodeURIComponent(state.idField)}=${encodeURIComponent(state.idValue.trim())}`
+    : `/api/v1/queries/entities/schema/${encodeURIComponent(e.name)}`;
+  const r = await api(path);
+  if (!r.ok) {
+    state.schema = null;
+    $("fieldList").innerHTML = `<div class="empty">${esc(msgOf(r) || "Schema unavailable.")}</div>`;
+    return;
+  }
+  state.schema = r.body;
+  refreshFieldNames();
+  renderFields();
+}
+
+function renderFields() {
+  const host = $("fieldList");
+  const needle = $("fieldFilter").value.trim().toLowerCase();
+  const fields = (state.schema?.fields || []).filter((f) => !needle || f.name.toLowerCase().includes(needle));
+  if (!fields.length) { host.innerHTML = `<div class="empty">No matching fields.</div>`; return; }
+  host.innerHTML = "";
+  for (const f of fields) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "fieldrow" + (f.type === "object" || f.type === "array" ? " jsonb" : "");
+    b.title = f.source && f.source !== f.name ? `backed by ${f.source}` : f.name;
+    b.innerHTML = `<span class="nm">${segmented(f.name)}</span><span class="ty">${esc(f.type)}</span>`;
+    b.addEventListener("click", () => insertAtCursor(`{ "type": "field", "name": "${f.name}" }`));
+    host.appendChild(b);
+  }
+}
+
+/** Renders `metric::Accuracy::score` with the prefix muted and the leaf in ink. */
+function segmented(name) {
+  const parts = name.split("::");
+  if (parts.length === 1) return esc(name);
+  const head = parts.slice(0, -1).map((p) => `<i>${esc(p)}</i>`).join("<s>::</s>");
+  return `${head}<s>::</s>${esc(parts[parts.length - 1])}`;
+}
+
+/* ============================== rail: reference ============================== */
+
+function renderReference() {
+  const dl = (rows) => `<dl>${rows.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join("")}</dl>`;
+  $("refBody").innerHTML = `
+    <div class="refsec">
+      <h3>Snippets</h3>
+      <div class="chips" id="snipChips"></div>
+
+      <h3>Comparison operators</h3>
+      ${dl(OPERATORS)}
+      <p>A null literal is only valid with <code>eq</code>/<code>ne</code>. <code>ne</code>, <code>nc</code>
+      and <code>not</code> are total: a row with no value satisfies them.</p>
+
+      <h3>Logical operators</h3>
+      ${dl(LOGICAL)}
+
+      <h3>Expression types</h3>
+      ${dl(EXPR_TYPES)}
+
+      <h3>Value types</h3>
+      <div class="chips">${VALUE_TYPES.map((v) => `<span class="chip" style="cursor:default">${v}</span>`).join("")}</div>
+
+      <h3>Functions</h3>
+      ${dl(FUNCTIONS)}
+      <p><code>distinct</code> is honoured by <code>count</code>, <code>sum</code> and <code>avg</code> only.</p>
+
+      <h3>Modes and paging</h3>
+      <dl>
+        <dt>row</dt><dd>An empty <code>select</code> projects every column of the entity.</dd>
+        <dt>aggregate</dt><dd><code>select</code> is required; every entry that is not a group key needs an <code>as</code> alias. <code>having</code> and <code>sort</code> can reference those aliases.</dd>
+        <dt>offset</dt><dd>Default limit 100, clamped to 1000. A negative offset is a 400. <code>include_total</code> runs a second count and works in row mode only.</dd>
+        <dt>cursor</dt><dd>Modelled but not executable — the translator rejects it with a 400.</dd>
+      </dl>
+
+      <h3>Reference</h3>
+      <p>The full wire contract lives in <code>docs/query-dsl/structured-query-model-v8.html</code>.</p>
+    </div>`;
+  const chips = $("snipChips");
+  for (const [label, text] of SNIPPETS) {
+    const c = document.createElement("button");
+    c.type = "button"; c.className = "chip"; c.textContent = label;
+    c.addEventListener("click", () => insertAtCursor(text));
+    chips.appendChild(c);
+  }
+}
+
+/* ============================== rail: history ============================== */
+
+function renderHistory() {
+  const host = $("histBody");
+  if (!state.history.length) { host.innerHTML = `<div class="empty">Queries you run land here.</div>`; return; }
+  host.innerHTML = "";
+  for (const h of state.history) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "histitem";
+    const when = new Date(h.at).toLocaleTimeString();
+    b.innerHTML = `<b>${esc(h.entity || "?")}</b> ${esc(h.mode || "")} <span>· ${esc(h.outcome)} · ${esc(when)}</span>`;
+    b.addEventListener("click", () => setEditor(h.query));
+    host.appendChild(b);
+  }
+}
+
+function remember(query, outcome) {
+  state.history.unshift({ at: Date.now(), entity: query.entity, mode: query.mode, outcome, query });
+  state.history = state.history.slice(0, 25);
+  renderHistory();
+  savePrefs();
+}
+
+/* ============================== run ============================== */
+
+function msgOf(r) {
+  if (r.body && typeof r.body === "object") return r.body.message || r.body.error || "";
+  return typeof r.body === "string" ? r.body : "";
+}
+
+async function run() {
+  let query;
+  try { query = JSON.parse(ta.value); }
+  catch (e) { showError("The editor does not hold valid JSON.", e.message); return; }
+
+  $("runBtn").disabled = true;
+  const t0 = performance.now();
+  const r = await api(EXECUTE, { method: "POST", body: JSON.stringify(query) });
+  const ms = Math.round(performance.now() - t0);
+  $("runBtn").disabled = false;
+
+  if (!r.ok) {
+    state.result = null;
+    remember(query, r.status);
+    const b = r.body && typeof r.body === "object" ? r.body : null;
+    showError(
+      `${r.status} ${b?.code || ""} ${msgOf(r)}`.trim(),
+      b ? JSON.stringify(b, null, 2) : String(r.body || ""));
+    $("resStat").textContent = `Failed in ${ms} ms.`;
+    return;
+  }
+
+  state.result = r.body;
+  state.error = null;
+  remember(query, "ok");
+  const rows = r.body?.rows || [];
+  const total = r.body?.totalCount;
+  $("resStat").innerHTML =
+    `<b>${rows.length}</b> row${rows.length === 1 ? "" : "s"} in ${ms} ms` +
+    (total != null ? ` · <b>${total}</b> matching` : "");
+  renderResult();
+}
+
+function showError(head, detail) {
+  state.result = null;
+  $("resBody").innerHTML = `<div class="errbox"><b>${esc(head)}</b>${detail ? `<pre>${esc(detail)}</pre>` : ""}</div>`;
+}
+
+function renderResult() {
+  const host = $("resBody");
+  const rows = state.result?.rows || [];
+
+  if (state.view === "json") {
+    host.innerHTML = `<pre class="raw">${highlight(JSON.stringify(state.result, null, 2))}</pre>`;
+    return;
+  }
+  if (!rows.length) {
+    host.innerHTML = `<div class="placeholder"><b>No rows matched.</b>The query ran; the result set is empty.</div>`;
+    return;
+  }
+
+  const known = new Set((state.schema?.fields || []).map((f) => f.name));
+  const aliases = selectAliases();
+  const cols = [];
+  for (const row of rows) for (const k of Object.keys(row)) if (!cols.includes(k)) cols.push(k);
+
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const htr = document.createElement("tr");
+  for (const c of cols) {
+    const th = document.createElement("th");
+    th.textContent = c;
+    // A column that is neither a schema field nor an alias you wrote is extension-derived
+    // (today: overall_score_value). It is read-only — not filterable, sortable or groupable.
+    if (known.size && !known.has(c) && !aliases.has(c)) {
+      th.classList.add("ext");
+      th.title = "Added after the query ran. Not part of the entity's schema — it cannot be filtered or sorted on.";
+    }
+    htr.appendChild(th);
+  }
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    for (const c of cols) tr.appendChild(cell(row[c]));
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  host.innerHTML = "";
+  host.appendChild(table);
+}
+
+/** Aliases you wrote in `select`, so they are not mistaken for extension-derived columns. */
+function selectAliases() {
+  try {
+    const q = JSON.parse(ta.value);
+    return new Set((q.select || []).map((s) => s && s.as).filter(Boolean));
+  } catch { return new Set(); }
+}
+
+function cell(v) {
+  const td = document.createElement("td");
+  if (v === null || v === undefined) { td.className = "null"; td.textContent = "null"; return td; }
+  if (typeof v === "number") { td.className = "num"; td.textContent = String(v); return td; }
+  if (typeof v === "boolean") { td.className = "bool"; td.textContent = String(v); return td; }
+
+  const isObj = typeof v === "object";
+  const short = isObj ? JSON.stringify(v) : String(v);
+  const full = isObj ? JSON.stringify(v, null, 2) : short;
+  const s = document.createElement("span");
+  s.className = "v" + (isObj ? " obj" : "");
+  s.textContent = short;
+
+  // Clamped by CSS; let long or structured values be opened in place.
+  if (isObj || short.length > 60) {
+    s.classList.add("more");
+    s.title = "Click to expand";
+    s.addEventListener("click", () => {
+      s.textContent = s.classList.toggle("open") ? full : short;
+    });
+  }
+  td.appendChild(s);
+  return td;
+}
+
+/* ============================== builder ==============================
+   The JSON stays the source of truth. The builder reads it on open and writes it back
+   on every change; anything it cannot express (subqueries, nested functions, case)
+   is shown read-only and left untouched, so switching panes never loses a query. */
+
+const DISTINCT_FNS = new Set(["count", "sum", "avg"]);
+const FN_NAMES = FUNCTIONS.map(([sig]) => sig.slice(0, sig.indexOf("(")));
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function select(options, value, onChange, cls) {
+  const s = el("select", cls);
+  for (const o of options) {
+    const [v, label] = Array.isArray(o) ? o : [o, o];
+    const opt = el("option", null, label);
+    opt.value = v;
+    s.appendChild(opt);
+  }
+  s.value = value ?? "";
+  s.addEventListener("change", () => onChange(s.value));
+  return s;
+}
+
+function textInput(value, onInput, placeholder, cls) {
+  const i = el("input", cls);
+  i.type = "text";
+  i.value = value ?? "";
+  if (placeholder) i.placeholder = placeholder;
+  i.addEventListener("input", () => onInput(i.value));
+  return i;
+}
+
+function fieldInput(value, onInput, cls) {
+  const i = textInput(value, onInput, "field name", cls);
+  i.setAttribute("list", "fieldNames");
+  i.spellcheck = false;
+  return i;
+}
+
+function label(text) { return el("label", null, text); }
+
+function delButton(onClick, title) {
+  const b = el("button", "del", "✕");
+  b.type = "button";
+  b.title = title || "Remove";
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function addButton(text, onClick) {
+  const b = el("button", "add", text);
+  b.type = "button";
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function advChip(value) {
+  const c = el("div", "adv", JSON.stringify(value));
+  c.title = "The builder cannot edit this shape. Switch to JSON.";
+  return c;
+}
+
+/** Writes the model back to the editor without re-rendering the form. */
+function commit() { setEditor(state.query, true); }
+
+/** Rebuilds the form, then writes — for edits that change the shape of the UI. */
+function restructure() { setEditor(state.query, true); renderBuilder(); }
+
+const isField = (e) => e && e.type === "field";
+const isValue = (e) => e && e.type === "value";
+const newValue = () => ({ type: "value", value_type: "string", value: "" });
+const newField = () => ({ type: "field", name: "" });
+const newLeaf = () => ({ op: "eq", args: [newField(), newValue()] });
+
+/* ---------- operands ---------- */
+
+/** A field-or-literal operand: a kind switch plus the editor for that kind. */
+function operandRow(expr, onReplace) {
+  const frag = document.createDocumentFragment();
+  if (!isField(expr) && !isValue(expr)) { frag.appendChild(advChip(expr)); return frag; }
+
+  frag.appendChild(select(
+    [["field", "field"], ["value", "value"]],
+    isField(expr) ? "field" : "value",
+    (kind) => onReplace(kind === "field" ? newField() : newValue())));
+
+  if (isField(expr)) {
+    frag.appendChild(fieldInput(expr.name, (v) => { expr.name = v; commit(); }, "grow"));
+  } else {
+    frag.appendChild(select(VALUE_TYPES, expr.value_type, (v) => { expr.value_type = v; restructure(); }));
+    // A null literal has no value to type.
+    if (expr.value_type !== "null") {
+      frag.appendChild(textInput(expr.value, (v) => { expr.value = v; commit(); }, "value", "grow"));
+    }
+  }
+  return frag;
+}
+
+/* ---------- filter tree ---------- */
+
+function renderFilter(node, onReplace, onRemove, depth) {
+  const logical = node && ["and", "or", "not"].includes(node.op);
+  return logical ? renderGroup(node, onReplace, onRemove, depth) : renderLeaf(node, onReplace, onRemove);
+}
+
+function renderGroup(node, onReplace, onRemove, depth) {
+  const box = el("div", "group" + (depth % 2 ? " alt" : ""));
+  const head = el("div", "brow");
+
+  head.appendChild(select(["and", "or", "not"], node.op, (op) => {
+    node.op = op;
+    // `not` takes exactly one child; drop the extras rather than send a 400.
+    if (op === "not" && node.args.length > 1) node.args = node.args.slice(0, 1);
+    restructure();
+  }));
+
+  if (node.op !== "not" || !(node.args || []).length) {
+    head.appendChild(addButton("+ condition", () => { (node.args ||= []).push(newLeaf()); restructure(); }));
+  }
+  if (node.op !== "not") {
+    head.appendChild(addButton("+ group", () => {
+      (node.args ||= []).push({ op: "and", args: [newLeaf()] });
+      restructure();
+    }));
+  }
+  head.appendChild(el("span", "sep"));
+  head.appendChild(delButton(onRemove, "Remove this group"));
+  box.appendChild(head);
+
+  (node.args || []).forEach((child, i) => {
+    box.appendChild(renderFilter(
+      child,
+      (next) => { node.args[i] = next; restructure(); },
+      () => { node.args.splice(i, 1); restructure(); },
+      depth + 1));
+  });
+  return box;
+}
+
+function renderLeaf(node, onReplace, onRemove) {
+  const row = el("div", "brow");
+  const args = node.args || (node.args = [newField(), newValue()]);
+
+  row.appendChild(operandRow(args[0], (next) => { args[0] = next; restructure(); }));
+
+  row.appendChild(select(OPERATORS.map(([o]) => o), node.op, (op) => {
+    node.op = op;
+    // `in` wants a list on the right; every other operator wants a single operand.
+    if (op === "in" && args[1]?.type !== "array" && args[1]?.type !== "subquery") {
+      args[1] = { type: "array", items: [newValue()] };
+    } else if (op !== "in" && args[1]?.type === "array") {
+      args[1] = newValue();
+    }
+    restructure();
+  }));
+
+  if (node.op === "in") row.appendChild(listOperand(args));
+  else row.appendChild(operandRow(args[1], (next) => { args[1] = next; restructure(); }));
+
+  row.appendChild(delButton(onRemove, "Remove this condition"));
+  return row;
+}
+
+/** The right side of `in`: a comma-separated list of literals sharing one value type. */
+function listOperand(args) {
+  const frag = document.createDocumentFragment();
+  const arr = args[1];
+  if (!arr || arr.type !== "array" || !(arr.items || []).every(isValue)) {
+    frag.appendChild(advChip(arr));
+    return frag;
+  }
+  const type = arr.items[0]?.value_type || "string";
+  frag.appendChild(select(VALUE_TYPES.filter((t) => t !== "null"), type, (t) => {
+    arr.items.forEach((i) => { i.value_type = t; });
+    commit();
+  }));
+  frag.appendChild(textInput(
+    arr.items.map((i) => i.value).join(", "),
+    (raw) => {
+      arr.items = raw.split(",").map((s) => ({ type: "value", value_type: type, value: s.trim() }));
+      commit();
+    },
+    "comma-separated", "grow"));
+  return frag;
+}
+
+/* ---------- select, sort, paging ---------- */
+
+function renderSelectEntry(entry, index, list) {
+  const row = el("div", "brow");
+  const expr = entry.expr;
+  const kind = isField(expr) ? "field" : expr?.type === "fn" ? "fn" : "adv";
+
+  if (kind === "adv") {
+    row.appendChild(advChip(expr));
+  } else {
+    row.appendChild(select([["field", "field"], ["fn", "function"]], kind, (k) => {
+      entry.expr = k === "field" ? newField() : { type: "fn", name: "count", args: [] };
+      restructure();
+    }));
+
+    if (kind === "field") {
+      row.appendChild(fieldInput(expr.name, (v) => { expr.name = v; commit(); }, "grow"));
+    } else {
+      row.appendChild(select(FN_NAMES, expr.name, (n) => { expr.name = n; restructure(); }));
+      (expr.args ||= []).forEach((arg, i) => {
+        row.appendChild(operandRow(arg, (next) => { expr.args[i] = next; restructure(); }));
+        row.appendChild(delButton(() => { expr.args.splice(i, 1); restructure(); }, "Remove argument"));
+      });
+      row.appendChild(addButton("+ arg", () => { expr.args.push(newField()); restructure(); }));
+      if (DISTINCT_FNS.has(expr.name)) {
+        const wrap = el("label", "chk");
+        const cb = el("input");
+        cb.type = "checkbox";
+        cb.checked = !!expr.distinct;
+        cb.addEventListener("change", () => { expr.distinct = cb.checked; commit(); });
+        wrap.append(cb, document.createTextNode("distinct"));
+        row.appendChild(wrap);
+      }
+    }
+  }
+
+  row.appendChild(label("as"));
+  row.appendChild(textInput(entry.as, (v) => {
+    if (v) entry.as = v; else delete entry.as;
+    commit();
+  }, "alias"));
+  row.appendChild(delButton(() => { list.splice(index, 1); restructure(); }));
+  return row;
+}
+
+function renderSortEntry(item, index, list) {
+  const row = el("div", "brow");
+  row.appendChild(fieldInput(item.field, (v) => { item.field = v; commit(); }, "grow"));
+  row.appendChild(select(["asc", "desc"], item.dir || "asc", (v) => { item.dir = v; commit(); }));
+  row.appendChild(select([["", "db default"], ["first", "nulls first"], ["last", "nulls last"]],
+    item.nulls || "", (v) => { if (v) item.nulls = v; else delete item.nulls; commit(); }));
+  row.appendChild(delButton(() => { list.splice(index, 1); restructure(); }));
+  return row;
+}
+
+/* ---------- the form ---------- */
+
+function section(title) {
+  const s = el("div", "bsec");
+  if (title) s.appendChild(el("h4", null, title));
+  return s;
+}
+
+function renderBuilder() {
+  const host = $("builderWrap");
+  host.innerHTML = "";
+
+  let q;
+  try { q = JSON.parse(ta.value); }
+  catch {
+    host.appendChild(el("p", "bhint", "The editor does not hold valid JSON. Fix it on the JSON tab, then come back."));
+    return;
+  }
+  if (!q || typeof q !== "object" || Array.isArray(q)) {
+    host.appendChild(el("p", "bhint", "The query must be a JSON object."));
+    return;
+  }
+  state.query = q;
+  const aggregate = q.mode === "aggregate";
+
+  // Entity and mode
+  const top = section();
+  const topRow = el("div", "brow");
+  topRow.appendChild(label("Entity"));
+  topRow.appendChild(select(
+    state.entities.map((e) => e.name).concat(state.entities.some((e) => e.name === q.entity) ? [] : [q.entity || ""]),
+    q.entity || "", (v) => { q.entity = v; commit(); }));
+  topRow.appendChild(label("Mode"));
+  topRow.appendChild(select([["row", "row"], ["aggregate", "aggregate"]], q.mode || "row", (v) => {
+    q.mode = v;
+    if (v === "aggregate" && !(q.select || []).length) q.select = [{ expr: { type: "fn", name: "count", args: [] }, as: "total" }];
+    restructure();
+  }));
+  const dWrap = el("label", "chk");
+  const dCb = el("input");
+  dCb.type = "checkbox";
+  dCb.checked = !!q.distinct;
+  dCb.addEventListener("change", () => { q.distinct = dCb.checked; commit(); });
+  dWrap.append(dCb, document.createTextNode("distinct"));
+  topRow.appendChild(dWrap);
+  top.appendChild(topRow);
+  host.appendChild(top);
+
+  // Select
+  const sel = section("Select");
+  (q.select || []).forEach((entry, i) => sel.appendChild(renderSelectEntry(entry, i, q.select)));
+  if (!(q.select || []).length) {
+    sel.appendChild(el("p", "bhint", aggregate
+      ? "Aggregate mode needs at least one column."
+      : "Empty projects every column of the entity."));
+  }
+  sel.appendChild(addButton("+ column", () => { (q.select ||= []).push({ expr: newField() }); restructure(); }));
+  host.appendChild(sel);
+
+  // Filter
+  const flt = section("Filter");
+  if (q.filter) {
+    flt.appendChild(renderFilter(q.filter,
+      (next) => { q.filter = next; restructure(); },
+      () => { delete q.filter; restructure(); }, 0));
+  } else {
+    const row = el("div", "brow");
+    row.appendChild(addButton("+ condition", () => { q.filter = newLeaf(); restructure(); }));
+    row.appendChild(addButton("+ group", () => { q.filter = { op: "and", args: [newLeaf()] }; restructure(); }));
+    flt.appendChild(row);
+  }
+  host.appendChild(flt);
+
+  if (aggregate) {
+    // Group by
+    const grp = section("Group by");
+    (q.group_by || []).forEach((name, i) => {
+      const row = el("div", "brow");
+      row.appendChild(fieldInput(name, (v) => { q.group_by[i] = v; commit(); }, "grow"));
+      row.appendChild(delButton(() => { q.group_by.splice(i, 1); restructure(); }));
+      grp.appendChild(row);
+    });
+    grp.appendChild(addButton("+ key", () => { (q.group_by ||= []).push(""); restructure(); }));
+    host.appendChild(grp);
+
+    // Having
+    const hav = section("Having");
+    if (q.having) {
+      hav.appendChild(renderFilter(q.having,
+        (next) => { q.having = next; restructure(); },
+        () => { delete q.having; restructure(); }, 0));
+    } else {
+      hav.appendChild(addButton("+ condition", () => { q.having = newLeaf(); restructure(); }));
+    }
+    hav.appendChild(el("p", "bhint", "Resolves against base fields and the aliases above."));
+    host.appendChild(hav);
+  }
+
+  // Sort
+  const srt = section("Sort");
+  (q.sort || []).forEach((item, i) => srt.appendChild(renderSortEntry(item, i, q.sort)));
+  srt.appendChild(addButton("+ key", () => { (q.sort ||= []).push({ field: "", dir: "asc" }); restructure(); }));
+  host.appendChild(srt);
+
+  // Page
+  const pg = section("Page");
+  const page = q.page && q.page.type === "cursor" ? null : q.page;
+  if (!page) {
+    pg.appendChild(el("p", "bhint", "Cursor paging is not executable. Switch to offset."));
+    pg.appendChild(addButton("Use offset paging", () => {
+      q.page = { type: "offset", offset: 0, limit: 100, include_total: false };
+      restructure();
+    }));
+  } else {
+    q.page ||= { type: "offset", offset: 0, limit: 100, include_total: false };
+    const p = q.page;
+    p.type = "offset";
+    const row = el("div", "brow");
+    row.appendChild(label("Offset"));
+    row.appendChild(textInput(p.offset ?? 0, (v) => { p.offset = Number(v) || 0; commit(); }));
+    row.appendChild(label("Limit"));
+    row.appendChild(textInput(p.limit ?? 100, (v) => { p.limit = Number(v) || 0; commit(); }));
+    const tWrap = el("label", "chk");
+    const tCb = el("input");
+    tCb.type = "checkbox";
+    tCb.checked = !!p.include_total;
+    tCb.disabled = aggregate;
+    tCb.addEventListener("change", () => { p.include_total = tCb.checked; commit(); });
+    tWrap.append(tCb, document.createTextNode("include total"));
+    row.appendChild(tWrap);
+    pg.appendChild(row);
+    pg.appendChild(el("p", "bhint", aggregate
+      ? "A total is only returned in row mode. Limit defaults to 100 and caps at 1000."
+      : "Limit defaults to 100 and caps at 1000."));
+  }
+  host.appendChild(pg);
+}
+
+function setPane(pane) {
+  const builder = pane === "builder";
+  $("modeBuilder").setAttribute("aria-selected", String(builder));
+  $("modeJson").setAttribute("aria-selected", String(!builder));
+  $("builderWrap").hidden = !builder;
+  $("editorWrap").hidden = builder;
+  if (builder) renderBuilder();
+}
+
+function refreshFieldNames() {
+  $("fieldNames").innerHTML = (state.schema?.fields || [])
+    .map((f) => `<option value="${esc(f.name)}"></option>`).join("");
+}
+
+/* ============================== wiring ============================== */
+
+function setView(view) {
+  state.view = view;
+  $("viewTable").setAttribute("aria-selected", String(view === "table"));
+  $("viewJson").setAttribute("aria-selected", String(view === "json"));
+  if (state.result) renderResult();
+}
+
+async function copy(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const was = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  } catch {
+    btn.textContent = "Copy blocked";
+  }
+}
+
+function curl() {
+  const origin = base() || location.origin;
+  const h = headers(true);
+  const parts = [`curl -s -X POST '${origin}${EXECUTE}'`];
+  for (const [k, v] of Object.entries(h)) parts.push(`  -H '${k}: ${v}'`);
+  let body = ta.value;
+  try { body = JSON.stringify(JSON.parse(body)); } catch { /* send as typed */ }
+  parts.push(`  -d '${body.replace(/'/g, `'\\''`)}'`);
+  return parts.join(" \\\n");
+}
+
+function initGrip() {
+  const grip = $("grip"), wrap = $("workarea");
+  let startY = 0, startH = 0;
+  grip.addEventListener("pointerdown", (e) => {
+    startY = e.clientY; startH = wrap.getBoundingClientRect().height;
+    grip.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const h = Math.max(90, Math.min(window.innerHeight - 200, startH + ev.clientY - startY));
+      wrap.style.height = h + "px";
+    };
+    const up = () => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      savePrefs();
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+  });
+}
+
+function init() {
+  loadPrefs();
+  $("themeBtn").textContent = document.documentElement.dataset.theme === "dark" ? "Light" : "Dark";
+  const mac = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
+  if (!mac) $("kbdHint").textContent = "Ctrl+Enter";
+
+  for (const [label] of EXAMPLES) {
+    const o = document.createElement("option");
+    o.value = label; o.textContent = label;
+    $("exampleSel").appendChild(o);
+  }
+
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", String(x === t)));
+    document.querySelectorAll(".pane").forEach((p) =>
+      p.toggleAttribute("data-active", p.dataset.pane === t.dataset.pane));
+  }));
+
+  $("themeBtn").addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    $("themeBtn").textContent = next === "dark" ? "Light" : "Dark";
+    savePrefs();
+    if (state.result) renderResult();
+  });
+
+  $("baseUrl").addEventListener("change", () => { savePrefs(); loadEntities(); });
+  $("authScheme").addEventListener("change", () => { savePrefs(); loadEntities(); });
+  $("authToken").addEventListener("change", () => { savePrefs(); loadEntities(); });
+
+  $("instanceField").addEventListener("change", (e) => { state.idField = e.target.value; loadSchema(); });
+  $("instanceId").addEventListener("change", (e) => { state.idValue = e.target.value; loadSchema(); });
+  $("fieldFilter").addEventListener("input", renderFields);
+
+  $("runBtn").addEventListener("click", run);
+  $("modeBuilder").addEventListener("click", () => setPane("builder"));
+  $("modeJson").addEventListener("click", () => setPane("json"));
+  $("fmtBtn").addEventListener("click", () => {
+    try { setEditor(JSON.parse(ta.value)); } catch { /* the validity flag already says so */ }
+  });
+  $("resetBtn").addEventListener("click", () => {
+    if (state.entity) setEditor(starter(state.entity, state.idField, state.idValue));
+  });
+  $("exampleSel").addEventListener("change", (e) => {
+    const found = EXAMPLES.find(([l]) => l === e.target.value);
+    if (found) setEditor(found[1]);
+    e.target.value = "";
+  });
+  $("curlBtn").addEventListener("click", (e) => copy(curl(), e.currentTarget));
+  $("copyRes").addEventListener("click", (e) =>
+    copy(JSON.stringify(state.result, null, 2), e.currentTarget));
+  $("viewTable").addEventListener("click", () => setView("table"));
+  $("viewJson").addEventListener("click", () => setView("json"));
+
+  window.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); }
+  });
+
+  initGrip();
+  renderReference();
+  renderHistory();
+  paint();
+  loadEntities();
+}
+
+init();
+</script>
+</body>
+</html>

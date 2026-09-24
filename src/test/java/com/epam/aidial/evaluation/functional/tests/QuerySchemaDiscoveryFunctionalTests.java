@@ -5,11 +5,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.query.model.ComparisonNode;
+import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
+import com.epam.aidial.evaluation.query.model.FilterNode;
 import com.epam.aidial.evaluation.query.model.OffsetPage;
 import com.epam.aidial.evaluation.query.model.OutputColumn;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.query.model.ValueExpr;
+import com.epam.aidial.evaluation.query.model.ValueType;
 import com.epam.aidial.evaluation.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.query.service.dto.QueryEntitySchemaDto;
 import com.epam.aidial.evaluation.query.service.dto.QueryFieldType;
@@ -290,7 +295,7 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
     @DisplayName("test_suite_runs base schema field names all execute in a row select with matching row keys")
     void shouldMatchTestSuiteRunsSchemaToExecutor() {
         TestSuite suite = metaTestDataHelper.createTestSuite("query-schema-run-" + UUID.randomUUID());
-        metaTestDataHelper.createTestSuiteRun(suite.getId());
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
 
         ResponseEntity<QueryEntitySchemaDto> response =
                 restTemplate.getForEntity(queriesUrl("/entities/schema/test_suite_runs"), QueryEntitySchemaDto.class);
@@ -303,12 +308,30 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
         List<OutputColumn> select = fieldNames.stream()
                 .map(name -> new OutputColumn(new FieldExpr(name), name))
                 .toList();
+        // Pinned to this test's own run (D10): the shared test database contains sibling runs
+        // that carry extension-derived keys (e.g. overall_score_value), so an unfiltered query
+        // would make rows().get(0) order-dependent instead of the fixture created here.
+        FilterNode filter = new ComparisonNode(
+                ComparisonOp.EQ,
+                List.of(
+                        new FieldExpr("id"),
+                        new ValueExpr(ValueType.UUID, run.getId().toString())));
         StructuredQuery query = new StructuredQuery(
-                "test_suite_runs", null, QueryMode.ROW, false, select, null, null, null, new OffsetPage(0, 10, false));
+                "test_suite_runs",
+                filter,
+                QueryMode.ROW,
+                false,
+                select,
+                null,
+                null,
+                null,
+                new OffsetPage(0, 10, false));
 
         QueryResultPage page = queryRepository.execute(query);
 
         assertThat(page.rows()).isNotEmpty();
-        assertThat(page.rows().get(0).keySet()).isEqualTo(fieldNames);
+        // Containment, not exact equality (D2): a row may legitimately carry additional
+        // extension-derived keys beyond the published queryable schema.
+        assertThat(page.rows().get(0).keySet()).containsAll(fieldNames);
     }
 }

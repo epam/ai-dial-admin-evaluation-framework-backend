@@ -26,6 +26,7 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [Query DSL function catalog](query-dsl-function-catalog.md) | Registry-driven `QueryFunction` SPI; stored-function delegation; no `mean` fn |
 | [Typed `OverallScoreDefinition`](overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; `coalesce` keeps `overall` non-null |
 | [Query DSL entity resolution](query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check |
+| [Query result page extension](query-result-page-extension.md) | `QueryResultPageExtender` SPI + `@Primary` coordinator; open key set; per-extender failure isolation |
 | [Query DSL subqueries](query-dsl-subqueries.md) | Subquery-valued `in` and scalar subqueries; the one lazy-bean cycle break |
 | [Query DSL null polarity](query-dsl-null-polarity.md) | `nc`/`ne`/`not` are total (null satisfies); positive ops stay unwrapped/sargable |
 | [`test_cases` query entity + `testCaseFilter`](test-cases-query-entity.md) | Instance-aware bindings keyed by `dataset_id`; scope-aware ALL-turns-match |

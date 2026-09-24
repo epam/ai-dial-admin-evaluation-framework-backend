@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
@@ -20,6 +21,7 @@ import com.epam.aidial.evaluation.service.domain.dto.analytics.ResultCountRespon
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +41,9 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private AnalyticsTestDataHelper analyticsTestDataHelper;
+
+    @Autowired
+    private EvalSummaryRepository evalSummaryRepository;
 
     private UUID testSuiteId;
     private UUID testSuiteRunId;
@@ -918,6 +923,21 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("findLatestComputationId breaks a computed_at_ms tie by the smaller computation_id, repeatably")
+    void findLatestComputationIdBreaksTieBySmallerComputationIdRepeatably() {
+        long sameComputedAtMs = System.currentTimeMillis();
+        UUID smaller = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID greater = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        insertMetricLessSummaries(greater, testSuiteRunCreatedAtMs, List.of("greater-case"), sameComputedAtMs);
+        insertMetricLessSummaries(smaller, testSuiteRunCreatedAtMs, List.of("smaller-case"), sameComputedAtMs);
+
+        for (int i = 0; i < 5; i++) {
+            Optional<UUID> latest = evalSummaryRepository.findLatestComputationId(testSuiteRunId);
+            assertThat(latest).contains(smaller);
+        }
+    }
+
+    @Test
     @DisplayName("The latest-computation resolution index exists on test_case_eval_summaries")
     void resolutionIndexExists() {
         var indexDefinition = analyticsTestDataHelper.findIndexDefinition(
@@ -926,6 +946,43 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
         assertThat(indexDefinition).isPresent();
         // Contains, not equals: Postgres renders indexdef schema-qualified and with USING btree.
         assertThat(indexDefinition.get()).contains("(test_suite_run_id, computed_at_ms DESC, computation_id)");
+    }
+
+    @Test
+    @DisplayName("findLatestComputationIds resolves a mixed page: scored runs, an unscored run, and a "
+            + "same-millisecond tie broken the same way as the single-run lookup")
+    void findLatestComputationIdsResolvesMixedPageInOneStatement() {
+        TestSuiteRun scoredRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
+        UUID scoredComputationId = UUID.randomUUID();
+        insertMetricLessSummaries(
+                scoredRun.getId(),
+                scoredComputationId,
+                scoredRun.getCreatedAt(),
+                List.of("scored-case"),
+                scoredRun.getCreatedAt());
+
+        TestSuiteRun unscoredRun = metaTestDataHelper.createTestSuiteRun(testSuiteId);
+
+        long sameComputedAtMs = System.currentTimeMillis();
+        UUID smaller = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID greater = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        insertMetricLessSummaries(greater, testSuiteRunCreatedAtMs, List.of("greater-case"), sameComputedAtMs);
+        insertMetricLessSummaries(smaller, testSuiteRunCreatedAtMs, List.of("smaller-case"), sameComputedAtMs);
+
+        Map<UUID, UUID> result = evalSummaryRepository.findLatestComputationIds(
+                List.of(testSuiteRunId, scoredRun.getId(), unscoredRun.getId()));
+
+        assertThat(result)
+                .hasSize(2)
+                .containsEntry(testSuiteRunId, smaller)
+                .containsEntry(scoredRun.getId(), scoredComputationId)
+                .doesNotContainKey(unscoredRun.getId());
+    }
+
+    @Test
+    @DisplayName("findLatestComputationIds returns an empty map for an empty input")
+    void findLatestComputationIdsReturnsEmptyMapForEmptyInput() {
+        assertThat(evalSummaryRepository.findLatestComputationIds(List.of())).isEmpty();
     }
 
     // --- Helpers ---
@@ -941,12 +998,21 @@ public abstract class EvalSummaryFunctionalTests extends BaseFunctionalTest {
      */
     private void insertMetricLessSummaries(
             UUID computationId, long createdAtMs, List<String> testCaseNames, long computedAtMs) {
+        insertMetricLessSummaries(testSuiteRunId, computationId, createdAtMs, testCaseNames, computedAtMs);
+    }
+
+    /**
+     * Run-parameterized variant of {@link #insertMetricLessSummaries(UUID, long, List, long)}, for tests
+     * that seed more than one run (e.g. a batch lookup's mixed page).
+     */
+    private void insertMetricLessSummaries(
+            UUID runId, UUID computationId, long createdAtMs, List<String> testCaseNames, long computedAtMs) {
         for (String testCaseName : testCaseNames) {
             analyticsTestDataHelper.createTestRunResult(
-                    testSuiteRunId, testSuiteId, UUID.randomUUID(), testCaseName, "{}", "{}", createdAtMs);
+                    runId, testSuiteId, UUID.randomUUID(), testCaseName, "{}", "{}", createdAtMs);
             analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
                     .suiteId(testSuiteId)
-                    .runId(testSuiteRunId)
+                    .runId(runId)
                     .computationId(computationId)
                     .testCaseName(testCaseName)
                     .createdAtMs(createdAtMs)

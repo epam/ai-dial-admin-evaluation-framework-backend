@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.query.service;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
 
+import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.query.service.dto.QueryEntityDto;
 import com.epam.aidial.evaluation.query.service.dto.QuerySchemaFieldDto;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -21,9 +22,8 @@ import org.springframework.stereotype.Component;
 @LogExecution
 public class MetricScoreResultSchemaProvider implements QueryableEntitySchemaProvider {
 
-    static final String ENTITY_NAME = "metric_score_results";
-
-    private static final QueryEntityDto DESCRIPTOR = new QueryEntityDto(ENTITY_NAME, false, null);
+    private static final QueryEntityDto DESCRIPTOR =
+            new QueryEntityDto(MetricScoreConstants.ENTITY_METRIC_SCORE_RESULTS, false, null);
 
     private final List<QuerySchemaFieldDto> baseSchema;
 

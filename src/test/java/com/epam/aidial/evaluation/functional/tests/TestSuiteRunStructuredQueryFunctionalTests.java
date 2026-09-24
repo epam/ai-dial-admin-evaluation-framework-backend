@@ -3,9 +3,12 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.epam.aidial.evaluation.constants.MetricScoreConstants;
+import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
+import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.query.model.ComparisonNode;
 import com.epam.aidial.evaluation.query.model.ComparisonOp;
@@ -22,8 +25,10 @@ import com.epam.aidial.evaluation.query.model.SortItem;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.model.ValueType;
+import com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields;
 import com.epam.aidial.evaluation.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.query.service.repository.StructuredQueryExecutor;
+import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.ArrayList;
 import java.util.List;
@@ -70,6 +75,12 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
 
     @Autowired
     private MetaTestDataHelper metaTestDataHelper;
+
+    @Autowired
+    private AnalyticsTestDataHelper analyticsTestDataHelper;
+
+    @Autowired
+    private MetricScoreService metricScoreService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -145,7 +156,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
     // ---- field set / snapshot refs (task 3.2) ----
 
     @Test
-    @DisplayName("empty select projects exactly the 21 entity fields and none of the excluded columns")
+    @DisplayName("empty select projects at least the 21 entity fields and none of the excluded columns")
     void emptySelectProjectsExactlyTheEntityFields() {
         TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-fields-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
@@ -154,7 +165,12 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
 
         assertThat(page.rows()).hasSize(1);
         Map<String, Object> row = page.rows().get(0);
-        assertThat(row.keySet()).isEqualTo(ALL_FIELDS);
+        // Containment, not exact equality (D2/D10): a row may legitimately carry additional
+        // extension-derived keys beyond the entity's queryable field set. This fixture run has no
+        // eval summaries so no extender attaches anything today, but the assertion must not depend
+        // on that being true forever. Asserted against the explicit ALL_FIELDS set (not a set
+        // derived from the row itself) so it still fails if a queryable field goes missing.
+        assertThat(row.keySet()).containsAll(ALL_FIELDS);
         assertThat(row).doesNotContainKeys("suite_snapshot", "run_config", "error_details");
     }
 
@@ -309,8 +325,8 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
     }
 
     @Test
-    @DisplayName("same-millisecond computations are resolved deterministically by the greater computation_id")
-    void metricNamesTiebreaksByGreaterComputationId() {
+    @DisplayName("same-millisecond computations are resolved deterministically by the smaller computation_id")
+    void metricNamesTiebreaksBySmallerComputationId() {
         TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-metrics-tie-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
         UUID smaller = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -322,7 +338,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
                 queryRepository.execute(rowQuery(eqUuid("id", run.getId()), List.of(col("metric_names"))));
 
         assertThat(page.rows()).hasSize(1);
-        assertThat(asArray(page.rows().get(0).get("metric_names"))).containsExactly("Accuracy");
+        assertThat(asArray(page.rows().get(0).get("metric_names"))).containsExactly("Toxicity");
     }
 
     @Test
@@ -604,5 +620,147 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
         StructuredQuery query = rowQuery(eq("error_details", ValueType.STRING, "anything"), null);
 
         assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing the extension-derived overall_score_value in a filter is rejected as an unknown field")
+    void rejectsOverallScoreValueInFilter() {
+        StructuredQuery query =
+                rowQuery(eq(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD, ValueType.STRING, "anything"), null);
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing the extension-derived overall_score_value in select is rejected as an unknown field")
+    void rejectsOverallScoreValueInSelect() {
+        StructuredQuery query = rowQuery(null, List.of(col(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD)));
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing the extension-derived overall_score_value in sort is rejected as an unknown field")
+    void rejectsOverallScoreValueInSort() {
+        StructuredQuery query = rowQuery(
+                null,
+                null,
+                List.of(new SortItem(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD, SortDir.ASC, null)));
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing the extension-derived overall_score_value in group_by is rejected as an unknown field")
+    void rejectsOverallScoreValueInGroupBy() {
+        StructuredQuery query = new StructuredQuery(
+                "test_suite_runs",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(new FnExpr("count", false, List.of()), "runs")),
+                List.of(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD),
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    // ---- overall_score_value end-to-end (tasks 4.5/4.6) ----
+
+    @Test
+    @DisplayName("a scored run carries its latest computation's overall value")
+    void overallScoreValueAttachedForScoredRun() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-overall-scored-" + UUID.randomUUID());
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
+        UUID computationId = UUID.randomUUID();
+        analyticsTestDataHelper.createEvalSummary(
+                suite.getId(), run.getId(), computationId, "case-1", "SUCCESS", 100L, 1_000L);
+        metricScoreService.saveAll(List.of(overallScore(run.getId(), suite.getId(), computationId, 0.75, 1_000L)));
+
+        QueryResultPage page = queryRepository.execute(rowQuery(eqUuid("id", run.getId()), List.of(col("id"))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(((Number) page.rows().get(0).get(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD)).doubleValue())
+                .isEqualTo(0.75);
+    }
+
+    @Test
+    @DisplayName("a run with no eval summaries omits overall_score_value")
+    void overallScoreValueOmittedForUnscoredRun() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-overall-unscored-" + UUID.randomUUID());
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
+
+        QueryResultPage page = queryRepository.execute(rowQuery(eqUuid("id", run.getId()), List.of(col("id"))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(page.rows().get(0)).doesNotContainKey(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD);
+    }
+
+    @Test
+    @DisplayName(
+            "a run whose latest computation has no overall row omits it rather than showing an earlier computation's value")
+    void overallScoreValueOmittedWhenLatestComputationHasNoOverallRow() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-overall-stale-" + UUID.randomUUID());
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
+        UUID earlierComputation = UUID.randomUUID();
+        UUID latestComputation = UUID.randomUUID();
+        // Both computations are real: each has its own eval summary, so `latestComputation` (the greater
+        // computed_at_ms) is what ComputationResolver actually resolves as "latest" — not merely absent.
+        analyticsTestDataHelper.createEvalSummary(
+                suite.getId(), run.getId(), earlierComputation, "case-1", "SUCCESS", 100L, 1_000L);
+        analyticsTestDataHelper.createEvalSummary(
+                suite.getId(), run.getId(), latestComputation, "case-1", "SUCCESS", 100L, 2_000L);
+        // Only the earlier computation produced an overall row; the latest computation has none.
+        metricScoreService.saveAll(List.of(overallScore(run.getId(), suite.getId(), earlierComputation, 0.5, 1_000L)));
+
+        QueryResultPage page = queryRepository.execute(rowQuery(eqUuid("id", run.getId()), List.of(col("id"))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(page.rows().get(0)).doesNotContainKey(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD);
+    }
+
+    @Test
+    @DisplayName("metric_names and overall_score_value resolve to the same tied computation")
+    void metricNamesAndOverallScoreValueAgreeOnTiedComputation() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-cross-path-tie-" + UUID.randomUUID());
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
+        UUID smaller = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID greater = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        long tiedComputedAtMs = 5_000L;
+        metaTestDataHelper.createRunMetricSnapshot(run.getId(), smaller, "Accuracy", "{}", tiedComputedAtMs);
+        metaTestDataHelper.createRunMetricSnapshot(run.getId(), greater, "Toxicity", "{}", tiedComputedAtMs);
+        analyticsTestDataHelper.createEvalSummary(
+                suite.getId(), run.getId(), smaller, "case-1", "SUCCESS", 100L, tiedComputedAtMs);
+        analyticsTestDataHelper.createEvalSummary(
+                suite.getId(), run.getId(), greater, "case-1", "SUCCESS", 100L, tiedComputedAtMs);
+        // Distinguishable per computation so the assertion fails if either path picks the wrong one.
+        metricScoreService.saveAll(List.of(
+                overallScore(run.getId(), suite.getId(), smaller, 0.11, tiedComputedAtMs),
+                overallScore(run.getId(), suite.getId(), greater, 0.99, tiedComputedAtMs)));
+
+        QueryResultPage page =
+                queryRepository.execute(rowQuery(eqUuid("id", run.getId()), List.of(col("id"), col("metric_names"))));
+
+        assertThat(page.rows()).hasSize(1);
+        Map<String, Object> row = page.rows().get(0);
+        assertThat(asArray(row.get("metric_names"))).containsExactly("Accuracy");
+        assertThat(((Number) row.get(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD)).doubleValue())
+                .isEqualTo(0.11);
+    }
+
+    private static MetricScoreResult overallScore(
+            UUID runId, UUID suiteId, UUID computationId, double value, long computedAtMs) {
+        return MetricScoreResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .computationId(computationId)
+                .metricScoreName(MetricScoreConstants.SCORE_OVERALL)
+                .metricName(MetricScoreConstants.SCORE_OVERALL)
+                .value(value)
+                .computedAtMs(computedAtMs)
+                .build();
     }
 }

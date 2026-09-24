@@ -179,6 +179,14 @@ test-suite-run:
     max-concurrent-runs-global: 20
     max-concurrent-runs-per-suite: 5
 
+# Query DSL structured-query result-page enrichment configuration (opt-in extension-derived keys)
+query-dsl:
+  enrichment:
+    test-suite-run:
+      cost:
+        enabled: ${QUERY_DSL_ENRICHMENT_TEST_SUITE_RUN_COST_ENABLED:false}
+        timeout-sec: ${QUERY_DSL_ENRICHMENT_TEST_SUITE_RUN_COST_TIMEOUT_SEC:2}
+
 # Metric providers configuration (sync of metric declarations from external GET /metrics endpoints)
 metric-providers:
   providers:

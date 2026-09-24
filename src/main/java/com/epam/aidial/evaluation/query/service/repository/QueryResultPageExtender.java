@@ -31,6 +31,14 @@ import com.epam.aidial.evaluation.query.model.StructuredQuery;
  * is responsible for catching/detecting either, logging, and continuing with the unextended page and
  * the remaining extenders. An implementation SHOULD NOT swallow its own failures merely to appear
  * well-behaved — that only hides them from the log.
+ *
+ * <p><b>Exception:</b> an implementation that bounds an external lookup with a caller-thread
+ * deadline (e.g. a timed {@code Future.get}) and must cancel that lookup on timeout MAY catch the
+ * expected asynchronous outcomes itself — timeout, interruption, rejection, execution failure — and
+ * degrade to the page it received instead of letting them propagate. This is not the general
+ * failure-swallowing the previous paragraph warns against: it MUST still log each caught failure
+ * once, with the exception as the last SLF4J argument, so the coordinator never needs to log a
+ * duplicate failure for it. See {@code TotalCostTestSuiteRunsPageExtender}.
  */
 public interface QueryResultPageExtender {
 

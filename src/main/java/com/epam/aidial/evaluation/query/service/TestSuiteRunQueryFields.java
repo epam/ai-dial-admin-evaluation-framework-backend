@@ -62,6 +62,17 @@ public final class TestSuiteRunQueryFields {
      */
     public static final String OVERALL_SCORE_VALUE_FIELD = "overall_score_value";
 
+    /**
+     * Extension-only result key carrying a run's total dial-adas usage cost (see
+     * {@code TotalCostTestSuiteRunsPageExtender}), only present when
+     * {@code query-dsl.enrichment.test-suite-run.cost.enabled} is {@code true}. It is merged onto a row
+     * after SQL and after paging, from one page-bounded dial-adas aggregate lookup, and is deliberately
+     * absent from both {@link PostgresTestSuiteRunEntityResolver#bindings} and
+     * {@link TestSuiteRunsSchemaProvider}'s published schema: it is not a queryable field and MUST NOT
+     * be accepted in {@code filter}/{@code select}/{@code sort}/{@code group_by}.
+     */
+    public static final String TOTAL_COST_FIELD = "total_cost";
+
     public static final RefDescriptor DEPLOYMENT_REF =
             new RefDescriptor("deployment_ref", "deploymentRef", List.of("id", "name", "version", "type"));
 

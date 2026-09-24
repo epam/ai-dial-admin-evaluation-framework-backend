@@ -117,6 +117,19 @@ Two computations of the same run can share `computed_at_ms` (one `Clock` read pe
 
 Migration `V1.34__ReplaceRunMetricSnapshotsRunIndex.sql` replaces `idx_run_metric_snapshots_run (test_suite_run_id)` with `idx_run_metric_snapshots_run_computed_at (test_suite_run_id, computed_at_ms DESC, computation_id DESC)`. That index's third column stayed `DESC` even after the tiebreak convergence to `ASC` — see [Computation Versioning](computation-versioning.md) on why no index migration was taken — so the tiebreak lookup now takes a small incremental sort rather than being fully index-served; the dropped index was a strict prefix of the new one regardless, so every existing `WHERE test_suite_run_id = ?` reader (`findByRunId`, `findByRunIdAndComputationId`, `findLatestComputationId`, FK cascade on run delete) stays served.
 
+## Result-only extension-derived keys: `overall_score_value` and `total_cost`
+
+Two keys are merged onto a `row`-mode result page after this entity's own SQL runs, by registered
+`QueryResultPageExtender`s (see [Query result page extension](query-result-page-extension.md) for the
+full mechanism/contract): `overall_score_value` (the run's latest computation's run-level `overall`
+metric score, from the analytics `metric_score_results` entity) and `total_cost` (the run's total
+dial-adas usage cost, opt-in via `query-dsl.enrichment.test-suite-run.cost.enabled`). Neither is a
+column of `bindings()` or `TestSuiteRunsSchemaProvider.baseSchema()` above — both are absent from
+`filter`/`select`/`sort`/`group_by` and from `GET /api/v1/queries/entities/schema/test_suite_runs`,
+and each is simply omitted (never set to `null`) from a row for which no value could be resolved.
+`TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD` / `TOTAL_COST_FIELD` document this explicitly at
+the constant.
+
 ## Shared constants class as the anti-drift mechanism
 
 `TestSuiteRunQueryFields` (excluded columns, `suite_type` + its snapshot key, the two `RefDescriptor`s for `deployment_ref`/`mcp_deployment_ref`, `metric_names` name/source, `number_of_runs` name/config-key) is the single source both `PostgresTestSuiteRunEntityResolver.bindings()` and `TestSuiteRunsSchemaProvider.baseSchema()` build from. `number_of_runs`'s `source` deliberately reuses the `run_config` `EXCLUDED_COLUMNS` constant — the same column name is both excluded and published as a source, which is intended. A unit test on each class asserts the schema's field-name set equals the resolver's binding-key set and that types agree per field — the two cannot silently diverge.

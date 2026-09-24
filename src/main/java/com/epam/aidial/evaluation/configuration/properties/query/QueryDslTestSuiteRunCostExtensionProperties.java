@@ -9,27 +9,27 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 /**
- * Configures the opt-in {@code total_cost} result-page enrichment for row-mode {@code test_suite_runs}
+ * Configures the opt-in {@code total_cost} result-page extension for row-mode {@code test_suite_runs}
  * structured-query results (design D6 of {@code enrich-test-suite-runs-total-cost}). Disabled by
  * default: enabling it stands up a dedicated short-timeout dial-adas client and lifecycle-managed
- * executor (see {@code TestSuiteRunCostEnrichmentAsyncConfiguration} and
+ * executor (see {@code TestSuiteRunCostExtensionAsyncConfiguration} and
  * {@code DialAdasClientConfiguration}).
  */
 @Getter
 @Setter
 @LogExecution
 @Validated
-@ConfigurationProperties(prefix = QueryDslTestSuiteRunCostEnrichmentProperties.PREFIX)
-public class QueryDslTestSuiteRunCostEnrichmentProperties {
+@ConfigurationProperties(prefix = QueryDslTestSuiteRunCostExtensionProperties.PREFIX)
+public class QueryDslTestSuiteRunCostExtensionProperties {
 
     /**
      * Single definition of this feature's configuration prefix, reused by every
      * {@code @ConditionalOnProperty(prefix = ..., name = "enabled", havingValue = "true")} gate across
-     * {@code TestSuiteRunCostEnrichmentAsyncConfiguration}, {@code DialAdasClientConfiguration}, and
+     * {@code TestSuiteRunCostExtensionAsyncConfiguration}, {@code DialAdasClientConfiguration}, and
      * (group 3) {@code TotalCostTestSuiteRunsPageExtender}'s supporting configuration, so the prefix
      * exists exactly once (AGENTS.md: non-configurable constants defined once).
      */
-    public static final String PREFIX = "query-dsl.enrichment.test-suite-run.cost";
+    public static final String PREFIX = "query-dsl.extension.test-suite-run.cost";
 
     @NotNull
     private Boolean enabled;

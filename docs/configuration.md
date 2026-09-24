@@ -29,7 +29,7 @@ This document is the operator-facing reference for every configurable property o
    - [DIAL File Storage](#53-dial-file-storage)
    - [DIAL MCP Client](#54-dial-mcp-client)
    - [DIAL ADAS Client](#55-dial-adas-client)
-   - [DIAL ADAS Client — Query Result Enrichment](#56-dial-adas-client--query-result-enrichment)
+   - [DIAL ADAS Client — Query Result Extension](#56-dial-adas-client--query-result-extension)
 6. [Evaluation Engine](#6-evaluation-engine)
    - [Test Suite Run — SSE](#61-test-suite-run--sse)
    - [Test Suite Run — Execution Settings](#62-test-suite-run--execution-settings)
@@ -380,14 +380,14 @@ Configuration for dial-adas, an external analytics service queried for `GET /api
 | `dial.adas.connect-timeout-ms` | `DIAL_ADAS_CONNECT_TIMEOUT_MS` | `5000` | No | - | Connection timeout in milliseconds. |
 | `dial.adas.read-timeout-ms` | `DIAL_ADAS_READ_TIMEOUT_MS` | `30000` | No | - | Read timeout in milliseconds. |
 
-### 5.6 DIAL ADAS Client — Query Result Enrichment
+### 5.6 DIAL ADAS Client — Query Result Extension
 
-Opt-in enrichment that attaches a derived `total_cost` key to each row of a `row`-mode `test_suite_runs` structured-query result page (see [test-suite-runs-query-entity pattern](patterns/test-suite-runs-query-entity.md)). Disabled by default. When enabled, a dedicated dial-adas client/`RestClient` pair and a dedicated executor are registered alongside — and never shared with — the normal client documented in [5.5 DIAL ADAS Client](#55-dial-adas-client).
+Opt-in extension that attaches a derived `total_cost` key to each row of a `row`-mode `test_suite_runs` structured-query result page (see [test-suite-runs-query-entity pattern](patterns/test-suite-runs-query-entity.md)). Disabled by default. When enabled, a dedicated dial-adas client/`RestClient` pair and a dedicated executor are registered alongside — and never shared with — the normal client documented in [5.5 DIAL ADAS Client](#55-dial-adas-client).
 
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
-| `query-dsl.enrichment.test-suite-run.cost.enabled` | `QUERY_DSL_ENRICHMENT_TEST_SUITE_RUN_COST_ENABLED` | `false` | No | - | Enables the `total_cost` result-page enrichment for row-mode `test_suite_runs` structured queries. When `false` (default), no dial-adas lookup is performed for the query and no `total_cost` key is added to any row. |
-| `query-dsl.enrichment.test-suite-run.cost.timeout-sec` | `QUERY_DSL_ENRICHMENT_TEST_SUITE_RUN_COST_TIMEOUT_SEC` | `2` | Conditional | `query-dsl.enrichment.test-suite-run.cost.enabled=true` | Authoritative end-to-end deadline, in seconds, for the request thread's wait on the per-page cost lookup; also sets both the connect and read timeout of the dedicated enrichment dial-adas client as a best-effort cleanup backstop, never a second deadline. Minimum `1`. |
+| `query-dsl.extension.test-suite-run.cost.enabled` | `QUERY_DSL_EXTENSION_TEST_SUITE_RUN_COST_ENABLED` | `false` | No | - | Enables the `total_cost` result-page extension for row-mode `test_suite_runs` structured queries. When `false` (default), no dial-adas lookup is performed for the query and no `total_cost` key is added to any row. |
+| `query-dsl.extension.test-suite-run.cost.timeout-sec` | `QUERY_DSL_EXTENSION_TEST_SUITE_RUN_COST_TIMEOUT_SEC` | `2` | Conditional | `query-dsl.extension.test-suite-run.cost.enabled=true` | Authoritative end-to-end deadline, in seconds, for the request thread's wait on the per-page cost lookup; also sets both the connect and read timeout of the dedicated extension dial-adas client as a best-effort cleanup backstop, never a second deadline. Minimum `1`. |
 
 ---
 

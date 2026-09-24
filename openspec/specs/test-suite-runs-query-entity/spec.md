@@ -199,22 +199,22 @@ Status: **Implemented**
 - **THEN** the score for the whole page is resolved in a bounded number of statements, not one per row
 
 ### Requirement: Run-level total cost on a row result page
-When `query-dsl.enrichment.test-suite-run.cost.enabled` is enabled, a `row`-mode `test_suite_runs` result page SHALL carry the extension-derived key `total_cost` for each eligible run with matching dial-adas usage data. The value SHALL be the total `total_price` for that run across all matching usage rows. The lookup SHALL apply no `eval.phase` filter; therefore it includes the currently recorded `execution` and `metric-evaluation` usage rows without treating those values as an exclusive whitelist.
+When `query-dsl.extension.test-suite-run.cost.enabled` is enabled, a `row`-mode `test_suite_runs` result page SHALL carry the extension-derived key `total_cost` for each eligible run with matching dial-adas usage data. The value SHALL be the total `total_price` for that run across all matching usage rows. The lookup SHALL apply no `eval.phase` filter; therefore it includes the currently recorded `execution` and `metric-evaluation` usage rows without treating those values as an exclusive whitelist.
 
 The key SHALL be result-only: it SHALL NOT be accepted in `filter`, `select`, `sort` or `group_by`, and SHALL NOT appear in the published entity schema. It SHALL be omitted, rather than set to null, when no usage group exists or the group's total is null. Existing row keys SHALL win over the derived key; row and key order and the page total count SHALL remain unchanged.
 
-The property `query-dsl.enrichment.test-suite-run.cost.enabled` SHALL use environment variable `QUERY_DSL_ENRICHMENT_TEST_SUITE_RUN_COST_ENABLED` and default to `false`. The property `query-dsl.enrichment.test-suite-run.cost.timeout-sec` SHALL use environment variable `QUERY_DSL_ENRICHMENT_TEST_SUITE_RUN_COST_TIMEOUT_SEC`, default to `2`, and reject values below `1`. The request thread's timed `Future.get` SHALL be the authoritative end-to-end enrichment wait deadline. The dedicated dial-adas client used only for this enrichment SHALL set both its connection and read timeout to the same configured value as a cleanup backstop; it SHALL NOT change the normal client or the existing batch endpoint's timeout behavior.
+The property `query-dsl.extension.test-suite-run.cost.enabled` SHALL use environment variable `QUERY_DSL_EXTENSION_TEST_SUITE_RUN_COST_ENABLED` and default to `false`. The property `query-dsl.extension.test-suite-run.cost.timeout-sec` SHALL use environment variable `QUERY_DSL_EXTENSION_TEST_SUITE_RUN_COST_TIMEOUT_SEC`, default to `2`, and reject values below `1`. The request thread's timed `Future.get` SHALL be the authoritative end-to-end extension wait deadline. The dedicated dial-adas client used only for this extension SHALL set both its connection and read timeout to the same configured value as a cleanup backstop; it SHALL NOT change the normal client or the existing batch endpoint's timeout behavior.
 
-The dedicated enrichment executor SHALL follow `spring.threads.virtual.enabled`: virtual threads when enabled and daemon platform threads when disabled. It SHALL cancel remaining work when it closes.
+The dedicated extension executor SHALL follow `spring.threads.virtual.enabled`: virtual threads when enabled and daemon platform threads when disabled. It SHALL cancel remaining work when it closes.
 
 Status: **Implemented**
 
 #### Scenario: Enabled row query returns total cost
-- **WHEN** cost enrichment is enabled and a row-mode `test_suite_runs` query returns a run with matching dial-adas usage rows
+- **WHEN** cost extension is enabled and a row-mode `test_suite_runs` query returns a run with matching dial-adas usage rows
 - **THEN** that row carries `total_cost` equal to the sum of `total_price` across all matching usage rows
 
-#### Scenario: Disabled enrichment adds no derived key
-- **WHEN** `query-dsl.enrichment.test-suite-run.cost.enabled` is false or absent
+#### Scenario: Disabled extension adds no derived key
+- **WHEN** `query-dsl.extension.test-suite-run.cost.enabled` is false or absent
 - **THEN** a row-mode `test_suite_runs` query performs no dial-adas cost lookup and adds no `total_cost` extension-derived key, while preserving any `total_cost` key already projected by the query
 
 #### Scenario: Missing usage omits the key
@@ -237,15 +237,15 @@ Status: **Implemented**
 - **WHEN** the system looks up total cost for an enabled result page
 - **THEN** its dial-adas aggregate request applies no `eval.phase` filter and groups matching usage rows by run id
 
-#### Scenario: Timeout configuration bounds enrichment
-- **WHEN** enrichment is enabled without an explicit timeout override
-- **THEN** the request thread waits at most 2 seconds for the enrichment future and the dedicated dial-adas client's connection and read timeouts are each 2 seconds
+#### Scenario: Timeout configuration bounds extension
+- **WHEN** the extension is enabled without an explicit timeout override
+- **THEN** the request thread waits at most 2 seconds for the extension future and the dedicated dial-adas client's connection and read timeouts are each 2 seconds
 
 #### Scenario: Executor follows application thread mode
-- **WHEN** `spring.threads.virtual.enabled` is true or false while enrichment is enabled
-- **THEN** enrichment work runs respectively on virtual threads or daemon platform threads, and container shutdown cancels remaining enrichment work
+- **WHEN** `spring.threads.virtual.enabled` is true or false while the extension is enabled
+- **THEN** extension work runs respectively on virtual threads or daemon platform threads, and container shutdown cancels remaining extension work
 
-#### Scenario: Enrichment failure preserves preceding contributions
+#### Scenario: Extension failure preserves preceding contributions
 - **WHEN** the page cost lookup times out, dial-adas fails, its asynchronous execution fails, or the executor rejects its submission
 - **THEN** the response is HTTP 200 with the page exactly as received by this extender, including contributions from any extender that ran before it (e.g. `overall_score_value` when that extender ran first; extender order is not guaranteed), and without a partial `total_cost` contribution
 
@@ -254,7 +254,7 @@ Status: **Implemented**
 - **THEN** the pending lookup is cancelled, the interrupt status is restored, and the response retains the page as received by this extender without a partial `total_cost` contribution
 
 #### Scenario: Later extensions remain applicable after total-cost failure
-- **WHEN** total-cost enrichment fails and another registered page extender follows it
+- **WHEN** total-cost extension fails and another registered page extender follows it
 - **THEN** the later extender remains eligible to contribute to the returned page
 
 #### Scenario: Async lookup preserves caller credential and trace context
@@ -270,4 +270,4 @@ Status: **Implemented**
 - Composite index serving the latest-computation lookup: `src/main/resources/db/migration/meta/POSTGRES/V1.34__ReplaceRunMetricSnapshotsRunIndex.sql`
 - Functional coverage: `src/test/java/com/epam/aidial/evaluation/functional/tests/TestSuiteRunStructuredQueryFunctionalTests.java` (nested `TestSuiteRunStructuredQueryTests` in `PostgresFunctionalTests`), plus `QuerySchemaDiscoveryFunctionalTests` and `StructuredQueryExecuteFunctionalTests`
 - Pattern doc with EXPLAIN evidence: `docs/patterns/test-suite-runs-query-entity.md`
-- Total-cost enrichment (opt-in, `query-dsl.enrichment.test-suite-run.cost.*`): `src/main/java/com/epam/aidial/evaluation/query/service/repository/TotalCostTestSuiteRunsPageExtender.java` (timed `Future.get` on `testSuiteRunCostEnrichmentExecutor`, dedicated `testSuiteRunCostEnrichmentDialAdasClient`), shared lookup `service/domain/BatchRunTotalCostLookup.java`, wiring in `configuration/TestSuiteRunCostEnrichmentAsyncConfiguration.java` / `client/dialadas/DialAdasClientConfiguration.java`, properties `configuration/properties/query/QueryDslTestSuiteRunCostEnrichmentProperties.java`; tests `TotalCostTestSuiteRunsPageExtenderTest`, `TestSuiteRunCostEnrichmentFunctionalTests` (nested `TestSuiteRunCostEnrichmentTests`)
+- Total-cost extension (opt-in, `query-dsl.extension.test-suite-run.cost.*`): `src/main/java/com/epam/aidial/evaluation/query/service/repository/TotalCostTestSuiteRunsPageExtender.java` (timed `Future.get` on `testSuiteRunCostExtensionExecutor`, dedicated `testSuiteRunCostExtensionDialAdasClient`), shared lookup `service/domain/BatchRunTotalCostLookup.java`, wiring in `configuration/TestSuiteRunCostExtensionAsyncConfiguration.java` / `client/dialadas/DialAdasClientConfiguration.java`, properties `configuration/properties/query/QueryDslTestSuiteRunCostExtensionProperties.java`; tests `TotalCostTestSuiteRunsPageExtenderTest`, `TestSuiteRunCostExtensionFunctionalTests` (nested `TestSuiteRunCostExtensionTests`)

@@ -87,7 +87,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
     @Autowired
     private ObjectMapper objectMapper;
 
-    /** The normal, shared, by-type mocked client — cost enrichment is disabled in this context. */
+    /** The normal, shared, by-type mocked client — cost extension is disabled in this context. */
     @Autowired
     private DialAdasClient dialAdasClient;
 
@@ -717,9 +717,9 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
     }
 
     @Test
-    @DisplayName("with cost enrichment disabled (default), a row query adds no total_cost key and makes zero"
+    @DisplayName("with cost extension disabled (default), a row query adds no total_cost key and makes zero"
             + " dial-adas calls")
-    void disabledCostEnrichmentAddsNoKeyAndMakesZeroDialAdasCalls() {
+    void disabledCostExtensionAddsNoKeyAndMakesZeroDialAdasCalls() {
         TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-cost-disabled-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
 

@@ -123,7 +123,7 @@ Two keys are merged onto a `row`-mode result page after this entity's own SQL ru
 `QueryResultPageExtender`s (see [Query result page extension](query-result-page-extension.md) for the
 full mechanism/contract): `overall_score_value` (the run's latest computation's run-level `overall`
 metric score, from the analytics `metric_score_results` entity) and `total_cost` (the run's total
-dial-adas usage cost, opt-in via `query-dsl.enrichment.test-suite-run.cost.enabled`). Neither is a
+dial-adas usage cost, opt-in via `query-dsl.extension.test-suite-run.cost.enabled`). Neither is a
 column of `bindings()` or `TestSuiteRunsSchemaProvider.baseSchema()` above — both are absent from
 `filter`/`select`/`sort`/`group_by` and from `GET /api/v1/queries/entities/schema/test_suite_runs`,
 and each is simply omitted (never set to `null`) from a row for which no value could be resolved.

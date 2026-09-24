@@ -12,14 +12,14 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.ClassPathResource;
 
-@DisplayName("QueryDslTestSuiteRunCostEnrichmentProperties binding")
-class QueryDslTestSuiteRunCostEnrichmentPropertiesBindingTest {
+@DisplayName("QueryDslTestSuiteRunCostExtensionProperties binding")
+class QueryDslTestSuiteRunCostExtensionPropertiesBindingTest {
 
     private final ApplicationContextRunner runner =
             new ApplicationContextRunner().withUserConfiguration(TestConfiguration.class);
 
     @Configuration
-    @EnableConfigurationProperties(QueryDslTestSuiteRunCostEnrichmentProperties.class)
+    @EnableConfigurationProperties(QueryDslTestSuiteRunCostExtensionProperties.class)
     static class TestConfiguration {}
 
     @Test
@@ -32,21 +32,21 @@ class QueryDslTestSuiteRunCostEnrichmentPropertiesBindingTest {
                         source -> context.getEnvironment().getPropertySources().addLast(source)))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    final var properties = context.getBean(QueryDslTestSuiteRunCostEnrichmentProperties.class);
+                    final var properties = context.getBean(QueryDslTestSuiteRunCostExtensionProperties.class);
                     assertThat(properties.getEnabled()).isFalse();
                     assertThat(properties.getTimeoutSec()).isEqualTo(2);
                 });
     }
 
     @Test
-    @DisplayName("an explicit override enables enrichment and keeps the configured timeout")
+    @DisplayName("an explicit override enables extension and keeps the configured timeout")
     void explicitOverride_bindsEnabledWithConfiguredTimeout() {
         runner.withPropertyValues(
-                        "query-dsl.enrichment.test-suite-run.cost.enabled=true",
-                        "query-dsl.enrichment.test-suite-run.cost.timeout-sec=2")
+                        "query-dsl.extension.test-suite-run.cost.enabled=true",
+                        "query-dsl.extension.test-suite-run.cost.timeout-sec=2")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    final var properties = context.getBean(QueryDslTestSuiteRunCostEnrichmentProperties.class);
+                    final var properties = context.getBean(QueryDslTestSuiteRunCostExtensionProperties.class);
                     assertThat(properties.getEnabled()).isTrue();
                     assertThat(properties.getTimeoutSec()).isEqualTo(2);
                 });
@@ -56,8 +56,8 @@ class QueryDslTestSuiteRunCostEnrichmentPropertiesBindingTest {
     @DisplayName("fails to start when timeout-sec is below 1")
     void timeoutBelowOne_bindingFails() {
         runner.withPropertyValues(
-                        "query-dsl.enrichment.test-suite-run.cost.enabled=true",
-                        "query-dsl.enrichment.test-suite-run.cost.timeout-sec=0")
+                        "query-dsl.extension.test-suite-run.cost.enabled=true",
+                        "query-dsl.extension.test-suite-run.cost.timeout-sec=0")
                 .run(context ->
                         assertThat(context).hasFailed().getFailure().rootCause().hasMessageContaining("timeoutSec"));
     }

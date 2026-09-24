@@ -22,7 +22,7 @@ public record StructuredQueryResultDto(
                         + " computation's run-level `overall` metric score when one is available for that"
                         + " computation; a row for a run with no such score simply omits the key — it is never"
                         + " present with a `null` value. When"
-                        + " `query-dsl.enrichment.test-suite-run.cost.enabled` is true, `test_suite_runs`"
+                        + " `query-dsl.extension.test-suite-run.cost.enabled` is true, `test_suite_runs`"
                         + " `row`-mode results also carry an extension-derived `total_cost` key with that run's"
                         + " total dial-adas usage cost when matching usage exists; a row with no matching usage,"
                         + " or the feature disabled, simply omits the key.",

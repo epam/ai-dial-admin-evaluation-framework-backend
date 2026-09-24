@@ -101,7 +101,7 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteCloneFunctionalTests
 import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
-import com.epam.aidial.evaluation.functional.tests.TestSuiteRunCostEnrichmentFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteRunCostExtensionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunStructuredQueryFunctionalTests;
@@ -628,8 +628,8 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class TestSuiteRunStructuredQueryTests extends TestSuiteRunStructuredQueryFunctionalTests {}
 
     @Nested
-    @TestPropertySource(properties = "query-dsl.enrichment.test-suite-run.cost.enabled=true")
-    class TestSuiteRunCostEnrichmentTests extends TestSuiteRunCostEnrichmentFunctionalTests {}
+    @TestPropertySource(properties = "query-dsl.extension.test-suite-run.cost.enabled=true")
+    class TestSuiteRunCostExtensionTests extends TestSuiteRunCostExtensionFunctionalTests {}
 
     @Nested
     class EvalSummaryStructuredQueryTests extends EvalSummaryStructuredQueryFunctionalTests {}

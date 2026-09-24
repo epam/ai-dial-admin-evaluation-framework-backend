@@ -65,7 +65,7 @@ public final class TestSuiteRunQueryFields {
     /**
      * Extension-only result key carrying a run's total dial-adas usage cost (see
      * {@code TotalCostTestSuiteRunsPageExtender}), only present when
-     * {@code query-dsl.enrichment.test-suite-run.cost.enabled} is {@code true}. It is merged onto a row
+     * {@code query-dsl.extension.test-suite-run.cost.enabled} is {@code true}. It is merged onto a row
      * after SQL and after paging, from one page-bounded dial-adas aggregate lookup, and is deliberately
      * absent from both {@link PostgresTestSuiteRunEntityResolver#bindings} and
      * {@link TestSuiteRunsSchemaProvider}'s published schema: it is not a queryable field and MUST NOT

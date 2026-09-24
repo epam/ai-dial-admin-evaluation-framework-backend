@@ -7,6 +7,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
+import com.epam.aidial.evaluation.query.model.FieldExpr;
+import com.epam.aidial.evaluation.query.model.OutputColumn;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields;
@@ -95,78 +97,91 @@ class OverallScoreTestSuiteRunsPageExtenderTest {
     }
 
     @Test
+    @DisplayName("an explicit projection keeping id under the id key is extended")
+    void extendsExplicitProjectionWithId() {
+        final QueryResultPage page = pageWithRow(row(RUN_ID.toString(), "test_run_name", "run-1"));
+        when(computationResolver.resolveLatest(List.of(RUN_ID))).thenReturn(Map.of(RUN_ID, COMPUTATION_ID));
+        when(executor.execute(any(StructuredQuery.class))).thenReturn(overallScoreResult(RUN_ID, 0.8));
+
+        final QueryResultPage result =
+                extender.extend(rowQuery(List.of(col("id", null), col("test_run_name", null))), page);
+
+        assertThat(result.rows().get(0)).containsEntry(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD, 0.8);
+    }
+
+    @Test
     @DisplayName("a projection without id is untouched")
     void skipsProjectionWithoutId() {
         final Map<String, Object> rowWithoutId = new LinkedHashMap<>();
         rowWithoutId.put("test_run_name", "run-1");
         final QueryResultPage page = new QueryResultPage(List.of(rowWithoutId), 1L);
 
-        final QueryResultPage result = extender.extend(rowQuery(), page);
+        final QueryResultPage result = extender.extend(rowQuery(List.of(col("test_run_name", null))), page);
 
         assertThat(result).isSameAs(page);
         verifyNoInteractions(computationResolver, executor);
     }
 
     @Test
-    @DisplayName("a row whose id is not a UUID is untouched")
-    void skipsNonUuidId() {
-        final QueryResultPage page = pageWithRow(row("not-a-uuid", "existing", "value"));
-
-        final QueryResultPage result = extender.extend(rowQuery(), page);
-
-        assertThat(result).isSameAs(page);
-        verifyNoInteractions(computationResolver, executor);
-    }
-
-    @Test
-    @DisplayName("a row that already carries the key is untouched")
-    void skipsRowAlreadyCarryingKey() {
+    @DisplayName("a projection renaming id to another key is untouched")
+    void skipsProjectionRenamingId() {
         final Map<String, Object> row = new LinkedHashMap<>();
-        row.put("id", RUN_ID.toString());
-        row.put(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD, 0.42);
+        row.put("run", RUN_ID.toString());
         final QueryResultPage page = new QueryResultPage(List.of(row), 1L);
 
-        final QueryResultPage result = extender.extend(rowQuery(), page);
+        final QueryResultPage result = extender.extend(rowQuery(List.of(col("id", "run"))), page);
 
         assertThat(result).isSameAs(page);
         verifyNoInteractions(computationResolver, executor);
     }
 
     @Test
-    @DisplayName("on a multi-row page, a row already carrying the key keeps its value and row order is unchanged")
-    void doesNotOverwriteExistingKeyOnMultiRowPage() {
-        final UUID otherRunId = UUID.fromString("33333333-3333-3333-3333-333333333333");
-        final UUID otherComputationId = UUID.fromString("44444444-4444-4444-4444-444444444444");
-        final Map<String, Object> preKeyedRow = new LinkedHashMap<>();
-        preKeyedRow.put("id", RUN_ID.toString());
-        preKeyedRow.put(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD, 0.42);
-        final Map<String, Object> toExtendRow = row(otherRunId.toString(), "existing", "value");
-        final QueryResultPage page = new QueryResultPage(List.of(preKeyedRow, toExtendRow), 2L);
+    @DisplayName("a projection aliasing another field as id is untouched")
+    void skipsProjectionAliasingOtherFieldAsId() {
+        final QueryResultPage page = pageWithRow(row("run-1", "status", "COMPLETED"));
 
-        // Simulates a resolved computation existing for the pre-keyed run too (e.g. if candidateRunIds
-        // ever stopped excluding it): mergeRows alone must still refuse to overwrite the row's own key,
-        // not rely on the caller having excluded it.
-        when(computationResolver.resolveLatest(any()))
-                .thenReturn(Map.of(RUN_ID, COMPUTATION_ID, otherRunId, otherComputationId));
-        final Map<String, Object> conflictingScore = new LinkedHashMap<>();
-        conflictingScore.put(MetricScoreConstants.FIELD_TEST_SUITE_RUN_ID, RUN_ID.toString());
-        conflictingScore.put(MetricScoreConstants.VALUE_ALIAS, 0.99);
-        final Map<String, Object> newScore = new LinkedHashMap<>();
-        newScore.put(MetricScoreConstants.FIELD_TEST_SUITE_RUN_ID, otherRunId.toString());
-        newScore.put(MetricScoreConstants.VALUE_ALIAS, 0.9);
-        when(executor.execute(any(StructuredQuery.class)))
-                .thenReturn(new QueryResultPage(List.of(conflictingScore, newScore), null));
+        final QueryResultPage result =
+                extender.extend(rowQuery(List.of(col("test_run_name", "id"), col("status", null))), page);
+
+        assertThat(result).isSameAs(page);
+        verifyNoInteractions(computationResolver, executor);
+    }
+
+    @Test
+    @DisplayName("a projection already carrying the derived key via an alias is untouched")
+    void skipsProjectionAlreadyCarryingKey() {
+        final Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", RUN_ID.toString());
+        row.put(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD, "run-1");
+        final QueryResultPage page = new QueryResultPage(List.of(row), 1L);
+
+        final QueryResultPage result = extender.extend(
+                rowQuery(List.of(
+                        col("id", null), col("test_run_name", TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD))),
+                page);
+
+        assertThat(result).isSameAs(page);
+        verifyNoInteractions(computationResolver, executor);
+    }
+
+    @Test
+    @DisplayName("on a multi-row page, only scored rows gain the key and row order is unchanged")
+    void extendsOnlyScoredRowsOnMultiRowPage() {
+        final UUID otherRunId = UUID.fromString("33333333-3333-3333-3333-333333333333");
+        final Map<String, Object> unscoredRow = row(RUN_ID.toString(), "existing", "value");
+        final Map<String, Object> scoredRow = row(otherRunId.toString(), "existing", "value");
+        final QueryResultPage page = new QueryResultPage(List.of(unscoredRow, scoredRow), 2L);
+        when(computationResolver.resolveLatest(List.of(RUN_ID, otherRunId)))
+                .thenReturn(Map.of(RUN_ID, COMPUTATION_ID, otherRunId, COMPUTATION_ID));
+        when(executor.execute(any(StructuredQuery.class))).thenReturn(overallScoreResult(otherRunId, 0.9));
 
         final QueryResultPage result = extender.extend(rowQuery(), page);
 
         assertThat(result.rows()).hasSize(2);
-        // Row order unchanged: the pre-keyed row stays first, the extended row stays second.
-        assertThat(result.rows().get(0).get("id")).isEqualTo(RUN_ID.toString());
-        assertThat(result.rows().get(0).get(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD))
-                .isEqualTo(0.42);
-        assertThat(result.rows().get(1).get("id")).isEqualTo(otherRunId.toString());
-        assertThat(result.rows().get(1).get(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD))
-                .isEqualTo(0.9);
+        assertThat(result.rows().get(0)).isSameAs(unscoredRow);
+        assertThat(result.rows().get(1))
+                .containsEntry("id", otherRunId.toString())
+                .containsEntry(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD, 0.9);
     }
 
     @Test
@@ -182,8 +197,16 @@ class OverallScoreTestSuiteRunsPageExtenderTest {
     }
 
     private static StructuredQuery rowQuery() {
+        return rowQuery(List.of());
+    }
+
+    private static StructuredQuery rowQuery(List<OutputColumn> select) {
         return new StructuredQuery(
-                TestSuiteRunQueryFields.ENTITY, null, QueryMode.ROW, false, List.of(), null, null, null, null);
+                TestSuiteRunQueryFields.ENTITY, null, QueryMode.ROW, false, select, null, null, null, null);
+    }
+
+    private static OutputColumn col(String field, String as) {
+        return new OutputColumn(new FieldExpr(field), as);
     }
 
     private static Map<String, Object> row(String id, String extraKey, Object extraValue) {

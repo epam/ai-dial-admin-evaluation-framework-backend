@@ -179,12 +179,16 @@ Status: **Implemented**
 - **THEN** no `overall_score_value` key is added to any group row
 
 #### Scenario: Projection without `id` is untouched
-- **WHEN** a `row` query's `select` omits `id`
+- **WHEN** a `row` query's `select` omits `id`, or renames it to another key
 - **THEN** no row carries `overall_score_value` and the query succeeds
 
-#### Scenario: Row whose `id` is not a UUID is untouched
-- **WHEN** a row's `id` value is not parseable as a UUID (for example a client aliased another column as `id`)
-- **THEN** that row carries no `overall_score_value`, no lookup is attempted for it, and the remaining rows are unaffected
+#### Scenario: Projection aliasing another expression as `id` is untouched
+- **WHEN** a `row` query's `select` keys another expression as `id` (for example `{"expr": {"field": "test_run_name"}, "as": "id"}`)
+- **THEN** no row carries `overall_score_value`, no lookup is attempted, and the query succeeds
+
+#### Scenario: Projection already carrying the key is untouched
+- **WHEN** a `row` query's `select` aliases another expression as `overall_score_value`
+- **THEN** every row keeps the client-selected value and no lookup is attempted
 
 #### Scenario: Analytics unavailable degrades to an unextended page
 - **WHEN** the analytics lookup fails or the `metric_score_results` entity is not registered (non-Postgres analytics vendor)

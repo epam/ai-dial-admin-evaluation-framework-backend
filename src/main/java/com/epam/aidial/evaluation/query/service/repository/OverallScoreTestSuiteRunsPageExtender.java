@@ -52,11 +52,13 @@ import org.springframework.stereotype.Component;
  *       coordinator — which would re-enter the seam and recurse).
  * </ol>
  *
- * <p>Skip conditions, each leaving {@code page} untouched: the query targets a different entity or
- * runs in {@code aggregate} mode; the row projection carries no {@code id} to key on; a given row's
- * {@code id} is not a UUID (that row only); a row already carries the key (a client-supplied
- * {@code select} alias wins); the {@code metric_score_results} entity has no registered resolver
- * (non-Postgres analytics vendor).
+ * <p>Skip conditions, each leaving {@code page} untouched, all decided from the query alone — a
+ * {@code row} result's key set is fixed by its projection, so it is the same for every row: the query
+ * targets a different entity or runs in {@code aggregate} mode; the projection does not carry the run's
+ * {@code id} under the {@code id} key (omitted, renamed, or another expression aliased as {@code id});
+ * the projection already carries the derived key (a client-supplied {@code select} alias wins); the
+ * {@code metric_score_results} entity has no registered resolver (non-Postgres analytics vendor). Once
+ * those pass, every row carries a UUID {@code id} (the run's non-null primary key).
  */
 @Component
 @LogExecution
@@ -96,23 +98,36 @@ public class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExt
     private boolean applies(StructuredQuery query) {
         return TestSuiteRunQueryFields.ENTITY.equals(query.entity())
                 && query.mode() == QueryMode.ROW
+                && projectsRunId(query.select())
+                && !projectsKey(query.select(), TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD)
                 && entityRegistry.supportedEntities().contains(MetricScoreConstants.ENTITY_METRIC_SCORE_RESULTS);
     }
 
     /**
-     * Distinct run ids of rows carrying a parseable {@code id} that do not already carry the derived
-     * key. A row whose {@code id} is missing or not a UUID, or which already carries the key, is
-     * simply excluded here and left untouched by {@link #mergeRows}.
+     * Whether every row carries the run's own {@code id} under the {@code id} key: an empty projection
+     * selects every entity field, otherwise some column must be the plain {@code id} field keyed as
+     * {@code id}. A key match alone is not enough — another expression aliased as {@code id} would key
+     * the lookup on the wrong value.
      */
-    private static List<UUID> candidateRunIds(QueryResultPage page) {
-        final List<UUID> runIds = new ArrayList<>();
-        for (final Map<String, Object> row : page.rows()) {
-            if (row.containsKey(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD)) {
-                continue;
-            }
-            parseUuid(row.get(ID_FIELD)).ifPresent(runIds::add);
+    private static boolean projectsRunId(List<OutputColumn> select) {
+        if (select == null || select.isEmpty()) {
+            return true;
         }
-        return runIds.stream().distinct().toList();
+        return select.stream()
+                .anyMatch(col -> col.expr() instanceof FieldExpr(String fieldName)
+                        && ID_FIELD.equals(fieldName)
+                        && ID_FIELD.equals(col.outputKey()));
+    }
+
+    private static boolean projectsKey(List<OutputColumn> select, String key) {
+        return select != null && select.stream().anyMatch(col -> key.equals(col.outputKey()));
+    }
+
+    private static List<UUID> candidateRunIds(QueryResultPage page) {
+        return page.rows().stream()
+                .map(OverallScoreTestSuiteRunsPageExtender::runId)
+                .distinct()
+                .toList();
     }
 
     private Map<UUID, Object> fetchOverallValues(Map<UUID, UUID> latestComputationByRun) {
@@ -173,17 +188,13 @@ public class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExt
     }
 
     /**
-     * Additive, non-overwriting, order-preserving merge: copies only the rows that gained a value.
-     * The {@code containsKey} check enforces the non-overwriting guarantee locally, rather than
-     * relying on {@link #candidateRunIds} having already excluded such rows from {@code valueByRun}'s
-     * keys upstream.
+     * Additive, order-preserving merge: copies only the rows that gained a value. Non-overwriting is
+     * guaranteed by {@link #applies}, which skips any projection that already carries the derived key.
      */
     private static List<Map<String, Object>> mergeRows(List<Map<String, Object>> rows, Map<UUID, Object> valueByRun) {
         final List<Map<String, Object>> merged = new ArrayList<>(rows.size());
         for (final Map<String, Object> row : rows) {
-            final Object value = row.containsKey(TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD)
-                    ? null
-                    : parseUuid(row.get(ID_FIELD)).map(valueByRun::get).orElse(null);
+            final Object value = valueByRun.get(runId(row));
             if (value == null) {
                 merged.add(row);
             } else {
@@ -193,6 +204,10 @@ public class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExt
             }
         }
         return merged;
+    }
+
+    private static UUID runId(Map<String, Object> row) {
+        return UUID.fromString((String) row.get(ID_FIELD));
     }
 
     private static Optional<UUID> parseUuid(Object value) {

@@ -144,9 +144,7 @@ public class StructuredQueryBuilder {
             final List<Field<?>> fields = new ArrayList<>(projection.size());
             for (final OutputColumn col : projection) {
                 final Field<?> field = exprTranslator.toField(col.expr(), bindings);
-                final String alias = col.as() != null
-                        ? col.as()
-                        : col.expr() instanceof FieldExpr(String fieldName) ? fieldName : null;
+                final String alias = col.outputKey();
                 if (alias != null) {
                     fields.add(field.as(alias));
                     selectAliases.add(alias);

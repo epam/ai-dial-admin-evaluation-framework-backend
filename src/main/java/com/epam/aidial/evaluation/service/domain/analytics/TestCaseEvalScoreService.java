@@ -14,7 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Internal-only write path for {@code test_case_eval_scores}, populated by the in-process metric
  * evaluation engine right after each {@code test_case_eval_summaries} flush (see
  * {@code InProcessMetricEvaluationExecutor}). No external REST endpoint exists for this table —
- * scores are read back only via the LEFT JOIN into the existing eval-summary read surface.
+ * scores are read back via the LEFT JOIN into the existing eval-summary read surface, or directly
+ * (deduplicated) via the {@code test_case_eval_scores} Query DSL entity.
  */
 @Slf4j
 @Service
@@ -25,19 +26,23 @@ public class TestCaseEvalScoreService {
     private final TestCaseEvalScoreRepository testCaseEvalScoreRepository;
 
     @Transactional("analyticsTransactionManager")
-    public void batchCreate(long computedAtMs, List<TestCaseEvalScoreBatchWriteItemDto> items) {
+    public void batchUpsert(long computedAtMs, List<TestCaseEvalScoreBatchWriteItemDto> items) {
         if (items.isEmpty()) {
             return;
         }
         List<TestCaseEvalScore> entities = items.stream()
                 .map(item -> TestCaseEvalScore.builder()
                         .evalSummaryId(item.getEvalSummaryId())
+                        .testSuiteRunId(item.getTestSuiteRunId())
+                        .testCaseId(item.getTestCaseId())
+                        .testCaseName(item.getTestCaseName())
+                        .computationId(item.getComputationId())
                         .score(item.getScore())
                         .passed(item.getPassed())
                         .computedAtMs(computedAtMs)
                         .build())
                 .toList();
         testCaseEvalScoreRepository.saveAll(entities);
-        log.debug("Batch created {} eval summary scores", entities.size());
+        log.debug("Batch upserted {} eval summary scores", entities.size());
     }
 }

@@ -5,7 +5,9 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregated;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
 
 import org.jooq.Index;
@@ -32,6 +34,9 @@ public class Indexes {
     public static final Index IDX_METRIC_SCORE_RESULT_SUITE_COMPUTED = Internal.createIndex(DSL.name("idx_metric_score_result_suite_computed"), MetricScoreResult.METRIC_SCORE_RESULT, new OrderField[] { MetricScoreResult.METRIC_SCORE_RESULT.TEST_SUITE_ID, MetricScoreResult.METRIC_SCORE_RESULT.COMPUTED_AT_MS }, false);
     public static final Index IDX_RESULTS_ID = Internal.createIndex(DSL.name("idx_results_id"), TestCaseRunResults.TEST_CASE_RUN_RESULTS, new OrderField[] { TestCaseRunResults.TEST_CASE_RUN_RESULTS.ID }, false);
     public static final Index IDX_RESULTS_SUITE_RUN_CASE = Internal.createIndex(DSL.name("idx_results_suite_run_case"), TestCaseRunResults.TEST_CASE_RUN_RESULTS, new OrderField[] { TestCaseRunResults.TEST_CASE_RUN_RESULTS.TEST_SUITE_ID, TestCaseRunResults.TEST_CASE_RUN_RESULTS.TEST_SUITE_RUN_ID, TestCaseRunResults.TEST_CASE_RUN_RESULTS.TEST_CASE_NAME }, false);
+    public static final Index IDX_TC_METRIC_SCORES_AGG_COMPUTATION = Internal.createIndex(DSL.name("idx_tc_metric_scores_agg_computation"), TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED, new OrderField[] { TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTATION_ID }, false);
+    public static final Index IDX_TEST_CASE_EVAL_SCORES_NATURAL_KEY = Internal.createIndex(DSL.name("idx_test_case_eval_scores_natural_key"), TestCaseEvalScores.TEST_CASE_EVAL_SCORES, new OrderField[] { TestCaseEvalScores.TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID, TestCaseEvalScores.TEST_CASE_EVAL_SCORES.TEST_CASE_ID, TestCaseEvalScores.TEST_CASE_EVAL_SCORES.COMPUTATION_ID, TestCaseEvalScores.TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS.desc() }, false);
     public static final Index UQ_EVAL_SUMMARIES_NATURAL_KEY = Internal.createIndex(DSL.name("uq_eval_summaries_natural_key"), TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES, new OrderField[] { TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.TURN_INDEX, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS }, true);
     public static final Index UQ_METRIC_SCORE_RESULT_NATURAL_KEY = Internal.createIndex(DSL.name("uq_metric_score_result_natural_key"), MetricScoreResult.METRIC_SCORE_RESULT, new OrderField[] { MetricScoreResult.METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID, MetricScoreResult.METRIC_SCORE_RESULT.COMPUTATION_ID, MetricScoreResult.METRIC_SCORE_RESULT.METRIC_SCORE_NAME, MetricScoreResult.METRIC_SCORE_RESULT.METRIC_NAME }, true);
+    public static final Index UQ_TC_METRIC_SCORES_AGG_NATURAL_KEY = Internal.createIndex(DSL.name("uq_tc_metric_scores_agg_natural_key"), TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED, new OrderField[] { TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID, TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_CASE_ID, TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTATION_ID }, true);
 }

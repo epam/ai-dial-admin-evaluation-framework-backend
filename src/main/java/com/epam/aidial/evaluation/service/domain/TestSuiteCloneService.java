@@ -242,6 +242,7 @@ public class TestSuiteCloneService {
         testSuiteRequestValidator.validateSuiteTypeFields(dto);
         testSuiteRequestValidator.validateTestSuiteSchemas(dto);
         testSuiteRequestValidator.validateTemplateLimits(dto);
+        testSuiteRequestValidator.validateTestCaseOverallScore(dto);
 
         // Normalize nulls to empty lists (mirrors normalizeRequest() in TestSuiteService)
         if (dto.getInputBindings() == null) {

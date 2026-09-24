@@ -5,13 +5,17 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics.tables;
 
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Analytics;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.Indexes;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Keys;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalScoresRecord;
 
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.Index;
 import org.jooq.Name;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
@@ -70,6 +74,27 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
      */
     public final TableField<TestCaseEvalScoresRecord, Long> COMPUTED_AT_MS = createField(DSL.name("computed_at_ms"), SQLDataType.BIGINT.nullable(false), this, "");
 
+    /**
+     * The column
+     * <code>analytics.test_case_eval_scores.test_suite_run_id</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> TEST_SUITE_RUN_ID = createField(DSL.name("test_suite_run_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.test_case_id</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> TEST_CASE_ID = createField(DSL.name("test_case_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.test_case_name</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> TEST_CASE_NAME = createField(DSL.name("test_case_name"), SQLDataType.VARCHAR(255).nullable(false), this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.computation_id</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> COMPUTATION_ID = createField(DSL.name("computation_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
     private TestCaseEvalScores(Name alias, Table<TestCaseEvalScoresRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -104,6 +129,11 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
     @Override
     public Schema getSchema() {
         return aliased() ? null : Analytics.ANALYTICS;
+    }
+
+    @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.IDX_TEST_CASE_EVAL_SCORES_NATURAL_KEY);
     }
 
     @Override

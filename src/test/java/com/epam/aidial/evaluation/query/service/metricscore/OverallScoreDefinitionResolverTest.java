@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.query.service.metricscore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.configuration.JsonMapperConfiguration;
+import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.FnExpr;
@@ -30,31 +31,35 @@ class OverallScoreDefinitionResolverTest {
             new OverallScoreDefinitionResolver(builtInStatistics, objectMapper);
 
     @Test
-    @DisplayName("Mean composes divide(add(avg(f1), avg(f2)), 2) over the run's discovered metric fields")
+    @DisplayName("Mean composes divide(add(avg(f1), avg(f2)), 2) over test_case_metric_scores, directly, for "
+            + "the run's discovered metric keys")
     void resolvesMeanOverTwoFields() {
-        StructuredQuery result = resolver.resolve(new Mean(), List.of("metric::A::score", "metric::B::score"));
+        StructuredQuery result = resolver.resolve(new Mean(), List.of("A.score", "B.score"));
 
         Expr expected = new FnExpr(
                 "divide",
                 false,
-                List.of(
-                        new FnExpr("add", false, List.of(avg("metric::A::score"), avg("metric::B::score"))),
-                        decimal("2")));
-        assertThat(result).isEqualTo(builtInStatistics.aggregateSelecting(expected));
+                List.of(new FnExpr("add", false, List.of(avg("A.score"), avg("B.score"))), decimal("2")));
+        assertThat(result)
+                .isEqualTo(builtInStatistics.aggregateSelecting(
+                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, expected));
     }
 
     @Test
     @DisplayName("Mean degenerates to a single metric's average for a single-field run")
     void resolvesMeanOverSingleField() {
-        StructuredQuery result = resolver.resolve(new Mean(), List.of("metric::A::score"));
+        StructuredQuery result = resolver.resolve(new Mean(), List.of("A.score"));
 
-        Expr expected = new FnExpr(
-                "divide", false, List.of(new FnExpr("add", false, List.of(avg("metric::A::score"))), decimal("1")));
-        assertThat(result).isEqualTo(builtInStatistics.aggregateSelecting(expected));
+        Expr expected =
+                new FnExpr("divide", false, List.of(new FnExpr("add", false, List.of(avg("A.score"))), decimal("1")));
+        assertThat(result)
+                .isEqualTo(builtInStatistics.aggregateSelecting(
+                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, expected));
     }
 
     @Test
-    @DisplayName("WeightedMean composes divide(add(multiply(w, avg(m)), ...), add(w, ...)), combining duplicate terms")
+    @DisplayName("WeightedMean composes divide(add(multiply(w, avg(m)), ...), add(w, ...)) over "
+            + "test_case_metric_scores, combining duplicate terms")
     void resolvesWeightedMeanWithDuplicateTerm() {
         WeightedMean weightedMean = new WeightedMean(List.of(
                 new WeightedMetric("A", "score", new BigDecimal("1.0")),
@@ -63,8 +68,8 @@ class OverallScoreDefinitionResolverTest {
 
         StructuredQuery result = resolver.resolve(weightedMean, List.of());
 
-        Expr avgA = avg("metric::A::score");
-        Expr avgB = avg("metric::B::score");
+        Expr avgA = avg("A.score");
+        Expr avgB = avg("B.score");
         Expr expected = new FnExpr(
                 "divide",
                 false,
@@ -77,7 +82,9 @@ class OverallScoreDefinitionResolverTest {
                                         new FnExpr("multiply", false, List.of(decimal("1.0"), avgA)),
                                         new FnExpr("multiply", false, List.of(decimal("2.0"), avgB)))),
                         new FnExpr("add", false, List.of(decimal("1.0"), decimal("1.0"), decimal("2.0")))));
-        assertThat(result).isEqualTo(builtInStatistics.aggregateSelecting(expected));
+        assertThat(result)
+                .isEqualTo(builtInStatistics.aggregateSelecting(
+                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, expected));
     }
 
     @Test
@@ -102,8 +109,12 @@ class OverallScoreDefinitionResolverTest {
         assertThat(result).isNull();
     }
 
-    private static FnExpr avg(String fieldName) {
-        FnExpr rawAvg = new FnExpr("avg", false, List.of(new FieldExpr(fieldName)));
+    private static FnExpr avg(String metricKey) {
+        FnExpr rawAvg = new FnExpr(
+                "avg",
+                false,
+                List.of(new FieldExpr(
+                        "metric_scores::" + metricKey + "::" + MetricScoreConstants.METRIC_SCORES_STAT_AVG)));
         return new FnExpr("coalesce", false, List.of(rawAvg, decimal("0")));
     }
 

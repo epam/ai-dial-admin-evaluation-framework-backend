@@ -78,6 +78,8 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
                 .containsExactly(
                         new QueryEntityDto("eval_summaries", true, "test_suite_run_id"),
                         new QueryEntityDto("metric_score_results", false, null),
+                        new QueryEntityDto("test_case_eval_scores", false, null),
+                        new QueryEntityDto("test_case_metric_scores", false, null),
                         new QueryEntityDto("test_cases", true, "dataset_id"),
                         new QueryEntityDto("test_suite_runs", false, null),
                         new QueryEntityDto("test_suites", false, null));

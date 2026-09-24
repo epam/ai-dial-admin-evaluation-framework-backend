@@ -533,12 +533,39 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         UUID suiteId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
-        UUID passedA = analyticsTestDataHelper.createEvalSummary(
-                suiteId, runId, computationId, "case-a", ExecutionStatus.SUCCESS.name(), 100L, 1_000L);
-        UUID passedB = analyticsTestDataHelper.createEvalSummary(
-                suiteId, runId, computationId, "case-b", ExecutionStatus.SUCCESS.name(), 200L, 2_000L);
-        UUID failedC = analyticsTestDataHelper.createEvalSummary(
-                suiteId, runId, computationId, "case-c", ExecutionStatus.SUCCESS.name(), 300L, 3_000L);
+        UUID testCaseA = UUID.randomUUID();
+        UUID testCaseB = UUID.randomUUID();
+        UUID testCaseC = UUID.randomUUID();
+        UUID passedA = analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseA)
+                .testCaseName("case-a")
+                .executionStatus(ExecutionStatus.SUCCESS.name())
+                .execDurationMs(100L)
+                .createdAtMs(1_000L)
+                .build());
+        UUID passedB = analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseB)
+                .testCaseName("case-b")
+                .executionStatus(ExecutionStatus.SUCCESS.name())
+                .execDurationMs(200L)
+                .createdAtMs(2_000L)
+                .build());
+        UUID failedC = analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseC)
+                .testCaseName("case-c")
+                .executionStatus(ExecutionStatus.SUCCESS.name())
+                .execDurationMs(300L)
+                .createdAtMs(3_000L)
+                .build());
         // A row with no test_case_eval_scores entry at all (e.g. no overallScore configured) reads as
         // passed = NULL via the LEFT JOIN, same as an explicit null score/passed row would.
         analyticsTestDataHelper.createEvalSummary(
@@ -546,18 +573,30 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         testCaseEvalScoreRepository.saveAll(List.of(
                 TestCaseEvalScore.builder()
                         .evalSummaryId(passedA)
+                        .testSuiteRunId(runId)
+                        .testCaseId(testCaseA)
+                        .testCaseName("case-a")
+                        .computationId(computationId)
                         .score(0.9)
                         .passed(true)
                         .computedAtMs(1_000L)
                         .build(),
                 TestCaseEvalScore.builder()
                         .evalSummaryId(passedB)
+                        .testSuiteRunId(runId)
+                        .testCaseId(testCaseB)
+                        .testCaseName("case-b")
+                        .computationId(computationId)
                         .score(0.95)
                         .passed(true)
                         .computedAtMs(2_000L)
                         .build(),
                 TestCaseEvalScore.builder()
                         .evalSummaryId(failedC)
+                        .testSuiteRunId(runId)
+                        .testCaseId(testCaseC)
+                        .testCaseName("case-c")
+                        .computationId(computationId)
                         .score(0.1)
                         .passed(false)
                         .computedAtMs(3_000L)
@@ -591,10 +630,28 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         UUID suiteId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
-        UUID idA = analyticsTestDataHelper.createEvalSummary(
-                suiteId, runId, computationId, "case-a", ExecutionStatus.SUCCESS.name(), 100L, 1_000L);
-        UUID idB = analyticsTestDataHelper.createEvalSummary(
-                suiteId, runId, computationId, "case-b", ExecutionStatus.SUCCESS.name(), 200L, 2_000L);
+        UUID testCaseA = UUID.randomUUID();
+        UUID testCaseB = UUID.randomUUID();
+        UUID idA = analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseA)
+                .testCaseName("case-a")
+                .executionStatus(ExecutionStatus.SUCCESS.name())
+                .execDurationMs(100L)
+                .createdAtMs(1_000L)
+                .build());
+        UUID idB = analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseB)
+                .testCaseName("case-b")
+                .executionStatus(ExecutionStatus.SUCCESS.name())
+                .execDurationMs(200L)
+                .createdAtMs(2_000L)
+                .build());
         // A different run's row must never leak into this run's results.
         analyticsTestDataHelper.createEvalSummary(
                 suiteId,
@@ -607,12 +664,20 @@ public abstract class EvalSummaryStructuredQueryFunctionalTests extends BaseFunc
         testCaseEvalScoreRepository.saveAll(List.of(
                 TestCaseEvalScore.builder()
                         .evalSummaryId(idA)
+                        .testSuiteRunId(runId)
+                        .testCaseId(testCaseA)
+                        .testCaseName("case-a")
+                        .computationId(computationId)
                         .score(0.8)
                         .passed(true)
                         .computedAtMs(1_000L)
                         .build(),
                 TestCaseEvalScore.builder()
                         .evalSummaryId(idB)
+                        .testSuiteRunId(runId)
+                        .testCaseId(testCaseB)
+                        .testCaseName("case-b")
+                        .computationId(computationId)
                         .score(0.2)
                         .passed(false)
                         .computedAtMs(2_000L)

@@ -12,6 +12,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TestCaseEvalScore {
     private UUID evalSummaryId;
+    private UUID testSuiteRunId;
+    private UUID testCaseId;
+    private String testCaseName;
+    private UUID computationId;
     private Double score;
     private Boolean passed;
     private Long computedAtMs;

@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.query.service.metricscore;
 
 import com.epam.aidial.evaluation.constants.EvalSummaryExportColumnConstants;
+import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.FnExpr;
@@ -28,17 +29,23 @@ import tools.jackson.databind.ObjectMapper;
  * caller as a dedicated DSL function.
  *
  * <ul>
- *   <li>{@link Mean} — {@code divide(add(coalesce(avg(f1), 0), coalesce(avg(f2), 0), ...), n)} over
- *       {@code metricFieldNames}, the run's currently discovered numeric metric fields (not anything
- *       persisted on the definition itself). A field missing from the run's data resolves to a SQL
- *       {@code NULL} average that is coalesced to {@code 0} for that term.
- *   <li>{@link WeightedMean} — {@code divide(add(multiply(w1, coalesce(avg(m1), 0)), ...), add(w1, ...))},
- *       built directly from the stored {@link WeightedMetric} list, independent of
- *       {@code metricFieldNames}. A missing metric's average is likewise coalesced to {@code 0} for its
- *       term rather than nulling the whole result.
+ *   <li>{@link Mean}/{@link WeightedMean} — built directly against the {@code test_case_metric_scores}
+ *       entity (see {@code test-case-metric-score-aggregation}), since we author these queries ourselves
+ *       and always know exactly which table/fields to target: no need to build against
+ *       {@code eval_summaries} and retarget afterward. {@link Mean} composes
+ *       {@code divide(add(coalesce(avg(metric_scores::k1::avg), 0), ...), n)} over the run's currently
+ *       discovered metric keys (not anything persisted on the definition itself); {@link WeightedMean}
+ *       composes {@code divide(add(multiply(w1, coalesce(avg(metric_scores::k1::avg), 0)), ...), add(w1,
+ *       ...))} directly from the stored {@link WeightedMetric} list. A metric key missing from a test
+ *       case's (or, ungrouped, the run's) aggregated data resolves to a SQL {@code NULL} average that is
+ *       coalesced to {@code 0} for that term — the same formula this class has always built, just now
+ *       evaluated per test case (via {@code test_case_metric_scores}) instead of per raw row.
  *   <li>{@link CustomFunction} — the stored raw expression, converted to a {@link StructuredQuery}
- *       verbatim (the caller supplies the full query, including its own run-scoping filter). NOT subject
- *       to the {@code mean}/{@code weighted_mean} null-to-zero coalescing.
+ *       verbatim (the caller supplies the full query, including its own run-scoping filter), and executed
+ *       against {@code eval_summaries} unchanged — an opaque, client-authored expression we don't control
+ *       and don't retarget, an accepted out-of-scope weight-skew limitation (same as
+ *       {@code BuiltInMetricStatistics}/{@code FilteredMetricScoreAggregator}). NOT subject to the
+ *       {@code mean}/{@code weighted_mean} null-to-zero coalescing.
  * </ul>
  */
 @Slf4j
@@ -51,31 +58,36 @@ public class OverallScoreDefinitionResolver {
     private final ObjectMapper objectMapper;
 
     /**
-     * Resolves {@code definition} into a {@link StructuredQuery}. Returns {@code null} when a
-     * {@link CustomFunction}'s stored expression cannot be converted into a valid query (logged, not
-     * thrown, so the run still completes).
+     * Resolves {@code definition} into a {@link StructuredQuery}. {@code metricKeys} (only consumed by
+     * {@link Mean}) are metric keys in {@code <tsmdName>.<outputField>} form (i.e. {@link
+     * MetricField#metricName()}'s own format), not flattened {@code metric::} field names. Returns
+     * {@code null} when a {@link CustomFunction}'s stored expression cannot be converted into a valid
+     * query (logged, not thrown, so the run still completes).
      */
-    public StructuredQuery resolve(OverallScoreDefinition definition, List<String> metricFieldNames) {
+    public StructuredQuery resolve(OverallScoreDefinition definition, List<String> metricKeys) {
         return switch (definition) {
-            case Mean _ -> builtInStatistics.aggregateSelecting(meanExpr(metricFieldNames));
-            case WeightedMean weightedMean -> builtInStatistics.aggregateSelecting(weightedMeanExpr(weightedMean));
+            case Mean _ ->
+                builtInStatistics.aggregateSelecting(
+                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, meanExpr(metricKeys));
+            case WeightedMean weightedMean ->
+                builtInStatistics.aggregateSelecting(
+                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, weightedMeanExpr(weightedMean));
             case CustomFunction customFunction -> parseCustomFunction(customFunction);
         };
     }
 
-    private Expr meanExpr(List<String> metricFieldNames) {
-        final List<Expr> avgTerms =
-                metricFieldNames.stream().<Expr>map(this::avg).toList();
+    private Expr meanExpr(List<String> metricKeys) {
+        final List<Expr> avgTerms = metricKeys.stream().<Expr>map(this::avg).toList();
         return new FnExpr(
                 "divide",
                 false,
-                List.of(new FnExpr("add", false, avgTerms), decimal(BigDecimal.valueOf(metricFieldNames.size()))));
+                List.of(new FnExpr("add", false, avgTerms), decimal(BigDecimal.valueOf(metricKeys.size()))));
     }
 
     private Expr weightedMeanExpr(WeightedMean weightedMean) {
         final List<Expr> weightedTerms = weightedMean.weights().stream()
-                .map(metric -> (Expr) new FnExpr(
-                        "multiply", false, List.of(decimal(metric.weight()), avg(flattenedFieldName(metric)))))
+                .map(metric ->
+                        (Expr) new FnExpr("multiply", false, List.of(decimal(metric.weight()), avg(metricKey(metric)))))
                 .toList();
         final List<Expr> weightTerms = weightedMean.weights().stream()
                 .map(metric -> (Expr) decimal(metric.weight()))
@@ -95,16 +107,19 @@ public class OverallScoreDefinitionResolver {
         }
     }
 
-    private FnExpr avg(String fieldName) {
+    /** {@code avg(metric_scores::<metricKey>::avg)}, coalesced to {@code 0} when the key is absent. */
+    private FnExpr avg(String metricKey) {
+        final String fieldName = MetricScoreConstants.FIELD_METRIC_SCORES
+                + EvalSummaryExportColumnConstants.COLUMN_SEPARATOR
+                + metricKey
+                + EvalSummaryExportColumnConstants.COLUMN_SEPARATOR
+                + MetricScoreConstants.METRIC_SCORES_STAT_AVG;
         final FnExpr rawAvg = new FnExpr("avg", false, List.of(new FieldExpr(fieldName)));
         return new FnExpr("coalesce", false, List.of(rawAvg, decimal(BigDecimal.ZERO)));
     }
 
-    private static String flattenedFieldName(WeightedMetric metric) {
-        return EvalSummaryExportColumnConstants.METRIC_COLUMN_PREFIX
-                + metric.metricName()
-                + EvalSummaryExportColumnConstants.COLUMN_SEPARATOR
-                + metric.outputField();
+    private static String metricKey(WeightedMetric metric) {
+        return metric.metricName() + "." + metric.outputField();
     }
 
     private static ValueExpr decimal(BigDecimal weight) {

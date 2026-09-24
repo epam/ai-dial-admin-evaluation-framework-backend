@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -25,7 +26,9 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResult
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
@@ -35,8 +38,10 @@ import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.TestCaseEvalScoreService;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseMetricScoreAggregatedService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -53,6 +58,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -104,6 +110,12 @@ class InProcessMetricEvaluationExecutorTest {
 
     @Mock
     private TestCaseEvalScoreService testCaseEvalScoreService;
+
+    @Mock
+    private TestCaseMetricScoreAggregator testCaseMetricScoreAggregator;
+
+    @Mock
+    private TestCaseMetricScoreAggregatedService testCaseMetricScoreAggregatedService;
 
     @Mock
     private Clock clock;
@@ -231,7 +243,7 @@ class InProcessMetricEvaluationExecutorTest {
         doReturn(values).when(outputMapper).buildMetricValues(any());
         doReturn(null).when(outputMapper).buildMetricInfos(any());
 
-        when(evalSummaryRowScoreComputer.computeBatch(any(), any(), any(), any(), any()))
+        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     List<UUID> ids = invocation.getArgument(4);
@@ -242,11 +254,15 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchUpsert(anyLong(), scoreCaptor.capture());
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems).hasSize(1);
         assertThat(scoreItems.get(0).getEvalSummaryId()).isNotNull();
+        assertThat(scoreItems.get(0).getTestSuiteRunId()).isEqualTo(runId);
+        assertThat(scoreItems.get(0).getTestCaseId()).isNotNull();
+        assertThat(scoreItems.get(0).getTestCaseName()).isNotBlank();
+        assertThat(scoreItems.get(0).getComputationId()).isNotNull();
         assertThat(scoreItems.get(0).getScore()).isEqualTo(0.8);
         assertThat(scoreItems.get(0).getPassed()).isTrue();
     }
@@ -263,7 +279,7 @@ class InProcessMetricEvaluationExecutorTest {
         when(resultRepository.findAll(any(), any(), any(), eq(100)))
                 .thenReturn(new CursorPage<>(List.of(result), null, false));
 
-        when(evalSummaryRowScoreComputer.computeBatch(any(), any(), any(), any(), any()))
+        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     List<UUID> ids = invocation.getArgument(4);
@@ -274,7 +290,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchUpsert(anyLong(), scoreCaptor.capture());
 
         assertThat(scoreCaptor.getValue()).hasSize(1);
         assertThat(scoreCaptor.getValue().get(0).getScore()).isEqualTo(0.9);
@@ -295,8 +311,72 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(evalSummaryRowScoreComputer, never()).computeBatch(any(), any(), any(), any(), any());
+        verify(evalSummaryRowScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any());
         verifyNoInteractions(testCaseEvalScoreService);
+    }
+
+    @Test
+    @DisplayName("Aggregated metric scores are written before row scores, since row scores read them back")
+    void aggregatedMetricScoresWrittenBeforeRowScores() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L, null, new Mean(), null);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        MetricField metricField = new MetricField("metric::Accuracy::score", "Accuracy.score");
+        when(metricFieldDiscoverer.discover(any())).thenReturn(List.of(metricField));
+        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(4);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.8));
+                });
+        List<TestCaseMetricScoreAggregatedBatchWriteItemDto> aggregatedItems =
+                List.of(TestCaseMetricScoreAggregatedBatchWriteItemDto.builder()
+                        .testSuiteRunId(runId)
+                        .testCaseId(result.getTestCaseId())
+                        .computationId(context.getComputationId())
+                        .metricScores("{\"Accuracy.score\":{\"avg\":0.8,\"min\":0.8,\"max\":0.8,\"count\":1}}")
+                        .build());
+        when(testCaseMetricScoreAggregator.aggregate(any(), any(), any())).thenReturn(aggregatedItems);
+
+        executor.execute(context);
+
+        InOrder inOrder = inOrder(testCaseMetricScoreAggregatedService, testCaseEvalScoreService);
+        inOrder.verify(testCaseMetricScoreAggregatedService).batchUpsert(anyLong(), eq(aggregatedItems));
+        inOrder.verify(testCaseEvalScoreService).batchUpsert(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("Aggregated metric score computation failure does not fail the flush or suppress row-score writes")
+    void aggregatedMetricScoreFailureDoesNotFailFlush() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L, null, new Mean(), null);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        MetricField metricField = new MetricField("metric::Accuracy::score", "Accuracy.score");
+        when(metricFieldDiscoverer.discover(any())).thenReturn(List.of(metricField));
+        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(4);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.8));
+                });
+        when(testCaseMetricScoreAggregator.aggregate(any(), any(), any())).thenThrow(new RuntimeException("boom"));
+
+        executor.execute(context);
+
+        verify(testCaseEvalScoreService).batchUpsert(anyLong(), any());
+        verifyNoInteractions(testCaseMetricScoreAggregatedService);
     }
 
     @Test

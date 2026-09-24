@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.query.service.metricscore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -17,7 +16,6 @@ import com.epam.aidial.evaluation.query.model.ComparisonOp;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.LogicalNode;
 import com.epam.aidial.evaluation.query.model.LogicalOp;
-import com.epam.aidial.evaluation.query.model.OffsetPage;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.service.StructuredQueryService;
@@ -28,7 +26,6 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import java.math.BigDecimal;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,7 +33,6 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("EvalSummaryRowScoreComputer")
@@ -44,11 +40,12 @@ class EvalSummaryRowScoreComputerTest {
 
     private static final UUID RUN_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID COMPUTATION_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
-    private static final UUID ROW_A = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static final UUID ROW_B = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static final UUID TC_A = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
-    private final BuiltInMetricStatistics builtInStatistics = new BuiltInMetricStatistics();
+    private static final MetricField METRIC_ACCURACY = new MetricField("metric::Accuracy::score", "Accuracy.score");
+
     private final ObjectMapper objectMapper = new JsonMapperConfiguration().objectMapper();
+    private final BuiltInMetricStatistics builtInStatistics = new BuiltInMetricStatistics();
     private final StructuredQueryService structuredQueryService = mock(StructuredQueryService.class);
 
     private final EvalSummaryRowScoreComputer computer = new EvalSummaryRowScoreComputer(
@@ -58,254 +55,133 @@ class EvalSummaryRowScoreComputerTest {
     @DisplayName("Should return an empty map without executing when definition is null")
     void nullDefinitionShortCircuits() {
         Map<UUID, Double> result =
-                computer.computeBatch(null, List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, List.of(ROW_A));
+                computer.computeByTestCase(null, List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, List.of(TC_A));
 
         assertThat(result).isEmpty();
-        verify(structuredQueryService, never()).execute(any(), anyMap());
+        verify(structuredQueryService, never()).execute(any(), any());
     }
 
     @Test
-    @DisplayName("Should return an empty map without executing when rowIds is empty")
-    void emptyRowIdsShortCircuits() {
+    @DisplayName("Should return an empty map without executing when testCaseIds is empty")
+    void emptyTestCaseIdsShortCircuits() {
         Map<UUID, Double> result =
-                computer.computeBatch(new Mean(), List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, List.of());
+                computer.computeByTestCase(new Mean(), List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, List.of());
 
         assertThat(result).isEmpty();
-        verify(structuredQueryService, never()).execute(any(), anyMap());
+        verify(structuredQueryService, never()).execute(any(), any());
     }
 
     @Test
-    @DisplayName("Should graft id as a select column and GROUP BY id, ANDing id IN (...) onto the filter")
-    void graftsIdSelectAndGroupBy() {
-        stubRows(Map.of(ROW_A.toString(), 0.7));
+    @DisplayName("Mean: grafts test_case_id/GROUP BY onto the query built directly against "
+            + "test_case_metric_scores, and reads each test case's value from the grouped result")
+    void meanGraftsTestCaseIdOntoDirectlyBuiltQuery() {
+        stubResult(Map.of("test_case_id", TC_A.toString(), MetricScoreConstants.VALUE_ALIAS, 0.7));
 
-        computer.computeBatch(new Mean(), List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, List.of(ROW_A));
+        Map<UUID, Double> result =
+                computer.computeByTestCase(new Mean(), List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, List.of(TC_A));
 
+        assertThat(result).containsEntry(TC_A, 0.7);
         StructuredQuery executed = capturedQuery();
-        assertThat(executed.groupBy()).containsExactly("id");
+        assertThat(executed.entity()).isEqualTo("test_case_metric_scores");
+        assertThat(executed.groupBy()).containsExactly("test_case_id");
         assertThat(executed.select()).hasSize(2);
-        assertThat(executed.select().getFirst().expr()).isEqualTo(new FieldExpr("id"));
-        assertThat(executed.select().getFirst().as()).isEqualTo("id");
+        assertThat(executed.select().get(0).expr()).isEqualTo(new FieldExpr("test_case_id"));
+        assertThat(executed.select().get(1).as()).isEqualTo(MetricScoreConstants.VALUE_ALIAS);
         assertThat(executed.filter()).isInstanceOfSatisfying(LogicalNode.class, node -> {
             assertThat(node.op()).isEqualTo(LogicalOp.AND);
             assertThat(node.args())
                     .anySatisfy(arg -> assertThat(arg).isInstanceOfSatisfying(ComparisonNode.class, cmp -> {
                         assertThat(cmp.op()).isEqualTo(ComparisonOp.IN);
-                        assertThat(cmp.args().getFirst()).isEqualTo(new FieldExpr("id"));
+                        assertThat(cmp.args().getFirst()).isEqualTo(new FieldExpr("test_case_id"));
                     }));
         });
     }
 
     @Test
-    @DisplayName("Should set an explicit page sized to rowIds rather than passing through the resolved query's "
-            + "(typically null) page, which would otherwise default to a 100-row limit and silently truncate")
-    void setsExplicitPageSizedToRowIds() {
-        stubRows(Map.of(ROW_A.toString(), 0.7, ROW_B.toString(), 0.5));
+    @DisplayName("Mean: a test case whose aggregate is SQL NULL maps to a null score")
+    void meanWithNullAggregateYieldsNullScore() {
+        stubResult(Map.of("test_case_id", TC_A.toString()));
 
-        computer.computeBatch(new Mean(), List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, List.of(ROW_A, ROW_B));
+        Map<UUID, Double> result =
+                computer.computeByTestCase(new Mean(), List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, List.of(TC_A));
 
-        StructuredQuery executed = capturedQuery();
-        assertThat(executed.page()).isEqualTo(new OffsetPage(0, 2, false));
+        assertThat(result).containsEntry(TC_A, null);
     }
 
     @Test
-    @DisplayName("Should chunk rowIds larger than the translator's MAX_LIMIT into multiple queries, merging "
-            + "all chunks' results rather than silently dropping the excess rows")
-    void chunksRowIdsExceedingMaxLimit() {
-        List<UUID> rowIds = IntStream.range(0, StructuredQueryBuilder.MAX_LIMIT + 50)
+    @DisplayName("Mean: chunks testCaseIds larger than the translator's MAX_LIMIT into multiple queries")
+    void chunksTestCaseIdsExceedingMaxLimit() {
+        List<UUID> testCaseIds = IntStream.range(0, StructuredQueryBuilder.MAX_LIMIT + 50)
                 .mapToObj(i -> UUID.randomUUID())
                 .toList();
 
-        // Each execute() call returns exactly one scored row: the first id of whatever chunk it received,
-        // proving every chunk actually executes rather than only the first MAX_LIMIT rows.
-        when(structuredQueryService.execute(any(), anyMap())).thenAnswer(invocation -> {
+        when(structuredQueryService.execute(any(), any())).thenAnswer(invocation -> {
             StructuredQuery query = invocation.getArgument(0);
             LogicalNode filter = (LogicalNode) query.filter();
             ComparisonNode inNode = filter.args().stream()
                     .filter(ComparisonNode.class::isInstance)
                     .map(ComparisonNode.class::cast)
+                    .filter(cmp -> cmp.op() == ComparisonOp.IN)
                     .findFirst()
                     .orElseThrow();
             ArrayExpr idList = (ArrayExpr) inNode.args().get(1);
             String firstId = ((ValueExpr) idList.items().getFirst()).value();
-            return new QueryResultPage(List.of(rowOf(firstId, 0.5)), null);
+            return new QueryResultPage(
+                    List.of(Map.of("test_case_id", firstId, MetricScoreConstants.VALUE_ALIAS, 0.5)), null);
         });
 
         Map<UUID, Double> result =
-                computer.computeBatch(new Mean(), List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, rowIds);
+                computer.computeByTestCase(new Mean(), List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, testCaseIds);
 
-        verify(structuredQueryService, times(2)).execute(any(), anyMap());
+        verify(structuredQueryService, times(2)).execute(any(), any());
         assertThat(result)
                 .hasSize(2)
-                .containsEntry(rowIds.getFirst(), 0.5)
-                .containsEntry(rowIds.get(StructuredQueryBuilder.MAX_LIMIT), 0.5);
+                .containsEntry(testCaseIds.getFirst(), 0.5)
+                .containsEntry(testCaseIds.get(StructuredQueryBuilder.MAX_LIMIT), 0.5);
     }
 
     @Test
-    @DisplayName("Should map score per row id, including a row whose aggregate is itself SQL NULL")
-    void mapsScorePerRowIncludingNull() {
-        when(structuredQueryService.execute(any(), anyMap()))
-                .thenReturn(new QueryResultPage(
-                        List.of(rowOf(ROW_A.toString(), 0.7), rowOfNullValue(ROW_B.toString())), null));
+    @DisplayName("WeightedMean: grafts the same way, reading the combined value from the grouped result")
+    void weightedMeanGraftsOntoDirectlyBuiltQuery() {
+        stubResult(Map.of("test_case_id", TC_A.toString(), MetricScoreConstants.VALUE_ALIAS, 0.6));
 
-        Map<UUID, Double> result = computer.computeBatch(
-                new Mean(), List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, List.of(ROW_A, ROW_B));
-
-        assertThat(result).hasSize(2).containsEntry(ROW_A, 0.7).containsEntry(ROW_B, null);
-    }
-
-    @Test
-    @DisplayName("Should omit a rowId that the query's result set does not contain")
-    void omitsRowIdAbsentFromResultSet() {
-        stubRows(Map.of(ROW_A.toString(), 0.7));
-
-        Map<UUID, Double> result = computer.computeBatch(
-                new Mean(), List.of("metric::A::score"), RUN_ID, COMPUTATION_ID, List.of(ROW_A, ROW_B));
-
-        assertThat(result).containsOnlyKeys(ROW_A);
-    }
-
-    @Test
-    @DisplayName("Should compute a per-row weighted mean score")
-    void computesWeightedMean() {
-        stubRows(Map.of(ROW_A.toString(), 0.6));
-
-        Map<UUID, Double> result = computer.computeBatch(
-                new WeightedMean(List.of(new WeightedMetric("Accuracy", "score", BigDecimal.ONE))),
+        Map<UUID, Double> result = computer.computeByTestCase(
+                new WeightedMean(List.of(
+                        new WeightedMetric("Accuracy", "score", BigDecimal.valueOf(2)),
+                        new WeightedMetric("Relevancy", "score", BigDecimal.ONE))),
                 List.of(),
                 RUN_ID,
                 COMPUTATION_ID,
-                List.of(ROW_A));
+                List.of(TC_A));
 
-        assertThat(result).containsEntry(ROW_A, 0.6);
+        assertThat(result).containsEntry(TC_A, 0.6);
+        assertThat(capturedQuery().entity()).isEqualTo("test_case_metric_scores");
     }
 
     @Test
-    @DisplayName("Should compute a well-formed CustomFunction, reading its own alias")
-    void computesWellFormedCustomFunction() {
-        when(structuredQueryService.execute(any(), anyMap()))
-                .thenReturn(new QueryResultPage(List.of(Map.of("id", ROW_A.toString(), "myAlias", 0.42)), null));
-
-        Map<UUID, Double> result = computer.computeBatch(
-                customFunction("aggregate", "eval_summaries", "\"as\":\"myAlias\"", null),
-                List.of(),
+    @DisplayName("Should return an empty map without executing when definition is a CustomFunction (rejected by "
+            + "suite validation; this is a defensive fallback only)")
+    void customFunctionYieldsEmptyMapDefensively() {
+        Map<UUID, Double> result = computer.computeByTestCase(
+                new CustomFunction(Map.of("entity", "eval_summaries", "mode", "aggregate")),
+                List.of(METRIC_ACCURACY),
                 RUN_ID,
                 COMPUTATION_ID,
-                List.of(ROW_A));
-
-        assertThat(result).containsEntry(ROW_A, 0.42);
-    }
-
-    @Test
-    @DisplayName("Should reject (empty map, no execute) a CustomFunction not in AGGREGATE mode")
-    void rejectsNonAggregateCustomFunction() {
-        Map<UUID, Double> result = computer.computeBatch(
-                customFunction("row", "eval_summaries", "\"as\":\"value\"", null),
-                List.of(),
-                RUN_ID,
-                COMPUTATION_ID,
-                List.of(ROW_A));
+                List.of(TC_A));
 
         assertThat(result).isEmpty();
-        verify(structuredQueryService, never()).execute(any(), anyMap());
-    }
-
-    @Test
-    @DisplayName("Should reject a CustomFunction targeting a foreign entity")
-    void rejectsForeignEntityCustomFunction() {
-        Map<UUID, Double> result = computer.computeBatch(
-                customFunction("aggregate", "test_suites", "\"as\":\"value\"", null),
-                List.of(),
-                RUN_ID,
-                COMPUTATION_ID,
-                List.of(ROW_A));
-
-        assertThat(result).isEmpty();
-        verify(structuredQueryService, never()).execute(any(), anyMap());
-    }
-
-    @Test
-    @DisplayName("Should reject a CustomFunction whose select column has no alias")
-    void rejectsCustomFunctionWithoutAlias() {
-        Map<UUID, Double> result = computer.computeBatch(
-                customFunction("aggregate", "eval_summaries", "\"as\":\"\"", null),
-                List.of(),
-                RUN_ID,
-                COMPUTATION_ID,
-                List.of(ROW_A));
-
-        assertThat(result).isEmpty();
-        verify(structuredQueryService, never()).execute(any(), anyMap());
-    }
-
-    @Test
-    @DisplayName("Should reject a CustomFunction that already specifies its own groupBy, rather than overwriting it")
-    void rejectsCustomFunctionWithExistingGroupBy() {
-        Map<UUID, Double> result = computer.computeBatch(
-                customFunction("aggregate", "eval_summaries", "\"as\":\"value\"", List.of("test_case_id")),
-                List.of(),
-                RUN_ID,
-                COMPUTATION_ID,
-                List.of(ROW_A));
-
-        assertThat(result).isEmpty();
-        verify(structuredQueryService, never()).execute(any(), anyMap());
-    }
-
-    @Test
-    @DisplayName("Should return an empty map when the resolver cannot parse the CustomFunction")
-    void unparseableCustomFunctionYieldsEmptyMap() {
-        Map<UUID, Double> result = computer.computeBatch(
-                new CustomFunction(Map.of("not", "a valid structured query shape at all", "entity", 123)),
-                List.of(),
-                RUN_ID,
-                COMPUTATION_ID,
-                List.of(ROW_A));
-
-        assertThat(result).isEmpty();
-        verify(structuredQueryService, never()).execute(any(), anyMap());
+        verify(structuredQueryService, never()).execute(any(), any());
     }
 
     // ----- helpers -----
 
-    private void stubRows(Map<String, Double> idToValue) {
-        List<Map<String, Object>> rows = idToValue.entrySet().stream()
-                .map(e -> rowOf(e.getKey(), e.getValue()))
-                .toList();
-        when(structuredQueryService.execute(any(), anyMap())).thenReturn(new QueryResultPage(rows, null));
-    }
-
-    private static Map<String, Object> rowOf(String id, double value) {
-        return Map.of("id", id, MetricScoreConstants.VALUE_ALIAS, value);
-    }
-
-    private static Map<String, Object> rowOfNullValue(String id) {
-        Map<String, Object> row = new HashMap<>();
-        row.put("id", id);
-        row.put(MetricScoreConstants.VALUE_ALIAS, null);
-        return row;
+    private void stubResult(Map<String, Object> row) {
+        when(structuredQueryService.execute(any(), any())).thenReturn(new QueryResultPage(List.of(row), null));
     }
 
     private StructuredQuery capturedQuery() {
         ArgumentCaptor<StructuredQuery> captor = ArgumentCaptor.forClass(StructuredQuery.class);
-        verify(structuredQueryService).execute(captor.capture(), anyMap());
+        verify(structuredQueryService).execute(captor.capture(), any());
         return captor.getValue();
-    }
-
-    private CustomFunction customFunction(String mode, String entity, String aliasJson, List<String> groupBy) {
-        String groupByJson = groupBy == null
-                ? ""
-                : ",\"group_by\":["
-                        + groupBy.stream()
-                                .map(s -> "\"" + s + "\"")
-                                .reduce((a, b) -> a + "," + b)
-                                .orElse("") + "]";
-        String json = "{\"entity\":\"" + entity + "\",\"mode\":\"" + mode + "\","
-                + "\"select\":[{\"expr\":{\"type\":\"fn\",\"name\":\"avg\","
-                + "\"args\":[{\"type\":\"field\",\"name\":\"metric::Accuracy::score\"}]},"
-                + aliasJson + "}]"
-                + groupByJson
-                + "}";
-        return new CustomFunction(objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {}));
     }
 }

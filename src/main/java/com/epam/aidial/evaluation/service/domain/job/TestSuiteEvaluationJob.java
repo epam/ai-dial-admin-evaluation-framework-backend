@@ -20,6 +20,8 @@ import com.epam.aidial.evaluation.runner.dto.RetryPolicyDto;
 import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.RunErrorDetailsDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
+import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
@@ -399,14 +401,23 @@ public class TestSuiteEvaluationJob {
                 .perResultTimeoutMs(metricEvaluationProperties.getPerResultTimeoutMs())
                 .requestLabels(buildRequestLabels(snapshot))
                 // Per-test-case scoring prefers testCaseOverallScore when the suite configured one,
-                // falling back to overallScore otherwise. The run-level aggregate (computeMetricScores,
-                // below) always uses overallScore unconditionally — the two scopes may diverge.
-                .overallScoreDefinition(
-                        snapshot.getTestCaseOverallScore() != null
-                                ? snapshot.getTestCaseOverallScore()
-                                : snapshot.getOverallScore())
+                // falling back to overallScore otherwise — except when overallScore is a CustomFunction:
+                // TestSuiteRequestValidator already rejects a CustomFunction testCaseOverallScore outright
+                // (population-dependent functions like roc_auc are meaningless per test case), so falling
+                // back to a CustomFunction overallScore here would silently defeat that validation. In that
+                // case per-test-case scoring is simply not computed (null definition, same as an unconfigured
+                // suite). The run-level aggregate (computeMetricScores, below) always uses overallScore
+                // unconditionally — the two scopes may diverge.
+                .overallScoreDefinition(resolveTestCaseOverallScoreDefinition(snapshot))
                 .overallScoreThreshold(snapshot.getOverallScoreThreshold())
                 .build();
+    }
+
+    private OverallScoreDefinition resolveTestCaseOverallScoreDefinition(SuiteSnapshotDto snapshot) {
+        if (snapshot.getTestCaseOverallScore() != null) {
+            return snapshot.getTestCaseOverallScore();
+        }
+        return snapshot.getOverallScore() instanceof CustomFunction ? null : snapshot.getOverallScore();
     }
 
     /**

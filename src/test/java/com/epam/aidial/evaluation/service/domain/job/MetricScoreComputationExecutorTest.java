@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,6 +15,8 @@ import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.query.model.Expr;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
+import com.epam.aidial.evaluation.query.model.OutputColumn;
+import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.StructuredQueryService;
 import com.epam.aidial.evaluation.query.service.metricscore.BuiltInMetricStatistics;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
@@ -21,10 +24,14 @@ import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputati
 import com.epam.aidial.evaluation.query.service.metricscore.OverallScoreDefinitionResolver;
 import com.epam.aidial.evaluation.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
+import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
+import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.MetricScoreService;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -224,6 +231,87 @@ class MetricScoreComputationExecutorTest {
 
         verify(metricScoreService, never()).saveAll(any());
         verify(structuredQueryService, never()).execute(any(), any());
+    }
+
+    @Test
+    @DisplayName("Mean overall is computed directly against test_case_metric_scores, coalescing a metric "
+            + "absent from every test case to zero")
+    void meanOverallCoalescesMetricAbsentFromEveryTestCase() {
+        twoMetricFields();
+        when(structuredQueryService.execute(any(), any())).thenAnswer(invocation -> {
+            final StructuredQuery query = invocation.getArgument(0);
+            if ("test_case_metric_scores".equals(query.entity())) {
+                // Accuracy never fired for any test case in the run; SQL avg() over zero rows is NULL,
+                // coalesced to 0 by the resolver's formula (same formula as before this feature, now
+                // evaluated per test case instead of per raw row).
+                return new QueryResultPage(List.of(Map.of("value", 0.3)), null);
+            }
+            return answer(invocation.getArgument(1), 0.6, 0.8, 0.7);
+        });
+
+        executor.execute(context(new Mean()));
+
+        final MetricScoreResult overall = overallResult(captureSaved());
+        // (0.6 + 0) / 2 = 0.3.
+        assertThat(overall.getValue()).isEqualTo(0.3);
+    }
+
+    @Test
+    @DisplayName("Mean overall query targets test_case_metric_scores ungrouped, as a single value column")
+    void meanOverallQueryTargetsTestCaseMetricScores() {
+        twoMetricFields();
+        when(structuredQueryService.execute(any(), any())).thenAnswer(invocation -> {
+            final StructuredQuery query = invocation.getArgument(0);
+            if ("test_case_metric_scores".equals(query.entity())) {
+                return new QueryResultPage(List.of(Map.of("value", 0.7)), null);
+            }
+            return answer(invocation.getArgument(1), 0.6, 0.8, 0.7);
+        });
+
+        executor.execute(context(new Mean()));
+
+        final ArgumentCaptor<StructuredQuery> captor = ArgumentCaptor.forClass(StructuredQuery.class);
+        verify(structuredQueryService, atLeastOnce()).execute(captor.capture(), any());
+        final StructuredQuery overallQuery = captor.getAllValues().stream()
+                .filter(q -> "test_case_metric_scores".equals(q.entity()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(overallQuery.groupBy()).isNull();
+        assertThat(overallQuery.select())
+                .extracting(OutputColumn::as)
+                .containsExactly(MetricScoreConstants.VALUE_ALIAS);
+    }
+
+    @Test
+    @DisplayName("WeightedMean overall coalesces a configured metric absent from every test case to zero")
+    void weightedMeanOverallCoalescesMissingMetric() {
+        when(runMetricSnapshotRepository.findByRunIdAndComputationId(RUN_ID, COMPUTATION_ID))
+                .thenReturn(List.of(snapshot("Relevancy")));
+        when(outputSchemaFieldExtractor.extractFieldNames(any())).thenReturn(List.of("score"));
+        when(structuredQueryService.execute(any(), any())).thenAnswer(invocation -> {
+            final StructuredQuery query = invocation.getArgument(0);
+            if ("test_case_metric_scores".equals(query.entity())) {
+                return new QueryResultPage(List.of(Map.of("value", 0.45)), null);
+            }
+            return answer(invocation.getArgument(1), 0.6, 0.8, 0.7);
+        });
+
+        final WeightedMean weightedMean = new WeightedMean(List.of(
+                new WeightedMetric("Relevancy", "score", BigDecimal.valueOf(3)),
+                new WeightedMetric("Accuracy", "score", BigDecimal.ONE)));
+
+        executor.execute(context(weightedMean));
+
+        final MetricScoreResult overall = overallResult(captureSaved());
+        // (3*0.6 + 1*0) / 4 = 0.45.
+        assertThat(overall.getValue()).isEqualTo(0.45);
+    }
+
+    private static MetricScoreResult overallResult(List<MetricScoreResult> saved) {
+        return saved.stream()
+                .filter(r -> MetricScoreConstants.SCORE_OVERALL.equals(r.getMetricScoreName()))
+                .findFirst()
+                .orElseThrow();
     }
 
     @SuppressWarnings("unchecked")

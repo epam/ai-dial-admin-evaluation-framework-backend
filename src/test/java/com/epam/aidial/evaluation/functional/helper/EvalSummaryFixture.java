@@ -27,6 +27,9 @@ public class EvalSummaryFixture {
     private final String testCaseName;
     private final long createdAtMs;
 
+    @Builder.Default
+    private final UUID testCaseId = UUID.randomUUID();
+
     /**
      * Nullable, and read through {@link #getComputedAtMs()} rather than the generated getter: latest-computation
      * resolution orders by {@code computed_at_ms}, so a test seeding two computations must separate them

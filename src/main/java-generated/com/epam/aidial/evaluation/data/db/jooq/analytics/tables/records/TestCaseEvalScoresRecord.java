@@ -74,6 +74,64 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
         return (Long) get(3);
     }
 
+    /**
+     * Setter for
+     * <code>analytics.test_case_eval_scores.test_suite_run_id</code>.
+     */
+    public void setTestSuiteRunId(String value) {
+        set(4, value);
+    }
+
+    /**
+     * Getter for
+     * <code>analytics.test_case_eval_scores.test_suite_run_id</code>.
+     */
+    public String getTestSuiteRunId() {
+        return (String) get(4);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_scores.test_case_id</code>.
+     */
+    public void setTestCaseId(String value) {
+        set(5, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_scores.test_case_id</code>.
+     */
+    public String getTestCaseId() {
+        return (String) get(5);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_scores.test_case_name</code>.
+     */
+    public void setTestCaseName(String value) {
+        set(6, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_scores.test_case_name</code>.
+     */
+    public String getTestCaseName() {
+        return (String) get(6);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_scores.computation_id</code>.
+     */
+    public void setComputationId(String value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_scores.computation_id</code>.
+     */
+    public String getComputationId() {
+        return (String) get(7);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -97,13 +155,17 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
     /**
      * Create a detached, initialised TestCaseEvalScoresRecord
      */
-    public TestCaseEvalScoresRecord(String evalSummaryId, Double score, Boolean passed, Long computedAtMs) {
+    public TestCaseEvalScoresRecord(String evalSummaryId, Double score, Boolean passed, Long computedAtMs, String testSuiteRunId, String testCaseId, String testCaseName, String computationId) {
         super(TestCaseEvalScores.TEST_CASE_EVAL_SCORES);
 
         setEvalSummaryId(evalSummaryId);
         setScore(score);
         setPassed(passed);
         setComputedAtMs(computedAtMs);
+        setTestSuiteRunId(testSuiteRunId);
+        setTestCaseId(testCaseId);
+        setTestCaseName(testCaseName);
+        setComputationId(computationId);
         resetTouchedOnNotNull();
     }
 }

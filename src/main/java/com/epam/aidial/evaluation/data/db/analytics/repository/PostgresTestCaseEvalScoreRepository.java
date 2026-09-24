@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
+import static org.jooq.impl.DSL.excluded;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -33,13 +34,26 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
                         .set(
                                 TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID,
                                 s.getEvalSummaryId().toString())
+                        .set(
+                                TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID,
+                                s.getTestSuiteRunId().toString())
+                        .set(
+                                TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
+                                s.getTestCaseId().toString())
+                        .set(TEST_CASE_EVAL_SCORES.TEST_CASE_NAME, s.getTestCaseName())
+                        .set(
+                                TEST_CASE_EVAL_SCORES.COMPUTATION_ID,
+                                s.getComputationId().toString())
                         .set(TEST_CASE_EVAL_SCORES.SCORE, s.getScore())
                         .set(TEST_CASE_EVAL_SCORES.PASSED, s.getPassed())
                         .set(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS, s.getComputedAtMs())
                         .onConflict(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID)
-                        .doNothing())
+                        .doUpdate()
+                        .set(TEST_CASE_EVAL_SCORES.SCORE, excluded(TEST_CASE_EVAL_SCORES.SCORE))
+                        .set(TEST_CASE_EVAL_SCORES.PASSED, excluded(TEST_CASE_EVAL_SCORES.PASSED))
+                        .set(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS, excluded(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS)))
                 .toList();
         dsl.batch(queries).execute();
-        log.debug("Batch inserted {} eval summary scores", scores.size());
+        log.debug("Batch upserted {} eval summary scores", scores.size());
     }
 }

@@ -10,10 +10,13 @@ import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputationExecutor;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseMetricScoreAggregatedService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricScoreValueDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunComparisonResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunComparisonRunDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
 import java.util.List;
 import java.util.UUID;
@@ -56,6 +59,12 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private MetricScoreComputationExecutor phaseThreeExecutor;
+
+    @Autowired
+    private TestCaseMetricScoreAggregator testCaseMetricScoreAggregator;
+
+    @Autowired
+    private TestCaseMetricScoreAggregatedService testCaseMetricScoreAggregatedService;
 
     private UUID suiteId;
     private UUID runA;
@@ -348,8 +357,14 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         metaTestDataHelper.createRunMetricSnapshot(runA, computationA, METRIC, OUTPUT_SCHEMA, COMPUTED_AT_MS);
         metaTestDataHelper.createRunMetricSnapshot(runA, computationA, "Ghost", OUTPUT_SCHEMA, COMPUTED_AT_MS);
         seedSnapshot(runB, computationB);
-        seedScore(runA, computationA, "Case", 0.5);
+        final UUID testCaseId = UUID.randomUUID();
+        analyticsTestDataHelper.createEvalSummary(
+                fixture(runA, computationA, "Case", 0.5).testCaseId(testCaseId).build());
         seedScore(runB, computationB, "Case", 0.5);
+        // A Mean/WeightedMean overall reads test_case_metric_scores_aggregated, not raw eval summaries — a
+        // live run populates it as it executes (InProcessMetricEvaluationExecutor#writeAggregatedMetricScores),
+        // so a fixture that only seeds eval summaries must reproduce that step explicitly.
+        aggregateMetricScores(runA, computationA, testCaseId);
 
         final RunComparisonRunDto sideA = compare(runA, runB).getRuns().get(0);
 
@@ -634,6 +649,20 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
                 .computationId(computationId)
                 .computedAtMs(COMPUTED_AT_MS)
                 .build());
+    }
+
+    /**
+     * Mirrors {@code InProcessMetricEvaluationExecutor#writeAggregatedMetricScores}: a live run computes and
+     * upserts {@code test_case_metric_scores_aggregated} from that run's eval summaries as it executes, and
+     * this is what a {@code Mean}/{@code WeightedMean} overall then reads (both Phase 3's own and this
+     * comparison's, since {@code FilteredMetricScoreAggregator} reuses the same resolver unchanged). A fixture
+     * that seeds eval summaries directly, bypassing that executor, must reproduce this step explicitly for any
+     * test exercising a {@code Mean}/{@code WeightedMean} overall.
+     */
+    private void aggregateMetricScores(UUID runId, UUID computationId, UUID... testCaseIds) {
+        final List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items =
+                testCaseMetricScoreAggregator.aggregate(runId, computationId, List.of(testCaseIds));
+        testCaseMetricScoreAggregatedService.batchUpsert(COMPUTED_AT_MS, items);
     }
 
     private static List<String> triples(RunComparisonRunDto run) {

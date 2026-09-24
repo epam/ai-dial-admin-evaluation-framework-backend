@@ -6,14 +6,21 @@ import static org.assertj.core.api.Assertions.within;
 import com.epam.aidial.evaluation.configuration.JsonMapperConfiguration;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
+import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
+import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputationExecutor;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseMetricScoreAggregatedService;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
 import java.math.BigDecimal;
 import java.util.List;
@@ -79,6 +86,35 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
 
     @Autowired
     private MetricScoreResultRepository resultRepository;
+
+    @Autowired
+    private RunMetricSnapshotRepository runMetricSnapshotRepository;
+
+    @Autowired
+    private MetricFieldDiscoverer metricFieldDiscoverer;
+
+    @Autowired
+    private TestCaseMetricScoreAggregator testCaseMetricScoreAggregator;
+
+    @Autowired
+    private TestCaseMetricScoreAggregatedService testCaseMetricScoreAggregatedService;
+
+    /**
+     * Populates {@code test_case_metric_scores_aggregated} from the run's already-seeded eval summaries,
+     * mirroring what Phase 2's flush cycle does in production — required before invoking {@link #executor}
+     * directly, since {@link #executor}'s {@code Mean}/{@code WeightedMean} overall computations read from
+     * this table rather than raw eval summaries ({@code CustomFunction} still reads raw eval summaries
+     * directly, unretargeted).
+     */
+    private void aggregateMetricScores(UUID runId, UUID computationId, long computedAtMs) {
+        final List<RunMetricSnapshot> snapshots =
+                runMetricSnapshotRepository.findByRunIdAndComputationId(runId, computationId);
+        final List<MetricField> metricFields = metricFieldDiscoverer.discover(snapshots);
+        final List<UUID> testCaseIds = analyticsTestDataHelper.findDistinctTestCaseIds(runId, computationId);
+        final List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items =
+                testCaseMetricScoreAggregator.aggregate(runId, computationId, testCaseIds);
+        testCaseMetricScoreAggregatedService.batchUpsert(computedAtMs, items);
+    }
 
     @Test
     @DisplayName("computes AVG/P10/P90/MIN/MAX per metric field plus overall, under the run's computation")
@@ -196,6 +232,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
 
         // Only Relevancy is present in the run's data (avg = 0.5); "Ghost" is never seeded.
         seedRun(suiteId, runId, computationId, createdAt, computedAt);
+        aggregateMetricScores(runId, computationId, computedAt);
         final WeightedMean weightedMean = new WeightedMean(List.of(
                 new WeightedMetric("Relevancy", "score", new BigDecimal("1.0")),
                 new WeightedMetric("Ghost", "score", new BigDecimal("1.0"))));

@@ -28,6 +28,7 @@ import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputati
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
@@ -40,6 +41,7 @@ import com.epam.aidial.evaluation.service.domain.exception.SnapshotSuiteMissingE
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -518,6 +520,33 @@ class TestSuiteEvaluationJobTest {
                     Executors.newVirtualThreadPerTaskExecutor());
 
             assertThat(context.getOverallScoreDefinition()).isEqualTo(overallScore);
+        }
+
+        @Test
+        @DisplayName("does not fall back to a CustomFunction overallScore when testCaseOverallScore is absent "
+                + "(population-dependent functions are meaningless per test case; TestSuiteRequestValidator "
+                + "already rejects a CustomFunction testCaseOverallScore outright)")
+        void doesNotFallBackToCustomFunctionOverallScore() throws Exception {
+            CustomFunction overallScore = new CustomFunction(Map.of("entity", "eval_summaries", "mode", "aggregate"));
+            SuiteSnapshotDto snapshot = SuiteSnapshotDto.builder()
+                    .snapshotVersion(SuiteSnapshotDto.CURRENT_VERSION)
+                    .suiteType("DEPLOYMENT")
+                    .overallScore(overallScore)
+                    .build();
+            TestSuiteRun run = TestSuiteRun.builder()
+                    .id(UUID.randomUUID())
+                    .testSuiteId(UUID.randomUUID())
+                    .suiteSnapshot(objectMapper.writeValueAsString(snapshot))
+                    .build();
+
+            MetricEvaluationContext context = (MetricEvaluationContext) ReflectionTestUtils.invokeMethod(
+                    job,
+                    "buildMetricEvaluationContext",
+                    run,
+                    invokeResolveSnapshot(run),
+                    Executors.newVirtualThreadPerTaskExecutor());
+
+            assertThat(context.getOverallScoreDefinition()).isNull();
         }
     }
 

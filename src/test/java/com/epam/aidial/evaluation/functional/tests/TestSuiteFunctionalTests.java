@@ -766,6 +766,85 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should return 400 when testCaseOverallScore is a CustomFunction on create — only "
+            + "Mean/WeightedMean are meaningful per test case")
+    void shouldReject400WhenTestCaseOverallScoreIsCustomFunctionOnCreate() {
+        OverallScoreDefinition testCaseOverallScoreDefinition = new CustomFunction(Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "avg",
+                                "args",
+                                List.of(Map.of("type", "field", "name", "metric::MetricA::score"))),
+                        "as",
+                        "value"))));
+        TestSuiteRequestDto request =
+                buildTestSuiteRequest("Rejected TestCaseOverallScore Suite Create", "Description");
+        request.setTestCaseOverallScore(testCaseOverallScoreDefinition);
+
+        ResponseEntity<String> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when testCaseOverallScore is a CustomFunction on update — only "
+            + "Mean/WeightedMean are meaningful per test case")
+    void shouldReject400WhenTestCaseOverallScoreIsCustomFunctionOnUpdate() {
+        TestSuiteResponseDto created = createTestSuite("Rejected TestCaseOverallScore Suite Update");
+        OverallScoreDefinition testCaseOverallScoreDefinition = new CustomFunction(Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "avg",
+                                "args",
+                                List.of(Map.of("type", "field", "name", "metric::MetricA::score"))),
+                        "as",
+                        "value"))));
+        TestSuiteRequestDto updateRequest = TestSuiteRequestDto.builder()
+                .name(created.getName())
+                .description(created.getDescription())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(buildEndpointContract("/v1/chat"))
+                .datasetId(created.getDatasetId())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .testCaseOverallScore(testCaseOverallScoreDefinition)
+                .build();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch(created.getVersion() != null ? "\"" + created.getVersion() + "\"" : "0");
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + created.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(updateRequest, headers),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     @DisplayName("Should persist and return overallScoreThreshold on create")
     void shouldPersistAndReturnOverallScoreThresholdOnCreate() {
         // Given: a create request including overallScoreThreshold

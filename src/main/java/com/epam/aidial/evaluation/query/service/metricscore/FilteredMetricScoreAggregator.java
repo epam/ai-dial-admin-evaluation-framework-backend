@@ -104,25 +104,27 @@ public class FilteredMetricScoreAggregator {
      * that metric's average).
      *
      * <p>Kept separate from the per-metric loop because a {@code CustomFunction} definition resolves to a
-     * complete {@link StructuredQuery} rather than a liftable expression — which is also why
-     * {@link OverallScoreDefinitionResolver} needs no changes here.
+     * complete {@link StructuredQuery} rather than a liftable expression. Mirrors
+     * {@code MetricScoreComputationExecutor#computeOverallScore} exactly, so a {@code Mean}/
+     * {@code WeightedMean}/{@code CustomFunction} ends up on the same entity here as it does in the
+     * persisted Phase 3 computation.
      */
     private Optional<MetricScoreValueDto> computeOverall(FilterNode idPredicate, FilteredMetricScoreRequest request) {
         final boolean isDefault = request.overallScoreDefinition() == null;
         if (isDefault && request.metricFields().size() != 1) {
             return Optional.empty();
         }
-        final StructuredQuery resolved = isDefault
+        final StructuredQuery query = isDefault
                 ? builtInStatistics.defaultOverall()
                 // The resolver MUST see the run's full discovered field list: a mean divides by its size, so
                 // any filtered subset would silently change the divisor.
                 : overallScoreDefinitionResolver.resolve(
-                        request.overallScoreDefinition(), flattenedFieldNames(request.metricFields()));
-        if (resolved == null) {
+                        request.overallScoreDefinition(), metricKeys(request.metricFields()));
+        if (query == null) {
             // Unparseable custom_function; already logged by the resolver.
             return Optional.empty();
         }
-        final String valueAlias = findValueAlias(resolved);
+        final String valueAlias = findValueAlias(query);
         if (valueAlias == null) {
             return Optional.empty();
         }
@@ -134,13 +136,47 @@ public class FilteredMetricScoreAggregator {
                     new FieldExpr(request.metricFields().getFirst().flattenedName()));
         }
         final Double value = executeScalar(
-                withIdPredicate(resolved, idPredicate),
+                withIdPredicate(query, overallIdPredicate(query, idPredicate, request)),
                 params,
                 valueAlias,
                 MetricScoreConstants.SCORE_OVERALL,
                 MetricScoreConstants.SCORE_OVERALL);
         return Optional.ofNullable(value)
                 .map(v -> value(MetricScoreConstants.SCORE_OVERALL, MetricScoreConstants.SCORE_OVERALL, v));
+    }
+
+    /**
+     * {@code idPredicate} filters individual {@code eval_summaries} rows by their own {@code id}; that id
+     * space is meaningless on {@code test_case_metric_scores} (one row per test case, pre-aggregated over
+     * the <em>entire</em> row set by {@link TestCaseMetricScoreAggregator} — it carries no per-row ids to
+     * exclude). Grafting it there anyway would silently compare against an unrelated id column rather than
+     * fail, so a {@code Mean}/{@code WeightedMean} overall instead runs unfiltered whenever there are rows
+     * to exclude — the one case ("other stuff works as before" does not cover), specific to
+     * multi-request/turn/rerun test cases with a partially-unmatched row set, where this method's
+     * {@code overall} can include unmatched-row data that the per-metric statistics above (still filtered,
+     * since those run directly over {@code eval_summaries}) correctly excluded.
+     *
+     * <p><b>Known limitation, deliberately not fixed here</b> (a consequence of {@code Mean}/
+     * {@code WeightedMean} now resolving against a fully pre-aggregated entity with no row-level
+     * granularity, not of anything specific to run comparison): a real fix would need to translate the
+     * excluded {@code eval_summaries} row ids into an equivalent {@code test_case_id} exclusion (or
+     * recompute the aggregate over only the matched rows) rather than dropping the predicate outright.
+     * Tracked as a follow-up.
+     */
+    private FilterNode overallIdPredicate(
+            StructuredQuery query, FilterNode idPredicate, FilteredMetricScoreRequest request) {
+        if (idPredicate == null || MetricScoreConstants.ENTITY_EVAL_SUMMARIES.equals(query.entity())) {
+            return idPredicate;
+        }
+        log.warn(
+                "Run {} computation {}: 'overall' targets entity '{}', which cannot exclude the {} unmatched "
+                        + "eval-summary row(s) from this comparison — computed over the full (unfiltered) "
+                        + "per-test-case aggregate instead",
+                request.runId(),
+                request.computationId(),
+                query.entity(),
+                request.unmatchedEvalSummaryIds().size());
+        return null;
     }
 
     /**
@@ -192,14 +228,15 @@ public class FilteredMetricScoreAggregator {
      *
      * <p>The built-in paths always produce a single {@link MetricScoreConstants#VALUE_ALIAS} column, but a
      * {@code CustomFunction} is stored opaquely and never validated as a runnable query, so its shape is
-     * checked here and it may use an alias of its own.
+     * checked here and it may use an alias of its own. The final entity is one of two valid targets:
+     * {@code eval_summaries} (the default overall, or any {@code CustomFunction}, unretargeted) or
+     * {@code test_case_metric_scores} ({@code Mean}/{@code WeightedMean}) — anything else means the
+     * definition targets an entity Phase 3 itself would never resolve to.
      */
     private String findValueAlias(StructuredQuery query) {
-        if (!MetricScoreConstants.ENTITY_EVAL_SUMMARIES.equals(query.entity())) {
-            log.warn(
-                    "Skipping metric score 'overall': definition targets entity '{}', expected '{}'",
-                    query.entity(),
-                    MetricScoreConstants.ENTITY_EVAL_SUMMARIES);
+        if (!MetricScoreConstants.ENTITY_EVAL_SUMMARIES.equals(query.entity())
+                && !MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES.equals(query.entity())) {
+            log.warn("Skipping metric score 'overall': definition targets unexpected entity '{}'", query.entity());
             return null;
         }
         if (query.mode() != QueryMode.AGGREGATE) {
@@ -248,8 +285,8 @@ public class FilteredMetricScoreAggregator {
         return params;
     }
 
-    private static List<String> flattenedFieldNames(List<MetricField> metricFields) {
-        return metricFields.stream().map(MetricField::flattenedName).toList();
+    private static List<String> metricKeys(List<MetricField> metricFields) {
+        return metricFields.stream().map(MetricField::metricName).toList();
     }
 
     private static MetricScoreValueDto value(String scoreName, String metricName, Double value) {

@@ -74,6 +74,8 @@ import com.epam.aidial.evaluation.functional.tests.MultiTurnSharedDataFunctional
 import com.epam.aidial.evaluation.functional.tests.NoSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.OidcSecurityStartupSmokeTest;
 import com.epam.aidial.evaluation.functional.tests.PolymorphicBodyFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseEvalScoreRepositoryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseMetricScoreAggregatedRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestCaseRunInputRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.PostgresTestSuiteRunRepositoryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.QuerySchemaDiscoveryFunctionalTests;
@@ -95,7 +97,11 @@ import com.epam.aidial.evaluation.functional.tests.TestCaseBatchPutFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchCapsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseConvenienceApiFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseEvalScoresStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseMetricScoreAggregationEndToEndFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseMetricScoreAggregatorFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseMetricScoresStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseQueryAndFilterFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseRunInputsRetentionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteCloneFunctionalTests;
@@ -626,6 +632,25 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class PostgresTestCaseRunInputRepositoryTests extends PostgresTestCaseRunInputRepositoryFunctionalTests {}
+
+    @Nested
+    class PostgresTestCaseMetricScoreAggregatedRepositoryTests
+            extends PostgresTestCaseMetricScoreAggregatedRepositoryFunctionalTests {}
+
+    @Nested
+    class PostgresTestCaseEvalScoreRepositoryTests extends PostgresTestCaseEvalScoreRepositoryFunctionalTests {}
+
+    @Nested
+    class TestCaseMetricScoreAggregatorTests extends TestCaseMetricScoreAggregatorFunctionalTests {}
+
+    @Nested
+    class TestCaseMetricScoreAggregationEndToEndTests extends TestCaseMetricScoreAggregationEndToEndFunctionalTests {}
+
+    @Nested
+    class TestCaseMetricScoresStructuredQueryTests extends TestCaseMetricScoresStructuredQueryFunctionalTests {}
+
+    @Nested
+    class TestCaseEvalScoresStructuredQueryTests extends TestCaseEvalScoresStructuredQueryFunctionalTests {}
 
     @Nested
     class TestCaseRunInputsRetentionTests extends TestCaseRunInputsRetentionFunctionalTests {}

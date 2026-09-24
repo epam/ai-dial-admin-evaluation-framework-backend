@@ -74,6 +74,16 @@ public class AnalyticsTestDataHelper {
         return count != null ? count : 0L;
     }
 
+    /** Distinct {@code test_case_id}s of a run's computation — for seeding Phase 2.5's aggregation in tests. */
+    public List<UUID> findDistinctTestCaseIds(UUID runId, UUID computationId) {
+        return analyticsDsl
+                .selectDistinct(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID)
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()))
+                .fetch(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID)));
+    }
+
     public List<Map<String, Object>> findEvalSummariesByRunId(UUID runId) {
         return analyticsDsl
                 .select(
@@ -234,7 +244,9 @@ public class AnalyticsTestDataHelper {
                 .set(
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
                         UUID.randomUUID().toString())
-                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, UUID.randomUUID().toString())
+                .set(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
+                        fixture.getTestCaseId().toString())
                 .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, fixture.getTestCaseName())
                 .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, fixture.getRunIndex())
                 .set(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX, fixture.getRequestIndex())

@@ -31,9 +31,19 @@ public final class MetricScoreConstants {
     /** Wire name of the persisted metric-score-results structured-query entity. */
     public static final String ENTITY_METRIC_SCORE_RESULTS = "metric_score_results";
 
-    // Run-scoping filter field names (columns of the eval_summaries entity).
+    /** The per-test-case aggregated entity {@code Mean}/{@code WeightedMean}/{@code CustomFunction} are
+     * retargeted to for equal per-test-case weighting — see {@code test-case-metric-score-aggregation}. */
+    public static final String ENTITY_TEST_CASE_METRIC_SCORES = "test_case_metric_scores";
+
+    /** The {@code test_case_metric_scores} entity's JSONB column and its flattened field prefix/stat. */
+    public static final String FIELD_METRIC_SCORES = "metric_scores";
+
+    public static final String METRIC_SCORES_STAT_AVG = "avg";
+
+    // Run-scoping filter field names (columns shared by eval_summaries and test_case_metric_scores).
     public static final String FIELD_TEST_SUITE_RUN_ID = "test_suite_run_id";
     public static final String FIELD_COMPUTATION_ID = "computation_id";
+    public static final String FIELD_TEST_CASE_ID = "test_case_id";
 
     // Score-identifying field names (columns of the metric_score_results entity).
     public static final String FIELD_METRIC_SCORE_NAME = "metric_score_name";

@@ -1,11 +1,11 @@
-package com.epam.aidial.evaluation.configuration;
+package com.epam.aidial.evaluation.query.service.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClientConfiguration;
+import com.epam.aidial.evaluation.configuration.TestSuiteRunCostEnrichmentAsyncConfiguration;
 import com.epam.aidial.evaluation.configuration.properties.dialadas.DialAdasProperties;
 import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostEnrichmentProperties;
-import com.epam.aidial.evaluation.query.service.repository.TotalCostTestSuiteRunsPageExtender;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import com.epam.aidial.evaluation.service.domain.AdasCostQueryBuilder;
 import com.epam.aidial.evaluation.service.domain.BatchRunTotalCostLookup;

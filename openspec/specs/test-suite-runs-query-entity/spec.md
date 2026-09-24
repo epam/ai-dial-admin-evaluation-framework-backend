@@ -221,12 +221,12 @@ Status: **Implemented**
 - **WHEN** an eligible returned run has no matching dial-adas usage group, or its group's total is null
 - **THEN** its row carries no `total_cost` key rather than `total_cost: null`
 
-#### Scenario: Existing key is not overwritten
-- **WHEN** a returned row already contains `total_cost`, for example through a client-supplied select alias
-- **THEN** the row retains its existing value and the enrichment does not overwrite it
+#### Scenario: Projection already carrying the key is untouched
+- **WHEN** a `row` query's `select` aliases another expression as `total_cost`
+- **THEN** every row keeps the client-selected value and no lookup is attempted
 
 #### Scenario: Non-target or non-eligible query does no lookup
-- **WHEN** a query targets another entity, a row-mode `test_suite_runs` query returns an empty page or omits `id`, every returned id is absent or non-UUID, every row already contains `total_cost`, or the query runs in aggregate mode
+- **WHEN** a query targets another entity or runs in aggregate mode, or a row-mode `test_suite_runs` query returns an empty page or its `select` omits `id`, renames it, or keys another expression as `id`
 - **THEN** the extender performs zero dial-adas requests and returns the page it received unchanged
 
 #### Scenario: Lookup remains page-bounded

@@ -63,9 +63,7 @@ import org.springframework.stereotype.Component;
 @Component
 @LogExecution
 @RequiredArgsConstructor
-public class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExtender {
-
-    private static final String ID_FIELD = "id";
+class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExtender {
 
     private final ComputationResolver computationResolver;
     private final JooqStructuredQueryExecutor executor;
@@ -78,16 +76,9 @@ public class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExt
         }
 
         final List<UUID> runIds = candidateRunIds(page);
-        if (runIds.isEmpty()) {
-            return page;
-        }
-
         final Map<UUID, UUID> latestComputationByRun = computationResolver.resolveLatest(runIds);
-        if (latestComputationByRun.isEmpty()) {
-            return page;
-        }
-
         final Map<UUID, Object> valueByRun = fetchOverallValues(latestComputationByRun);
+
         if (valueByRun.isEmpty()) {
             return page;
         }
@@ -98,39 +89,24 @@ public class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExt
     private boolean applies(StructuredQuery query) {
         return TestSuiteRunQueryFields.ENTITY.equals(query.entity())
                 && query.mode() == QueryMode.ROW
-                && projectsRunId(query.select())
-                && !projectsKey(query.select(), TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD)
+                && TestSuiteRunsRowProjection.projectsRunId(query.select())
+                && TestSuiteRunsRowProjection.doesNotProjectKey(
+                        query.select(), TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD)
                 && entityRegistry.supportedEntities().contains(MetricScoreConstants.ENTITY_METRIC_SCORE_RESULTS);
-    }
-
-    /**
-     * Whether every row carries the run's own {@code id} under the {@code id} key: an empty projection
-     * selects every entity field, otherwise some column must be the plain {@code id} field keyed as
-     * {@code id}. A key match alone is not enough — another expression aliased as {@code id} would key
-     * the lookup on the wrong value.
-     */
-    private static boolean projectsRunId(List<OutputColumn> select) {
-        if (select == null || select.isEmpty()) {
-            return true;
-        }
-        return select.stream()
-                .anyMatch(col -> col.expr() instanceof FieldExpr(String fieldName)
-                        && ID_FIELD.equals(fieldName)
-                        && ID_FIELD.equals(col.outputKey()));
-    }
-
-    private static boolean projectsKey(List<OutputColumn> select, String key) {
-        return select != null && select.stream().anyMatch(col -> key.equals(col.outputKey()));
     }
 
     private static List<UUID> candidateRunIds(QueryResultPage page) {
         return page.rows().stream()
-                .map(OverallScoreTestSuiteRunsPageExtender::runId)
+                .map(TestSuiteRunsRowProjection::runId)
                 .distinct()
                 .toList();
     }
 
     private Map<UUID, Object> fetchOverallValues(Map<UUID, UUID> latestComputationByRun) {
+        if (latestComputationByRun.isEmpty()) {
+            return Map.of();
+        }
+
         final List<UUID> runIds = List.copyOf(latestComputationByRun.keySet());
         final List<UUID> computationIds =
                 latestComputationByRun.values().stream().distinct().toList();
@@ -194,7 +170,7 @@ public class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExt
     private static List<Map<String, Object>> mergeRows(List<Map<String, Object>> rows, Map<UUID, Object> valueByRun) {
         final List<Map<String, Object>> merged = new ArrayList<>(rows.size());
         for (final Map<String, Object> row : rows) {
-            final Object value = valueByRun.get(runId(row));
+            final Object value = valueByRun.get(TestSuiteRunsRowProjection.runId(row));
             if (value == null) {
                 merged.add(row);
             } else {
@@ -204,10 +180,6 @@ public class OverallScoreTestSuiteRunsPageExtender implements QueryResultPageExt
             }
         }
         return merged;
-    }
-
-    private static UUID runId(Map<String, Object> row) {
-        return UUID.fromString((String) row.get(ID_FIELD));
     }
 
     private static Optional<UUID> parseUuid(Object value) {

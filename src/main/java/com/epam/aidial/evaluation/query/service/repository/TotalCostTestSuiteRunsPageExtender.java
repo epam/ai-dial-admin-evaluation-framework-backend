@@ -1,7 +1,7 @@
 package com.epam.aidial.evaluation.query.service.repository;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
-import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostEnrichmentProperties;
+import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostExtensionProperties;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields;
@@ -33,11 +33,11 @@ import org.springframework.stereotype.Component;
  * Attaches a run's total dial-adas usage cost to each row of a {@code row}-mode {@code
  * test_suite_runs} result page, as the extension-derived {@link TestSuiteRunQueryFields#TOTAL_COST_FIELD}
  * key (design D1/D4/D5 of {@code enrich-test-suite-runs-total-cost}). Registered only when
- * {@code query-dsl.enrichment.test-suite-run.cost.enabled=true}.
+ * {@code query-dsl.extension.test-suite-run.cost.enabled=true}.
  *
  * <p>One page-bounded lookup per page: {@link BatchRunTotalCostLookup} issues exactly one dial-adas
  * aggregate request for the page's distinct run {@code id}s via the dedicated, short-timeout
- * {@code testSuiteRunCostEnrichmentDialAdasClient} — never the normal shared {@link DialAdasClient}.
+ * {@code testSuiteRunCostExtensionDialAdasClient} — never the normal shared {@link DialAdasClient}.
  *
  * <p>Skip conditions, each leaving {@code page} untouched, all decided from the query alone — a
  * {@code row} result's key set is fixed by its projection, so it is the same for every row: the query
@@ -47,7 +47,7 @@ import org.springframework.stereotype.Component;
  * those pass, every row carries a UUID {@code id} (the run's non-null primary key). An empty page
  * issues no request.
  *
- * <p>The lookup runs on the dedicated {@code testSuiteRunCostEnrichmentExecutor}, not the request
+ * <p>The lookup runs on the dedicated {@code testSuiteRunCostExtensionExecutor}, not the request
  * thread: before submission this extender captures {@link AuthorizationTokenHolder#getCredential()}
  * and {@link Context#current()} on the request thread and wraps the submitted task with both, so the
  * dial-adas request the worker thread ultimately issues carries the original caller's credential
@@ -69,20 +69,20 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @RequiredArgsConstructor
 @ConditionalOnProperty(
-        prefix = QueryDslTestSuiteRunCostEnrichmentProperties.PREFIX,
+        prefix = QueryDslTestSuiteRunCostExtensionProperties.PREFIX,
         name = "enabled",
         havingValue = "true")
 class TotalCostTestSuiteRunsPageExtender implements QueryResultPageExtender {
 
     private final BatchRunTotalCostLookup batchRunTotalCostLookup;
 
-    @Qualifier("testSuiteRunCostEnrichmentDialAdasClient")
+    @Qualifier("testSuiteRunCostExtensionDialAdasClient")
     private final DialAdasClient dialAdasClient;
 
-    @Qualifier("testSuiteRunCostEnrichmentExecutor")
+    @Qualifier("testSuiteRunCostExtensionExecutor")
     private final AsyncTaskExecutor executor;
 
-    private final QueryDslTestSuiteRunCostEnrichmentProperties properties;
+    private final QueryDslTestSuiteRunCostExtensionProperties properties;
 
     @Override
     public QueryResultPage extend(StructuredQuery query, QueryResultPage page) {
@@ -136,7 +136,7 @@ class TotalCostTestSuiteRunsPageExtender implements QueryResultPageExtender {
         try {
             future = executor.submit(context.wrap(TokenPropagationHelper.withCredentialCallable(credential, lookup)));
         } catch (RejectedExecutionException e) {
-            log.warn("Total cost enrichment lookup was rejected by the enrichment executor: {}", e.getMessage(), e);
+            log.warn("Total cost extension lookup was rejected by the extension executor: {}", e.getMessage(), e);
             return Map.of();
         }
 
@@ -149,7 +149,7 @@ class TotalCostTestSuiteRunsPageExtender implements QueryResultPageExtender {
         } catch (TimeoutException e) {
             future.cancel(true);
             log.warn(
-                    "Total cost enrichment lookup timed out after {}s: {}",
+                    "Total cost extension lookup timed out after {}s: {}",
                     properties.getTimeoutSec(),
                     e.getMessage(),
                     e);
@@ -157,10 +157,10 @@ class TotalCostTestSuiteRunsPageExtender implements QueryResultPageExtender {
         } catch (InterruptedException e) {
             future.cancel(true);
             Thread.currentThread().interrupt();
-            log.warn("Total cost enrichment lookup was interrupted: {}", e.getMessage(), e);
+            log.warn("Total cost extension lookup was interrupted: {}", e.getMessage(), e);
             return Map.of();
         } catch (ExecutionException e) {
-            log.warn("Total cost enrichment lookup failed: {}", e.getMessage(), e);
+            log.warn("Total cost extension lookup failed: {}", e.getMessage(), e);
             return Map.of();
         }
     }

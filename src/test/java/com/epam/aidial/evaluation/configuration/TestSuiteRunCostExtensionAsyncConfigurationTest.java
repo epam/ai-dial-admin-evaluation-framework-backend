@@ -13,11 +13,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 
-@DisplayName("TestSuiteRunCostEnrichmentAsyncConfiguration.testSuiteRunCostEnrichmentExecutor")
-class TestSuiteRunCostEnrichmentAsyncConfigurationTest {
+@DisplayName("TestSuiteRunCostExtensionAsyncConfiguration.testSuiteRunCostExtensionExecutor")
+class TestSuiteRunCostExtensionAsyncConfigurationTest {
 
-    private final TestSuiteRunCostEnrichmentAsyncConfiguration configuration =
-            new TestSuiteRunCostEnrichmentAsyncConfiguration();
+    private final TestSuiteRunCostExtensionAsyncConfiguration configuration =
+            new TestSuiteRunCostExtensionAsyncConfiguration();
 
     private record ThreadInfo(boolean virtual, boolean daemon, String name) {}
 
@@ -27,41 +27,40 @@ class TestSuiteRunCostEnrichmentAsyncConfigurationTest {
     }
 
     @Test
-    @DisplayName(
-            "virtual thread mode: a submitted task runs on a virtual thread named test-suite-run-cost-enrichment-*")
+    @DisplayName("virtual thread mode: a submitted task runs on a virtual thread named test-suite-run-cost-extension-*")
     void virtualModeRunsOnVirtualThread() throws Exception {
         final AsyncTaskExecutor executor =
-                configuration.testSuiteRunCostEnrichmentExecutor(new RunExecutorFactory(true));
+                configuration.testSuiteRunCostExtensionExecutor(new RunExecutorFactory(true));
 
         final ThreadInfo info = CompletableFuture.supplyAsync(
-                        TestSuiteRunCostEnrichmentAsyncConfigurationTest::captureThreadInfo, executor)
+                        TestSuiteRunCostExtensionAsyncConfigurationTest::captureThreadInfo, executor)
                 .get(5, TimeUnit.SECONDS);
 
         assertThat(info.virtual()).isTrue();
-        assertThat(info.name()).startsWith("test-suite-run-cost-enrichment-");
+        assertThat(info.name()).startsWith("test-suite-run-cost-extension-");
     }
 
     @Test
     @DisplayName("platform thread mode: a submitted task runs on a daemon platform thread named"
-            + " test-suite-run-cost-enrichment-*")
+            + " test-suite-run-cost-extension-*")
     void platformModeRunsOnDaemonPlatformThread() throws Exception {
         final AsyncTaskExecutor executor =
-                configuration.testSuiteRunCostEnrichmentExecutor(new RunExecutorFactory(false));
+                configuration.testSuiteRunCostExtensionExecutor(new RunExecutorFactory(false));
 
         final ThreadInfo info = CompletableFuture.supplyAsync(
-                        TestSuiteRunCostEnrichmentAsyncConfigurationTest::captureThreadInfo, executor)
+                        TestSuiteRunCostExtensionAsyncConfigurationTest::captureThreadInfo, executor)
                 .get(5, TimeUnit.SECONDS);
 
         assertThat(info.virtual()).isFalse();
         assertThat(info.daemon()).isTrue();
-        assertThat(info.name()).startsWith("test-suite-run-cost-enrichment-");
+        assertThat(info.name()).startsWith("test-suite-run-cost-extension-");
     }
 
     @Test
     @DisplayName("close() rejects new task submissions")
     void closeRejectsNewSubmissions() {
-        final SimpleAsyncTaskExecutor executor = (SimpleAsyncTaskExecutor)
-                configuration.testSuiteRunCostEnrichmentExecutor(new RunExecutorFactory(true));
+        final SimpleAsyncTaskExecutor executor =
+                (SimpleAsyncTaskExecutor) configuration.testSuiteRunCostExtensionExecutor(new RunExecutorFactory(true));
 
         executor.close();
 
@@ -71,8 +70,8 @@ class TestSuiteRunCostEnrichmentAsyncConfigurationTest {
     @Test
     @DisplayName("close() interrupts a task blocked in Thread.sleep")
     void closeInterruptsBlockedTask() throws Exception {
-        final SimpleAsyncTaskExecutor executor = (SimpleAsyncTaskExecutor)
-                configuration.testSuiteRunCostEnrichmentExecutor(new RunExecutorFactory(true));
+        final SimpleAsyncTaskExecutor executor =
+                (SimpleAsyncTaskExecutor) configuration.testSuiteRunCostExtensionExecutor(new RunExecutorFactory(true));
         final CountDownLatch taskStarted = new CountDownLatch(1);
         final CompletableFuture<Boolean> observedInterrupt = new CompletableFuture<>();
 

@@ -96,7 +96,7 @@ Status: **Implemented**
   call is not caught and propagates as the request's error. This same reusable lookup is also called, with
   a dedicated short-timeout `DialAdasClient`, by `query.service.repository.TotalCostTestSuiteRunsPageExtender`
   (`enrich-test-suite-runs-total-cost`) — see the `query-result-page-extension` spec — so the batch endpoint
-  and the `total_cost` result-page enrichment share exactly one query-building/response-parsing
+  and the `total_cost` result-page extension share exactly one query-building/response-parsing
   implementation rather than two copies that could silently drift.
 - API: `web.controller.CostController.getTotalRunCosts` — `POST /api/v1/costs/test-suite-runs`, request
   `service.domain.dto.TotalRunCostRequestDto { List<UUID> runIds }` bound via `@Valid @RequestBody`,

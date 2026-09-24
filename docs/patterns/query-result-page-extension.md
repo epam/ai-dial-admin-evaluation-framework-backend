@@ -59,7 +59,7 @@ Adding a second extender is a new `@Component QueryResultPageExtender` bean and 
 coordinator edit, same shape as [the `QueryFunction` catalog](query-dsl-function-catalog.md). The
 second implementation, `TotalCostTestSuiteRunsPageExtender` (`enrich-test-suite-runs-total-cost`),
 attaches the same entity's run-level `total_cost` from dial-adas usage data, conditional on
-`query-dsl.enrichment.test-suite-run.cost.enabled=true`. Unlike the first extender, its source value
+`query-dsl.extension.test-suite-run.cost.enabled=true`. Unlike the first extender, its source value
 comes from a network call it must bound itself: it captures the caller's credential and OpenTelemetry
 context, submits the lookup to a dedicated executor, and waits with a timed `Future.get` that is the
 authoritative end-to-end deadline. Every expected asynchronous outcome other than an on-time success

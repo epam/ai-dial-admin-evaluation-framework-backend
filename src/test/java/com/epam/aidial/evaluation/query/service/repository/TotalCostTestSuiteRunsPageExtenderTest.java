@@ -14,7 +14,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClientConfiguration;
-import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostEnrichmentProperties;
+import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostExtensionProperties;
 import com.epam.aidial.evaluation.query.model.FieldExpr;
 import com.epam.aidial.evaluation.query.model.OutputColumn;
 import com.epam.aidial.evaluation.query.model.QueryMode;
@@ -67,9 +67,9 @@ class TotalCostTestSuiteRunsPageExtenderTest {
         AuthorizationTokenHolder.clearToken();
     }
 
-    private static QueryDslTestSuiteRunCostEnrichmentProperties properties(int timeoutSec) {
-        final QueryDslTestSuiteRunCostEnrichmentProperties properties =
-                new QueryDslTestSuiteRunCostEnrichmentProperties();
+    private static QueryDslTestSuiteRunCostExtensionProperties properties(int timeoutSec) {
+        final QueryDslTestSuiteRunCostExtensionProperties properties =
+                new QueryDslTestSuiteRunCostExtensionProperties();
         properties.setEnabled(true);
         properties.setTimeoutSec(timeoutSec);
         return properties;
@@ -134,7 +134,7 @@ class TotalCostTestSuiteRunsPageExtenderTest {
     }
 
     @Test
-    @DisplayName("uses the qualified enrichment dial-adas client passed at construction, never another instance")
+    @DisplayName("uses the qualified extension dial-adas client passed at construction, never another instance")
     void usesTheQualifiedDialAdasClient() {
         final DialAdasClient otherClient = mock(DialAdasClient.class);
         final QueryResultPage page = pageWithRow(row(RUN_ID.toString(), "existing", "value"));
@@ -436,8 +436,8 @@ class TotalCostTestSuiteRunsPageExtenderTest {
     }
 
     @Test
-    @DisplayName("a submission rejected by a closed enrichment executor returns the page unchanged, with no"
-            + " lookup call")
+    @DisplayName(
+            "a submission rejected by a closed extension executor returns the page unchanged, with no" + " lookup call")
     void rejectedSubmissionReturnsPageUnchanged() {
         final SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor();
         executor.close();

@@ -1,6 +1,6 @@
 package com.epam.aidial.evaluation.configuration;
 
-import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostEnrichmentProperties;
+import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostExtensionProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -10,7 +10,7 @@ import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 
 /**
- * Conditional executor dedicated to the {@code total_cost} result-page enrichment lookup (design D4 of
+ * Conditional executor dedicated to the {@code total_cost} result-page extension lookup (design D4 of
  * {@code enrich-test-suite-runs-total-cost}). Thread mode follows
  * {@link RunExecutorFactory#isVirtualThreads()} — the same switch the run job executor
  * ({@link AsyncConfiguration#testSuiteRunExecutor}) follows — but this executor is feature-specific: it
@@ -29,15 +29,15 @@ import org.springframework.core.task.SimpleAsyncTaskExecutor;
 @Configuration
 @LogExecution
 @ConditionalOnProperty(
-        prefix = QueryDslTestSuiteRunCostEnrichmentProperties.PREFIX,
+        prefix = QueryDslTestSuiteRunCostExtensionProperties.PREFIX,
         name = "enabled",
         havingValue = "true")
-public class TestSuiteRunCostEnrichmentAsyncConfiguration {
+public class TestSuiteRunCostExtensionAsyncConfiguration {
 
-    private static final String THREAD_NAME_PREFIX = "test-suite-run-cost-enrichment-";
+    private static final String THREAD_NAME_PREFIX = "test-suite-run-cost-extension-";
 
-    @Bean(name = "testSuiteRunCostEnrichmentExecutor")
-    public AsyncTaskExecutor testSuiteRunCostEnrichmentExecutor(RunExecutorFactory runExecutorFactory) {
+    @Bean(name = "testSuiteRunCostExtensionExecutor")
+    public AsyncTaskExecutor testSuiteRunCostExtensionExecutor(RunExecutorFactory runExecutorFactory) {
         var executor = new SimpleAsyncTaskExecutor(THREAD_NAME_PREFIX);
         executor.setVirtualThreads(runExecutorFactory.isVirtualThreads());
         executor.setDaemon(true);

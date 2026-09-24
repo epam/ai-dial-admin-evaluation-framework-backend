@@ -2,7 +2,7 @@ package com.epam.aidial.evaluation.client.dialadas;
 
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClientConfiguration;
 import com.epam.aidial.evaluation.configuration.properties.dialadas.DialAdasProperties;
-import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostEnrichmentProperties;
+import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostExtensionProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import io.opentelemetry.api.OpenTelemetry;
 import java.time.Duration;
@@ -33,22 +33,22 @@ public class DialAdasClientConfiguration {
 
     /**
      * Short-timeout {@link RestClient} used only by the conditional {@code total_cost} result-page
-     * enrichment (design D3 of {@code enrich-test-suite-runs-total-cost}). Reuses
+     * extension (design D3 of {@code enrich-test-suite-runs-total-cost}). Reuses
      * {@link DialAdasProperties#getBaseUrl()} and the same shared caller-credential/tracing
      * interceptors as {@link #dialAdasRestClient}, but sets both connect and read timeouts to the
-     * configured {@code query-dsl.enrichment.test-suite-run.cost.timeout-sec} as a cleanup backstop —
+     * configured {@code query-dsl.extension.test-suite-run.cost.timeout-sec} as a cleanup backstop —
      * it never changes {@link #dialAdasRestClient}'s normal timeout behavior.
      */
-    @Bean("testSuiteRunCostEnrichmentDialAdasRestClient")
+    @Bean("testSuiteRunCostExtensionDialAdasRestClient")
     @ConditionalOnProperty(
-            prefix = QueryDslTestSuiteRunCostEnrichmentProperties.PREFIX,
+            prefix = QueryDslTestSuiteRunCostExtensionProperties.PREFIX,
             name = "enabled",
             havingValue = "true")
-    public RestClient testSuiteRunCostEnrichmentDialAdasRestClient(
+    public RestClient testSuiteRunCostExtensionDialAdasRestClient(
             DialAdasProperties properties,
             OpenTelemetry openTelemetry,
-            QueryDslTestSuiteRunCostEnrichmentProperties enrichmentProperties) {
-        Duration timeout = Duration.ofSeconds(enrichmentProperties.getTimeoutSec());
+            QueryDslTestSuiteRunCostExtensionProperties extensionProperties) {
+        Duration timeout = Duration.ofSeconds(extensionProperties.getTimeoutSec());
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(timeout);
         requestFactory.setReadTimeout(timeout);
@@ -63,18 +63,18 @@ public class DialAdasClientConfiguration {
 
     /**
      * Conditional, named {@link DialAdasClient} instance built explicitly around
-     * {@link #testSuiteRunCostEnrichmentDialAdasRestClient} rather than scanned, so only the qualified
+     * {@link #testSuiteRunCostExtensionDialAdasRestClient} rather than scanned, so only the qualified
      * injection point in {@code TotalCostTestSuiteRunsPageExtender} ever receives the short-timeout
      * client; every existing unqualified consumer keeps resolving to the {@code @Primary} scanned
      * {@link DialAdasClient}.
      */
-    @Bean("testSuiteRunCostEnrichmentDialAdasClient")
+    @Bean("testSuiteRunCostExtensionDialAdasClient")
     @ConditionalOnProperty(
-            prefix = QueryDslTestSuiteRunCostEnrichmentProperties.PREFIX,
+            prefix = QueryDslTestSuiteRunCostExtensionProperties.PREFIX,
             name = "enabled",
             havingValue = "true")
-    public DialAdasClient testSuiteRunCostEnrichmentDialAdasClient(
-            @Qualifier("testSuiteRunCostEnrichmentDialAdasRestClient") RestClient restClient) {
+    public DialAdasClient testSuiteRunCostExtensionDialAdasClient(
+            @Qualifier("testSuiteRunCostExtensionDialAdasRestClient") RestClient restClient) {
         return new DialAdasClient(restClient);
     }
 }

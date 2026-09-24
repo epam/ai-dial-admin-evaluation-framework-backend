@@ -26,7 +26,7 @@ import org.springframework.web.client.RestClientResponseException;
  *
  * <p>{@code @Primary} so every existing unqualified injection keeps resolving to this
  * normal-timeout, scanned instance even once the conditional, short-timeout
- * {@code testSuiteRunCostEnrichmentDialAdasClient} bean (see {@code DialAdasClientConfiguration})
+ * {@code testSuiteRunCostExtensionDialAdasClient} bean (see {@code DialAdasClientConfiguration})
  * is registered alongside it.
  */
 @Slf4j

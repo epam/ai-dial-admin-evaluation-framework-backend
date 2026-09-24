@@ -9,7 +9,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.configuration.properties.dialadas.DialAdasProperties;
-import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostEnrichmentProperties;
+import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostExtensionProperties;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
@@ -30,13 +30,13 @@ import org.springframework.web.client.RestClient;
 
 /**
  * Proves design D3 of {@code enrich-test-suite-runs-total-cost}: the conditional, named
- * {@code testSuiteRunCostEnrichmentDialAdasRestClient}/{@code testSuiteRunCostEnrichmentDialAdasClient}
+ * {@code testSuiteRunCostExtensionDialAdasRestClient}/{@code testSuiteRunCostExtensionDialAdasClient}
  * beans reuse {@link DialAdasProperties#getBaseUrl()} and the shared caller-credential interceptor but
- * apply the configured enrichment {@code timeoutSec} as connect/read timeouts, while the normal
+ * apply the configured extension {@code timeoutSec} as connect/read timeouts, while the normal
  * {@link DialAdasClientConfiguration#dialAdasRestClient} bean remains driven only by
- * {@link DialAdasProperties} and is unaffected by the enrichment configuration.
+ * {@link DialAdasProperties} and is unaffected by the extension configuration.
  */
-@DisplayName("DialAdasClientConfiguration cost-enrichment beans")
+@DisplayName("DialAdasClientConfiguration cost-extension beans")
 class DialAdasClientConfigurationTest {
 
     private final DialAdasClientConfiguration configuration = new DialAdasClientConfiguration();
@@ -54,8 +54,8 @@ class DialAdasClientConfigurationTest {
         return properties;
     }
 
-    private static QueryDslTestSuiteRunCostEnrichmentProperties enrichmentProperties(int timeoutSec) {
-        QueryDslTestSuiteRunCostEnrichmentProperties properties = new QueryDslTestSuiteRunCostEnrichmentProperties();
+    private static QueryDslTestSuiteRunCostExtensionProperties extensionProperties(int timeoutSec) {
+        QueryDslTestSuiteRunCostExtensionProperties properties = new QueryDslTestSuiteRunCostExtensionProperties();
         properties.setEnabled(true);
         properties.setTimeoutSec(timeoutSec);
         return properties;
@@ -63,19 +63,19 @@ class DialAdasClientConfigurationTest {
 
     @Test
     @DisplayName(
-            "testSuiteRunCostEnrichmentDialAdasRestClient reuses the base URL and registers the caller-credential interceptor")
-    void enrichmentRestClient_reusesBaseUrlAndRegistersInterceptor() {
-        AuthorizationTokenHolder.setCredential(CallerCredential.apiKey("key-enrichment"));
+            "testSuiteRunCostExtensionDialAdasRestClient reuses the base URL and registers the caller-credential interceptor")
+    void extensionRestClient_reusesBaseUrlAndRegistersInterceptor() {
+        AuthorizationTokenHolder.setCredential(CallerCredential.apiKey("key-extension"));
         DialAdasProperties properties = dialAdasProperties("http://dial-adas.local", 5000, 30000);
 
-        RestClient restClient = configuration.testSuiteRunCostEnrichmentDialAdasRestClient(
-                properties, OpenTelemetry.noop(), enrichmentProperties(2));
+        RestClient restClient = configuration.testSuiteRunCostExtensionDialAdasRestClient(
+                properties, OpenTelemetry.noop(), extensionProperties(2));
 
         RestClient.Builder mutated = restClient.mutate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(mutated).build();
         RestClient testClient = mutated.build();
         server.expect(requestTo("http://dial-adas.local/ping"))
-                .andExpect(header(CallerCredential.API_KEY_HEADER, "key-enrichment"))
+                .andExpect(header(CallerCredential.API_KEY_HEADER, "key-extension"))
                 .andRespond(withSuccess());
 
         testClient.get().uri("/ping").retrieve().toBodilessEntity();
@@ -84,27 +84,27 @@ class DialAdasClientConfigurationTest {
     }
 
     @Test
-    @DisplayName("testSuiteRunCostEnrichmentDialAdasClient delegates to the given qualified RestClient")
-    void enrichmentClient_delegatesToGivenRestClient() {
+    @DisplayName("testSuiteRunCostExtensionDialAdasClient delegates to the given qualified RestClient")
+    void extensionClient_delegatesToGivenRestClient() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://dial-adas.local");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestClient restClient = builder.build();
         server.expect(requestTo("http://dial-adas.local/v1/queries/execute"))
                 .andRespond(withSuccess("{\"rows\":[]}", MediaType.APPLICATION_JSON));
 
-        DialAdasClient enrichmentClient = configuration.testSuiteRunCostEnrichmentDialAdasClient(restClient);
+        DialAdasClient extensionClient = configuration.testSuiteRunCostExtensionDialAdasClient(restClient);
         StructuredQuery query =
                 new StructuredQuery("dial_usage_log", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
         AdasAggregateResponseDto<AdasRunAvgCostRowDto> response =
-                enrichmentClient.executeAggregate(query, AdasRunAvgCostRowDto.class);
+                extensionClient.executeAggregate(query, AdasRunAvgCostRowDto.class);
 
         assertThat(response.getRows()).isEmpty();
         server.verify();
     }
 
     @Test
-    @DisplayName("enrichment client's timeoutSec bounds a stalled request as a cleanup backstop")
-    void enrichmentRestClient_appliesConfiguredReadTimeout() throws Exception {
+    @DisplayName("extension client's timeoutSec bounds a stalled request as a cleanup backstop")
+    void extensionRestClient_appliesConfiguredReadTimeout() throws Exception {
         try (ServerSocket serverSocket = new ServerSocket(0)) {
             Thread acceptThread = new Thread(() -> acceptAndStall(serverSocket, 5000));
             acceptThread.setDaemon(true);
@@ -112,8 +112,8 @@ class DialAdasClientConfigurationTest {
 
             DialAdasProperties properties =
                     dialAdasProperties("http://localhost:" + serverSocket.getLocalPort(), 5000, 30000);
-            RestClient restClient = configuration.testSuiteRunCostEnrichmentDialAdasRestClient(
-                    properties, OpenTelemetry.noop(), enrichmentProperties(1));
+            RestClient restClient = configuration.testSuiteRunCostExtensionDialAdasRestClient(
+                    properties, OpenTelemetry.noop(), extensionProperties(1));
 
             long start = System.nanoTime();
             assertThatThrownBy(() -> restClient
@@ -131,8 +131,8 @@ class DialAdasClientConfigurationTest {
 
     @Test
     @DisplayName(
-            "normal dialAdasRestClient keeps its own longer configured timeout, unaffected by enrichment configuration")
-    void normalRestClient_unaffectedByEnrichmentConfiguration() throws Exception {
+            "normal dialAdasRestClient keeps its own longer configured timeout, unaffected by extension configuration")
+    void normalRestClient_unaffectedByExtensionConfiguration() throws Exception {
         try (ServerSocket serverSocket = new ServerSocket(0)) {
             Thread acceptThread = new Thread(() -> acceptStallThenRespond(serverSocket, 1500));
             acceptThread.setDaemon(true);

@@ -40,13 +40,13 @@ import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
- * End-to-end coverage of the {@code total_cost} row-page enrichment (design D1/D3/D4 of
+ * End-to-end coverage of the {@code total_cost} row-page extension (design D1/D3/D4 of
  * {@code enrich-test-suite-runs-total-cost}) with {@code
- * query-dsl.enrichment.test-suite-run.cost.enabled=true}. The concrete nested registration in {@code
+ * query-dsl.extension.test-suite-run.cost.enabled=true}. The concrete nested registration in {@code
  * PostgresFunctionalTests} carries the {@code @TestPropertySource} enabling override, which boots a
- * separate application context with the qualified {@code testSuiteRunCostEnrichmentExecutor} /
- * {@code testSuiteRunCostEnrichmentDialAdasClient} beans registered (see {@code
- * TestSuiteRunCostEnrichmentAsyncConfiguration} / {@code DialAdasClientConfiguration}); this class's
+ * separate application context with the qualified {@code testSuiteRunCostExtensionExecutor} /
+ * {@code testSuiteRunCostExtensionDialAdasClient} beans registered (see {@code
+ * TestSuiteRunCostExtensionAsyncConfiguration} / {@code DialAdasClientConfiguration}); this class's
  * fields, including the named {@link MockitoBean}, live here rather than on the trivial nested
  * subclass, matching the established pattern of the other multi-field structured-query functional test
  * classes (e.g. {@link TestSuiteRunStructuredQueryFunctionalTests}) that keep all fixtures/tests on the
@@ -56,10 +56,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * PostgresFunctionalTests} class still overrides the {@code @Primary} shared client in this
  * separately-booted context (nested test classes inherit outer class-level bean overrides), so
  * {@link #dialAdasClient} here is that same shared-client mock, distinct from
- * {@link #testSuiteRunCostEnrichmentDialAdasClient}.
+ * {@link #testSuiteRunCostExtensionDialAdasClient}.
  */
-@DisplayName("test_suite_runs total_cost enrichment (enabled)")
-public abstract class TestSuiteRunCostEnrichmentFunctionalTests extends BaseFunctionalTest {
+@DisplayName("test_suite_runs total_cost extension (enabled)")
+public abstract class TestSuiteRunCostExtensionFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private StructuredQueryExecutor queryRepository;
@@ -71,13 +71,13 @@ public abstract class TestSuiteRunCostEnrichmentFunctionalTests extends BaseFunc
     @Autowired
     private DialAdasClient dialAdasClient;
 
-    /** The dedicated, short-timeout enrichment client, mocked by name for this scenario only. */
-    @MockitoBean(name = "testSuiteRunCostEnrichmentDialAdasClient")
-    private DialAdasClient testSuiteRunCostEnrichmentDialAdasClient;
+    /** The dedicated, short-timeout extension client, mocked by name for this scenario only. */
+    @MockitoBean(name = "testSuiteRunCostExtensionDialAdasClient")
+    private DialAdasClient testSuiteRunCostExtensionDialAdasClient;
 
     @Autowired
-    @Qualifier("testSuiteRunCostEnrichmentExecutor")
-    private AsyncTaskExecutor testSuiteRunCostEnrichmentExecutor;
+    @Qualifier("testSuiteRunCostExtensionExecutor")
+    private AsyncTaskExecutor testSuiteRunCostExtensionExecutor;
 
     private static StructuredQuery rowQuery(UUID runId) {
         FilterNode filter = new ComparisonNode(
@@ -106,9 +106,9 @@ public abstract class TestSuiteRunCostEnrichmentFunctionalTests extends BaseFunc
     @Test
     @DisplayName("a row with a mocked grouped ADAS total gets total_cost")
     void attachesTotalCostForRowWithMatchingUsageGroup() {
-        TestSuite suite = metaTestDataHelper.createTestSuite("cost-enrich-match-" + UUID.randomUUID());
+        TestSuite suite = metaTestDataHelper.createTestSuite("cost-ext-match-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
-        when(testSuiteRunCostEnrichmentDialAdasClient.executeAggregate(
+        when(testSuiteRunCostExtensionDialAdasClient.executeAggregate(
                         any(StructuredQuery.class), eq(AdasBatchRunCostRowDto.class)))
                 .thenReturn(costResponse(run.getId(), 12.5));
 
@@ -122,9 +122,9 @@ public abstract class TestSuiteRunCostEnrichmentFunctionalTests extends BaseFunc
     @Test
     @DisplayName("a missing usage group omits the total_cost key rather than setting it to null")
     void omitsTotalCostWhenGroupMissing() {
-        TestSuite suite = metaTestDataHelper.createTestSuite("cost-enrich-missing-" + UUID.randomUUID());
+        TestSuite suite = metaTestDataHelper.createTestSuite("cost-ext-missing-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
-        when(testSuiteRunCostEnrichmentDialAdasClient.executeAggregate(
+        when(testSuiteRunCostExtensionDialAdasClient.executeAggregate(
                         any(StructuredQuery.class), eq(AdasBatchRunCostRowDto.class)))
                 .thenReturn(AdasAggregateResponseDto.<AdasBatchRunCostRowDto>builder()
                         .rows(List.of())
@@ -140,34 +140,34 @@ public abstract class TestSuiteRunCostEnrichmentFunctionalTests extends BaseFunc
     @DisplayName("one eligible page issues exactly one aggregate call with no eval.phase filter, and zero calls on"
             + " the primary shared client")
     void issuesExactlyOneAggregateCallWithNoEvalPhaseFilterAndNoPrimaryCalls() {
-        TestSuite suite = metaTestDataHelper.createTestSuite("cost-enrich-onecall-" + UUID.randomUUID());
+        TestSuite suite = metaTestDataHelper.createTestSuite("cost-ext-onecall-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
-        when(testSuiteRunCostEnrichmentDialAdasClient.executeAggregate(
+        when(testSuiteRunCostExtensionDialAdasClient.executeAggregate(
                         any(StructuredQuery.class), eq(AdasBatchRunCostRowDto.class)))
                 .thenReturn(costResponse(run.getId(), 3.0));
 
         queryRepository.execute(rowQuery(run.getId()));
 
         ArgumentCaptor<StructuredQuery> captor = ArgumentCaptor.forClass(StructuredQuery.class);
-        verify(testSuiteRunCostEnrichmentDialAdasClient, times(1))
+        verify(testSuiteRunCostExtensionDialAdasClient, times(1))
                 .executeAggregate(captor.capture(), eq(AdasBatchRunCostRowDto.class));
         assertThat(captor.getValue().toString()).doesNotContain("eval.phase");
         verifyNoInteractions(dialAdasClient);
     }
 
     @Test
-    @DisplayName("a query with no eligible ids (empty page) performs zero enrichment calls")
-    void noEligibleIdsMakeZeroEnrichmentCalls() {
+    @DisplayName("a query with no eligible ids (empty page) performs zero extension calls")
+    void noEligibleIdsMakeZeroExtensionCalls() {
         QueryResultPage page = queryRepository.execute(rowQuery(UUID.randomUUID()));
 
         assertThat(page.rows()).isEmpty();
-        verifyNoInteractions(testSuiteRunCostEnrichmentDialAdasClient);
+        verifyNoInteractions(testSuiteRunCostExtensionDialAdasClient);
     }
 
     @Test
-    @DisplayName("the enabled context boots with the qualified enrichment client and executor wired")
+    @DisplayName("the enabled context boots with the qualified extension client and executor wired")
     void enabledContextBootsWithQualifiedClientAndExecutorWiring() {
-        assertThat(testSuiteRunCostEnrichmentDialAdasClient).isNotNull();
-        assertThat(testSuiteRunCostEnrichmentExecutor).isNotNull().isInstanceOf(SimpleAsyncTaskExecutor.class);
+        assertThat(testSuiteRunCostExtensionDialAdasClient).isNotNull();
+        assertThat(testSuiteRunCostExtensionExecutor).isNotNull().isInstanceOf(SimpleAsyncTaskExecutor.class);
     }
 }

@@ -15,6 +15,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialcore.DialCoreClientConfiguration;
 import com.epam.aidial.evaluation.configuration.properties.query.QueryDslTestSuiteRunCostEnrichmentProperties;
+import com.epam.aidial.evaluation.query.model.FieldExpr;
+import com.epam.aidial.evaluation.query.model.OutputColumn;
 import com.epam.aidial.evaluation.query.model.QueryMode;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields;
@@ -88,8 +90,16 @@ class TotalCostTestSuiteRunsPageExtenderTest {
     }
 
     private static StructuredQuery rowQuery() {
+        return rowQuery(List.of());
+    }
+
+    private static StructuredQuery rowQuery(List<OutputColumn> select) {
         return new StructuredQuery(
-                TestSuiteRunQueryFields.ENTITY, null, QueryMode.ROW, false, List.of(), null, null, null, null);
+                TestSuiteRunQueryFields.ENTITY, null, QueryMode.ROW, false, select, null, null, null, null);
+    }
+
+    private static OutputColumn col(String field, String as) {
+        return new OutputColumn(new FieldExpr(field), as);
     }
 
     private static Map<String, Object> row(String id, String extraKey, Object extraValue) {
@@ -187,38 +197,51 @@ class TotalCostTestSuiteRunsPageExtenderTest {
     }
 
     @Test
+    @DisplayName("an explicit projection keeping id under the id key is extended")
+    void extendsExplicitProjectionWithId() {
+        final QueryResultPage page = pageWithRow(row(RUN_ID.toString(), "test_run_name", "run-1"));
+        when(batchRunTotalCostLookup.fetchTotalCosts(List.of(RUN_ID), dialAdasClient))
+                .thenReturn(Map.of(RUN_ID, 1.25));
+
+        final QueryResultPage result =
+                defaultExtender().extend(rowQuery(List.of(col("id", null), col("test_run_name", null))), page);
+
+        assertThat(result.rows().get(0)).containsEntry(TestSuiteRunQueryFields.TOTAL_COST_FIELD, 1.25);
+    }
+
+    @Test
     @DisplayName("a projection without id is untouched, with zero dial-adas calls")
     void skipsProjectionWithoutId() {
         final Map<String, Object> rowWithoutId = new LinkedHashMap<>();
         rowWithoutId.put("test_run_name", "run-1");
         final QueryResultPage page = new QueryResultPage(List.of(rowWithoutId), 1L);
 
-        final QueryResultPage result = defaultExtender().extend(rowQuery(), page);
+        final QueryResultPage result = defaultExtender().extend(rowQuery(List.of(col("test_run_name", null))), page);
 
         assertThat(result).isSameAs(page);
         verifyNoInteractions(batchRunTotalCostLookup, dialAdasClient);
     }
 
     @Test
-    @DisplayName("a page where every row's id is not a UUID is untouched, with zero dial-adas calls")
-    void skipsAllMalformedIds() {
-        final QueryResultPage page = new QueryResultPage(
-                List.of(row("not-a-uuid", "existing", "value"), row("also-not-a-uuid", "x", "y")), 2L);
+    @DisplayName("a projection renaming id to another key is untouched, with zero dial-adas calls")
+    void skipsProjectionRenamingId() {
+        final Map<String, Object> row = new LinkedHashMap<>();
+        row.put("run", RUN_ID.toString());
+        final QueryResultPage page = new QueryResultPage(List.of(row), 1L);
 
-        final QueryResultPage result = defaultExtender().extend(rowQuery(), page);
+        final QueryResultPage result = defaultExtender().extend(rowQuery(List.of(col("id", "run"))), page);
 
         assertThat(result).isSameAs(page);
         verifyNoInteractions(batchRunTotalCostLookup, dialAdasClient);
     }
 
     @Test
-    @DisplayName("a page where every row already carries the key is untouched, with zero dial-adas calls")
-    void skipsAllPreKeyedRows() {
-        final Map<String, Object> row1 = row(RUN_ID.toString(), TestSuiteRunQueryFields.TOTAL_COST_FIELD, 5.0);
-        final Map<String, Object> row2 = row(RUN_ID_2.toString(), TestSuiteRunQueryFields.TOTAL_COST_FIELD, 6.0);
-        final QueryResultPage page = new QueryResultPage(List.of(row1, row2), 2L);
+    @DisplayName("a projection aliasing another field as id is untouched, with zero dial-adas calls")
+    void skipsProjectionAliasingOtherFieldAsId() {
+        final QueryResultPage page = pageWithRow(row("run-1", "status", "COMPLETED"));
 
-        final QueryResultPage result = defaultExtender().extend(rowQuery(), page);
+        final QueryResultPage result =
+                defaultExtender().extend(rowQuery(List.of(col("test_run_name", "id"), col("status", null))), page);
 
         assertThat(result).isSameAs(page);
         verifyNoInteractions(batchRunTotalCostLookup, dialAdasClient);
@@ -226,22 +249,36 @@ class TotalCostTestSuiteRunsPageExtenderTest {
 
     @Test
     @DisplayName(
-            "on a multi-row page, a pre-keyed row keeps its own value; row/key order and totalCount are" + " unchanged")
-    void doesNotOverwriteExistingKeyAndPreservesOrder() {
-        final Map<String, Object> preKeyedRow = row(RUN_ID.toString(), TestSuiteRunQueryFields.TOTAL_COST_FIELD, 9.99);
-        final Map<String, Object> toExtendRow = row(RUN_ID_2.toString(), "existing", "value");
-        final QueryResultPage page = new QueryResultPage(List.of(preKeyedRow, toExtendRow), 2L);
-        // Simulates a resolved lookup existing for the pre-keyed run too: mergeRows alone must still
-        // refuse to overwrite the row's own key, not rely on candidateRunIds having excluded it upstream.
-        when(batchRunTotalCostLookup.fetchTotalCosts(List.of(RUN_ID_2), dialAdasClient))
-                .thenReturn(Map.of(RUN_ID, 1.0, RUN_ID_2, 3.5));
+            "a projection already carrying the derived key via an alias is untouched, with zero dial-adas" + " calls")
+    void skipsProjectionAlreadyCarryingKey() {
+        final Map<String, Object> row = row(RUN_ID.toString(), TestSuiteRunQueryFields.TOTAL_COST_FIELD, "run-1");
+        final QueryResultPage page = new QueryResultPage(List.of(row), 1L);
+
+        final QueryResultPage result = defaultExtender()
+                .extend(
+                        rowQuery(List.of(
+                                col("id", null), col("test_run_name", TestSuiteRunQueryFields.TOTAL_COST_FIELD))),
+                        page);
+
+        assertThat(result).isSameAs(page);
+        assertThat(result.rows().get(0)).containsEntry(TestSuiteRunQueryFields.TOTAL_COST_FIELD, "run-1");
+        verifyNoInteractions(batchRunTotalCostLookup, dialAdasClient);
+    }
+
+    @Test
+    @DisplayName(
+            "on a multi-row page, only rows with a cost gain the key; row/key order and totalCount are" + " unchanged")
+    void extendsOnlyCostedRowsAndPreservesOrder() {
+        final Map<String, Object> uncostedRow = row(RUN_ID.toString(), "existing", "value");
+        final Map<String, Object> costedRow = row(RUN_ID_2.toString(), "existing", "value");
+        final QueryResultPage page = new QueryResultPage(List.of(uncostedRow, costedRow), 2L);
+        when(batchRunTotalCostLookup.fetchTotalCosts(List.of(RUN_ID, RUN_ID_2), dialAdasClient))
+                .thenReturn(Map.of(RUN_ID_2, 3.5));
 
         final QueryResultPage result = defaultExtender().extend(rowQuery(), page);
 
         assertThat(result.rows()).hasSize(2);
-        assertThat(result.rows().get(0).get("id")).isEqualTo(RUN_ID.toString());
-        assertThat(result.rows().get(0).get(TestSuiteRunQueryFields.TOTAL_COST_FIELD))
-                .isEqualTo(9.99);
+        assertThat(result.rows().get(0)).isSameAs(uncostedRow);
         assertThat(result.rows().get(1).get("id")).isEqualTo(RUN_ID_2.toString());
         assertThat(result.rows().get(1).get(TestSuiteRunQueryFields.TOTAL_COST_FIELD))
                 .isEqualTo(3.5);

@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.data.db.repository.sql.json.PostgresJsonPathAc
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
+import com.epam.aidial.evaluation.query.service.TestSuiteRunQueryFields;
 import com.epam.aidial.evaluation.query.service.dto.QueryFieldType;
 import java.util.List;
 import java.util.Locale;
@@ -60,6 +61,16 @@ class PostgresTestSuiteRunEntityResolverTest {
 
         assertThat(bindings.keySet()).containsExactlyInAnyOrderElementsOf(EXPECTED_FIELDS);
         assertThat(bindings).doesNotContainKeys("suite_snapshot", "run_config", "error_details");
+    }
+
+    @Test
+    @DisplayName("bindings do not contain the extension-only overall_score_value/total_cost keys")
+    void shouldNotBindExtensionOnlyKeys() {
+        final Map<String, QueryFieldBinding> bindings = resolver.bindings(mock(StructuredQuery.class));
+
+        assertThat(bindings)
+                .doesNotContainKeys(
+                        TestSuiteRunQueryFields.OVERALL_SCORE_VALUE_FIELD, TestSuiteRunQueryFields.TOTAL_COST_FIELD);
     }
 
     @Test

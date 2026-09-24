@@ -1,7 +1,7 @@
 ---
 name: opsx-implementer
 description: Implements one task group of an OpenSpec change. Dispatched by the opsx-coordinate-implementation skill; do not select directly for ad-hoc work.
-model: auto-router-medium[1m]
+model: sonnet
 ---
 
 You implement **one task group** of an OpenSpec change. A coordinator dispatched you and will review your diff line by line.

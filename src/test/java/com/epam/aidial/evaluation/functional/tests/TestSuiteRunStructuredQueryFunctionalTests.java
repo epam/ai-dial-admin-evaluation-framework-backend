@@ -2,7 +2,9 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
@@ -84,6 +86,10 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    /** The normal, shared, by-type mocked client — cost enrichment is disabled in this context. */
+    @Autowired
+    private DialAdasClient dialAdasClient;
 
     private static StructuredQuery rowQuery(FilterNode filter, List<OutputColumn> select) {
         return rowQuery(filter, select, null);
@@ -665,6 +671,63 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
                 new OffsetPage(0, 100, false));
 
         assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing the extension-derived total_cost in a filter is rejected as an unknown field")
+    void rejectsTotalCostInFilter() {
+        StructuredQuery query =
+                rowQuery(eq(TestSuiteRunQueryFields.TOTAL_COST_FIELD, ValueType.STRING, "anything"), null);
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing the extension-derived total_cost in select is rejected as an unknown field")
+    void rejectsTotalCostInSelect() {
+        StructuredQuery query = rowQuery(null, List.of(col(TestSuiteRunQueryFields.TOTAL_COST_FIELD)));
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing the extension-derived total_cost in sort is rejected as an unknown field")
+    void rejectsTotalCostInSort() {
+        StructuredQuery query = rowQuery(
+                null, null, List.of(new SortItem(TestSuiteRunQueryFields.TOTAL_COST_FIELD, SortDir.ASC, null)));
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("referencing the extension-derived total_cost in group_by is rejected as an unknown field")
+    void rejectsTotalCostInGroupBy() {
+        StructuredQuery query = new StructuredQuery(
+                "test_suite_runs",
+                null,
+                QueryMode.AGGREGATE,
+                false,
+                List.of(new OutputColumn(new FnExpr("count", false, List.of()), "runs")),
+                List.of(TestSuiteRunQueryFields.TOTAL_COST_FIELD),
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+
+        assertThatThrownBy(() -> queryRepository.execute(query)).isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    @DisplayName("with cost enrichment disabled (default), a row query adds no total_cost key and makes zero"
+            + " dial-adas calls")
+    void disabledCostEnrichmentAddsNoKeyAndMakesZeroDialAdasCalls() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-cost-disabled-" + UUID.randomUUID());
+        TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
+
+        QueryResultPage page = queryRepository.execute(rowQuery(eqUuid("id", run.getId()), List.of(col("id"))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(page.rows().get(0)).doesNotContainKey(TestSuiteRunQueryFields.TOTAL_COST_FIELD);
+        verifyNoInteractions(dialAdasClient);
     }
 
     // ---- overall_score_value end-to-end (tasks 4.5/4.6) ----

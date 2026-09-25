@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.reflect.TypeUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -22,9 +23,15 @@ import org.springframework.web.client.RestClientResponseException;
  * {@link com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder}. No retry loop: this is a
  * single user-facing read, not a background/critical-path call, so a failed attempt surfaces
  * immediately as a 502/504 rather than adding latency via retries.
+ *
+ * <p>{@code @Primary} so every existing unqualified injection keeps resolving to this
+ * normal-timeout, scanned instance even once the conditional, short-timeout
+ * {@code testSuiteRunCostExtensionDialAdasClient} bean (see {@code DialAdasClientConfiguration})
+ * is registered alongside it.
  */
 @Slf4j
 @Service
+@Primary
 @RequiredArgsConstructor
 @LogExecution
 public class DialAdasClient {

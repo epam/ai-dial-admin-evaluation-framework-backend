@@ -101,6 +101,7 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteCloneFunctionalTests
 import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteMetricDefinitionFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestSuiteRunCostExtensionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunStructuredQueryFunctionalTests;
@@ -519,18 +520,19 @@ public class PostgresFunctionalTests extends FunctionalTests {
     class RunMetricSnapshotTests extends RunMetricSnapshotFunctionalTests {}
 
     @Nested
-    @TestPropertySource(properties = {"spring.ai.mcp.server.protocol=STREAMABLE"})
+    @TestPropertySource(properties = {"spring.ai.mcp.server.enabled=true", "spring.ai.mcp.server.protocol=STREAMABLE"})
     @Import(CallerIdentityProbeTools.class)
     class McpServerFoundationTests extends McpServerFoundationFunctionalTests {}
 
     @Nested
-    @TestPropertySource(properties = {"spring.ai.mcp.server.protocol=STATELESS"})
+    @TestPropertySource(properties = {"spring.ai.mcp.server.enabled=true", "spring.ai.mcp.server.protocol=STATELESS"})
     @Import(CallerIdentityProbeTools.class)
     class McpServerStatelessTests extends McpServerStatelessFunctionalTests {}
 
     @Nested
     @TestPropertySource(
             properties = {
+                "spring.ai.mcp.server.enabled=true",
                 "config.rest.security.mode=oidc",
                 "config.rest.security.disable-swagger-authorization=true",
                 "providers.test.issuer=https://issuer.example.com",
@@ -574,6 +576,7 @@ public class PostgresFunctionalTests extends FunctionalTests {
     @Nested
     @TestPropertySource(
             properties = {
+                "spring.ai.mcp.server.enabled=true",
                 "spring.ai.mcp.server.streamable-http.mcp-endpoint=/agent/mcp/",
                 "config.rest.security.mode=oidc",
                 "config.rest.security.disable-swagger-authorization=true",
@@ -625,6 +628,10 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestSuiteRunStructuredQueryTests extends TestSuiteRunStructuredQueryFunctionalTests {}
+
+    @Nested
+    @TestPropertySource(properties = "query-dsl.extension.test-suite-run.cost.enabled=true")
+    class TestSuiteRunCostExtensionTests extends TestSuiteRunCostExtensionFunctionalTests {}
 
     @Nested
     class EvalSummaryStructuredQueryTests extends EvalSummaryStructuredQueryFunctionalTests {}

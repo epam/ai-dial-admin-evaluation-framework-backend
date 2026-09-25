@@ -55,9 +55,19 @@ remaining extenders still run. It is not a separate code path bolted on as an af
 because "never return null" is exactly as unenforceable as "never throw" (see the contract section
 below), so the coordinator defends against both the same way.
 
-Adding a second extender (e.g. the forthcoming run-cost one) is a new `@Component
-QueryResultPageExtender` bean and nothing else — no coordinator edit, same shape as
-[the `QueryFunction` catalog](query-dsl-function-catalog.md).
+Adding a second extender is a new `@Component QueryResultPageExtender` bean and nothing else — no
+coordinator edit, same shape as [the `QueryFunction` catalog](query-dsl-function-catalog.md). The
+second implementation, `TotalCostTestSuiteRunsPageExtender` (`enrich-test-suite-runs-total-cost`),
+attaches the same entity's run-level `total_cost` from dial-adas usage data, conditional on
+`query-dsl.extension.test-suite-run.cost.enabled=true`. Unlike the first extender, its source value
+comes from a network call it must bound itself: it captures the caller's credential and OpenTelemetry
+context, submits the lookup to a dedicated executor, and waits with a timed `Future.get` that is the
+authoritative end-to-end deadline. Every expected asynchronous outcome other than an on-time success
+— rejection, timeout, interruption, or the lookup task failing — is caught inside the extender itself,
+logged once with the exception last, and degrades to the page it received; see the documented
+exception on `QueryResultPageExtender`'s javadoc for why this is not the general failure-swallowing
+the contract otherwise warns against. See [`test_suite_runs` query entity](test-suite-runs-query-entity.md)
+for the `total_cost` key itself.
 
 ## The open key set
 

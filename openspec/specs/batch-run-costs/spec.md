@@ -85,17 +85,25 @@ Status: **Implemented**
   `AdasDeploymentCostRowDto`); `client.dialadas.dto.AdasAggregateResponseDto<T>` and
   `DialAdasClient.executeAggregate(StructuredQuery, Class<T>)` are generic over the row type.
 - Fetching: `service.domain.CostService.getTotalRunCosts(List<UUID> runIds)` validates the request
-  (non-empty, size `<= ValidationConstants.MAX_BATCH_RUN_IDS`) via inline checks, then a private
-  `fetchTotalCosts(Collection<UUID>)` helper calls `AdasCostQueryBuilder.buildPageTotalCostQuery` +
-  `DialAdasClient.executeAggregate`, groups returned rows by their `run_id` parsed via `UUID.fromString`
-  (skipping unparseable rows, including the `"other"` bucket, rather than matching the literal string), and
-  builds a `Map<UUID, Double>`; a requested id absent from that map surfaces as a null `totalCost`. A
-  `DialAdasClientException` from the underlying call is not caught and propagates as the request's error.
+  (non-empty, size `<= ValidationConstants.MAX_BATCH_RUN_IDS`) via inline checks, then calls the
+  injectable `service.domain.BatchRunTotalCostLookup.fetchTotalCosts(Collection<UUID> runIds,
+  DialAdasClient dialAdasClient)` with the normal shared `DialAdasClient` — the query-execution and
+  response-parsing logic that used to be a private `CostService.fetchTotalCosts` helper. The lookup calls
+  `AdasCostQueryBuilder.buildPageTotalCostQuery` + `DialAdasClient.executeAggregate` exactly once, groups
+  returned rows by their `run_id` parsed via `UUID.fromString` (skipping unparseable rows, including the
+  `"other"` bucket, rather than matching the literal string), and builds a `Map<UUID, Double>`; a requested
+  id absent from that map surfaces as a null `totalCost`. A `DialAdasClientException` from the underlying
+  call is not caught and propagates as the request's error. This same reusable lookup is also called, with
+  a dedicated short-timeout `DialAdasClient`, by `query.service.repository.TotalCostTestSuiteRunsPageExtender`
+  (`enrich-test-suite-runs-total-cost`) — see the `query-result-page-extension` spec — so the batch endpoint
+  and the `total_cost` result-page extension share exactly one query-building/response-parsing
+  implementation rather than two copies that could silently drift.
 - API: `web.controller.CostController.getTotalRunCosts` — `POST /api/v1/costs/test-suite-runs`, request
   `service.domain.dto.TotalRunCostRequestDto { List<UUID> runIds }` bound via `@Valid @RequestBody`,
   response `List<service.domain.dto.TotalRunCostResponseDto(UUID runId, Double totalCost)>` ordered per the
   requested `runIds`. `ValidationConstants.MAX_BATCH_RUN_IDS = 1000` (matching `pagination.max-size`).
-- Tests: `AdasCostQueryBuilderTest` (query shape), `CostServiceTest`'s `GetRunCostsBatch`/batch-related
-  nested cases, `CostControllerTest` (request binding), and functional coverage in
-  `TestSuiteRunFunctionalTests.shouldGetBatchRunCosts` under `PostgresFunctionalTests`.
+- Tests: `AdasCostQueryBuilderTest` (query shape), `BatchRunTotalCostLookupTest` (one aggregate call,
+  valid/unparseable/`other`-bucket rows, missing groups, null totals), `CostServiceTest`'s
+  `GetRunCostsBatch`/batch-related nested cases, `CostControllerTest` (request binding), and functional
+  coverage in `TestSuiteRunFunctionalTests.shouldGetBatchRunCosts` under `PostgresFunctionalTests`.
 - OpenAPI examples: `src/main/resources/openapi/examples/api-v1-costs-test-suite-runs-POST-response-200-{minimal,full}.json`.

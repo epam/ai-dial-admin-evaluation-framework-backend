@@ -899,15 +899,16 @@ Per-row overall score/pass-fail for each `test_case_eval_summaries` row, compute
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Denormalized from `test_case_eval_summaries.test_case_id` (V1.21); set once at insert, never updated by a later upsert |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Denormalized from `test_case_eval_summaries.test_case_name` (V1.21); set once at insert, never updated by a later upsert |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Denormalized from `test_case_eval_summaries.computation_id` (V1.21) |
-| `score` | DOUBLE PRECISION | NULL | - | Per-row overall score, computed via SQL from the suite's `overallScore` definition grouped per row; null when the definition's aggregate is itself SQL NULL (e.g. `roc_auc` on a single-row group) |
+| `execution_status` | VARCHAR(20) | NOT NULL | - | Per-test-case aggregate (V1.21): `FAILED` if *any* of that test case's `test_case_eval_summaries` rows for the computation has `execution_status <> SUCCESS` (a metric execution failure, or an upstream TIMEOUT/ERROR/FAILED row — collapsed uniformly to `FAILED`), else `SUCCESS`. Computed by `TestCaseExecutionStatusAggregator`, independent of `test_case_metric_scores_aggregated`. A condition-skipped metric never flips a row's own status, so it does not affect this aggregate. When `FAILED`, `score`/`passed` are always `NULL` — the score SQL is not even issued for that test case. Written in the same upsert as `score`/`passed`/`computed_at_ms` |
+| `score` | DOUBLE PRECISION | NULL | - | Per-row overall score, computed via SQL from the suite's `overallScore` definition grouped per row, **only when `execution_status = SUCCESS`**; null when the definition's aggregate is itself SQL NULL (e.g. `roc_auc` on a single-row group) or when `execution_status = FAILED` |
 | `passed` | BOOLEAN | NULL | - | `score >= overallScoreThreshold` as captured in the run's suite snapshot at run-start time; null if `score` or the threshold is null |
 | `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp (matches the corresponding `test_case_eval_summaries.computed_at_ms`) |
 
 The table's write grain is unchanged: still one row per raw `test_case_eval_summaries` row, keyed by
-`eval_summary_id` (upserted via `INSERT ... ON CONFLICT (eval_summary_id) DO UPDATE SET score, passed,
-computed_at_ms` as of V1.21 — previously `DO NOTHING`, which could never correct a stale score from an
-earlier flush). The 4 columns above were added (V1.21) purely so the table can also be read directly,
-deduplicated, as its own `test_case_eval_scores` Query DSL entity (`SELECT DISTINCT ON
+`eval_summary_id` (upserted via `INSERT ... ON CONFLICT (eval_summary_id) DO UPDATE SET execution_status,
+score, passed, computed_at_ms` as of V1.21 — previously `DO NOTHING`, which could never correct a stale
+score from an earlier flush). The 5 columns above were added (V1.21) purely so the table can also be read
+directly, deduplicated, as its own `test_case_eval_scores` Query DSL entity (`SELECT DISTINCT ON
 (test_suite_run_id, test_case_id, computation_id) ... ORDER BY ..., computed_at_ms DESC`, the freshest row
 per test case wins) — see `docs/patterns/query-dsl-entity-resolution.md`. `score`/`passed` remain
 *additionally* queryable via the `eval_summaries` Query DSL entity too, which still joins a narrowed
@@ -916,7 +917,14 @@ and via the dedicated REST endpoints' own join.
 
 ### Primary Key
 
-`eval_summary_id` — a 1:1 (or 0:1, since a row without a computable score is simply never inserted) relationship with `test_case_eval_summaries.id`, so no surrogate PK is needed.
+`eval_summary_id` — a 1:1 relationship with `test_case_eval_summaries.id`. A row is written whenever the
+suite has an effective per-row score definition **and** either the test case actually has a computed score
+(`SUCCESS` aggregate with at least one numeric metric sample) or its aggregate is `FAILED` (in which case a
+row is written regardless of whether it has any numeric samples, with `score = NULL`). A `SUCCESS`-aggregate
+test case with zero numeric samples (e.g. every metric condition-skipped) stays absent from this table,
+exactly as it stays absent from `test_case_metric_scores_aggregated` — only a `FAILED` aggregate forces a
+row into existence despite having nothing to score. No row exists at all when the suite has no effective
+per-row score definition configured.
 
 ### Indexes
 

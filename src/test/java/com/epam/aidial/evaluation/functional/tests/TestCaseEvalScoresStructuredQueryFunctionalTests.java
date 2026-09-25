@@ -23,6 +23,7 @@ import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.model.ValueType;
 import com.epam.aidial.evaluation.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.query.service.repository.StructuredQueryExecutor;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -81,6 +82,49 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
                 .isEqualTo(0.6);
         assertThat(((Number) byName.get("single-turn-case").get("score")).doubleValue())
                 .isEqualTo(0.9);
+    }
+
+    @Test
+    @DisplayName("execution_status is selectable/filterable on the entity, same as score/passed")
+    void executionStatusIsQueryable() {
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        UUID successCase = UUID.randomUUID();
+        UUID failedCase = UUID.randomUUID();
+
+        testCaseEvalScoreRepository.saveAll(List.of(
+                TestCaseEvalScore.builder()
+                        .evalSummaryId(UUID.randomUUID())
+                        .testSuiteRunId(runId)
+                        .testCaseId(successCase)
+                        .testCaseName("success-case")
+                        .computationId(computationId)
+                        .executionStatus(ExecutionStatus.SUCCESS)
+                        .score(0.9)
+                        .passed(true)
+                        .computedAtMs(1_000L)
+                        .build(),
+                TestCaseEvalScore.builder()
+                        .evalSummaryId(UUID.randomUUID())
+                        .testSuiteRunId(runId)
+                        .testCaseId(failedCase)
+                        .testCaseName("failed-case")
+                        .computationId(computationId)
+                        .executionStatus(ExecutionStatus.FAILED)
+                        .score(null)
+                        .passed(null)
+                        .computedAtMs(1_000L)
+                        .build()));
+
+        QueryResultPage page = queryRepository.execute(rowQuery(
+                runIdIn(List.of(runId)), List.of(col("test_case_name"), col("execution_status"), col("score"))));
+
+        assertThat(page.rows()).hasSize(2);
+        Map<String, Map<String, Object>> byName =
+                page.rows().stream().collect(Collectors.toMap(row -> (String) row.get("test_case_name"), row -> row));
+        assertThat(byName.get("success-case").get("execution_status")).isEqualTo("SUCCESS");
+        assertThat(byName.get("failed-case").get("execution_status")).isEqualTo("FAILED");
+        assertThat(byName.get("failed-case").get("score")).isNull();
     }
 
     @Test
@@ -164,6 +208,7 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
                 .testCaseId(testCaseId)
                 .testCaseName(testCaseName)
                 .computationId(computationId)
+                .executionStatus(ExecutionStatus.SUCCESS)
                 .score(score)
                 .passed(true)
                 .computedAtMs(computedAtMs)

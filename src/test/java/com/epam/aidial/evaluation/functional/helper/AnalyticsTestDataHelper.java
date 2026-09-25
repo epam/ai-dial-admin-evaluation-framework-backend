@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.functional.helper;
 
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
@@ -101,6 +102,26 @@ public class AnalyticsTestDataHelper {
                         TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .fetch(AnalyticsTestDataHelper::recordToMap);
+    }
+
+    /**
+     * Reads {@code test_case_eval_scores} at its raw write grain — one row per
+     * {@code test_case_eval_summaries} row, not deduped to one per test case — so a test can assert that
+     * every physical row of a multi-turn/multi-request/rerun test case carries the identical, broadcast
+     * {@code execution_status}/{@code score}/{@code passed}.
+     */
+    public List<Map<String, Object>> findTestCaseEvalScoresByRunId(UUID runId) {
+        return analyticsDsl
+                .select(
+                        TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID,
+                        TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
+                        TEST_CASE_EVAL_SCORES.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SCORES.EXECUTION_STATUS,
+                        TEST_CASE_EVAL_SCORES.SCORE,
+                        TEST_CASE_EVAL_SCORES.PASSED)
+                .from(TEST_CASE_EVAL_SCORES)
+                .where(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID.eq(runId.toString()))
                 .fetch(AnalyticsTestDataHelper::recordToMap);
     }
 

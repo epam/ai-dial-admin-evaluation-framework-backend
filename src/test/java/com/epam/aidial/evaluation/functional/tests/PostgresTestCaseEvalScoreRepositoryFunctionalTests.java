@@ -15,6 +15,7 @@ import com.epam.aidial.evaluation.query.model.ValueExpr;
 import com.epam.aidial.evaluation.query.model.ValueType;
 import com.epam.aidial.evaluation.query.service.repository.QueryResultPage;
 import com.epam.aidial.evaluation.query.service.repository.StructuredQueryExecutor;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -52,6 +53,7 @@ public abstract class PostgresTestCaseEvalScoreRepositoryFunctionalTests extends
                 .testCaseId(testCaseId)
                 .testCaseName("case-a")
                 .computationId(computationId)
+                .executionStatus(ExecutionStatus.SUCCESS)
                 .score(0.5)
                 .passed(true)
                 .computedAtMs(1_000L)
@@ -118,6 +120,7 @@ public abstract class PostgresTestCaseEvalScoreRepositoryFunctionalTests extends
                 .testCaseId(testCaseId)
                 .testCaseName("case-a")
                 .computationId(computationId)
+                .executionStatus(ExecutionStatus.SUCCESS)
                 .score(score)
                 .passed(passed)
                 .computedAtMs(computedAtMs)

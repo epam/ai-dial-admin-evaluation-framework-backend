@@ -38,6 +38,7 @@ public class PostgresTestCaseEvalScoreEntityResolver implements StructuredQueryE
                     TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
                     TEST_CASE_EVAL_SCORES.TEST_CASE_NAME,
                     TEST_CASE_EVAL_SCORES.COMPUTATION_ID,
+                    TEST_CASE_EVAL_SCORES.EXECUTION_STATUS,
                     TEST_CASE_EVAL_SCORES.SCORE,
                     TEST_CASE_EVAL_SCORES.PASSED,
                     TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS)

@@ -16,6 +16,17 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryReposi
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.functional.helper.MetricDeclarationTestDataProvider;
+import com.epam.aidial.evaluation.query.model.ComparisonNode;
+import com.epam.aidial.evaluation.query.model.ComparisonOp;
+import com.epam.aidial.evaluation.query.model.FieldExpr;
+import com.epam.aidial.evaluation.query.model.OffsetPage;
+import com.epam.aidial.evaluation.query.model.OutputColumn;
+import com.epam.aidial.evaluation.query.model.QueryMode;
+import com.epam.aidial.evaluation.query.model.StructuredQuery;
+import com.epam.aidial.evaluation.query.model.ValueExpr;
+import com.epam.aidial.evaluation.query.model.ValueType;
+import com.epam.aidial.evaluation.query.service.repository.QueryResultPage;
+import com.epam.aidial.evaluation.query.service.repository.StructuredQueryExecutor;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -28,6 +39,7 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
+import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -65,6 +77,9 @@ public abstract class TestCaseMetricScoreAggregationEndToEndFunctionalTests exte
 
     @Autowired
     private EvalSummaryRepository evalSummaryRepository;
+
+    @Autowired
+    private StructuredQueryExecutor queryRepository;
 
     @Test
     @DisplayName("A conditionally-skipped metric no longer poisons the row it's absent from, and a "
@@ -188,6 +203,182 @@ public abstract class TestCaseMetricScoreAggregationEndToEndFunctionalTests exte
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("missing overall metric score result"));
         assertThat(overall.getValue()).isCloseTo(0.55, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("A test case whose only metric fails end-to-end gets execution_status=FAILED and score=null "
+            + "in test_case_eval_scores, while an unaffected test case still gets SUCCESS and a computed score")
+    void endToEndMetricFailureMarksTestCaseEvalScoreFailed() {
+        TestSuiteResponseDto suite = createChatSuiteWithMeanOverallScore("Suite For Execution Status Repro");
+        UUID datasetId = suite.getDatasetId();
+
+        // "ERROR" is a marker read back by the mocked metric provider below to produce a provider-reported
+        // per-field error for case-broken, while case-ok's metric fires normally.
+        createSingleTurnCase(datasetId, "case-ok", Map.of("prompt", "hi", "category", "0.8"));
+        createSingleTurnCase(datasetId, "case-broken", Map.of("prompt", "boom", "category", "ERROR"));
+
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        String versionId = UUID.randomUUID().toString();
+        metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                versionId,
+                "00000000-0000-0000-0000-000000000001",
+                1,
+                "{}",
+                "{}",
+                "{\"properties\":{\"score\":{\"type\":\"number\"}}}");
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                suite.getId(),
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                UUID.fromString(versionId),
+                "MetricMain",
+                "[]",
+                "[{\"property\": \"value\", \"source\": {\"$type\": \"TestCase\", \"columnName\": \"category\"}}]",
+                null);
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(chatReply("ok"));
+        when(metricProviderClient.evaluate(anyString(), any(EvaluationRequestDto.class)))
+                .thenAnswer(invocation -> {
+                    EvaluationRequestDto request = invocation.getArgument(1);
+                    String value = String.valueOf(request.getInput().get("value"));
+                    MetricOutputFieldDto output = "ERROR".equals(value)
+                            ? MetricOutputFieldDto.builder().type("error").build()
+                            : MetricOutputFieldDto.builder()
+                                    .type("value")
+                                    .value(new BigDecimal(value))
+                                    .build();
+                    return EvaluationResponseDto.builder()
+                            .metricName(request.getMetricName())
+                            .output(Map.of("score", output))
+                            .build();
+                });
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 15);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
+        assertThat(summariesByTestCaseName).hasSize(2);
+        assertThat(summariesByTestCaseName.get("case-broken").getExecutionStatus())
+                .as("a provider-reported per-field error already flips the raw eval-summary row's own status")
+                .isEqualTo(ExecutionStatus.FAILED);
+        assertThat(summariesByTestCaseName.get("case-ok").getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+
+        Map<String, Map<String, Object>> scoresByTestCaseName = fetchTestCaseEvalScoresByTestCaseName(run.getId());
+        assertThat(scoresByTestCaseName).containsOnlyKeys("case-ok", "case-broken");
+
+        Map<String, Object> okScore = scoresByTestCaseName.get("case-ok");
+        assertThat(okScore.get("execution_status")).isEqualTo("SUCCESS");
+        assertThat(((Number) okScore.get("score")).doubleValue()).isCloseTo(0.8, within(1e-9));
+
+        Map<String, Object> brokenScore = scoresByTestCaseName.get("case-broken");
+        assertThat(brokenScore.get("execution_status"))
+                .as("execution_status is aggregated per test case, independent of test_case_metric_scores_aggregated")
+                .isEqualTo("FAILED");
+        assertThat(brokenScore.get("score"))
+                .as("score is not computed at all for a FAILED-aggregate test case")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("A multi-turn test case's execution_status/score are broadcast identically to every one of its "
+            + "raw test_case_eval_scores rows, not just the one row that actually failed")
+    void multiTurnTestCaseBroadcastsExecutionStatusAndScoreToEveryRawRow() {
+        TestSuiteResponseDto suite = createChatSuiteWithMeanOverallScore("Suite For Broadcast Repro");
+        UUID datasetId = suite.getDatasetId();
+
+        // Turn 0's metric fires normally; turn 1's reports a provider error — only turn 1's own eval-summary
+        // row flips to FAILED, but the test case's aggregated execution_status (OR'd across both rows) must
+        // still be FAILED and broadcast identically onto BOTH of this test case's test_case_eval_scores rows.
+        createMultiTurnCase(
+                datasetId,
+                "case-multi-turn-broadcast",
+                List.of(
+                        Map.of("prompt", "turn zero", "category", "0.8"),
+                        Map.of("prompt", "turn one", "category", "ERROR")));
+
+        metricDeclarationTestDataProvider.insertSeedMetricDeclarations();
+        String versionId = UUID.randomUUID().toString();
+        metricDeclarationTestDataProvider.insertVersionWithSchemas(
+                versionId,
+                "00000000-0000-0000-0000-000000000001",
+                1,
+                "{}",
+                "{}",
+                "{\"properties\":{\"score\":{\"type\":\"number\"}}}");
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                suite.getId(),
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                UUID.fromString(versionId),
+                "MetricMain",
+                "[]",
+                "[{\"property\": \"value\", \"source\": {\"$type\": \"TestCase\", \"columnName\": \"category\"}}]",
+                null);
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(chatReply("ok"));
+        when(metricProviderClient.evaluate(anyString(), any(EvaluationRequestDto.class)))
+                .thenAnswer(invocation -> {
+                    EvaluationRequestDto request = invocation.getArgument(1);
+                    String value = String.valueOf(request.getInput().get("value"));
+                    MetricOutputFieldDto output = "ERROR".equals(value)
+                            ? MetricOutputFieldDto.builder().type("error").build()
+                            : MetricOutputFieldDto.builder()
+                                    .type("value")
+                                    .value(new BigDecimal(value))
+                                    .build();
+                    return EvaluationResponseDto.builder()
+                            .metricName(request.getMetricName())
+                            .output(Map.of("score", output))
+                            .build();
+                });
+
+        TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 15);
+        assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+
+        List<Map<String, Object>> rawSummaryRows =
+                fetchEvalSummariesForTestCase(run.getId(), "case-multi-turn-broadcast");
+        assertThat(rawSummaryRows)
+                .as("one raw test_case_eval_summaries row per turn")
+                .hasSize(2);
+
+        List<Map<String, Object>> rawScoreRows =
+                analyticsTestDataHelper.findTestCaseEvalScoresByRunId(run.getId()).stream()
+                        .filter(row -> "case-multi-turn-broadcast".equals(row.get("test_case_name")))
+                        .toList();
+        assertThat(rawScoreRows)
+                .as("one raw test_case_eval_scores row per raw eval-summary row — the write grain is unchanged")
+                .hasSize(2);
+        assertThat(rawScoreRows).allSatisfy(row -> {
+            assertThat(row.get("execution_status"))
+                    .as("the aggregate is broadcast identically to every raw row, not just the failed turn")
+                    .isEqualTo("FAILED");
+            assertThat(row.get("score")).isNull();
+            assertThat(row.get("passed")).isNull();
+        });
+    }
+
+    private Map<String, Map<String, Object>> fetchTestCaseEvalScoresByTestCaseName(UUID runId) {
+        StructuredQuery query = new StructuredQuery(
+                "test_case_eval_scores",
+                new ComparisonNode(
+                        ComparisonOp.EQ,
+                        List.of(new FieldExpr("test_suite_run_id"), new ValueExpr(ValueType.UUID, runId.toString()))),
+                QueryMode.ROW,
+                false,
+                List.of(
+                        new OutputColumn(new FieldExpr("test_case_name"), null),
+                        new OutputColumn(new FieldExpr("execution_status"), null),
+                        new OutputColumn(new FieldExpr("score"), null)),
+                null,
+                null,
+                null,
+                new OffsetPage(0, 100, false));
+        QueryResultPage page = queryRepository.execute(query);
+        Map<String, Map<String, Object>> byName = new HashMap<>();
+        for (Map<String, Object> row : page.rows()) {
+            byName.put((String) row.get("test_case_name"), row);
+        }
+        return byName;
     }
 
     /**

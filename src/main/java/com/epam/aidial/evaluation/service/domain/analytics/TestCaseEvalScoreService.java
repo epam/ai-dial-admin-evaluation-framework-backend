@@ -37,6 +37,7 @@ public class TestCaseEvalScoreService {
                         .testCaseId(item.getTestCaseId())
                         .testCaseName(item.getTestCaseName())
                         .computationId(item.getComputationId())
+                        .executionStatus(item.getExecutionStatus())
                         .score(item.getScore())
                         .passed(item.getPassed())
                         .computedAtMs(computedAtMs)

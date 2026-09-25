@@ -44,11 +44,15 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
                         .set(
                                 TEST_CASE_EVAL_SCORES.COMPUTATION_ID,
                                 s.getComputationId().toString())
+                        .set(
+                                TEST_CASE_EVAL_SCORES.EXECUTION_STATUS,
+                                s.getExecutionStatus().name())
                         .set(TEST_CASE_EVAL_SCORES.SCORE, s.getScore())
                         .set(TEST_CASE_EVAL_SCORES.PASSED, s.getPassed())
                         .set(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS, s.getComputedAtMs())
                         .onConflict(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID)
                         .doUpdate()
+                        .set(TEST_CASE_EVAL_SCORES.EXECUTION_STATUS, excluded(TEST_CASE_EVAL_SCORES.EXECUTION_STATUS))
                         .set(TEST_CASE_EVAL_SCORES.SCORE, excluded(TEST_CASE_EVAL_SCORES.SCORE))
                         .set(TEST_CASE_EVAL_SCORES.PASSED, excluded(TEST_CASE_EVAL_SCORES.PASSED))
                         .set(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS, excluded(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS)))

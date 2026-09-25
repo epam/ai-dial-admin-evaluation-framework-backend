@@ -98,6 +98,7 @@ import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchCapsFunction
 import com.epam.aidial.evaluation.functional.tests.TestCaseBulkPatchFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseConvenienceApiFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseEvalScoresStructuredQueryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseExecutionStatusAggregatorFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseMetricScoreAggregationEndToEndFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseMetricScoreAggregatorFunctionalTests;
@@ -642,6 +643,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestCaseMetricScoreAggregatorTests extends TestCaseMetricScoreAggregatorFunctionalTests {}
+
+    @Nested
+    class TestCaseExecutionStatusAggregatorTests extends TestCaseExecutionStatusAggregatorFunctionalTests {}
 
     @Nested
     class TestCaseMetricScoreAggregationEndToEndTests extends TestCaseMetricScoreAggregationEndToEndFunctionalTests {}

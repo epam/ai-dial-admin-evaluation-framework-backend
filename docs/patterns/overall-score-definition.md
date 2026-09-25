@@ -28,6 +28,15 @@ The same `OverallScoreDefinitionResolver` also drives a second computation: a pe
 | Definition used | Always `overallScore` | `testCaseOverallScore` if configured, else `overallScore` |
 | Written to | `metric_score_result` | `test_case_eval_scores` (joined into `EvalSummary.score`/`.passed` on read) |
 | Timing | After all `EvalSummary` rows for the computation exist | Right after each flush's own batch is written (not after the whole run) |
+| Precondition | None beyond `overallScore` being configured | Additionally gated per test case on `execution_status` — see below |
+
+**Per-row scoring is additionally gated on a per-test-case `execution_status` aggregate.** Before invoking
+`EvalSummaryRowScoreComputer`, `InProcessMetricEvaluationExecutor` computes each batch test case's
+aggregated `execution_status` (`TestCaseExecutionStatusAggregator` — `FAILED` if any of that test case's
+rows failed, else `SUCCESS`; see `docs/patterns/eval-summaries-read-surface.md`) and issues the score query
+only for `SUCCESS`-aggregate test cases. A `FAILED`-aggregate test case's `score`/`passed` are written as
+`NULL` without ever reaching this resolved-query machinery — this precondition is orthogonal to which
+`OverallScoreDefinition` variant is in play (`Mean`/`WeightedMean`/`CustomFunction` are all skipped alike).
 
 **Why grafting `id`/`GROUP BY id` is safe for any resolved query, with zero query-builder changes**: `StructuredQueryBuilder.buildAggregate`/`resolveGroupKey` already handles a select column that's also a `GROUP BY` key by referencing the select's own output alias rather than re-translating the expression — the exact mechanism a per-row `id` column needs, whether the query came from `Mean`/`WeightedMean` or an opaque `CustomFunction`.
 

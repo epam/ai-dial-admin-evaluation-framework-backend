@@ -84,3 +84,10 @@ Status: **Implemented**
 - The `metric_scores` JSONB key is `<metricName>` in the metric-field-discovery sense, i.e.
   `<tsmdName>.<outputField>` (`MetricField.metricName()`'s own format) — not the bare TSMD name, which
   would collide across a TSMD's distinct output fields (e.g. a classifier's `label` and `probability`).
+- `test_case_eval_scores.execution_status` (see `eval-summary-scoring`) is a **separate** per-test-case
+  aggregate, computed by a sibling component `TestCaseExecutionStatusAggregator` that queries
+  `test_case_eval_summaries` directly rather than through this table — it is not part of
+  `test_case_metric_scores_aggregated`'s contract and does not change the "absent metric key = no numeric
+  sample" behavior described above. It exists because this table's `jsonb_each`-driven aggregation never
+  sees a row whose `metric_values = '{}'` (e.g. every metric condition-skipped, or the row failed before
+  any metric ran), which is exactly the case the execution-status aggregate needs to see.

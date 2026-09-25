@@ -125,6 +125,14 @@ public class TestSuiteMetricDefinitionService {
     }
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
+    public List<AggregatedMetricDefinitionResponseDto> listAggregated(UUID testSuiteId) {
+        log.debug("Listing aggregated TSMDs for suite: {}", testSuiteId);
+        return repository.findAllAggregatedByTestSuiteId(testSuiteId).stream()
+                .map(mapper::toAggregatedDto)
+                .toList();
+    }
+
+    @Transactional(value = "metaTransactionManager", readOnly = true)
     public PageResponseDto<TestSuiteMetricDefinitionResponseDto> list(
             UUID testSuiteId, int page, int size, List<String> sort, List<String> filter, boolean includeTotalCount) {
         log.debug("Listing TSMDs for suite: {}, page={}, size={}", testSuiteId, page, size);

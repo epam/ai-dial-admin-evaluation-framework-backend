@@ -53,6 +53,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestSuiteMetricDefinition Controller Tests")
@@ -113,6 +114,10 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
 
     private String tsmdAggregatedUrl(UUID id) {
         return tsmdUrl() + "/" + id + "/aggregated";
+    }
+
+    private String tsmdAggregatedListUrl() {
+        return tsmdUrl() + "/aggregated";
     }
 
     private TestSuiteMetricDefinitionRequestDto validRequest(String name) {
@@ -633,6 +638,113 @@ public abstract class TestSuiteMetricDefinitionFunctionalTests extends BaseFunct
         assertThat(getResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(getResponse.getBody().getConfigBindings()).hasSize(1);
         assertThat(getResponse.getBody().getInputBindings()).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("Should list aggregated metric definitions with declaration, version, and schema details")
+    void shouldListAggregatedMetricDefinitions() {
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> accuracy = restTemplate.postForEntity(
+                tsmdUrl(), jsonEntity(validRequest("Aggregated Accuracy")), TestSuiteMetricDefinitionResponseDto.class);
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> latency = restTemplate.postForEntity(
+                tsmdUrl(),
+                jsonEntity(validRequestForLatency("Aggregated Latency")),
+                TestSuiteMetricDefinitionResponseDto.class);
+        TestSuite otherSuite = metaTestDataHelper.createTestSuite("other-suite-" + UUID.randomUUID());
+        metaTestDataHelper.createTestSuiteMetricDefinition(
+                otherSuite.getId(), SEED_ACCURACY_ID, SEED_ACCURACY_VERSION_ID, "Other Suite Metric");
+
+        ResponseEntity<List<AggregatedMetricDefinitionResponseDto>> response = restTemplate.exchange(
+                tsmdAggregatedListUrl(), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody())
+                .extracting(AggregatedMetricDefinitionResponseDto::getId)
+                .containsExactlyInAnyOrder(
+                        accuracy.getBody().getId(), latency.getBody().getId());
+        assertThat(response.getBody())
+                .extracting(AggregatedMetricDefinitionResponseDto::getName)
+                .containsExactlyInAnyOrder("Aggregated Accuracy", "Aggregated Latency");
+        assertThat(response.getBody()).allSatisfy(dto -> {
+            assertThat(dto.getTestSuiteId()).isEqualTo(testSuite.getId());
+            assertThat(dto.getMetricDeclaration()).isNotNull();
+            assertThat(dto.getMetricDeclaration().getDescription()).isNotBlank();
+            assertThat(dto.getMetricDeclarationVersion()).isNotNull();
+            assertThat(dto.getMetricDeclarationVersion().getDescription()).isNotBlank();
+            assertThat(dto.getMetricDeclarationVersion().getConfigSchema()).isInstanceOf(Map.class);
+            assertThat(dto.getMetricDeclarationVersion().getInputSchema()).isInstanceOf(Map.class);
+            assertThat(dto.getMetricDeclarationVersion().getOutputSchema()).isInstanceOf(Map.class);
+        });
+    }
+
+    @Test
+    @DisplayName("Should list disabled and invalid aggregated metric definitions")
+    void shouldListDisabledAndInvalidAggregatedMetricDefinitions() {
+        TestSuiteMetricDefinitionRequestDto disabledRequest = validRequest("Disabled Metric");
+        disabledRequest.setEnabled(false);
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> disabled = restTemplate.postForEntity(
+                tsmdUrl(), jsonEntity(disabledRequest), TestSuiteMetricDefinitionResponseDto.class);
+        ResponseEntity<TestSuiteMetricDefinitionResponseDto> invalid = restTemplate.postForEntity(
+                tsmdUrl(), jsonEntity(validRequest("Invalid Metric")), TestSuiteMetricDefinitionResponseDto.class);
+        metaTestDataHelper.forceTsmdInvalid(invalid.getBody().getId(), "[]");
+
+        ResponseEntity<List<AggregatedMetricDefinitionResponseDto>> response = restTemplate.exchange(
+                tsmdAggregatedListUrl(), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody())
+                .extracting(AggregatedMetricDefinitionResponseDto::getId)
+                .containsExactlyInAnyOrder(
+                        disabled.getBody().getId(), invalid.getBody().getId());
+    }
+
+    @Test
+    @DisplayName("Should return empty aggregated list for empty and unknown test suites")
+    void shouldReturnEmptyAggregatedList_whenSuiteIsEmptyOrUnknown() {
+        ResponseEntity<List<AggregatedMetricDefinitionResponseDto>> emptySuiteResponse = restTemplate.exchange(
+                tsmdAggregatedListUrl(), HttpMethod.GET, null, new ParameterizedTypeReference<>() {});
+        ResponseEntity<List<AggregatedMetricDefinitionResponseDto>> unknownSuiteResponse = restTemplate.exchange(
+                apiUrl("/test-suites/" + UUID.randomUUID() + "/metric-definitions/aggregated"),
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {});
+
+        assertThat(emptySuiteResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(emptySuiteResponse.getBody()).isEmpty();
+        assertThat(unknownSuiteResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(unknownSuiteResponse.getBody()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("OpenAPI documents aggregated metric-definition list as an array with minimal and full examples")
+    void openApiSpecDocumentsAggregatedMetricDefinitionList() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode operation = new ObjectMapper()
+                .readTree(apiDocs.getBody())
+                .path("paths")
+                .path("/api/v1/test-suites/{testSuiteId}/metric-definitions/aggregated")
+                .path("get");
+        JsonNode responseSchema = operation
+                .path("responses")
+                .path("200")
+                .path("content")
+                .path("application/json")
+                .path("schema");
+        JsonNode examples = operation
+                .path("responses")
+                .path("200")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+
+        assertThat(operation.isMissingNode()).isFalse();
+        assertThat(responseSchema.path("type").asString()).isEqualTo("array");
+        assertThat(responseSchema.path("items").path("$ref").asString())
+                .endsWith("/AggregatedMetricDefinitionResponseDto");
+        assertThat(examples.propertyNames()).containsExactlyInAnyOrder("minimal", "full");
+        assertThat(examples.path("minimal").path("value").isArray()).isTrue();
+        assertThat(examples.path("full").path("value").isArray()).isTrue();
     }
 
     @Test

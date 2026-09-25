@@ -13,7 +13,6 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClientException;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasBatchRunCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
@@ -25,6 +24,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -49,6 +49,9 @@ class CostServiceTest {
     @Mock
     private TestSuiteRunService testSuiteRunService;
 
+    @Mock
+    private BatchRunTotalCostLookup batchRunTotalCostLookup;
+
     private CostService service;
 
     private static AdasAggregateResponseDto<AdasDeploymentCostRowDto> aggregateResponse(long count, Double totalCost) {
@@ -62,7 +65,7 @@ class CostServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CostService(adasCostQueryBuilder, dialAdasClient, testSuiteRunService);
+        service = new CostService(adasCostQueryBuilder, dialAdasClient, testSuiteRunService, batchRunTotalCostLookup);
     }
 
     @Nested
@@ -219,54 +222,25 @@ class CostServiceTest {
         private final UUID runId1 = UUID.randomUUID();
         private final UUID runId2 = UUID.randomUUID();
 
-        private final StructuredQuery pageTotalCostQuery = new StructuredQuery(
-                "page-total-cost-query", null, QueryMode.AGGREGATE, false, null, null, null, null, null);
-
         @Test
-        @DisplayName("returns results in the caller's requested order, null totalCost for an unmatched run id")
+        @DisplayName("returns results in the caller's requested order, null totalCost for an unmatched run id,"
+                + " using the shared dial-adas client")
         void returnsResultsInRequestedOrder() {
-            when(adasCostQueryBuilder.buildPageTotalCostQuery(List.of(runId1, runId2)))
-                    .thenReturn(pageTotalCostQuery);
-            when(dialAdasClient.executeAggregate(pageTotalCostQuery, AdasBatchRunCostRowDto.class))
-                    .thenReturn(AdasAggregateResponseDto.<AdasBatchRunCostRowDto>builder()
-                            .rows(List.of(AdasBatchRunCostRowDto.builder()
-                                    .runId(runId1.toString())
-                                    .totalCost(0.05)
-                                    .build()))
-                            .build());
+            when(batchRunTotalCostLookup.fetchTotalCosts(List.of(runId1, runId2), dialAdasClient))
+                    .thenReturn(Map.of(runId1, 0.05));
 
             List<TotalRunCostResponseDto> result = service.getTotalRunCosts(List.of(runId1, runId2));
 
             assertThat(result)
                     .extracting(TotalRunCostResponseDto::getRunId, TotalRunCostResponseDto::getTotalCost)
                     .containsExactly(tuple(runId1, 0.05), tuple(runId2, null));
+            verify(batchRunTotalCostLookup).fetchTotalCosts(List.of(runId1, runId2), dialAdasClient);
         }
 
         @Test
-        @DisplayName("excludes the \"other\" bucket row from the result")
-        void excludesOtherBucketRow() {
-            when(adasCostQueryBuilder.buildPageTotalCostQuery(List.of(runId1))).thenReturn(pageTotalCostQuery);
-            when(dialAdasClient.executeAggregate(pageTotalCostQuery, AdasBatchRunCostRowDto.class))
-                    .thenReturn(AdasAggregateResponseDto.<AdasBatchRunCostRowDto>builder()
-                            .rows(List.of(AdasBatchRunCostRowDto.builder()
-                                    .runId("other")
-                                    .totalCost(1.5)
-                                    .build()))
-                            .build());
-
-            List<TotalRunCostResponseDto> result = service.getTotalRunCosts(List.of(runId1));
-
-            assertThat(result)
-                    .extracting(TotalRunCostResponseDto::getRunId, TotalRunCostResponseDto::getTotalCost)
-                    .containsExactly(tuple(runId1, null));
-        }
-
-        @Test
-        @DisplayName("propagates DialAdasClientException from the underlying call")
+        @DisplayName("propagates DialAdasClientException from the underlying batch lookup unchanged")
         void propagatesDialAdasClientException() {
-            when(adasCostQueryBuilder.buildPageTotalCostQuery(List.of(runId1, runId2)))
-                    .thenReturn(pageTotalCostQuery);
-            when(dialAdasClient.executeAggregate(pageTotalCostQuery, AdasBatchRunCostRowDto.class))
+            when(batchRunTotalCostLookup.fetchTotalCosts(List.of(runId1, runId2), dialAdasClient))
                     .thenThrow(new DialAdasClientException(502, "boom"));
 
             assertThatThrownBy(() -> service.getTotalRunCosts(List.of(runId1, runId2)))
@@ -274,15 +248,16 @@ class CostServiceTest {
         }
 
         @Test
-        @DisplayName("throws ValidationException for empty runIds without calling dial-adas")
+        @DisplayName("throws ValidationException for empty runIds without calling the batch lookup")
         void throwsForEmptyInput() {
             assertThatThrownBy(() -> service.getTotalRunCosts(List.<UUID>of())).isInstanceOf(ValidationException.class);
 
-            verifyNoInteractions(dialAdasClient);
+            verifyNoInteractions(batchRunTotalCostLookup);
         }
 
         @Test
-        @DisplayName("throws ValidationException when runIds exceeds MAX_BATCH_RUN_IDS without calling dial-adas")
+        @DisplayName(
+                "throws ValidationException when runIds exceeds MAX_BATCH_RUN_IDS without calling the batch lookup")
         void throwsForOverLimitInput() {
             List<UUID> tooMany = IntStream.range(0, ValidationConstants.MAX_BATCH_RUN_IDS + 1)
                     .mapToObj(i -> UUID.randomUUID())
@@ -290,7 +265,7 @@ class CostServiceTest {
 
             assertThatThrownBy(() -> service.getTotalRunCosts(tooMany)).isInstanceOf(ValidationException.class);
 
-            verifyNoInteractions(dialAdasClient);
+            verifyNoInteractions(batchRunTotalCostLookup);
         }
     }
 }

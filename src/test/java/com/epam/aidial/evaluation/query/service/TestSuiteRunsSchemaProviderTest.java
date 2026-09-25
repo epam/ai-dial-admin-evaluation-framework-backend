@@ -37,6 +37,14 @@ class TestSuiteRunsSchemaProviderTest {
     }
 
     @Test
+    @DisplayName("base schema omits the extension-only overall_score_value/total_cost keys")
+    void shouldExcludeExtensionOnlyKeys() {
+        assertThat(provider.baseSchema())
+                .extracting(QuerySchemaFieldDto::name)
+                .doesNotContain("overall_score_value", "total_cost");
+    }
+
+    @Test
     @DisplayName("base schema includes the plain run columns")
     void shouldIncludePlainColumns() {
         assertThat(provider.baseSchema())

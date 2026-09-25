@@ -2,7 +2,6 @@ package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.client.dialadas.DialAdasClient;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasAggregateResponseDto;
-import com.epam.aidial.evaluation.client.dialadas.dto.AdasBatchRunCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasDeploymentCostRowDto;
 import com.epam.aidial.evaluation.client.dialadas.dto.AdasRunAvgCostRowDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
@@ -11,8 +10,6 @@ import com.epam.aidial.evaluation.service.domain.dto.DeploymentCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.RunCostsResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TotalRunCostResponseDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,6 +24,7 @@ public class CostService {
     private final AdasCostQueryBuilder adasCostQueryBuilder;
     private final DialAdasClient dialAdasClient;
     private final TestSuiteRunService testSuiteRunService;
+    private final BatchRunTotalCostLookup batchRunTotalCostLookup;
 
     public RunCostsResponseDto getRunCosts(UUID runId) {
         testSuiteRunService.ensureRunExists(runId);
@@ -48,46 +46,13 @@ public class CostService {
                     "runIds must not exceed " + ValidationConstants.MAX_BATCH_RUN_IDS + " entries");
         }
 
-        Map<UUID, Double> totalsByRunId = fetchTotalCosts(runIds);
+        Map<UUID, Double> totalsByRunId = batchRunTotalCostLookup.fetchTotalCosts(runIds, dialAdasClient);
         return runIds.stream()
                 .map(runId -> TotalRunCostResponseDto.builder()
                         .runId(runId)
                         .totalCost(totalsByRunId.get(runId))
                         .build())
                 .toList();
-    }
-
-    /**
-     * Computes total cost for a batch of runs in a single dial-adas call
-     * ({@link AdasCostQueryBuilder#buildPageTotalCostQuery}). dial-adas only returns a row for a run id
-     * that matched at least one usage row, so a requested id with no matching row is simply absent from
-     * the returned map. A {@code DialAdasClientException} from the underlying call is not caught here —
-     * it propagates to the caller (surfacing as a 502/504 for the whole batch, same as every other cost
-     * endpoint), since there is no partial-failure case for a single HTTP call.
-     */
-    private Map<UUID, Double> fetchTotalCosts(Collection<UUID> runIds) {
-        AdasAggregateResponseDto<AdasBatchRunCostRowDto> response = dialAdasClient.executeAggregate(
-                adasCostQueryBuilder.buildPageTotalCostQuery(runIds), AdasBatchRunCostRowDto.class);
-
-        Map<UUID, Double> totalsByRunId = new HashMap<>();
-        if (response == null || response.getRows() == null) {
-            return totalsByRunId;
-        }
-        for (AdasBatchRunCostRowDto row : response.getRows()) {
-            UUID runId = parseRunId(row.getRunId());
-            if (runId != null) {
-                totalsByRunId.put(runId, row.getTotalCost());
-            }
-        }
-        return totalsByRunId;
-    }
-
-    private static UUID parseRunId(String value) {
-        try {
-            return value == null ? null : UUID.fromString(value);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
     }
 
     private Double fetchAvgCost(UUID runId, EvalPhase phase) {

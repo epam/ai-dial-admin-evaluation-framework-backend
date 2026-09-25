@@ -7,11 +7,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.support.ContextPropagatingTaskDecorator;
+import org.springframework.scheduling.annotation.AsyncAnnotationBeanPostProcessor;
 
 /**
- * Configures the shared test suite run job executor: one thread per dispatched run
- * ("test-suite-run-N"), thread mode following {@link RunExecutorFactory#isVirtualThreads()} (in turn
- * driven by {@code spring.threads.virtual.enabled}).
+ * Configures the shared test suite run job executor — one thread per dispatched run
+ * ("test-suite-run-N") — and the default executor for {@code @Async} methods ("async-N"). Both follow
+ * {@link RunExecutorFactory#isVirtualThreads()} (in turn driven by {@code spring.threads.virtual.enabled}).
  */
 @Configuration
 @LogExecution
@@ -35,6 +36,25 @@ public class AsyncConfiguration {
     @Bean(name = "testSuiteRunExecutor")
     public AsyncTaskExecutor testSuiteRunExecutor(RunExecutorFactory runExecutorFactory) {
         var executor = new SimpleAsyncTaskExecutor("test-suite-run-");
+        executor.setVirtualThreads(runExecutorFactory.isVirtualThreads());
+        executor.setTaskDecorator(new ContextPropagatingTaskDecorator());
+        executor.setCancelRemainingTasksOnClose(true);
+        executor.setDaemon(true);
+        return executor;
+    }
+
+    /**
+     * Default executor for {@code @Async} methods. Spring resolves it by the reserved bean name
+     * {@value AsyncAnnotationBeanPostProcessor#DEFAULT_TASK_EXECUTOR_BEAN_NAME} because the context holds
+     * several {@code TaskExecutor}s (this one, {@code testSuiteRunExecutor}, feature-specific executors and
+     * the scheduler); without it, Spring falls back to an unmanaged {@code SimpleAsyncTaskExecutor}
+     * that ignores the virtual-thread setting and propagates no context. Unbounded, like the fallback it
+     * replaces; {@code setCancelRemainingTasksOnClose(true)} interrupts in-flight tasks at container
+     * shutdown.
+     */
+    @Bean(name = AsyncAnnotationBeanPostProcessor.DEFAULT_TASK_EXECUTOR_BEAN_NAME)
+    public AsyncTaskExecutor taskExecutor(RunExecutorFactory runExecutorFactory) {
+        var executor = new SimpleAsyncTaskExecutor("async-");
         executor.setVirtualThreads(runExecutorFactory.isVirtualThreads());
         executor.setTaskDecorator(new ContextPropagatingTaskDecorator());
         executor.setCancelRemainingTasksOnClose(true);

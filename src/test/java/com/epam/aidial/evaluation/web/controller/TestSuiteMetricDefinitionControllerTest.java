@@ -6,13 +6,17 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.epam.aidial.evaluation.service.domain.TestSuiteMetricDefinitionService;
+import com.epam.aidial.evaluation.service.domain.dto.AggregatedMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteMetricDefinitionResponseDto;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +42,25 @@ class TestSuiteMetricDefinitionControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setMessageConverters(new JacksonJsonHttpMessageConverter())
                 .build();
+    }
+
+    @Test
+    @DisplayName("GET aggregated resolves the static route and delegates to the aggregated-list service")
+    void listAggregated_staticRouteDelegatesToService() throws Exception {
+        UUID testSuiteId = UUID.randomUUID();
+        AggregatedMetricDefinitionResponseDto dto = AggregatedMetricDefinitionResponseDto.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy Check")
+                .build();
+        when(service.listAggregated(testSuiteId)).thenReturn(List.of(dto));
+
+        mockMvc.perform(get("/api/v1/test-suites/{testSuiteId}/metric-definitions/aggregated", testSuiteId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].id").value(dto.getId().toString()))
+                .andExpect(jsonPath("$[0].name").value("Accuracy Check"));
+
+        verify(service).listAggregated(testSuiteId);
     }
 
     @Test

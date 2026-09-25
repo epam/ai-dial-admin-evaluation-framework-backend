@@ -39,7 +39,7 @@ Specs defining the primary business entities and their APIs.
 - **[tsmd-validation](tsmd-validation/spec.md)** — Implemented
   TSMD soft validation — `MetricDefinitionValidationService` with 6 checks (INVALID_OUTPUT_SCHEMA for missing/malformed output schemas, UNRESOLVED_REFERENCE for TestCase/Response column refs, REQUIRED for missing/null-constant required properties, ADDITIONAL for unknown properties), synchronous auto-revalidation on suite schema update, manual revalidation endpoint side effect, `enabled` flag management.
 - **[aggregated-metric-definition](aggregated-metric-definition/spec.md)** — Implemented
-  Read-only aggregated endpoint returning a TSMD enriched with full metric declaration and version details (schemas) in a single response. Related: test-suite-metric-definitions, metrics-system.
+  Read-only aggregated endpoints returning one TSMD or an unpaginated suite-wide list enriched with full metric declaration and version details (schemas) in a single response. Related: test-suite-metric-definitions, metrics-system.
 
 ### Polymorphic Request Body
 

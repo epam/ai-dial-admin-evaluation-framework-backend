@@ -11,6 +11,7 @@ import com.epam.aidial.evaluation.web.pagination.FilterParam;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -101,6 +103,28 @@ public class TestSuiteMetricDefinitionController {
             @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId,
             @Parameter(description = "Metric definition ID") @PathVariable UUID id) {
         return service.getAggregatedById(testSuiteId, id);
+    }
+
+    @GetMapping(value = "/aggregated", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+            summary = "List aggregated metric definitions",
+            description =
+                    "Lists all metric definitions for a test suite enriched with metric declaration and version details")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Aggregated metric definitions retrieved",
+            content =
+                    @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            array =
+                                    @ArraySchema(
+                                            schema =
+                                                    @Schema(
+                                                            implementation =
+                                                                    AggregatedMetricDefinitionResponseDto.class))))
+    public List<AggregatedMetricDefinitionResponseDto> listAggregated(
+            @Parameter(description = "Test suite ID") @PathVariable UUID testSuiteId) {
+        return service.listAggregated(testSuiteId);
     }
 
     @GetMapping

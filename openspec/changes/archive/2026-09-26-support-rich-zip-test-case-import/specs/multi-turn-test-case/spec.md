@@ -11,7 +11,7 @@ This guarantee holds under two conditions. First, the dataset's `testCaseSchema`
 
 Additionally, importing an exported multi-turn CSV into a **different dataset whose `testCaseSchema` is empty** SHALL reproduce the source's turn structure: every turn survives with its per-turn values, and re-exporting the destination SHALL yield CSV content identical to the source export. The destination schema MAY differ from the source schema in scope (columns the source declared shared are inferred per-turn at the destination), and a value the source case omitted MAY materialize as an empty string at the destination (a CSV cannot distinguish an absent value from a blank one); each turn's merged effective view SHALL otherwise equal the source case's.
 
-Status: **Implemented** (CSV); **Planned** (ZIP)
+Status: **Implemented**
 
 #### Scenario: Export multiplies turns to rows
 - **WHEN** a multi-turn case with N turns is exported
@@ -57,7 +57,7 @@ Scope inference SHALL require no additional read of the CSV: a single streaming 
 
 Deriving a schema from CSV columns SHALL NOT mutate the dataset's current schema field definitions, and export SHALL NOT change: shared values remain repeated on every turn row, so an export → import → export round trip through a schema-less dataset yields byte-identical CSV content.
 
-Status: **Implemented** (tiers 1–3); **Planned** (tier 0)
+Status: **Implemented**
 
 #### Scenario: OVERRIDE import preserves perTurn on the persisted schema
 - **WHEN** a dataset has a schema field marked `perTurn: true` and a CSV containing that column is imported with `importMode=OVERRIDE`

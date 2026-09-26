@@ -10,7 +10,7 @@ The count limit SHALL count only files the import newly creates; overwriting a s
 
 Unlike the upload endpoint, which rejects a duplicate filename with HTTP 400, a ZIP import SHALL overwrite an existing dataset file with the same name. Such files SHALL be listed, downloaded and deleted through the dataset file endpoints like any other dataset file.
 
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: ZIP import file above the size limit
 - **WHEN** a ZIP import references an archive file larger than `dial.file-storage.max-file-size-bytes`

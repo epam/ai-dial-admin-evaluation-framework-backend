@@ -235,6 +235,9 @@ csv:
     max-file-size: 10MB
     max-rows: 100000
     batch-size: 1000
+    zip:
+      max-entries: ${CSV_IMPORT_ZIP_MAX_ENTRIES:1000}
+      max-total-uncompressed-size: ${CSV_IMPORT_ZIP_MAX_TOTAL_UNCOMPRESSED_SIZE:1GB}
   export:
     page-size: 500
 

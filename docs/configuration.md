@@ -587,6 +587,8 @@ On list endpoints, missing `page` defaults to `0` and missing `size` to `paginat
 | `csv.import.max-file-size` | `CSV_IMPORT_MAX_FILE_SIZE` | `10MB` | No | - | Maximum CSV file size. Parsed via Spring's `DataSize` support; use a value with unit (`10MB`, `1GB`). |
 | `csv.import.max-rows` | `CSV_IMPORT_MAX_ROWS` | `100000` | No | - | Maximum number of rows accepted per import. |
 | `csv.import.batch-size` | `CSV_IMPORT_BATCH_SIZE` | `1000` | No | - | Number of rows inserted per JDBC batch. |
+| `csv.import.zip.max-entries` | `CSV_IMPORT_ZIP_MAX_ENTRIES` | `1000` | No | - | Maximum number of entries a test-case ZIP archive import may contain. Archives over this limit are rejected with HTTP 400 before any file is written. |
+| `csv.import.zip.max-total-uncompressed-size` | `CSV_IMPORT_ZIP_MAX_TOTAL_UNCOMPRESSED_SIZE` | `1GB` | No | - | Maximum total uncompressed size of a test-case ZIP archive import, judged from entry headers and enforced again on the bytes actually read. Archives over this limit are rejected with HTTP 400. |
 
 ### 7.4 Validation
 

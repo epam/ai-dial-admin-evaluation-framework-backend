@@ -6,7 +6,7 @@ The service SHALL export test cases of a Dataset in a format appropriate to the 
 Column order SHALL be by schema order: fixed columns `testCaseName` and `turnIndex` first, then data columns in the order fields appear in the dataset's `testCaseSchema`. The previously-supported `includeEnabled` query parameter is removed (TestCase has no `enabled` field; per-suite exclude lists belong to suites, not the dataset). ARRAY and OBJECT values SHALL be serialized as JSON strings.
 
 The ZIP archive format, its manifest, file materialization and export failure behaviour are defined by the `test-case-zip-archive` capability.
-Status: **Planned**
+Status: **Implemented**
 
 #### Scenario: Export without FILE fields (CSV)
 - **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export.csv`
@@ -22,18 +22,18 @@ Status: **Planned**
 - **THEN** system SHALL use semicolon as delimiter
 
 #### Scenario: Export with FILE fields and materializeFiles=true (ZIP)
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export?materializeFiles=true`
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export.csv?materializeFiles=true`
 - **AND** the dataset's `testCaseSchema` has one or more FILE type fields
 - **THEN** system SHALL return `Content-Type: application/zip` with `Content-Disposition: attachment; filename="test-cases-{datasetId}.zip"`
 - **AND** the archive SHALL be fully built before the response starts, so a failure yields an error status instead of a truncated archive (it is no longer streamed while being built)
 - **AND** the archive SHALL follow the `test-case-zip-archive` layout: `test-cases.csv` with one row per turn, `manifest.json`, and one `files/{n}/{filename}` entry per distinct EF-owned file reference, with `public/…` references kept verbatim in the CSV
 
 #### Scenario: Export with FILE fields and materializeFiles=false
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export?materializeFiles=false`
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export.csv?materializeFiles=false`
 - **THEN** system SHALL return CSV with FILE columns containing the stored file references verbatim (e.g. `@ef/datasets/{datasetId}/{filename}`, legacy `@ef/suites/{suiteId}/{filename}`, `public/…`)
 
 #### Scenario: Export with FILE fields default materializeFiles
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export` without `materializeFiles`
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export.csv` without `materializeFiles`
 - **AND** the dataset's `testCaseSchema` has one or more FILE type fields
 - **THEN** system SHALL default `materializeFiles` to `true` and produce a ZIP
 
@@ -67,9 +67,9 @@ The import endpoint SHALL accept both CSV files and ZIP archives. A file SHALL b
 - its content type is `application/zip` or `application/x-zip-compressed`;
 - its content starts with the ZIP signature bytes `PK\x03\x04`.
 
-Otherwise it SHALL be treated as CSV. ZIP import behaviour (archive layout, manifest, file placement and overwrite, cell rewriting, limits and failure handling) is defined by the `test-case-zip-archive` capability.
+Otherwise it SHALL be treated as CSV. The import and preview endpoints SHALL respond with `application/json`. ZIP import behaviour (archive layout, manifest, file placement and overwrite, cell rewriting, limits and failure handling) is defined by the `test-case-zip-archive` capability.
 
-Status: **Implemented** (CSV); **Planned** (ZIP, content-based detection)
+Status: **Implemented**
 
 #### Scenario: Import CSV file (unchanged)
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import` with a `.csv` file
@@ -102,7 +102,7 @@ The preview response SHALL report both `totalRows` — the number of CSV data ro
 
 For a ZIP archive, preview SHALL match import as defined by the `test-case-zip-archive` capability, without writing any file.
 
-Status: **Implemented** (CSV); **Planned** (ZIP)
+Status: **Implemented**
 
 #### Scenario: Preview CSV file
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import/preview` with a CSV file

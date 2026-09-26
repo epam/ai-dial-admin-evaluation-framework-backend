@@ -10,6 +10,8 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.csv.TestCaseExportRowProjector;
+import com.epam.aidial.evaluation.service.domain.csv.TestCaseExportRowProjector.ProjectedRow;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import java.io.IOException;
@@ -17,7 +19,6 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,7 +28,6 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVPrinter;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -36,9 +36,6 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class CsvExportService {
 
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-    private static final TypeReference<List<Map<String, Object>>> TURNS_TYPE = new TypeReference<>() {};
-
     private final DatasetRepository datasetRepository;
     private final DatasetSchemaProvider datasetSchemaProvider;
     private final TestCaseRepository testCaseRepository;
@@ -46,6 +43,7 @@ public class CsvExportService {
     private final ObjectMapper objectMapper;
     private final CsvExportProperties csvExportProperties;
     private final PaginationProperties paginationProperties;
+    private final TestCaseExportRowProjector rowProjector;
 
     /**
      * Exports test cases as CSV using paginated DB queries and writes directly to the output stream.
@@ -94,20 +92,11 @@ public class CsvExportService {
                 }
                 for (TestCase tc : cases) {
                     String name = tc.getTestCaseName() != null ? tc.getTestCaseName() : "";
-                    if (tc.getMultiTurnData() != null) {
-                        // Multi-turn cases are multiplied to one flat row per turn, sharing testCaseName,
-                        // with turnIndex 0..N-1 in order. The case's shared (test-case-level) data is merged
-                        // into every turn row, so shared columns are repeated identically across the rows.
-                        Map<String, Object> sharedData = parseJsonToMap(tc.getData());
-                        List<Map<String, Object>> turns = parseTurns(tc.getMultiTurnData());
-                        for (int i = 0; i < turns.size(); i++) {
-                            Map<String, Object> row = new LinkedHashMap<>(sharedData);
-                            row.putAll(turns.get(i));
-                            printer.printRecord(buildRow(name, String.valueOf(i), row, dataColumnNames));
-                        }
-                    } else {
-                        // Single-turn case → one row with a blank turnIndex.
-                        printer.printRecord(buildRow(name, "", parseJsonToMap(tc.getData()), dataColumnNames));
+                    // Multi-turn cases are multiplied to one flat row per turn, sharing testCaseName; a
+                    // single-turn case yields exactly one row with a blank turnIndex. See
+                    // TestCaseExportRowProjector for the shared expansion/merge logic.
+                    for (ProjectedRow row : rowProjector.project(tc)) {
+                        printer.printRecord(buildRow(name, row.turnIndex(), row.data(), dataColumnNames));
                     }
                 }
                 if (cases.size() < pageSize) {
@@ -132,19 +121,6 @@ public class CsvExportService {
         return row;
     }
 
-    private List<Map<String, Object>> parseTurns(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            List<Map<String, Object>> turns = objectMapper.readValue(json, TURNS_TYPE);
-            return turns != null ? turns : List.of();
-        } catch (JacksonException e) {
-            log.warn("Failed to parse multiTurnData for export, treating as no turns: {}", e.getMessage(), e);
-            return List.of();
-        }
-    }
-
     private String cellValue(Object value) {
         if (value == null) {
             return "";
@@ -157,16 +133,5 @@ public class CsvExportService {
             }
         }
         return value.toString();
-    }
-
-    private Map<String, Object> parseJsonToMap(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(json, MAP_TYPE);
-        } catch (Exception e) {
-            return Map.of();
-        }
     }
 }

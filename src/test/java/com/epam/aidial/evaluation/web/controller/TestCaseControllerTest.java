@@ -1,0 +1,129 @@
+package com.epam.aidial.evaluation.web.controller;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyChar;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.epam.aidial.evaluation.service.domain.CsvExportService;
+import com.epam.aidial.evaluation.service.domain.CsvImportService;
+import com.epam.aidial.evaluation.service.domain.TestCaseService;
+import com.epam.aidial.evaluation.service.domain.ZipExportService;
+import com.epam.aidial.evaluation.service.domain.ZipImportService;
+import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
+import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
+import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
+import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
+import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+
+/**
+ * Unit tests for {@link TestCaseController}'s ZIP-vs-CSV detection (design D9): extension and content-type
+ * checks first, then a {@code PK\x03\x04} magic-byte fallback via {@code ZipImportService.isZipArchive} for
+ * a file whose name and content type don't already say it's a ZIP (e.g. an export renamed to {@code
+ * export.bin} and sent as {@code application/octet-stream}).
+ */
+@DisplayName("TestCaseController ZIP detection")
+@ExtendWith(MockitoExtension.class)
+class TestCaseControllerTest {
+
+    @Mock
+    private TestCaseService testCaseService;
+
+    @Mock
+    private CsvExportService csvExportService;
+
+    @Mock
+    private CsvImportService csvImportService;
+
+    @Mock
+    private ZipExportService zipExportService;
+
+    @Mock
+    private ZipImportService zipImportService;
+
+    @Mock
+    private PaginationParamResolver paginationParamResolver;
+
+    private TestCaseController controller() {
+        return new TestCaseController(
+                testCaseService,
+                csvExportService,
+                csvImportService,
+                zipExportService,
+                zipImportService,
+                paginationParamResolver,
+                new CsvDelimiterParser());
+    }
+
+    @Test
+    @DisplayName("a ZIP renamed to export.bin with content type application/octet-stream is still routed to "
+            + "ZipImportService, detected by the PK magic bytes")
+    void importCsv_zipRenamedWithGenericContentType_detectedByMagicBytes() throws IOException {
+        UUID datasetId = UUID.randomUUID();
+        byte[] content = "not a real zip, only the detector is faked".getBytes(StandardCharsets.UTF_8);
+        MockMultipartFile file = new MockMultipartFile("file", "export.bin", "application/octet-stream", content);
+        when(zipImportService.isZipArchive(any())).thenReturn(true);
+        when(zipImportService.importZip(any(), any(), anyChar(), any(), any(), any()))
+                .thenReturn(CsvImportResultDto.builder().totalRows(1).build());
+
+        CsvImportResultDto result =
+                controller().importCsv(datasetId, file, ",", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL, null);
+
+        assertThat(result.getTotalRows()).isEqualTo(1);
+        ArgumentCaptor<Path> pathCaptor = ArgumentCaptor.forClass(Path.class);
+        verify(zipImportService).importZip(eq(datasetId), pathCaptor.capture(), eq(','), eq(null), any(), any());
+        Path staged = pathCaptor.getValue();
+        assertThat(Files.readAllBytes(staged)).isEqualTo(content);
+        Files.deleteIfExists(staged);
+        verify(csvImportService, never()).importCsv(any(), any(), anyLong(), anyChar(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a .zip-named file is routed to ZipImportService without needing the magic-byte fallback")
+    void importCsv_zipExtension_routedWithoutMagicByteCheck() throws IOException {
+        UUID datasetId = UUID.randomUUID();
+        byte[] content = "zip bytes".getBytes(StandardCharsets.UTF_8);
+        MockMultipartFile file = new MockMultipartFile("file", "data.zip", "application/zip", content);
+        when(zipImportService.importZip(any(), any(), anyChar(), any(), any(), any()))
+                .thenReturn(CsvImportResultDto.builder().totalRows(2).build());
+
+        CsvImportResultDto result =
+                controller().importCsv(datasetId, file, ",", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL, null);
+
+        assertThat(result.getTotalRows()).isEqualTo(2);
+        verify(zipImportService, never()).isZipArchive(any());
+    }
+
+    @Test
+    @DisplayName("a plain CSV file (no zip extension/content-type/magic-bytes) is routed to CsvImportService")
+    void importCsv_plainCsv_routedToCsvImportService() throws IOException {
+        UUID datasetId = UUID.randomUUID();
+        byte[] content = "testCaseName,prompt\nTC,hi".getBytes(StandardCharsets.UTF_8);
+        MockMultipartFile file = new MockMultipartFile("file", "data.csv", "text/csv", content);
+        when(zipImportService.isZipArchive(any())).thenReturn(false);
+        when(csvImportService.importCsv(any(), any(), anyLong(), anyChar(), any(), any(), any()))
+                .thenReturn(CsvImportResultDto.builder().totalRows(1).build());
+
+        CsvImportResultDto result =
+                controller().importCsv(datasetId, file, ",", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL, null);
+
+        assertThat(result.getTotalRows()).isEqualTo(1);
+        verify(zipImportService, never()).importZip(any(), any(), anyChar(), any(), any(), any());
+    }
+}

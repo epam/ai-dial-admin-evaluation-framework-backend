@@ -107,6 +107,8 @@ import com.epam.aidial.evaluation.functional.tests.TestSuiteRunSseFunctionalTest
 import com.epam.aidial.evaluation.functional.tests.TestSuiteRunStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TryItOutFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.ZipRoundTripFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.ZipTestCaseImportFunctionalTests;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreClientException;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
@@ -490,6 +492,12 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class FileFieldTests extends FileFieldFunctionalTests {}
+
+    @Nested
+    class ZipTestCaseImportTests extends ZipTestCaseImportFunctionalTests {}
+
+    @Nested
+    class ZipRoundTripTests extends ZipRoundTripFunctionalTests {}
 
     @Nested
     class SuiteValidationFileRefTests extends SuiteValidationFileRefFunctionalTests {}

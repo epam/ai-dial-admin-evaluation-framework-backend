@@ -48,6 +48,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("TestCase Functional Tests")
@@ -832,6 +833,42 @@ public abstract class TestCaseFunctionalTests extends BaseFunctionalTest {
                 new ParameterizedTypeReference<>() {});
         assertThat(list.getBody()).isNotNull();
         assertThat(list.getBody().getTotalElements()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName(
+            "OpenAPI spec carries minimal, full and missing-file-warning response examples for the import endpoint")
+    void openApiSpecCarriesImportMissingFileWarningExample() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode apiDocsRoot = new ObjectMapper().readTree(apiDocs.getBody());
+
+        JsonNode operation = apiDocsRoot
+                .path("paths")
+                .path("/api/v1/datasets/{datasetId}/test-cases/import")
+                .path("post");
+        assertThat(operation.isMissingNode())
+                .as("the import operation should be registered")
+                .isFalse();
+
+        JsonNode examples = operation
+                .path("responses")
+                .path("200")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+        assertThat(examples.propertyNames())
+                .as("OpenApiExampleCustomizer should inject minimal, full and missing-file-warning examples "
+                        + "now that the operation declares produces=application/json")
+                .containsExactlyInAnyOrder("minimal", "full", "missing-file-warning");
+
+        JsonNode warning = examples.path("missing-file-warning")
+                .path("value")
+                .path("warnings")
+                .path(0);
+        assertThat(warning.path("rowNumber").asInt()).isEqualTo(3);
+        assertThat(warning.path("columnName").asString()).isEqualTo("document");
+        assertThat(warning.path("message").asString()).isEqualTo("File missing from archive: files/9/missing.pdf");
     }
 
     @Test

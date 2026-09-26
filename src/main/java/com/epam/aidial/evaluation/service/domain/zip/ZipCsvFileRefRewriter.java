@@ -1,11 +1,10 @@
 package com.epam.aidial.evaluation.service.domain.zip;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.service.domain.csv.CsvFormats;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportWarningDto;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -15,7 +14,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
@@ -48,7 +46,7 @@ public class ZipCsvFileRefRewriter {
             byte[] csv, char delimiter, Map<String, ZipImportColumnTypeResolver.ColumnTypeResolution> columnTypes) {
         Set<String> referencedPaths = new LinkedHashSet<>();
         Set<String> fileColumns = new LinkedHashSet<>();
-        try (CSVParser parser = createParser(csv, delimiter)) {
+        try (CSVParser parser = CsvFormats.importParser(csv, delimiter)) {
             Iterator<CSVRecord> it = parser.iterator();
             if (!it.hasNext()) {
                 return new ScanResult(Set.of(), Set.of());
@@ -86,9 +84,9 @@ public class ZipCsvFileRefRewriter {
             Map<String, String> pathToRef) {
         List<CsvImportWarningDto> warnings = new ArrayList<>();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (CSVParser parser = createParser(csv, delimiter);
-                CSVPrinter printer =
-                        new CSVPrinter(new OutputStreamWriter(out, StandardCharsets.UTF_8), format(delimiter))) {
+        try (CSVParser parser = CsvFormats.importParser(csv, delimiter);
+                CSVPrinter printer = new CSVPrinter(
+                        new OutputStreamWriter(out, StandardCharsets.UTF_8), CsvFormats.forImport(delimiter))) {
             Iterator<CSVRecord> it = parser.iterator();
             if (!it.hasNext()) {
                 return new RewriteResult(csv, List.of());
@@ -148,23 +146,6 @@ public class ZipCsvFileRefRewriter {
             headers.add(record.get(i).trim());
         }
         return headers;
-    }
-
-    private static CSVParser createParser(byte[] csv, char delimiter) throws IOException {
-        return CSVParser.builder()
-                .setFormat(format(delimiter))
-                .setReader(new InputStreamReader(new ByteArrayInputStream(csv), StandardCharsets.UTF_8))
-                .get();
-    }
-
-    private static CSVFormat format(char delimiter) {
-        return CSVFormat.DEFAULT
-                .builder()
-                .setDelimiter(delimiter)
-                .setQuote('"')
-                .setTrim(true)
-                .setIgnoreEmptyLines(false)
-                .get();
     }
 
     /** {@code referencedPaths}: every archive path an eligible cell held. {@code fileColumns}: their columns. */

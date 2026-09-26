@@ -14,6 +14,7 @@ import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import com.epam.aidial.evaluation.service.domain.zip.ZipManifest;
+import com.epam.aidial.evaluation.service.domain.zip.ZipTestArchives;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -364,7 +365,7 @@ public abstract class ZipTestCaseImportFunctionalTests extends BaseFunctionalTes
             entries.put("files/1/small.bin", "hello".getBytes(StandardCharsets.UTF_8));
             entries.put("files/2/big.bin", realBigContent);
             byte[] zip = createZip(entries);
-            byte[] lyingZip = lieAboutUncompressedSize(zip, "files/2/big.bin", 10);
+            byte[] lyingZip = ZipTestArchives.lieAboutUncompressedSize(zip, "files/2/big.bin", 10);
 
             ResponseEntity<String> response = importZipRaw(datasetId, lyingZip, "OVERRIDE", "FAIL");
 
@@ -700,50 +701,5 @@ public abstract class ZipTestCaseImportFunctionalTests extends BaseFunctionalTes
             throw new IllegalStateException("Failed to create ZIP fixture", e);
         }
         return baos.toByteArray();
-    }
-
-    /**
-     * Patches the ZIP central directory's declared uncompressed size for {@code entryName} to {@code
-     * declaredSize}, without touching the real (larger) compressed data — reproducing an entry whose header
-     * lies about its size, which {@code ZipFile#getInputStream} still fully decompresses regardless of the
-     * declared size. Mirrors {@code ZipArchiveReaderTest}'s unit-level helper of the same shape.
-     */
-    private static byte[] lieAboutUncompressedSize(byte[] zip, String entryName, int declaredSize) {
-        byte[] nameBytes = entryName.getBytes(StandardCharsets.UTF_8);
-        byte[] patched = zip.clone();
-        for (int i = 0; i + 4 <= patched.length; i++) {
-            // Central directory file header signature: PK\x01\x02
-            if ((patched[i] & 0xff) == 0x50
-                    && (patched[i + 1] & 0xff) == 0x4b
-                    && (patched[i + 2] & 0xff) == 0x01
-                    && (patched[i + 3] & 0xff) == 0x02) {
-                int nameLen = readLe16(patched, i + 28);
-                if (nameLen == nameBytes.length && matches(patched, i + 46, nameBytes)) {
-                    writeLe32(patched, i + 24, declaredSize);
-                    return patched;
-                }
-            }
-        }
-        throw new IllegalStateException("Central directory entry not found: " + entryName);
-    }
-
-    private static boolean matches(byte[] data, int offset, byte[] expected) {
-        for (int i = 0; i < expected.length; i++) {
-            if (data[offset + i] != expected[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static int readLe16(byte[] b, int off) {
-        return (b[off] & 0xff) | ((b[off + 1] & 0xff) << 8);
-    }
-
-    private static void writeLe32(byte[] b, int off, int v) {
-        b[off] = (byte) (v & 0xff);
-        b[off + 1] = (byte) ((v >> 8) & 0xff);
-        b[off + 2] = (byte) ((v >> 16) & 0xff);
-        b[off + 3] = (byte) ((v >> 24) & 0xff);
     }
 }

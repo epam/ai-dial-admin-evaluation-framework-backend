@@ -17,7 +17,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -221,32 +220,12 @@ class ZipArchiveReaderTest {
         entries.put("test-cases.csv", CSV_BYTES);
         entries.put("files/1/aaa.pdf", FILE_BYTES);
         entries.put("files/1/bbb.pdf", FILE_BYTES);
-        byte[] zip = renameEntry(zipBytes(entries), "files/1/bbb.pdf", "files/1/aaa.pdf");
+        byte[] zip = ZipTestArchives.renameEntry(zipBytes(entries), "files/1/bbb.pdf", "files/1/aaa.pdf");
         Path archive = writeZip(zip);
 
         assertThatThrownBy(() -> defaultReader().open(archive))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Duplicate ZIP entry path");
-    }
-
-    /** Renames every occurrence of a ZIP entry's exact name bytes; {@code from} and {@code to} must be equal length. */
-    private static byte[] renameEntry(byte[] zip, String from, String to) {
-        byte[] fromBytes = from.getBytes(StandardCharsets.UTF_8);
-        byte[] toBytes = to.getBytes(StandardCharsets.UTF_8);
-        if (fromBytes.length != toBytes.length) {
-            throw new IllegalArgumentException("Names must be the same length to rename in place");
-        }
-        byte[] patched = zip.clone();
-        outer:
-        for (int i = 0; i + fromBytes.length <= patched.length; i++) {
-            for (int j = 0; j < fromBytes.length; j++) {
-                if (patched[i + j] != fromBytes[j]) {
-                    continue outer;
-                }
-            }
-            System.arraycopy(toBytes, 0, patched, i, toBytes.length);
-        }
-        return patched;
     }
 
     @Test
@@ -307,8 +286,8 @@ class ZipArchiveReaderTest {
         byte[] zip = zipBytes(entries);
         // Lie about both files' declared sizes so the eager (header-sum) total check at open() time passes,
         // even though their real bytes will exceed the running total once they are actually read.
-        zip = lieAboutUncompressedSize(zip, "files/1/a.bin", 5);
-        zip = lieAboutUncompressedSize(zip, "files/2/b.bin", 5);
+        zip = ZipTestArchives.lieAboutUncompressedSize(zip, "files/1/a.bin", 5);
+        zip = ZipTestArchives.lieAboutUncompressedSize(zip, "files/2/b.bin", 5);
         Path archive = writeZip(zip);
 
         // Enough for the CSV (read at open time) plus file1, but not for file1 and file2 together.
@@ -334,7 +313,7 @@ class ZipArchiveReaderTest {
         entries.put("test-cases.csv", CSV_BYTES);
         entries.put("files/1/big.bin", realBigContent);
         byte[] zip = zipBytes(entries);
-        byte[] lyingZip = lieAboutUncompressedSize(zip, "files/1/big.bin", 10);
+        byte[] lyingZip = ZipTestArchives.lieAboutUncompressedSize(zip, "files/1/big.bin", 10);
         Path archive = writeZip(lyingZip);
 
         // Cap large enough to pass the header pre-check (10 <= cap) but smaller than the real content (5000).
@@ -344,50 +323,5 @@ class ZipArchiveReaderTest {
                     .isInstanceOf(ValidationException.class)
                     .hasMessageContaining("exceeds maximum");
         }
-    }
-
-    /**
-     * Patches the ZIP central directory's declared uncompressed size for {@code entryName} to {@code
-     * declaredSize}, without touching the real (larger) compressed data — reproducing an entry whose header
-     * lies about its size, which {@link ZipFile#getInputStream} still fully decompresses regardless of the
-     * declared size.
-     */
-    private static byte[] lieAboutUncompressedSize(byte[] zip, String entryName, int declaredSize) {
-        byte[] nameBytes = entryName.getBytes(StandardCharsets.UTF_8);
-        byte[] patched = zip.clone();
-        for (int i = 0; i + 4 <= patched.length; i++) {
-            // Central directory file header signature: PK\x01\x02
-            if ((patched[i] & 0xff) == 0x50
-                    && (patched[i + 1] & 0xff) == 0x4b
-                    && (patched[i + 2] & 0xff) == 0x01
-                    && (patched[i + 3] & 0xff) == 0x02) {
-                int nameLen = readLe16(patched, i + 28);
-                if (nameLen == nameBytes.length && matches(patched, i + 46, nameBytes)) {
-                    writeLe32(patched, i + 24, declaredSize);
-                    return patched;
-                }
-            }
-        }
-        throw new IllegalStateException("Central directory entry not found: " + entryName);
-    }
-
-    private static boolean matches(byte[] data, int offset, byte[] expected) {
-        for (int i = 0; i < expected.length; i++) {
-            if (data[offset + i] != expected[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static int readLe16(byte[] b, int off) {
-        return (b[off] & 0xff) | ((b[off + 1] & 0xff) << 8);
-    }
-
-    private static void writeLe32(byte[] b, int off, int v) {
-        b[off] = (byte) (v & 0xff);
-        b[off + 1] = (byte) ((v >> 8) & 0xff);
-        b[off + 2] = (byte) ((v >> 16) & 0xff);
-        b[off + 3] = (byte) ((v >> 24) & 0xff);
     }
 }

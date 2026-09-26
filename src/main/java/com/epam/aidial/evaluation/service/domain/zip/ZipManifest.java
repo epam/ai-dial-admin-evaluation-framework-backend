@@ -24,7 +24,14 @@ public record ZipManifest(int formatVersion, List<FieldDefinitionDto> testCaseSc
 
     /**
      * Pairs one archive file path with the file reference it was exported from (or, on import, the
-     * dataset's own file it should be treated as).
+     * dataset's own file it should be treated as), and the source file's content type. {@code
+     * contentType} is optional: absent in archives written before it existed or hand-made ones, in which
+     * case import guesses it from the filename.
      */
-    public record FileEntry(String path, String sourceRef) {}
+    public record FileEntry(String path, String sourceRef, String contentType) {
+
+        public FileEntry(String path, String sourceRef) {
+            this(path, sourceRef, null);
+        }
+    }
 }

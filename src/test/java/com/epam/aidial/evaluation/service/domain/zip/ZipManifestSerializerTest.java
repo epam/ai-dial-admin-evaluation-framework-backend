@@ -29,7 +29,7 @@ class ZipManifestSerializerTest {
     }
 
     @Test
-    @DisplayName("round trip keeps perTurn, required, displayName and description")
+    @DisplayName("round trip keeps perTurn, required, displayName, description and file content type")
     void write_thenRead_roundTripsFieldAttributes() {
         FieldDefinitionDto document = FieldDefinitionDto.builder()
                 .name("document")
@@ -48,7 +48,8 @@ class ZipManifestSerializerTest {
         ZipManifest manifest = new ZipManifest(
                 ZipManifest.CURRENT_FORMAT_VERSION,
                 List.of(document, prompt),
-                List.of(new ZipManifest.FileEntry("files/1/report.pdf", "@ef/datasets/abc/report.pdf")));
+                List.of(new ZipManifest.FileEntry(
+                        "files/1/report.pdf", "@ef/datasets/abc/report.pdf", "application/pdf")));
 
         byte[] written = serializer.write(manifest);
         ZipManifest read = serializer.read(written);
@@ -67,6 +68,21 @@ class ZipManifestSerializerTest {
         assertThat(read.files()).hasSize(1);
         assertThat(read.files().getFirst().path()).isEqualTo("files/1/report.pdf");
         assertThat(read.files().getFirst().sourceRef()).isEqualTo("@ef/datasets/abc/report.pdf");
+        assertThat(read.files().getFirst().contentType()).isEqualTo("application/pdf");
+    }
+
+    @Test
+    @DisplayName("a file entry without contentType (older or hand-made archive) reads with a null content type")
+    void read_fileEntryWithoutContentType_hasNullContentType() {
+        String json = "{\"formatVersion\":1,\"testCaseSchema\":[],"
+                + "\"files\":[{\"path\":\"files/1/a.png\",\"sourceRef\":\"@ef/datasets/abc/a.png\"}]}";
+
+        ZipManifest manifest = serializer.read(json.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(manifest.files()).singleElement().satisfies(entry -> {
+            assertThat(entry.path()).isEqualTo("files/1/a.png");
+            assertThat(entry.contentType()).isNull();
+        });
     }
 
     @Test

@@ -15,6 +15,7 @@ import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.ColumnBinding;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
+import com.epam.aidial.evaluation.service.domain.csv.CsvFormats;
 import com.epam.aidial.evaluation.service.domain.csv.CsvImportSchemaHints;
 import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
 import com.epam.aidial.evaluation.service.domain.csv.CsvTestCase;
@@ -22,6 +23,7 @@ import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
 import com.epam.aidial.evaluation.service.domain.csv.MultiTurnAssembly;
 import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
 import com.epam.aidial.evaluation.service.domain.csv.ParsedCsvRow;
+import com.epam.aidial.evaluation.service.domain.csv.ResolvedSchemaHints;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvColumnInfoDto;
@@ -36,9 +38,7 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -49,7 +49,6 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -121,7 +120,7 @@ public class CsvImportService {
         }
         List<FieldDefinitionDto> testCaseSchema = datasetSchemaProvider.getSchema(datasetId);
 
-        try (CSVParser parser = createParser(inputStream, delimiter)) {
+        try (CSVParser parser = CsvFormats.importParser(inputStream, delimiter)) {
             List<String> headers = parseHeader(parser);
             if (headers.isEmpty()) {
                 throw new ValidationException("CSV has no header row");
@@ -131,12 +130,13 @@ public class CsvImportService {
 
             boolean schemaEmpty = testCaseSchema == null || testCaseSchema.isEmpty();
             Set<String> allDataFieldNames = allDataFieldNames(bindings);
-            List<FieldDefinitionDto> validationSchema =
-                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames, hints);
+            ResolvedSchemaHints resolvedHints = ResolvedSchemaHints.resolve(mode, testCaseSchema, hints);
+            List<FieldDefinitionDto> validationSchema = buildValidationSchema(
+                    mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames, resolvedHints);
             // Preview parity with importCsv: see the identical comment there for why parse-time types come
             // from fieldTypes overlaid with the manifest, never from validationSchema directly.
-            Set<String> manifestDrivenColumns = manifestDrivenColumns(mode, schemaEmpty, testCaseSchema, hints);
-            Map<String, SchemaFieldType> parseFieldTypes = parseFieldTypes(fieldTypes, manifestDrivenColumns, hints);
+            Set<String> manifestDrivenColumns = resolvedHints.drivingFields().keySet();
+            Map<String, SchemaFieldType> parseFieldTypes = parseFieldTypes(fieldTypes, resolvedHints);
 
             List<CsvImportWarningDto> warnings = new ArrayList<>();
             List<TestCaseResponseDto> sampleRows = new ArrayList<>();
@@ -232,7 +232,7 @@ public class CsvImportService {
             // Post-stream membership set (design D3): the observed multi-turn gate, exact after streaming.
             Set<String> finalMultiTurnColumns = sawMultiTurnCase ? allDataFieldNames : Set.of();
             List<FieldDefinitionDto> autoDetectedSchema = buildAutoDetectedSchema(
-                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns, hints);
+                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns, resolvedHints);
 
             List<CsvColumnInfoDto> detectedColumns =
                     buildDetectedColumns(headers, bindings, fieldTypes, autoDetectedSchema);
@@ -313,7 +313,7 @@ public class CsvImportService {
 
         List<FieldDefinitionDto> testCaseSchema = datasetSchemaProvider.getSchema(datasetId);
 
-        try (CSVParser parser = createParser(inputStream, delimiter)) {
+        try (CSVParser parser = CsvFormats.importParser(inputStream, delimiter)) {
             List<String> headers = parseHeader(parser);
             if (headers.isEmpty()) {
                 throw new ValidationException("CSV has no header row");
@@ -326,10 +326,11 @@ public class CsvImportService {
 
             boolean schemaEmpty = testCaseSchema == null || testCaseSchema.isEmpty();
             Set<String> allDataFieldNames = allDataFieldNames(bindings);
-            List<FieldDefinitionDto> validationSchema =
-                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames, hints);
-            // manifestDrivenColumns gates both parseFieldTypes' overlay and parseRow's raw-text coercion
-            // (see parseRow and manifestDrivenColumns javadoc) to *only* the columns the manifest tier
+            ResolvedSchemaHints resolvedHints = ResolvedSchemaHints.resolve(mode, testCaseSchema, hints);
+            List<FieldDefinitionDto> validationSchema = buildValidationSchema(
+                    mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames, resolvedHints);
+            // manifestDrivenColumns (the resolved hints' driving fields) gates both parseFieldTypes' overlay
+            // and parseRow's raw-text coercion (see parseRow javadoc) to *only* the columns the manifest tier
             // actually decides for this mode: a column already known from the pre-import schema (or from
             // plain inference) keeps its pre-import type and coerces the heuristically pre-parsed value,
             // byte-for-byte as before — changing plain-CSV behaviour is out of scope. Only a manifest-tier
@@ -338,7 +339,7 @@ public class CsvImportService {
             // silently rewritten by CsvCellParser's numeric/boolean heuristic before any type-aware
             // coercion runs, and the post-persist fixup pass can only coerce the *type* of whatever parse
             // time already stored, never recover text that heuristic has already discarded.
-            Set<String> manifestDrivenColumns = manifestDrivenColumns(mode, schemaEmpty, testCaseSchema, hints);
+            Set<String> manifestDrivenColumns = resolvedHints.drivingFields().keySet();
             // Parse-time column types: fieldTypes (the pre-import dataset schema) overlaid with the
             // manifest's type for exactly manifestDrivenColumns — never validationSchema directly, since
             // validationSchema's OVERRIDE/empty-schema branch deliberately clears every non-manifest
@@ -346,7 +347,7 @@ public class CsvImportService {
             // pre-inference validation) — using it here would make parseRow treat an existing OBJECT/ARRAY
             // or INTEGER column as undeclared during a plain (no-hints) OVERRIDE import, a plain-CSV
             // behaviour change. With EMPTY hints, parseFieldTypes is identical to fieldTypes.
-            Map<String, SchemaFieldType> parseFieldTypes = parseFieldTypes(fieldTypes, manifestDrivenColumns, hints);
+            Map<String, SchemaFieldType> parseFieldTypes = parseFieldTypes(fieldTypes, resolvedHints);
 
             List<CsvImportWarningDto> warnings = new ArrayList<>();
             int totalRows = 0;
@@ -433,8 +434,7 @@ public class CsvImportService {
                     testCaseSchema,
                     inferredTypes,
                     finalMultiTurnColumns,
-                    manifestDrivenColumns,
-                    hints);
+                    resolvedHints);
 
             // Post-persist fixup: coerce values to the schema's *effective* (final, hints-aware) type per
             // column, never to the raw per-cell inference. With a manifest or a fileColumns hint (design
@@ -443,7 +443,7 @@ public class CsvImportService {
             // *old* schema's types (or a heuristic guess when the column was undeclared), so this pass is
             // the only place a manifest-declared type ever reaches already-parsed row data.
             List<FieldDefinitionDto> finalSchema = buildFinalSchema(
-                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns, hints);
+                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns, resolvedHints);
             Map<String, SchemaFieldType> effectiveTypes = getFieldTypes(finalSchema);
             Set<String> changedColumns = computeChangedColumns(mode, schemaEmpty, fieldTypes, effectiveTypes);
             if (!changedColumns.isEmpty()) {
@@ -723,11 +723,9 @@ public class CsvImportService {
      *   <li>APPEND + non-empty schema: existing testCaseSchema unchanged</li>
      * </ul>
      *
-     * <p>{@code hints.declaredSchema()} (a ZIP manifest's fields) supplies a declared tier (design D4, tier
-     * 0) that takes priority over inference wherever the mode above lets the manifest decide: verbatim for
-     * OVERRIDE/empty-schema, and for MERGE new columns only (existing dataset fields are unaffected).
-     * APPEND + non-empty schema ignores {@code hints} entirely, matching the manifest-ignored row of design
-     * D4. Plain CSV import always passes {@link CsvImportSchemaHints#EMPTY}, so this is a no-op then.
+     * <p>{@code hints.drivingFields()} (the manifest fields this mode lets decide, see {@link
+     * ResolvedSchemaHints}) supply a declared tier (design D4, tier 0) that takes priority over inference.
+     * Plain CSV import resolves {@link CsvImportSchemaHints#EMPTY}, so this is a no-op then.
      */
     List<FieldDefinitionDto> buildValidationSchema(
             CsvImportMode mode,
@@ -735,7 +733,7 @@ public class CsvImportService {
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
             Set<String> multiTurnColumns,
-            CsvImportSchemaHints hints) {
+            ResolvedSchemaHints hints) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
             // Types are unknown until inference completes. A declared field still carries perTurn forward
             // from testCaseSchema by field name (declared scope is a persistent dataset-schema property a
@@ -764,18 +762,17 @@ public class CsvImportService {
      * Returns true when the dataset schema column was updated (which also bumps the dataset version).
      *
      * <p>The MERGE branch only attempts a delta when {@code inferredTypes} is non-empty (a cheap way to
-     * skip the work when the CSV plainly added no new column) <b>or</b> {@code manifestDrivenColumns} is
-     * non-empty. The second condition is required: a manifest-declared new MERGE column (design D4) whose
-     * cells are all blank in every row — e.g. every referenced ZIP file missing from the archive — never
+     * skip the work when the CSV plainly added no new column) <b>or</b> {@code hints} has driving fields.
+     * The second condition is required: a manifest-declared new MERGE column (design D4) whose cells are
+     * all blank in every row — e.g. every referenced ZIP file missing from the archive — never
      * reaches {@code inferredTypes} (type inference skips blank cells entirely), so without it the manifest
      * field would silently never be appended, even though the spec says MERGE takes a new field's
-     * definition from the manifest regardless of its cells. {@code manifestDrivenColumns} for MERGE mode is
-     * already exactly "manifest-listed names absent from the current schema" (see {@link
-     * #manifestDrivenColumns}), i.e. delta-eligible by construction, so its non-emptiness is a precise
-     * proxy here; {@code buildMergeDelta}'s own {@code delta.isEmpty()} check below still guards the actual
-     * persist for a manifest field that turns out to have no CSV column. Plain CSV ({@link
-     * CsvImportSchemaHints#EMPTY}) always yields an empty {@code manifestDrivenColumns}, so this keeps the
-     * exact old gate for plain CSV.
+     * definition from the manifest regardless of its cells. In MERGE mode the driving fields are exactly
+     * the manifest-listed names absent from the current schema (see {@link ResolvedSchemaHints}), i.e.
+     * delta-eligible by construction, so their presence is a precise proxy here; {@code buildMergeDelta}'s
+     * own {@code delta.isEmpty()} check below still guards the actual persist for a manifest field that
+     * turns out to have no CSV column. Plain CSV ({@link CsvImportSchemaHints#EMPTY}) never has driving
+     * fields, so this keeps the exact old gate for plain CSV.
      */
     private boolean persistSchema(
             UUID datasetId,
@@ -785,8 +782,7 @@ public class CsvImportService {
             List<FieldDefinitionDto> testCaseSchema,
             Map<String, SchemaFieldType> inferredTypes,
             Set<String> multiTurnColumns,
-            Set<String> manifestDrivenColumns,
-            CsvImportSchemaHints hints) {
+            ResolvedSchemaHints hints) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
             // Build full auto-detected schema from inferred types (OVERRIDE, APPEND+empty, MERGE+empty)
             List<FieldDefinitionDto> newSchema = schemaFieldBuilder.buildFromBindings(
@@ -795,7 +791,8 @@ public class CsvImportService {
             datasetRepository.updateTestCaseSchema(datasetId, schemaJson);
             return true;
         }
-        if (mode == CsvImportMode.MERGE && (!inferredTypes.isEmpty() || !manifestDrivenColumns.isEmpty())) {
+        if (mode == CsvImportMode.MERGE
+                && (!inferredTypes.isEmpty() || !hints.drivingFields().isEmpty())) {
             // Merge: add only new fields (those not already in the existing schema)
             List<FieldDefinitionDto> delta = schemaFieldBuilder.buildMergeDelta(
                     testCaseSchema, bindings, inferredTypes, multiTurnColumns, hints);
@@ -865,7 +862,7 @@ public class CsvImportService {
             List<FieldDefinitionDto> testCaseSchema,
             Map<String, SchemaFieldType> inferredTypes,
             Set<String> multiTurnColumns,
-            CsvImportSchemaHints hints) {
+            ResolvedSchemaHints hints) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
             return schemaFieldBuilder.buildFromBindings(
                     bindings, inferredTypes, testCaseSchema, multiTurnColumns, hints);
@@ -1255,7 +1252,7 @@ public class CsvImportService {
             List<FieldDefinitionDto> testCaseSchema,
             Map<String, SchemaFieldType> inferredTypes,
             Set<String> multiTurnColumns,
-            CsvImportSchemaHints hints) {
+            ResolvedSchemaHints hints) {
         if (mode == CsvImportMode.OVERRIDE) {
             // Always return full auto-detected schema
             return schemaFieldBuilder.buildFromBindings(
@@ -1284,18 +1281,6 @@ public class CsvImportService {
         if (contentLength > maxBytes) {
             throw new ValidationException("File size exceeds limit " + csvImportProperties.getMaxFileSize());
         }
-    }
-
-    private static CSVParser createParser(InputStream inputStream, char delimiter) throws IOException {
-        CSVFormat format = CSVFormat.DEFAULT
-                .builder()
-                .setDelimiter(delimiter)
-                .setQuote('"')
-                .setTrim(true)
-                .setIgnoreEmptyLines(false)
-                .get();
-        InputStreamReader reader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
-        return CSVParser.builder().setFormat(format).setReader(reader).get();
     }
 
     private List<String> parseHeader(CSVParser parser) throws IOException {
@@ -1410,76 +1395,23 @@ public class CsvImportService {
     }
 
     /**
-     * Column names whose parse-time type comes from the manifest tier (design D4, tier 0) for this specific
-     * mode/schema-state combination — exactly the columns {@link #buildValidationSchema} resolves to a
-     * manifest field rather than to the pre-import schema or plain inference:
-     *
-     * <ul>
-     *   <li>OVERRIDE, or any mode with an empty schema: every manifest-listed field name, unconditionally
-     *       (the dataset's current schema is ignored for this bucket per D4/D5);
-     *   <li>MERGE, non-empty schema: only manifest-listed names <b>absent</b> from the current dataset
-     *       schema — an already-declared field is never overridden by the manifest;
-     *   <li>APPEND, non-empty schema: none — the manifest is ignored entirely.
-     * </ul>
-     *
-     * <p>Used to gate both {@link #parseFieldTypes}'s manifest overlay and {@link #parseRow}'s raw-text
-     * coercion. Plain CSV import ({@link CsvImportSchemaHints#EMPTY}) always returns an empty set here, so
-     * every declared column keeps its pre-import type and coerces the heuristically pre-parsed cell value
-     * exactly as before — changing that behaviour is out of scope (proposal Non-goals).
-     */
-    private static Set<String> manifestDrivenColumns(
-            CsvImportMode mode,
-            boolean schemaEmpty,
-            List<FieldDefinitionDto> testCaseSchema,
-            CsvImportSchemaHints hints) {
-        if (hints.declaredSchema().isEmpty()) {
-            return Set.of();
-        }
-        Set<String> manifestNames = new LinkedHashSet<>();
-        for (FieldDefinitionDto field : hints.declaredSchema()) {
-            if (field != null && field.getName() != null) {
-                manifestNames.add(field.getName());
-            }
-        }
-        if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
-            return manifestNames;
-        }
-        if (mode == CsvImportMode.MERGE) {
-            if (testCaseSchema != null) {
-                for (FieldDefinitionDto field : testCaseSchema) {
-                    if (field != null && field.getName() != null) {
-                        manifestNames.remove(field.getName());
-                    }
-                }
-            }
-            return manifestNames;
-        }
-        // APPEND + non-empty schema: manifest ignored entirely
-        return Set.of();
-    }
-
-    /**
      * Parse-time column types: {@code fieldTypes} (the pre-import dataset schema's types, unchanged),
-     * overlaid with the manifest's declared type for exactly the names in {@code manifestDrivenColumns}.
+     * overlaid with the type of each of the resolved hints' driving fields.
      * Deliberately <b>not</b> derived from {@code validationSchema}: that schema's OVERRIDE/empty-schema
      * branch clears every non-manifest column's type to {@code null} by design (validation-time only, see
      * {@link #buildValidationSchema}), which would otherwise make {@link #parseRow} treat an
      * already-declared OBJECT/ARRAY or INTEGER column as undeclared during a plain (no-hints) OVERRIDE
-     * import — a plain-CSV behaviour change. With an empty {@code manifestDrivenColumns} (in particular,
+     * import — a plain-CSV behaviour change. With no driving fields (in particular,
      * plain CSV with {@link CsvImportSchemaHints#EMPTY}), this returns {@code fieldTypes} itself, so
      * {@code parseRow} sees exactly what it always has.
      */
     private static Map<String, SchemaFieldType> parseFieldTypes(
-            Map<String, SchemaFieldType> fieldTypes, Set<String> manifestDrivenColumns, CsvImportSchemaHints hints) {
-        if (manifestDrivenColumns.isEmpty()) {
+            Map<String, SchemaFieldType> fieldTypes, ResolvedSchemaHints hints) {
+        if (hints.drivingFields().isEmpty()) {
             return fieldTypes;
         }
         Map<String, SchemaFieldType> overlaid = new LinkedHashMap<>(fieldTypes);
-        for (FieldDefinitionDto declared : hints.declaredSchema()) {
-            if (declared != null && declared.getName() != null && manifestDrivenColumns.contains(declared.getName())) {
-                overlaid.put(declared.getName(), declared.getType());
-            }
-        }
+        hints.drivingFields().forEach((name, declared) -> overlaid.put(name, declared.getType()));
         return overlaid;
     }
 

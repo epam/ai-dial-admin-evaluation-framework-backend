@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -332,7 +333,7 @@ class CsvSchemaFieldBuilderTest {
             List<FieldDefinitionDto> currentSchema = List.of(currentField("document", true));
             FieldDefinitionDto manifestDocument =
                     manifestField("document", SchemaFieldType.FILE, true, null, "Document", "The uploaded document");
-            CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestDocument), Set.of());
+            ResolvedSchemaHints hints = resolved(List.of(manifestDocument), Set.of());
 
             List<FieldDefinitionDto> result = builder.buildFromBindings(
                     bindings, Map.of("document", SchemaFieldType.STRING), currentSchema, Set.of(), hints);
@@ -352,7 +353,7 @@ class CsvSchemaFieldBuilderTest {
             List<ColumnBinding> bindings = List.of(dataBinding("document"), dataBinding("score"));
             FieldDefinitionDto manifestDocument =
                     manifestField("document", SchemaFieldType.FILE, true, null, null, null);
-            CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestDocument), Set.of());
+            ResolvedSchemaHints hints = resolved(List.of(manifestDocument), Set.of());
 
             List<FieldDefinitionDto> result = builder.buildFromBindings(
                     bindings, Map.of("score", SchemaFieldType.INTEGER), List.of(), Set.of(), hints);
@@ -369,7 +370,7 @@ class CsvSchemaFieldBuilderTest {
         void manifestFieldWithNoCsvColumnIsKept() {
             List<ColumnBinding> bindings = List.of(dataBinding("prompt"));
             FieldDefinitionDto manifestExtra = manifestField("extra", SchemaFieldType.STRING, false, null, null, null);
-            CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestExtra), Set.of());
+            ResolvedSchemaHints hints = resolved(List.of(manifestExtra), Set.of());
 
             List<FieldDefinitionDto> result = builder.buildFromBindings(bindings, Map.of(), List.of(), Set.of(), hints);
 
@@ -380,7 +381,7 @@ class CsvSchemaFieldBuilderTest {
         @DisplayName("no manifest: a column in fileColumns is typed FILE instead of the generic inference")
         void fileColumnsHintTypesFileWithoutManifest() {
             List<ColumnBinding> bindings = List.of(dataBinding("attachment"));
-            CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(), Set.of("attachment"));
+            ResolvedSchemaHints hints = resolved(List.of(), Set.of("attachment"));
 
             List<FieldDefinitionDto> result = builder.buildFromBindings(
                     bindings, Map.of("attachment", SchemaFieldType.STRING), List.of(), Set.of(), hints);
@@ -393,7 +394,7 @@ class CsvSchemaFieldBuilderTest {
         void manifestPresentSuppressesFileColumnsFallback() {
             List<ColumnBinding> bindings = List.of(dataBinding("attachment"));
             FieldDefinitionDto manifestOther = manifestField("other", SchemaFieldType.STRING, false, null, null, null);
-            CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestOther), Set.of("attachment"));
+            ResolvedSchemaHints hints = resolved(List.of(manifestOther), Set.of("attachment"));
 
             List<FieldDefinitionDto> result = builder.buildFromBindings(
                     bindings, Map.of("attachment", SchemaFieldType.STRING), List.of(), Set.of(), hints);
@@ -412,7 +413,7 @@ class CsvSchemaFieldBuilderTest {
             List<FieldDefinitionDto> currentSchema = List.of(currentField("prompt", true));
 
             List<FieldDefinitionDto> withHints =
-                    builder.buildFromBindings(bindings, null, currentSchema, Set.of(), CsvImportSchemaHints.EMPTY);
+                    builder.buildFromBindings(bindings, null, currentSchema, Set.of(), resolved(List.of(), Set.of()));
             List<FieldDefinitionDto> withoutHints = builder.buildFromBindings(bindings, null, currentSchema, Set.of());
 
             assertThat(withHints).usingRecursiveComparison().isEqualTo(withoutHints);
@@ -430,7 +431,7 @@ class CsvSchemaFieldBuilderTest {
             List<ColumnBinding> bindings = List.of(dataBinding("prompt"), dataBinding("attachment"));
             FieldDefinitionDto manifestAttachment =
                     manifestField("attachment", SchemaFieldType.FILE, true, null, "Attachment", "An uploaded file");
-            CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestAttachment), Set.of());
+            ResolvedSchemaHints hints = resolved(List.of(manifestAttachment), Set.of());
 
             List<FieldDefinitionDto> delta = builder.buildMergeDelta(
                     currentSchema, bindings, Map.of("attachment", SchemaFieldType.STRING), Set.of(), hints);
@@ -449,7 +450,7 @@ class CsvSchemaFieldBuilderTest {
             List<FieldDefinitionDto> currentSchema = List.of(currentField("prompt", false));
             List<ColumnBinding> bindings = List.of(dataBinding("prompt"), dataBinding("newField"));
             FieldDefinitionDto manifestPrompt = manifestField("prompt", SchemaFieldType.FILE, true, true, null, null);
-            CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(manifestPrompt), Set.of());
+            ResolvedSchemaHints hints = resolved(List.of(manifestPrompt), Set.of());
 
             List<FieldDefinitionDto> delta = builder.buildMergeDelta(currentSchema, bindings, null, Set.of(), hints);
 
@@ -461,12 +462,18 @@ class CsvSchemaFieldBuilderTest {
         void fileColumnsHintOnDelta() {
             List<FieldDefinitionDto> currentSchema = List.of(currentField("prompt", false));
             List<ColumnBinding> bindings = List.of(dataBinding("prompt"), dataBinding("attachment"));
-            CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(), Set.of("attachment"));
+            ResolvedSchemaHints hints = resolved(List.of(), Set.of("attachment"));
 
             List<FieldDefinitionDto> delta = builder.buildMergeDelta(
                     currentSchema, bindings, Map.of("attachment", SchemaFieldType.STRING), Set.of(), hints);
 
             assertThat(delta.getFirst().getType()).isEqualTo(SchemaFieldType.FILE);
         }
+    }
+
+    /** Hints as an OVERRIDE into an empty schema resolves them: every manifest field drives. */
+    private static ResolvedSchemaHints resolved(List<FieldDefinitionDto> declared, Set<String> fileColumns) {
+        return ResolvedSchemaHints.resolve(
+                CsvImportMode.OVERRIDE, List.of(), new CsvImportSchemaHints(declared, fileColumns));
     }
 }

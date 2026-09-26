@@ -173,7 +173,8 @@ class ZipExportServiceTest {
     }
 
     @Test
-    @DisplayName("one EF-owned reference used by many rows and turns is downloaded once and shares one path")
+    @DisplayName("one EF-owned reference used by many rows and turns is downloaded once, shares one path, and"
+            + " records its content type")
     void buildZip_sameReferenceAcrossRowsAndTurns_downloadsOnceAndDedups() throws IOException {
         List<FieldDefinitionDto> schema = List.of(
                 FieldDefinitionDto.builder()
@@ -222,6 +223,7 @@ class ZipExportServiceTest {
         assertThat(manifest.files()).hasSize(1);
         assertThat(manifest.files().getFirst().path()).isEqualTo("files/1/report.pdf");
         assertThat(manifest.files().getFirst().sourceRef()).isEqualTo(ref);
+        assertThat(manifest.files().getFirst().contentType()).isEqualTo("application/pdf");
     }
 
     @Test
@@ -312,7 +314,7 @@ class ZipExportServiceTest {
         doAnswer(invocation -> {
                     OutputStream out = invocation.getArgument(1);
                     out.write(content.getBytes(StandardCharsets.UTF_8));
-                    return null;
+                    return "application/pdf";
                 })
                 .when(dialFileClient)
                 .downloadTo(anyString(), any());

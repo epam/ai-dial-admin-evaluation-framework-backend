@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.csv;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -16,8 +17,8 @@ import org.springframework.stereotype.Component;
  * <b>declares</b> a field's scope explicitly, so a declared field (one already present in the dataset's
  * current schema) carries its scope forward from that schema, while an undeclared field's scope is
  * <b>inferred</b> from the CSV's turn structure. Every field this builder emits resolves {@code perTurn} in
- * four tiers: (0) <b>manifest-declared</b> (ZIP import only) — the field is listed in the {@link
- * CsvImportSchemaHints#declaredSchema()} passed in: its definition (type, {@code perTurn}, {@code
+ * four tiers: (0) <b>manifest-declared</b> (ZIP import only) — the field is one of the {@link
+ * ResolvedSchemaHints#drivingFields()} passed in: its definition (type, {@code perTurn}, {@code
  * required}, {@code displayName}, {@code description}) is used verbatim, superseding every tier below,
  * including the dataset's own declared scope; (1) <b>declared</b> — the field name exists in the dataset's
  * current schema: its {@code perTurn} is preserved verbatim, including an absent value (declared shared) —
@@ -31,17 +32,20 @@ import org.springframework.stereotype.Component;
 @LogExecution
 public class CsvSchemaFieldBuilder {
 
+    private static final ResolvedSchemaHints NO_HINTS =
+            ResolvedSchemaHints.resolve(CsvImportMode.OVERRIDE, List.of(), CsvImportSchemaHints.EMPTY);
+
     /**
      * Builds a field list from CSV column bindings (data-mapped columns only), with no ZIP schema hints.
-     * Equivalent to {@link #buildFromBindings(List, Map, List, Set, CsvImportSchemaHints)} with {@link
-     * CsvImportSchemaHints#EMPTY}.
+     * Equivalent to {@link #buildFromBindings(List, Map, List, Set, ResolvedSchemaHints)} with no driving
+     * fields and no file columns.
      */
     public List<FieldDefinitionDto> buildFromBindings(
             List<ColumnBinding> bindings,
             Map<String, SchemaFieldType> types,
             List<FieldDefinitionDto> currentSchema,
             Set<String> multiTurnColumns) {
-        return buildFromBindings(bindings, types, currentSchema, multiTurnColumns, CsvImportSchemaHints.EMPTY);
+        return buildFromBindings(bindings, types, currentSchema, multiTurnColumns, NO_HINTS);
     }
 
     /**
@@ -50,20 +54,20 @@ public class CsvSchemaFieldBuilder {
      * {@code type(null)} unless the manifest tier (0) supplies it. When {@code types} is supplied
      * (persist/fixup/preview-time, after inference), a binding with no entry defaults to {@link
      * SchemaFieldType#STRING}, or to {@link SchemaFieldType#FILE} when {@code hints.fileColumns()} names it
-     * and no manifest is present (see {@link CsvImportSchemaHints}). {@code multiTurnColumns} supplies the
-     * undeclared-column scope tier (see class javadoc). A manifest field with no matching CSV binding is
-     * still appended (design D4): the manifest is the source of truth for fields a blank-everywhere CSV
-     * column can no longer express.
+     * (non-empty only when no manifest is present, see {@link ResolvedSchemaHints}). {@code
+     * multiTurnColumns} supplies the undeclared-column scope tier (see class javadoc). A driving manifest
+     * field with no matching CSV binding is still appended (design D4): the manifest is the source of truth
+     * for fields a blank-everywhere CSV column can no longer express.
      */
     public List<FieldDefinitionDto> buildFromBindings(
             List<ColumnBinding> bindings,
             Map<String, SchemaFieldType> types,
             List<FieldDefinitionDto> currentSchema,
             Set<String> multiTurnColumns,
-            CsvImportSchemaHints hints) {
+            ResolvedSchemaHints hints) {
         Map<String, Boolean> scopeByName = scopeByName(currentSchema);
-        Map<String, FieldDefinitionDto> declaredByName = byName(hints.declaredSchema());
-        Set<String> fileColumns = fileColumnsHint(hints);
+        Map<String, FieldDefinitionDto> declaredByName = hints.drivingFields();
+        Set<String> fileColumns = hints.fileColumns();
         List<FieldDefinitionDto> schema = new ArrayList<>();
         Set<String> covered = new LinkedHashSet<>();
         for (ColumnBinding binding : bindings) {
@@ -78,8 +82,8 @@ public class CsvSchemaFieldBuilder {
                             ? copyOf(declared)
                             : newField(name, resolveType(name, types, fileColumns), scopeByName, multiTurnColumns));
         }
-        for (FieldDefinitionDto declared : hints.declaredSchema()) {
-            if (declared != null && declared.getName() != null && covered.add(declared.getName())) {
+        for (FieldDefinitionDto declared : declaredByName.values()) {
+            if (covered.add(declared.getName())) {
                 schema.add(copyOf(declared));
             }
         }
@@ -88,15 +92,15 @@ public class CsvSchemaFieldBuilder {
 
     /**
      * Builds only the CSV columns absent from {@code currentSchema} (the MERGE delta), with no ZIP schema
-     * hints. Equivalent to {@link #buildMergeDelta(List, List, Map, Set, CsvImportSchemaHints)} with {@link
-     * CsvImportSchemaHints#EMPTY}.
+     * hints. Equivalent to {@link #buildMergeDelta(List, List, Map, Set, ResolvedSchemaHints)} with no
+     * driving fields and no file columns.
      */
     public List<FieldDefinitionDto> buildMergeDelta(
             List<FieldDefinitionDto> currentSchema,
             List<ColumnBinding> bindings,
             Map<String, SchemaFieldType> types,
             Set<String> multiTurnColumns) {
-        return buildMergeDelta(currentSchema, bindings, types, multiTurnColumns, CsvImportSchemaHints.EMPTY);
+        return buildMergeDelta(currentSchema, bindings, types, multiTurnColumns, NO_HINTS);
     }
 
     /**
@@ -118,10 +122,10 @@ public class CsvSchemaFieldBuilder {
             List<ColumnBinding> bindings,
             Map<String, SchemaFieldType> types,
             Set<String> multiTurnColumns,
-            CsvImportSchemaHints hints) {
+            ResolvedSchemaHints hints) {
         Map<String, Boolean> scopeByName = scopeByName(currentSchema);
-        Map<String, FieldDefinitionDto> declaredByName = byName(hints.declaredSchema());
-        Set<String> fileColumns = fileColumnsHint(hints);
+        Map<String, FieldDefinitionDto> declaredByName = hints.drivingFields();
+        Set<String> fileColumns = hints.fileColumns();
         List<FieldDefinitionDto> delta = new ArrayList<>();
         for (ColumnBinding binding : bindings) {
             if (!ColumnBinding.MAPPED_TO_DATA.equals(binding.mappedTo())
@@ -149,16 +153,6 @@ public class CsvSchemaFieldBuilder {
         return types.getOrDefault(fieldName, SchemaFieldType.STRING);
     }
 
-    /**
-     * The {@code fileColumns} hint (design D4, "without a manifest") applies only when there is no
-     * manifest: the two hint kinds are alternatives for a given import, never combined. When {@code
-     * declaredSchema} is non-empty, a manifest is present and decides FILE typing itself (tier 0), so the
-     * fallback hint is suppressed here rather than at every call site.
-     */
-    private static Set<String> fileColumnsHint(CsvImportSchemaHints hints) {
-        return hints.declaredSchema().isEmpty() ? hints.fileColumns() : Set.of();
-    }
-
     private static FieldDefinitionDto copyOf(FieldDefinitionDto declared) {
         return FieldDefinitionDto.builder()
                 .name(declared.getName())
@@ -168,16 +162,6 @@ public class CsvSchemaFieldBuilder {
                 .description(declared.getDescription())
                 .perTurn(declared.getPerTurn())
                 .build();
-    }
-
-    private static Map<String, FieldDefinitionDto> byName(List<FieldDefinitionDto> fields) {
-        Map<String, FieldDefinitionDto> byName = new LinkedHashMap<>();
-        for (FieldDefinitionDto field : fields) {
-            if (field != null && field.getName() != null) {
-                byName.put(field.getName(), field);
-            }
-        }
-        return byName;
     }
 
     private static FieldDefinitionDto newField(

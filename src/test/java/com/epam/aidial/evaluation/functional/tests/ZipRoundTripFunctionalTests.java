@@ -260,6 +260,31 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
         assertThat(listDatasetFiles(datasetId)).hasSize(fileCountBefore + 1);
     }
 
+    @Test
+    @DisplayName("A file's content type survives export and re-import into another dataset, even when the "
+            + "filename would guess a different one")
+    void roundTrip_keepsSourceContentType() {
+        UUID sourceDatasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("image")
+                .type(SchemaFieldType.FILE)
+                .required(false)
+                .build()));
+        FileMetadataDto file = uploadDatasetFile(
+                sourceDatasetId, "picture.bin", "PNG_BYTES".getBytes(StandardCharsets.UTF_8), MediaType.IMAGE_PNG);
+        assertThat(file.getContentType()).isEqualTo(MediaType.IMAGE_PNG_VALUE);
+        createSingleTurnCase(sourceDatasetId, "ImageCase", Map.of("image", file.getPath()));
+
+        byte[] zip = exportZip(sourceDatasetId);
+        UUID destinationDatasetId = newDatasetWithSchema(List.of());
+        assertThat(importZip(destinationDatasetId, zip, "OVERRIDE", "FAIL").getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+
+        assertThat(listDatasetFiles(destinationDatasetId)).singleElement().satisfies(imported -> {
+            assertThat(imported.getFilename()).isEqualTo("picture.bin");
+            assertThat(imported.getContentType()).isEqualTo(MediaType.IMAGE_PNG_VALUE);
+        });
+    }
+
     // --- 6.3: ZIP-imported case runs under a multi-request suite ---
 
     @Test
@@ -296,9 +321,13 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
         ResponseEntity<CsvImportResultDto> importResponse = importZip(datasetId, zip, "OVERRIDE", "FAIL");
         assertThat(importResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        String sharedRef = "@ef/datasets/" + datasetId + "/shared.bin";
-        String turn0Ref = "@ef/datasets/" + datasetId + "/turn0.bin";
-        String turn1Ref = "@ef/datasets/" + datasetId + "/turn1.bin";
+        // The imported cells are @ef refs; a |file placeholder must send them as DIAL data refs.
+        assertThat(listTestCases(datasetId).get(0).getData().get("sharedDoc"))
+                .isEqualTo("@ef/datasets/" + datasetId + "/shared.bin");
+        String dialPrefix = "files/test-bucket/datasets/" + datasetId + "/";
+        String sharedRef = dialPrefix + "shared.bin";
+        String turn0Ref = dialPrefix + "turn0.bin";
+        String turn1Ref = dialPrefix + "turn1.bin";
 
         TestSuiteResponseDto suite = createMultiRequestSuiteOnDataset(datasetId);
 
@@ -323,7 +352,9 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
                 .orElseThrow();
         assertThat(((Number) request0Row.get("turn_index")).intValue()).isZero();
         assertThat(((Number) request0Row.get("total_turns")).intValue()).isEqualTo(1);
-        assertThat(String.valueOf(request0Row.get("request_body"))).contains(sharedRef);
+        assertThat(String.valueOf(request0Row.get("request_body")))
+                .contains(sharedRef)
+                .doesNotContain("@ef/");
 
         List<Map<String, Object>> request1Rows = results.stream()
                 .filter(r -> ((Number) r.get("request_index")).intValue() == 1)
@@ -343,8 +374,14 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
                 .filter(r -> ((Number) r.get("turn_index")).intValue() == 1)
                 .findFirst()
                 .orElseThrow();
-        assertThat(String.valueOf(turn0Row.get("request_body"))).contains(turn0Ref);
-        assertThat(String.valueOf(turn1Row.get("request_body"))).contains(turn1Ref);
+        assertThat(String.valueOf(turn0Row.get("request_body")))
+                .contains(turn0Ref)
+                .doesNotContain(turn1Ref)
+                .doesNotContain("@ef/");
+        assertThat(String.valueOf(turn1Row.get("request_body")))
+                .contains(turn1Ref)
+                .doesNotContain(turn0Ref)
+                .doesNotContain("@ef/");
     }
 
     private TestSuiteResponseDto createMultiRequestSuiteOnDataset(UUID datasetId) {
@@ -364,7 +401,7 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
                 .requestTemplate(RequestTemplateDto.builder()
                         .urlTemplate("/v1/shared")
                         .body(JsonRequestBodyDto.builder()
-                                .content(Map.of("op", "shared", "doc", "${{sharedDoc}}"))
+                                .content(Map.of("op", "shared", "doc", "${{sharedDoc|file}}"))
                                 .build())
                         .build())
                 .inputBindings(List.of(InputBindingDto.builder()
@@ -385,7 +422,7 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
                         .requestTemplate(RequestTemplateDto.builder()
                                 .urlTemplate("/v1/turn")
                                 .body(JsonRequestBodyDto.builder()
-                                        .content(Map.of("op", "turn", "doc", "${{turnDoc}}"))
+                                        .content(Map.of("op", "turn", "doc", "${{turnDoc|file}}"))
                                         .build())
                                 .build())
                         .inputBindings(List.of(InputBindingDto.builder()
@@ -448,13 +485,23 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
     }
 
     private FileMetadataDto uploadDatasetFile(UUID datasetId, String filename, byte[] content) {
+        return uploadDatasetFile(datasetId, filename, content, MediaType.APPLICATION_OCTET_STREAM);
+    }
+
+    private FileMetadataDto uploadDatasetFile(UUID datasetId, String filename, byte[] content, MediaType contentType) {
+        HttpHeaders partHeaders = new HttpHeaders();
+        partHeaders.setContentType(contentType);
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("file", new ByteArrayResource(content) {
-            @Override
-            public String getFilename() {
-                return filename;
-            }
-        });
+        body.add(
+                "file",
+                new HttpEntity<>(
+                        new ByteArrayResource(content) {
+                            @Override
+                            public String getFilename() {
+                                return filename;
+                            }
+                        },
+                        partHeaders));
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
         ResponseEntity<FileMetadataDto> r = restTemplate.postForEntity(

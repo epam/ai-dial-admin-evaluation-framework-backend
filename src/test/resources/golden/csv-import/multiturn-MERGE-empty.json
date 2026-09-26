@@ -1,0 +1,126 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 0,
+      "overriddenCount" : 0,
+      "totalRows" : 3,
+      "validCount" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "autoDetectedSchema" : [ {
+        "name" : "prompt",
+        "perTurn" : true,
+        "required" : false,
+        "type" : "STRING"
+      }, {
+        "name" : "reply",
+        "perTurn" : true,
+        "required" : false,
+        "type" : "STRING"
+      }, {
+        "name" : "note",
+        "perTurn" : true,
+        "required" : false,
+        "type" : "STRING"
+      } ],
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "turnIndex",
+        "headerName" : "turnIndex",
+        "inferredType" : "STRING",
+        "mappedTo" : "turnIndex"
+      }, {
+        "fieldName" : "prompt",
+        "headerName" : "prompt",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "reply",
+        "headerName" : "reply",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "note",
+        "headerName" : "note",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : { },
+        "multiTurnData" : [ {
+          "note" : "n0",
+          "prompt" : "hello",
+          "reply" : "hi there"
+        }, {
+          "note" : "n1",
+          "prompt" : "hello",
+          "reply" : "how are you"
+        } ],
+        "testCaseName" : "Conv",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "note" : "",
+          "prompt" : "one-shot",
+          "reply" : ""
+        },
+        "testCaseName" : "Solo",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      } ],
+      "totalRows" : 3,
+      "totalTestCases" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "prompt",
+    "perTurn" : true,
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "reply",
+    "perTurn" : true,
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "note",
+    "perTurn" : true,
+    "required" : false,
+    "type" : "STRING"
+  } ],
+  "testCases" : [ {
+    "data" : { },
+    "id" : "<uuid>",
+    "multiTurnData" : [ {
+      "note" : "n0",
+      "prompt" : "hello",
+      "reply" : "hi there"
+    }, {
+      "note" : "n1",
+      "prompt" : "hello",
+      "reply" : "how are you"
+    } ],
+    "testCaseName" : "Conv",
+    "valid" : true
+  }, {
+    "data" : {
+      "note" : "",
+      "prompt" : "one-shot",
+      "reply" : ""
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "Solo",
+    "valid" : true
+  } ]
+}

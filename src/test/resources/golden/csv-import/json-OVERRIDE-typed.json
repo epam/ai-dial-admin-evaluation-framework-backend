@@ -1,0 +1,139 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 1,
+      "overriddenCount" : 0,
+      "totalRows" : 2,
+      "validCount" : 1,
+      "warnings" : [ {
+        "columnName" : "",
+        "message" : "Cell could not be parsed as JSON for OBJECT/ARRAY field",
+        "rowNumber" : 3
+      } ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "autoDetectedSchema" : [ {
+        "name" : "meta",
+        "required" : false,
+        "type" : "STRING"
+      }, {
+        "name" : "tags",
+        "required" : false,
+        "type" : "STRING"
+      }, {
+        "name" : "newObj",
+        "required" : false,
+        "type" : "OBJECT"
+      }, {
+        "name" : "newArr",
+        "required" : false,
+        "type" : "ARRAY"
+      } ],
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "meta",
+        "headerName" : "meta",
+        "inferredType" : "OBJECT",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "tags",
+        "headerName" : "tags",
+        "inferredType" : "ARRAY",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "newObj",
+        "headerName" : "newObj",
+        "inferredType" : "OBJECT",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "newArr",
+        "headerName" : "newArr",
+        "inferredType" : "ARRAY",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : {
+          "meta" : {
+            "k" : 1
+          },
+          "newArr" : [ "a" ],
+          "newObj" : {
+            "x" : "y"
+          },
+          "tags" : [ 1, 2 ]
+        },
+        "testCaseName" : "A",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "meta" : "not json",
+          "newArr" : [ ],
+          "newObj" : { },
+          "tags" : "["
+        },
+        "testCaseName" : "B",
+        "valid" : false,
+        "validationWarnings" : [ {
+          "code" : "UNKNOWN",
+          "message" : "Cell could not be parsed as JSON for OBJECT/ARRAY field"
+        } ]
+      } ],
+      "totalRows" : 2,
+      "totalTestCases" : 2,
+      "warnings" : [ {
+        "columnName" : "",
+        "message" : "Cell could not be parsed as JSON for OBJECT/ARRAY field",
+        "rowNumber" : 3
+      } ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "meta",
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "tags",
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "newObj",
+    "required" : false,
+    "type" : "OBJECT"
+  }, {
+    "name" : "newArr",
+    "required" : false,
+    "type" : "ARRAY"
+  } ],
+  "testCases" : [ {
+    "data" : {
+      "meta" : "{k=1}",
+      "newArr" : [ "a" ],
+      "newObj" : {
+        "x" : "y"
+      },
+      "tags" : "[1, 2]"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "A",
+    "valid" : true
+  }, {
+    "data" : {
+      "meta" : "not json",
+      "newArr" : [ ],
+      "newObj" : { },
+      "tags" : "["
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "B",
+    "valid" : true
+  } ]
+}

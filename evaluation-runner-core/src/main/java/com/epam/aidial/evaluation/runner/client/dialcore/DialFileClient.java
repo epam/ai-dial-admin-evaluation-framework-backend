@@ -71,15 +71,21 @@ public class DialFileClient {
         }
     }
 
-    public void downloadTo(String path, OutputStream target) {
+    /**
+     * Streams the file at {@code path} into {@code target}.
+     *
+     * @return the response's {@code Content-Type}, or {@code null} when DIAL Core sent none
+     */
+    public String downloadTo(String path, OutputStream target) {
         try {
-            restClient.get().uri(FILES_PATH + encodePath(path)).exchange((request, response) -> {
+            return restClient.get().uri(FILES_PATH + encodePath(path)).exchange((request, response) -> {
                 if (response.getStatusCode().isError()) {
                     String body = new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
                     throw new DialCoreClientException(response.getStatusCode(), "Download failed", body);
                 }
                 response.getBody().transferTo(target);
-                return null;
+                MediaType contentType = response.getHeaders().getContentType();
+                return contentType != null ? contentType.toString() : null;
             });
         } catch (DialCoreClientException e) {
             throw e;

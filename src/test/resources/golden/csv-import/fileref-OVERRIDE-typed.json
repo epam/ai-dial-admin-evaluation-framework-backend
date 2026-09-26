@@ -1,0 +1,88 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 0,
+      "overriddenCount" : 0,
+      "totalRows" : 2,
+      "validCount" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "autoDetectedSchema" : [ {
+        "name" : "attachment",
+        "required" : false,
+        "type" : "STRING"
+      }, {
+        "name" : "other",
+        "required" : false,
+        "type" : "STRING"
+      } ],
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "attachment",
+        "headerName" : "attachment",
+        "inferredType" : "FILE",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "other",
+        "headerName" : "other",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : {
+          "attachment" : "files/1/a.png",
+          "other" : "files/2/b.txt"
+        },
+        "testCaseName" : "A",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "attachment" : "public/shared/x.png",
+          "other" : "@ef/datasets/abc/y.txt"
+        },
+        "testCaseName" : "B",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      } ],
+      "totalRows" : 2,
+      "totalTestCases" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "attachment",
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "other",
+    "required" : false,
+    "type" : "STRING"
+  } ],
+  "testCases" : [ {
+    "data" : {
+      "attachment" : "files/1/a.png",
+      "other" : "files/2/b.txt"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "A",
+    "valid" : true
+  }, {
+    "data" : {
+      "attachment" : "public/shared/x.png",
+      "other" : "@ef/datasets/abc/y.txt"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "B",
+    "valid" : true
+  } ]
+}

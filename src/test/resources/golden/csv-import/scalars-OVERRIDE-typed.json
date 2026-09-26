@@ -1,0 +1,139 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 0,
+      "overriddenCount" : 0,
+      "totalRows" : 2,
+      "validCount" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "autoDetectedSchema" : [ {
+        "name" : "prompt",
+        "required" : false,
+        "type" : "STRING"
+      }, {
+        "name" : "code",
+        "required" : false,
+        "type" : "INTEGER"
+      }, {
+        "name" : "count",
+        "required" : false,
+        "type" : "INTEGER"
+      }, {
+        "name" : "flag",
+        "required" : false,
+        "type" : "BOOLEAN"
+      }, {
+        "name" : "newNum",
+        "required" : false,
+        "type" : "NUMBER"
+      } ],
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "prompt",
+        "headerName" : "prompt",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "code",
+        "headerName" : "code",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "count",
+        "headerName" : "count",
+        "inferredType" : "INTEGER",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "flag",
+        "headerName" : "flag",
+        "inferredType" : "BOOLEAN",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "newNum",
+        "headerName" : "newNum",
+        "inferredType" : "NUMBER",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : {
+          "code" : "7",
+          "count" : 12,
+          "flag" : true,
+          "newNum" : 3.5,
+          "prompt" : "hi"
+        },
+        "testCaseName" : "A",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "code" : "42",
+          "count" : "",
+          "flag" : false,
+          "newNum" : "",
+          "prompt" : ""
+        },
+        "testCaseName" : "B",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      } ],
+      "totalRows" : 2,
+      "totalTestCases" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "prompt",
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "code",
+    "required" : false,
+    "type" : "INTEGER"
+  }, {
+    "name" : "count",
+    "required" : false,
+    "type" : "INTEGER"
+  }, {
+    "name" : "flag",
+    "required" : false,
+    "type" : "BOOLEAN"
+  }, {
+    "name" : "newNum",
+    "required" : false,
+    "type" : "NUMBER"
+  } ],
+  "testCases" : [ {
+    "data" : {
+      "code" : 7,
+      "count" : 12,
+      "flag" : true,
+      "newNum" : 3.5,
+      "prompt" : "hi"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "A",
+    "valid" : true
+  }, {
+    "data" : {
+      "code" : 42,
+      "count" : "",
+      "flag" : false,
+      "newNum" : "",
+      "prompt" : ""
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "B",
+    "valid" : false
+  } ]
+}

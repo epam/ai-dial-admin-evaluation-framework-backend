@@ -1,0 +1,116 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 0,
+      "overriddenCount" : 2,
+      "totalRows" : 3,
+      "validCount" : 3,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "prompt",
+        "headerName" : "prompt",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "code",
+        "headerName" : "code",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : {
+          "code" : "10",
+          "prompt" : "replaced"
+        },
+        "testCaseName" : "Seed",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "code" : "",
+          "prompt" : "fresh"
+        },
+        "testCaseName" : "New",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "code" : "9",
+          "prompt" : "dup"
+        },
+        "testCaseName" : "New",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      } ],
+      "totalRows" : 3,
+      "totalTestCases" : 3,
+      "warnings" : [ {
+        "columnName" : "testCaseName",
+        "message" : "would replace earlier row with same name (last wins)",
+        "rowNumber" : 4
+      }, {
+        "columnName" : "testCaseName",
+        "message" : "would override existing test case 'Seed'",
+        "rowNumber" : 2
+      } ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "prompt",
+    "required" : true,
+    "type" : "STRING"
+  }, {
+    "name" : "code",
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "count",
+    "required" : false,
+    "type" : "INTEGER"
+  }, {
+    "name" : "meta",
+    "required" : false,
+    "type" : "OBJECT"
+  }, {
+    "name" : "tags",
+    "required" : false,
+    "type" : "ARRAY"
+  }, {
+    "name" : "attachment",
+    "required" : false,
+    "type" : "FILE"
+  }, {
+    "name" : "reply",
+    "perTurn" : true,
+    "required" : false,
+    "type" : "STRING"
+  } ],
+  "testCases" : [ {
+    "data" : {
+      "code" : "9",
+      "prompt" : "dup"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "New",
+    "valid" : true
+  }, {
+    "data" : {
+      "code" : "10",
+      "prompt" : "replaced"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "Seed",
+    "valid" : true
+  } ]
+}

@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.runner.config.properties.DialFileStorageProper
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import com.epam.aidial.evaluation.service.domain.io.LimitingInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,20 +44,81 @@ public class FileService {
 
     public FileMetadataDto upload(UUID testSuiteId, MultipartFile file) {
         validateTestSuiteExists(testSuiteId);
-        String efRef = dialFileRefResolver.buildEfRef(testSuiteId, requireFilename(file));
-        return uploadInternal(
-                file, efRef, buildSuiteFolderPath(testSuiteId), fileStorageProperties.getMaxFilesPerSuite(), "suite");
+        String filename = requireFilename(file);
+        String efRef = dialFileRefResolver.buildEfRef(testSuiteId, filename);
+        try (InputStream is = file.getInputStream()) {
+            return uploadInternal(
+                    filename,
+                    is,
+                    file.getSize(),
+                    file.getContentType(),
+                    efRef,
+                    buildSuiteFolderPath(testSuiteId),
+                    fileStorageProperties.getMaxFilesPerSuite(),
+                    "suite");
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read uploaded file", e);
+        }
     }
 
     public FileMetadataDto uploadToDataset(UUID datasetId, MultipartFile file) {
         validateDatasetExists(datasetId);
-        String efRef = dialFileRefResolver.buildDatasetEfRef(datasetId, requireFilename(file));
-        return uploadInternal(
-                file,
-                efRef,
-                buildDatasetFolderPath(datasetId),
-                fileStorageProperties.getMaxFilesPerDataset(),
-                "dataset");
+        String filename = requireFilename(file);
+        String efRef = dialFileRefResolver.buildDatasetEfRef(datasetId, filename);
+        try (InputStream is = file.getInputStream()) {
+            return uploadInternal(
+                    filename,
+                    is,
+                    file.getSize(),
+                    file.getContentType(),
+                    efRef,
+                    buildDatasetFolderPath(datasetId),
+                    fileStorageProperties.getMaxFilesPerDataset(),
+                    "dataset");
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read uploaded file", e);
+        }
+    }
+
+    /**
+     * Writes a file into a dataset's storage, creating it or overwriting a same-name file — unlike
+     * {@link #uploadToDataset}, which rejects a duplicate name with HTTP 400. Used by ZIP import, where a
+     * re-imported file with the same name is meant to take effect (see the {@code test-case-zip-archive}
+     * capability). Enforces {@code dial.file-storage.max-file-size-bytes} on the bytes actually read, via a
+     * limiting stream that throws before the PUT is sent — {@link DialFileClient#upload} reads the whole
+     * stream into memory, so the cap must apply to that read, not to a caller-declared size that may be
+     * wrong (e.g. a ZIP entry header). Does not itself check the per-dataset file count limit; call
+     * {@link #checkDatasetFileCapacity} once for the whole set of files an import would newly create.
+     */
+    public FileMetadataDto putDatasetFile(UUID datasetId, String filename, InputStream content, String contentType) {
+        validateDatasetExists(datasetId);
+        validateFilename(filename);
+        String efRef = dialFileRefResolver.buildDatasetEfRef(datasetId, filename);
+        String realPath = dialFileRefResolver.resolveToRealPath(efRef);
+        InputStream limited = new LimitingInputStream(
+                content,
+                fileStorageProperties.getMaxFileSizeBytes(),
+                max -> new ValidationException("File size exceeds maximum of " + max + " bytes"));
+        DialFileMetadataDto uploaded = dialFileClient.upload(realPath, limited, filename, contentType);
+        return FileMetadataDto.builder()
+                .path(efRef)
+                .filename(filename)
+                .contentType(contentType)
+                .sizeBytes(uploaded != null && uploaded.getContentLength() != null ? uploaded.getContentLength() : 0)
+                .build();
+    }
+
+    /**
+     * Checks that a dataset has capacity for {@code newFiles} additional files under
+     * {@code dial.file-storage.max-files-per-dataset}. Files an import would overwrite (same name as an
+     * existing file) do not count as new and must be excluded from {@code newFiles} by the caller.
+     */
+    public void checkDatasetFileCapacity(UUID datasetId, int newFiles) {
+        int existing = listByDataset(datasetId).size();
+        int maxFilesPerDataset = fileStorageProperties.getMaxFilesPerDataset();
+        if (existing + newFiles > maxFilesPerDataset) {
+            throw new ValidationException("Maximum number of files per dataset (" + maxFilesPerDataset + ") reached");
+        }
     }
 
     public List<FileMetadataDto> list(UUID testSuiteId) {
@@ -202,17 +264,27 @@ public class FileService {
         deleteAllInFolder(buildDatasetFolderPath(datasetId), "dataset", datasetId);
     }
 
+    /**
+     * Shared validation and upload for the normal (duplicate-rejecting) upload endpoints. Kept distinct from
+     * {@link #putDatasetFile}, which allows overwrite and has no duplicate-name check.
+     */
     private FileMetadataDto uploadInternal(
-            MultipartFile file, String efRef, String folderPath, int maxFilesPerOwner, String ownerKind) {
-        if (file.isEmpty()) {
+            String filename,
+            InputStream content,
+            long size,
+            String contentType,
+            String efRef,
+            String folderPath,
+            int maxFilesPerOwner,
+            String ownerKind) {
+        if (size <= 0) {
             throw new ValidationException("Uploaded file is empty");
         }
-        if (file.getSize() > fileStorageProperties.getMaxFileSizeBytes()) {
-            throw new ValidationException("File size " + file.getSize() + " exceeds maximum of "
+        if (size > fileStorageProperties.getMaxFileSizeBytes()) {
+            throw new ValidationException("File size " + size + " exceeds maximum of "
                     + fileStorageProperties.getMaxFileSizeBytes() + " bytes");
         }
 
-        String filename = file.getOriginalFilename();
         validateFilename(filename);
 
         String realPath = dialFileRefResolver.resolveToRealPath(efRef);
@@ -227,17 +299,13 @@ public class FileService {
                     "Maximum number of files per " + ownerKind + " (" + maxFilesPerOwner + ") reached");
         }
 
-        try (InputStream is = file.getInputStream()) {
-            dialFileClient.upload(realPath, is, filename, file.getContentType());
-            return FileMetadataDto.builder()
-                    .path(efRef)
-                    .filename(filename)
-                    .contentType(file.getContentType())
-                    .sizeBytes(file.getSize())
-                    .build();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read uploaded file", e);
-        }
+        dialFileClient.upload(realPath, content, filename, contentType);
+        return FileMetadataDto.builder()
+                .path(efRef)
+                .filename(filename)
+                .contentType(contentType)
+                .sizeBytes(size)
+                .build();
     }
 
     private void downloadToInternal(String realPath, String filename, OutputStream target) {

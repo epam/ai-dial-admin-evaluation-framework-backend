@@ -1,0 +1,12 @@
+{
+  "totalRows": 3,
+  "validCount": 2,
+  "invalidCount": 1,
+  "warnings": [
+    {
+      "rowNumber": 3,
+      "columnName": "document",
+      "message": "File missing from archive: files/9/missing.pdf"
+    }
+  ]
+}

@@ -94,6 +94,8 @@ Status: **Implemented**
 ### Requirement: Flat CSV import/export multiplication
 CSV import/export SHALL remain flat: a multi-turn case is represented as one row per turn. A reserved `turnIndex` header groups and orders turns; it and `testCaseName` are excluded from `data` and from schema auto-detection. Per-turn columns vary per row. Shared columns SHALL be repeated on every turn row of a case; on import the columns whose **resolved scope is shared** (declared shared in the dataset's current schema, or defaulted shared by scope resolution) MUST be identical across a case's turn rows, and a mismatch SHALL be reported as a conflict warning that invalidates the case. Columns whose resolved scope is per-turn — declared or inferred from the file's turn structure — are NOT subject to this identity rule. Single-turn cases export one row with a blank `turnIndex`.
 
+ZIP export and import SHALL use the same flat representation: a ZIP archive's `test-cases.csv` carries one row per turn with `turnIndex`, exactly like CSV export, and ZIP import assembles turn rows into multi-turn cases exactly like CSV import (see the `test-case-zip-archive` capability). Every guarantee of this requirement SHALL hold for ZIP archives too.
+
 The round trip SHALL be **repeatable**: importing an exported CSV back into a dataset, and then importing an export of the result again, SHALL yield the same test cases each time — the second and every subsequent import SHALL produce the same `data` and `multiTurnData` as the first.
 
 This guarantee holds under two conditions. First, the dataset's `testCaseSchema` declares every field the case carries — export derives its column set from the schema, so a key held by a case but absent from the schema is omitted from the CSV and cannot survive any round trip. Second, re-importing the same names is a defined write: `importMode=OVERRIDE` with any `conflictStrategy`, or `APPEND`/`MERGE` with `conflictStrategy=OVERRIDE`. `APPEND`/`MERGE` with `FAIL` (HTTP 409) or `SKIP` (nothing written) is correct collision handling, not a round-trip defect, and is excluded.
@@ -127,8 +129,14 @@ Status: **Implemented**
 - **WHEN** a multi-turn dataset is exported, the CSV is imported into a second dataset whose `testCaseSchema` is empty, and the second dataset is exported
 - **THEN** the second dataset's cases SHALL carry the same turn counts as the source and per-turn merged effective views equal to the source's up to blank materialization, every imported case SHALL be valid with no shared-column conflict, and the two exported CSVs SHALL be identical
 
+#### Scenario: ZIP export and re-import keeps turns
+- **WHEN** a dataset containing a multi-turn case is exported as ZIP and the archive is imported back with `importMode=OVERRIDE`
+- **THEN** the case SHALL carry the same number of turns with the same per-turn values and the same shared `data` as before the export
+
 ### Requirement: CSV schema rebuild preserves per-field scope
 When a CSV import rebuilds or updates the dataset's `testCaseSchema` (any mode that persists a schema), the system SHALL resolve each derived field's `perTurn` scope in this precedence order:
+
+0. **Manifest-declared** (ZIP import only) — the import is a ZIP archive whose `manifest.json` declares the field, and the mode lets the manifest decide that field's definition (see the `test-case-zip-archive` capability, "ZIP import schema from the manifest"): its `perTurn` value SHALL be taken from the manifest verbatim, including an absent value (shared). Tiers 1–3 below apply only when tier 0 does not.
 
 1. **Declared** — the field name exists in the dataset's current schema: its `perTurn` value is preserved verbatim, including an absent/false value (declared shared). The declared test is the field's *presence* in the current schema, not the presence of a non-null `perTurn` value — a declared field whose `perTurn` is absent is declared shared and SHALL NOT be re-scoped by inference.
 2. **Inferred from the file's turn structure** — the field is undeclared and the CSV contains at least one multi-turn case (a contiguous same-`testCaseName` run where some row's `turnIndex` parses to an integer): the derived field SHALL carry `perTurn: true`. The gate is file-level: one multi-turn case makes every undeclared column per-turn.
@@ -173,6 +181,10 @@ Status: **Implemented**
 #### Scenario: Preview reports the scope import would persist
 - **WHEN** a client previews a multi-turn CSV against a dataset whose `testCaseSchema` is empty
 - **THEN** the `autoDetectedSchema` SHALL mark every data column `perTurn: true`, the multi-turn sample rows SHALL carry those columns in their `multiTurnData` turn maps, and no shared-column conflict SHALL be reported
+
+#### Scenario: Manifest scope wins over file-level inference
+- **WHEN** a ZIP containing a multi-turn case is imported into a dataset whose `testCaseSchema` is empty, and its manifest declares column `context` shared and column `prompt` `perTurn: true`
+- **THEN** the persisted schema SHALL mark `prompt` `perTurn: true` and omit `perTurn` on `context`, and the file-level gate SHALL NOT mark `context` per-turn
 
 ### Requirement: CSV import preview assembles multi-turn cases
 CSV import preview SHALL group CSV rows into test cases using the same rules as import, and report per assembled test case rather than per CSV row. Turn rows of one multi-turn case SHALL NOT be reported as duplicate names of each other.

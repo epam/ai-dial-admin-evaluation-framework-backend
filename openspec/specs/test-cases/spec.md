@@ -303,8 +303,12 @@ Status: **Planned**
 - **THEN** system SHALL handle the duplicate per `conflictStrategy`: FAIL → HTTP 409; SKIP → first occurrence preserved, subsequent skipped; OVERRIDE → last occurrence wins via upsert
 
 ### Requirement: Export test cases (CSV or ZIP)
-The service SHALL export test cases of a Dataset in a format appropriate to the dataset's schema and the `materializeFiles` parameter. If the dataset's `testCaseSchema` contains no `FILE` type fields, export SHALL produce a CSV file. If the schema contains `FILE` type fields, the `materializeFiles` parameter controls the export format. Column order SHALL be by schema order: fixed column `testCaseName` first, then data columns in the order fields appear in the dataset's `testCaseSchema`. The previously-supported `includeEnabled` query parameter is removed (TestCase has no `enabled` field; per-suite exclude lists belong to suites, not the dataset). ARRAY and OBJECT values SHALL be serialized as JSON strings.
-Status: **Planned**
+The service SHALL export test cases of a Dataset in a format appropriate to the dataset's schema and the `materializeFiles` parameter. If the dataset's `testCaseSchema` contains no `FILE` type fields, export SHALL produce a CSV file. If the schema contains `FILE` type fields, the `materializeFiles` parameter controls the export format.
+
+Column order SHALL be by schema order: fixed columns `testCaseName` and `turnIndex` first, then data columns in the order fields appear in the dataset's `testCaseSchema`. The previously-supported `includeEnabled` query parameter is removed (TestCase has no `enabled` field; per-suite exclude lists belong to suites, not the dataset). ARRAY and OBJECT values SHALL be serialized as JSON strings.
+
+The ZIP archive format, its manifest, file materialization and export failure behaviour are defined by the `test-case-zip-archive` capability.
+Status: **Implemented**
 
 #### Scenario: Export without FILE fields (CSV)
 - **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export.csv`
@@ -313,23 +317,25 @@ Status: **Planned**
 
 #### Scenario: CSV columns reflect dataset schema
 - **WHEN** system exports CSV
-- **THEN** header SHALL be: `testCaseName`, then dataset `testCaseSchema` fields in schema order; no `enabled` column
+- **THEN** header SHALL be: `testCaseName`, `turnIndex`, then dataset `testCaseSchema` fields in schema order; no `enabled` column
 
 #### Scenario: Export with custom delimiter
 - **WHEN** client calls `GET .../datasets/{datasetId}/test-cases/export.csv?delimiter=;`
 - **THEN** system SHALL use semicolon as delimiter
 
 #### Scenario: Export with FILE fields and materializeFiles=true (ZIP)
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export?materializeFiles=true`
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export.csv?materializeFiles=true`
 - **AND** the dataset's `testCaseSchema` has one or more FILE type fields
-- **THEN** system SHALL return `Content-Type: application/zip` with `Content-Disposition: attachment; filename="test-cases-{datasetId}.zip"`; the ZIP SHALL contain `test-cases.csv` where FILE columns hold relative paths `files/{rowIndex}/{fieldName}/{filename}` (1-based CSV row index and schema field name, ensuring uniqueness) and a `files/` directory with the file bytes downloaded from DIAL storage; streamed (no full in-memory buffering)
+- **THEN** system SHALL return `Content-Type: application/zip` with `Content-Disposition: attachment; filename="test-cases-{datasetId}.zip"`
+- **AND** the archive SHALL be fully built before the response starts, so a failure yields an error status instead of a truncated archive (it is no longer streamed while being built)
+- **AND** the archive SHALL follow the `test-case-zip-archive` layout: `test-cases.csv` with one row per turn, `manifest.json`, and one `files/{n}/{filename}` entry per distinct EF-owned file reference, with `public/…` references kept verbatim in the CSV
 
 #### Scenario: Export with FILE fields and materializeFiles=false
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export?materializeFiles=false`
-- **THEN** system SHALL return CSV with FILE columns containing raw DIAL paths (current scheme `@ef/suites/{...}/...` is preserved per the file-reference path scheme follow-up)
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export.csv?materializeFiles=false`
+- **THEN** system SHALL return CSV with FILE columns containing the stored file references verbatim (e.g. `@ef/datasets/{datasetId}/{filename}`, legacy `@ef/suites/{suiteId}/{filename}`, `public/…`)
 
 #### Scenario: Export with FILE fields default materializeFiles
-- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export` without `materializeFiles`
+- **WHEN** client calls `GET /api/v1/datasets/{datasetId}/test-cases/export.csv` without `materializeFiles`
 - **AND** the dataset's `testCaseSchema` has one or more FILE type fields
 - **THEN** system SHALL default `materializeFiles` to `true` and produce a ZIP
 
@@ -538,7 +544,14 @@ Status: **Planned**
 - **Note:** If the parsed value is already a String, it is stored as-is (no-op).
 
 ### Requirement: Import test cases (CSV or ZIP)
-The import endpoint SHALL accept both CSV files and ZIP archives. The file format is detected by file extension or content.
+The import endpoint SHALL accept both CSV files and ZIP archives. A file SHALL be treated as a ZIP archive when any of these holds:
+- its filename ends with `.zip`;
+- its content type is `application/zip` or `application/x-zip-compressed`;
+- its content starts with the ZIP signature bytes `PK\x03\x04`.
+
+Otherwise it SHALL be treated as CSV. The import and preview endpoints SHALL respond with `application/json`. ZIP import behaviour (archive layout, manifest, file placement and overwrite, cell rewriting, limits and failure handling) is defined by the `test-case-zip-archive` capability.
+
+Status: **Implemented**
 
 #### Scenario: Import CSV file (unchanged)
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import` with a `.csv` file
@@ -547,17 +560,15 @@ The import endpoint SHALL accept both CSV files and ZIP archives. The file forma
 
 #### Scenario: Import ZIP archive
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import` with a `.zip` file
-- **THEN** system SHALL:
-  1. Extract and parse `test-cases.csv` from the archive
-  2. For each FILE column value (relative path), find the corresponding file in the archive's `files/` directory
-  3. Sanitize the original filename by replacing any characters outside the allowed set (alphanumeric, `-`, `_`, `.`, ` `, `(`, `)`) with `_`, then generate a unique DIAL filename (e.g., `{rowIndex}_{fieldName}_{sanitizedFilename}`) to avoid collisions in the flat suite folder
-  4. Upload each file to DIAL storage at `{efBucket}/suites/{suiteId}/{uniqueFilename}` via `DialFileClient`
-  5. Map the DIAL file path (`files/@ef/suites/{suiteId}/{uniqueFilename}`) into the test case's `data` field
-  6. Create test cases with the resolved data
+- **THEN** system SHALL import it per the `test-case-zip-archive` capability: every referenced archive file SHALL be uploaded to `{efBucket}/datasets/{datasetId}/{filename}`, and the corresponding FILE values SHALL hold the dataset file reference
+
+#### Scenario: ZIP detected by content
+- **WHEN** client uploads a ZIP archive named `export.bin` with content type `application/octet-stream`
+- **THEN** system SHALL detect it as ZIP from its signature bytes and import it as a ZIP archive
 
 #### Scenario: Import ZIP with missing file
 - **WHEN** a CSV row references a file path (e.g., `files/1/doc/report.pdf`) that does not exist in the ZIP archive
-- **THEN** system SHALL produce a validation warning for that test case and set the FILE field value to null
+- **THEN** system SHALL store the FILE field value blank (treated as absent by validation) and report a warning carrying that row's number and column name
 
 #### Scenario: Import CSV for suite with FILE fields
 - **WHEN** client imports a CSV file for a suite whose schema has FILE fields
@@ -571,6 +582,8 @@ The preview response SHALL report both `totalRows` — the number of CSV data ro
 
 `sampleRows` SHALL contain assembled test cases (bounded by the sample limit), not raw CSV rows. A sample for a multi-turn case SHALL carry its `multiTurnData` turn array and its shared `data`; a sample for a single-turn case SHALL carry a flat `data` with no turn array.
 
+For a ZIP archive, preview SHALL match import as defined by the `test-case-zip-archive` capability, without writing any file.
+
 Status: **Implemented**
 
 #### Scenario: Preview CSV file
@@ -580,7 +593,7 @@ Status: **Implemented**
 #### Scenario: Preview ZIP archive
 - **WHEN** client sends `POST /api/v1/datasets/{datasetId}/test-cases/import/preview` with a ZIP file
 - **THEN** system SHALL extract and preview the `test-cases.csv` within the archive
-- **AND** FILE columns SHALL show the relative paths from the CSV (not DIAL file paths, since files are not yet uploaded during preview)
+- **AND** FILE columns SHALL show the dataset file references import would store (`@ef/datasets/{datasetId}/{filename}` per the configured bucket alias), not the archive's relative paths, and no file SHALL be uploaded
 
 #### Scenario: Preview reports test case count alongside row count
 - **WHEN** client previews a CSV whose rows include a multi-turn case of N turns

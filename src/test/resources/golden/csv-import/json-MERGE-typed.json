@@ -1,0 +1,218 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 2,
+      "overriddenCount" : 0,
+      "totalRows" : 2,
+      "validCount" : 0,
+      "warnings" : [ {
+        "columnName" : "prompt",
+        "message" : "Required field 'prompt' is missing from data",
+        "rowNumber" : 2
+      }, {
+        "columnName" : "prompt",
+        "message" : "Required field 'prompt' is missing from data",
+        "rowNumber" : 3
+      }, {
+        "columnName" : "meta",
+        "message" : "Field 'meta' has schema type OBJECT but value is String",
+        "rowNumber" : 3
+      }, {
+        "columnName" : "tags",
+        "message" : "Field 'tags' has schema type ARRAY but value is String",
+        "rowNumber" : 3
+      }, {
+        "columnName" : "",
+        "message" : "Cell could not be parsed as JSON for OBJECT/ARRAY field",
+        "rowNumber" : 3
+      } ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "autoDetectedSchema" : [ {
+        "name" : "newObj",
+        "required" : false,
+        "type" : "OBJECT"
+      }, {
+        "name" : "newArr",
+        "required" : false,
+        "type" : "ARRAY"
+      } ],
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "meta",
+        "headerName" : "meta",
+        "inferredType" : "OBJECT",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "tags",
+        "headerName" : "tags",
+        "inferredType" : "ARRAY",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "newObj",
+        "headerName" : "newObj",
+        "inferredType" : "OBJECT",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "newArr",
+        "headerName" : "newArr",
+        "inferredType" : "ARRAY",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : {
+          "meta" : {
+            "k" : 1
+          },
+          "newArr" : [ "a" ],
+          "newObj" : {
+            "x" : "y"
+          },
+          "tags" : [ 1, 2 ]
+        },
+        "testCaseName" : "A",
+        "valid" : false,
+        "validationWarnings" : [ {
+          "code" : "REQUIRED",
+          "fieldName" : "prompt",
+          "message" : "Required field 'prompt' is missing from data",
+          "path" : "$.data.prompt"
+        } ]
+      }, {
+        "data" : {
+          "meta" : "not json",
+          "newArr" : [ ],
+          "newObj" : { },
+          "tags" : "["
+        },
+        "testCaseName" : "B",
+        "valid" : false,
+        "validationWarnings" : [ {
+          "code" : "REQUIRED",
+          "fieldName" : "prompt",
+          "message" : "Required field 'prompt' is missing from data",
+          "path" : "$.data.prompt"
+        }, {
+          "code" : "TYPE",
+          "fieldName" : "meta",
+          "message" : "Field 'meta' has schema type OBJECT but value is String",
+          "path" : "$.data.meta"
+        }, {
+          "code" : "TYPE",
+          "fieldName" : "tags",
+          "message" : "Field 'tags' has schema type ARRAY but value is String",
+          "path" : "$.data.tags"
+        }, {
+          "code" : "UNKNOWN",
+          "message" : "Cell could not be parsed as JSON for OBJECT/ARRAY field"
+        } ]
+      } ],
+      "totalRows" : 2,
+      "totalTestCases" : 2,
+      "warnings" : [ {
+        "columnName" : "prompt",
+        "message" : "Required field 'prompt' is missing from data",
+        "rowNumber" : 2
+      }, {
+        "columnName" : "prompt",
+        "message" : "Required field 'prompt' is missing from data",
+        "rowNumber" : 3
+      }, {
+        "columnName" : "meta",
+        "message" : "Field 'meta' has schema type OBJECT but value is String",
+        "rowNumber" : 3
+      }, {
+        "columnName" : "tags",
+        "message" : "Field 'tags' has schema type ARRAY but value is String",
+        "rowNumber" : 3
+      }, {
+        "columnName" : "",
+        "message" : "Cell could not be parsed as JSON for OBJECT/ARRAY field",
+        "rowNumber" : 3
+      } ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "prompt",
+    "required" : true,
+    "type" : "STRING"
+  }, {
+    "name" : "code",
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "count",
+    "required" : false,
+    "type" : "INTEGER"
+  }, {
+    "name" : "meta",
+    "required" : false,
+    "type" : "OBJECT"
+  }, {
+    "name" : "tags",
+    "required" : false,
+    "type" : "ARRAY"
+  }, {
+    "name" : "attachment",
+    "required" : false,
+    "type" : "FILE"
+  }, {
+    "name" : "reply",
+    "perTurn" : true,
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "newObj",
+    "required" : false,
+    "type" : "OBJECT"
+  }, {
+    "name" : "newArr",
+    "required" : false,
+    "type" : "ARRAY"
+  } ],
+  "testCases" : [ {
+    "data" : {
+      "meta" : {
+        "k" : 1
+      },
+      "newArr" : [ "a" ],
+      "newObj" : {
+        "x" : "y"
+      },
+      "tags" : [ 1, 2 ]
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "A",
+    "valid" : false
+  }, {
+    "data" : {
+      "meta" : "not json",
+      "newArr" : [ ],
+      "newObj" : { },
+      "tags" : "["
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "B",
+    "valid" : false
+  }, {
+    "data" : {
+      "code" : "1",
+      "count" : 5,
+      "meta" : {
+        "a" : 1
+      },
+      "prompt" : "seed prompt"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "Seed",
+    "valid" : true
+  } ]
+}

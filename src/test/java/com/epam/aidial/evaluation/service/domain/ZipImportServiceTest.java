@@ -47,6 +47,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.util.unit.DataSize;
@@ -121,8 +123,8 @@ class ZipImportServiceTest {
     }
 
     @Test
-    @DisplayName("a successful import uploads the file, imports the CSV and cleans up the staged temp file")
-    void importZip_happyPath_uploadsFileAndCleansUpTempFile() {
+    @DisplayName("a successful import uploads the file, imports the CSV and leaves the caller's staged file alone")
+    void importZip_happyPath_uploadsFileAndLeavesStagedFile() {
         Path staged = stageZip(Map.of(
                 "test-cases.csv",
                 "testCaseName,prompt,document\nTC,hi,files/1/a.txt".getBytes(StandardCharsets.UTF_8),
@@ -137,7 +139,37 @@ class ZipImportServiceTest {
         zipImportService.importZip(DATASET_ID, staged, ',', null, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
 
         verify(fileService).putDatasetFile(eq(DATASET_ID), eq("a.txt"), any(), any());
-        assertThat(Files.exists(staged)).isFalse();
+        assertThat(Files.exists(staged)).isTrue();
+    }
+
+    @ParameterizedTest(name = "manifest contentType {0} → uploaded as {1}")
+    @CsvSource(
+            nullValues = "NULL",
+            value = {"image/png, image/png", "'not a type', text/plain", "NULL, text/plain", "'  ', text/plain"})
+    @DisplayName("an upload uses the manifest's valid content type, else guesses from the filename")
+    void importZip_uploadContentType_prefersValidManifestValue(String manifestContentType, String expected) {
+        String files = manifestContentType == null
+                ? "[{\"path\":\"files/1/a.txt\",\"sourceRef\":\"@ef/datasets/x/a.txt\"}]"
+                : "[{\"path\":\"files/1/a.txt\",\"sourceRef\":\"@ef/datasets/x/a.txt\",\"contentType\":\""
+                        + manifestContentType + "\"}]";
+        String manifest = "{\"formatVersion\":1,\"testCaseSchema\":[{\"name\":\"document\",\"type\":\"FILE\"}],"
+                + "\"files\":" + files + "}";
+        Path staged = stageZip(Map.of(
+                "test-cases.csv",
+                "testCaseName,document\nTC,files/1/a.txt".getBytes(StandardCharsets.UTF_8),
+                "manifest.json",
+                manifest.getBytes(StandardCharsets.UTF_8),
+                "files/1/a.txt",
+                "content".getBytes(StandardCharsets.UTF_8)));
+        when(csvImportService.importCsv(any(), any(), anyLong(), anyChar(), any(), any(), any(), any()))
+                .thenReturn(CsvImportResultDto.builder()
+                        .totalRows(1)
+                        .warnings(List.of())
+                        .build());
+
+        zipImportService.importZip(DATASET_ID, staged, ',', null, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        verify(fileService).putDatasetFile(eq(DATASET_ID), eq("a.txt"), any(), eq(expected));
     }
 
     @Test
@@ -159,7 +191,6 @@ class ZipImportServiceTest {
 
         verify(fileService).putDatasetFile(eq(DATASET_ID), eq("a.txt"), any(), any());
         verify(fileService).deleteByDataset(DATASET_ID, "a.txt");
-        assertThat(Files.exists(staged)).isFalse();
     }
 
     @Test
@@ -183,7 +214,6 @@ class ZipImportServiceTest {
         verify(fileService).deleteByDataset(DATASET_ID, "a.txt");
         verify(fileService, never()).deleteByDataset(DATASET_ID, "b.txt");
         verifyNoInteractions(csvImportService);
-        assertThat(Files.exists(staged)).isFalse();
     }
 
     @Test
@@ -227,7 +257,6 @@ class ZipImportServiceTest {
 
         verify(fileService, never()).putDatasetFile(any(), any(), any(), any());
         verifyNoInteractions(csvImportService);
-        assertThat(Files.exists(staged)).isFalse();
     }
 
     @Test
@@ -264,7 +293,6 @@ class ZipImportServiceTest {
 
         verify(fileService, never()).putDatasetFile(any(), any(), any(), any());
         verifyNoInteractions(csvImportService);
-        assertThat(Files.exists(staged)).isFalse();
     }
 
     private Path stageZip(Map<String, byte[]> entries) {

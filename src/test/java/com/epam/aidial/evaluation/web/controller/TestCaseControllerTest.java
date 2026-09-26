@@ -1,10 +1,10 @@
 package com.epam.aidial.evaluation.web.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyChar;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,16 +18,18 @@ import com.epam.aidial.evaluation.service.domain.csv.CsvDelimiterParser;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -79,19 +81,46 @@ class TestCaseControllerTest {
         byte[] content = "not a real zip, only the detector is faked".getBytes(StandardCharsets.UTF_8);
         MockMultipartFile file = new MockMultipartFile("file", "export.bin", "application/octet-stream", content);
         when(zipImportService.isZipArchive(any())).thenReturn(true);
+        List<byte[]> stagedBytes = new ArrayList<>();
         when(zipImportService.importZip(any(), any(), anyChar(), any(), any(), any()))
-                .thenReturn(CsvImportResultDto.builder().totalRows(1).build());
+                .thenAnswer(inv -> {
+                    stagedBytes.add(Files.readAllBytes(inv.getArgument(1, Path.class)));
+                    return CsvImportResultDto.builder().totalRows(1).build();
+                });
 
         CsvImportResultDto result =
                 controller().importCsv(datasetId, file, ",", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL, null);
 
         assertThat(result.getTotalRows()).isEqualTo(1);
-        ArgumentCaptor<Path> pathCaptor = ArgumentCaptor.forClass(Path.class);
-        verify(zipImportService).importZip(eq(datasetId), pathCaptor.capture(), eq(','), eq(null), any(), any());
-        Path staged = pathCaptor.getValue();
-        assertThat(Files.readAllBytes(staged)).isEqualTo(content);
-        Files.deleteIfExists(staged);
+        assertThat(stagedBytes).singleElement().isEqualTo(content);
         verify(csvImportService, never()).importCsv(any(), any(), anyLong(), anyChar(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("the controller deletes its staged ZIP after the import, including when the import throws")
+    void importCsv_zip_stagedFileDeletedAfterSuccessAndFailure() throws IOException {
+        UUID datasetId = UUID.randomUUID();
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "data.zip", "application/zip", "zip bytes".getBytes(StandardCharsets.UTF_8));
+        List<Path> stagedPaths = new ArrayList<>();
+        when(zipImportService.importZip(any(), any(), anyChar(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    stagedPaths.add(inv.getArgument(1, Path.class));
+                    return CsvImportResultDto.builder().totalRows(1).build();
+                })
+                .thenAnswer(inv -> {
+                    stagedPaths.add(inv.getArgument(1, Path.class));
+                    throw new ValidationException("boom");
+                });
+
+        controller().importCsv(datasetId, file, ",", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL, null);
+        assertThatThrownBy(() -> controller()
+                        .importCsv(datasetId, file, ",", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL, null))
+                .isInstanceOf(ValidationException.class);
+
+        assertThat(stagedPaths)
+                .hasSize(2)
+                .allSatisfy(path -> assertThat(Files.exists(path)).isFalse());
     }
 
     @Test

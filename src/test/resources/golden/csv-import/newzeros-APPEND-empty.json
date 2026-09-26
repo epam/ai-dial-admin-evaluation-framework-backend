@@ -1,0 +1,88 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 0,
+      "overriddenCount" : 0,
+      "totalRows" : 2,
+      "validCount" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "autoDetectedSchema" : [ {
+        "name" : "zip",
+        "required" : false,
+        "type" : "INTEGER"
+      }, {
+        "name" : "ratio",
+        "required" : false,
+        "type" : "NUMBER"
+      } ],
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "zip",
+        "headerName" : "zip",
+        "inferredType" : "INTEGER",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "ratio",
+        "headerName" : "ratio",
+        "inferredType" : "NUMBER",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : {
+          "ratio" : 0.5,
+          "zip" : 123
+        },
+        "testCaseName" : "A",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "ratio" : 1,
+          "zip" : 98
+        },
+        "testCaseName" : "B",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      } ],
+      "totalRows" : 2,
+      "totalTestCases" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "zip",
+    "required" : false,
+    "type" : "INTEGER"
+  }, {
+    "name" : "ratio",
+    "required" : false,
+    "type" : "NUMBER"
+  } ],
+  "testCases" : [ {
+    "data" : {
+      "ratio" : 0.5,
+      "zip" : 123
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "A",
+    "valid" : true
+  }, {
+    "data" : {
+      "ratio" : 1.0,
+      "zip" : 98
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "B",
+    "valid" : true
+  } ]
+}

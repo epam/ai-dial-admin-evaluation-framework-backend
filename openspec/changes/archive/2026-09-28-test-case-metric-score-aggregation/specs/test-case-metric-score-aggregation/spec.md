@@ -6,6 +6,13 @@ across **all** of that test case's `test_case_eval_summaries` rows — every `ru
 `turn_index` combination collapsed together — and persist the result as one row in
 `test_case_metric_scores_aggregated`, keyed by `(test_suite_run_id, test_case_id, computation_id)`, with
 the per-metric statistics stored as a JSONB map `{"<metricName>": {"avg":.., "min":.., "max":.., "count":..}}`.
+
+**Behavioral note**: Metric output fields whose `metric_scores` values are non-numeric (e.g. explicit JSON
+`null`, strings, objects) are silently excluded from aggregation, detected at runtime via `jsonb_typeof`
+rather than a pre-declared schema type. This differs from prior behavior which coalesced explicit JSON
+nulls to `0`. The new exclusion prevents spurious statistics when a metric's condition or evaluation
+produces a non-numeric result.
+
 Status: **Implemented**
 
 #### Scenario: Multiple rows for one test case collapse into one aggregated row
@@ -22,7 +29,7 @@ Status: **Implemented**
 
 ### Requirement: Aggregation runs during Phase 2's flush cycle, fail-soft
 The system SHALL compute and persist the aggregation for a flush batch's affected test cases immediately
-after that batch's per-row score is written (see `eval-summary-scoring`), re-aggregating each affected
+before that batch's per-row score is written (see `eval-summary-scoring`), re-aggregating each affected
 test case's **entire** row set for the computation (not just the current batch's rows), and upserting the
 result (`INSERT ... ON CONFLICT (test_suite_run_id, test_case_id, computation_id) DO UPDATE`) so that a
 test case whose rows straddle multiple flush batches converges to a correct, idempotent result. A failure

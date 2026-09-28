@@ -29,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -59,13 +60,21 @@ public class DefaultExceptionHandler {
     /** Stable MESSAGE TEXT raised by that trigger; {@code P0001} alone is PL/pgSQL's default errcode. */
     private static final String PRIVATE_BINDING_GUARD_MESSAGE_TOKEN = "PRIVATE_DATASET_ALREADY_BOUND";
 
+    /**
+     * The JSON content type is preset so the error body is written even when the request's {@code Accept}
+     * header names a non-JSON download type (e.g. {@code text/csv} on the test-case ZIP export, which fails
+     * here when a referenced file cannot be downloaded): a preset type bypasses content negotiation, which
+     * would otherwise fail and turn the error into an empty 500.
+     */
     @ExceptionHandler(DialCoreClientException.class)
     public ResponseEntity<ErrorView> handleDialCoreClientException(HttpServletRequest req, DialCoreClientException ex) {
         logUncaught(ex);
         HttpStatus status = DialCoreErrorMapper.toHttpStatus(ex.getStatusCode());
         ErrorCode code = toErrorCode(DialCoreErrorMapper.toDialCoreErrorCode(ex.getStatusCode()));
         String message = ex.getMessage() != null ? ex.getMessage() : status.getReasonPhrase();
-        return ResponseEntity.status(status).body(new ErrorView(req, status, code, message));
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(new ErrorView(req, status, code, message));
     }
 
     @ExceptionHandler(McpInvocationException.class)

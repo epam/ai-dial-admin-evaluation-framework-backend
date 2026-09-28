@@ -227,8 +227,8 @@ class ZipExportServiceTest {
     }
 
     @Test
-    @DisplayName("a download failure throws, names the reference, and deletes the temp ZIP file")
-    void buildZip_downloadFailure_throwsAndDeletesTempFile() throws IOException {
+    @DisplayName("a download failure throws naming the test case and reference, and deletes the temp ZIP file")
+    void buildZip_downloadFailure_throwsNamingTestCaseAndDeletesTempFile() throws IOException {
         List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
                 .name("document")
                 .type(SchemaFieldType.FILE)
@@ -243,7 +243,9 @@ class ZipExportServiceTest {
                 .when(dialFileClient)
                 .downloadTo(anyString(), any());
 
+        UUID testCaseId = UUID.randomUUID();
         TestCase testCase = TestCase.builder()
+                .id(testCaseId)
                 .testCaseName("case-1")
                 .data("{\"document\":\"" + ref + "\"}")
                 .build();
@@ -253,6 +255,8 @@ class ZipExportServiceTest {
 
         assertThatThrownBy(() -> service.buildZip(datasetId, List.of(), ','))
                 .isInstanceOf(DialCoreClientException.class)
+                .hasMessageContaining("case-1")
+                .hasMessageContaining(testCaseId.toString())
                 .hasMessageContaining(ref);
 
         long tempZipsAfter = countLeakedZipExportTempFiles();
@@ -261,7 +265,7 @@ class ZipExportServiceTest {
 
     @Test
     @DisplayName(
-            "a transport-level download failure (not a DialCoreClientException) is mapped to a 502 naming the reference, and deletes the temp ZIP file")
+            "a transport-level download failure (not a DialCoreClientException) is mapped to a 502 naming the test case and reference, and deletes the temp ZIP file")
     void buildZip_transportFailureDuringDownload_mapsTo502AndDeletesTempFile() throws IOException {
         List<FieldDefinitionDto> schema = List.of(FieldDefinitionDto.builder()
                 .name("document")
@@ -277,7 +281,9 @@ class ZipExportServiceTest {
                 .when(dialFileClient)
                 .downloadTo(anyString(), any());
 
+        UUID testCaseId = UUID.randomUUID();
         TestCase testCase = TestCase.builder()
+                .id(testCaseId)
                 .testCaseName("case-1")
                 .data("{\"document\":\"" + ref + "\"}")
                 .build();
@@ -287,6 +293,8 @@ class ZipExportServiceTest {
 
         assertThatThrownBy(() -> service.buildZip(datasetId, List.of(), ','))
                 .isInstanceOf(DialCoreClientException.class)
+                .hasMessageContaining("case-1")
+                .hasMessageContaining(testCaseId.toString())
                 .hasMessageContaining(ref)
                 .satisfies(e -> assertThat(((DialCoreClientException) e).getStatusCode())
                         .isEqualTo(HttpStatus.BAD_GATEWAY));

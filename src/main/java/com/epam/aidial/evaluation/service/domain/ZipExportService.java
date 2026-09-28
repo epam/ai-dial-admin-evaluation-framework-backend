@@ -92,7 +92,8 @@ public class ZipExportService {
      * written, so a caller can set response headers only on success (see design D8).
      *
      * @throws EntityNotFoundException if the dataset does not exist
-     * @throws DialCoreClientException naming the reference, if any EF-owned file cannot be downloaded
+     * @throws DialCoreClientException naming the test case and reference, if any EF-owned file cannot be
+     *     downloaded
      */
     public ZipExportHandle buildZip(UUID datasetId, List<String> filter, char delimiter) {
         if (!datasetRepository.existsById(datasetId)) {
@@ -189,10 +190,9 @@ public class ZipExportService {
                     break;
                 }
                 for (TestCase tc : cases) {
-                    String name = tc.getTestCaseName() != null ? tc.getTestCaseName() : "";
                     for (ProjectedRow row : rowProjector.project(tc)) {
                         printer.printRecord(buildRow(
-                                name,
+                                tc,
                                 row.turnIndex(),
                                 row.data(),
                                 dataColumnNames,
@@ -215,7 +215,7 @@ public class ZipExportService {
     }
 
     private List<Object> buildRow(
-            String testCaseName,
+            TestCase testCase,
             String turnIndex,
             Map<String, Object> data,
             List<String> dataColumnNames,
@@ -225,12 +225,12 @@ public class ZipExportService {
             List<ZipManifest.FileEntry> manifestFiles)
             throws IOException {
         List<Object> row = new ArrayList<>();
-        row.add(testCaseName);
+        row.add(testCase.getTestCaseName() != null ? testCase.getTestCaseName() : "");
         row.add(turnIndex);
         for (String name : dataColumnNames) {
             Object value = data.get(name);
             if (fileFieldNames.contains(name) && value != null) {
-                row.add(resolveFileCell(value.toString(), zos, assignedArchivePaths, manifestFiles));
+                row.add(resolveFileCell(testCase, value.toString(), zos, assignedArchivePaths, manifestFiles));
             } else {
                 row.add(cellValue(value));
             }
@@ -239,6 +239,7 @@ public class ZipExportService {
     }
 
     private String resolveFileCell(
+            TestCase testCase,
             String ref,
             ZipOutputStream zos,
             Map<String, String> assignedArchivePaths,
@@ -257,20 +258,23 @@ public class ZipExportService {
                 contentType = dialFileClient.downloadTo(efOwned.realPath(), zos);
             } catch (DialCoreClientException e) {
                 log.warn("Failed to download file for ZIP export, aborting: ref={}, error={}", ref, e.getMessage(), e);
-                throw new DialCoreClientException(
-                        e.getStatusCode(), "Failed to download file for ZIP export: " + ref, e);
+                throw new DialCoreClientException(e.getStatusCode(), downloadFailureMessage(testCase, ref), e);
             } catch (RestClientException e) {
                 // Transport-level failure (e.g. ResourceAccessException) that DialFileClient does not itself
-                // map to a DialCoreClientException; still must fail the export naming the ref, not surface
-                // as a generic 500 with no ref.
+                // map to a DialCoreClientException; still must fail the export naming the test case and ref,
+                // not surface as a generic 500.
                 log.warn("Failed to download file for ZIP export, aborting: ref={}, error={}", ref, e.getMessage(), e);
-                throw new DialCoreClientException(
-                        HttpStatus.BAD_GATEWAY, "Failed to download file for ZIP export: " + ref, e);
+                throw new DialCoreClientException(HttpStatus.BAD_GATEWAY, downloadFailureMessage(testCase, ref), e);
             }
             zos.closeEntry();
             manifestFiles.add(new ZipManifest.FileEntry(efOwned.archivePath(), ref, contentType));
         }
         return efOwned.archivePath();
+    }
+
+    private static String downloadFailureMessage(TestCase testCase, String ref) {
+        return "Failed to download file for ZIP export: %s, referenced by test case '%s' (id: %s)"
+                .formatted(ref, testCase.getTestCaseName(), testCase.getId());
     }
 
     private String cellValue(Object value) {

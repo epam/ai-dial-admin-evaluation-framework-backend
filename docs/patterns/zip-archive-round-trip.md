@@ -34,6 +34,6 @@ Every stream is capped on real bytes (`LimitingInputStream`) plus a running tota
 
 Preview runs the same pipeline without writes or If-Match, so FILE cells show the future `@ef/datasets/…` refs.
 
-**Export**: `ZipExportService.buildZip` builds a temp ZIP (paged, `TestCaseExportRowProjector` shared with CSV export, each ref downloaded once and its response `Content-Type` recorded in the manifest) and returns an `AutoCloseable` handle; the controller sets `application/zip` headers only after it succeeds. A download failure throws (mapped DIAL error status), never a partial ZIP.
+**Export**: `ZipExportService.buildZip` builds a temp ZIP (paged, `TestCaseExportRowProjector` shared with CSV export, each ref downloaded once and its response `Content-Type` recorded in the manifest) and returns an `AutoCloseable` handle; the controller sets `application/zip` headers only after it succeeds. A download failure throws (mapped DIAL error status, 502), never a partial ZIP; the message names the test case (name + id) and the ref. The endpoint has no `produces` and the `DialCoreClientException` handler presets `application/json`, so the error JSON is written even for `Accept: text/csv`.
 
 **Out of scope**: suite config (`additionalRequests`) is not in the archive; unreferenced files are not deleted after OVERRIDE; no content-hash compare.

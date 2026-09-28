@@ -32,8 +32,6 @@ import jakarta.validation.constraints.Size;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -141,8 +139,9 @@ public class TestCaseController {
         char delim = csvDelimiterParser.parse(delimiter);
         try {
             if (isZipFile(file)) {
-                Path staged = stageUpload(file, "zip-preview-", ".zip");
-                return zipImportService.previewZip(datasetId, staged, delim, importMode, conflictStrategy);
+                try (StagedUpload staged = StagedUpload.stage(file, "zip-preview-", ".zip")) {
+                    return zipImportService.previewZip(datasetId, staged.path(), delim, importMode, conflictStrategy);
+                }
             }
             return csvImportService.preview(
                     datasetId, file.getInputStream(), file.getSize(), delim, importMode, conflictStrategy);
@@ -208,9 +207,10 @@ public class TestCaseController {
         Long expectedVersion = parseVersionOptional(ifMatch);
         try {
             if (isZipFile(file)) {
-                Path staged = stageUpload(file, "zip-import-", ".zip");
-                return zipImportService.importZip(
-                        datasetId, staged, delim, expectedVersion, importMode, conflictStrategy);
+                try (StagedUpload staged = StagedUpload.stage(file, "zip-import-", ".zip")) {
+                    return zipImportService.importZip(
+                            datasetId, staged.path(), delim, expectedVersion, importMode, conflictStrategy);
+                }
             }
             return csvImportService.importCsv(
                     datasetId,
@@ -254,30 +254,6 @@ public class TestCaseController {
         }
         try (InputStream in = new BufferedInputStream(file.getInputStream())) {
             return zipImportService.isZipArchive(in);
-        }
-    }
-
-    /** Stages a ZIP upload to a temp file; {@code ZipImportService} deletes it once it is done with it. */
-    private static Path stageUpload(MultipartFile file, String prefix, String suffix) throws IOException {
-        Path staged = Files.createTempFile(prefix, suffix);
-        try {
-            file.transferTo(staged);
-        } catch (IOException e) {
-            deleteStagedQuietly(staged);
-            throw e;
-        }
-        return staged;
-    }
-
-    private static void deleteStagedQuietly(Path staged) {
-        try {
-            Files.deleteIfExists(staged);
-        } catch (IOException deleteFailure) {
-            log.warn(
-                    "Failed to delete staged upload {} after transfer failure: {}",
-                    staged,
-                    deleteFailure.getMessage(),
-                    deleteFailure);
         }
     }
 

@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.csv.CsvFormats;
 import com.epam.aidial.evaluation.service.domain.csv.TestCaseExportRowProjector;
 import com.epam.aidial.evaluation.service.domain.csv.TestCaseExportRowProjector.ProjectedRow;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
@@ -68,11 +69,7 @@ public class CsvExportService {
         List<FilterCondition> filters = filterParser.parse(filter != null ? filter : List.of());
         int pageSize = Math.clamp(csvExportProperties.getPageSize(), 1, paginationProperties.getMaxSize());
 
-        CSVFormat format = CSVFormat.DEFAULT
-                .builder()
-                .setDelimiter(delimiter)
-                .setRecordSeparator("\n")
-                .get();
+        CSVFormat format = CsvFormats.forExport(delimiter);
 
         try (OutputStreamWriter writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
                 CSVPrinter printer = new CSVPrinter(writer, format)) {

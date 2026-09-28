@@ -24,7 +24,8 @@ class CsvImportPropertiesTest {
     static class TestConfiguration {}
 
     @Test
-    @DisplayName("binds the real application.yml zip defaults: max-entries 1000, max-total-uncompressed-size 1GB")
+    @DisplayName(
+            "binds the real application.yml zip defaults: max-entries 1000, max-total-uncompressed-size 1GB, max-manifest-size 1MB")
     void applicationYmlDefaults_bindZipMaxEntriesAndMaxTotalUncompressedSize() throws Exception {
         final List<PropertySource<?>> applicationYml =
                 new YamlPropertySourceLoader().load("application", new ClassPathResource("application.yml"));
@@ -37,6 +38,7 @@ class CsvImportPropertiesTest {
                     assertThat(properties.getZip().getMaxEntries()).isEqualTo(1000);
                     assertThat(properties.getZip().getMaxTotalUncompressedSize())
                             .isEqualTo(DataSize.ofGigabytes(1));
+                    assertThat(properties.getZip().getMaxManifestSize()).isEqualTo(DataSize.ofMegabytes(1));
                 });
     }
 
@@ -48,7 +50,8 @@ class CsvImportPropertiesTest {
                         "csv.import.max-rows=100000",
                         "csv.import.batch-size=1000",
                         "csv.import.zip.max-entries=0",
-                        "csv.import.zip.max-total-uncompressed-size=1GB")
+                        "csv.import.zip.max-total-uncompressed-size=1GB",
+                        "csv.import.zip.max-manifest-size=1MB")
                 .run(context ->
                         assertThat(context).hasFailed().getFailure().rootCause().hasMessageContaining("maxEntries"));
     }
@@ -60,11 +63,28 @@ class CsvImportPropertiesTest {
                         "csv.import.max-file-size=10MB",
                         "csv.import.max-rows=100000",
                         "csv.import.batch-size=1000",
-                        "csv.import.zip.max-entries=1000")
+                        "csv.import.zip.max-entries=1000",
+                        "csv.import.zip.max-manifest-size=1MB")
                 .run(context -> assertThat(context)
                         .hasFailed()
                         .getFailure()
                         .rootCause()
                         .hasMessageContaining("maxTotalUncompressedSize"));
+    }
+
+    @Test
+    @DisplayName("fails to start when zip.max-manifest-size is missing")
+    void zipMaxManifestSizeMissing_bindingFails() {
+        runner.withPropertyValues(
+                        "csv.import.max-file-size=10MB",
+                        "csv.import.max-rows=100000",
+                        "csv.import.batch-size=1000",
+                        "csv.import.zip.max-entries=1000",
+                        "csv.import.zip.max-total-uncompressed-size=1GB")
+                .run(context -> assertThat(context)
+                        .hasFailed()
+                        .getFailure()
+                        .rootCause()
+                        .hasMessageContaining("maxManifestSize"));
     }
 }

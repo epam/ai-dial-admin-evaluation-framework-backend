@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
+import com.epam.aidial.evaluation.service.domain.csv.CsvFormats;
 import com.epam.aidial.evaluation.service.domain.csv.TestCaseExportRowProjector;
 import com.epam.aidial.evaluation.service.domain.csv.TestCaseExportRowProjector.ProjectedRow;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
@@ -167,11 +168,7 @@ public class ZipExportService {
             Map<String, String> assignedArchivePaths,
             List<ZipManifest.FileEntry> manifestFiles)
             throws IOException {
-        CSVFormat format = CSVFormat.DEFAULT
-                .builder()
-                .setDelimiter(delimiter)
-                .setRecordSeparator("\n")
-                .get();
+        CSVFormat format = CsvFormats.forExport(delimiter);
 
         try (OutputStreamWriter writer =
                         new OutputStreamWriter(Files.newOutputStream(csvPath), StandardCharsets.UTF_8);
@@ -255,8 +252,9 @@ public class ZipExportService {
         FileClassification.EfOwned efOwned = (FileClassification.EfOwned) classification;
         if (efOwned.firstSeen()) {
             zos.putNextEntry(new ZipEntry(efOwned.archivePath()));
+            String contentType;
             try {
-                dialFileClient.downloadTo(efOwned.realPath(), zos);
+                contentType = dialFileClient.downloadTo(efOwned.realPath(), zos);
             } catch (DialCoreClientException e) {
                 log.warn("Failed to download file for ZIP export, aborting: ref={}, error={}", ref, e.getMessage(), e);
                 throw new DialCoreClientException(
@@ -270,7 +268,7 @@ public class ZipExportService {
                         HttpStatus.BAD_GATEWAY, "Failed to download file for ZIP export: " + ref, e);
             }
             zos.closeEntry();
-            manifestFiles.add(new ZipManifest.FileEntry(efOwned.archivePath(), ref));
+            manifestFiles.add(new ZipManifest.FileEntry(efOwned.archivePath(), ref, contentType));
         }
         return efOwned.archivePath();
     }

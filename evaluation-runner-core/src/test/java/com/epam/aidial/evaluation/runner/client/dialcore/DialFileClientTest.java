@@ -81,7 +81,7 @@ class DialFileClientTest {
     class DownloadTo {
 
         @Test
-        @DisplayName("should stream file content to output stream")
+        @DisplayName("should stream file content to output stream and return its content type")
         void shouldStreamFileContent() {
             byte[] expected = "file bytes here".getBytes(StandardCharsets.UTF_8);
             server.expect(requestTo("/v1/files/bucket/suites/abc/data.csv"))
@@ -89,9 +89,10 @@ class DialFileClientTest {
                     .andRespond(withSuccess(expected, MediaType.APPLICATION_OCTET_STREAM));
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            client.downloadTo("bucket/suites/abc/data.csv", output);
+            String contentType = client.downloadTo("bucket/suites/abc/data.csv", output);
 
             assertThat(output.toByteArray()).isEqualTo(expected);
+            assertThat(contentType).isEqualTo(MediaType.APPLICATION_OCTET_STREAM_VALUE);
             server.verify();
         }
 

@@ -1,0 +1,144 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 1,
+      "overriddenCount" : 0,
+      "totalRows" : 2,
+      "validCount" : 1,
+      "warnings" : [ {
+        "columnName" : "count",
+        "message" : "Field 'count' has schema type INTEGER but value is String",
+        "rowNumber" : 3
+      } ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "prompt",
+        "headerName" : "prompt",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "code",
+        "headerName" : "code",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "count",
+        "headerName" : "count",
+        "inferredType" : "INTEGER",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "flag",
+        "headerName" : "flag",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "newNum",
+        "headerName" : "newNum",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : {
+          "code" : "7",
+          "count" : 12,
+          "prompt" : "hi"
+        },
+        "testCaseName" : "A",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "code" : "42",
+          "count" : "",
+          "prompt" : ""
+        },
+        "testCaseName" : "B",
+        "valid" : false,
+        "validationWarnings" : [ {
+          "code" : "TYPE",
+          "fieldName" : "count",
+          "message" : "Field 'count' has schema type INTEGER but value is String",
+          "path" : "$.data.count"
+        } ]
+      } ],
+      "totalRows" : 2,
+      "totalTestCases" : 2,
+      "warnings" : [ {
+        "columnName" : "count",
+        "message" : "Field 'count' has schema type INTEGER but value is String",
+        "rowNumber" : 3
+      } ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "prompt",
+    "required" : true,
+    "type" : "STRING"
+  }, {
+    "name" : "code",
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "count",
+    "required" : false,
+    "type" : "INTEGER"
+  }, {
+    "name" : "meta",
+    "required" : false,
+    "type" : "OBJECT"
+  }, {
+    "name" : "tags",
+    "required" : false,
+    "type" : "ARRAY"
+  }, {
+    "name" : "attachment",
+    "required" : false,
+    "type" : "FILE"
+  }, {
+    "name" : "reply",
+    "perTurn" : true,
+    "required" : false,
+    "type" : "STRING"
+  } ],
+  "testCases" : [ {
+    "data" : {
+      "code" : "7",
+      "count" : 12,
+      "prompt" : "hi"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "A",
+    "valid" : true
+  }, {
+    "data" : {
+      "code" : "42",
+      "count" : "",
+      "prompt" : ""
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "B",
+    "valid" : false
+  }, {
+    "data" : {
+      "code" : "1",
+      "count" : 5,
+      "meta" : {
+        "a" : 1
+      },
+      "prompt" : "seed prompt"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "Seed",
+    "valid" : true
+  } ]
+}

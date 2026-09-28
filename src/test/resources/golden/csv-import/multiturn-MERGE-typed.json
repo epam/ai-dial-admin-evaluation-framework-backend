@@ -1,0 +1,147 @@
+{
+  "import" : {
+    "body" : {
+      "invalidCount" : 0,
+      "overriddenCount" : 0,
+      "totalRows" : 3,
+      "validCount" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "preview" : {
+    "body" : {
+      "autoDetectedSchema" : [ {
+        "name" : "note",
+        "perTurn" : true,
+        "required" : false,
+        "type" : "STRING"
+      } ],
+      "detectedColumns" : [ {
+        "fieldName" : "testCaseName",
+        "headerName" : "testCaseName",
+        "inferredType" : "STRING",
+        "mappedTo" : "testCaseName"
+      }, {
+        "fieldName" : "turnIndex",
+        "headerName" : "turnIndex",
+        "inferredType" : "STRING",
+        "mappedTo" : "turnIndex"
+      }, {
+        "fieldName" : "prompt",
+        "headerName" : "prompt",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "reply",
+        "headerName" : "reply",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      }, {
+        "fieldName" : "note",
+        "headerName" : "note",
+        "inferredType" : "STRING",
+        "mappedTo" : "data"
+      } ],
+      "sampleRows" : [ {
+        "data" : {
+          "prompt" : "hello"
+        },
+        "multiTurnData" : [ {
+          "note" : "n0",
+          "reply" : "hi there"
+        }, {
+          "note" : "n1",
+          "reply" : "how are you"
+        } ],
+        "testCaseName" : "Conv",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      }, {
+        "data" : {
+          "note" : "",
+          "prompt" : "one-shot",
+          "reply" : ""
+        },
+        "testCaseName" : "Solo",
+        "valid" : true,
+        "validationWarnings" : [ ]
+      } ],
+      "totalRows" : 3,
+      "totalTestCases" : 2,
+      "warnings" : [ ]
+    },
+    "status" : 200
+  },
+  "testCaseSchema" : [ {
+    "name" : "prompt",
+    "required" : true,
+    "type" : "STRING"
+  }, {
+    "name" : "code",
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "count",
+    "required" : false,
+    "type" : "INTEGER"
+  }, {
+    "name" : "meta",
+    "required" : false,
+    "type" : "OBJECT"
+  }, {
+    "name" : "tags",
+    "required" : false,
+    "type" : "ARRAY"
+  }, {
+    "name" : "attachment",
+    "required" : false,
+    "type" : "FILE"
+  }, {
+    "name" : "reply",
+    "perTurn" : true,
+    "required" : false,
+    "type" : "STRING"
+  }, {
+    "name" : "note",
+    "perTurn" : true,
+    "required" : false,
+    "type" : "STRING"
+  } ],
+  "testCases" : [ {
+    "data" : {
+      "prompt" : "hello"
+    },
+    "id" : "<uuid>",
+    "multiTurnData" : [ {
+      "note" : "n0",
+      "reply" : "hi there"
+    }, {
+      "note" : "n1",
+      "reply" : "how are you"
+    } ],
+    "testCaseName" : "Conv",
+    "valid" : true
+  }, {
+    "data" : {
+      "code" : "1",
+      "count" : 5,
+      "meta" : {
+        "a" : 1
+      },
+      "prompt" : "seed prompt"
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "Seed",
+    "valid" : true
+  }, {
+    "data" : {
+      "note" : "",
+      "prompt" : "one-shot",
+      "reply" : ""
+    },
+    "id" : "<uuid>",
+    "testCaseName" : "Solo",
+    "valid" : true
+  } ]
+}

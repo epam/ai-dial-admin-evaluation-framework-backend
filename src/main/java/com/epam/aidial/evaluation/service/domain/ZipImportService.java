@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain;
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.csv.CsvFormats;
 import com.epam.aidial.evaluation.service.domain.csv.CsvImportSchemaHints;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
@@ -21,11 +22,8 @@ import com.epam.aidial.evaluation.service.domain.zip.ZipManifestSerializer;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.net.URLConnection;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -38,9 +36,10 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 
 /**
@@ -87,8 +86,8 @@ public class ZipImportService {
 
     /**
      * Preview ZIP import: runs the same pipeline as {@link #importZip} through the rewrite and pre-write
-     * checks (no {@code If-Match} check, and {@code stagedFile} is a temp file the controller already staged
-     * from the upload), but makes no DIAL write. FILE cells in the resulting sample rows show the future
+     * checks (no {@code If-Match} check; {@code stagedFile} is the caller's temp copy of the upload, which the
+     * caller deletes), but makes no DIAL write. FILE cells in the resulting sample rows show the future
      * {@code @ef/datasets/{id}/{name}} references (design D7).
      */
     public CsvImportPreviewDto previewZip(
@@ -110,8 +109,6 @@ public class ZipImportService {
             return mergePreviewWarnings(preview, prepared.rewriteWarnings());
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to read staged ZIP archive", e);
-        } finally {
-            deleteQuietly(stagedFile);
         }
     }
 
@@ -145,7 +142,7 @@ public class ZipImportService {
                 }
             }
 
-            uploadPlannedFiles(datasetId, openZip, prepared.plan(), journal);
+            uploadPlannedFiles(datasetId, openZip, prepared, journal);
 
             CsvImportResultDto result = csvImportService.importCsv(
                     datasetId,
@@ -167,7 +164,6 @@ public class ZipImportService {
             throw new UncheckedIOException("Failed to read staged ZIP archive", e);
         } finally {
             journal.close();
-            deleteQuietly(stagedFile);
         }
     }
 
@@ -207,7 +203,17 @@ public class ZipImportService {
         CsvImportSchemaHints hints = manifest.map(m -> new CsvImportSchemaHints(m.testCaseSchema(), Set.<String>of()))
                 .orElseGet(() -> new CsvImportSchemaHints(List.of(), scanResult.fileColumns()));
 
-        return new PreparedImport(rewriteResult.csv(), hints, rewriteResult.warnings(), plan);
+        return new PreparedImport(
+                rewriteResult.csv(), hints, rewriteResult.warnings(), plan, manifestContentTypeByPath(manifest));
+    }
+
+    private static Map<String, String> manifestContentTypeByPath(Optional<ZipManifest> manifest) {
+        Map<String, String> byPath = new LinkedHashMap<>();
+        manifest.ifPresent(m -> m.files().stream()
+                .filter(entry ->
+                        entry.contentType() != null && !entry.contentType().isBlank())
+                .forEach(entry -> byPath.put(entry.path(), entry.contentType())));
+        return byPath;
     }
 
     private static Map<String, String> manifestSourceRefByPath(Optional<ZipManifest> manifest) {
@@ -235,15 +241,12 @@ public class ZipImportService {
     }
 
     private void uploadPlannedFiles(
-            UUID datasetId,
-            ZipArchiveReader.OpenZip openZip,
-            ZipFileImportPlanner.ImportFilePlan plan,
-            ZipImportUploadJournal journal) {
+            UUID datasetId, ZipArchiveReader.OpenZip openZip, PreparedImport prepared, ZipImportUploadJournal journal) {
         for (Map.Entry<String, ZipFileImportPlanner.PlannedFile> entry :
-                plan.byPath().entrySet()) {
+                prepared.plan().byPath().entrySet()) {
             String path = entry.getKey();
             ZipFileImportPlanner.PlannedFile planned = entry.getValue();
-            String contentType = guessContentType(planned.filename());
+            String contentType = contentTypeFor(path, planned.filename(), prepared.contentTypeByPath());
             if (!planned.isNew()) {
                 // Must succeed before the overwrite; a failure here aborts before this file is touched.
                 journal.backupBeforeOverwrite(planned.filename());
@@ -257,6 +260,22 @@ public class ZipImportService {
                 journal.recordCreated(planned.filename());
             }
         }
+    }
+
+    /**
+     * The manifest's recorded content type for this archive path when it is a valid media type, else a
+     * guess from the filename, so a round trip keeps the source file's type.
+     */
+    private static String contentTypeFor(String path, String filename, Map<String, String> contentTypeByPath) {
+        String recorded = contentTypeByPath.get(path);
+        if (recorded != null) {
+            try {
+                return MediaType.parseMediaType(recorded).toString();
+            } catch (InvalidMediaTypeException e) {
+                log.warn("Ignoring invalid manifest content type for {}: {}", path, recorded, e);
+            }
+        }
+        return guessContentType(filename);
     }
 
     private static String guessContentType(String filename) {
@@ -290,17 +309,9 @@ public class ZipImportService {
         return preview;
     }
 
-    private static void deleteQuietly(Path path) {
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException e) {
-            log.warn("Failed to delete staged ZIP upload {}: {}", path, e.getMessage(), e);
-        }
-    }
-
     /** The CSV's data column names (header row, excluding {@code testCaseName}/{@code turnIndex}). */
     private static List<String> csvDataColumnNames(byte[] csv, char delimiter) {
-        try (CSVParser parser = createParser(csv, delimiter)) {
+        try (CSVParser parser = CsvFormats.importParser(csv, delimiter)) {
             Iterator<CSVRecord> it = parser.iterator();
             if (!it.hasNext()) {
                 return List.of();
@@ -321,7 +332,7 @@ public class ZipImportService {
 
     /** Number of data rows (excluding the header). Invariant across the cell-by-cell rewrite. */
     private static int countDataRows(byte[] csv, char delimiter) {
-        try (CSVParser parser = createParser(csv, delimiter)) {
+        try (CSVParser parser = CsvFormats.importParser(csv, delimiter)) {
             Iterator<CSVRecord> it = parser.iterator();
             if (!it.hasNext()) {
                 return 0;
@@ -338,24 +349,14 @@ public class ZipImportService {
         }
     }
 
-    private static CSVParser createParser(byte[] csv, char delimiter) throws IOException {
-        CSVFormat format = CSVFormat.DEFAULT
-                .builder()
-                .setDelimiter(delimiter)
-                .setQuote('"')
-                .setTrim(true)
-                .setIgnoreEmptyLines(false)
-                .get();
-        return CSVParser.builder()
-                .setFormat(format)
-                .setReader(new InputStreamReader(new ByteArrayInputStream(csv), StandardCharsets.UTF_8))
-                .get();
-    }
-
-    /** Everything the shared pipeline produces: the rewritten CSV, its schema hints, warnings, and the plan. */
+    /**
+     * Everything the shared pipeline produces: the rewritten CSV, its schema hints, warnings, the plan, and
+     * the manifest's content type per archive path.
+     */
     private record PreparedImport(
             byte[] rewrittenCsv,
             CsvImportSchemaHints hints,
             List<CsvImportWarningDto> rewriteWarnings,
-            ZipFileImportPlanner.ImportFilePlan plan) {}
+            ZipFileImportPlanner.ImportFilePlan plan,
+            Map<String, String> contentTypeByPath) {}
 }

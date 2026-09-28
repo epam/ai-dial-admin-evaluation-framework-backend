@@ -25,6 +25,7 @@ import com.epam.aidial.evaluation.functional.tests.AnalyticsResultListFunctional
 import com.epam.aidial.evaluation.functional.tests.AnalyticsRetryFieldsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.ApiKeyAuthenticationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.CsvImportModeFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.CsvImportPlainGoldenFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetCloneFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetCrudFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetDetachFunctionalTests;
@@ -233,7 +234,8 @@ public class PostgresFunctionalTests extends FunctionalTests {
                         throw new DialCoreClientException(HttpStatusCode.valueOf(404), "Not found", "File not found");
                     }
                     target.write(bytes);
-                    return null;
+                    DialFileMetadataDto meta = dialMetadataStore.get(path);
+                    return meta != null ? meta.getContentType() : null;
                 })
                 .when(dialFileClient)
                 .downloadTo(anyString(), any(OutputStream.class));
@@ -398,6 +400,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class CsvImportModeTests extends CsvImportModeFunctionalTests {}
+
+    @Nested
+    class CsvImportPlainGoldenTests extends CsvImportPlainGoldenFunctionalTests {}
 
     @Nested
     class TryItOutTests extends TryItOutFunctionalTests {}

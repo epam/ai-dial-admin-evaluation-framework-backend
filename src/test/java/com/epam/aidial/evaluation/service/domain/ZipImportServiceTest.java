@@ -321,6 +321,7 @@ class ZipImportServiceTest {
         CsvImportProperties.Zip zip = new CsvImportProperties.Zip();
         zip.setMaxEntries(1000);
         zip.setMaxTotalUncompressedSize(DataSize.of(10, DataUnit.MEGABYTES));
+        zip.setMaxManifestSize(DataSize.of(1, DataUnit.MEGABYTES));
         properties.setZip(zip);
         return properties;
     }

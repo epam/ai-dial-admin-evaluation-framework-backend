@@ -589,6 +589,7 @@ On list endpoints, missing `page` defaults to `0` and missing `size` to `paginat
 | `csv.import.batch-size` | `CSV_IMPORT_BATCH_SIZE` | `1000` | No | - | Number of rows inserted per JDBC batch. |
 | `csv.import.zip.max-entries` | `CSV_IMPORT_ZIP_MAX_ENTRIES` | `1000` | No | - | Maximum number of entries a test-case ZIP archive import may contain. Archives over this limit are rejected with HTTP 400 before any file is written. |
 | `csv.import.zip.max-total-uncompressed-size` | `CSV_IMPORT_ZIP_MAX_TOTAL_UNCOMPRESSED_SIZE` | `1GB` | No | - | Maximum total uncompressed size of a test-case ZIP archive import, judged from entry headers and enforced again on the bytes actually read. Archives over this limit are rejected with HTTP 400. |
+| `csv.import.zip.max-manifest-size` | `CSV_IMPORT_ZIP_MAX_MANIFEST_SIZE` | `1MB` | No | - | Maximum size of a test-case ZIP archive's `manifest.json`, judged from its entry header and enforced again on the bytes actually read. Archives whose manifest exceeds it are rejected with HTTP 400. |
 
 ### 7.4 Validation
 

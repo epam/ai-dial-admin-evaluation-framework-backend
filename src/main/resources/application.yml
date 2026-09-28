@@ -238,6 +238,7 @@ csv:
     zip:
       max-entries: ${CSV_IMPORT_ZIP_MAX_ENTRIES:1000}
       max-total-uncompressed-size: ${CSV_IMPORT_ZIP_MAX_TOTAL_UNCOMPRESSED_SIZE:1GB}
+      max-manifest-size: ${CSV_IMPORT_ZIP_MAX_MANIFEST_SIZE:1MB}
   export:
     page-size: 500
 

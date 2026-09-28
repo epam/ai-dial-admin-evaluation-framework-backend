@@ -38,6 +38,15 @@ class ZipArchiveReaderTest {
 
     private ZipArchiveReader reader(
             int maxEntries, long maxTotalUncompressedBytes, long maxCsvBytes, long maxFileBytes) {
+        return reader(maxEntries, maxTotalUncompressedBytes, maxCsvBytes, maxFileBytes, 1_000_000);
+    }
+
+    private ZipArchiveReader reader(
+            int maxEntries,
+            long maxTotalUncompressedBytes,
+            long maxCsvBytes,
+            long maxFileBytes,
+            long maxManifestBytes) {
         CsvImportProperties csvImportProperties = new CsvImportProperties();
         csvImportProperties.setMaxFileSize(DataSize.of(maxCsvBytes, DataUnit.BYTES));
         csvImportProperties.setMaxRows(10_000);
@@ -45,6 +54,7 @@ class ZipArchiveReaderTest {
         CsvImportProperties.Zip zip = new CsvImportProperties.Zip();
         zip.setMaxEntries(maxEntries);
         zip.setMaxTotalUncompressedSize(DataSize.of(maxTotalUncompressedBytes, DataUnit.BYTES));
+        zip.setMaxManifestSize(DataSize.of(maxManifestBytes, DataUnit.BYTES));
         csvImportProperties.setZip(zip);
 
         DialFileStorageProperties fileStorageProperties = new DialFileStorageProperties();
@@ -184,6 +194,30 @@ class ZipArchiveReaderTest {
         assertThatThrownBy(() -> reader(1000, 1_000_000, 5, 1_000_000).open(archive))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("test-cases.csv size exceeds maximum");
+    }
+
+    @Test
+    @DisplayName("manifest entry above csv.import.zip.max-manifest-size is rejected")
+    void open_manifestExceedsMaxManifestSize_throwsValidationException() throws IOException {
+        Path archive = zipOf(baseEntries());
+
+        assertThatThrownBy(
+                        () -> reader(1000, 1_000_000, 1_000_000, 1_000_000, 5).open(archive))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("manifest.json size exceeds maximum of 5 bytes");
+    }
+
+    @Test
+    @DisplayName("a manifest whose header understates its size fails while its bytes are read")
+    void open_manifestHeaderUnderstatesSize_failsWhileReading() throws IOException {
+        byte[] lyingZip = ZipTestArchives.lieAboutUncompressedSize(zipBytes(baseEntries()), "manifest.json", 5);
+        Path archive = writeZip(lyingZip);
+
+        // Header (5) passes the pre-check against the cap (10); the real manifest is larger than 10 bytes.
+        assertThatThrownBy(
+                        () -> reader(1000, 1_000_000, 1_000_000, 1_000_000, 10).open(archive))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("manifest.json size exceeds maximum of 10 bytes");
     }
 
     @Test

@@ -38,7 +38,8 @@ import org.springframework.stereotype.Component;
  *   <li>rejects, before any write, an absolute path, a path containing a {@code ..} segment or a backslash,
  *       a duplicate normalized name, more entries than {@code csv.import.zip.max-entries}, a total declared
  *       (uncompressed) size above {@code csv.import.zip.max-total-uncompressed-size}, a missing {@code
- *       test-cases.csv}, and either required entry's declared size over its own cap;
+ *       test-cases.csv}, and either required entry's declared size over its own cap ({@code
+ *       csv.import.max-file-size} for the CSV, {@code csv.import.zip.max-manifest-size} for the manifest);
  *   <li>wraps every entry's actual read (CSV, manifest, and later, on demand, each {@code files/…} entry) in
  *       a {@link LimitingInputStream} enforcing the same per-entry caps on the bytes actually read, so an
  *       entry whose header understates its real size still fails instead of exhausting memory, <em>and</em>
@@ -160,7 +161,7 @@ public class ZipArchiveReader {
                 : readCapped(
                         zipFile,
                         manifestEntry,
-                        maxTotalSize,
+                        csvImportProperties.getZip().getMaxManifestSize().toBytes(),
                         max -> new ValidationException("manifest.json size exceeds maximum of " + max + " bytes"),
                         runningTotal);
 

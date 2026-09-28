@@ -38,5 +38,8 @@ public class CsvImportProperties {
 
         @NotNull
         private DataSize maxTotalUncompressedSize;
+
+        @NotNull
+        private DataSize maxManifestSize;
     }
 }

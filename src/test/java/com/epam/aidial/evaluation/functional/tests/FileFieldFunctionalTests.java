@@ -109,12 +109,14 @@ public abstract class FileFieldFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Export suite with FILE fields returns ZIP containing CSV + files")
+    @DisplayName("Export suite with FILE fields returns ZIP containing CSV + manifest + files")
     void exportWithFileFieldsReturnsZip() throws IOException {
         TestSuiteResponseDto suite = createSuiteWithFileSchema();
 
+        // uploadFileToSuite produces a legacy @ef/suites/... reference; export must still materialize it.
         FileMetadataDto file =
                 uploadFileToSuite(suite.getId(), "report.txt", "Report content here".getBytes(StandardCharsets.UTF_8));
+        assertThat(file.getPath()).contains("/suites/");
 
         createTestCaseInSuite(suite.getId(), "TC-File", Map.of("prompt", "Analyze", "document", file.getPath()));
 
@@ -128,17 +130,140 @@ public abstract class FileFieldFunctionalTests extends BaseFunctionalTest {
         assertThat(contentType).containsAnyOf("application/zip", "application/octet-stream");
 
         Map<String, byte[]> zipEntries = readZipEntries(response.getBody());
-        assertThat(zipEntries).containsKey("test-cases.csv");
+        assertThat(zipEntries).containsKeys("test-cases.csv", "manifest.json");
 
         String csv = new String(zipEntries.get("test-cases.csv"), StandardCharsets.UTF_8);
-        assertThat(csv).contains("testCaseName");
+        assertThat(csv).contains("testCaseName,turnIndex,prompt,document");
         assertThat(csv).contains("TC-File");
-        assertThat(csv).contains("files/");
-        assertThat(csv).contains("report.txt");
+        // the single distinct EF-owned reference gets number 1, first-seen order
+        assertThat(csv).contains("files/1/report.txt");
 
-        boolean hasFileEntry =
-                zipEntries.keySet().stream().anyMatch(name -> name.startsWith("files/") && name.endsWith("report.txt"));
-        assertThat(hasFileEntry).isTrue();
+        assertThat(zipEntries).containsKey("files/1/report.txt");
+        assertThat(new String(zipEntries.get("files/1/report.txt"), StandardCharsets.UTF_8))
+                .isEqualTo("Report content here");
+    }
+
+    @Test
+    @DisplayName(
+            "Export ZIP: multi-turn case writes one row per turn; shared FILE keeps one path, per-turn FILE differs")
+    void exportZipMultiTurnCase_writesOneRowPerTurnWithSharedAndPerTurnFiles() throws IOException {
+        TestSuiteResponseDto suite = createSuiteWithMultiTurnFileSchema();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+
+        FileMetadataDto sharedFile =
+                uploadFileToSuite(suite.getId(), "shared.txt", "Shared content".getBytes(StandardCharsets.UTF_8));
+        FileMetadataDto turn0File =
+                uploadFileToSuite(suite.getId(), "turn0.txt", "Turn 0 content".getBytes(StandardCharsets.UTF_8));
+        FileMetadataDto turn1File =
+                uploadFileToSuite(suite.getId(), "turn1.txt", "Turn 1 content".getBytes(StandardCharsets.UTF_8));
+
+        TestCaseRequestDto req = TestCaseRequestDto.builder()
+                .testCaseName("MultiTurnTC")
+                .data(Map.of("sharedDoc", sharedFile.getPath()))
+                .multiTurnData(List.of(
+                        Map.of("prompt", "t0", "turnDoc", turn0File.getPath()),
+                        Map.of("prompt", "t1", "turnDoc", turn1File.getPath())))
+                .build();
+        ResponseEntity<TestCaseResponseDto> createResponse = restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases"), jsonEntity(req), TestCaseResponseDto.class);
+        assertThat(createResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        ResponseEntity<byte[]> response =
+                restTemplate.getForEntity(apiUrl("/datasets/" + datasetId + "/test-cases/export.csv"), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, byte[]> zipEntries = readZipEntries(response.getBody());
+
+        String csv = new String(zipEntries.get("test-cases.csv"), StandardCharsets.UTF_8);
+        String[] lines = csv.split("\n");
+        assertThat(lines).hasSize(3); // header + 2 turn rows
+        assertThat(lines[0]).isEqualTo("testCaseName,turnIndex,prompt,sharedDoc,turnDoc");
+        assertThat(lines[1]).isEqualTo("MultiTurnTC,0,t0,files/1/shared.txt,files/2/turn0.txt");
+        assertThat(lines[2]).isEqualTo("MultiTurnTC,1,t1,files/1/shared.txt,files/3/turn1.txt");
+
+        assertThat(zipEntries).containsKeys("files/1/shared.txt", "files/2/turn0.txt", "files/3/turn1.txt");
+        assertThat(new String(zipEntries.get("files/1/shared.txt"), StandardCharsets.UTF_8))
+                .isEqualTo("Shared content");
+        assertThat(new String(zipEntries.get("files/2/turn0.txt"), StandardCharsets.UTF_8))
+                .isEqualTo("Turn 0 content");
+        assertThat(new String(zipEntries.get("files/3/turn1.txt"), StandardCharsets.UTF_8))
+                .isEqualTo("Turn 1 content");
+        assertThat(zipEntries).containsKey("manifest.json");
+    }
+
+    @Test
+    @DisplayName("Export ZIP: one file referenced by many test cases is written to the archive once")
+    void exportZipFileUsedByManyCases_writesEntryOnce() throws IOException {
+        TestSuiteResponseDto suite = createSuiteWithFileSchema();
+        FileMetadataDto file =
+                uploadFileToSuite(suite.getId(), "policy.pdf", "Policy content".getBytes(StandardCharsets.UTF_8));
+
+        createTestCaseInSuite(suite.getId(), "TC-A", Map.of("prompt", "a", "document", file.getPath()));
+        createTestCaseInSuite(suite.getId(), "TC-B", Map.of("prompt", "b", "document", file.getPath()));
+        createTestCaseInSuite(suite.getId(), "TC-C", Map.of("prompt", "c", "document", file.getPath()));
+
+        ResponseEntity<byte[]> response = restTemplate.getForEntity(
+                apiUrl("/datasets/" + metaTestDataHelper.getDatasetId(suite.getId()) + "/test-cases/export.csv"),
+                byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, byte[]> zipEntries = readZipEntries(response.getBody());
+
+        long fileEntryCount = zipEntries.keySet().stream()
+                .filter(name -> name.startsWith("files/"))
+                .count();
+        assertThat(fileEntryCount).isEqualTo(1);
+        assertThat(zipEntries).containsKey("files/1/policy.pdf");
+
+        String csv = new String(zipEntries.get("test-cases.csv"), StandardCharsets.UTF_8);
+        long referenceCount = csv.split("files/1/policy.pdf", -1).length - 1;
+        assertThat(referenceCount).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Export ZIP: a public/... reference is kept verbatim with no archive entry")
+    void exportZipPublicReference_isVerbatimWithNoEntry() throws IOException {
+        TestSuiteResponseDto suite = createSuiteWithFileSchema();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        createTestCaseInSuite(suite.getId(), "TC-Public", Map.of("prompt", "p", "document", "public/shared/guide.pdf"));
+
+        ResponseEntity<byte[]> response =
+                restTemplate.getForEntity(apiUrl("/datasets/" + datasetId + "/test-cases/export.csv"), byte[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<String, byte[]> zipEntries = readZipEntries(response.getBody());
+
+        String csv = new String(zipEntries.get("test-cases.csv"), StandardCharsets.UTF_8);
+        assertThat(csv).contains("public/shared/guide.pdf");
+        boolean hasFileEntry = zipEntries.keySet().stream().anyMatch(name -> name.startsWith("files/"));
+        assertThat(hasFileEntry).isFalse();
+        assertThat(zipEntries).containsKey("manifest.json");
+    }
+
+    @Test
+    @DisplayName("Export ZIP: a file missing from DIAL storage returns an error status and no ZIP body")
+    void exportZipMissingDialFile_returnsErrorStatusWithNoZip() {
+        TestSuiteResponseDto suite = createSuiteWithFileSchema();
+        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        String missingRef = "@ef/suites/" + suite.getId() + "/ghost.pdf";
+        createTestCaseInSuite(suite.getId(), "TC-Missing", Map.of("prompt", "p", "document", missingRef));
+
+        // The endpoint's `produces` is restricted to text/csv and application/zip; accept anything so the
+        // request reaches the handler (and its error response) instead of failing content negotiation.
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(List.of(MediaType.ALL));
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                apiUrl("/datasets/" + datasetId + "/test-cases/export.csv"),
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                new ParameterizedTypeReference<Map<String, Object>>() {});
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        if (response.getHeaders().getContentType() != null) {
+            assertThat(response.getHeaders().getContentType().toString()).doesNotContain("application/zip");
+        }
+        assertThat(response.getBody()).isNotNull();
+        assertThat((String) response.getBody().get("message")).contains(missingRef);
     }
 
     @Test
@@ -166,7 +291,7 @@ public abstract class FileFieldFunctionalTests extends BaseFunctionalTest {
                 .containsAnyOf("application/zip", "application/octet-stream");
 
         Map<String, byte[]> zipEntries = readZipEntries(response.getBody());
-        assertThat(zipEntries).containsKey("test-cases.csv");
+        assertThat(zipEntries).containsKeys("test-cases.csv", "manifest.json");
 
         String csv = new String(zipEntries.get("test-cases.csv"), StandardCharsets.UTF_8);
         assertThat(csv).contains("TC-Mixed");
@@ -305,6 +430,28 @@ public abstract class FileFieldFunctionalTests extends BaseFunctionalTest {
                                 .name("tags")
                                 .type(SchemaFieldType.ARRAY)
                                 .required(false)
+                                .build()));
+    }
+
+    private TestSuiteResponseDto createSuiteWithMultiTurnFileSchema() {
+        return createSuite(
+                "MultiTurn File Suite " + UUID.randomUUID(),
+                List.of(
+                        FieldDefinitionDto.builder()
+                                .name("prompt")
+                                .type(SchemaFieldType.STRING)
+                                .perTurn(true)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("sharedDoc")
+                                .type(SchemaFieldType.FILE)
+                                .required(false)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("turnDoc")
+                                .type(SchemaFieldType.FILE)
+                                .required(false)
+                                .perTurn(true)
                                 .build()));
     }
 

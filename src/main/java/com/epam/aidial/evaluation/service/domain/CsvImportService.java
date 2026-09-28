@@ -15,6 +15,7 @@ import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.csv.ColumnBinding;
 import com.epam.aidial.evaluation.service.domain.csv.CsvCellParser;
+import com.epam.aidial.evaluation.service.domain.csv.CsvImportSchemaHints;
 import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
 import com.epam.aidial.evaluation.service.domain.csv.CsvTestCase;
 import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
@@ -96,6 +97,24 @@ public class CsvImportService {
             char delimiter,
             CsvImportMode mode,
             CsvConflictStrategy conflictStrategy) {
+        return preview(
+                datasetId, inputStream, contentLength, delimiter, mode, conflictStrategy, CsvImportSchemaHints.EMPTY);
+    }
+
+    /**
+     * Dry-run overload accepting ZIP-derived schema hints (design D4): a manifest's declared field
+     * definitions and/or the set of columns whose cells referenced an archive file path. Plain CSV import
+     * calls the six-argument overload above, which passes {@link CsvImportSchemaHints#EMPTY}, so its
+     * behaviour is unchanged.
+     */
+    public CsvImportPreviewDto preview(
+            UUID datasetId,
+            InputStream inputStream,
+            long contentLength,
+            char delimiter,
+            CsvImportMode mode,
+            CsvConflictStrategy conflictStrategy,
+            CsvImportSchemaHints hints) {
         validateFileSize(contentLength);
         if (!datasetRepository.existsById(datasetId)) {
             throw new EntityNotFoundException("Dataset not found: " + datasetId);
@@ -113,7 +132,11 @@ public class CsvImportService {
             boolean schemaEmpty = testCaseSchema == null || testCaseSchema.isEmpty();
             Set<String> allDataFieldNames = allDataFieldNames(bindings);
             List<FieldDefinitionDto> validationSchema =
-                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames);
+                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames, hints);
+            // Preview parity with importCsv: see the identical comment there for why parse-time types come
+            // from fieldTypes overlaid with the manifest, never from validationSchema directly.
+            Set<String> manifestDrivenColumns = manifestDrivenColumns(mode, schemaEmpty, testCaseSchema, hints);
+            Map<String, SchemaFieldType> parseFieldTypes = parseFieldTypes(fieldTypes, manifestDrivenColumns, hints);
 
             List<CsvImportWarningDto> warnings = new ArrayList<>();
             List<TestCaseResponseDto> sampleRows = new ArrayList<>();
@@ -148,8 +171,16 @@ public class CsvImportService {
                     throw new ValidationException("Row count exceeds limit " + csvImportProperties.getMaxRows());
                 }
                 rowNum++;
-                ParsedCsvRow row =
-                        parseRow(record, bindings, rowNum, totalRows + 1, padWidth, fieldTypes, mode, schemaEmpty);
+                ParsedCsvRow row = parseRow(
+                        record,
+                        bindings,
+                        rowNum,
+                        totalRows + 1,
+                        padWidth,
+                        parseFieldTypes,
+                        manifestDrivenColumns,
+                        mode,
+                        schemaEmpty);
                 totalRows++;
 
                 // Incremental schema inference
@@ -201,7 +232,7 @@ public class CsvImportService {
             // Post-stream membership set (design D3): the observed multi-turn gate, exact after streaming.
             Set<String> finalMultiTurnColumns = sawMultiTurnCase ? allDataFieldNames : Set.of();
             List<FieldDefinitionDto> autoDetectedSchema = buildAutoDetectedSchema(
-                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
+                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns, hints);
 
             List<CsvColumnInfoDto> detectedColumns =
                     buildDetectedColumns(headers, bindings, fieldTypes, autoDetectedSchema);
@@ -240,6 +271,35 @@ public class CsvImportService {
             Long expectedVersion,
             CsvImportMode mode,
             CsvConflictStrategy conflictStrategy) {
+        return importCsv(
+                datasetId,
+                inputStream,
+                contentLength,
+                delimiter,
+                expectedVersion,
+                mode,
+                conflictStrategy,
+                CsvImportSchemaHints.EMPTY);
+    }
+
+    /**
+     * Import overload accepting ZIP-derived schema hints (design D4): see {@link #preview(UUID, InputStream,
+     * long, char, CsvImportMode, CsvConflictStrategy, CsvImportSchemaHints)}. Plain CSV import calls the
+     * seven-argument overload above, which passes {@link CsvImportSchemaHints#EMPTY}, so its behaviour is
+     * unchanged. Annotated {@code @Transactional} independently of that overload: both are valid external
+     * entry points (the plain-CSV controller path and, in future, the ZIP import path), and a self-invocation
+     * from one into the other would not pick up a transaction advice it did not already have.
+     */
+    @Transactional("metaTransactionManager")
+    public CsvImportResultDto importCsv(
+            UUID datasetId,
+            InputStream inputStream,
+            long contentLength,
+            char delimiter,
+            Long expectedVersion,
+            CsvImportMode mode,
+            CsvConflictStrategy conflictStrategy,
+            CsvImportSchemaHints hints) {
         validateFileSize(contentLength);
         Dataset dataset = datasetRepository
                 .findById(datasetId)
@@ -259,12 +319,34 @@ public class CsvImportService {
                 throw new ValidationException("CSV has no header row");
             }
             List<ColumnBinding> bindings = resolveColumnBindings(headers);
+            // fieldTypes reflects only the pre-import dataset schema; it feeds computeChangedColumns'
+            // "is this column new to the dataset" check further down, which must stay keyed on the
+            // pre-import schema regardless of hints.
             Map<String, SchemaFieldType> fieldTypes = getFieldTypes(testCaseSchema);
 
             boolean schemaEmpty = testCaseSchema == null || testCaseSchema.isEmpty();
             Set<String> allDataFieldNames = allDataFieldNames(bindings);
             List<FieldDefinitionDto> validationSchema =
-                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames);
+                    buildValidationSchema(mode, schemaEmpty, bindings, testCaseSchema, allDataFieldNames, hints);
+            // manifestDrivenColumns gates both parseFieldTypes' overlay and parseRow's raw-text coercion
+            // (see parseRow and manifestDrivenColumns javadoc) to *only* the columns the manifest tier
+            // actually decides for this mode: a column already known from the pre-import schema (or from
+            // plain inference) keeps its pre-import type and coerces the heuristically pre-parsed value,
+            // byte-for-byte as before — changing plain-CSV behaviour is out of scope. Only a manifest-tier
+            // column needs its type resolved from the manifest and coerced from the cell's raw text, since
+            // that is the only route by which content like "007", "1.50" or "TRUE" could otherwise be
+            // silently rewritten by CsvCellParser's numeric/boolean heuristic before any type-aware
+            // coercion runs, and the post-persist fixup pass can only coerce the *type* of whatever parse
+            // time already stored, never recover text that heuristic has already discarded.
+            Set<String> manifestDrivenColumns = manifestDrivenColumns(mode, schemaEmpty, testCaseSchema, hints);
+            // Parse-time column types: fieldTypes (the pre-import dataset schema) overlaid with the
+            // manifest's type for exactly manifestDrivenColumns — never validationSchema directly, since
+            // validationSchema's OVERRIDE/empty-schema branch deliberately clears every non-manifest
+            // column's type to null (design: "types are unknown until inference completes", meant only for
+            // pre-inference validation) — using it here would make parseRow treat an existing OBJECT/ARRAY
+            // or INTEGER column as undeclared during a plain (no-hints) OVERRIDE import, a plain-CSV
+            // behaviour change. With EMPTY hints, parseFieldTypes is identical to fieldTypes.
+            Map<String, SchemaFieldType> parseFieldTypes = parseFieldTypes(fieldTypes, manifestDrivenColumns, hints);
 
             List<CsvImportWarningDto> warnings = new ArrayList<>();
             int totalRows = 0;
@@ -292,8 +374,16 @@ public class CsvImportService {
                     throw new ValidationException("Row count exceeds limit " + maxRows);
                 }
                 rowNum++;
-                ParsedCsvRow row =
-                        parseRow(record, bindings, rowNum, totalRows + 1, padWidth, fieldTypes, mode, schemaEmpty);
+                ParsedCsvRow row = parseRow(
+                        record,
+                        bindings,
+                        rowNum,
+                        totalRows + 1,
+                        padWidth,
+                        parseFieldTypes,
+                        manifestDrivenColumns,
+                        mode,
+                        schemaEmpty);
                 totalRows++;
 
                 // Incremental schema inference per row
@@ -336,14 +426,28 @@ public class CsvImportService {
 
             // Schema persistence after streaming completes
             boolean schemaPersisted = persistSchema(
-                    datasetId, mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
+                    datasetId,
+                    mode,
+                    schemaEmpty,
+                    bindings,
+                    testCaseSchema,
+                    inferredTypes,
+                    finalMultiTurnColumns,
+                    manifestDrivenColumns,
+                    hints);
 
-            // Post-persist fixup: coerce values for columns with newly determined types
-            Set<String> changedColumns = computeChangedColumns(mode, schemaEmpty, fieldTypes, inferredTypes);
+            // Post-persist fixup: coerce values to the schema's *effective* (final, hints-aware) type per
+            // column, never to the raw per-cell inference. With a manifest or a fileColumns hint (design
+            // D4), the persisted type can differ from what inference alone would say (e.g. a manifest
+            // declares a numeric-looking column STRING) — the parse-time storage above always used the
+            // *old* schema's types (or a heuristic guess when the column was undeclared), so this pass is
+            // the only place a manifest-declared type ever reaches already-parsed row data.
+            List<FieldDefinitionDto> finalSchema = buildFinalSchema(
+                    mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns, hints);
+            Map<String, SchemaFieldType> effectiveTypes = getFieldTypes(finalSchema);
+            Set<String> changedColumns = computeChangedColumns(mode, schemaEmpty, fieldTypes, effectiveTypes);
             if (!changedColumns.isEmpty()) {
-                List<FieldDefinitionDto> finalSchema = buildFinalSchema(
-                        mode, schemaEmpty, bindings, testCaseSchema, inferredTypes, finalMultiTurnColumns);
-                fixupTestCases(datasetId, changedColumns, inferredTypes, finalSchema);
+                fixupTestCases(datasetId, changedColumns, effectiveTypes, finalSchema);
             }
 
             // Trigger dataset-rooted revalidation when the dataset schema was persisted.
@@ -618,28 +722,36 @@ public class CsvImportService {
      *   <li>APPEND/MERGE + empty schema: all data columns from CSV headers (required=false)</li>
      *   <li>APPEND + non-empty schema: existing testCaseSchema unchanged</li>
      * </ul>
+     *
+     * <p>{@code hints.declaredSchema()} (a ZIP manifest's fields) supplies a declared tier (design D4, tier
+     * 0) that takes priority over inference wherever the mode above lets the manifest decide: verbatim for
+     * OVERRIDE/empty-schema, and for MERGE new columns only (existing dataset fields are unaffected).
+     * APPEND + non-empty schema ignores {@code hints} entirely, matching the manifest-ignored row of design
+     * D4. Plain CSV import always passes {@link CsvImportSchemaHints#EMPTY}, so this is a no-op then.
      */
     List<FieldDefinitionDto> buildValidationSchema(
             CsvImportMode mode,
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
-            Set<String> multiTurnColumns) {
+            Set<String> multiTurnColumns,
+            CsvImportSchemaHints hints) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
             // Types are unknown until inference completes. A declared field still carries perTurn forward
             // from testCaseSchema by field name (declared scope is a persistent dataset-schema property a
             // CSV never expresses). An undeclared column gets the D2 pre-stream over-approximation:
             // multiTurnColumns is every data-bound column name, so it is treated as per-turn during
             // streaming — harmless for single-turn cases (their validation never consults scope), and
-            // correct for multi-turn cases, for which per-turn is the desired answer anyway.
-            return schemaFieldBuilder.buildFromBindings(bindings, null, testCaseSchema, multiTurnColumns);
+            // correct for multi-turn cases, for which per-turn is the desired answer anyway. A manifest
+            // field (hints, tier 0) overrides all of that verbatim, type included.
+            return schemaFieldBuilder.buildFromBindings(bindings, null, testCaseSchema, multiTurnColumns, hints);
         }
         if (mode == CsvImportMode.MERGE) {
             List<FieldDefinitionDto> merged = new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
-            merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, null, multiTurnColumns));
+            merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, null, multiTurnColumns, hints));
             return merged;
         }
-        // APPEND + non-empty schema: use existing schema as-is
+        // APPEND + non-empty schema: use existing schema as-is, hints ignored
         return testCaseSchema != null ? testCaseSchema : List.of();
     }
 
@@ -650,6 +762,20 @@ public class CsvImportService {
     /**
      * Persists the dataset's test_case_schema for OVERRIDE / empty-schema / MERGE-with-new-fields cases.
      * Returns true when the dataset schema column was updated (which also bumps the dataset version).
+     *
+     * <p>The MERGE branch only attempts a delta when {@code inferredTypes} is non-empty (a cheap way to
+     * skip the work when the CSV plainly added no new column) <b>or</b> {@code manifestDrivenColumns} is
+     * non-empty. The second condition is required: a manifest-declared new MERGE column (design D4) whose
+     * cells are all blank in every row — e.g. every referenced ZIP file missing from the archive — never
+     * reaches {@code inferredTypes} (type inference skips blank cells entirely), so without it the manifest
+     * field would silently never be appended, even though the spec says MERGE takes a new field's
+     * definition from the manifest regardless of its cells. {@code manifestDrivenColumns} for MERGE mode is
+     * already exactly "manifest-listed names absent from the current schema" (see {@link
+     * #manifestDrivenColumns}), i.e. delta-eligible by construction, so its non-emptiness is a precise
+     * proxy here; {@code buildMergeDelta}'s own {@code delta.isEmpty()} check below still guards the actual
+     * persist for a manifest field that turns out to have no CSV column. Plain CSV ({@link
+     * CsvImportSchemaHints#EMPTY}) always yields an empty {@code manifestDrivenColumns}, so this keeps the
+     * exact old gate for plain CSV.
      */
     private boolean persistSchema(
             UUID datasetId,
@@ -658,19 +784,21 @@ public class CsvImportService {
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
             Map<String, SchemaFieldType> inferredTypes,
-            Set<String> multiTurnColumns) {
+            Set<String> multiTurnColumns,
+            Set<String> manifestDrivenColumns,
+            CsvImportSchemaHints hints) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
             // Build full auto-detected schema from inferred types (OVERRIDE, APPEND+empty, MERGE+empty)
-            List<FieldDefinitionDto> newSchema =
-                    schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
+            List<FieldDefinitionDto> newSchema = schemaFieldBuilder.buildFromBindings(
+                    bindings, inferredTypes, testCaseSchema, multiTurnColumns, hints);
             String schemaJson = serializeSchema(newSchema);
             datasetRepository.updateTestCaseSchema(datasetId, schemaJson);
             return true;
         }
-        if (mode == CsvImportMode.MERGE && !inferredTypes.isEmpty()) {
+        if (mode == CsvImportMode.MERGE && (!inferredTypes.isEmpty() || !manifestDrivenColumns.isEmpty())) {
             // Merge: add only new fields (those not already in the existing schema)
-            List<FieldDefinitionDto> delta =
-                    schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns);
+            List<FieldDefinitionDto> delta = schemaFieldBuilder.buildMergeDelta(
+                    testCaseSchema, bindings, inferredTypes, multiTurnColumns, hints);
             if (!delta.isEmpty()) {
                 List<FieldDefinitionDto> mergedSchema =
                         new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
@@ -697,23 +825,29 @@ public class CsvImportService {
     // -------------------------------------------------------------------------
 
     /**
-     * Computes which column names had their schema type newly determined during this import.
-     * Returns an empty set if no fixup is needed.
+     * Computes which column names need their already-parsed row data coerced to match the schema this
+     * import ends up with. Returns an empty set if no fixup is needed. Built from {@code effectiveTypes}
+     * (derived from the final, hints-aware schema — see {@link #buildFinalSchema}), not from raw per-cell
+     * inference: for OVERRIDE / any-mode-with-empty-schema this is every column the final schema declares
+     * (a superset of the columns that actually had non-blank data, which is harmless — {@link
+     * #coerceColumns} is a no-op for a column absent from a row's data, and idempotent for a column already
+     * at its target type); for MERGE it is still only the columns new to the dataset's existing schema,
+     * since an already-declared field's type never changes here.
      */
     private Set<String> computeChangedColumns(
             CsvImportMode mode,
             boolean schemaEmpty,
             Map<String, SchemaFieldType> originalFieldTypes,
-            Map<String, SchemaFieldType> inferredTypes) {
+            Map<String, SchemaFieldType> effectiveTypes) {
         if (mode == CsvImportMode.APPEND && !schemaEmpty) {
             return Set.of();
         }
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
-            return new LinkedHashSet<>(inferredTypes.keySet());
+            return new LinkedHashSet<>(effectiveTypes.keySet());
         }
         // MERGE + non-empty schema: only new columns not in original schema
         Set<String> changed = new LinkedHashSet<>();
-        for (String col : inferredTypes.keySet()) {
+        for (String col : effectiveTypes.keySet()) {
             if (!originalFieldTypes.containsKey(col)) {
                 changed.add(col);
             }
@@ -730,13 +864,16 @@ public class CsvImportService {
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
             Map<String, SchemaFieldType> inferredTypes,
-            Set<String> multiTurnColumns) {
+            Set<String> multiTurnColumns,
+            CsvImportSchemaHints hints) {
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
-            return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
+            return schemaFieldBuilder.buildFromBindings(
+                    bindings, inferredTypes, testCaseSchema, multiTurnColumns, hints);
         }
         // MERGE + non-empty schema: existing schema + new fields from inferredTypes
         List<FieldDefinitionDto> merged = new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
-        merged.addAll(schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns));
+        merged.addAll(
+                schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns, hints));
         return merged;
     }
 
@@ -752,7 +889,7 @@ public class CsvImportService {
     private void fixupTestCases(
             UUID datasetId,
             Set<String> changedColumns,
-            Map<String, SchemaFieldType> inferredTypes,
+            Map<String, SchemaFieldType> effectiveTypes,
             List<FieldDefinitionDto> finalSchema) {
         int batchSize = csvImportProperties.getBatchSize();
         int offset = 0;
@@ -767,9 +904,9 @@ public class CsvImportService {
             for (TestCase tc : batch) {
                 String rawTurns = tc.getMultiTurnData();
                 if (rawTurns != null && !rawTurns.isBlank()) {
-                    fixupMultiTurnCase(datasetId, tc, rawTurns, changedColumns, inferredTypes, finalSchema, toUpdate);
+                    fixupMultiTurnCase(datasetId, tc, rawTurns, changedColumns, effectiveTypes, finalSchema, toUpdate);
                 } else {
-                    fixupSingleTurnCase(datasetId, tc, changedColumns, inferredTypes, finalSchema, toUpdate);
+                    fixupSingleTurnCase(datasetId, tc, changedColumns, effectiveTypes, finalSchema, toUpdate);
                 }
             }
 
@@ -794,24 +931,29 @@ public class CsvImportService {
             UUID datasetId,
             TestCase tc,
             Set<String> changedColumns,
-            Map<String, SchemaFieldType> inferredTypes,
+            Map<String, SchemaFieldType> effectiveTypes,
             List<FieldDefinitionDto> finalSchema,
             List<TestCase> toUpdate) {
         Map<String, Object> data = deserializeData(tc.getData());
         String originalDataJson = tc.getData();
 
-        if (!coerceColumns(data, changedColumns, inferredTypes)) {
+        CoercionResult coercion = coerceColumns(data, changedColumns, effectiveTypes);
+        if (!coercion.changed() && !coercion.hasJsonParseErrors()) {
             return;
         }
 
         String newDataJson = warningsSerializer.serializeMap(data);
-        if (newDataJson.equals(originalDataJson)) {
+        // A JSON-parse failure (see coerceColumns) never changes the value's text, so the re-validation
+        // below must still run even when newDataJson == originalDataJson — otherwise a manifest-declared
+        // OBJECT/ARRAY column holding malformed JSON would silently keep its stale valid=true status.
+        if (newDataJson.equals(originalDataJson) && !coercion.hasJsonParseErrors()) {
             return;
         }
 
         ValidationResult vr =
                 testCaseValidationService.validateTestCase(data, finalSchema, null, List.of(), false, datasetId);
-        ValidationResult merged = durableWarningMerger.merge(vr, tc.getValidationWarnings());
+        ValidationResult combined = combineWithJsonParseErrors(vr, coercion.hasJsonParseErrors());
+        ValidationResult merged = durableWarningMerger.merge(combined, tc.getValidationWarnings());
         tc.setData(newDataJson);
         tc.setValid(merged.isValid());
         tc.setValidationWarnings(warningsSerializer.serializeWarnings(merged.getWarnings()));
@@ -837,7 +979,7 @@ public class CsvImportService {
             TestCase tc,
             String rawTurns,
             Set<String> changedColumns,
-            Map<String, SchemaFieldType> inferredTypes,
+            Map<String, SchemaFieldType> effectiveTypes,
             List<FieldDefinitionDto> finalSchema,
             List<TestCase> toUpdate) {
         List<Map<String, Object>> turns;
@@ -859,33 +1001,41 @@ public class CsvImportService {
             // would silently overwrite it with "[]" — a shape change this pass must not make — so fall back
             // to the single-turn path, which leaves tc.getMultiTurnData() untouched and writes it back
             // verbatim via batchUpdate.
-            fixupSingleTurnCase(datasetId, tc, changedColumns, inferredTypes, finalSchema, toUpdate);
+            fixupSingleTurnCase(datasetId, tc, changedColumns, effectiveTypes, finalSchema, toUpdate);
             return;
         }
 
         Map<String, Object> sharedData = deserializeData(tc.getData());
         String originalDataJson = tc.getData();
 
-        boolean changed = coerceColumns(sharedData, changedColumns, inferredTypes);
+        CoercionResult sharedCoercion = coerceColumns(sharedData, changedColumns, effectiveTypes);
+        boolean changed = sharedCoercion.changed();
+        boolean hasJsonParseErrors = sharedCoercion.hasJsonParseErrors();
         for (Map<String, Object> turn : turns) {
-            if (turn != null && coerceColumns(turn, changedColumns, inferredTypes)) {
-                changed = true;
+            if (turn == null) {
+                continue;
             }
+            CoercionResult turnCoercion = coerceColumns(turn, changedColumns, effectiveTypes);
+            changed |= turnCoercion.changed();
+            hasJsonParseErrors |= turnCoercion.hasJsonParseErrors();
         }
 
-        if (!changed) {
+        if (!changed && !hasJsonParseErrors) {
             return;
         }
 
         String newDataJson = warningsSerializer.serializeMap(sharedData);
         String newTurnsJson = turnsCsvSerializer.serializeTurns(turns);
-        if (newDataJson.equals(originalDataJson) && rawTurns.equals(newTurnsJson)) {
+        // See the single-turn fixup for why hasJsonParseErrors alone must still force re-validation even
+        // when neither the shared data nor the turns' serialized text changed.
+        if (newDataJson.equals(originalDataJson) && rawTurns.equals(newTurnsJson) && !hasJsonParseErrors) {
             return;
         }
 
         ValidationResult recomputed = testCaseValidationService.validateMultiTurn(
                 sharedData, turns, finalSchema, null, List.of(), false, datasetId);
-        ValidationResult merged = durableWarningMerger.merge(recomputed, tc.getValidationWarnings());
+        ValidationResult combined = combineWithJsonParseErrors(recomputed, hasJsonParseErrors);
+        ValidationResult merged = durableWarningMerger.merge(combined, tc.getValidationWarnings());
 
         tc.setData(newDataJson);
         tc.setMultiTurnData(newTurnsJson);
@@ -895,20 +1045,43 @@ public class CsvImportService {
     }
 
     /**
-     * Coerces every {@code changedColumns} entry present in {@code data} to its newly inferred type,
-     * mutating {@code data} in place. Shared by the single-turn path (on {@code data}) and the multi-turn
-     * path (on shared {@code data} and on each turn map). Returns whether anything actually changed.
+     * Coerces every {@code changedColumns} entry present in {@code data} to its <b>effective</b> (final,
+     * hints-aware) schema type, mutating {@code data} in place. Shared by the single-turn path (on
+     * {@code data}) and the multi-turn path (on shared {@code data} and on each turn map).
+     *
+     * <p>{@code SchemaTypeCoercer.coerce} is an identity no-op for {@code OBJECT}/{@code ARRAY} — it exists
+     * to coerce primitive scalars, never to (re)parse JSON — so a column whose effective type is
+     * {@code OBJECT}/{@code ARRAY} and whose stored value is still a {@code String} (only possible via a
+     * manifest/{@code fileColumns} hint: plain inference never yields {@code OBJECT}/{@code ARRAY}, and a
+     * column already declared {@code OBJECT}/{@code ARRAY} in the pre-import schema is already parsed at
+     * parse time via {@code fieldTypes}) is instead reparsed with {@link #parseJsonCell}, the exact same
+     * JSON parse path a declared {@code OBJECT}/{@code ARRAY} field uses at parse time — no separate ad-hoc
+     * parsing. Invalid JSON leaves the value untouched, exactly as parse time does, and is reported via the
+     * returned {@link CoercionResult#hasJsonParseErrors()}, which the caller merges in with {@link
+     * #combineWithJsonParseErrors} the same way parse time's {@code hasJsonParseErrors} is merged in.
      */
-    private boolean coerceColumns(
-            Map<String, Object> data, Set<String> changedColumns, Map<String, SchemaFieldType> inferredTypes) {
+    private CoercionResult coerceColumns(
+            Map<String, Object> data, Set<String> changedColumns, Map<String, SchemaFieldType> effectiveTypes) {
         boolean changed = false;
+        boolean hasJsonParseErrors = false;
         for (String col : changedColumns) {
             Object value = data.get(col);
             if (value == null) {
                 continue;
             }
-            SchemaFieldType targetType = inferredTypes.get(col);
+            SchemaFieldType targetType = effectiveTypes.get(col);
             if (targetType == null) {
+                continue;
+            }
+            if ((targetType == SchemaFieldType.OBJECT || targetType == SchemaFieldType.ARRAY)
+                    && value instanceof String raw) {
+                Object parsed = parseJsonCell(raw, targetType);
+                if (parsed != null) {
+                    data.put(col, parsed);
+                    changed = true;
+                } else {
+                    hasJsonParseErrors = true;
+                }
                 continue;
             }
             Object coerced = schemaTypeCoercer.coerce(value, targetType);
@@ -917,8 +1090,11 @@ public class CsvImportService {
                 changed = true;
             }
         }
-        return changed;
+        return new CoercionResult(changed, hasJsonParseErrors);
     }
+
+    /** Result of {@link #coerceColumns}: whether any value changed, and whether a JSON reparse failed. */
+    private record CoercionResult(boolean changed, boolean hasJsonParseErrors) {}
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> deserializeData(String dataJson) {
@@ -1078,19 +1254,22 @@ public class CsvImportService {
             List<ColumnBinding> bindings,
             List<FieldDefinitionDto> testCaseSchema,
             Map<String, SchemaFieldType> inferredTypes,
-            Set<String> multiTurnColumns) {
+            Set<String> multiTurnColumns,
+            CsvImportSchemaHints hints) {
         if (mode == CsvImportMode.OVERRIDE) {
             // Always return full auto-detected schema
-            return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
+            return schemaFieldBuilder.buildFromBindings(
+                    bindings, inferredTypes, testCaseSchema, multiTurnColumns, hints);
         } else if (mode == CsvImportMode.APPEND) {
             if (schemaEmpty) {
-                return schemaFieldBuilder.buildFromBindings(bindings, inferredTypes, testCaseSchema, multiTurnColumns);
+                return schemaFieldBuilder.buildFromBindings(
+                        bindings, inferredTypes, testCaseSchema, multiTurnColumns, hints);
             }
             return null;
         } else if (mode == CsvImportMode.MERGE) {
             // Return only delta fields (new columns not in existing schema)
-            List<FieldDefinitionDto> delta =
-                    schemaFieldBuilder.buildMergeDelta(testCaseSchema, bindings, inferredTypes, multiTurnColumns);
+            List<FieldDefinitionDto> delta = schemaFieldBuilder.buildMergeDelta(
+                    testCaseSchema, bindings, inferredTypes, multiTurnColumns, hints);
             return delta.isEmpty() ? null : delta;
         }
         return null;
@@ -1231,10 +1410,98 @@ public class CsvImportService {
     }
 
     /**
+     * Column names whose parse-time type comes from the manifest tier (design D4, tier 0) for this specific
+     * mode/schema-state combination — exactly the columns {@link #buildValidationSchema} resolves to a
+     * manifest field rather than to the pre-import schema or plain inference:
+     *
+     * <ul>
+     *   <li>OVERRIDE, or any mode with an empty schema: every manifest-listed field name, unconditionally
+     *       (the dataset's current schema is ignored for this bucket per D4/D5);
+     *   <li>MERGE, non-empty schema: only manifest-listed names <b>absent</b> from the current dataset
+     *       schema — an already-declared field is never overridden by the manifest;
+     *   <li>APPEND, non-empty schema: none — the manifest is ignored entirely.
+     * </ul>
+     *
+     * <p>Used to gate both {@link #parseFieldTypes}'s manifest overlay and {@link #parseRow}'s raw-text
+     * coercion. Plain CSV import ({@link CsvImportSchemaHints#EMPTY}) always returns an empty set here, so
+     * every declared column keeps its pre-import type and coerces the heuristically pre-parsed cell value
+     * exactly as before — changing that behaviour is out of scope (proposal Non-goals).
+     */
+    private static Set<String> manifestDrivenColumns(
+            CsvImportMode mode,
+            boolean schemaEmpty,
+            List<FieldDefinitionDto> testCaseSchema,
+            CsvImportSchemaHints hints) {
+        if (hints.declaredSchema().isEmpty()) {
+            return Set.of();
+        }
+        Set<String> manifestNames = new LinkedHashSet<>();
+        for (FieldDefinitionDto field : hints.declaredSchema()) {
+            if (field != null && field.getName() != null) {
+                manifestNames.add(field.getName());
+            }
+        }
+        if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
+            return manifestNames;
+        }
+        if (mode == CsvImportMode.MERGE) {
+            if (testCaseSchema != null) {
+                for (FieldDefinitionDto field : testCaseSchema) {
+                    if (field != null && field.getName() != null) {
+                        manifestNames.remove(field.getName());
+                    }
+                }
+            }
+            return manifestNames;
+        }
+        // APPEND + non-empty schema: manifest ignored entirely
+        return Set.of();
+    }
+
+    /**
+     * Parse-time column types: {@code fieldTypes} (the pre-import dataset schema's types, unchanged),
+     * overlaid with the manifest's declared type for exactly the names in {@code manifestDrivenColumns}.
+     * Deliberately <b>not</b> derived from {@code validationSchema}: that schema's OVERRIDE/empty-schema
+     * branch clears every non-manifest column's type to {@code null} by design (validation-time only, see
+     * {@link #buildValidationSchema}), which would otherwise make {@link #parseRow} treat an
+     * already-declared OBJECT/ARRAY or INTEGER column as undeclared during a plain (no-hints) OVERRIDE
+     * import — a plain-CSV behaviour change. With an empty {@code manifestDrivenColumns} (in particular,
+     * plain CSV with {@link CsvImportSchemaHints#EMPTY}), this returns {@code fieldTypes} itself, so
+     * {@code parseRow} sees exactly what it always has.
+     */
+    private static Map<String, SchemaFieldType> parseFieldTypes(
+            Map<String, SchemaFieldType> fieldTypes, Set<String> manifestDrivenColumns, CsvImportSchemaHints hints) {
+        if (manifestDrivenColumns.isEmpty()) {
+            return fieldTypes;
+        }
+        Map<String, SchemaFieldType> overlaid = new LinkedHashMap<>(fieldTypes);
+        for (FieldDefinitionDto declared : hints.declaredSchema()) {
+            if (declared != null && declared.getName() != null && manifestDrivenColumns.contains(declared.getName())) {
+                overlaid.put(declared.getName(), declared.getType());
+            }
+        }
+        return overlaid;
+    }
+
+    /**
      * Parses a CSV record into a ParsedCsvRow using the column bindings.
      * All non-reserved columns go into the single "data" map.
      * For OBJECT/ARRAY schema fields, attempts JSON parsing.
      * When mode==APPEND and schema is non-empty: unknown columns (not in fieldTypes) are discarded.
+     *
+     * <p>For a column whose type is already known (present, non-null, in {@code fieldTypes} — which may
+     * come from the manifest via the caller's {@code parseFieldTypes}, see {@code preview}/{@code
+     * importCsv}) <b>and</b> whose name is in {@code manifestDrivenColumns}, the cell is coerced from its
+     * <b>raw text</b>, not from {@link CsvCellParser#parseCell}'s heuristic guess: {@link
+     * SchemaTypeCoercer}'s per-type coercions already parse a {@code String} source themselves
+     * (INTEGER/NUMBER/BOOLEAN), so this changes nothing for those targets, but it is the only way a
+     * STRING/FILE target preserves the cell verbatim — {@code parseCell("007")} would otherwise already
+     * have collapsed it to {@code Long(7)} before any type-aware coercion ever ran, and no later step can
+     * recover the discarded leading zero. A known-type column <b>not</b> in {@code manifestDrivenColumns}
+     * (declared in the pre-import schema, or a plain-inferred MERGE/APPEND type) keeps coercing the
+     * pre-heuristic {@code value}, byte-for-byte as before plain CSV import ever saw a manifest — that
+     * behaviour is out of scope to change (proposal Non-goals). An <b>undeclared</b> column ({@code type ==
+     * null}) is unaffected either way and still goes through the heuristic below.
      */
     private ParsedCsvRow parseRow(
             CSVRecord record,
@@ -1243,6 +1510,7 @@ public class CsvImportService {
             int dataRowIndex,
             int padWidth,
             Map<String, SchemaFieldType> fieldTypes,
+            Set<String> manifestDrivenColumns,
             CsvImportMode mode,
             boolean schemaEmpty) {
         String testCaseName = null;
@@ -1281,7 +1549,12 @@ public class CsvImportService {
                             } else {
                                 data.put(b.fieldName(), value);
                             }
+                        } else if (manifestDrivenColumns.contains(b.fieldName())) {
+                            // Manifest-tier column only (see class/method javadoc): coerce from the raw
+                            // text, not the pre-heuristic `value`, so content fidelity survives.
+                            data.put(b.fieldName(), schemaTypeCoercer.coerce(raw != null ? raw : "", type));
                         } else {
+                            // Every other known-type column: unchanged, byte-for-byte plain-CSV behaviour.
                             data.put(b.fieldName(), schemaTypeCoercer.coerce(value, type));
                         }
                     }
@@ -1342,9 +1615,19 @@ public class CsvImportService {
     }
 
     private static ValidationResult combineWithJsonParseErrors(ValidationResult vr, ParsedCsvRow row) {
-        boolean valid = vr.isValid() && !row.hasJsonParseErrors();
+        return combineWithJsonParseErrors(vr, row.hasJsonParseErrors());
+    }
+
+    /**
+     * Shared by parse-time row validation ({@link #combineWithJsonParseErrors(ValidationResult,
+     * ParsedCsvRow)}) and the post-persist fixup pass ({@link #coerceColumns}, via {@link
+     * #fixupSingleTurnCase}/{@link #fixupMultiTurnCase}): the same warning message, code and invalidation
+     * either path reports for an unparseable OBJECT/ARRAY cell.
+     */
+    private static ValidationResult combineWithJsonParseErrors(ValidationResult vr, boolean hasJsonParseErrors) {
+        boolean valid = vr.isValid() && !hasJsonParseErrors;
         List<ValidationWarningDto> warnings = new ArrayList<>(vr.getWarnings() != null ? vr.getWarnings() : List.of());
-        if (row.hasJsonParseErrors()) {
+        if (hasJsonParseErrors) {
             warnings.add(ValidationWarningDto.builder()
                     .message("Cell could not be parsed as JSON for OBJECT/ARRAY field")
                     .code(ValidationWarningCode.UNKNOWN)

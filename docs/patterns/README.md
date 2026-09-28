@@ -37,3 +37,4 @@ Project-specific patterns not discoverable from a single file. Linked from [AGEN
 | [`evaluation-runner-core` module](evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
 | [Anthropic Messages API support](anthropic-messages-api.md) | Deployment-less `/anthropic/v1/messages` + `/openai/v1/responses` URL passthrough; third `StreamingResponseAccumulator` mode; `model`-in-body must equal the effective deployment (static + pre-invocation `RequestModelValidator`) |
 | [MCP Server (inbound)](mcp-server.md) | `mcp` layer as a peer of `web`; request-thread caller model; executor never throws; error table + binding-layer limitation; session limitation |
+| [ZIP archive round trip](zip-archive-round-trip.md) | `public/` verbatim, EF-owned re-uploaded with same-name overwrite; manifest precedence; upload before tx + backup/restore journal |

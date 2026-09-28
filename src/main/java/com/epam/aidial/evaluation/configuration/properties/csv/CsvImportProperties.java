@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.configuration.properties.csv;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
@@ -24,4 +25,18 @@ public class CsvImportProperties {
 
     @Min(1)
     private int batchSize;
+
+    @Valid
+    private Zip zip = new Zip();
+
+    @Getter
+    @Setter
+    public static class Zip {
+
+        @Min(1)
+        private int maxEntries;
+
+        @NotNull
+        private DataSize maxTotalUncompressedSize;
+    }
 }

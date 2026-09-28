@@ -41,7 +41,8 @@ public class OpenApiExampleCustomizer implements OpenApiCustomizer {
             "with-bodies",
             "jsonata-body",
             "chained",
-            "cancelling");
+            "cancelling",
+            "missing-file-warning");
 
     @Override
     public void customise(io.swagger.v3.oas.models.OpenAPI openApi) {

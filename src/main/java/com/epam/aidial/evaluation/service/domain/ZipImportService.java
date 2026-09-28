@@ -1,40 +1,57 @@
 package com.epam.aidial.evaluation.service.domain;
 
-import com.epam.aidial.evaluation.runner.client.dialcore.DialFileClient;
-import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
+import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.service.domain.csv.CsvImportSchemaHints;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportWarningDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
+import com.epam.aidial.evaluation.service.domain.zip.ZipArchiveReader;
+import com.epam.aidial.evaluation.service.domain.zip.ZipCsvFileRefRewriter;
+import com.epam.aidial.evaluation.service.domain.zip.ZipFileImportPlanner;
+import com.epam.aidial.evaluation.service.domain.zip.ZipImportColumnTypeResolver;
+import com.epam.aidial.evaluation.service.domain.zip.ZipImportUploadJournal;
+import com.epam.aidial.evaluation.service.domain.zip.ZipManifest;
+import com.epam.aidial.evaluation.service.domain.zip.ZipManifestSerializer;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.springframework.stereotype.Service;
 
 /**
- * Handles import of test cases from ZIP archives containing test-cases.csv and a files/ directory.
- * Files in the archive are uploaded to DIAL Core file storage and their DIAL references replace
- * the relative paths in CSV cells.
+ * Coordinates ZIP import and preview (design D6/D7): opens the staged archive with {@link
+ * ZipArchiveReader}, resolves each CSV data column's type with {@link ZipImportColumnTypeResolver}, scans
+ * and rewrites {@code test-cases.csv} cell by cell with {@link ZipCsvFileRefRewriter}, plans file names and
+ * overwrite/new status with {@link ZipFileImportPlanner}, then — import only — uploads each planned file via
+ * {@link FileService#putDatasetFile}, recording every write in a {@link ZipImportUploadJournal} so a failed
+ * import can be rolled back, before delegating to {@link CsvImportService}.
+ *
+ * <p>Preview runs the same pipeline through the rewrite and pre-write checks, but performs no DIAL write.
  */
 @Slf4j
 @Service
@@ -42,15 +59,23 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ZipImportService {
 
-    private static final Pattern VALID_FILENAME_CHARS = Pattern.compile("[^a-zA-Z0-9\\-_. ()]");
-    private static final int MAX_FILENAME_LENGTH = 255;
+    private static final String TEST_CASE_NAME_HEADER = "testCaseName";
+    private static final String TURN_INDEX_HEADER = "turnIndex";
 
+    private final ZipArchiveReader zipArchiveReader;
+    private final ZipManifestSerializer zipManifestSerializer;
+    private final ZipCsvFileRefRewriter zipCsvFileRefRewriter;
+    private final ZipImportColumnTypeResolver zipImportColumnTypeResolver;
+    private final ZipFileImportPlanner zipFileImportPlanner;
+    private final DatasetSchemaProvider datasetSchemaProvider;
+    private final DatasetService datasetService;
+    private final FileService fileService;
     private final CsvImportService csvImportService;
-    private final DialFileClient dialFileClient;
-    private final DialFileRefResolver dialFileRefResolver;
+    private final CsvImportProperties csvImportProperties;
 
     /**
-     * Detects whether the input is a ZIP archive (by checking magic bytes).
+     * Detects whether the input is a ZIP archive (by checking magic bytes), used by the controller as a
+     * fallback when the file extension and content type don't already say so (design D9).
      */
     public boolean isZipArchive(InputStream input) throws IOException {
         input.mark(4);
@@ -61,194 +86,276 @@ public class ZipImportService {
     }
 
     /**
-     * Preview ZIP import: extracts CSV, resolves file paths, delegates to CsvImportService preview.
+     * Preview ZIP import: runs the same pipeline as {@link #importZip} through the rewrite and pre-write
+     * checks (no {@code If-Match} check, and {@code stagedFile} is a temp file the controller already staged
+     * from the upload), but makes no DIAL write. FILE cells in the resulting sample rows show the future
+     * {@code @ef/datasets/{id}/{name}} references (design D7).
      */
     public CsvImportPreviewDto previewZip(
             UUID datasetId,
-            InputStream zipInput,
-            long fileSize,
+            Path stagedFile,
             char delimiter,
             CsvImportMode importMode,
-            CsvConflictStrategy conflictStrategy)
-            throws IOException {
-        ZipContent content = extractZipContent(zipInput);
-        if (content.csvData == null) {
-            throw new ValidationException("ZIP archive must contain a test-cases.csv file");
+            CsvConflictStrategy conflictStrategy) {
+        try (ZipArchiveReader.OpenZip openZip = zipArchiveReader.open(stagedFile)) {
+            PreparedImport prepared = prepare(datasetId, openZip, delimiter, importMode);
+            CsvImportPreviewDto preview = csvImportService.preview(
+                    datasetId,
+                    new ByteArrayInputStream(prepared.rewrittenCsv()),
+                    prepared.rewrittenCsv().length,
+                    delimiter,
+                    importMode,
+                    conflictStrategy,
+                    prepared.hints());
+            return mergePreviewWarnings(preview, prepared.rewriteWarnings());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read staged ZIP archive", e);
+        } finally {
+            deleteQuietly(stagedFile);
         }
-
-        return csvImportService.preview(
-                datasetId,
-                new ByteArrayInputStream(content.csvData),
-                content.csvData.length,
-                delimiter,
-                importMode,
-                conflictStrategy);
     }
 
     /**
-     * Import ZIP: extracts CSV, uploads files to DIAL Core file storage, replaces file paths
-     * with DIAL file references, then delegates to CsvImportService.
+     * Import ZIP: opens the staged archive, resolves column types, scans and plans referenced files,
+     * rewrites the CSV, checks the rewritten CSV's size/row count and (when {@code expectedVersion} is
+     * given) the dataset's current version before any DIAL write, uploads each planned file (backing up one
+     * about to be overwritten first) and records every write in a journal, then delegates to {@link
+     * CsvImportService#importCsv}. On any {@link RuntimeException} the journal is rolled back and the
+     * exception rethrown (design D6/D11).
      */
     public CsvImportResultDto importZip(
             UUID datasetId,
-            InputStream zipInput,
-            long fileSize,
+            Path stagedFile,
             char delimiter,
             Long expectedVersion,
             CsvImportMode importMode,
-            CsvConflictStrategy conflictStrategy)
-            throws IOException {
-        ZipContent content = extractZipContent(zipInput);
-        if (content.csvData == null) {
-            throw new ValidationException("ZIP archive must contain a test-cases.csv file");
-        }
+            CsvConflictStrategy conflictStrategy) {
+        ZipImportUploadJournal journal = new ZipImportUploadJournal(datasetId, fileService);
+        try (ZipArchiveReader.OpenZip openZip = zipArchiveReader.open(stagedFile)) {
+            PreparedImport prepared = prepare(datasetId, openZip, delimiter, importMode);
 
-        Map<String, String> pathToDialRef = new HashMap<>();
-        List<CsvImportWarningDto> fileWarnings = new ArrayList<>();
-        Set<String> usedFilenames = new HashSet<>();
-
-        for (Map.Entry<String, byte[]> entry : content.files.entrySet()) {
-            String archivePath = entry.getKey();
-            byte[] fileBytes = entry.getValue();
-            String originalFilename = Paths.get(archivePath).getFileName().toString();
-            String sanitized = sanitizeFilename(originalFilename);
-            String uniqueFilename = generateUniqueFilename(sanitized, usedFilenames);
-            usedFilenames.add(uniqueFilename);
-
-            String contentType = URLConnection.guessContentTypeFromName(originalFilename);
-            if (contentType == null) {
-                contentType = "application/octet-stream";
+            if (expectedVersion != null) {
+                Long currentVersion = datasetService.getById(datasetId).getVersion();
+                if (!expectedVersion.equals(currentVersion)) {
+                    throw new VersionConflictException(
+                            "Dataset version conflict: expected " + expectedVersion + " but current is "
+                                    + currentVersion,
+                            datasetId,
+                            expectedVersion);
+                }
             }
 
-            String efRef = dialFileRefResolver.buildDatasetEfRef(datasetId, uniqueFilename);
-            String realPath = dialFileRefResolver.resolveToRealPath(efRef);
-            dialFileClient.upload(realPath, new ByteArrayInputStream(fileBytes), uniqueFilename, contentType);
-            pathToDialRef.put(archivePath, efRef);
+            uploadPlannedFiles(datasetId, openZip, prepared.plan(), journal);
+
+            CsvImportResultDto result = csvImportService.importCsv(
+                    datasetId,
+                    new ByteArrayInputStream(prepared.rewrittenCsv()),
+                    prepared.rewrittenCsv().length,
+                    delimiter,
+                    expectedVersion,
+                    importMode,
+                    conflictStrategy,
+                    prepared.hints());
+
+            return mergeResultWarnings(result, prepared.rewriteWarnings());
+        } catch (RuntimeException e) {
+            // Best effort even when nothing was written yet (e.g. a 400 raised before any upload): the
+            // journal is then empty and rollback is a no-op.
+            journal.rollback();
+            throw e;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read staged ZIP archive", e);
+        } finally {
+            journal.close();
+            deleteQuietly(stagedFile);
         }
+    }
 
-        byte[] rewrittenCsv = rewriteCsvFilePaths(content.csvData, pathToDialRef, fileWarnings);
+    /**
+     * Runs the pipeline shared by import and preview: reads the optional manifest, resolves each data
+     * column's type, scans the CSV for referenced archive paths, validates and plans those actually present
+     * in the archive, rewrites the CSV, and checks the rewritten CSV's size and row count. Makes one
+     * read-only {@link FileService#listByDataset} call (inside {@link ZipFileImportPlanner#plan}); no write.
+     */
+    private PreparedImport prepare(
+            UUID datasetId, ZipArchiveReader.OpenZip openZip, char delimiter, CsvImportMode importMode) {
+        byte[] csvBytes = openZip.csvBytes();
+        Optional<ZipManifest> manifest = openZip.manifestBytes().map(zipManifestSerializer::read);
 
-        CsvImportResultDto result = csvImportService.importCsv(
-                datasetId,
-                new ByteArrayInputStream(rewrittenCsv),
-                rewrittenCsv.length,
-                delimiter,
-                expectedVersion,
-                importMode,
-                conflictStrategy);
+        List<String> dataColumnNames = csvDataColumnNames(csvBytes, delimiter);
+        List<FieldDefinitionDto> datasetSchema = datasetSchemaProvider.getSchema(datasetId);
+        List<FieldDefinitionDto> manifestSchema =
+                manifest.map(ZipManifest::testCaseSchema).orElse(List.of());
+        Map<String, ZipImportColumnTypeResolver.ColumnTypeResolution> columnTypes =
+                zipImportColumnTypeResolver.resolve(importMode, datasetSchema, manifestSchema, dataColumnNames);
 
-        if (!fileWarnings.isEmpty()) {
-            List<CsvImportWarningDto> allWarnings = new ArrayList<>(result.getWarnings());
-            allWarnings.addAll(fileWarnings);
-            return CsvImportResultDto.builder()
-                    .totalRows(result.getTotalRows())
-                    .validCount(result.getValidCount())
-                    .invalidCount(result.getInvalidCount())
-                    .skippedCount(result.getSkippedCount())
-                    .overriddenCount(result.getOverriddenCount())
-                    .warnings(allWarnings)
-                    .build();
+        ZipCsvFileRefRewriter.ScanResult scanResult = zipCsvFileRefRewriter.scan(csvBytes, delimiter, columnTypes);
+
+        Set<String> existingReferenced = new LinkedHashSet<>(scanResult.referencedPaths());
+        existingReferenced.retainAll(openZip.filePaths());
+        openZip.validateReferencedEntries(existingReferenced);
+
+        Map<String, String> manifestSourceRefByPath = manifestSourceRefByPath(manifest);
+        ZipFileImportPlanner.ImportFilePlan plan =
+                zipFileImportPlanner.plan(datasetId, existingReferenced, manifestSourceRefByPath);
+
+        ZipCsvFileRefRewriter.RewriteResult rewriteResult =
+                zipCsvFileRefRewriter.rewrite(csvBytes, delimiter, columnTypes, plan.pathToRef());
+
+        validateRewrittenCsv(rewriteResult.csv(), delimiter);
+
+        CsvImportSchemaHints hints = manifest.map(m -> new CsvImportSchemaHints(m.testCaseSchema(), Set.<String>of()))
+                .orElseGet(() -> new CsvImportSchemaHints(List.of(), scanResult.fileColumns()));
+
+        return new PreparedImport(rewriteResult.csv(), hints, rewriteResult.warnings(), plan);
+    }
+
+    private static Map<String, String> manifestSourceRefByPath(Optional<ZipManifest> manifest) {
+        if (manifest.isEmpty()) {
+            return Map.of();
         }
+        Map<String, String> byPath = new LinkedHashMap<>();
+        for (ZipManifest.FileEntry entry : manifest.get().files()) {
+            byPath.put(entry.path(), entry.sourceRef());
+        }
+        return byPath;
+    }
+
+    private void validateRewrittenCsv(byte[] csv, char delimiter) {
+        long maxSize = csvImportProperties.getMaxFileSize().toBytes();
+        if (csv.length > maxSize) {
+            throw new ValidationException("Rewritten CSV size " + csv.length + " exceeds maximum of " + maxSize
+                    + " bytes (ZIP file references expand into longer dataset refs)");
+        }
+        int dataRows = countDataRows(csv, delimiter);
+        int maxRows = csvImportProperties.getMaxRows();
+        if (dataRows > maxRows) {
+            throw new ValidationException("CSV row count " + dataRows + " exceeds maximum of " + maxRows + " rows");
+        }
+    }
+
+    private void uploadPlannedFiles(
+            UUID datasetId,
+            ZipArchiveReader.OpenZip openZip,
+            ZipFileImportPlanner.ImportFilePlan plan,
+            ZipImportUploadJournal journal) {
+        for (Map.Entry<String, ZipFileImportPlanner.PlannedFile> entry :
+                plan.byPath().entrySet()) {
+            String path = entry.getKey();
+            ZipFileImportPlanner.PlannedFile planned = entry.getValue();
+            String contentType = guessContentType(planned.filename());
+            if (!planned.isNew()) {
+                // Must succeed before the overwrite; a failure here aborts before this file is touched.
+                journal.backupBeforeOverwrite(planned.filename());
+            }
+            try (InputStream in = openZip.openFile(path)) {
+                fileService.putDatasetFile(datasetId, planned.filename(), in, contentType);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to read archive file: " + path, e);
+            }
+            if (planned.isNew()) {
+                journal.recordCreated(planned.filename());
+            }
+        }
+    }
+
+    private static String guessContentType(String filename) {
+        String contentType = URLConnection.guessContentTypeFromName(filename);
+        return contentType != null ? contentType : "application/octet-stream";
+    }
+
+    private static CsvImportResultDto mergeResultWarnings(
+            CsvImportResultDto result, List<CsvImportWarningDto> rewriteWarnings) {
+        if (rewriteWarnings.isEmpty()) {
+            return result;
+        }
+        List<CsvImportWarningDto> merged = new ArrayList<>(rewriteWarnings);
+        if (result.getWarnings() != null) {
+            merged.addAll(result.getWarnings());
+        }
+        result.setWarnings(merged);
         return result;
     }
 
-    private static final Pattern FILE_PATH_PATTERN = Pattern.compile("files/\\d+/[^,\\n\\r\"]+");
-
-    /**
-     * Rewrites CSV data: replaces relative file path references (files/rowIndex/...) with
-     * DIAL file references. Paths not found in the archive are replaced with empty string
-     * and a warning is generated.
-     */
-    private byte[] rewriteCsvFilePaths(
-            byte[] csvData, Map<String, String> pathToDialRef, List<CsvImportWarningDto> warnings) {
-        String csv = new String(csvData, StandardCharsets.UTF_8);
-
-        for (Map.Entry<String, String> entry : pathToDialRef.entrySet()) {
-            csv = csv.replace(entry.getKey(), entry.getValue());
+    private static CsvImportPreviewDto mergePreviewWarnings(
+            CsvImportPreviewDto preview, List<CsvImportWarningDto> rewriteWarnings) {
+        if (rewriteWarnings.isEmpty()) {
+            return preview;
         }
-
-        Matcher matcher = FILE_PATH_PATTERN.matcher(csv);
-        StringBuilder result = new StringBuilder();
-        while (matcher.find()) {
-            String missingPath = matcher.group();
-            warnings.add(CsvImportWarningDto.builder()
-                    .rowNumber(0)
-                    .columnName("FILE")
-                    .message("File missing from archive: " + missingPath)
-                    .build());
-            matcher.appendReplacement(result, "");
+        List<CsvImportWarningDto> merged = new ArrayList<>(rewriteWarnings);
+        if (preview.getWarnings() != null) {
+            merged.addAll(preview.getWarnings());
         }
-        matcher.appendTail(result);
-
-        return result.toString().getBytes(StandardCharsets.UTF_8);
+        preview.setWarnings(merged);
+        return preview;
     }
 
-    private ZipContent extractZipContent(InputStream input) throws IOException {
-        byte[] csvData = null;
-        Map<String, byte[]> files = new HashMap<>();
+    private static void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            log.warn("Failed to delete staged ZIP upload {}: {}", path, e.getMessage(), e);
+        }
+    }
 
-        try (ZipInputStream zis = new ZipInputStream(input)) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    continue;
-                }
-                String name = entry.getName();
-                byte[] data = readEntryBytes(zis);
-
-                if ("test-cases.csv".equals(name)) {
-                    csvData = data;
-                } else if (name.startsWith("files/")) {
-                    files.put(name, data);
-                }
-                zis.closeEntry();
+    /** The CSV's data column names (header row, excluding {@code testCaseName}/{@code turnIndex}). */
+    private static List<String> csvDataColumnNames(byte[] csv, char delimiter) {
+        try (CSVParser parser = createParser(csv, delimiter)) {
+            Iterator<CSVRecord> it = parser.iterator();
+            if (!it.hasNext()) {
+                return List.of();
             }
-        }
-
-        return new ZipContent(csvData, files);
-    }
-
-    private byte[] readEntryBytes(ZipInputStream zis) throws IOException {
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        int len;
-        while ((len = zis.read(buffer)) != -1) {
-            bos.write(buffer, 0, len);
-        }
-        return bos.toByteArray();
-    }
-
-    static String sanitizeFilename(String filename) {
-        if (filename == null || filename.isBlank()) {
-            return "unnamed";
-        }
-        String sanitized = VALID_FILENAME_CHARS.matcher(filename).replaceAll("_");
-        sanitized = sanitized.trim();
-        if (sanitized.isEmpty()) {
-            return "unnamed";
-        }
-        if (sanitized.length() > MAX_FILENAME_LENGTH) {
-            sanitized = sanitized.substring(0, MAX_FILENAME_LENGTH);
-        }
-        return sanitized;
-    }
-
-    static String generateUniqueFilename(String filename, Set<String> usedFilenames) {
-        if (!usedFilenames.contains(filename)) {
-            return filename;
-        }
-        int dotIndex = filename.lastIndexOf('.');
-        String base = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
-        String ext = dotIndex > 0 ? filename.substring(dotIndex) : "";
-        int counter = 1;
-        while (true) {
-            String candidate = base + "_" + counter + ext;
-            if (!usedFilenames.contains(candidate)) {
-                return candidate;
+            CSVRecord headerRecord = it.next();
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < headerRecord.size(); i++) {
+                String header = headerRecord.get(i).trim();
+                if (!TEST_CASE_NAME_HEADER.equalsIgnoreCase(header) && !TURN_INDEX_HEADER.equalsIgnoreCase(header)) {
+                    names.add(header);
+                }
             }
-            counter++;
+            return names;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read ZIP-imported CSV headers", e);
         }
     }
 
-    private record ZipContent(byte[] csvData, Map<String, byte[]> files) {}
+    /** Number of data rows (excluding the header). Invariant across the cell-by-cell rewrite. */
+    private static int countDataRows(byte[] csv, char delimiter) {
+        try (CSVParser parser = createParser(csv, delimiter)) {
+            Iterator<CSVRecord> it = parser.iterator();
+            if (!it.hasNext()) {
+                return 0;
+            }
+            it.next();
+            int count = 0;
+            while (it.hasNext()) {
+                it.next();
+                count++;
+            }
+            return count;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to count ZIP-imported CSV rows", e);
+        }
+    }
+
+    private static CSVParser createParser(byte[] csv, char delimiter) throws IOException {
+        CSVFormat format = CSVFormat.DEFAULT
+                .builder()
+                .setDelimiter(delimiter)
+                .setQuote('"')
+                .setTrim(true)
+                .setIgnoreEmptyLines(false)
+                .get();
+        return CSVParser.builder()
+                .setFormat(format)
+                .setReader(new InputStreamReader(new ByteArrayInputStream(csv), StandardCharsets.UTF_8))
+                .get();
+    }
+
+    /** Everything the shared pipeline produces: the rewritten CSV, its schema hints, warnings, and the plan. */
+    private record PreparedImport(
+            byte[] rewrittenCsv,
+            CsvImportSchemaHints hints,
+            List<CsvImportWarningDto> rewriteWarnings,
+            ZipFileImportPlanner.ImportFilePlan plan) {}
 }

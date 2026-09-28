@@ -135,6 +135,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [`evaluation-runner-core` module](docs/patterns/evaluation-runner-core-module.md) | DB-free Phase 1 engine; autoconfiguration wiring; deliberate DTO duplication |
 | [Anthropic Messages API support](docs/patterns/anthropic-messages-api.md) | Deployment-less `/anthropic/v1/messages` + `/openai/v1/responses` URL passthrough; third `StreamingResponseAccumulator` mode; `model`-in-body must equal the effective deployment (static + pre-invocation `RequestModelValidator`) |
 | [MCP Server (inbound)](docs/patterns/mcp-server.md) | `mcp` layer as a peer of `web`; request-thread caller model on two library behaviours (+ D-F2c fallback); executor never throws; error table + binding-layer limitation; session model (`STATELESS` default, `STREAMABLE` opt-in) |
+| [ZIP archive round trip](docs/patterns/zip-archive-round-trip.md) | `public/` refs verbatim, EF-owned files re-uploaded with same-name overwrite; manifest decides schema on OVERRIDE; uploads before the tx with a backup/restore journal |
 
 ### Inline conventions
 

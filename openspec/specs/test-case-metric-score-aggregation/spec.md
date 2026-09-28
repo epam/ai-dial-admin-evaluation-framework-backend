@@ -18,6 +18,13 @@ across **all** of that test case's `test_case_eval_summaries` rows — every `ru
 `turn_index` combination collapsed together — and persist the result as one row in
 `test_case_metric_scores_aggregated`, keyed by `(test_suite_run_id, test_case_id, computation_id)`, with
 the per-metric statistics stored as a JSONB map `{"<metricName>": {"avg":.., "min":.., "max":.., "count":..}}`.
+
+A metric output field whose `metric_values` leaf is an explicit JSON `null` (e.g. `{"Exact Match":
+{"exact_match": null}}` — a provider-reported evaluation error surfaced as a null value, see
+`metric-evaluation`) SHALL be treated as a real sample of `0`: it SHALL count toward that field's `count`
+and contribute `0` to its `avg`/`min`/`max`, the same as if the metric had genuinely scored zero. This is
+distinct from the field being **absent** from `metric_values` altogether (never dispatched, or
+`condition`-skipped), which SHALL remain excluded from that field's stats entirely, per the scenario below.
 Status: **Implemented**
 
 #### Scenario: Multiple rows for one test case collapse into one aggregated row
@@ -31,6 +38,14 @@ Status: **Implemented**
 #### Scenario: A metric that fired on only some of a test case's rows is aggregated over only those rows
 - **WHEN** a metric's `condition` scopes it to a subset of a test case's rows (e.g. `request.index == 0`), so 4 of the test case's 8 rows have a value and 4 do not
 - **THEN** the metric's `avg`/`min`/`max` are computed over exactly the 4 rows that have a value, and `count` equals 4
+
+#### Scenario: An explicit null output value counts as a failing zero, not an absent sample
+- **WHEN** a test case has one row where a metric's output value is `null` (e.g. `{"Exact Match": {"exact_match": null}}`, a provider error) and one row where the same metric fires normally with value `1.0`
+- **THEN** that metric's `count` is 2 (not 1), its `avg` is 0.5 (not 1.0), and its `min` is 0
+
+#### Scenario: A row where the metric never fired does not contribute to another row's null sample
+- **WHEN** one row of a test case has a metric's output value as `null` and a second row of the same test case has no key for that metric in `metric_values` at all
+- **THEN** the metric's `count` is 1, reflecting only the null row — the row where the metric is absent contributes nothing
 
 ### Requirement: Aggregation runs during Phase 2's flush cycle, fail-soft
 The system SHALL compute and persist the aggregation for a flush batch's affected test cases immediately
@@ -68,8 +83,10 @@ Status: **Implemented**
   reserved for future partitioning), `computed_at_ms`; a unique index on
   `(test_suite_run_id, test_case_id, computation_id)` and a lookup index on `computation_id`.
 - New components: `TestCaseMetricScoreAggregator` (hand-written jOOQ — a single scan of
-  `test_case_eval_summaries` that walks `metric_values` generically via two chained `jsonb_each` calls
-  filtered to numeric leaves (`jsonb_typeof(...) = 'number'`), combined via `jsonb_object_agg`; needs no
+  `test_case_eval_summaries` that walks `metric_values` generically via two chained `jsonb_each` calls,
+  filtered to leaves whose `jsonb_typeof(...)` is `number` or `null` (a `null` leaf's value is coalesced to
+  `0` via a `CASE WHEN` rather than cast, since `null::text::double precision` would error) — any other
+  leaf type (string, object, array, boolean) stays excluded — combined via `jsonb_object_agg`; needs no
   `MetricFieldDiscoverer`/`MetricField` input, since it self-discovers metric keys from the data; this is
   a data-normalization step, not a scoring computation, so it bypasses the generic Query DSL translator),
   `TestCaseMetricScoreAggregated`
@@ -87,7 +104,8 @@ Status: **Implemented**
 - `test_case_eval_scores.execution_status` (see `eval-summary-scoring`) is a **separate** per-test-case
   aggregate, computed by a sibling component `TestCaseExecutionStatusAggregator` that queries
   `test_case_eval_summaries` directly rather than through this table — it is not part of
-  `test_case_metric_scores_aggregated`'s contract and does not change the "absent metric key = no numeric
-  sample" behavior described above. It exists because this table's `jsonb_each`-driven aggregation never
-  sees a row whose `metric_values = '{}'` (e.g. every metric condition-skipped, or the row failed before
-  any metric ran), which is exactly the case the execution-status aggregate needs to see.
+  `test_case_metric_scores_aggregated`'s contract and does not change the "absent metric key = no sample,
+  explicit null = a failing zero sample" behavior described above. It exists because this table's
+  `jsonb_each`-driven aggregation never sees a row whose `metric_values = '{}'` (e.g. every metric
+  condition-skipped, or the row failed before any metric ran), which is exactly the case the
+  execution-status aggregate needs to see.

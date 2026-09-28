@@ -172,20 +172,18 @@ public abstract class TestCaseMetricScoreAggregationEndToEndFunctionalTests exte
         Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
         assertThat(summariesByTestCaseName).hasSize(2);
 
-        // caseA has 2 rows (one per turn); both must share the identical, correctly-computed score — the
-        // fix under test. Before this change, turn 1's row (where MetricBonus never fired) would have had
-        // its own independently-computed score with MetricBonus coalesced to 0: (0.8 + 0) / 2 = 0.4, wrong.
+        // caseA has 2 raw eval-summary rows (one per turn), but exactly one test_case_eval_scores row per
+        // test case (post-Decision-10 re-key) — the fix under test. Before this change, turn 1's row
+        // (where MetricBonus never fired) would have had its own independently-computed score with
+        // MetricBonus coalesced to 0: (0.8 + 0) / 2 = 0.4, wrong.
         List<Map<String, Object>> multiTurnCaseRows = fetchEvalSummariesForTestCase(run.getId(), "case-a-multi-turn");
         assertThat(multiTurnCaseRows).hasSize(2);
-        for (Map<String, Object> row : multiTurnCaseRows) {
-            EvalSummary summary = evalSummaryRepository
-                    .findById(UUID.fromString((String) row.get("id")))
-                    .orElseThrow();
-            assertThat(summary.getScore()).isCloseTo(0.7, within(1e-9));
-        }
 
-        EvalSummary caseB = summariesByTestCaseName.get("case-b-single-turn");
-        assertThat(caseB.getScore()).isCloseTo(0.4, within(1e-9));
+        Map<String, Map<String, Object>> scoresByTestCaseName = fetchTestCaseEvalScoresByTestCaseName(run.getId());
+        assertThat((Double) scoresByTestCaseName.get("case-a-multi-turn").get("score"))
+                .isCloseTo(0.7, within(1e-9));
+        assertThat((Double) scoresByTestCaseName.get("case-b-single-turn").get("score"))
+                .isCloseTo(0.4, within(1e-9));
 
         // Run-level overall (mean): averaged per metric across test cases (each test case contributes
         // exactly one sample per metric, regardless of row count), then averaged across metrics.
@@ -280,8 +278,9 @@ public abstract class TestCaseMetricScoreAggregationEndToEndFunctionalTests exte
     }
 
     @Test
-    @DisplayName("A multi-turn test case's execution_status/score are broadcast identically to every one of its "
-            + "raw test_case_eval_scores rows, not just the one row that actually failed")
+    @DisplayName("A multi-turn test case's execution_status is written once per test case in "
+            + "test_case_eval_scores (post-Decision-10 re-key), aggregated across every raw row even "
+            + "though only one turn actually failed")
     void multiTurnTestCaseBroadcastsExecutionStatusAndScoreToEveryRawRow() {
         TestSuiteResponseDto suite = createChatSuiteWithMeanOverallScore("Suite For Broadcast Repro");
         UUID datasetId = suite.getDatasetId();
@@ -346,11 +345,12 @@ public abstract class TestCaseMetricScoreAggregationEndToEndFunctionalTests exte
                         .filter(row -> "case-multi-turn-broadcast".equals(row.get("test_case_name")))
                         .toList();
         assertThat(rawScoreRows)
-                .as("one raw test_case_eval_scores row per raw eval-summary row — the write grain is unchanged")
-                .hasSize(2);
+                .as("one test_case_eval_scores row per test case (new format, eval_summary_id IS NULL) — "
+                        + "not one per raw eval-summary row")
+                .hasSize(1);
         assertThat(rawScoreRows).allSatisfy(row -> {
             assertThat(row.get("execution_status"))
-                    .as("the aggregate is broadcast identically to every raw row, not just the failed turn")
+                    .as("the aggregate is computed across all of this test case's rows, not just the failed turn")
                     .isEqualTo("FAILED");
             assertThat(row.get("score")).isNull();
             assertThat(row.get("passed")).isNull();

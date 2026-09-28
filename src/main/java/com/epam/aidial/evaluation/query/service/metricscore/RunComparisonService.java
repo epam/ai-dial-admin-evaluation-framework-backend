@@ -122,7 +122,9 @@ public class RunComparisonService {
         requireUnmatchedWithinCap(runId, stats);
         final List<UUID> unmatchedIds =
                 evalSummaryRepository.findUnmatchedIds(runId, computationId, otherRunId, otherComputationId);
-        return new AggregationInputs(runId, computationId, stats, unmatchedIds);
+        final List<UUID> unmatchedTestCaseIds =
+                evalSummaryRepository.findUnmatchedTestCaseIds(runId, computationId, otherRunId, otherComputationId);
+        return new AggregationInputs(runId, computationId, stats, unmatchedIds, unmatchedTestCaseIds);
     }
 
     private RunComparisonRunDto aggregateScores(
@@ -147,6 +149,7 @@ public class RunComparisonService {
                 .matchedSuccessRowCount(stats.matchedSuccessRows())
                 .avgExecDurationMs(toDouble(stats.avgExecDurationMs()))
                 .unmatchedEvalSummaryIds(inputs.unmatchedIds())
+                .unmatchedEvalTestCaseIds(inputs.unmatchedTestCaseIds())
                 .scores(scores)
                 .build();
     }
@@ -205,7 +208,11 @@ public class RunComparisonService {
 
     /** One side's resolved inputs, so the two directions are aggregated symmetrically. */
     private record AggregationInputs(
-            UUID runId, UUID computationId, EvalSummaryMatchStats stats, List<UUID> unmatchedIds) {}
+            UUID runId,
+            UUID computationId,
+            EvalSummaryMatchStats stats,
+            List<UUID> unmatchedIds,
+            List<UUID> unmatchedTestCaseIds) {}
 
     /** Both runs' resolved computation ids, kept together since every downstream read needs both. */
     private record ComputationIds(UUID first, UUID second) {}

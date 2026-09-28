@@ -34,11 +34,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * End-to-end reads of the {@code test_case_eval_scores} queryable entity via the unified Query DSL on
- * real Postgres: the underlying table still stores one row per raw {@code test_case_eval_summaries} row
- * (see {@code test-case-metric-score-aggregation}'s design for why it was extended in place rather than
- * re-keyed), but this entity presents exactly one row per test case per computation via a
- * {@code SELECT DISTINCT ON (test_suite_run_id, test_case_id, computation_id) ... ORDER BY ...,
- * computed_at_ms DESC} view — the freshest row per group wins.
+ * real Postgres. Every row written by {@code PostgresTestCaseEvalScoreRepository.saveAll} today is
+ * new-format (post-Decision-10 re-key: {@code eval_summary_id = NULL}, one row per test case per
+ * computation, enforced by a partial unique index — {@code saveAll} upserts in place rather than
+ * duplicating). Tests that need to exercise the entity's dedup tie-break against pre-re-key data simulate
+ * "legacy" rows (real {@code eval_summary_id}, potentially several per test case) directly via {@code
+ * AnalyticsTestDataHelper.forceLegacyTestCaseEvalScore}, since the repository itself can no longer produce
+ * that shape.
  */
 @DisplayName("Structured Query -> jOOQ translation (test_case_eval_scores) Tests")
 public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends BaseFunctionalTest {
@@ -58,19 +60,47 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
     private AnalyticsTestDataHelper analyticsTestDataHelper;
 
     @Test
-    @DisplayName("returns exactly one row per test case per run, not one per underlying raw row")
+    @DisplayName("a multi-row legacy test case collapses to one row per test case")
     void dedupesMultiRowTestCaseToOneRowPerTestCase() {
         UUID runId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
         UUID multiTurnCase = UUID.randomUUID();
         UUID singleTurnCase = UUID.randomUUID();
 
-        // Simulates a 3-turn test case: 3 raw rows, all sharing the same (already-correct) score/passed.
-        testCaseEvalScoreRepository.saveAll(List.of(
-                scoreRow(runId, multiTurnCase, "multi-turn-case", computationId, 0.6, 1_000L),
-                scoreRow(runId, multiTurnCase, "multi-turn-case", computationId, 0.6, 1_100L),
-                scoreRow(runId, multiTurnCase, "multi-turn-case", computationId, 0.6, 1_200L),
-                scoreRow(runId, singleTurnCase, "single-turn-case", computationId, 0.9, 2_000L)));
+        // Simulates a 3-turn test case written before the re-key: 3 legacy rows, all sharing the same
+        // (already-correct) score/passed.
+        analyticsTestDataHelper.forceLegacyTestCaseEvalScore(
+                UUID.randomUUID(),
+                runId,
+                multiTurnCase,
+                "multi-turn-case",
+                computationId,
+                ExecutionStatus.SUCCESS,
+                0.6,
+                true,
+                1_000L);
+        analyticsTestDataHelper.forceLegacyTestCaseEvalScore(
+                UUID.randomUUID(),
+                runId,
+                multiTurnCase,
+                "multi-turn-case",
+                computationId,
+                ExecutionStatus.SUCCESS,
+                0.6,
+                true,
+                1_100L);
+        analyticsTestDataHelper.forceLegacyTestCaseEvalScore(
+                UUID.randomUUID(),
+                runId,
+                multiTurnCase,
+                "multi-turn-case",
+                computationId,
+                ExecutionStatus.SUCCESS,
+                0.6,
+                true,
+                1_200L);
+        testCaseEvalScoreRepository.saveAll(
+                List.of(scoreRow(runId, singleTurnCase, "single-turn-case", computationId, 0.9, 2_000L)));
 
         QueryResultPage page = queryRepository.execute(
                 rowQuery(runIdIn(List.of(runId)), List.of(col("test_case_name"), col("score"), col("passed"))));
@@ -85,6 +115,45 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
     }
 
     @Test
+    @DisplayName("a new-format row always wins over legacy rows for the same key")
+    void newFormatRowWinsOverLegacyRows() {
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        UUID testCaseId = UUID.randomUUID();
+
+        // Two legacy rows, one of them with a later computed_at_ms than the new-format row — the
+        // new-format row must still win regardless of that ordering.
+        analyticsTestDataHelper.forceLegacyTestCaseEvalScore(
+                UUID.randomUUID(),
+                runId,
+                testCaseId,
+                "case-a",
+                computationId,
+                ExecutionStatus.SUCCESS,
+                0.1,
+                false,
+                1_000L);
+        analyticsTestDataHelper.forceLegacyTestCaseEvalScore(
+                UUID.randomUUID(),
+                runId,
+                testCaseId,
+                "case-a",
+                computationId,
+                ExecutionStatus.SUCCESS,
+                0.2,
+                false,
+                9_000L);
+        testCaseEvalScoreRepository.saveAll(List.of(scoreRow(runId, testCaseId, "case-a", computationId, 0.9, 500L)));
+
+        QueryResultPage page = queryRepository.execute(
+                rowQuery(runIdIn(List.of(runId)), List.of(col("test_case_name"), col("score"), col("passed"))));
+
+        assertThat(page.rows()).hasSize(1);
+        assertThat(((Number) page.rows().get(0).get("score")).doubleValue()).isEqualTo(0.9);
+        assertThat(page.rows().get(0).get("passed")).isEqualTo(true);
+    }
+
+    @Test
     @DisplayName("execution_status is selectable/filterable on the entity, same as score/passed")
     void executionStatusIsQueryable() {
         UUID runId = UUID.randomUUID();
@@ -94,7 +163,7 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
 
         testCaseEvalScoreRepository.saveAll(List.of(
                 TestCaseEvalScore.builder()
-                        .evalSummaryId(UUID.randomUUID())
+                        .id(UUID.randomUUID())
                         .testSuiteRunId(runId)
                         .testCaseId(successCase)
                         .testCaseName("success-case")
@@ -105,7 +174,7 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
                         .computedAtMs(1_000L)
                         .build(),
                 TestCaseEvalScore.builder()
-                        .evalSummaryId(UUID.randomUUID())
+                        .id(UUID.randomUUID())
                         .testSuiteRunId(runId)
                         .testCaseId(failedCase)
                         .testCaseName("failed-case")
@@ -128,17 +197,35 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
     }
 
     @Test
-    @DisplayName("the row with the freshest computed_at_ms wins when a test case's rows disagree")
+    @DisplayName("the freshest legacy row wins when only legacy rows disagree")
     void freshestRowWinsOnDisagreement() {
         UUID runId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
         UUID testCaseId = UUID.randomUUID();
 
-        // Simulates the pre-existing DO NOTHING staleness bug: an earlier flush froze a partial score,
-        // a later flush computed the correct one. The entity must surface the freshest value.
-        testCaseEvalScoreRepository.saveAll(List.of(
-                scoreRow(runId, testCaseId, "case-a", computationId, 0.0, 1_000L),
-                scoreRow(runId, testCaseId, "case-a", computationId, 0.75, 2_000L)));
+        // Simulates two legacy rows for the same test case, written before the re-key, disagreeing on
+        // score (e.g. the pre-existing DO NOTHING staleness bug an earlier version of this table had). No
+        // new-format row exists for this key, so the entity falls back to the freshest legacy row.
+        analyticsTestDataHelper.forceLegacyTestCaseEvalScore(
+                UUID.randomUUID(),
+                runId,
+                testCaseId,
+                "case-a",
+                computationId,
+                ExecutionStatus.SUCCESS,
+                0.0,
+                false,
+                1_000L);
+        analyticsTestDataHelper.forceLegacyTestCaseEvalScore(
+                UUID.randomUUID(),
+                runId,
+                testCaseId,
+                "case-a",
+                computationId,
+                ExecutionStatus.SUCCESS,
+                0.75,
+                true,
+                2_000L);
 
         QueryResultPage page = queryRepository.execute(
                 rowQuery(runIdIn(List.of(runId)), List.of(col("test_case_name"), col("score"))));
@@ -203,7 +290,7 @@ public abstract class TestCaseEvalScoresStructuredQueryFunctionalTests extends B
     private static TestCaseEvalScore scoreRow(
             UUID runId, UUID testCaseId, String testCaseName, UUID computationId, double score, long computedAtMs) {
         return TestCaseEvalScore.builder()
-                .evalSummaryId(UUID.randomUUID())
+                .id(UUID.randomUUID())
                 .testSuiteRunId(runId)
                 .testCaseId(testCaseId)
                 .testCaseName(testCaseName)

@@ -146,6 +146,20 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
         return (String) get(8);
     }
 
+    /**
+     * Setter for <code>analytics.test_case_eval_scores.id</code>.
+     */
+    public void setId(String value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_scores.id</code>.
+     */
+    public String getId() {
+        return (String) get(9);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -169,7 +183,7 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
     /**
      * Create a detached, initialised TestCaseEvalScoresRecord
      */
-    public TestCaseEvalScoresRecord(String evalSummaryId, Double score, Boolean passed, Long computedAtMs, String testSuiteRunId, String testCaseId, String testCaseName, String computationId, String executionStatus) {
+    public TestCaseEvalScoresRecord(String evalSummaryId, Double score, Boolean passed, Long computedAtMs, String testSuiteRunId, String testCaseId, String testCaseName, String computationId, String executionStatus, String id) {
         super(TestCaseEvalScores.TEST_CASE_EVAL_SCORES);
 
         setEvalSummaryId(evalSummaryId);
@@ -181,6 +195,7 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
         setTestCaseName(testCaseName);
         setComputationId(computationId);
         setExecutionStatus(executionStatus);
+        setId(id);
         resetTouchedOnNotNull();
     }
 }

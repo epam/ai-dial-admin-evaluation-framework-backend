@@ -36,6 +36,15 @@ import org.springframework.stereotype.Component;
  * This is a deliberate, accepted shift from schema-declared numeric-field detection to runtime type
  * detection: a value that doesn't match its declared schema type is silently excluded here instead of
  * throwing a cast error, consistent with this table's fail-soft, regenerable-derived-data philosophy.
+ *
+ * <p>An explicit JSON {@code null} leaf (e.g. {@code {"Exact Match": {"exact_match": null}}}) is treated
+ * as a real sample of {@code 0} — it counts toward {@code count} and pulls {@code avg}/{@code min} down —
+ * rather than being excluded like a leaf of any other non-numeric type. A JSON null here means the metric
+ * fired but its evaluation errored (e.g. a provider error surfaced as a null output value), which is a
+ * failure that should drag the score down, not a metric that silently didn't run. This is distinct from
+ * the output field being <strong>absent</strong> from {@code metric_values} altogether (never dispatched,
+ * or {@code condition}-skipped): an absent key produces no row from {@code jsonb_each} at all, so it stays
+ * excluded from this metric's stats entirely, unaffected by this rule.
  */
 @Component
 @LogExecution
@@ -54,6 +63,7 @@ public class TestCaseMetricScoreAggregator {
     private static final String KEY_COLUMN = "key";
     private static final String VALUE_COLUMN = "value";
     private static final String NUMBER_TYPE = "number";
+    private static final String NULL_TYPE = "null";
     private static final String METRIC_NAME_SEPARATOR = ".";
 
     @Qualifier("analyticsDsl")
@@ -62,12 +72,13 @@ public class TestCaseMetricScoreAggregator {
     /**
      * Re-aggregates the <strong>entire</strong> row set (not just the current flush batch) of every id
      * in {@code testCaseIds}, for the given run/computation — required for correctness since one test
-     * case's rows can straddle multiple flush batches. A metric field with zero (numeric) samples for a
-     * test case is excluded from that test case's {@code metric_scores} map (never a zero/null entry),
-     * since only rows whose value is JSON-numeric contribute a group at all.
+     * case's rows can straddle multiple flush batches. A metric field with zero samples for a test case is
+     * excluded from that test case's {@code metric_scores} map entirely, since only rows whose value is
+     * JSON-numeric or JSON null (see the class javadoc — null is coalesced to {@code 0}, not excluded)
+     * contribute a group at all.
      *
-     * @return one item per test case that has at least one numeric sample for at least one metric field;
-     *     a test case with no such samples is simply absent from the result
+     * @return one item per test case that has at least one contributing sample for at least one metric
+     *     field; a test case with no such samples is simply absent from the result
      */
     public List<TestCaseMetricScoreAggregatedBatchWriteItemDto> aggregate(
             UUID runId, UUID computationId, List<UUID> testCaseIds) {
@@ -87,7 +98,11 @@ public class TestCaseMetricScoreAggregator {
         Field<String> outputField = DSL.field(DSL.name(OUTPUT_FIELD_TABLE_ALIAS, KEY_COLUMN), String.class);
         Field<JSONB> outputValue = DSL.field(DSL.name(OUTPUT_FIELD_TABLE_ALIAS, VALUE_COLUMN), JSONB.class);
 
-        Field<Double> valueField = DSL.field("({0})::text::double precision", Double.class, outputValue);
+        Field<Double> valueField = DSL.when(
+                        DSL.field("jsonb_typeof({0})", String.class, outputValue)
+                                .eq(NULL_TYPE),
+                        DSL.val(0.0))
+                .otherwise(DSL.field("({0})::text::double precision", Double.class, outputValue));
         Field<String> metricName = tsmdName.concat(METRIC_NAME_SEPARATOR).concat(outputField);
         Field<Double> avg = DSL.avg(valueField).cast(Double.class);
         Field<Double> min = DSL.min(valueField);
@@ -105,7 +120,7 @@ public class TestCaseMetricScoreAggregator {
                 .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
                 .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()))
                 .and(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID.in(testCaseIdStrings))
-                .and(DSL.field("jsonb_typeof({0})", String.class, outputValue).eq(NUMBER_TYPE))
+                .and(DSL.field("jsonb_typeof({0})", String.class, outputValue).in(NUMBER_TYPE, NULL_TYPE))
                 .groupBy(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, tsmdName, outputField);
 
         CommonTableExpression<Record6<String, String, Double, Double, Double, Integer>> metricStats =

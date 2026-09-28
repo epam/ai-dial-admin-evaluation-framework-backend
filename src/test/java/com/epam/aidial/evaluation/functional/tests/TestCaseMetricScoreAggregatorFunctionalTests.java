@@ -76,6 +76,58 @@ public abstract class TestCaseMetricScoreAggregatorFunctionalTests extends BaseF
     }
 
     @Test
+    @DisplayName("an explicit JSON null output value is treated as 0, not excluded like an absent metric")
+    void nullOutputValueIsCoalescedToZero() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID computationId = UUID.randomUUID();
+        UUID testCaseId = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+
+        // "Exact Match" errored on this row (null output) while "Ragas: Answer Relevancy" scored 0.0 —
+        // the exact shape a provider error surfaces as. A metric absent entirely (e.g. Ragas on the second
+        // row) must still stay excluded from its own stats, unaffected by this row's null.
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseId)
+                .testCaseName("TC-3")
+                .createdAtMs(now)
+                .runIndex(0)
+                .metricValuesJson(
+                        "{\"Exact Match\":{\"exact_match\":null},\"Ragas: Answer Relevancy\":{\"score\":0.0}}")
+                .build());
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseId)
+                .testCaseName("TC-3")
+                .createdAtMs(now)
+                .runIndex(1)
+                .metricValuesJson("{\"Exact Match\":{\"exact_match\":1.0}}")
+                .build());
+
+        List<TestCaseMetricScoreAggregatedBatchWriteItemDto> result =
+                aggregator.aggregate(runId, computationId, List.of(testCaseId));
+
+        assertThat(result).hasSize(1);
+        JsonNode metricScores = metricScoresNode(result.getFirst());
+        JsonNode exactMatch = metricScores.get("Exact Match.exact_match");
+        // The null row counts as a real (failing) sample: count 2, not 1; avg pulled down to 0.5, not 1.0.
+        assertThat(exactMatch.get("count").asInt()).isEqualTo(2);
+        assertThat(exactMatch.get("avg").asDouble()).isEqualTo(0.5);
+        assertThat(exactMatch.get("min").asDouble()).isEqualTo(0.0);
+        assertThat(exactMatch.get("max").asDouble()).isEqualTo(1.0);
+        // "Ragas: Answer Relevancy" is absent from the second row entirely — that row must not contribute
+        // a zero/null sample of its own, unlike the null-valued "Exact Match" on the first row.
+        JsonNode ragas = metricScores.get("Ragas: Answer Relevancy.score");
+        assertThat(ragas.get("count").asInt()).isEqualTo(1);
+        assertThat(ragas.get("avg").asDouble()).isEqualTo(0.0);
+    }
+
+    @Test
     @DisplayName("a metric that never fired for a test case is absent from its metric_scores map")
     void metricNeverFiredIsOmittedFromMap() {
         UUID suiteId = UUID.randomUUID();

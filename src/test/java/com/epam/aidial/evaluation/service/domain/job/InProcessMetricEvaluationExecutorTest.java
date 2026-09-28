@@ -272,7 +272,6 @@ class InProcessMetricEvaluationExecutorTest {
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems).hasSize(1);
-        assertThat(scoreItems.get(0).getEvalSummaryId()).isNotNull();
         assertThat(scoreItems.get(0).getTestSuiteRunId()).isEqualTo(runId);
         assertThat(scoreItems.get(0).getTestCaseId()).isNotNull();
         assertThat(scoreItems.get(0).getTestCaseName()).isNotBlank();
@@ -587,7 +586,7 @@ class InProcessMetricEvaluationExecutorTest {
     }
 
     @Test
-    @DisplayName("A test case's execution_status and score are broadcast identically to every one of its rows "
+    @DisplayName("A test case's execution_status is written once per test case, not once per row "
             + "in the batch, even when one of its turns failed and another succeeded")
     void executionStatusAndScoreAreBroadcastAcrossAllRowsOfOneTestCase() throws Exception {
         UUID runId = UUID.randomUUID();
@@ -677,10 +676,11 @@ class InProcessMetricEvaluationExecutorTest {
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems)
-                .as("one test_case_eval_scores item per raw eval-summary row, not deduped at write time")
-                .hasSize(2);
+                .as("one test_case_eval_scores item per distinct test case in the flush batch, "
+                        + "not one per raw eval-summary row")
+                .hasSize(1);
         assertThat(scoreItems)
-                .as("both rows of this test case must carry the identical, broadcast aggregate")
+                .as("the item carries the test case's broadcast/aggregated execution_status")
                 .allSatisfy(item -> {
                     assertThat(item.getTestCaseId()).isEqualTo(sharedTestCaseId);
                     assertThat(item.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);

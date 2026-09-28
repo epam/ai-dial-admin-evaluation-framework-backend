@@ -43,9 +43,9 @@ Both use the same typed, sealed `OverallScoreDefinition` (`Mean`/`WeightedMean`/
   reverted post-implementation once its complexity/fragility was judged disproportionate to the benefit.
 - No schema change to `test_case_eval_scores` or `metric_score_results` — only where their values are
   computed from changes, not their shape. `test_case_eval_scores` was later extended in place (additive
-  columns + a new Query DSL entity, not a shape change to its existing key/grain — see Decision 9) once its
-  own per-row duplication was discovered during manual verification; `metric_score_results` remains
-  untouched.
+  columns + a new Query DSL entity, not a shape change to its existing key/grain — see Decision 9), and
+  later still re-keyed to one row per test case, but additively — no destructive change to any existing row
+  (see Decision 10); `metric_score_results` remains untouched.
 - No backfill for historical computations.
 
 ## Decisions
@@ -257,6 +257,128 @@ ON`/`ORDER BY` column order exactly — is what keeps this efficient in practice
 *any* forced repointing of the `eval_summaries` join was premature — better to add the new entity
 alongside the existing surface and let consumers migrate deliberately.
 
+**10. `test_case_eval_scores` is re-keyed to one row per test case after all — additively, once real
+deployed data made the destructive alternative from Decision 9 unacceptable.** Manually verifying this
+change against a real (already-deployed, not just local) environment surfaced that `test_case_eval_scores`
+had shipped with only its original `V1.19` shape (`eval_summary_id` PK, `score`, `passed`,
+`computed_at_ms` — none of Decision 9's denormalized columns, which were still unshipped at that point).
+Real multi-turn runs had accumulated genuine duplicate rows per test case whose `score` values can
+*disagree* — a stale value from an earlier flush batch that a later flush's re-aggregation never revisits,
+since each flush only updates the raw rows in its own batch (`test_case_eval_summaries_...csv` evidence)
+— and whose `computed_at_ms` can tie within a flush batch, so a "freshest row wins" backfill cannot even
+deterministically pick between two disagreeing candidates. This made Decision 9's own "extend in place,
+present via `DISTINCT ON`" framing insufficient on its own: it kept `test_case_eval_scores` at a *finer*
+grain than `test_case_metric_scores_aggregated` indefinitely, which is what a test-case-scores table
+should never be, by construction, once `test_case_metric_scores_aggregated` exists.
+
+Two ways to actually collapse it to one row per test case were considered and rejected because both require
+touching or reasoning about every existing duplicate row:
+- **A real destructive `DROP`/recreate or `INSERT ... SELECT DISTINCT ON` backfill** (Decision 9's own
+  rejected alternative) — unacceptable now that real data, not just local data, is at stake; Postgres
+  cannot even resolve which of several tied-`computed_at_ms` legacy rows is "correct" when they disagree.
+- **A real recompute via a one-off application-level backfill job replaying `TestCaseMetricScoreAggregator`
+  + `EvalSummaryRowScoreComputer` against historical data** — mathematically correct, but these are full
+  Spring beans (jOOQ `DSLContext`, `StructuredQueryService`, meta-DB reads) that don't exist yet when Flyway
+  migrations run (Java Flyway migrations in this codebase, per `V1_33__CopyRunMetricSnapshotsFromAnalytics`,
+  do raw JDBC only, registered before the rest of the Spring context). A correct version of this would need
+  a new kind of component (an `ApplicationReadyEvent` listener, mirroring `TestSuiteRunReconciliation`) —
+  real, but disproportionate machinery to correct data that is already being read correctly today via the
+  existing `DISTINCT ON` entity.
+
+**Final decision: additive-only — never delete or reconcile a single legacy row.** `eval_summary_id`
+becomes a nullable *old/new-format discriminator* instead of the primary key: every legacy row keeps its
+real value untouched; every row written from now on carries `eval_summary_id = NULL` and is written once
+per `(test_suite_run_id, test_case_id, computation_id)`, computed directly from the already
+one-row-per-test-case `test_case_metric_scores_aggregated` row rather than broadcast to every raw
+`test_case_eval_summaries` row. A new surrogate `id` column becomes the primary key (backfilled from each
+legacy row's own `eval_summary_id` — already unique, no new UUID generation needed), and a **partial
+unique index** — `(test_suite_run_id, test_case_id, computation_id) WHERE eval_summary_id IS NULL` —
+enforces the one-row-per-test-case invariant *only* among new-format rows. This achieves Decision 9's
+original goal (`test_case_eval_scores` has the same row population as `test_case_metric_scores_aggregated`)
+for every row written after this change, with zero data-loss risk and zero forced migration for whatever
+hasn't adopted the new `test_case_eval_scores` entity yet — legacy rows keep reading exactly as they do
+today via the existing dedup, indefinitely.
+
+Consequences of the discriminator:
+- `InProcessMetricEvaluationExecutor.writeRowScores` now writes one `TestCaseEvalScoreBatchWriteItemDto`
+  per distinct test case in the flush batch (iterating the execution-status aggregate's keys), not one per
+  buffered raw row — `eval_summary_id` is never populated by this write path again.
+- `PostgresTestCaseEvalScoreRepository.saveAll`'s upsert conflict target becomes the partial index
+  (`onConflict(TEST_SUITE_RUN_ID, TEST_CASE_ID, COMPUTATION_ID).where(EVAL_SUMMARY_ID.isNull())`), not the
+  old `eval_summary_id` PK; each call mints a fresh surrogate `id`.
+- `PostgresTestCaseEvalScoreEntityResolver`'s `DISTINCT ON` dedup is **not removed** (legacy duplicates
+  still exist) but its tie-break gains a leading `(eval_summary_id IS NULL) DESC` clause: a new-format row
+  (there is at most one) always wins over any number of legacy rows for the same key; only among legacy
+  rows does the freshest `computed_at_ms` still apply.
+- All 5 places that join `eval_summaries` to `test_case_eval_scores`
+  (`PostgresEvalSummaryRepository`'s `findById`/`buildListQuery`/`buildExportQuery`/
+  `buildExportWithBodiesQuery`, `PostgresEvalSummaryEntityResolver`) move from a flat
+  `eval_summary_id`-equality join to a `LEFT JOIN LATERAL` with the identical `(new-format-first, then
+  freshest) DESC LIMIT 1` pick — necessary because, unlike Decision 9's original join, the score side is no
+  longer guaranteed unique on `(test_case_id, computation_id)` for legacy rows and a flat join would fan
+  out. This is the real, permanent cost of going additive: these 5 joins can never become the trivial
+  flat 3-column equality join a true (destructive) re-key would have allowed, for as long as any legacy row
+  exists.
+*Alternative considered*: keep pursuing either destructive option above. Rejected for the reasons stated —
+neither can be done without real risk to real, already-accumulated data, and the additive approach reaches
+the same end state for all new data at zero risk.
+*Not implemented, documented only*: a real historical backfill (recomputing legacy `score`/`execution_status`
+via the actual scoring flow, scoped to the bounded set of `(run, case, computation)` keys already present
+in the legacy table) remains a valid future follow-up if a real deployment ever needs it, using the
+`ApplicationReadyEvent`-listener shape described above — not undertaken now since nothing requires it: the
+legacy rows already read correctly today, and this change does not regress that.
+
+**11. `score`/`passed` are removed from the `eval_summaries` read surface entirely — superseding task
+15.6's still-in-progress "repoint all 5 joins to LATERAL" plan.** Mid-implementation of Decision 10, with
+`PostgresEvalSummaryRepository`'s 4 query builders already repointed to `LEFT JOIN LATERAL` but
+`PostgresEvalSummaryEntityResolver`'s `SCORES_JOIN` still pending, the user determined that continuing to
+broadcast a test case's score/passed onto every raw `eval_summaries` row — whichever join shape does it —
+is unneeded complexity now that `test_case_eval_scores` exists as its own one-row-per-test-case,
+deduplicated Query DSL entity (Decision 9/10). A client that wants a test case's score should query that
+entity directly; `eval_summaries` goes back to being purely the raw per-row read surface (per-row/per-turn/
+per-request grain, metric values, request/response bodies) it was before this change touched it, with no
+join to `test_case_eval_scores` of any kind.
+
+This is a deliberate API-breaking reversal of the "both surfaces read the same underlying table" framing
+from Decision 9/10 — `EvalSummaryResponseDto`/`EvalSummaryDetailResponseDto` stop returning `score`/`passed`
+altogether, not just changing how those values are joined in. It supersedes:
+- The still-pending half of task 15.6 (`PostgresEvalSummaryEntityResolver`'s `SCORES_JOIN` repointing) —
+  dropped rather than finished; `SCORES_JOIN` and its two `score`/`passed` `QueryFieldBinding`s are removed
+  from the `eval_summaries` Query DSL entity instead.
+- The already-completed half of task 15.6 (`PostgresEvalSummaryRepository`'s `scoresLateral()` join across
+  `findById`/`buildListQuery`/`buildExportQuery`/`buildExportWithBodiesQuery`) — reverted; each builder's
+  `SELECT` list drops its `scores.field(TEST_CASE_EVAL_SCORES.SCORE/PASSED)` pair and its
+  `.leftJoin(scores).on(DSL.trueCondition())`, and `scoresLateral()` itself is deleted.
+
+Consequences:
+- `EvalSummary` (model): drop `score`/`passed` fields.
+- `EvalSummaryRecordMapper`: drop the `.score(...)`/`.passed(...)` calls from `mapList`, `mapExport`, and
+  `mapExportWithBodies` (the `TEST_CASE_EVAL_SCORES` import becomes unused).
+- `EvalSummaryMapper`: drop the now-meaningless `@Mapping(target = "score", ignore = true)` /
+  `@Mapping(target = "passed", ignore = true)` lines (there is no `score`/`passed` target field left to
+  ignore).
+- `EvalSummaryResponseDto`/`EvalSummaryDetailResponseDto`: drop the `score`/`passed` fields and their
+  `@Schema` docs. This is the actual breaking change surfaced to API clients; any FE consumer still reading
+  `score`/`passed` off an `eval-summaries` response must migrate to querying `test_case_eval_scores`
+  (Query DSL entity) directly — the same migration path Decision 9's design already anticipated as a
+  follow-up, just made mandatory instead of optional.
+- `test_case_eval_scores` Query DSL entity requirement: drop the closing "exists alongside (not instead of)
+  `score`/`passed` remaining queryable via the `eval_summaries` entity's join — both surfaces read the same
+  underlying table" sentence — it is no longer true; `test_case_eval_scores` is now the *only* surface.
+- Tests: rewrite/remove unit and functional assertions that expect `score`/`passed` on eval-summary reads
+  (`EvalSummaryRecordMapperTest`, `PostgresEvalSummaryRepositoryFunctionalTests`,
+  `EvalSummaryStructuredQueryFunctionalTests`'s score/passed cases, any controller test asserting the field
+  in a list/detail/export response body).
+- Docs: `docs/patterns/eval-summaries-read-surface.md` drops its planned "lateral join, new-format-first
+  tie-break" description (Decision 10's task 15.8) — nothing to document there anymore; `docs/database-schema.md`'s
+  `test_case_eval_scores` section is unaffected (the table itself, and its Query DSL entity, are unchanged).
+
+*Alternative considered*: finish task 15.6 as originally planned (repoint `PostgresEvalSummaryEntityResolver`
+too, keep both surfaces). Rejected by the user — `test_case_eval_scores` already gives every consumer a
+correct, deduplicated, purpose-built read path; keeping a second, join-based path to the same data on
+`eval_summaries` is exactly the kind of duplicated surface Decision 3/8 already rejected for score
+*computation* now being carried over into score *exposure*.
+
 ## Risks / Trade-offs
 
 - **[Risk]** Re-aggregating a test case's entire row set on every flush that touches it means a test case
@@ -299,6 +421,14 @@ alongside the existing surface and let consumers migrate deliberately.
   migration needed (scores are regenerable derived data); a suite already storing a `CustomFunction`
   `testCaseOverallScore` is only rejected on its *next* write, not retroactively invalidated — its existing
   stored value is left as-is until the suite is next created/updated/cloned.
+- **[Risk]** The additive-only re-key (Decision 10) means the 5 `eval_summaries`↔`test_case_eval_scores`
+  join sites can never simplify to a flat 3-column equality join for as long as any legacy (real
+  `eval_summary_id`) row exists — they permanently carry a `LEFT JOIN LATERAL` correlated-subquery cost
+  instead.
+  → **Mitigation**: accepted deliberately in exchange for zero data-loss risk on real, already-accumulated
+  data. The legacy row population only shrinks over time (no new duplicate rows are ever created for a run
+  once it's already completed); a future cleanup (the documented, not-implemented historical backfill) could
+  eliminate the legacy tail entirely and let the joins simplify, but nothing requires that now.
 
 ## Migration Plan
 
@@ -325,14 +455,24 @@ alongside the existing surface and let consumers migrate deliberately.
    `PostgresTestCaseEvalScoreEntityResolver`/`TestCaseEvalScoresSchemaProvider` for the new
    `test_case_eval_scores` Query DSL entity (Decision 9). No changes to score computation or the existing
    `eval_summaries` join.
+10. (Post-real-deployment-verification) Rewrote `V1.21` (still unshipped at that point) in place a second
+    time (Decision 10): add a surrogate `id` PRIMARY KEY (backfilled from each legacy row's own
+    `eval_summary_id`), drop the old `eval_summary_id` PK, make `eval_summary_id` nullable, add the partial
+    unique index scoping "one row per test case" to new-format (`eval_summary_id IS NULL`) rows only.
+    Rewrote `InProcessMetricEvaluationExecutor.writeRowScores`/`toScoreItem` to write one item per test case
+    instead of one per raw buffered row. Extended `PostgresTestCaseEvalScoreEntityResolver`'s `DISTINCT ON`
+    tie-break with a leading new-format-first clause. Repointed all 5 `eval_summaries`↔`test_case_eval_scores`
+    join sites from a flat `eval_summary_id` equality join to a `LEFT JOIN LATERAL` doing the identical pick.
+    `./gradlew generateJooq` run again; diff committed.
 
 **Rollback**: for `test_case_metric_scores_aggregated` (V1.20), no data migration or backfill exists to
 reverse — reverting the code change stops writes to the new table and reverts scoring to reading raw
 `eval_summaries` directly; the table can be dropped independently at any time since nothing outside this
-feature reads it. For `test_case_eval_scores`'s V1.21 extension, the new columns and entity can be dropped
-independently too (nothing outside this feature's own new entity reads the new columns; the pre-existing
-`eval_summaries` join never referenced them) — the V1.21 backfill itself is not something to "roll back" in
-the usual sense, since it only copies already-correct sibling-column values, never recomputes anything.
+feature reads it. For `test_case_eval_scores`'s `V1.21` extension (both the Decision 9 columns and the
+Decision 10 re-key), the new columns/index/entity can be dropped independently too — a rollback of Decision
+10 specifically would mean re-adding `eval_summary_id`'s `NOT NULL`/PK and dropping the surrogate `id` and
+partial index; since Decision 10 never modified a legacy row's own data (only schema/constraints and the
+write path), this is safe at any time — no legacy row's `score`/`passed`/`computed_at_ms` was ever touched.
 
 ## Open Questions
 
@@ -348,3 +488,11 @@ question so much as a decision the team was willing to revisit after seeing the 
 accepted limitation with a real fix explicitly deferred as a follow-up, not resolved here.
 `test_case_eval_scores`'s own residual per-row storage duplication (Decision 9) is resolved by that
 decision — extend in place, expose a deduplicated entity, no re-key — not an open question either.
+Decision 9's "no re-key" framing was itself later revisited (Decision 10) once real deployed data made the
+destructive alternatives unacceptable, landing on an additive re-key (nullable `eval_summary_id`
+discriminator + partial unique index) that reaches the same one-row-per-test-case goal for all new data
+without touching a single existing row — also not an open question, a resolved decision.
+Decision 10's own "repoint all 5 joins to LATERAL, keep both surfaces" plan was itself superseded
+mid-implementation (Decision 11): `score`/`passed` are dropped from the `eval_summaries` surface entirely
+rather than finishing the LATERAL repointing, leaving `test_case_eval_scores` as the sole read path for
+test-case scores — also a resolved decision, not an open question.

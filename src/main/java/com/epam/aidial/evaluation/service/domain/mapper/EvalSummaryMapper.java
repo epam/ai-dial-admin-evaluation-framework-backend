@@ -41,10 +41,6 @@ public abstract class EvalSummaryMapper {
     @Mapping(source = "item.extractionWarnings", target = "extractionWarnings")
     @Mapping(target = "requestBody", ignore = true)
     @Mapping(target = "responseBody", ignore = true)
-    // score/passed are never set on this initial write — they're populated later, out-of-band, in
-    // test_case_eval_scores and joined back in on read (see EvalSummaryRecordMapper).
-    @Mapping(target = "score", ignore = true)
-    @Mapping(target = "passed", ignore = true)
     @Mapping(source = "computationId", target = "computationId")
     @Mapping(source = "testSuiteId", target = "testSuiteId")
     @Mapping(source = "testSuiteRunId", target = "testSuiteRunId")

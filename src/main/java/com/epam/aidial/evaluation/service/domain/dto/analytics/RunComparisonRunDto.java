@@ -54,6 +54,13 @@ public class RunComparisonRunDto {
     private List<UUID> unmatchedEvalSummaryIds;
 
     @Schema(
+            description = "Distinct test case ids among this run's unmatched rows (see "
+                    + "unmatchedEvalSummaryIds) — one entry per affected test case, not one per row, since "
+                    + "scoring is now per test case (test_case_eval_scores). A test case with only some of "
+                    + "its rows unmatched still appears here. Empty means every row matched.")
+    private List<UUID> unmatchedEvalTestCaseIds;
+
+    @Schema(
             description = "Statistics recomputed over the matched rows only. A null aggregate is omitted, so no "
                     + "entry carries a null value. The two runs' arrays may legitimately differ in content.")
     private List<MetricScoreValueDto> scores;

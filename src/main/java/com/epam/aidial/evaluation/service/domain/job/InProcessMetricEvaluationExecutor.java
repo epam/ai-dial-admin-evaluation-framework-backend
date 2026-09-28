@@ -449,22 +449,24 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     /**
-     * Computes and writes the per-test-case score once per test case, then broadcasts it to every
-     * {@code test_case_eval_scores} row of that test case in this flush's batch, reusing {@link
-     * EvalSummaryRowScoreComputer}, which now reads the just-written {@code
-     * test_case_metric_scores_aggregated} data (see {@link #writeAggregatedMetricScores}, which MUST run
-     * first). First computes each test case's aggregated {@code execution_status} (see {@link
-     * TestCaseExecutionStatusAggregator}) — OR-ed across <strong>all</strong> of that test case's rows for
-     * the computation, not just this batch — and issues the score SQL query only for test cases whose
-     * aggregate is {@code SUCCESS}; a {@code FAILED}-aggregate test case gets {@code score = null} without
-     * its id ever reaching that query. A {@code FAILED} test case always gets a written row regardless of
-     * whether it has any numeric metric samples; a {@code SUCCESS} test case only gets one when the score
-     * query actually returned a value for it — preserving {@code test_case_metric_scores_aggregated}'s
-     * "absent = no numeric sample" contract for the SUCCESS case (a metric-less/all-condition-skipped
-     * SUCCESS test case stays absent from both tables, same as before this class started tracking
-     * {@code execution_status}). Skipped entirely when the suite has no {@code overallScore} definition. A
-     * batch-write failure here is logged but does not cancel the run: score/passed/execution_status are
-     * regenerable derived data, unlike the eval summaries themselves.
+     * Computes and writes exactly one {@code test_case_eval_scores} row per test case in this flush's
+     * batch — never one per raw {@code test_case_eval_summaries} row — reusing {@link
+     * EvalSummaryRowScoreComputer}, which reads the just-written {@code test_case_metric_scores_aggregated}
+     * data (see {@link #writeAggregatedMetricScores}, which MUST run first). Every row written here carries
+     * {@code eval_summary_id = NULL}: it is computed from, and corresponds 1:1 to, the one-row-per-test-case
+     * aggregated row, so no broadcast/dedup is needed on this path (see {@code
+     * PostgresTestCaseEvalScoreRepository}'s partial-unique-index upsert). First computes each test case's
+     * aggregated {@code execution_status} (see {@link TestCaseExecutionStatusAggregator}) — OR-ed across
+     * <strong>all</strong> of that test case's rows for the computation, not just this batch — and issues the
+     * score SQL query only for test cases whose aggregate is {@code SUCCESS}; a {@code FAILED}-aggregate test
+     * case gets {@code score = null} without its id ever reaching that query. A {@code FAILED} test case
+     * always gets a written row regardless of whether it has any numeric metric samples; a {@code SUCCESS}
+     * test case only gets one when the score query actually returned a value for it — preserving {@code
+     * test_case_metric_scores_aggregated}'s "absent = no numeric sample" contract for the SUCCESS case (a
+     * metric-less/all-condition-skipped SUCCESS test case stays absent from both tables). Skipped entirely
+     * when the suite has no {@code overallScore} definition. A batch-write failure here is logged but does
+     * not cancel the run: score/passed/execution_status are regenerable derived data, unlike the eval
+     * summaries themselves.
      */
     private void writeRowScores(
             List<EvalSummaryBatchWriteItemDto> buffer,
@@ -495,21 +497,25 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                             context.getTestSuiteRunId(),
                             context.getComputationId(),
                             successTestCaseIds);
-            List<TestCaseEvalScoreBatchWriteItemDto> items = buffer.stream()
-                    .filter(item -> {
-                        ExecutionStatus status = statusByTestCase.get(item.getTestCaseId());
-                        // A FAILED test case always gets a row (score=null), even with zero numeric
-                        // samples — the point of this aggregation. A SUCCESS test case only gets one when
-                        // it actually has a computed score, preserving test_case_metric_scores_aggregated's
-                        // existing "absent = no numeric sample" contract: a SUCCESS test case with nothing
-                        // numeric (e.g. every metric condition-skipped) stays absent from both tables, same
-                        // as before this change.
-                        return status == ExecutionStatus.FAILED || scoresByTestCase.containsKey(item.getTestCaseId());
-                    })
-                    .map(item -> toScoreItem(
-                            item,
-                            scoresByTestCase.get(item.getTestCaseId()),
-                            statusByTestCase.get(item.getTestCaseId()),
+            Map<UUID, String> testCaseNamesById = buffer.stream()
+                    .collect(Collectors.toMap(
+                            EvalSummaryBatchWriteItemDto::getTestCaseId,
+                            EvalSummaryBatchWriteItemDto::getTestCaseName,
+                            (first, second) -> first));
+            List<TestCaseEvalScoreBatchWriteItemDto> items = statusByTestCase.entrySet().stream()
+                    // A FAILED test case always gets a row (score=null), even with zero numeric
+                    // samples — the point of this aggregation. A SUCCESS test case only gets one when
+                    // it actually has a computed score, preserving test_case_metric_scores_aggregated's
+                    // existing "absent = no numeric sample" contract: a SUCCESS test case with nothing
+                    // numeric (e.g. every metric condition-skipped) stays absent from both tables, same
+                    // as before this change.
+                    .filter(entry ->
+                            entry.getValue() == ExecutionStatus.FAILED || scoresByTestCase.containsKey(entry.getKey()))
+                    .map(entry -> toScoreItem(
+                            entry.getKey(),
+                            testCaseNamesById.get(entry.getKey()),
+                            scoresByTestCase.get(entry.getKey()),
+                            entry.getValue(),
                             context))
                     .toList();
             testCaseEvalScoreService.batchUpsert(context.getComputedAtMs(), items);
@@ -564,7 +570,8 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     private TestCaseEvalScoreBatchWriteItemDto toScoreItem(
-            EvalSummaryBatchWriteItemDto item,
+            UUID testCaseId,
+            String testCaseName,
             Double score,
             ExecutionStatus executionStatus,
             MetricEvaluationContext context) {
@@ -573,10 +580,9 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 ? effectiveScore >= context.getOverallScoreThreshold()
                 : null;
         return TestCaseEvalScoreBatchWriteItemDto.builder()
-                .evalSummaryId(item.getId())
                 .testSuiteRunId(context.getTestSuiteRunId())
-                .testCaseId(item.getTestCaseId())
-                .testCaseName(item.getTestCaseName())
+                .testCaseId(testCaseId)
+                .testCaseName(testCaseName)
                 .computationId(context.getComputationId())
                 .executionStatus(executionStatus)
                 .score(effectiveScore)

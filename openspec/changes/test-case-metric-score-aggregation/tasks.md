@@ -433,4 +433,130 @@ the FE to migrate to at its own pace, not a forced/breaking change.
 delta specs including the new `metrics-storage` one) are up to date and synced into the main specs. Ready
 for `/opsx:archive`.
 
+## 15. `test_case_eval_scores` re-keyed to one row per test case, additively (post-real-deployment discovery)
+
+Discovered after Group 14: `test_case_eval_scores` is **already deployed** with real records (including
+genuine multi-turn test cases), and only its original `V1.19` shape ever shipped — none of Group 14's
+`V1.21` columns exist in the real environment yet. Editing an already-applied migration in place (this
+change's established local-only convention) is not an option there: Flyway refuses to start on a checksum
+mismatch against real data. Manually reasoning through what a real backfill of the legacy duplicate rows
+would require (see Decision 10) showed that real historical rows can genuinely disagree on `score` across
+flush batches, and `computed_at_ms` can tie within a batch — so any destructive collapse was rejected in
+favor of an **additive-only** re-key: `eval_summary_id` becomes a nullable old/new-format discriminator, a
+surrogate `id` becomes the primary key, and a partial unique index enforces "one row per test case" only
+among new-format (`eval_summary_id IS NULL`) rows. See design.md's Decision 10 for the full rationale.
+
+- [x] 15.1 Rewrote `V1.21__AddRunCaseContextToTestCaseEvalScores.sql` (still unshipped, safe to edit again)
+      to, in one pass against the real `V1.19`-shaped table: backfill the identity columns via join to
+      `test_case_eval_summaries` (unchanged from Group 14); backfill `execution_status` as a fresh
+      `bool_or(execution_status <> 'SUCCESS')` aggregate (not copied from any single row); add a surrogate
+      `id` column, backfilled from each row's own `eval_summary_id`; drop the old `PRIMARY KEY
+      (eval_summary_id)` constraint and `ALTER COLUMN eval_summary_id DROP NOT NULL`; `ADD PRIMARY KEY
+      (id)`; add `uq_test_case_eval_scores_new_format_key` (partial unique index, `WHERE eval_summary_id IS
+      NULL`); extend `idx_test_case_eval_scores_natural_key` with a leading `(eval_summary_id IS NULL) DESC`
+      column. `./gradlew generateJooq --rerun` run; diff regenerated cleanly.
+- [x] 15.2 `TestCaseEvalScore` (model): added `id` field, documented `evalSummaryId` as a nullable
+      old/new-format discriminator rather than the row's own identity.
+      `TestCaseEvalScoreBatchWriteItemDto`: dropped `evalSummaryId` entirely (the write path never
+      populates it going forward).
+- [x] 15.3 `PostgresTestCaseEvalScoreRepository.saveAll`: mints `id = UUID.randomUUID()` per item (mirroring
+      `TestCaseMetricScoreAggregatedService`'s own surrogate-id pattern); `INSERT` omits `eval_summary_id`
+      (stays `NULL`); `onConflict(TEST_SUITE_RUN_ID, TEST_CASE_ID, COMPUTATION_ID).where(EVAL_SUMMARY_ID.isNull()).doUpdate()`
+      replaces the old `onConflict(EVAL_SUMMARY_ID)` target. `TestCaseEvalScoreService.batchUpsert`: mints
+      `id`, no longer threads `evalSummaryId` through.
+- [x] 15.4 `InProcessMetricEvaluationExecutor.writeRowScores`: rewritten to build one
+      `TestCaseEvalScoreBatchWriteItemDto` per distinct test case (iterating `statusByTestCase`'s keys, with
+      a `testCaseId -> testCaseName` lookup built from the buffer) instead of one per buffered raw row;
+      `toScoreItem` signature changed from `(EvalSummaryBatchWriteItemDto, Double, ExecutionStatus,
+      MetricEvaluationContext)` to `(UUID testCaseId, String testCaseName, Double score, ExecutionStatus,
+      MetricEvaluationContext)` — no `evalSummaryId` parameter. Javadoc updated to describe the 1:1
+      correspondence with the aggregated row instead of "broadcast to every row of the batch."
+- [x] 15.5 `PostgresTestCaseEvalScoreEntityResolver`: `DEDUPED`'s `ORDER BY` gained a leading
+      `DSL.field(EVAL_SUMMARY_ID.isNull()).desc()` clause before `COMPUTED_AT_MS.desc()`, so a new-format
+      row always wins over any number of legacy rows for the same key. `eval_summary_id` stays excluded
+      from the projection, unchanged. Javadoc updated to explain the tie-break now only has real work to do
+      against the legacy tail.
+- [x] 15.6 ~~Repoint the 5 `eval_summaries`↔`test_case_eval_scores` join sites... to `LEFT JOIN LATERAL`~~
+      **Superseded by Group 16 (Decision 11)**: the user decided, with `PostgresEvalSummaryRepository`'s 4
+      sites already repointed to a `scoresLateral()` `LEFT JOIN LATERAL` and `PostgresEvalSummaryEntityResolver`'s
+      `SCORES_JOIN` still pending, not to finish this task as scoped. Instead `score`/`passed` are removed
+      from the `eval_summaries` surface entirely — the 4 completed `scoresLateral()` joins are reverted, and
+      `SCORES_JOIN` is deleted rather than ever repointed. See Group 16.
+- [x] 15.7 ~~Rewrite/add unit + functional test coverage for the LATERAL repointing~~ **Superseded by Group
+      16**: the lateral-join-specific coverage this task described (new-format-vs-legacy tie-break exercised
+      *through* `eval_summaries`, `EvalSummaryStructuredQueryFunctionalTests`'s lateral-join case) is moot
+      once `eval_summaries` no longer joins `test_case_eval_scores` at all. The write-path assertions
+      (`InProcessMetricEvaluationExecutorTest`'s one-item-per-test-case broadcast test,
+      `PostgresTestCaseEvalScoreRepositoryFunctionalTests`'s partial-index upsert coexistence,
+      `TestCaseEvalScoresStructuredQueryFunctionalTests`'s new-format-wins case,
+      `TestCaseMetricScoreAggregationEndToEndFunctionalTests`'s multi-turn broadcast test,
+      `AnalyticsTestDataHelper.findTestCaseEvalScoresByRunId` keeping `EVAL_SUMMARY_ID`) are **unaffected by
+      Group 16** and remain owed here if not already covered by Group 15's own implementation — verify in
+      16.5 rather than re-deriving.
+- [x] 15.8 ~~Docs: describe the lateral join and the new-format-first tie-break in
+      `docs/patterns/eval-summaries-read-surface.md`~~ **Superseded by Group 16**: there is no lateral join
+      to document once `eval_summaries` drops the join entirely; see 16.6.
+- [x] 15.9 ~~Spec maintenance for the LATERAL repointing~~ **Superseded by Group 16**: the delta spec
+      requirements this task named are rewritten directly by Group 16 (16.7) to describe removal, not the
+      LATERAL join.
+- [x] 15.10 ~~Verification for the LATERAL repointing~~ **Superseded by Group 16**: verification for the
+      final (removal) state is 16.8.
+
+## 16. `score`/`passed` removed from the `eval_summaries` read surface entirely (post-Group-15 discussion,
+supersedes task 15.6-15.10)
+
+Mid-implementation of Group 15's task 15.6 — `PostgresEvalSummaryRepository`'s 4 query builders already
+repointed to `LEFT JOIN LATERAL` via `scoresLateral()`, `PostgresEvalSummaryEntityResolver`'s `SCORES_JOIN`
+still pending — the user determined that `eval_summaries` should stop exposing `score`/`passed` altogether:
+a client wanting a test case's score now queries the `test_case_eval_scores` Query DSL entity (Group 14)
+directly, rather than getting it broadcast onto every raw `eval_summaries` row via a join. See design.md's
+Decision 11 for the full rationale and the itemized consequences.
+
+- [x] 16.1 `PostgresEvalSummaryRepository`: delete the `scoresLateral()` helper; in `findById`,
+      `buildListQuery`, `buildExportQuery`, `buildExportWithBodiesQuery`, drop the
+      `scores.field(TEST_CASE_EVAL_SCORES.SCORE)`/`scores.field(TEST_CASE_EVAL_SCORES.PASSED)` projections
+      and the `.leftJoin(scores).on(DSL.trueCondition())` clause, reverting each builder to its
+      pre-Group-15 shape (no `test_case_eval_scores` join at all). Remove the now-unused
+      `TEST_CASE_EVAL_SCORES` import if nothing else in the file references it.
+- [x] 16.2 `PostgresEvalSummaryEntityResolver`: delete `SCORES_JOIN`, its two `score`/`passed`
+      `QueryFieldBinding` entries, and the `.leftJoin(SCORES_JOIN)...` clause — do **not** repoint it to a
+      LATERAL join as task 15.6 originally planned. Update the class javadoc (currently describing the
+      `score`/`passed` projection and the join-elimination optimization) to drop that description.
+- [x] 16.3 `EvalSummary` (model): remove `score`/`passed` fields. `EvalSummaryRecordMapper`: remove the
+      `.score(...)`/`.passed(...)` calls from `mapList`, `mapExport`, `mapExportWithBodies`; drop the
+      `TEST_CASE_EVAL_SCORES` import if it becomes unused. `EvalSummaryMapper`: remove the
+      `@Mapping(target = "score", ignore = true)` / `@Mapping(target = "passed", ignore = true)` lines (no
+      target field left to ignore) and the comment referencing them.
+- [x] 16.4 `EvalSummaryResponseDto`/`EvalSummaryDetailResponseDto`: remove the `score`/`passed` fields and
+      their `@Schema` annotations/examples. Update any OpenAPI example JSON files under
+      `src/main/resources/openapi/examples/` for the affected eval-summary endpoints that currently include
+      `score`/`passed` in a response example.
+- [x] 16.5 Test updates: remove/rewrite assertions expecting `score`/`passed` on an `eval_summaries` read in
+      `EvalSummaryRecordMapperTest`, `PostgresEvalSummaryRepositoryFunctionalTests`,
+      `EvalSummaryStructuredQueryFunctionalTests` (drop its `score`/`passed` filter/projection cases and the
+      lateral-join legacy-duplicate case task 15.7 would have added), and any controller test asserting
+      `score`/`passed` in a list/detail/export response body. Confirm task 15.7's write-path coverage
+      (`InProcessMetricEvaluationExecutorTest`, `PostgresTestCaseEvalScoreRepositoryFunctionalTests`,
+      `TestCaseEvalScoresStructuredQueryFunctionalTests`, `TestCaseMetricScoreAggregationEndToEndFunctionalTests`,
+      `AnalyticsTestDataHelper.findTestCaseEvalScoresByRunId`) is already in place from Group 15's own
+      implementation; add it here if it is not.
+- [x] 16.6 Docs: `docs/patterns/eval-summaries-read-surface.md` — remove any description of a
+      `test_case_eval_scores` join (planned or implemented); `docs/database-schema.md`'s `test_case_eval_scores`
+      section is unaffected (table/entity unchanged, only its `eval_summaries` join consumer is removed) —
+      confirm no stray reference to that join remains.
+- [x] 16.7 Spec maintenance: rewrite this change's `specs/metrics-storage/spec.md` delta — the "Overall
+      score and pass/fail exposed in eval summary responses" requirement is REMOVED (not modified); the
+      "`test_case_eval_scores` Query DSL entity" requirement drops its closing "exists alongside... both
+      surfaces read the same underlying table" sentence; the "Batch write eval summary scores (internal
+      only)" requirement drops "read via the LEFT JOIN into the existing eval-summary endpoints, or" (keeping
+      only "directly via the `test_case_eval_scores` Query DSL entity"). Sync into
+      `openspec/specs/metrics-storage/spec.md` (remove the same requirement there; update its "Notes" section
+      pointer list — currently documents the `eval_summaries`↔`test_case_eval_scores` join in
+      `PostgresEvalSummaryRepository`'s description, the `EvalSummary`/DTO `score`/`passed` fields, and
+      `Filtering/sorting the list endpoint by score/passed is explicitly deferred` — all need removal or
+      rewording once the fields no longer exist there at all).
+- [x] 16.8 Verification: `./gradlew compileJava compileTestJava`; run the tests touched/added in 16.5; full
+      `./gradlew :test`; `./gradlew spotlessApply checkstyleMain checkstyleTest`; `openspec validate --specs
+      --strict`.
+
 

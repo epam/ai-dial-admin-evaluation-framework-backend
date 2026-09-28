@@ -12,7 +12,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TestCaseEvalScoreBatchWriteItemDto {
-    private UUID evalSummaryId;
     private UUID testSuiteRunId;
     private UUID testCaseId;
     private String testCaseName;

@@ -16,13 +16,15 @@ import org.springframework.stereotype.Repository;
 
 /**
  * Resolves the {@code test_case_eval_scores} entity to a {@code SELECT DISTINCT ON (test_suite_run_id,
- * test_case_id, computation_id) ... ORDER BY ..., computed_at_ms DESC} view over the generated
- * {@code TEST_CASE_EVAL_SCORES} table: one row per test case per computation (the freshest by
- * {@code computed_at_ms}), even though the underlying table still stores one row per raw
- * {@code test_case_eval_summaries} row (see {@code test-case-metric-score-aggregation}'s design for why
- * the table was extended in place rather than re-keyed). {@code eval_summary_id} is deliberately excluded
- * from the projection — which raw row's id "wins" the dedup is an implementation detail, not meaningful
- * to a client of this entity.
+ * test_case_id, computation_id) ... ORDER BY ...} view over the generated {@code TEST_CASE_EVAL_SCORES}
+ * table: one row per test case per computation. Every row written going forward is already unique per
+ * that key ({@code eval_summary_id = NULL}, enforced by a partial unique index — see {@code
+ * PostgresTestCaseEvalScoreRepository}), so this dedup only ever has real work to do against the legacy
+ * tail of rows written before the table was re-keyed (real {@code eval_summary_id}, potentially several
+ * per test case). The tie-break therefore prefers a new-format row first (there can be at most one), and
+ * only falls back to the freshest {@code computed_at_ms} among legacy rows when no new-format row exists
+ * for that key. {@code eval_summary_id} is deliberately excluded from the projection — which legacy row's
+ * id "wins" the dedup is an implementation detail, not meaningful to a client of this entity.
  */
 @Repository
 @LogExecution
@@ -51,6 +53,7 @@ public class PostgresTestCaseEvalScoreEntityResolver implements StructuredQueryE
                     TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID,
                     TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
                     TEST_CASE_EVAL_SCORES.COMPUTATION_ID,
+                    DSL.field(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.isNull()).desc(),
                     TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS.desc())
             .asTable("test_case_eval_scores_deduped");
 

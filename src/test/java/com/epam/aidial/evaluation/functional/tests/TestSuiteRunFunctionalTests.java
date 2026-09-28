@@ -18,9 +18,7 @@ import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationRequestDto
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.constants.ValidationConstants;
-import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummary;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
-import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResultRepository;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
@@ -115,9 +113,6 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private MetricScoreResultRepository metricScoreResultRepository;
-
-    @Autowired
-    private EvalSummaryRepository evalSummaryRepository;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -1393,12 +1388,12 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
         // Per-row: testCaseOverallScore (Mean of the single probability field == the field itself) gives
         // real values, not the roc_auc-null pattern.
-        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
-        assertThat(summariesByTestCaseName).hasSize(4);
-        assertThat(summariesByTestCaseName.get("case-a").getScore()).isCloseTo(0.1, within(1e-9));
-        assertThat(summariesByTestCaseName.get("case-b").getScore()).isCloseTo(0.4, within(1e-9));
-        assertThat(summariesByTestCaseName.get("case-c").getScore()).isCloseTo(0.35, within(1e-9));
-        assertThat(summariesByTestCaseName.get("case-d").getScore()).isCloseTo(0.8, within(1e-9));
+        Map<String, Map<String, Object>> scoresByTestCaseName = fetchTestCaseEvalScoresByTestCaseName(run.getId());
+        assertThat(scoresByTestCaseName).hasSize(4);
+        assertThat((Double) scoresByTestCaseName.get("case-a").get("score")).isCloseTo(0.1, within(1e-9));
+        assertThat((Double) scoresByTestCaseName.get("case-b").get("score")).isCloseTo(0.4, within(1e-9));
+        assertThat((Double) scoresByTestCaseName.get("case-c").get("score")).isCloseTo(0.35, within(1e-9));
+        assertThat((Double) scoresByTestCaseName.get("case-d").get("score")).isCloseTo(0.8, within(1e-9));
 
         // Run-level: overallScore (roc_auc) still drives metric_score_result's "overall" row, unaffected
         // by testCaseOverallScore.
@@ -1505,16 +1500,16 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
-        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
-        assertThat(summariesByTestCaseName).hasSize(2);
+        Map<String, Map<String, Object>> scoresByTestCaseName = fetchTestCaseEvalScoresByTestCaseName(run.getId());
+        assertThat(scoresByTestCaseName).hasSize(2);
 
-        EvalSummary caseA = summariesByTestCaseName.get("case-a");
-        assertThat(caseA.getScore()).isCloseTo(0.8, within(1e-9));
-        assertThat(caseA.getPassed()).isTrue();
+        Map<String, Object> caseA = scoresByTestCaseName.get("case-a");
+        assertThat((Double) caseA.get("score")).isCloseTo(0.8, within(1e-9));
+        assertThat((Boolean) caseA.get("passed")).isTrue();
 
-        EvalSummary caseB = summariesByTestCaseName.get("case-b");
-        assertThat(caseB.getScore()).isCloseTo(0.2, within(1e-9));
-        assertThat(caseB.getPassed()).isFalse();
+        Map<String, Object> caseB = scoresByTestCaseName.get("case-b");
+        assertThat((Double) caseB.get("score")).isCloseTo(0.2, within(1e-9));
+        assertThat((Boolean) caseB.get("passed")).isFalse();
     }
 
     @Test
@@ -1577,12 +1572,11 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
-        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
-        assertThat(summariesByTestCaseName).hasSize(2);
-        assertThat(summariesByTestCaseName.values()).allSatisfy(summary -> {
-            assertThat(summary.getScore()).isNull();
-            assertThat(summary.getPassed()).isNull();
-        });
+        // No effective per-row score definition (no testCaseOverallScore, and no fallback onto a
+        // CustomFunction overallScore) — writeRowScores returns early, so no test_case_eval_scores row is
+        // written at all for either test case, not a row with a null score.
+        assertThat(analyticsTestDataHelper.findTestCaseEvalScoresByRunId(run.getId()))
+                .isEmpty();
     }
 
     @Test
@@ -1684,12 +1678,11 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         TestSuiteRunResponseDto run = createRunAndAwaitTerminal(suite.getId(), 1, null);
         assertThat(run.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
 
-        Map<String, EvalSummary> summariesByTestCaseName = fetchEvalSummariesByTestCaseName(run.getId());
-        assertThat(summariesByTestCaseName).hasSize(2);
-        assertThat(summariesByTestCaseName.values()).allSatisfy(summary -> {
-            assertThat(summary.getScore()).isNull();
-            assertThat(summary.getPassed()).isNull();
-        });
+        // No effective per-row score definition (no testCaseOverallScore, and no fallback onto a
+        // CustomFunction overallScore) — writeRowScores returns early, so no test_case_eval_scores row is
+        // written at all for either test case, not a row with a null score.
+        assertThat(analyticsTestDataHelper.findTestCaseEvalScoresByRunId(run.getId()))
+                .isEmpty();
     }
 
     @Test
@@ -1737,17 +1730,12 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
 
         // testCaseOverallScore is unset, and a CustomFunction overallScore never falls back for per-test-case
         // scoring (TestSuiteRequestValidator rejects a CustomFunction testCaseOverallScore outright — only
-        // Mean/WeightedMean are meaningful per test case) — so every one of the 8 rows, across both reruns
-        // of all 4 test cases, gets no score at all.
+        // Mean/WeightedMean are meaningful per test case) — so no test_case_eval_scores row is written at
+        // all for any of the 4 test cases, across either of their 8 raw eval_summaries rows.
         List<Map<String, Object>> rows = analyticsTestDataHelper.findEvalSummariesByRunId(run.getId());
         assertThat(rows).hasSize(8);
-        assertThat(rows).allSatisfy(row -> {
-            EvalSummary summary = evalSummaryRepository
-                    .findById(UUID.fromString((String) row.get("id")))
-                    .orElseThrow();
-            assertThat(summary.getScore()).isNull();
-            assertThat(summary.getPassed()).isNull();
-        });
+        assertThat(analyticsTestDataHelper.findTestCaseEvalScoresByRunId(run.getId()))
+                .isEmpty();
     }
 
     @Test
@@ -1790,18 +1778,13 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         assertThat(overall.getValue()).isCloseTo(0.5, within(1e-9));
 
         // Per-test-case scoring is simply not computed (testCaseOverallScore unset, no CustomFunction
-        // fallback), even though this function is row-safe and would have produced a real, non-null
-        // per-row value (0.3 or 0.7) had it been left grouped by id on eval_summaries the way it worked
-        // before this table was introduced.
+        // fallback) — no test_case_eval_scores row is written for either test case, even though this
+        // function is row-safe and would have produced a real, non-null per-row value (0.3 or 0.7) had it
+        // been left grouped by id on eval_summaries the way it worked before this table was introduced.
         List<Map<String, Object>> rows = analyticsTestDataHelper.findEvalSummariesByRunId(run.getId());
         assertThat(rows).hasSize(4);
-        assertThat(rows).allSatisfy(row -> {
-            EvalSummary summary = evalSummaryRepository
-                    .findById(UUID.fromString((String) row.get("id")))
-                    .orElseThrow();
-            assertThat(summary.getScore()).isNull();
-            assertThat(summary.getPassed()).isNull();
-        });
+        assertThat(analyticsTestDataHelper.findTestCaseEvalScoresByRunId(run.getId()))
+                .isEmpty();
     }
 
     private CustomFunction mixedFieldRocAucCustomFunction() {
@@ -2113,13 +2096,18 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
         return suite;
     }
 
-    private Map<String, EvalSummary> fetchEvalSummariesByTestCaseName(UUID runId) {
-        List<Map<String, Object>> rows = analyticsTestDataHelper.findEvalSummariesByRunId(runId);
-        Map<String, EvalSummary> byName = new HashMap<>();
+    /**
+     * Reads {@code test_case_eval_scores} keyed by test case name — safe post-Decision-10, since every row
+     * written going forward is one-per-test-case (new format, {@code eval_summary_id IS NULL}). A test case
+     * with no effective per-row score definition has no entry at all (see {@code
+     * InProcessMetricEvaluationExecutor#writeRowScores}'s early return), not an entry with a null score —
+     * callers assert absence via {@code Map#get}/{@code Map#isEmpty} rather than a null field read.
+     */
+    private Map<String, Map<String, Object>> fetchTestCaseEvalScoresByTestCaseName(UUID runId) {
+        List<Map<String, Object>> rows = analyticsTestDataHelper.findTestCaseEvalScoresByRunId(runId);
+        Map<String, Map<String, Object>> byName = new HashMap<>();
         for (Map<String, Object> row : rows) {
-            UUID id = UUID.fromString((String) row.get("id"));
-            EvalSummary summary = evalSummaryRepository.findById(id).orElseThrow();
-            byName.put((String) row.get("test_case_name"), summary);
+            byName.put((String) row.get("test_case_name"), row);
         }
         return byName;
     }

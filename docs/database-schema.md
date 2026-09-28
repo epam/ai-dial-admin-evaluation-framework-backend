@@ -31,7 +31,7 @@ This document describes the current database schema as implemented by Flyway mig
 |-------|-------------|-------------|
 | `test_case_run_results` | Test case execution results | `(created_at_ms, id)` (composite) |
 | `test_case_eval_summaries` | Metric-enriched test case results (denormalized) | `(created_at_ms, id)` (composite) |
-| `test_case_eval_scores` | Per-row overall score/pass-fail, computed via SQL, joined into the eval-summary read surface, and (deduplicated) its own `test_case_eval_scores` Query DSL entity | `eval_summary_id` (VARCHAR(36)) |
+| `test_case_eval_scores` | Per-test-case overall score/pass-fail, computed via SQL; the sole read surface for it (its own deduplicated `test_case_eval_scores` Query DSL entity — `eval_summaries` does not join to it) | `id` (VARCHAR(36)) |
 | `test_case_metric_scores_aggregated` | Per-test-case, per-computation aggregation of raw metric values (avg/min/max/count), collapsed across turn/request/run index | `id` (VARCHAR(36)) |
 | `run_metric_snapshots` | **FROZEN** — superseded by the meta table of the same name; not read or written by any code path | `id` (VARCHAR(36)) |
 
@@ -888,7 +888,7 @@ Arbitrary JSON detail objects, keyed by metric name and nested by output name.
 
 ## Table: `test_case_eval_scores` (Analytics DB)
 
-Per-row overall score/pass-fail for each `test_case_eval_summaries` row, computed via SQL right after that row's own batch is written (Phase 2) — reusing `OverallScoreDefinitionResolver`'s output (the same `StructuredQuery` Phase 3 builds from the suite's `overallScore` definition) with an `id IN (:rowIds)` filter and a `GROUP BY id` grafted on, so `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly. A row is only inserted when the grouped query returned a result for that id; a present row with `score = NULL` (e.g. a population-dependent `CustomFunction` like `roc_auc` degenerating on a single-row group) and a row's total absence (LEFT JOIN miss on read) look identical to a client, by design. Introduced in V1.19; extended in V1.21 with denormalized run/case context (below) and a dedicated Query DSL entity — the write grain and this description's computation flow are otherwise unchanged.
+Per-row overall score/pass-fail for each `test_case_eval_summaries` row, computed via SQL right after that row's own batch is written (Phase 2) — reusing `OverallScoreDefinitionResolver`'s output (the same `StructuredQuery` Phase 3 builds from the suite's `overallScore` definition) with an `id IN (:rowIds)` filter and a `GROUP BY id` grafted on, so `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly. A row is only inserted when the grouped query returned a result for that id; a present row with `score = NULL` (e.g. a population-dependent `CustomFunction` like `roc_auc` degenerating on a single-row group) and a row's total absence look identical to a client querying this table directly, by design (`eval_summaries` does not join to this table at all — see `docs/patterns/eval-summaries-read-surface.md`). Introduced in V1.19; extended in V1.21 with denormalized run/case context (below) and a dedicated Query DSL entity — the write grain and this description's computation flow are otherwise unchanged.
 
 > **Note:** This table resides in the **analytics database**. Foreign key references to meta DB entities and to `test_case_eval_summaries` are soft FKs — no physical constraint.
 

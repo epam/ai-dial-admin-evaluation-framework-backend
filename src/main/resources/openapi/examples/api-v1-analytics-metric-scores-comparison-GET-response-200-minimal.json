@@ -8,6 +8,7 @@
       "matchedSuccessRowCount": 40,
       "avgExecDurationMs": 1240.5,
       "unmatchedEvalSummaryIds": [],
+      "unmatchedEvalTestCaseIds": [],
       "scores": [
         {
           "metricScoreName": "AVG",
@@ -29,6 +30,7 @@
       "matchedSuccessRowCount": 39,
       "avgExecDurationMs": 1105.0,
       "unmatchedEvalSummaryIds": [],
+      "unmatchedEvalTestCaseIds": [],
       "scores": [
         {
           "metricScoreName": "AVG",

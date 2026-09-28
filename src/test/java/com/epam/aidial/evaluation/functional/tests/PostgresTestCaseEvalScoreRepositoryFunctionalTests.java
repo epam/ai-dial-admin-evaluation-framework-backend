@@ -48,6 +48,7 @@ public abstract class PostgresTestCaseEvalScoreRepositoryFunctionalTests extends
         UUID computationId = UUID.randomUUID();
 
         repository.saveAll(List.of(TestCaseEvalScore.builder()
+                .id(UUID.randomUUID())
                 .evalSummaryId(evalSummaryId)
                 .testSuiteRunId(runId)
                 .testCaseId(testCaseId)
@@ -115,6 +116,7 @@ public abstract class PostgresTestCaseEvalScoreRepositoryFunctionalTests extends
             boolean passed,
             long computedAtMs) {
         return TestCaseEvalScore.builder()
+                .id(UUID.randomUUID())
                 .evalSummaryId(evalSummaryId)
                 .testSuiteRunId(runId)
                 .testCaseId(testCaseId)

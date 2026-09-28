@@ -57,7 +57,7 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
     /**
      * The column <code>analytics.test_case_eval_scores.eval_summary_id</code>.
      */
-    public final TableField<TestCaseEvalScoresRecord, String> EVAL_SUMMARY_ID = createField(DSL.name("eval_summary_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+    public final TableField<TestCaseEvalScoresRecord, String> EVAL_SUMMARY_ID = createField(DSL.name("eval_summary_id"), SQLDataType.VARCHAR(36), this, "");
 
     /**
      * The column <code>analytics.test_case_eval_scores.score</code>.
@@ -100,6 +100,11 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
      */
     public final TableField<TestCaseEvalScoresRecord, String> EXECUTION_STATUS = createField(DSL.name("execution_status"), SQLDataType.VARCHAR(20).nullable(false), this, "");
 
+    /**
+     * The column <code>analytics.test_case_eval_scores.id</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
     private TestCaseEvalScores(Name alias, Table<TestCaseEvalScoresRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -138,7 +143,7 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_TEST_CASE_EVAL_SCORES_NATURAL_KEY);
+        return Arrays.asList(Indexes.UQ_TEST_CASE_EVAL_SCORES_NEW_FORMAT_KEY);
     }
 
     @Override

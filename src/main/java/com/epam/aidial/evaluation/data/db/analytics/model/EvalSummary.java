@@ -48,8 +48,6 @@ public class EvalSummary {
     private String extractionWarnings;
     private String requestBody;
     private String responseBody;
-    private Double score;
-    private Boolean passed;
     private Long createdAtMs;
     private Long computedAtMs;
 }

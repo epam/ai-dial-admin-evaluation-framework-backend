@@ -5,6 +5,7 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseEvalScore
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,7 +33,7 @@ public class TestCaseEvalScoreService {
         }
         List<TestCaseEvalScore> entities = items.stream()
                 .map(item -> TestCaseEvalScore.builder()
-                        .evalSummaryId(item.getEvalSummaryId())
+                        .id(UUID.randomUUID())
                         .testSuiteRunId(item.getTestSuiteRunId())
                         .testCaseId(item.getTestCaseId())
                         .testCaseName(item.getTestCaseName())

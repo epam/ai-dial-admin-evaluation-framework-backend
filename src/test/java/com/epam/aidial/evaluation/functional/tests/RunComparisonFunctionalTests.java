@@ -206,6 +206,65 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should exclude an unmatched test case from a mean overall computed over per-test-case scores")
+    void shouldExcludeUnmatchedTestCaseFromMeanOverall() {
+        // Mean resolves against test_case_metric_scores_aggregated, so this is the fixture that proves the
+        // test_case_id exclusion reaches that entity too — previously it ran unfiltered there.
+        metaTestDataHelper.setRunSuiteSnapshot(runA, snapshotWithMeanOverall());
+        seedSnapshot(runA, computationA);
+        seedSnapshot(runB, computationB);
+        final UUID keptTestCaseId = UUID.randomUUID();
+        final UUID unmatchedTestCaseId = UUID.randomUUID();
+        analyticsTestDataHelper.createEvalSummary(fixture(runA, computationA, "Keep", 0.5)
+                .testCaseId(keptTestCaseId)
+                .build());
+        // Present only in A, with an extreme value so leaking it into the overall is unmistakable.
+        analyticsTestDataHelper.createEvalSummary(fixture(runA, computationA, "OnlyInA", 9.0)
+                .testCaseId(unmatchedTestCaseId)
+                .build());
+        seedScore(runB, computationB, "Keep", 0.5);
+        aggregateMetricScores(runA, computationA, keptTestCaseId, unmatchedTestCaseId);
+
+        final RunComparisonRunDto sideA = compare(runA, runB).getRuns().get(0);
+
+        assertThat(sideA.getUnmatchedEvalTestCaseIds()).containsExactly(unmatchedTestCaseId);
+        // 4.75 if the unmatched test case leaked into the mean.
+        assertThat(score(sideA, "overall", "overall")).isCloseTo(0.5, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("Should exclude the whole test case when only some of its turns are unmatched")
+    void shouldExcludeWholeTestCaseWhenOnlySomeTurnsUnmatched() {
+        seedSnapshot(runA, computationA);
+        seedSnapshot(runB, computationB);
+        final UUID conversationId = UUID.randomUUID();
+        // A's conversation has 3 turns, B's only 2, so turn 2 is unmatched — but exclusion is per test case,
+        // so turns 0 and 1 (low value) leave the aggregate along with it.
+        for (int turn = 0; turn < 3; turn++) {
+            analyticsTestDataHelper.createEvalSummary(fixture(runA, computationA, "Conversation", 0.25)
+                    .testCaseId(conversationId)
+                    .turnIndex(turn)
+                    .totalTurns(3)
+                    .build());
+        }
+        for (int turn = 0; turn < 2; turn++) {
+            analyticsTestDataHelper.createEvalSummary(fixture(runB, computationB, "Conversation", 0.25)
+                    .turnIndex(turn)
+                    .totalTurns(2)
+                    .build());
+        }
+        seedScore(runA, computationA, "Other", 0.5);
+        seedScore(runB, computationB, "Other", 0.5);
+
+        final RunComparisonRunDto sideA = compare(runA, runB).getRuns().get(0);
+
+        assertThat(sideA.getUnmatchedEvalTestCaseIds()).containsExactly(conversationId);
+        // Only "Other" remains; MIN would be 0.25 if any of the conversation's turns stayed in.
+        assertThat(score(sideA, "MIN", METRIC_FIELD)).isEqualTo(0.5);
+        assertThat(score(sideA, "MAX", METRIC_FIELD)).isEqualTo(0.5);
+    }
+
+    @Test
     @DisplayName("Should report no scores and exclude every row when the runs share nothing")
     void shouldReturnNoScoresWhenNothingOverlaps() {
         seedSnapshot(runA, computationA);

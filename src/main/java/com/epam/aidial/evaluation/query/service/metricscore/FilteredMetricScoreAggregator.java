@@ -31,15 +31,15 @@ import org.springframework.stereotype.Component;
 
 /**
  * Recomputes the built-in metric-score statistics and the run-level {@code overall} over a <em>subset</em> of
- * a run's eval summaries, without persisting anything.
+ * a run's test cases, without persisting anything.
  *
- * <p>The whole component is one idea: run the queries Phase 3 itself runs, with a single row-exclusion
+ * <p>The whole component is one idea: run the queries Phase 3 itself runs, with a single test-case-exclusion
  * predicate ANDed onto each. {@link BuiltInMetricStatistics} and {@link OverallScoreDefinitionResolver} are
  * used unchanged, which is what makes agreement with the persisted full-population values structural rather
  * than merely tested — there is no second implementation that could drift.
  *
- * <p>The predicate is stated as an <strong>exclusion</strong>, {@code NOT (id IN (…))}, because two runs of
- * one suite over the same dataset match every row: the common case then excludes nothing, and
+ * <p>The predicate is stated as an <strong>exclusion</strong>, {@code NOT (test_case_id IN (…))}, because two
+ * runs of one suite over the same dataset match every row: the common case then excludes nothing, and
  * {@linkplain #exclusionPredicate(List) grafts no predicate at all}, so Phase 3's query runs verbatim and no
  * ids are bound. There is no {@code not_in} operator in the DSL and none is needed.
  */
@@ -49,15 +49,13 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class FilteredMetricScoreAggregator {
 
-    private static final String FIELD_ID = "id";
-
     private final BuiltInMetricStatistics builtInStatistics;
     private final OverallScoreDefinitionResolver overallScoreDefinitionResolver;
     private final StructuredQueryService structuredQueryService;
 
     /**
      * Computes every built-in statistic for every discovered metric field, plus {@code overall} when it
-     * applies, over the run's rows minus {@code request.unmatchedEvalSummaryIds()}.
+     * applies, over the run's test cases minus {@code request.unmatchedTestCaseIds()}.
      *
      * <p>A statistic whose aggregate is SQL NULL is <strong>omitted</strong>, exactly as Phase 3 omits it, so
      * no returned entry carries a null value. A {@link ValidationException} on one statistic is logged and
@@ -69,22 +67,22 @@ public class FilteredMetricScoreAggregator {
         if (request.metricFields().isEmpty()) {
             return List.of();
         }
-        final FilterNode idPredicate = exclusionPredicate(request.unmatchedEvalSummaryIds());
+        final FilterNode testCasePredicate = exclusionPredicate(request.unmatchedTestCaseIds());
         final List<MetricScoreValueDto> values = new ArrayList<>();
 
         for (final BuiltInMetricStatistics.MetricStatistic statistic : builtInStatistics.perMetric()) {
-            values.addAll(computePerMetric(statistic, idPredicate, request));
+            values.addAll(computePerMetric(statistic, testCasePredicate, request));
         }
-        computeOverall(idPredicate, request).ifPresent(values::add);
+        computeOverall(testCasePredicate, request).ifPresent(values::add);
         return values;
     }
 
     /** Each built-in statistic, once per metric field, binding {@code :metricField} as Phase 3 does. */
     private List<MetricScoreValueDto> computePerMetric(
             BuiltInMetricStatistics.MetricStatistic statistic,
-            FilterNode idPredicate,
+            FilterNode testCasePredicate,
             FilteredMetricScoreRequest request) {
-        final StructuredQuery query = withIdPredicate(statistic.query(), idPredicate);
+        final StructuredQuery query = withExclusionPredicate(statistic.query(), testCasePredicate);
         final List<MetricScoreValueDto> values = new ArrayList<>();
         for (final MetricField metricField : request.metricFields()) {
             final Map<String, Expr> params = runAndComputationIdParams(request);
@@ -109,7 +107,8 @@ public class FilteredMetricScoreAggregator {
      * {@code WeightedMean}/{@code CustomFunction} ends up on the same entity here as it does in the
      * persisted Phase 3 computation.
      */
-    private Optional<MetricScoreValueDto> computeOverall(FilterNode idPredicate, FilteredMetricScoreRequest request) {
+    private Optional<MetricScoreValueDto> computeOverall(
+            FilterNode testCasePredicate, FilteredMetricScoreRequest request) {
         final boolean isDefault = request.overallScoreDefinition() == null;
         if (isDefault && request.metricFields().size() != 1) {
             return Optional.empty();
@@ -136,7 +135,7 @@ public class FilteredMetricScoreAggregator {
                     new FieldExpr(request.metricFields().getFirst().flattenedName()));
         }
         final Double value = executeScalar(
-                withIdPredicate(query, overallIdPredicate(query, idPredicate, request)),
+                withExclusionPredicate(query, testCasePredicate),
                 params,
                 valueAlias,
                 MetricScoreConstants.SCORE_OVERALL,
@@ -146,51 +145,21 @@ public class FilteredMetricScoreAggregator {
     }
 
     /**
-     * {@code idPredicate} filters individual {@code eval_summaries} rows by their own {@code id}; that id
-     * space is meaningless on {@code test_case_metric_scores} (one row per test case, pre-aggregated over
-     * the <em>entire</em> row set by {@link TestCaseMetricScoreAggregator} — it carries no per-row ids to
-     * exclude). Grafting it there anyway would silently compare against an unrelated id column rather than
-     * fail, so a {@code Mean}/{@code WeightedMean} overall instead runs unfiltered whenever there are rows
-     * to exclude — the one case ("other stuff works as before" does not cover), specific to
-     * multi-request/turn/rerun test cases with a partially-unmatched row set, where this method's
-     * {@code overall} can include unmatched-row data that the per-metric statistics above (still filtered,
-     * since those run directly over {@code eval_summaries}) correctly excluded.
-     *
-     * <p><b>Known limitation, deliberately not fixed here</b> (a consequence of {@code Mean}/
-     * {@code WeightedMean} now resolving against a fully pre-aggregated entity with no row-level
-     * granularity, not of anything specific to run comparison): a real fix would need to translate the
-     * excluded {@code eval_summaries} row ids into an equivalent {@code test_case_id} exclusion (or
-     * recompute the aggregate over only the matched rows) rather than dropping the predicate outright.
-     * Tracked as a follow-up.
-     */
-    private FilterNode overallIdPredicate(
-            StructuredQuery query, FilterNode idPredicate, FilteredMetricScoreRequest request) {
-        if (idPredicate == null || MetricScoreConstants.ENTITY_EVAL_SUMMARIES.equals(query.entity())) {
-            return idPredicate;
-        }
-        log.warn(
-                "Run {} computation {}: 'overall' targets entity '{}', which cannot exclude the {} unmatched "
-                        + "eval-summary row(s) from this comparison — computed over the full (unfiltered) "
-                        + "per-test-case aggregate instead",
-                request.runId(),
-                request.computationId(),
-                query.entity(),
-                request.unmatchedEvalSummaryIds().size());
-        return null;
-    }
-
-    /**
-     * Returns a copy of {@code query} with {@code idPredicate} ANDed onto its filter, leaving every other
-     * component untouched. A null {@code idPredicate} returns {@code query} itself, so the no-exclusion case
+     * Returns a copy of {@code query} with {@code exclusionPredicate} ANDed onto its filter, leaving every
+     * other component untouched. A null predicate returns {@code query} itself, so the no-exclusion case
      * runs Phase 3's query verbatim.
+     *
+     * <p>The predicate is on {@code test_case_id}, a column of both {@code eval_summaries} and the
+     * pre-aggregated {@code test_case_metric_scores} ({@code Mean}/{@code WeightedMean} overall), so the
+     * same predicate is valid for every entity a score can resolve to.
      */
-    StructuredQuery withIdPredicate(StructuredQuery query, FilterNode idPredicate) {
-        if (idPredicate == null) {
+    StructuredQuery withExclusionPredicate(StructuredQuery query, FilterNode exclusionPredicate) {
+        if (exclusionPredicate == null) {
             return query;
         }
         final FilterNode filter = query.filter() == null
-                ? idPredicate
-                : new LogicalNode(LogicalOp.AND, List.of(query.filter(), idPredicate));
+                ? exclusionPredicate
+                : new LogicalNode(LogicalOp.AND, List.of(query.filter(), exclusionPredicate));
         return new StructuredQuery(
                 query.entity(),
                 filter,
@@ -204,22 +173,22 @@ public class FilteredMetricScoreAggregator {
     }
 
     /**
-     * {@code NOT (id IN (…))} over the rows to leave out, or {@code null} when there are none.
+     * {@code NOT (test_case_id IN (…))} over the test cases to leave out, or {@code null} when there are none.
      *
      * <p>Null rather than an empty {@code in} array on purpose: the translator rejects an empty array, and
      * grafting nothing is both cheaper and the case where agreement with the persisted values is a tautology.
-     * Safe from the classic {@code NOT IN} null trap because {@code id} is a primary-key component and no
+     * Safe from the classic {@code NOT IN} null trap because {@code test_case_id} is never null and no
      * element of the list is null.
      */
-    FilterNode exclusionPredicate(List<UUID> unmatchedEvalSummaryIds) {
-        if (unmatchedEvalSummaryIds == null || unmatchedEvalSummaryIds.isEmpty()) {
+    FilterNode exclusionPredicate(List<UUID> unmatchedTestCaseIds) {
+        if (unmatchedTestCaseIds == null || unmatchedTestCaseIds.isEmpty()) {
             return null;
         }
-        final List<Expr> items = unmatchedEvalSummaryIds.stream()
+        final List<Expr> items = unmatchedTestCaseIds.stream()
                 .<Expr>map(id -> new ValueExpr(ValueType.UUID, id.toString()))
                 .toList();
-        final ComparisonNode membership =
-                new ComparisonNode(ComparisonOp.IN, List.of(new FieldExpr(FIELD_ID), new ArrayExpr(items)));
+        final ComparisonNode membership = new ComparisonNode(
+                ComparisonOp.IN, List.of(new FieldExpr(MetricScoreConstants.FIELD_TEST_CASE_ID), new ArrayExpr(items)));
         return new LogicalNode(LogicalOp.NOT, List.of(membership));
     }
 

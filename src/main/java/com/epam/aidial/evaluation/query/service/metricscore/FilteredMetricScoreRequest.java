@@ -10,7 +10,7 @@ import java.util.UUID;
  * @param runId the run whose eval summaries are aggregated
  * @param computationId the run's resolved computation; pinned because re-evaluations mint new ones and all
  *     coexist
- * @param unmatchedEvalSummaryIds rows to <strong>exclude</strong>; empty means aggregate the whole run, in
+ * @param unmatchedTestCaseIds test cases to <strong>exclude</strong>; empty means aggregate the whole run, in
  *     which case no predicate is grafted at all
  * @param metricFields the run's fully discovered numeric metric fields — never a subset, since a mean's
  *     divisor is the size of this list
@@ -20,6 +20,6 @@ import java.util.UUID;
 public record FilteredMetricScoreRequest(
         UUID runId,
         UUID computationId,
-        List<UUID> unmatchedEvalSummaryIds,
+        List<UUID> unmatchedTestCaseIds,
         List<MetricField> metricFields,
         OverallScoreDefinition overallScoreDefinition) {}

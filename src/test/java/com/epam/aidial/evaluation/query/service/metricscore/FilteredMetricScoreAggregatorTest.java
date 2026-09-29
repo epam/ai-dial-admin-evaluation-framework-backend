@@ -69,7 +69,7 @@ class FilteredMetricScoreAggregatorTest {
             new OverallScoreDefinitionResolver(builtInStatistics, objectMapper),
             structuredQueryService);
 
-    // ----- withIdPredicate / exclusionPredicate -----
+    // ----- withExclusionPredicate / exclusionPredicate -----
 
     @Test
     @DisplayName("Should AND the exclusion predicate onto an existing filter, leaving every other component alone")
@@ -77,7 +77,7 @@ class FilteredMetricScoreAggregatorTest {
         StructuredQuery original = builtInStatistics.perMetric().getFirst().query();
         FilterNode predicate = aggregator.exclusionPredicate(List.of(EXCLUDED_A));
 
-        StructuredQuery grafted = aggregator.withIdPredicate(original, predicate);
+        StructuredQuery grafted = aggregator.withExclusionPredicate(original, predicate);
 
         assertThat(grafted.filter()).isEqualTo(new LogicalNode(LogicalOp.AND, List.of(original.filter(), predicate)));
         assertThat(grafted.entity()).isEqualTo(original.entity());
@@ -96,7 +96,8 @@ class FilteredMetricScoreAggregatorTest {
         StructuredQuery noFilter = queryWithoutFilter();
         FilterNode predicate = aggregator.exclusionPredicate(List.of(EXCLUDED_A));
 
-        assertThat(aggregator.withIdPredicate(noFilter, predicate).filter()).isEqualTo(predicate);
+        assertThat(aggregator.withExclusionPredicate(noFilter, predicate).filter())
+                .isEqualTo(predicate);
     }
 
     @Test
@@ -112,7 +113,7 @@ class FilteredMetricScoreAggregatorTest {
                         List.of(new ComparisonNode(
                                 ComparisonOp.IN,
                                 List.of(
-                                        new FieldExpr("id"),
+                                        new FieldExpr(MetricScoreConstants.FIELD_TEST_CASE_ID),
                                         new ArrayExpr(List.of(
                                                 new ValueExpr(ValueType.UUID, EXCLUDED_A.toString()),
                                                 new ValueExpr(ValueType.UUID, EXCLUDED_B.toString()))))))));
@@ -127,7 +128,7 @@ class FilteredMetricScoreAggregatorTest {
         assertThat(aggregator.exclusionPredicate(null)).isNull();
         // An empty `in` array would be rejected by the translator, and grafting nothing is also the case
         // where agreement with the persisted full-population value is a tautology.
-        assertThat(aggregator.withIdPredicate(original, null)).isSameAs(original);
+        assertThat(aggregator.withExclusionPredicate(original, null)).isSameAs(original);
     }
 
     // ----- statistics path -----
@@ -279,14 +280,10 @@ class FilteredMetricScoreAggregatorTest {
     }
 
     @Test
-    @DisplayName("Should not exclude any rows when a mean's overall runs against the per-test-case aggregate "
-            + "(known, accepted limitation — see FilteredMetricScoreAggregator#overallIdPredicate)")
-    void shouldNotGraftExclusionPredicateForMeanOverTestCaseMetricScores() {
-        // Mean always resolves directly against test_case_metric_scores (OverallScoreDefinitionResolver) —
-        // a per-test-case, already-fully-aggregated entity with no per-row ids to exclude. Grafting the
-        // eval_summaries-row exclusion predicate there would silently compare against an unrelated id
-        // column, so it must not be applied at all; a real fix is tracked as a follow-up, not implemented
-        // here.
+    @DisplayName("Should exclude the unmatched test cases from a mean's overall over the per-test-case aggregate")
+    void shouldGraftExclusionPredicateForMeanOverTestCaseMetricScores() {
+        // Mean resolves against test_case_metric_scores, which carries test_case_id, so the same
+        // test-case exclusion predicate applies there.
         stubScalar(0.5);
 
         aggregator.aggregate(request(List.of(RELEVANCY), new Mean(), List.of(EXCLUDED_A)));
@@ -295,8 +292,10 @@ class FilteredMetricScoreAggregatorTest {
         StructuredQuery unfiltered = new OverallScoreDefinitionResolver(builtInStatistics, objectMapper)
                 .resolve(new Mean(), List.of(RELEVANCY.metricName()));
         assertThat(overallQuery.entity()).isEqualTo(MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES);
-        // Its own run/computation-scoping filter is untouched; only the id-based exclusion is never grafted.
-        assertThat(overallQuery.filter()).isEqualTo(unfiltered.filter());
+        assertThat(overallQuery.filter())
+                .isEqualTo(new LogicalNode(
+                        LogicalOp.AND,
+                        List.of(unfiltered.filter(), aggregator.exclusionPredicate(List.of(EXCLUDED_A)))));
     }
 
     @Test
@@ -321,8 +320,8 @@ class FilteredMetricScoreAggregatorTest {
     void shouldGraftOntoCustomFunctionWithoutFilter() {
         stubScalar(0.5);
 
-        // A CustomFunction always stays on eval_summaries (unretargeted, see class javadoc) — the id-based
-        // exclusion predicate is meaningful there, so it must still be applied.
+        // A CustomFunction always stays on eval_summaries (unretargeted, see class javadoc) — the
+        // test-case exclusion predicate is meaningful there, so it must still be applied.
         aggregator.aggregate(request(List.of(RELEVANCY), customFunction("\"as\":\"value\""), List.of(EXCLUDED_A)));
 
         // The custom function is the one overall variant that can present a null incoming filter; the

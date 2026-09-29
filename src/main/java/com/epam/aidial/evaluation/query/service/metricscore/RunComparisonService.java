@@ -137,7 +137,7 @@ public class RunComparisonService {
                 : scoreAggregator.aggregate(new FilteredMetricScoreRequest(
                         inputs.runId(),
                         inputs.computationId(),
-                        inputs.unmatchedIds(),
+                        inputs.unmatchedTestCaseIds(),
                         metricFieldDiscoverer.discover(snapshots),
                         overallScoreDef));
 

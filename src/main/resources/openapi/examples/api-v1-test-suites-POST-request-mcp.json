@@ -2,6 +2,7 @@
   "name": "MCP Search Tool Suite",
   "description": "Test suite for web search MCP tool",
   "suiteType": "MCP_TOOL",
+  "metricScoreAggregation": "AVG",
   "mcpDeploymentRef": {
     "id": "web-search-toolset",
     "type": "dial-toolset",

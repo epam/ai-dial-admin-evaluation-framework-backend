@@ -9,6 +9,7 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.MetricScoreResult
 import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
@@ -19,6 +20,7 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.service.domain.analytics.TestCaseMetricScoreAggregatedService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
@@ -251,6 +253,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         seedClassifierSummary(suiteId, runId, computationId, "case-b", createdAt, 0, 0.4);
         seedClassifierSummary(suiteId, runId, computationId, "case-c", createdAt, 1, 0.35);
         seedClassifierSummary(suiteId, runId, computationId, "case-d", createdAt, 1, 0.8);
+        aggregateMetricScores(runId, computationId, computedAt);
     }
 
     private void seedClassifierSummary(
@@ -305,6 +308,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
                 createdAt,
                 "{}",
                 "{\"Relevancy\":{\"score\":1.0}}");
+        aggregateMetricScores(runId, computationId, computedAt);
     }
 
     private void seedTwoMetricRun(UUID suiteId, UUID runId, UUID computationId, long createdAt, long computedAt) {
@@ -313,6 +317,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         seedTwoMetricSummary(suiteId, runId, computationId, "case-a", createdAt, 0.0, 0.6);
         seedTwoMetricSummary(suiteId, runId, computationId, "case-b", createdAt, 0.5, 0.7);
         seedTwoMetricSummary(suiteId, runId, computationId, "case-c", createdAt, 1.0, 0.8);
+        aggregateMetricScores(runId, computationId, computedAt);
     }
 
     private void seedTwoMetricSummary(
@@ -335,13 +340,90 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
                 "{\"Relevancy\":{\"score\":" + relevancy + "},\"Accuracy\":{\"score\":" + accuracy + "}}");
     }
 
+    @Test
+    @DisplayName("statistics are computed over one value per test case, using the suite's AVG/MIN/MAX aggregation")
+    void computesStatisticsOverChosenAggregation() {
+        final String metric = "Relevancy.score";
+
+        final List<MetricScoreResult> avg = computeWithAggregation(MetricScoreAggregation.AVG);
+        assertThat(value(avg, "AVG", metric)).isCloseTo(0.5, within(1e-6));
+        assertThat(value(avg, "MIN", metric)).isCloseTo(0.5, within(1e-6));
+        assertThat(value(avg, "overall", "overall")).isCloseTo(0.5, within(1e-6));
+
+        final List<MetricScoreResult> min = computeWithAggregation(MetricScoreAggregation.MIN);
+        assertThat(value(min, "AVG", metric)).isCloseTo(0.25, within(1e-6));
+        assertThat(value(min, "MIN", metric)).isCloseTo(0.0, within(1e-6));
+        assertThat(value(min, "MAX", metric)).isCloseTo(0.5, within(1e-6));
+        assertThat(value(min, "overall", "overall")).isCloseTo(0.25, within(1e-6));
+
+        final List<MetricScoreResult> max = computeWithAggregation(MetricScoreAggregation.MAX);
+        assertThat(value(max, "AVG", metric)).isCloseTo(0.75, within(1e-6));
+        assertThat(value(max, "overall", "overall")).isCloseTo(0.75, within(1e-6));
+    }
+
+    /**
+     * Seeds a fresh run where case-a ran twice (0.0 and 1.0) and case-b once (0.5) — per-case avg 0.5/0.5,
+     * min 0.0/0.5, max 1.0/0.5 — then runs Phase 3 with the given aggregation.
+     */
+    private List<MetricScoreResult> computeWithAggregation(MetricScoreAggregation aggregation) {
+        final UUID suiteId = metaTestDataHelper
+                .createTestSuite("mscf-suite-" + UUID.randomUUID())
+                .getId();
+        final UUID runId = metaTestDataHelper.createTestSuiteRun(suiteId).getId();
+        final UUID computationId = UUID.randomUUID();
+        final long createdAt = 1_700_000_000_000L;
+        final long computedAt = 1_700_000_500_000L;
+
+        metaTestDataHelper.createRunMetricSnapshot(runId, computationId, "Relevancy", OUTPUT_SCHEMA, computedAt);
+        final UUID caseA = UUID.randomUUID();
+        final UUID caseB = UUID.randomUUID();
+        seedScoredRow(suiteId, runId, computationId, caseA, "case-a", 0, 0.0, createdAt);
+        seedScoredRow(suiteId, runId, computationId, caseA, "case-a", 1, 1.0, createdAt);
+        seedScoredRow(suiteId, runId, computationId, caseB, "case-b", 0, 0.5, createdAt);
+        aggregateMetricScores(runId, computationId, computedAt);
+
+        executor.execute(context(suiteId, runId, computationId, null, aggregation));
+        return resultRepository.findByRunAndComputation(runId, computationId);
+    }
+
+    private void seedScoredRow(
+            UUID suiteId,
+            UUID runId,
+            UUID computationId,
+            UUID testCaseId,
+            String name,
+            int runIndex,
+            double score,
+            long createdAt) {
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseId(testCaseId)
+                .testCaseName(name)
+                .runIndex(runIndex)
+                .createdAtMs(createdAt)
+                .metricValuesJson("{\"Relevancy\":{\"score\":" + score + "}}")
+                .build());
+    }
+
     private static MetricScoreComputationContext context(UUID suiteId, UUID runId, UUID computationId) {
         return context(suiteId, runId, computationId, null);
     }
 
     private static MetricScoreComputationContext context(
             UUID suiteId, UUID runId, UUID computationId, OverallScoreDefinition overallScoreDefinition) {
+        return context(suiteId, runId, computationId, overallScoreDefinition, MetricScoreAggregation.AVG);
+    }
+
+    private static MetricScoreComputationContext context(
+            UUID suiteId,
+            UUID runId,
+            UUID computationId,
+            OverallScoreDefinition overallScoreDefinition,
+            MetricScoreAggregation aggregation) {
         return MetricScoreComputationContext.builder()
+                .metricScoreAggregation(aggregation)
                 .testSuiteRunId(runId)
                 .testSuiteId(suiteId)
                 .computationId(computationId)

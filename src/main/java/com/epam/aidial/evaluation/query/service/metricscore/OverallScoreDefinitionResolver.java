@@ -14,6 +14,7 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import java.math.BigDecimal;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -64,30 +65,33 @@ public class OverallScoreDefinitionResolver {
      * {@code null} when a {@link CustomFunction}'s stored expression cannot be converted into a valid
      * query (logged, not thrown, so the run still completes).
      */
-    public StructuredQuery resolve(OverallScoreDefinition definition, List<String> metricKeys) {
+    public StructuredQuery resolve(
+            OverallScoreDefinition definition, List<String> metricKeys, MetricScoreAggregation aggregation) {
         return switch (definition) {
             case Mean _ ->
                 builtInStatistics.aggregateSelecting(
-                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, meanExpr(metricKeys));
+                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, meanExpr(metricKeys, aggregation));
             case WeightedMean weightedMean ->
                 builtInStatistics.aggregateSelecting(
-                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, weightedMeanExpr(weightedMean));
+                        MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES,
+                        weightedMeanExpr(weightedMean, aggregation));
             case CustomFunction customFunction -> parseCustomFunction(customFunction);
         };
     }
 
-    private Expr meanExpr(List<String> metricKeys) {
-        final List<Expr> avgTerms = metricKeys.stream().<Expr>map(this::avg).toList();
+    private Expr meanExpr(List<String> metricKeys, MetricScoreAggregation aggregation) {
+        final List<Expr> avgTerms =
+                metricKeys.stream().<Expr>map(key -> avg(key, aggregation)).toList();
         return new FnExpr(
                 "divide",
                 false,
                 List.of(new FnExpr("add", false, avgTerms), decimal(BigDecimal.valueOf(metricKeys.size()))));
     }
 
-    private Expr weightedMeanExpr(WeightedMean weightedMean) {
+    private Expr weightedMeanExpr(WeightedMean weightedMean, MetricScoreAggregation aggregation) {
         final List<Expr> weightedTerms = weightedMean.weights().stream()
-                .map(metric ->
-                        (Expr) new FnExpr("multiply", false, List.of(decimal(metric.weight()), avg(metricKey(metric)))))
+                .map(metric -> (Expr) new FnExpr(
+                        "multiply", false, List.of(decimal(metric.weight()), avg(metricKey(metric), aggregation))))
                 .toList();
         final List<Expr> weightTerms = weightedMean.weights().stream()
                 .map(metric -> (Expr) decimal(metric.weight()))
@@ -107,13 +111,13 @@ public class OverallScoreDefinitionResolver {
         }
     }
 
-    /** {@code avg(metric_scores::<metricKey>::avg)}, coalesced to {@code 0} when the key is absent. */
-    private FnExpr avg(String metricKey) {
+    /** {@code avg(metric_scores::<metricKey>::<leaf>)} for the chosen aggregation, coalesced to {@code 0} when the key is absent. */
+    private FnExpr avg(String metricKey, MetricScoreAggregation aggregation) {
         final String fieldName = MetricScoreConstants.FIELD_METRIC_SCORES
                 + EvalSummaryExportColumnConstants.COLUMN_SEPARATOR
                 + metricKey
                 + EvalSummaryExportColumnConstants.COLUMN_SEPARATOR
-                + MetricScoreConstants.METRIC_SCORES_STAT_AVG;
+                + aggregation.leaf();
         final FnExpr rawAvg = new FnExpr("avg", false, List.of(new FieldExpr(fieldName)));
         return new FnExpr("coalesce", false, List.of(rawAvg, decimal(BigDecimal.ZERO)));
     }

@@ -23,6 +23,7 @@ import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
@@ -410,6 +411,7 @@ public class TestSuiteEvaluationJob {
                 // unconditionally — the two scopes may diverge.
                 .overallScoreDefinition(resolveTestCaseOverallScoreDefinition(snapshot))
                 .overallScoreThreshold(snapshot.getOverallScoreThreshold())
+                .metricScoreAggregation(MetricScoreAggregation.orDefault(snapshot.getMetricScoreAggregation()))
                 .build();
     }
 
@@ -451,6 +453,7 @@ public class TestSuiteEvaluationJob {
                     .testSuiteId(run.getTestSuiteId())
                     .computationId(metricContext.getComputationId())
                     .overallScoreDefinition(snapshot.getOverallScore())
+                    .metricScoreAggregation(MetricScoreAggregation.orDefault(snapshot.getMetricScoreAggregation()))
                     .computedAtMs(clock.millis())
                     .build();
             metricScoreComputation.execute(ctx);

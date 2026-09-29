@@ -532,6 +532,7 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         seedSnapshot(cancelledRun, computationB);
         seedScore(runA, computationA, "Case", 0.5);
         seedScore(cancelledRun, computationB, "Case", 0.5);
+        aggregateAllTestCases(cancelledRun, computationB);
 
         final RunComparisonResponseDto response = compare(runA, cancelledRun);
 
@@ -637,6 +638,10 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     private RunComparisonResponseDto compare(UUID first, UUID second) {
+        // Statistics read the aggregated table, which Phase 2 populates in production; fixtures seed eval
+        // summaries directly, so reproduce that step (insert-only, so a prior explicit call is harmless).
+        aggregateAllTestCases(runA, computationA);
+        aggregateAllTestCases(runB, computationB);
         final ResponseEntity<RunComparisonResponseDto> response = restTemplate.getForEntity(
                 apiUrl("/analytics/metric-scores/comparison?runIds={first},{second}"),
                 RunComparisonResponseDto.class,
@@ -702,6 +707,7 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     private void computePhaseThree(UUID runId, UUID computationId) {
+        aggregateAllTestCases(runId, computationId);
         phaseThreeExecutor.execute(MetricScoreComputationContext.builder()
                 .testSuiteRunId(runId)
                 .testSuiteId(suiteId)
@@ -722,6 +728,13 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         final List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items =
                 testCaseMetricScoreAggregator.aggregate(runId, computationId, List.of(testCaseIds));
         testCaseMetricScoreAggregatedService.batchInsert(COMPUTED_AT_MS, items);
+    }
+
+    private void aggregateAllTestCases(UUID runId, UUID computationId) {
+        final List<UUID> testCaseIds = analyticsTestDataHelper.findDistinctTestCaseIds(runId, computationId);
+        if (!testCaseIds.isEmpty()) {
+            aggregateMetricScores(runId, computationId, testCaseIds.toArray(UUID[]::new));
+        }
     }
 
     private static List<String> triples(RunComparisonRunDto run) {

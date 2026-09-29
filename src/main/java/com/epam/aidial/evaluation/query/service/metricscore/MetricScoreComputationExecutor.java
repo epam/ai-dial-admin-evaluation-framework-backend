@@ -107,7 +107,9 @@ public class MetricScoreComputationExecutor {
         final List<MetricScoreResult> results = new ArrayList<>();
         for (final MetricField metricField : metricFields) {
             final Map<String, Expr> params = baseParams(ctx);
-            params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
+            params.put(
+                    MetricScoreConstants.PARAM_METRIC_FIELD,
+                    new FieldExpr(metricField.aggregatedFieldName(ctx.getMetricScoreAggregation())));
             final Double value = executeScalar(query, params, scoreName, metricField.flattenedName(), ctx);
             if (value != null) {
                 results.add(buildResult(ctx, scoreName, metricField.metricName(), value, computedAtMs));
@@ -118,7 +120,7 @@ public class MetricScoreComputationExecutor {
 
     /**
      * Run-level {@code overall}. The default (no suite definition) is computed only when the run has
-     * exactly one numeric metric field, directly over raw {@code eval_summaries} (unchanged). A non-null
+     * exactly one numeric metric field, over {@code test_case_metric_scores}. A non-null
      * {@code Mean}/{@code WeightedMean} is resolved via {@link OverallScoreDefinitionResolver} and executed
      * against {@code test_case_metric_scores} — one row per test case, so every test case counts equally
      * regardless of how many turns/requests/reruns produced its rows; both are built directly against that
@@ -144,7 +146,8 @@ public class MetricScoreComputationExecutor {
 
     private Double computeOverallScore(
             OverallScoreDefinition definition, List<MetricField> metricFields, MetricScoreComputationContext ctx) {
-        final StructuredQuery resolved = overallScoreDefinitionResolver.resolve(definition, metricKeys(metricFields));
+        final StructuredQuery resolved = overallScoreDefinitionResolver.resolve(
+                definition, metricKeys(metricFields), ctx.getMetricScoreAggregation());
         if (resolved == null) {
             return null;
         }
@@ -163,7 +166,7 @@ public class MetricScoreComputationExecutor {
         final Map<String, Expr> params = baseParams(ctx);
         params.put(
                 MetricScoreConstants.PARAM_METRIC_FIELD,
-                new FieldExpr(metricFields.getFirst().flattenedName()));
+                new FieldExpr(metricFields.getFirst().aggregatedFieldName(ctx.getMetricScoreAggregation())));
         return executeScalar(
                 builtInStatistics.defaultOverall(),
                 params,

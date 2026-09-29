@@ -86,7 +86,9 @@ public class FilteredMetricScoreAggregator {
         final List<MetricScoreValueDto> values = new ArrayList<>();
         for (final MetricField metricField : request.metricFields()) {
             final Map<String, Expr> params = runAndComputationIdParams(request);
-            params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
+            params.put(
+                    MetricScoreConstants.PARAM_METRIC_FIELD,
+                    new FieldExpr(metricField.aggregatedFieldName(request.metricScoreAggregation())));
             final Double value = executeScalar(
                     query, params, MetricScoreConstants.VALUE_ALIAS, statistic.name(), metricField.flattenedName());
             if (value != null) {
@@ -118,7 +120,9 @@ public class FilteredMetricScoreAggregator {
                 // The resolver MUST see the run's full discovered field list: a mean divides by its size, so
                 // any filtered subset would silently change the divisor.
                 : overallScoreDefinitionResolver.resolve(
-                        request.overallScoreDefinition(), metricKeys(request.metricFields()));
+                        request.overallScoreDefinition(),
+                        metricKeys(request.metricFields()),
+                        request.metricScoreAggregation());
         if (query == null) {
             // Unparseable custom_function; already logged by the resolver.
             return Optional.empty();
@@ -132,7 +136,8 @@ public class FilteredMetricScoreAggregator {
         if (isDefault) {
             params.put(
                     MetricScoreConstants.PARAM_METRIC_FIELD,
-                    new FieldExpr(request.metricFields().getFirst().flattenedName()));
+                    new FieldExpr(
+                            request.metricFields().getFirst().aggregatedFieldName(request.metricScoreAggregation())));
         }
         final Double value = executeScalar(
                 withExclusionPredicate(query, testCasePredicate),

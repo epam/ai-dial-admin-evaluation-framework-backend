@@ -33,6 +33,7 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricScoreValueDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.math.BigDecimal;
@@ -161,7 +162,9 @@ class FilteredMetricScoreAggregatorTest {
                                 new ValueExpr(ValueType.UUID, COMPUTATION_ID.toString())));
         assertThat(params)
                 .extracting(p -> p.get(MetricScoreConstants.PARAM_METRIC_FIELD))
-                .containsOnly(new FieldExpr(RELEVANCY.flattenedName()), new FieldExpr(ACCURACY.flattenedName()));
+                .containsOnly(
+                        new FieldExpr(RELEVANCY.aggregatedFieldName(MetricScoreAggregation.AVG)),
+                        new FieldExpr(ACCURACY.aggregatedFieldName(MetricScoreAggregation.AVG)));
     }
 
     @Test
@@ -261,7 +264,8 @@ class FilteredMetricScoreAggregatorTest {
         // subset here would silently produce a different number rather than an error.
         StructuredQuery overallQuery = capturedQueries().getLast();
         StructuredQuery expected = new OverallScoreDefinitionResolver(builtInStatistics, objectMapper)
-                .resolve(new Mean(), List.of(RELEVANCY.metricName(), ACCURACY.metricName()));
+                .resolve(
+                        new Mean(), List.of(RELEVANCY.metricName(), ACCURACY.metricName()), MetricScoreAggregation.AVG);
         assertThat(overallQuery.select()).isEqualTo(expected.select());
     }
 
@@ -290,7 +294,7 @@ class FilteredMetricScoreAggregatorTest {
 
         StructuredQuery overallQuery = capturedQueries().getLast();
         StructuredQuery unfiltered = new OverallScoreDefinitionResolver(builtInStatistics, objectMapper)
-                .resolve(new Mean(), List.of(RELEVANCY.metricName()));
+                .resolve(new Mean(), List.of(RELEVANCY.metricName()), MetricScoreAggregation.AVG);
         assertThat(overallQuery.entity()).isEqualTo(MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES);
         assertThat(overallQuery.filter())
                 .isEqualTo(new LogicalNode(
@@ -396,7 +400,8 @@ class FilteredMetricScoreAggregatorTest {
 
     private FilteredMetricScoreRequest request(
             List<MetricField> fields, OverallScoreDefinition definition, List<UUID> excluded) {
-        return new FilteredMetricScoreRequest(RUN_ID, COMPUTATION_ID, excluded, fields, definition);
+        return new FilteredMetricScoreRequest(
+                RUN_ID, COMPUTATION_ID, excluded, fields, definition, MetricScoreAggregation.AVG);
     }
 
     private CustomFunction customFunction(String aliasJson) {

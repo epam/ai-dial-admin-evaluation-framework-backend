@@ -38,8 +38,6 @@ public final class MetricScoreConstants {
     /** The {@code test_case_metric_scores} entity's JSONB column and its flattened field prefix/stat. */
     public static final String FIELD_METRIC_SCORES = "metric_scores";
 
-    public static final String METRIC_SCORES_STAT_AVG = "avg";
-
     // Run-scoping filter field names (columns shared by eval_summaries and test_case_metric_scores).
     public static final String FIELD_TEST_SUITE_RUN_ID = "test_suite_run_id";
     public static final String FIELD_COMPUTATION_ID = "computation_id";

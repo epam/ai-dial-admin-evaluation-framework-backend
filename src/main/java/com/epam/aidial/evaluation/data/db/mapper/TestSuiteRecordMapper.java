@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.data.db.mapper;
 import com.epam.aidial.evaluation.data.db.jooq.meta.tables.records.TestSuitesRecord;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import java.util.UUID;
 import org.jooq.JSONB;
@@ -32,6 +33,7 @@ public class TestSuiteRecordMapper {
                 .overallScore(toJsonString(r.getOverallScore()))
                 .testCaseOverallScore(toJsonString(r.getTestCaseOverallScore()))
                 .overallScoreThreshold(r.getOverallScoreThreshold())
+                .metricScoreAggregation(MetricScoreAggregation.fromValue(r.getMetricScoreAggregation()))
                 .testCaseFilter(toJsonString(r.getTestCaseFilter()))
                 .valid(r.getIsValid())
                 .validationWarnings(toJsonString(r.getValidationWarnings()))

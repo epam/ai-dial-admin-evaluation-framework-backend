@@ -23,6 +23,7 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -76,6 +77,7 @@ public class EvalSummaryRowScoreComputer {
     public Map<UUID, Double> computeByTestCase(
             OverallScoreDefinition definition,
             List<MetricField> metricFields,
+            MetricScoreAggregation aggregation,
             UUID runId,
             UUID computationId,
             List<UUID> testCaseIds) {
@@ -91,7 +93,8 @@ public class EvalSummaryRowScoreComputer {
             return Map.of();
         }
 
-        final StructuredQuery resolved = overallScoreDefinitionResolver.resolve(definition, metricKeys(metricFields));
+        final StructuredQuery resolved =
+                overallScoreDefinitionResolver.resolve(definition, metricKeys(metricFields), aggregation);
         final String valueAlias = requireGroupableShape(resolved);
         if (valueAlias == null) {
             return Map.of();

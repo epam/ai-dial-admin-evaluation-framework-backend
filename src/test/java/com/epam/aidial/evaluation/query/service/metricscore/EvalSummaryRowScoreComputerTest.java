@@ -25,6 +25,7 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.WeightedMetric;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -54,8 +55,8 @@ class EvalSummaryRowScoreComputerTest {
     @Test
     @DisplayName("Should return an empty map without executing when definition is null")
     void nullDefinitionShortCircuits() {
-        Map<UUID, Double> result =
-                computer.computeByTestCase(null, List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, List.of(TC_A));
+        Map<UUID, Double> result = computer.computeByTestCase(
+                null, List.of(METRIC_ACCURACY), MetricScoreAggregation.AVG, RUN_ID, COMPUTATION_ID, List.of(TC_A));
 
         assertThat(result).isEmpty();
         verify(structuredQueryService, never()).execute(any(), any());
@@ -64,8 +65,8 @@ class EvalSummaryRowScoreComputerTest {
     @Test
     @DisplayName("Should return an empty map without executing when testCaseIds is empty")
     void emptyTestCaseIdsShortCircuits() {
-        Map<UUID, Double> result =
-                computer.computeByTestCase(new Mean(), List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, List.of());
+        Map<UUID, Double> result = computer.computeByTestCase(
+                new Mean(), List.of(METRIC_ACCURACY), MetricScoreAggregation.AVG, RUN_ID, COMPUTATION_ID, List.of());
 
         assertThat(result).isEmpty();
         verify(structuredQueryService, never()).execute(any(), any());
@@ -77,8 +78,13 @@ class EvalSummaryRowScoreComputerTest {
     void meanGraftsTestCaseIdOntoDirectlyBuiltQuery() {
         stubResult(Map.of("test_case_id", TC_A.toString(), MetricScoreConstants.VALUE_ALIAS, 0.7));
 
-        Map<UUID, Double> result =
-                computer.computeByTestCase(new Mean(), List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, List.of(TC_A));
+        Map<UUID, Double> result = computer.computeByTestCase(
+                new Mean(),
+                List.of(METRIC_ACCURACY),
+                MetricScoreAggregation.AVG,
+                RUN_ID,
+                COMPUTATION_ID,
+                List.of(TC_A));
 
         assertThat(result).containsEntry(TC_A, 0.7);
         StructuredQuery executed = capturedQuery();
@@ -102,8 +108,13 @@ class EvalSummaryRowScoreComputerTest {
     void meanWithNullAggregateYieldsNullScore() {
         stubResult(Map.of("test_case_id", TC_A.toString()));
 
-        Map<UUID, Double> result =
-                computer.computeByTestCase(new Mean(), List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, List.of(TC_A));
+        Map<UUID, Double> result = computer.computeByTestCase(
+                new Mean(),
+                List.of(METRIC_ACCURACY),
+                MetricScoreAggregation.AVG,
+                RUN_ID,
+                COMPUTATION_ID,
+                List.of(TC_A));
 
         assertThat(result).containsEntry(TC_A, null);
     }
@@ -130,8 +141,8 @@ class EvalSummaryRowScoreComputerTest {
                     List.of(Map.of("test_case_id", firstId, MetricScoreConstants.VALUE_ALIAS, 0.5)), null);
         });
 
-        Map<UUID, Double> result =
-                computer.computeByTestCase(new Mean(), List.of(METRIC_ACCURACY), RUN_ID, COMPUTATION_ID, testCaseIds);
+        Map<UUID, Double> result = computer.computeByTestCase(
+                new Mean(), List.of(METRIC_ACCURACY), MetricScoreAggregation.AVG, RUN_ID, COMPUTATION_ID, testCaseIds);
 
         verify(structuredQueryService, times(2)).execute(any(), any());
         assertThat(result)
@@ -150,6 +161,7 @@ class EvalSummaryRowScoreComputerTest {
                         new WeightedMetric("Accuracy", "score", BigDecimal.valueOf(2)),
                         new WeightedMetric("Relevancy", "score", BigDecimal.ONE))),
                 List.of(),
+                MetricScoreAggregation.AVG,
                 RUN_ID,
                 COMPUTATION_ID,
                 List.of(TC_A));
@@ -165,6 +177,7 @@ class EvalSummaryRowScoreComputerTest {
         Map<UUID, Double> result = computer.computeByTestCase(
                 new CustomFunction(Map.of("entity", "eval_summaries", "mode", "aggregate")),
                 List.of(METRIC_ACCURACY),
+                MetricScoreAggregation.AVG,
                 RUN_ID,
                 COMPUTATION_ID,
                 List.of(TC_A));

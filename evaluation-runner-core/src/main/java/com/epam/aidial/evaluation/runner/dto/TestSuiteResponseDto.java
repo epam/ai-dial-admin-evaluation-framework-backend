@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.runner.dto;
 
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
@@ -93,6 +94,11 @@ public class TestSuiteResponseDto {
             description =
                     "Threshold the run-level `overall` metric score is compared against. Null when not configured.")
     private Double overallScoreThreshold;
+
+    @Schema(
+            description = "Which per-test-case leaf of the aggregated metric scores (`AVG`, `MIN` or `MAX`) is used "
+                    + "when scores and built-in statistics are computed. Defaults to `AVG`.")
+    private MetricScoreAggregation metricScoreAggregation;
 
     @Schema(
             description = "Per-suite test-case filter (a Structured Query DSL filter subtree), as a JSON object. "

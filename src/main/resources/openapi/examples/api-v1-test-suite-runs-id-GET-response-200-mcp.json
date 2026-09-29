@@ -11,6 +11,7 @@
   "suiteSnapshot": {
     "snapshotVersion": "1",
     "suiteType": "MCP_TOOL",
+    "metricScoreAggregation": "AVG",
     "deploymentRef": null,
     "endpointRef": null,
     "requestTemplate": null,

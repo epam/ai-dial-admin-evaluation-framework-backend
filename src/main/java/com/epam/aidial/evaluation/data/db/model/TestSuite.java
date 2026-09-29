@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.data.db.model;
 
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
@@ -31,6 +32,7 @@ public class TestSuite {
     private String overallScore;
     private String testCaseOverallScore;
     private Double overallScoreThreshold;
+    private MetricScoreAggregation metricScoreAggregation;
     private String testCaseFilter;
     private boolean valid;
     private String validationWarnings;

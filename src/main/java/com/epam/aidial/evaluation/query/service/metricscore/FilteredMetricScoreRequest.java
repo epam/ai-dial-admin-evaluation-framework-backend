@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.query.service.metricscore;
 
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,10 +17,18 @@ import java.util.UUID;
  *     divisor is the size of this list
  * @param overallScoreDefinition the suite snapshot's definition, or {@code null} for the default overall
  *     (computed only for a single-metric run)
+ * @param metricScoreAggregation the suite snapshot's per-test-case leaf (avg/min/max) read from the aggregated
+ *     metrics table
  */
 public record FilteredMetricScoreRequest(
         UUID runId,
         UUID computationId,
         List<UUID> unmatchedTestCaseIds,
         List<MetricField> metricFields,
-        OverallScoreDefinition overallScoreDefinition) {}
+        OverallScoreDefinition overallScoreDefinition,
+        MetricScoreAggregation metricScoreAggregation) {
+
+    public FilteredMetricScoreRequest {
+        metricScoreAggregation = MetricScoreAggregation.orDefault(metricScoreAggregation);
+    }
+}

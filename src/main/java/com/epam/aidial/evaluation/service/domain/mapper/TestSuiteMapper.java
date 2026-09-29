@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -72,6 +73,7 @@ public class TestSuiteMapper {
                 .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
                 .testCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(entity.getTestCaseOverallScore()))
                 .overallScoreThreshold(entity.getOverallScoreThreshold())
+                .metricScoreAggregation(MetricScoreAggregation.orDefault(entity.getMetricScoreAggregation()))
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();
     }
@@ -99,6 +101,7 @@ public class TestSuiteMapper {
                 .overallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()))
                 .testCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(dto.getTestCaseOverallScore()))
                 .overallScoreThreshold(dto.getOverallScoreThreshold())
+                .metricScoreAggregation(MetricScoreAggregation.orDefault(dto.getMetricScoreAggregation()))
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()))
                 .valid(true)
                 .validationWarnings("[]")
@@ -126,6 +129,9 @@ public class TestSuiteMapper {
         entity.setOverallScore(jsonbMapper.mapOverallScore(dto.getOverallScore()));
         entity.setTestCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(dto.getTestCaseOverallScore()));
         entity.setOverallScoreThreshold(dto.getOverallScoreThreshold());
+        if (dto.getMetricScoreAggregation() != null) {
+            entity.setMetricScoreAggregation(dto.getMetricScoreAggregation());
+        }
         entity.setTestCaseFilter(jsonbMapper.mapTestCaseFilter(dto.getTestCaseFilter()));
     }
 
@@ -209,6 +215,7 @@ public class TestSuiteMapper {
                 .overallScore(source.getOverallScore())
                 .testCaseOverallScore(source.getTestCaseOverallScore())
                 .overallScoreThreshold(source.getOverallScoreThreshold())
+                .metricScoreAggregation(source.getMetricScoreAggregation())
                 .testCaseFilter(source.getTestCaseFilter())
                 .version(0L)
                 .createdBy(createdBy)
@@ -251,6 +258,7 @@ public class TestSuiteMapper {
                 .overallScore(jsonbMapper.mapOverallScore(entity.getOverallScore()))
                 .testCaseOverallScore(jsonbMapper.mapTestCaseOverallScore(entity.getTestCaseOverallScore()))
                 .overallScoreThreshold(entity.getOverallScoreThreshold())
+                .metricScoreAggregation(MetricScoreAggregation.orDefault(entity.getMetricScoreAggregation()))
                 .testCaseFilter(jsonbMapper.mapTestCaseFilter(entity.getTestCaseFilter()))
                 .build();
     }

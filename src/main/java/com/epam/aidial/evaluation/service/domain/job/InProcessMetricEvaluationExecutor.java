@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.query.service.metricscore.TestCaseExecutionSta
 import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.ConditionContext;
 import com.epam.aidial.evaluation.service.domain.ConditionDecision;
@@ -507,6 +508,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     : evalSummaryRowScoreComputer.computeByTestCase(
                             context.getOverallScoreDefinition(),
                             metricFields,
+                            MetricScoreAggregation.orDefault(context.getMetricScoreAggregation()),
                             context.getTestSuiteRunId(),
                             context.getComputationId(),
                             successTestCaseIds);

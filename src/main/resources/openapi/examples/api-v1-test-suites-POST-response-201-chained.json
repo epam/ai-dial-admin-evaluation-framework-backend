@@ -3,6 +3,7 @@
   "name": "Chained Config + Chat Suite",
   "description": "Two-request chain: request #0 configures the deployment and extracts a sessionId; additionalRequests[0] runs the actual chat completion test, referencing $sessionId via jsonataContent — the accumulated frame carries request #0's extracted columns into request #1",
   "suiteType": "DEPLOYMENT",
+  "metricScoreAggregation": "AVG",
   "deploymentRef": {
     "id": "deploy-001",
     "name": "Production Deployment",

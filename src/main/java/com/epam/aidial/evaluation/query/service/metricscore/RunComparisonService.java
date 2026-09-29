@@ -8,7 +8,7 @@ import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
-import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.service.domain.TestSuiteRunService;
 import com.epam.aidial.evaluation.service.domain.analytics.ComputationResolver;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricScoreValueDto;
@@ -78,8 +78,8 @@ public class RunComparisonService {
         final TestSuiteRunResponseDto first = testSuiteRunService.getRun(runIds.get(0));
         final TestSuiteRunResponseDto second = testSuiteRunService.getRun(runIds.get(1));
         requireSameSuite(first, second);
-        final OverallScoreDefinition firstOverallScoreDef = overallScoreDefinition(first);
-        final OverallScoreDefinition secondOverallScoreDef = overallScoreDefinition(second);
+        requireSnapshot(first);
+        requireSnapshot(second);
 
         // ComputationResolver requires an ambient analytics transaction (its own contract). Resolving
         // both computations up front keeps that contract satisfied without extending it to the meta
@@ -109,8 +109,8 @@ public class RunComparisonService {
 
             return RunComparisonResponseDto.builder()
                     .runs(List.of(
-                            aggregateScores(firstInputs, firstOverallScoreDef, firstSnapshots),
-                            aggregateScores(secondInputs, secondOverallScoreDef, secondSnapshots)))
+                            aggregateScores(firstInputs, first.getSuiteSnapshot(), firstSnapshots),
+                            aggregateScores(secondInputs, second.getSuiteSnapshot(), secondSnapshots)))
                     .build();
         });
     }
@@ -128,7 +128,7 @@ public class RunComparisonService {
     }
 
     private RunComparisonRunDto aggregateScores(
-            AggregationInputs inputs, OverallScoreDefinition overallScoreDef, List<RunMetricSnapshot> snapshots) {
+            AggregationInputs inputs, SuiteSnapshotDto snapshot, List<RunMetricSnapshot> snapshots) {
         final EvalSummaryMatchStats stats = inputs.stats();
         final List<MetricScoreValueDto> scores = stats.matchedRows() == 0
                 // Nothing matched: every aggregate would be NULL and therefore omitted, so skip the queries
@@ -139,7 +139,8 @@ public class RunComparisonService {
                         inputs.computationId(),
                         inputs.unmatchedTestCaseIds(),
                         metricFieldDiscoverer.discover(snapshots),
-                        overallScoreDef));
+                        snapshot.getOverallScore(),
+                        MetricScoreAggregation.orDefault(snapshot.getMetricScoreAggregation())));
 
         return RunComparisonRunDto.builder()
                 .runId(inputs.runId())
@@ -171,19 +172,16 @@ public class RunComparisonService {
     }
 
     /**
-     * The run's snapshot {@code overallScore}, or null when the suite defined none.
-     *
-     * <p>A missing snapshot is rejected, matching the export path's treatment of legacy runs. The snapshot's
-     * schema <em>version</em> is deliberately not gated: only {@code overallScore} is read here, and a legacy
-     * snapshot lacking the field deserializes to null, which the default-overall rule already handles.
+     * Rejects a run without a suite snapshot, matching the export path's treatment of legacy runs. The
+     * snapshot's schema <em>version</em> is deliberately not gated: only {@code overallScore} and
+     * {@code metricScoreAggregation} are read, and a legacy snapshot lacking either deserializes to null,
+     * which the default-overall / default-{@code AVG} rules already handle.
      */
-    private OverallScoreDefinition overallScoreDefinition(TestSuiteRunResponseDto run) {
-        final SuiteSnapshotDto snapshot = run.getSuiteSnapshot();
-        if (snapshot == null) {
+    private void requireSnapshot(TestSuiteRunResponseDto run) {
+        if (run.getSuiteSnapshot() == null) {
             throw new SnapshotSuiteMissingException(
                     "Run " + run.getId() + " has no suite_snapshot; legacy runs cannot be compared");
         }
-        return snapshot.getOverallScore();
     }
 
     private UUID requireComputation(UUID runId) {

@@ -3,6 +3,7 @@
   "name": "Multi-turn Chat Suite (JSONata Body)",
   "description": "requestTemplate.body.jsonataContent authored as a JSONata source string instead of the legacy JSON object in body.content; history is accumulated purely via the $history frame variable, bound from the previous turn's 'history' response column — there is no hardcoded messages/choices path",
   "suiteType": "DEPLOYMENT",
+  "metricScoreAggregation": "AVG",
   "deploymentRef": {
     "id": "deploy-001",
     "name": "Production Deployment",

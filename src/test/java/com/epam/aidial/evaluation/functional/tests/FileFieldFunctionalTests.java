@@ -30,6 +30,8 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ByteArrayResource;
@@ -43,6 +45,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("FILE Field and CSV/ZIP Export/Import Functional Tests")
@@ -240,31 +243,40 @@ public abstract class FileFieldFunctionalTests extends BaseFunctionalTest {
         assertThat(zipEntries).containsKey("manifest.json");
     }
 
-    @Test
-    @DisplayName("Export ZIP: a file missing from DIAL storage returns an error status and no ZIP body")
-    void exportZipMissingDialFile_returnsErrorStatusWithNoZip() {
+    @ParameterizedTest(name = "Accept: {0}")
+    @ValueSource(strings = {"*/*", "text/csv", "application/zip", "application/json"})
+    @DisplayName(
+            "Export ZIP: a file missing from DIAL storage returns 502 JSON naming the test case, for any Accept header")
+    void exportZipMissingDialFile_returns502NamingTestCase(String accept) throws IOException {
         TestSuiteResponseDto suite = createSuiteWithFileSchema();
         UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
         String missingRef = "@ef/suites/" + suite.getId() + "/ghost.pdf";
-        createTestCaseInSuite(suite.getId(), "TC-Missing", Map.of("prompt", "p", "document", missingRef));
+        TestCaseResponseDto testCase =
+                createTestCaseInSuite(suite.getId(), "TC-Missing", Map.of("prompt", "p", "document", missingRef));
 
-        // The endpoint's `produces` is restricted to text/csv and application/zip; accept anything so the
-        // request reaches the handler (and its error response) instead of failing content negotiation.
-        HttpHeaders headers = new HttpHeaders();
-        headers.setAccept(List.of(MediaType.ALL));
-        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                apiUrl("/datasets/" + datasetId + "/test-cases/export.csv"),
+        RawResponse response = restTemplate.execute(
+                URI.create(apiUrl("/datasets/" + datasetId + "/test-cases/export.csv")),
                 HttpMethod.GET,
-                new HttpEntity<>(headers),
-                new ParameterizedTypeReference<Map<String, Object>>() {});
+                request -> request.getHeaders().set(HttpHeaders.ACCEPT, accept),
+                raw -> new RawResponse(
+                        HttpStatus.valueOf(raw.getStatusCode().value()),
+                        raw.getHeaders().getContentType(),
+                        raw.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION),
+                        new String(raw.getBody().readAllBytes(), StandardCharsets.UTF_8)));
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
-        if (response.getHeaders().getContentType() != null) {
-            assertThat(response.getHeaders().getContentType().toString()).doesNotContain("application/zip");
-        }
-        assertThat(response.getBody()).isNotNull();
-        assertThat((String) response.getBody().get("message")).contains(missingRef);
+        assertThat(response.status()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(response.contentType()).isNotNull();
+        assertThat(response.contentType().isCompatibleWith(MediaType.APPLICATION_JSON))
+                .isTrue();
+        assertThat(response.contentDisposition()).isNull();
+        Map<String, Object> body = objectMapper.readValue(response.body(), new TypeReference<>() {});
+        assertThat((String) body.get("message"))
+                .contains("TC-Missing")
+                .contains(testCase.getId().toString())
+                .contains(missingRef);
     }
+
+    private record RawResponse(HttpStatus status, MediaType contentType, String contentDisposition, String body) {}
 
     @Test
     @DisplayName("Export ZIP with ARRAY values serialized as valid JSON in CSV")
@@ -485,13 +497,14 @@ public abstract class FileFieldFunctionalTests extends BaseFunctionalTest {
         return r.getBody();
     }
 
-    private void createTestCaseInSuite(UUID suiteId, String name, Map<String, Object> data) {
+    private TestCaseResponseDto createTestCaseInSuite(UUID suiteId, String name, Map<String, Object> data) {
         UUID datasetId = metaTestDataHelper.getDatasetId(suiteId);
         TestCaseRequestDto req =
                 TestCaseRequestDto.builder().testCaseName(name).data(data).build();
         ResponseEntity<TestCaseResponseDto> r = restTemplate.postForEntity(
                 apiUrl("/datasets/" + datasetId + "/test-cases"), jsonEntity(req), TestCaseResponseDto.class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return r.getBody();
     }
 
     private FileMetadataDto uploadFileToSuite(UUID suiteId, String filename, byte[] content) {

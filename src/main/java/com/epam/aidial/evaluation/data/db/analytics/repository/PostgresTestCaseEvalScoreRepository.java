@@ -24,10 +24,11 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
     private final DSLContext dsl;
 
     /**
-     * Insert-only: scores are computed once per test case after the last flush, so an existing row is left untouched. Every row here is new-format ({@code eval_summary_id = NULL}), so the conflict target is the
-     * partial unique index scoped to that discriminator, not the {@code id} primary key (each call mints
-     * a fresh {@code id}, so the PK itself never conflicts). Legacy rows (real {@code eval_summary_id})
-     * are never written or touched by this method.
+     * Insert-only: scores are computed once per test case after the last flush, so an existing row is
+     * left untouched. Every row here is new-format ({@code eval_summary_id = NULL}), so the conflict
+     * target is the partial unique index scoped to that discriminator, not the {@code id} primary key
+     * (each call mints a fresh {@code id}, so the PK itself never conflicts). Legacy rows (real
+     * {@code eval_summary_id}) are never written or touched by this method.
      */
     @Override
     public void saveAll(List<TestCaseEvalScore> scores) {

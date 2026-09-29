@@ -77,9 +77,9 @@ entirely is coalesced to zero for its term (see the dedicated scenario below); a
 some of the test case's rows is not affected by this at all, since its aggregated `avg` is always computed
 over just the rows it fired on (see `test-case-metric-score-aggregation`).
 
-This SHALL be issued as one SQL query per Phase-2 flush batch (not one query per row or per test case),
-scoped only to that batch's `SUCCESS`-aggregate test cases, immediately after that batch's `EvalSummary`
-rows are written and its `execution_status` aggregates are computed.
+This SHALL be issued as one SQL query per chunk of test cases (not one query per row or per test case),
+scoped only to that chunk's `SUCCESS`-aggregate test cases, after the last Phase-2 flush has written all
+`EvalSummary` rows and once the chunk's `execution_status` aggregates are computed.
 
 If there is no effective per-row definition (neither `testCaseOverallScore` nor a non-`CustomFunction`
 `overallScore` is configured), `score` SHALL be `null` for every row. If a test case's `execution_status`
@@ -87,9 +87,9 @@ aggregate is `FAILED`, `score` SHALL be `null` for every row of that test case r
 effective per-row definition is configured.
 Status: **Implemented**
 
-#### Scenario: One query per flush batch, not per row or per test case
-- **WHEN** a Phase-2 flush writes a batch of N `EvalSummary` rows, spanning M distinct test cases, for a suite with an effective per-row `Mean`/`WeightedMean` definition, and all M test cases have a `SUCCESS` execution-status aggregate
-- **THEN** exactly one additional SQL query SHALL be issued against `test_case_metric_scores` to compute scores for all M test cases in that batch
+#### Scenario: One query per chunk, not per row or per test case
+- **WHEN** a run's `EvalSummary` rows span M distinct test cases (M no larger than the batch size), for a suite with an effective per-row `Mean`/`WeightedMean` definition, and all M test cases have a `SUCCESS` execution-status aggregate
+- **THEN** exactly one additional SQL query SHALL be issued against `test_case_metric_scores` to compute scores for all M test cases
 
 #### Scenario: Mean and WeightedMean produce one score per test case, shared by every row
 - **WHEN** a suite's effective per-row definition is `Mean` or `WeightedMean`, and a test case has multiple `EvalSummary` rows (multiple turns/requests/reruns) in the same computation, and that test case's execution-status aggregate is `SUCCESS`
@@ -157,7 +157,7 @@ Status: **Implemented**
 - New component: `EvalSummaryRowScoreComputer` (`com.epam.aidial.evaluation.query.service.metricscore`), a sibling of `OverallScoreDefinitionResolver` and `FilteredMetricScoreAggregator` (not an extension of the latter — that component's contract is scoped to read-only what-if recomputation, not persistence). It has no `CustomFunction` support — `Mean`/`WeightedMean` are the only reachable branches given `testCaseOverallScore`'s validation restriction; the sealed switch's `CustomFunction` case is a defensive, logged no-op.
 - `OverallScoreDefinitionResolver` builds the `Mean`/`WeightedMean` query directly against `test_case_metric_scores` (no separate combiner class, no rewrite step — see `test-case-metric-score-aggregation`); `EvalSummaryRowScoreComputer` only grafts `test_case_id`/`GROUP BY` onto the already-correctly-targeted query.
 - `TestCaseExecutionStatusAggregator` (`com.epam.aidial.evaluation.query.service.metricscore`, a sibling of `TestCaseMetricScoreAggregator`) computes the per-test-case `execution_status` aggregate by querying `test_case_eval_summaries` directly (`GROUP BY test_case_id`, `bool_or(execution_status <> 'SUCCESS')`) — independent of `test_case_metric_scores_aggregated`, since that table's `jsonb_each`-driven aggregation never sees a row with empty `metric_values`. Invoked from `InProcessMetricEvaluationExecutor.writeRowScores` before `EvalSummaryRowScoreComputer`, so the SUCCESS/FAILED split is known before the score query is built.
-- Invoked from `InProcessMetricEvaluationExecutor`'s flush cycle, right after `TestCaseMetricScoreAggregator`/`TestCaseMetricScoreAggregatedService` populate `test_case_metric_scores_aggregated` for the batch's affected test cases (the per-test-case score computation reads that table, so it must run after aggregation, not before); results are written to `test_case_eval_scores` via `TestCaseEvalScoreService.batchUpsert(...)`, in the same upsert as `execution_status`.
+- Invoked from `InProcessMetricEvaluationExecutor` once after the last flush, per chunk of test cases, right after `TestCaseMetricScoreAggregator`/`TestCaseMetricScoreAggregatedService` populate `test_case_metric_scores_aggregated` for the chunk (the per-test-case score computation reads that table, so it must run after aggregation, not before); results are written to `test_case_eval_scores` via `TestCaseEvalScoreService.batchInsert(...)`, in the same insert as `execution_status`.
 - Persisted on `test_case_eval_scores`, joined into the `EvalSummary` read surface — see `metrics-storage` for the schema and API-exposure changes, and `metric-evaluation` for the write-path wiring.
 - Threshold source: `SuiteSnapshotDto.overallScoreThreshold` — see `suite-run-snapshot`.
 - Effective-definition source: `SuiteSnapshotDto.testCaseOverallScore` (fallback: `SuiteSnapshotDto.overallScore`, but never when `overallScore` is a `CustomFunction`), resolved by `TestSuiteEvaluationJob.buildMetricEvaluationContext`/`resolveTestCaseOverallScoreDefinition` — see `test-suites` for the suite-API field and `suite-run-snapshot` for its snapshot capture. Phase 3's run-level `overall` aggregate always uses `overallScore` directly (any of the three variants) and is never affected by `testCaseOverallScore`.

@@ -41,8 +41,8 @@ public abstract class PostgresTestCaseMetricScoreAggregatedRepositoryFunctionalT
     }
 
     @Test
-    @DisplayName("saveAll upserts metric_scores/computed_at_ms on conflict, leaving created_at_ms unchanged")
-    void saveAllUpsertsOnConflictWithoutChangingCreatedAtMs() {
+    @DisplayName("saveAll ignores a second insert for the same key, leaving the existing row unchanged")
+    void saveAllIgnoresConflictingInsert() {
         UUID runId = UUID.randomUUID();
         UUID testCaseId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
@@ -55,8 +55,8 @@ public abstract class PostgresTestCaseMetricScoreAggregatedRepositoryFunctionalT
         List<TestCaseMetricScoreAggregated> found = repository.findByRunIdAndComputationId(runId, computationId);
 
         assertThat(found).hasSize(1);
-        assertJsonEquals("{\"MetricA\":{\"avg\":0.9}}", found.get(0).getMetricScores());
-        assertThat(found.get(0).getComputedAtMs()).isEqualTo(2000L);
+        assertJsonEquals("{\"MetricA\":{\"avg\":0.5}}", found.get(0).getMetricScores());
+        assertThat(found.get(0).getComputedAtMs()).isEqualTo(1000L);
         assertThat(found.get(0).getCreatedAtMs()).isEqualTo(1000L);
     }
 

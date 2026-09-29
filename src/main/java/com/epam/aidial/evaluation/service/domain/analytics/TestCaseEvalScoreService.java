@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Internal-only write path for {@code test_case_eval_scores}, populated by the in-process metric
- * evaluation engine right after each {@code test_case_eval_summaries} flush (see
+ * evaluation engine once per test case after the last {@code test_case_eval_summaries} flush (see
  * {@code InProcessMetricEvaluationExecutor}). No external REST endpoint exists for this table —
  * scores are read back via the LEFT JOIN into the existing eval-summary read surface, or directly
  * (deduplicated) via the {@code test_case_eval_scores} Query DSL entity.
@@ -27,7 +27,7 @@ public class TestCaseEvalScoreService {
     private final TestCaseEvalScoreRepository testCaseEvalScoreRepository;
 
     @Transactional("analyticsTransactionManager")
-    public void batchUpsert(long computedAtMs, List<TestCaseEvalScoreBatchWriteItemDto> items) {
+    public void batchInsert(long computedAtMs, List<TestCaseEvalScoreBatchWriteItemDto> items) {
         if (items.isEmpty()) {
             return;
         }
@@ -45,6 +45,6 @@ public class TestCaseEvalScoreService {
                         .build())
                 .toList();
         testCaseEvalScoreRepository.saveAll(entities);
-        log.debug("Batch upserted {} eval summary scores", entities.size());
+        log.debug("Batch inserted {} eval summary scores", entities.size());
     }
 }

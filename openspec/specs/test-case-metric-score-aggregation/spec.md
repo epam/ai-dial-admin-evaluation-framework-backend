@@ -47,22 +47,23 @@ Status: **Implemented**
 - **WHEN** one row of a test case has a metric's output value as `null` and a second row of the same test case has no key for that metric in `metric_values` at all
 - **THEN** the metric's `count` is 1, reflecting only the null row — the row where the metric is absent contributes nothing
 
-### Requirement: Aggregation runs during Phase 2's flush cycle, fail-soft
-The system SHALL compute and persist the aggregation for a flush batch's affected test cases immediately
-before that batch's per-row score is written (see `eval-summary-scoring`), re-aggregating each affected
-test case's **entire** row set for the computation (not just the current batch's rows), and upserting the
-result (`INSERT ... ON CONFLICT (test_suite_run_id, test_case_id, computation_id) DO UPDATE`) so that a
-test case whose rows straddle multiple flush batches converges to a correct, idempotent result. A failure
-computing or writing the aggregation SHALL be logged and SHALL NOT fail the flush or the run.
+### Requirement: Aggregation runs once after Phase 2's last flush, fail-soft
+The system SHALL compute and persist the aggregation for every test case of the computation exactly once,
+after the last `test_case_eval_summaries` flush (and also when a flush failure or cancellation ends the
+loop early, for the test cases already seen), in chunks of the context batch size and immediately before
+each chunk's score is written (see `eval-summary-scoring`). Because every row of a test case exists by
+then, each test case is aggregated over its **entire** row set and inserted once
+(`INSERT ... ON CONFLICT (test_suite_run_id, test_case_id, computation_id) DO NOTHING`) — the table is
+insert-only. A failure computing or writing the aggregation SHALL be logged and SHALL NOT fail the run.
 Status: **Implemented**
 
-#### Scenario: A test case's rows spanning two flush batches still aggregate correctly
+#### Scenario: A test case's rows spanning two flush batches are aggregated once
 - **WHEN** a test case's rows are split across two separate Phase-2 flush batches
-- **THEN** after both flushes complete, exactly one `test_case_metric_scores_aggregated` row exists for that test case and computation, reflecting all of its rows
+- **THEN** after both flushes complete, exactly one aggregation is computed and inserted for that test case and computation, reflecting all of its rows
 
-#### Scenario: Aggregation failure does not fail the flush
-- **WHEN** the aggregation computation throws for a flush batch
-- **THEN** the flush's eval-summary and per-row-score writes still succeed, the error is logged, and the run continues
+#### Scenario: Aggregation failure does not fail the run
+- **WHEN** the aggregation computation throws for a chunk
+- **THEN** the eval-summary writes already flushed remain, the error is logged, and the run continues
 
 ### Requirement: `test_case_metric_scores` Query DSL entity
 The system SHALL expose `test_case_metric_scores_aggregated` as a Query DSL entity named
@@ -79,8 +80,7 @@ Status: **Implemented**
 ## Implementation Notes
 - New table: `test_case_metric_scores_aggregated` (analytics DB), added by
   `V1.20__CreateTestCaseMetricScoresAggregatedTable.sql` — `id`, `test_suite_run_id`, `test_case_id`,
-  `computation_id`, `metric_scores` JSONB, `created_at_ms` (set once, never updated by later upserts —
-  reserved for future partitioning), `computed_at_ms`; a unique index on
+  `computation_id`, `metric_scores` JSONB, `created_at_ms` (reserved for future partitioning), `computed_at_ms`; a unique index on
   `(test_suite_run_id, test_case_id, computation_id)` and a lookup index on `computation_id`.
 - New components: `TestCaseMetricScoreAggregator` (hand-written jOOQ — a single scan of
   `test_case_eval_summaries` that walks `metric_values` generically via two chained `jsonb_each` calls,

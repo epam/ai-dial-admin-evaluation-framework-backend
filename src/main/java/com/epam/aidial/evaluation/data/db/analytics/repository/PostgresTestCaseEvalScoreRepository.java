@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
-import static org.jooq.impl.DSL.excluded;
 
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseEvalScore;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
@@ -25,7 +24,7 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
     private final DSLContext dsl;
 
     /**
-     * Every row here is new-format ({@code eval_summary_id = NULL}), so the conflict target is the
+     * Insert-only: scores are computed once per test case after the last flush, so an existing row is left untouched. Every row here is new-format ({@code eval_summary_id = NULL}), so the conflict target is the
      * partial unique index scoped to that discriminator, not the {@code id} primary key (each call mints
      * a fresh {@code id}, so the PK itself never conflicts). Legacy rows (real {@code eval_summary_id})
      * are never written or touched by this method.
@@ -59,14 +58,9 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
                                 TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
                                 TEST_CASE_EVAL_SCORES.COMPUTATION_ID)
                         .where(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.isNull())
-                        .doUpdate()
-                        .set(TEST_CASE_EVAL_SCORES.TEST_CASE_NAME, excluded(TEST_CASE_EVAL_SCORES.TEST_CASE_NAME))
-                        .set(TEST_CASE_EVAL_SCORES.EXECUTION_STATUS, excluded(TEST_CASE_EVAL_SCORES.EXECUTION_STATUS))
-                        .set(TEST_CASE_EVAL_SCORES.SCORE, excluded(TEST_CASE_EVAL_SCORES.SCORE))
-                        .set(TEST_CASE_EVAL_SCORES.PASSED, excluded(TEST_CASE_EVAL_SCORES.PASSED))
-                        .set(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS, excluded(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS)))
+                        .doNothing())
                 .toList();
         dsl.batch(queries).execute();
-        log.debug("Batch upserted {} eval summary scores", scores.size());
+        log.debug("Batch inserted {} eval summary scores", scores.size());
     }
 }

@@ -12,11 +12,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Internal-only write path for {@code test_case_metric_scores_aggregated}, populated by the in-process
- * metric evaluation engine right after each {@code test_case_eval_summaries} flush's per-row score write
- * (see {@code InProcessMetricEvaluationExecutor}). A test case touched by more than one flush batch is
- * fully re-aggregated (and upserted) on every touch, so {@code computedAtMs} advances on every call while
- * {@code createdAtMs} is only honored by the database on a row's first insert.
+ * Internal-only, insert-only write path for {@code test_case_metric_scores_aggregated}, populated by the
+ * in-process metric evaluation engine once per computation, after the last {@code test_case_eval_summaries}
+ * flush (see {@code InProcessMetricEvaluationExecutor}). Each test case is aggregated exactly once over its
+ * complete row set, so an already-existing row for the same key is left untouched.
  */
 @Slf4j
 @Service
@@ -27,7 +26,7 @@ public class TestCaseMetricScoreAggregatedService {
     private final TestCaseMetricScoreAggregatedRepository testCaseMetricScoreAggregatedRepository;
 
     @Transactional("analyticsTransactionManager")
-    public void batchUpsert(long computedAtMs, List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items) {
+    public void batchInsert(long computedAtMs, List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items) {
         if (items.isEmpty()) {
             return;
         }
@@ -43,6 +42,6 @@ public class TestCaseMetricScoreAggregatedService {
                         .build())
                 .toList();
         testCaseMetricScoreAggregatedRepository.saveAll(entities);
-        log.debug("Batch upserted {} test case metric score aggregates", entities.size());
+        log.debug("Batch inserted {} test case metric score aggregates", entities.size());
     }
 }

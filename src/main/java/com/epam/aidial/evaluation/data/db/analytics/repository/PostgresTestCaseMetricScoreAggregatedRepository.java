@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_METRIC_SCORES_AGGREGATED;
-import static org.jooq.impl.DSL.excluded;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.TestCaseMetricScoreAggregatedRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseMetricScoreAggregated;
@@ -53,16 +52,10 @@ public class PostgresTestCaseMetricScoreAggregatedRepository implements TestCase
                                 TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID,
                                 TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_CASE_ID,
                                 TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTATION_ID)
-                        .doUpdate()
-                        .set(
-                                TEST_CASE_METRIC_SCORES_AGGREGATED.METRIC_SCORES,
-                                excluded(TEST_CASE_METRIC_SCORES_AGGREGATED.METRIC_SCORES))
-                        .set(
-                                TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTED_AT_MS,
-                                excluded(TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTED_AT_MS)))
+                        .doNothing())
                 .toList();
         dsl.batch(queries).execute();
-        log.debug("Batch upserted {} test case metric score aggregates", aggregates.size());
+        log.debug("Batch inserted {} test case metric score aggregates", aggregates.size());
     }
 
     @Override

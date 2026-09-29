@@ -888,7 +888,7 @@ Arbitrary JSON detail objects, keyed by metric name and nested by output name.
 
 ## Table: `test_case_eval_scores` (Analytics DB)
 
-Per-row overall score/pass-fail for each `test_case_eval_summaries` row, computed via SQL right after that row's own batch is written (Phase 2) — reusing `OverallScoreDefinitionResolver`'s output (the same `StructuredQuery` Phase 3 builds from the suite's `overallScore` definition) with an `id IN (:rowIds)` filter and a `GROUP BY id` grafted on, so `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly. A row is only inserted when the grouped query returned a result for that id; a present row with `score = NULL` (e.g. a population-dependent `CustomFunction` like `roc_auc` degenerating on a single-row group) and a row's total absence look identical to a client querying this table directly, by design (`eval_summaries` does not join to this table at all — see `docs/patterns/eval-summaries-read-surface.md`). Introduced in V1.19; extended in V1.21 with denormalized run/case context (below) and a dedicated Query DSL entity — the write grain and this description's computation flow are otherwise unchanged.
+Per-row overall score/pass-fail for each `test_case_eval_summaries` row, computed via SQL once per test case after the last flush of Phase 2 — reusing `OverallScoreDefinitionResolver`'s output (the same `StructuredQuery` Phase 3 builds from the suite's `overallScore` definition) with an `id IN (:rowIds)` filter and a `GROUP BY id` grafted on, so `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly. A row is only inserted when the grouped query returned a result for that id; a present row with `score = NULL` (e.g. a population-dependent `CustomFunction` like `roc_auc` degenerating on a single-row group) and a row's total absence look identical to a client querying this table directly, by design (`eval_summaries` does not join to this table at all — see `docs/patterns/eval-summaries-read-surface.md`). Introduced in V1.19; extended in V1.21 with denormalized run/case context (below) and a dedicated Query DSL entity — the write grain and this description's computation flow are otherwise unchanged.
 
 > **Note:** This table resides in the **analytics database**. Foreign key references to meta DB entities and to `test_case_eval_summaries` are soft FKs — no physical constraint.
 
@@ -899,15 +899,15 @@ Per-row overall score/pass-fail for each `test_case_eval_summaries` row, compute
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Denormalized from `test_case_eval_summaries.test_case_id` (V1.21); set once at insert, never updated by a later upsert |
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Denormalized from `test_case_eval_summaries.test_case_name` (V1.21); set once at insert, never updated by a later upsert |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Denormalized from `test_case_eval_summaries.computation_id` (V1.21) |
-| `execution_status` | VARCHAR(20) | NOT NULL | - | Per-test-case aggregate (V1.21): `FAILED` if *any* of that test case's `test_case_eval_summaries` rows for the computation has `execution_status <> SUCCESS` (a metric execution failure, or an upstream TIMEOUT/ERROR/FAILED row — collapsed uniformly to `FAILED`), else `SUCCESS`. Computed by `TestCaseExecutionStatusAggregator`, independent of `test_case_metric_scores_aggregated`. A condition-skipped metric never flips a row's own status, so it does not affect this aggregate. When `FAILED`, `score`/`passed` are always `NULL` — the score SQL is not even issued for that test case. Written in the same upsert as `score`/`passed`/`computed_at_ms` |
+| `execution_status` | VARCHAR(20) | NOT NULL | - | Per-test-case aggregate (V1.21): `FAILED` if *any* of that test case's `test_case_eval_summaries` rows for the computation has `execution_status <> SUCCESS` (a metric execution failure, or an upstream TIMEOUT/ERROR/FAILED row — collapsed uniformly to `FAILED`), else `SUCCESS`. Computed by `TestCaseExecutionStatusAggregator`, independent of `test_case_metric_scores_aggregated`. A condition-skipped metric never flips a row's own status, so it does not affect this aggregate. When `FAILED`, `score`/`passed` are always `NULL` — the score SQL is not even issued for that test case. Written in the same insert as `score`/`passed`/`computed_at_ms` |
 | `score` | DOUBLE PRECISION | NULL | - | Per-row overall score, computed via SQL from the suite's `overallScore` definition grouped per row, **only when `execution_status = SUCCESS`**; null when the definition's aggregate is itself SQL NULL (e.g. `roc_auc` on a single-row group) or when `execution_status = FAILED` |
 | `passed` | BOOLEAN | NULL | - | `score >= overallScoreThreshold` as captured in the run's suite snapshot at run-start time; null if `score` or the threshold is null |
 | `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp (matches the corresponding `test_case_eval_summaries.computed_at_ms`) |
 
-The table's write grain is unchanged: still one row per raw `test_case_eval_summaries` row, keyed by
-`eval_summary_id` (upserted via `INSERT ... ON CONFLICT (eval_summary_id) DO UPDATE SET execution_status,
-score, passed, computed_at_ms` as of V1.21 — previously `DO NOTHING`, which could never correct a stale
-score from an earlier flush). The 5 columns above were added (V1.21) purely so the table can also be read
+New rows are written one per test case (`eval_summary_id = NULL`), inserted with
+`INSERT ... ON CONFLICT (test_suite_run_id, test_case_id, computation_id) WHERE eval_summary_id IS NULL DO NOTHING`
+— insert-only, since each test case is scored once after the last flush. Legacy rows keep one row per raw
+`test_case_eval_summaries` row, keyed by `eval_summary_id`. The 5 columns above were added (V1.21) purely so the table can also be read
 directly, deduplicated, as its own `test_case_eval_scores` Query DSL entity (`SELECT DISTINCT ON
 (test_suite_run_id, test_case_id, computation_id) ... ORDER BY ..., computed_at_ms DESC`, the freshest row
 per test case wins) — see `docs/patterns/query-dsl-entity-resolution.md`. `score`/`passed` remain
@@ -937,10 +937,10 @@ per-row score definition configured.
 Per-test-case, per-computation aggregation of raw `test_case_eval_summaries.metric_values` data: one row
 per `(test_suite_run_id, test_case_id, computation_id)`, collapsing every `run_index`/`request_index`/
 `turn_index` combination for that test case into a single JSONB map of per-metric `avg`/`min`/`max`/
-`count`. Computed by `TestCaseMetricScoreAggregator` and written right after each Phase-2 flush batch's
-row-score write (see `test_case_eval_scores` above), fully re-aggregating each affected test case's
-entire row set for the computation on every touch (not just the current batch's rows), via an upsert —
-so writes to this table are idempotent, not append-only. Introduced in V1.20.
+`count`. Computed by `TestCaseMetricScoreAggregator` once per test case, after the last Phase-2 flush and
+before that test case's score is written (see `test_case_eval_scores` above), over the test case's
+entire row set for the computation, and inserted with `ON CONFLICT DO NOTHING` — the table is
+insert-only. Introduced in V1.20.
 
 This table backs the equal-per-test-case-weighting rebuild of both `test_case_eval_scores`' per-row score
 and `metric_score_result`'s run-level `overall` for `Mean`/`WeightedMean`/`CustomFunction` — see those
@@ -956,8 +956,8 @@ sections and `docs/patterns/` for the scoring mechanics.
 | `test_case_id` | VARCHAR(36) | NOT NULL | - | Reference to the aggregated test case (soft FK) |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Metric computation batch identifier |
 | `metric_scores` | JSONB | NOT NULL | `'{}'::jsonb` | Per-metric aggregated stats, shape `{"<metricName>": {"avg":.., "min":.., "max":.., "count":..}}`; a metric absent from the map never fired for this test case in this computation (never a zero/null entry) |
-| `created_at_ms` | BIGINT | NOT NULL | - | Set once at the row's first insert and never updated by later upserts, so it stays fixed across re-aggregations — reserved for future range partitioning by this column, mirroring `test_case_eval_summaries`' convention |
-| `computed_at_ms` | BIGINT | NOT NULL | - | Most recent computation timestamp; updated on every re-aggregation, unlike `created_at_ms` |
+| `created_at_ms` | BIGINT | NOT NULL | - | Set at insert and never updated — reserved for future range partitioning by this column, mirroring `test_case_eval_summaries`' convention |
+| `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp of the run that produced the row (equals `created_at_ms`) |
 
 ### Primary Key
 
@@ -967,7 +967,7 @@ sections and `docs/patterns/` for the scoring mechanics.
 
 | Constraint Name | Type | Columns | Notes |
 |-----------------|------|---------|-------|
-| `uq_tc_metric_scores_agg_natural_key` | UNIQUE | `(test_suite_run_id, test_case_id, computation_id)` | One aggregated row per test case per computation; upsert target |
+| `uq_tc_metric_scores_agg_natural_key` | UNIQUE | `(test_suite_run_id, test_case_id, computation_id)` | One aggregated row per test case per computation; `ON CONFLICT DO NOTHING` target |
 
 ### Indexes
 

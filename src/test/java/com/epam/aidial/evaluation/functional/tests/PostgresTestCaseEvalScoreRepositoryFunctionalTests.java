@@ -68,20 +68,20 @@ public abstract class PostgresTestCaseEvalScoreRepositoryFunctionalTests extends
     }
 
     @Test
-    @DisplayName("saveAll upserts score/passed/computed_at_ms on conflict, correcting a stale value")
-    void saveAllUpsertsOnConflict() {
+    @DisplayName("saveAll ignores a second insert for the same key, leaving the existing row unchanged")
+    void saveAllIgnoresConflictingInsert() {
         UUID evalSummaryId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID testCaseId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
 
         repository.saveAll(List.of(scoreRow(evalSummaryId, runId, testCaseId, computationId, 0.0, false, 1_000L)));
-        // Simulates a later flush correcting an earlier, stale score for the same raw row.
+        // A repeated write for the same (run, test case, computation) must not overwrite the first.
         repository.saveAll(List.of(scoreRow(evalSummaryId, runId, testCaseId, computationId, 0.9, true, 2_000L)));
 
         Map<String, Object> row = findByRunId(runId);
-        assertThat(((Number) row.get("score")).doubleValue()).isEqualTo(0.9);
-        assertThat(row.get("passed")).isEqualTo(true);
+        assertThat(((Number) row.get("score")).doubleValue()).isEqualTo(0.0);
+        assertThat(row.get("passed")).isEqualTo(false);
     }
 
     private Map<String, Object> findByRunId(UUID runId) {

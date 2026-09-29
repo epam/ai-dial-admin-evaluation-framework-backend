@@ -662,7 +662,7 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     private void aggregateMetricScores(UUID runId, UUID computationId, UUID... testCaseIds) {
         final List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items =
                 testCaseMetricScoreAggregator.aggregate(runId, computationId, List.of(testCaseIds));
-        testCaseMetricScoreAggregatedService.batchUpsert(COMPUTED_AT_MS, items);
+        testCaseMetricScoreAggregatedService.batchInsert(COMPUTED_AT_MS, items);
     }
 
     private static List<String> triples(RunComparisonRunDto run) {

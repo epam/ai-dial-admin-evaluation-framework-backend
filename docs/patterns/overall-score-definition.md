@@ -27,7 +27,7 @@ The same `OverallScoreDefinitionResolver` also drives a second computation: a pe
 | Scope | One aggregate per `(run, computation)`, no `GROUP BY` | One value per `EvalSummary` row, `GROUP BY id` grafted on |
 | Definition used | Always `overallScore` | `testCaseOverallScore` if configured, else `overallScore` |
 | Written to | `metric_score_result` | `test_case_eval_scores` (joined into `EvalSummary.score`/`.passed` on read) |
-| Timing | After all `EvalSummary` rows for the computation exist | Right after each flush's own batch is written (not after the whole run) |
+| Timing | After all `EvalSummary` rows for the computation exist | Once per test case, in chunks, after the last flush has written all `EvalSummary` rows (in `finally`, so also after an early loop exit) |
 | Precondition | None beyond `overallScore` being configured | Additionally gated per test case on `execution_status` — see below |
 
 **Per-row scoring is additionally gated on a per-test-case `execution_status` aggregate.** Before invoking

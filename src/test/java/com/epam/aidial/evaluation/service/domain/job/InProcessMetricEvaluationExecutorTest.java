@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -21,6 +22,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
+import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
@@ -268,7 +270,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchUpsert(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems).hasSize(1);
@@ -303,7 +305,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchUpsert(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
 
         assertThat(scoreCaptor.getValue()).hasSize(1);
         assertThat(scoreCaptor.getValue().get(0).getScore()).isEqualTo(0.9);
@@ -360,8 +362,87 @@ class InProcessMetricEvaluationExecutorTest {
         executor.execute(context);
 
         InOrder inOrder = inOrder(testCaseMetricScoreAggregatedService, testCaseEvalScoreService);
-        inOrder.verify(testCaseMetricScoreAggregatedService).batchUpsert(anyLong(), eq(aggregatedItems));
-        inOrder.verify(testCaseEvalScoreService).batchUpsert(anyLong(), any());
+        inOrder.verify(testCaseMetricScoreAggregatedService).batchInsert(anyLong(), eq(aggregatedItems));
+        inOrder.verify(testCaseEvalScoreService).batchInsert(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "A test case whose rows span several flush batches is aggregated and scored once, after the last flush")
+    void testCaseSpanningBatchesAggregatedAndScoredOnce() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+        UUID sharedTestCaseId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContextWithBatchSize(
+                runId,
+                suiteId,
+                List.of(),
+                10000L,
+                1,
+                null,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                new Mean(),
+                null);
+
+        TestCaseRunResult turn0 = successResult(runId, suiteId, "tc1").toBuilder()
+                .testCaseId(sharedTestCaseId)
+                .build();
+        TestCaseRunResult turn1 = successResult(runId, suiteId, "tc1").toBuilder()
+                .testCaseId(sharedTestCaseId)
+                .build();
+        Cursor nextCursor = new Cursor(1L, UUID.randomUUID());
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(turn0), nextCursor, true))
+                .thenReturn(new CursorPage<>(List.of(turn1), null, false));
+        when(metricFieldDiscoverer.discover(any()))
+                .thenReturn(List.of(new MetricField("metric::Accuracy::score", "Accuracy.score")));
+
+        executor.execute(context);
+
+        verify(evalSummaryBatchWriteClient, times(2)).batchWrite(any(), any(), any(), any(), any());
+        verify(testCaseMetricScoreAggregator, times(1))
+                .aggregate(eq(runId), eq(context.getComputationId()), eq(List.of(sharedTestCaseId)));
+        verify(testCaseExecutionStatusAggregator, times(1))
+                .aggregate(eq(runId), eq(context.getComputationId()), eq(List.of(sharedTestCaseId)));
+    }
+
+    @Test
+    @DisplayName("Aggregation and scoring still run for already-flushed test cases when a later flush fails")
+    void aggregationRunsAfterLaterFlushFailure() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContextWithBatchSize(
+                runId,
+                suiteId,
+                List.of(),
+                10000L,
+                1,
+                null,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                new Mean(),
+                null);
+
+        TestCaseRunResult first = successResult(runId, suiteId, "tc1");
+        TestCaseRunResult second = successResult(runId, suiteId, "tc2");
+        Cursor nextCursor = new Cursor(1L, UUID.randomUUID());
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(first), nextCursor, true))
+                .thenReturn(new CursorPage<>(List.of(second), null, false));
+        when(metricFieldDiscoverer.discover(any()))
+                .thenReturn(List.of(new MetricField("metric::Accuracy::score", "Accuracy.score")));
+        doNothing()
+                .doThrow(new RuntimeException("db down"))
+                .when(evalSummaryBatchWriteClient)
+                .batchWrite(any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> executor.execute(context))
+                .as("the original flush failure is not masked by the post-pass")
+                .isInstanceOf(AnalyticsWriteException.class);
+
+        verify(testCaseMetricScoreAggregator)
+                .aggregate(eq(runId), eq(context.getComputationId()), eq(List.of(first.getTestCaseId())));
     }
 
     @Test
@@ -388,7 +469,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(testCaseEvalScoreService).batchUpsert(anyLong(), any());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), any());
         verifyNoInteractions(testCaseMetricScoreAggregatedService);
     }
 
@@ -443,7 +524,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchUpsert(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems).hasSize(1);
@@ -488,7 +569,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchUpsert(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems).hasSize(1);
@@ -532,7 +613,7 @@ class InProcessMetricEvaluationExecutorTest {
         executor.execute(context);
 
         verify(testCaseEvalScoreService)
-                .batchUpsert(anyLong(), argThat((List<TestCaseEvalScoreBatchWriteItemDto> items) -> items.isEmpty()));
+                .batchInsert(anyLong(), argThat((List<TestCaseEvalScoreBatchWriteItemDto> items) -> items.isEmpty()));
     }
 
     @Test
@@ -574,7 +655,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchUpsert(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems)
@@ -672,7 +753,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchUpsert(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems)

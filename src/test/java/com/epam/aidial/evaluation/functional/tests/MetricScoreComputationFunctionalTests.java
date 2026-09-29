@@ -113,7 +113,7 @@ public abstract class MetricScoreComputationFunctionalTests extends BaseFunction
         final List<UUID> testCaseIds = analyticsTestDataHelper.findDistinctTestCaseIds(runId, computationId);
         final List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items =
                 testCaseMetricScoreAggregator.aggregate(runId, computationId, testCaseIds);
-        testCaseMetricScoreAggregatedService.batchUpsert(computedAtMs, items);
+        testCaseMetricScoreAggregatedService.batchInsert(computedAtMs, items);
     }
 
     @Test

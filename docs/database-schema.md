@@ -889,47 +889,31 @@ Arbitrary JSON detail objects, keyed by metric name and nested by output name.
 
 ## Table: `test_case_eval_scores` (Analytics DB)
 
-Per-row overall score/pass-fail for each `test_case_eval_summaries` row, computed via SQL once per test case after the last flush of Phase 2 — reusing `OverallScoreDefinitionResolver`'s output (the same `StructuredQuery` Phase 3 builds from the suite's `overallScore` definition) with an `id IN (:rowIds)` filter and a `GROUP BY id` grafted on, so `Mean`/`WeightedMean`/`CustomFunction` are all attempted uniformly. A row is only inserted when the grouped query returned a result for that id; a present row with `score = NULL` (e.g. a population-dependent `CustomFunction` like `roc_auc` degenerating on a single-row group) and a row's total absence look identical to a client querying this table directly, by design (`eval_summaries` does not join to this table at all — see `docs/patterns/eval-summaries-read-surface.md`). Introduced in V1.19; extended in V1.21 with denormalized run/case context (below) and a dedicated Query DSL entity — the write grain and this description's computation flow are otherwise unchanged.
+Per-test-case overall score/pass-fail, one row per `(test_suite_run_id, test_case_id, computation_id)`, computed via SQL once per test case after the last flush of Phase 2 — reusing `OverallScoreDefinitionResolver`'s output (the `StructuredQuery` built from the suite's `overallScore` definition) over `test_case_metric_scores_aggregated`. A present row with `score = NULL` (e.g. a population-dependent `CustomFunction` like `roc_auc` degenerating on a single-row group) and a row's total absence look identical to a client querying this table directly, by design; `eval_summaries` does not join to this table (see `docs/patterns/eval-summaries-read-surface.md`). Created in V1.19, re-created in V1.21.
 
-> **Note:** This table resides in the **analytics database**. Foreign key references to meta DB entities and to `test_case_eval_summaries` are soft FKs — no physical constraint.
+> **Note:** This table resides in the **analytics database**. Foreign key references to meta DB entities are soft FKs — no physical constraint.
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
-| `eval_summary_id` | VARCHAR(36) | NOT NULL | - | Reference to the scored `test_case_eval_summaries.id` row (soft FK); primary key |
-| `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | Denormalized from `test_case_eval_summaries.test_suite_run_id` (V1.21), backfilled in place; lets the `test_case_eval_scores` Query DSL entity filter without a join |
-| `test_case_id` | VARCHAR(36) | NOT NULL | - | Denormalized from `test_case_eval_summaries.test_case_id` (V1.21); set once at insert, never updated by a later upsert |
-| `test_case_name` | VARCHAR(255) | NOT NULL | - | Denormalized from `test_case_eval_summaries.test_case_name` (V1.21); set once at insert, never updated by a later upsert |
-| `computation_id` | VARCHAR(36) | NOT NULL | - | Denormalized from `test_case_eval_summaries.computation_id` (V1.21) |
-| `execution_status` | VARCHAR(20) | NOT NULL | - | Per-test-case aggregate (V1.21): `FAILED` if *any* of that test case's `test_case_eval_summaries` rows for the computation has `execution_status <> SUCCESS` (a metric execution failure, or an upstream TIMEOUT/ERROR/FAILED row — collapsed uniformly to `FAILED`), else `SUCCESS`. Computed by `TestCaseExecutionStatusAggregator`, independent of `test_case_metric_scores_aggregated`. A condition-skipped metric never flips a row's own status, so it does not affect this aggregate. When `FAILED`, `score`/`passed` are always `NULL` — the score SQL is not even issued for that test case. Written in the same insert as `score`/`passed`/`computed_at_ms` |
-| `score` | DOUBLE PRECISION | NULL | - | Per-row overall score, computed via SQL from the suite's `overallScore` definition grouped per row, **only when `execution_status = SUCCESS`**; null when the definition's aggregate is itself SQL NULL (e.g. `roc_auc` on a single-row group) or when `execution_status = FAILED` |
+| `id` | VARCHAR(36) | NOT NULL | - | Surrogate primary key |
+| `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | Run id; lets the `test_case_eval_scores` Query DSL entity filter without a join |
+| `test_case_id` | VARCHAR(36) | NOT NULL | - | Test case id |
+| `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case name; set once at insert |
+| `computation_id` | VARCHAR(36) | NOT NULL | - | Computation id |
+| `execution_status` | VARCHAR(20) | NOT NULL | - | Per-test-case aggregate: `FAILED` if *any* of that test case's `test_case_eval_summaries` rows for the computation has `execution_status <> SUCCESS` (a metric execution failure, or an upstream TIMEOUT/ERROR/FAILED row — collapsed uniformly to `FAILED`), else `SUCCESS`. Computed by `TestCaseExecutionStatusAggregator`, independent of `test_case_metric_scores_aggregated`. A condition-skipped metric never flips a row's own status, so it does not affect this aggregate. When `FAILED`, `score`/`passed` are always `NULL` — the score SQL is not even issued for that test case |
+| `score` | DOUBLE PRECISION | NULL | - | Per-test-case overall score, computed via SQL from the suite's `overallScore` definition, **only when `execution_status = SUCCESS`**; null when the definition's aggregate is itself SQL NULL (e.g. `roc_auc` on a single-row group) or when `execution_status = FAILED` |
 | `passed` | BOOLEAN | NULL | - | `score >= overallScoreThreshold` as captured in the run's suite snapshot at run-start time; null if `score` or the threshold is null |
-| `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp (matches the corresponding `test_case_eval_summaries.computed_at_ms`) |
+| `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp |
 
-New rows are written one per test case (`eval_summary_id = NULL`), inserted with
-`INSERT ... ON CONFLICT (test_suite_run_id, test_case_id, computation_id) WHERE eval_summary_id IS NULL DO NOTHING`
-— insert-only, since each test case is scored once after the last flush. Legacy rows keep one row per raw
-`test_case_eval_summaries` row, keyed by `eval_summary_id`. The 5 columns above were added (V1.21) purely so the table can also be read
-directly, deduplicated, as its own `test_case_eval_scores` Query DSL entity (`SELECT DISTINCT ON
-(test_suite_run_id, test_case_id, computation_id) ... ORDER BY ..., computed_at_ms DESC`, the freshest row
-per test case wins) — see `docs/patterns/query-dsl-entity-resolution.md`. `score`/`passed` remain
-*additionally* queryable via the `eval_summaries` Query DSL entity too, which still joins a narrowed
-projection of this table on `eval_summary_id` (unchanged; see `docs/patterns/eval-summaries-read-surface.md`),
-and via the dedicated REST endpoints' own join.
+Rows are inserted with `INSERT ... ON CONFLICT (test_suite_run_id, test_case_id, computation_id) DO NOTHING` — insert-only, since each test case is scored once after the last flush. The table is read directly as the `test_case_eval_scores` Query DSL entity — see `docs/patterns/query-dsl-entity-resolution.md`.
 
 ### Primary Key
 
-`eval_summary_id` — a 1:1 relationship with `test_case_eval_summaries.id`. A row is written whenever the
-suite has an effective per-row score definition **and** either the test case actually has a computed score
-(`SUCCESS` aggregate with at least one numeric metric sample) or its aggregate is `FAILED` (in which case a
-row is written regardless of whether it has any numeric samples, with `score = NULL`). A `SUCCESS`-aggregate
-test case with zero numeric samples (e.g. every metric condition-skipped) stays absent from this table,
-exactly as it stays absent from `test_case_metric_scores_aggregated` — only a `FAILED` aggregate forces a
-row into existence despite having nothing to score. No row exists at all when the suite has no effective
-per-row score definition configured.
+`id` (surrogate). Natural key: unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)`. A row is written whenever the suite has an effective per-row score definition **and** either the test case actually has a computed score (`SUCCESS` aggregate with at least one numeric metric sample) or its aggregate is `FAILED` (in which case a row is written regardless of whether it has any numeric samples, with `score = NULL`). A `SUCCESS`-aggregate test case with zero numeric samples (e.g. every metric condition-skipped) stays absent from this table, exactly as it stays absent from `test_case_metric_scores_aggregated` — only a `FAILED` aggregate forces a row into existence despite having nothing to score. No row exists at all when the suite has no effective per-row score definition configured.
 
 ### Indexes
 
-`idx_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id, computed_at_ms DESC)` (V1.21) — supports the `test_case_eval_scores` entity's `DISTINCT ON` access pattern and `test_suite_run_id`-scoped lookups (`eq`/`in`).
+The unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` doubles as the lookup index for `test_suite_run_id`-scoped queries.
 
 ---
 
@@ -1103,7 +1087,7 @@ When used as a suite's `overallScore` and computed per row (`test_case_eval_scor
 | V1.18 | `V1.18__AddRequestColumnsToEvalSummaries.sql` | Added `request_index`/`total_requests` (NOT NULL DEFAULT 0/1) to test_case_eval_summaries; dropped and re-created unique index `uq_eval_summaries_natural_key` as `(test_suite_run_id, test_case_id, run_index, request_index, turn_index, computation_id, created_at_ms)` |
 | V1.19 | `V1.19__CreateTestCaseEvalScoresTable.sql` | Created test_case_eval_scores table (`eval_summary_id` PK, nullable `score`/`passed`, `computed_at_ms`); no denormalized context, no secondary indexes — every read joins to test_case_eval_summaries |
 | V1.20 | `V1.20__CreateTestCaseMetricScoresAggregatedTable.sql` | Created test_case_metric_scores_aggregated table (`id` PK, `test_suite_run_id`/`test_case_id`/`computation_id`, `metric_scores` JSONB NOT NULL DEFAULT '{}', `created_at_ms` (set once, immutable across upserts), `computed_at_ms`); unique index on `(test_suite_run_id, test_case_id, computation_id)`, lookup index on `computation_id` |
-| V1.21 | `V1.21__AddRunCaseContextToTestCaseEvalScores.sql` | Added `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id` (all NOT NULL) to test_case_eval_scores, backfilled in place from test_case_eval_summaries; `eval_summary_id` remains the PK and write grain, unchanged. Added index `idx_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id, computed_at_ms DESC)` |
+| V1.21 | `V1.21__AddRunCaseContextToTestCaseEvalScores.sql` | Dropped and re-created test_case_eval_scores (`id` PK; `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id`/`execution_status` NOT NULL; nullable `score`/`passed`; `computed_at_ms`); `eval_summary_id` removed; unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` |
 
 ---
 

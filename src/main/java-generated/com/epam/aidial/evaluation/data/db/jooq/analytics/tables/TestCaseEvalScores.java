@@ -5,7 +5,6 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics.tables;
 
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Analytics;
-import com.epam.aidial.evaluation.data.db.jooq.analytics.Indexes;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Keys;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalScoresRecord;
 
@@ -15,7 +14,6 @@ import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Index;
 import org.jooq.Name;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
@@ -55,24 +53,9 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
     }
 
     /**
-     * The column <code>analytics.test_case_eval_scores.eval_summary_id</code>.
+     * The column <code>analytics.test_case_eval_scores.id</code>.
      */
-    public final TableField<TestCaseEvalScoresRecord, String> EVAL_SUMMARY_ID = createField(DSL.name("eval_summary_id"), SQLDataType.VARCHAR(36), this, "");
-
-    /**
-     * The column <code>analytics.test_case_eval_scores.score</code>.
-     */
-    public final TableField<TestCaseEvalScoresRecord, Double> SCORE = createField(DSL.name("score"), SQLDataType.DOUBLE, this, "");
-
-    /**
-     * The column <code>analytics.test_case_eval_scores.passed</code>.
-     */
-    public final TableField<TestCaseEvalScoresRecord, Boolean> PASSED = createField(DSL.name("passed"), SQLDataType.BOOLEAN, this, "");
-
-    /**
-     * The column <code>analytics.test_case_eval_scores.computed_at_ms</code>.
-     */
-    public final TableField<TestCaseEvalScoresRecord, Long> COMPUTED_AT_MS = createField(DSL.name("computed_at_ms"), SQLDataType.BIGINT.nullable(false), this, "");
+    public final TableField<TestCaseEvalScoresRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
 
     /**
      * The column
@@ -101,9 +84,19 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
     public final TableField<TestCaseEvalScoresRecord, String> EXECUTION_STATUS = createField(DSL.name("execution_status"), SQLDataType.VARCHAR(20).nullable(false), this, "");
 
     /**
-     * The column <code>analytics.test_case_eval_scores.id</code>.
+     * The column <code>analytics.test_case_eval_scores.score</code>.
      */
-    public final TableField<TestCaseEvalScoresRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+    public final TableField<TestCaseEvalScoresRecord, Double> SCORE = createField(DSL.name("score"), SQLDataType.DOUBLE, this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.passed</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, Boolean> PASSED = createField(DSL.name("passed"), SQLDataType.BOOLEAN, this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.computed_at_ms</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, Long> COMPUTED_AT_MS = createField(DSL.name("computed_at_ms"), SQLDataType.BIGINT.nullable(false), this, "");
 
     private TestCaseEvalScores(Name alias, Table<TestCaseEvalScoresRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -142,13 +135,13 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
     }
 
     @Override
-    public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.UQ_TEST_CASE_EVAL_SCORES_NEW_FORMAT_KEY);
+    public UniqueKey<TestCaseEvalScoresRecord> getPrimaryKey() {
+        return Keys.TEST_CASE_EVAL_SCORES_PKEY;
     }
 
     @Override
-    public UniqueKey<TestCaseEvalScoresRecord> getPrimaryKey() {
-        return Keys.TEST_CASE_EVAL_SCORES_PKEY;
+    public List<UniqueKey<TestCaseEvalScoresRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.UQ_TEST_CASE_EVAL_SCORES_NATURAL_KEY);
     }
 
     @Override

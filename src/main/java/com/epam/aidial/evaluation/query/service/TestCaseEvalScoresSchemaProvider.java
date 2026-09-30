@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
  * Schema provider for the simple {@code test_case_eval_scores} entity (one row per test case per
  * computation, deduplicated — see {@link PostgresTestCaseEvalScoreEntityResolver}). All columns are
  * plain scalars (no JSONB), so the entity is not complex and has no detailed schema, mirroring
- * {@code TestCaseMetricScoresSchemaProvider}. Reads the resolver's static {@code DEDUPED} table constant
+ * {@code TestCaseMetricScoresSchemaProvider}. Reads the resolver's static {@code SCORES} table constant
  * directly rather than injecting the (vendor-gated) resolver bean, so schema discovery stays independent
  * of which analytics vendor is configured.
  */
@@ -26,7 +26,7 @@ public class TestCaseEvalScoresSchemaProvider implements QueryableEntitySchemaPr
     private final List<QuerySchemaFieldDto> baseSchema;
 
     public TestCaseEvalScoresSchemaProvider(JooqTableSchemaResolver schemaResolver) {
-        this.baseSchema = schemaResolver.resolve(PostgresTestCaseEvalScoreEntityResolver.DEDUPED);
+        this.baseSchema = schemaResolver.resolve(PostgresTestCaseEvalScoreEntityResolver.SCORES);
     }
 
     @Override

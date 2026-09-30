@@ -105,15 +105,10 @@ public class AnalyticsTestDataHelper {
                 .fetch(AnalyticsTestDataHelper::recordToMap);
     }
 
-    /**
-     * Reads {@code test_case_eval_scores} at its raw write grain — one row per test case for a new-format
-     * (post-Decision-10) run, or one row per legacy write for an older one — so a test can assert on the
-     * underlying rows directly rather than through the deduplicated Query DSL entity.
-     */
+    /** Reads {@code test_case_eval_scores} rows for a run directly, bypassing the Query DSL entity. */
     public List<Map<String, Object>> findTestCaseEvalScoresByRunId(UUID runId) {
         return analyticsDsl
                 .select(
-                        TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID,
                         TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
                         TEST_CASE_EVAL_SCORES.TEST_CASE_NAME,
                         TEST_CASE_EVAL_SCORES.EXECUTION_STATUS,
@@ -122,38 +117,6 @@ public class AnalyticsTestDataHelper {
                 .from(TEST_CASE_EVAL_SCORES)
                 .where(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID.eq(runId.toString()))
                 .fetch(AnalyticsTestDataHelper::recordToMap);
-    }
-
-    /**
-     * Inserts a {@code test_case_eval_scores} row with a real (non-null) {@code eval_summary_id} — the
-     * pre-Decision-10 "legacy" shape that {@code PostgresTestCaseEvalScoreRepository.saveAll} itself can no
-     * longer produce (it always writes {@code eval_summary_id = NULL}). Tests use this to simulate rows
-     * written before the re-key, to exercise {@code PostgresTestCaseEvalScoreEntityResolver}'s
-     * new-format-first/freshest-among-legacy dedup tie-break against a realistic mix of row formats.
-     */
-    public void forceLegacyTestCaseEvalScore(
-            UUID evalSummaryId,
-            UUID runId,
-            UUID testCaseId,
-            String testCaseName,
-            UUID computationId,
-            ExecutionStatus executionStatus,
-            Double score,
-            Boolean passed,
-            long computedAtMs) {
-        analyticsDsl
-                .insertInto(TEST_CASE_EVAL_SCORES)
-                .set(TEST_CASE_EVAL_SCORES.ID, evalSummaryId.toString())
-                .set(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID, evalSummaryId.toString())
-                .set(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID, runId.toString())
-                .set(TEST_CASE_EVAL_SCORES.TEST_CASE_ID, testCaseId.toString())
-                .set(TEST_CASE_EVAL_SCORES.TEST_CASE_NAME, testCaseName)
-                .set(TEST_CASE_EVAL_SCORES.COMPUTATION_ID, computationId.toString())
-                .set(TEST_CASE_EVAL_SCORES.EXECUTION_STATUS, executionStatus.name())
-                .set(TEST_CASE_EVAL_SCORES.SCORE, score)
-                .set(TEST_CASE_EVAL_SCORES.PASSED, passed)
-                .set(TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS, computedAtMs)
-                .execute();
     }
 
     public List<Map<String, Object>> findResultsByRunId(UUID runId) {

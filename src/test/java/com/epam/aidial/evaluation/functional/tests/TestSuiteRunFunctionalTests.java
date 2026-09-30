@@ -2097,8 +2097,8 @@ public abstract class TestSuiteRunFunctionalTests extends BaseFunctionalTest {
     }
 
     /**
-     * Reads {@code test_case_eval_scores} keyed by test case name — safe post-Decision-10, since every row
-     * written going forward is one-per-test-case (new format, {@code eval_summary_id IS NULL}). A test case
+     * Reads {@code test_case_eval_scores} keyed by test case name — safe since every row is
+     * one-per-test-case. A test case
      * with no effective per-row score definition has no entry at all (see {@code
      * InProcessMetricEvaluationExecutor#writeRowScores}'s early return), not an entry with a null score —
      * callers assert absence via {@code Map#get}/{@code Map#isEmpty} rather than a null field read.

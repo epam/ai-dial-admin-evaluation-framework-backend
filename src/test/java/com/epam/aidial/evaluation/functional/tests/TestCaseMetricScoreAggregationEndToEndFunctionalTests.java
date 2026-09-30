@@ -345,8 +345,7 @@ public abstract class TestCaseMetricScoreAggregationEndToEndFunctionalTests exte
                         .filter(row -> "case-multi-turn-broadcast".equals(row.get("test_case_name")))
                         .toList();
         assertThat(rawScoreRows)
-                .as("one test_case_eval_scores row per test case (new format, eval_summary_id IS NULL) — "
-                        + "not one per raw eval-summary row")
+                .as("one test_case_eval_scores row per test case — " + "not one per raw eval-summary row")
                 .hasSize(1);
         assertThat(rawScoreRows).allSatisfy(row -> {
             assertThat(row.get("execution_status"))

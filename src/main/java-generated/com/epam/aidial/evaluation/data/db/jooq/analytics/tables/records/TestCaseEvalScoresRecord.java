@@ -19,59 +19,17 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
     private static final long serialVersionUID = 1L;
 
     /**
-     * Setter for <code>analytics.test_case_eval_scores.eval_summary_id</code>.
+     * Setter for <code>analytics.test_case_eval_scores.id</code>.
      */
-    public void setEvalSummaryId(String value) {
+    public void setId(String value) {
         set(0, value);
     }
 
     /**
-     * Getter for <code>analytics.test_case_eval_scores.eval_summary_id</code>.
+     * Getter for <code>analytics.test_case_eval_scores.id</code>.
      */
-    public String getEvalSummaryId() {
+    public String getId() {
         return (String) get(0);
-    }
-
-    /**
-     * Setter for <code>analytics.test_case_eval_scores.score</code>.
-     */
-    public void setScore(Double value) {
-        set(1, value);
-    }
-
-    /**
-     * Getter for <code>analytics.test_case_eval_scores.score</code>.
-     */
-    public Double getScore() {
-        return (Double) get(1);
-    }
-
-    /**
-     * Setter for <code>analytics.test_case_eval_scores.passed</code>.
-     */
-    public void setPassed(Boolean value) {
-        set(2, value);
-    }
-
-    /**
-     * Getter for <code>analytics.test_case_eval_scores.passed</code>.
-     */
-    public Boolean getPassed() {
-        return (Boolean) get(2);
-    }
-
-    /**
-     * Setter for <code>analytics.test_case_eval_scores.computed_at_ms</code>.
-     */
-    public void setComputedAtMs(Long value) {
-        set(3, value);
-    }
-
-    /**
-     * Getter for <code>analytics.test_case_eval_scores.computed_at_ms</code>.
-     */
-    public Long getComputedAtMs() {
-        return (Long) get(3);
     }
 
     /**
@@ -79,7 +37,7 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
      * <code>analytics.test_case_eval_scores.test_suite_run_id</code>.
      */
     public void setTestSuiteRunId(String value) {
-        set(4, value);
+        set(1, value);
     }
 
     /**
@@ -87,77 +45,105 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
      * <code>analytics.test_case_eval_scores.test_suite_run_id</code>.
      */
     public String getTestSuiteRunId() {
-        return (String) get(4);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>analytics.test_case_eval_scores.test_case_id</code>.
      */
     public void setTestCaseId(String value) {
-        set(5, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>analytics.test_case_eval_scores.test_case_id</code>.
      */
     public String getTestCaseId() {
-        return (String) get(5);
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>analytics.test_case_eval_scores.test_case_name</code>.
      */
     public void setTestCaseName(String value) {
-        set(6, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>analytics.test_case_eval_scores.test_case_name</code>.
      */
     public String getTestCaseName() {
-        return (String) get(6);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>analytics.test_case_eval_scores.computation_id</code>.
      */
     public void setComputationId(String value) {
-        set(7, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>analytics.test_case_eval_scores.computation_id</code>.
      */
     public String getComputationId() {
-        return (String) get(7);
+        return (String) get(4);
     }
 
     /**
      * Setter for <code>analytics.test_case_eval_scores.execution_status</code>.
      */
     public void setExecutionStatus(String value) {
-        set(8, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>analytics.test_case_eval_scores.execution_status</code>.
      */
     public String getExecutionStatus() {
-        return (String) get(8);
+        return (String) get(5);
     }
 
     /**
-     * Setter for <code>analytics.test_case_eval_scores.id</code>.
+     * Setter for <code>analytics.test_case_eval_scores.score</code>.
      */
-    public void setId(String value) {
-        set(9, value);
+    public void setScore(Double value) {
+        set(6, value);
     }
 
     /**
-     * Getter for <code>analytics.test_case_eval_scores.id</code>.
+     * Getter for <code>analytics.test_case_eval_scores.score</code>.
      */
-    public String getId() {
-        return (String) get(9);
+    public Double getScore() {
+        return (Double) get(6);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_scores.passed</code>.
+     */
+    public void setPassed(Boolean value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_scores.passed</code>.
+     */
+    public Boolean getPassed() {
+        return (Boolean) get(7);
+    }
+
+    /**
+     * Setter for <code>analytics.test_case_eval_scores.computed_at_ms</code>.
+     */
+    public void setComputedAtMs(Long value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>analytics.test_case_eval_scores.computed_at_ms</code>.
+     */
+    public Long getComputedAtMs() {
+        return (Long) get(8);
     }
 
     // -------------------------------------------------------------------------
@@ -183,19 +169,18 @@ public class TestCaseEvalScoresRecord extends UpdatableRecordImpl<TestCaseEvalSc
     /**
      * Create a detached, initialised TestCaseEvalScoresRecord
      */
-    public TestCaseEvalScoresRecord(String evalSummaryId, Double score, Boolean passed, Long computedAtMs, String testSuiteRunId, String testCaseId, String testCaseName, String computationId, String executionStatus, String id) {
+    public TestCaseEvalScoresRecord(String id, String testSuiteRunId, String testCaseId, String testCaseName, String computationId, String executionStatus, Double score, Boolean passed, Long computedAtMs) {
         super(TestCaseEvalScores.TEST_CASE_EVAL_SCORES);
 
-        setEvalSummaryId(evalSummaryId);
-        setScore(score);
-        setPassed(passed);
-        setComputedAtMs(computedAtMs);
+        setId(id);
         setTestSuiteRunId(testSuiteRunId);
         setTestCaseId(testCaseId);
         setTestCaseName(testCaseName);
         setComputationId(computationId);
         setExecutionStatus(executionStatus);
-        setId(id);
+        setScore(score);
+        setPassed(passed);
+        setComputedAtMs(computedAtMs);
         resetTouchedOnNotNull();
     }
 }

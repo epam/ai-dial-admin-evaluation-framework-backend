@@ -40,16 +40,14 @@ public abstract class PostgresTestCaseEvalScoreRepositoryFunctionalTests extends
     private StructuredQueryExecutor queryRepository;
 
     @Test
-    @DisplayName("saveAll inserts a row with all 4 new columns populated")
+    @DisplayName("saveAll inserts a row with run and test case context populated")
     void saveAllInsertsWithRunCaseContext() {
-        UUID evalSummaryId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID testCaseId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
 
         repository.saveAll(List.of(TestCaseEvalScore.builder()
                 .id(UUID.randomUUID())
-                .evalSummaryId(evalSummaryId)
                 .testSuiteRunId(runId)
                 .testCaseId(testCaseId)
                 .testCaseName("case-a")
@@ -70,14 +68,13 @@ public abstract class PostgresTestCaseEvalScoreRepositoryFunctionalTests extends
     @Test
     @DisplayName("saveAll ignores a second insert for the same key, leaving the existing row unchanged")
     void saveAllIgnoresConflictingInsert() {
-        UUID evalSummaryId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID testCaseId = UUID.randomUUID();
         UUID computationId = UUID.randomUUID();
 
-        repository.saveAll(List.of(scoreRow(evalSummaryId, runId, testCaseId, computationId, 0.0, false, 1_000L)));
+        repository.saveAll(List.of(scoreRow(runId, testCaseId, computationId, 0.0, false, 1_000L)));
         // A repeated write for the same (run, test case, computation) must not overwrite the first.
-        repository.saveAll(List.of(scoreRow(evalSummaryId, runId, testCaseId, computationId, 0.9, true, 2_000L)));
+        repository.saveAll(List.of(scoreRow(runId, testCaseId, computationId, 0.9, true, 2_000L)));
 
         Map<String, Object> row = findByRunId(runId);
         assertThat(((Number) row.get("score")).doubleValue()).isEqualTo(0.0);
@@ -108,16 +105,9 @@ public abstract class PostgresTestCaseEvalScoreRepositoryFunctionalTests extends
     }
 
     private static TestCaseEvalScore scoreRow(
-            UUID evalSummaryId,
-            UUID runId,
-            UUID testCaseId,
-            UUID computationId,
-            double score,
-            boolean passed,
-            long computedAtMs) {
+            UUID runId, UUID testCaseId, UUID computationId, double score, boolean passed, long computedAtMs) {
         return TestCaseEvalScore.builder()
                 .id(UUID.randomUUID())
-                .evalSummaryId(evalSummaryId)
                 .testSuiteRunId(runId)
                 .testCaseId(testCaseId)
                 .testCaseName("case-a")

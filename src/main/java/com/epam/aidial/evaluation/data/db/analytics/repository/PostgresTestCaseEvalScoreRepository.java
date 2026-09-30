@@ -23,13 +23,7 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
     @Qualifier("analyticsDsl")
     private final DSLContext dsl;
 
-    /**
-     * Insert-only: scores are computed once per test case after the last flush, so an existing row is
-     * left untouched. Every row here is new-format ({@code eval_summary_id = NULL}), so the conflict
-     * target is the partial unique index scoped to that discriminator, not the {@code id} primary key
-     * (each call mints a fresh {@code id}, so the PK itself never conflicts). Legacy rows (real
-     * {@code eval_summary_id}) are never written or touched by this method.
-     */
+    /** Insert-only: scores are computed once per test case after the last flush, so an existing row is left untouched. */
     @Override
     public void saveAll(List<TestCaseEvalScore> scores) {
         if (scores == null || scores.isEmpty()) {
@@ -58,7 +52,6 @@ public class PostgresTestCaseEvalScoreRepository implements TestCaseEvalScoreRep
                                 TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID,
                                 TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
                                 TEST_CASE_EVAL_SCORES.COMPUTATION_ID)
-                        .where(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.isNull())
                         .doNothing())
                 .toList();
         dsl.batch(queries).execute();

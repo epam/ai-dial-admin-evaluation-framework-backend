@@ -17,6 +17,7 @@ import com.epam.aidial.evaluation.data.db.repository.sql.SortWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import java.util.List;
 import java.util.Optional;
@@ -128,6 +129,10 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                 .set(TEST_SUITES.OVERALL_SCORE, toJsonb(testSuite.getOverallScore()))
                 .set(TEST_SUITES.TEST_CASE_OVERALL_SCORE, toJsonb(testSuite.getTestCaseOverallScore()))
                 .set(TEST_SUITES.OVERALL_SCORE_THRESHOLD, testSuite.getOverallScoreThreshold())
+                .set(
+                        TEST_SUITES.METRIC_SCORE_AGGREGATION,
+                        MetricScoreAggregation.orDefault(testSuite.getMetricScoreAggregation())
+                                .getValue())
                 .set(TEST_SUITES.TEST_CASE_FILTER, toJsonb(testSuite.getTestCaseFilter()))
                 .set(TEST_SUITES.IS_VALID, testSuite.isValid())
                 .set(TEST_SUITES.VALIDATION_WARNINGS, toJsonb(testSuite.getValidationWarnings()))
@@ -168,6 +173,10 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                 .set(TEST_SUITES.OVERALL_SCORE, toJsonb(testSuite.getOverallScore()))
                 .set(TEST_SUITES.TEST_CASE_OVERALL_SCORE, toJsonb(testSuite.getTestCaseOverallScore()))
                 .set(TEST_SUITES.OVERALL_SCORE_THRESHOLD, testSuite.getOverallScoreThreshold())
+                .set(
+                        TEST_SUITES.METRIC_SCORE_AGGREGATION,
+                        MetricScoreAggregation.orDefault(testSuite.getMetricScoreAggregation())
+                                .getValue())
                 .set(TEST_SUITES.TEST_CASE_FILTER, toJsonb(testSuite.getTestCaseFilter()))
                 .set(TEST_SUITES.IS_VALID, testSuite.isValid())
                 .set(TEST_SUITES.VALIDATION_WARNINGS, toJsonb(testSuite.getValidationWarnings()))
@@ -302,6 +311,10 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                 .set(TEST_SUITES.OVERALL_SCORE, toJsonb(testSuite.getOverallScore()))
                 .set(TEST_SUITES.TEST_CASE_OVERALL_SCORE, toJsonb(testSuite.getTestCaseOverallScore()))
                 .set(TEST_SUITES.OVERALL_SCORE_THRESHOLD, testSuite.getOverallScoreThreshold())
+                .set(
+                        TEST_SUITES.METRIC_SCORE_AGGREGATION,
+                        MetricScoreAggregation.orDefault(testSuite.getMetricScoreAggregation())
+                                .getValue())
                 .set(TEST_SUITES.TEST_CASE_FILTER, toJsonb(testSuite.getTestCaseFilter()))
                 .set(TEST_SUITES.IS_VALID, testSuite.isValid())
                 .set(TEST_SUITES.VALIDATION_WARNINGS, toJsonb(testSuite.getValidationWarnings()))

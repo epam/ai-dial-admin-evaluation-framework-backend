@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteDeleteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
@@ -766,6 +767,85 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
+    @DisplayName("Should return 400 when testCaseOverallScore is a CustomFunction on create — only "
+            + "Mean/WeightedMean are meaningful per test case")
+    void shouldReject400WhenTestCaseOverallScoreIsCustomFunctionOnCreate() {
+        OverallScoreDefinition testCaseOverallScoreDefinition = new CustomFunction(Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "avg",
+                                "args",
+                                List.of(Map.of("type", "field", "name", "metric::MetricA::score"))),
+                        "as",
+                        "value"))));
+        TestSuiteRequestDto request =
+                buildTestSuiteRequest("Rejected TestCaseOverallScore Suite Create", "Description");
+        request.setTestCaseOverallScore(testCaseOverallScoreDefinition);
+
+        ResponseEntity<String> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("Should return 400 when testCaseOverallScore is a CustomFunction on update — only "
+            + "Mean/WeightedMean are meaningful per test case")
+    void shouldReject400WhenTestCaseOverallScoreIsCustomFunctionOnUpdate() {
+        TestSuiteResponseDto created = createTestSuite("Rejected TestCaseOverallScore Suite Update");
+        OverallScoreDefinition testCaseOverallScoreDefinition = new CustomFunction(Map.of(
+                "entity",
+                "eval_summaries",
+                "mode",
+                "aggregate",
+                "select",
+                List.of(Map.of(
+                        "expr",
+                        Map.of(
+                                "type",
+                                "fn",
+                                "name",
+                                "avg",
+                                "args",
+                                List.of(Map.of("type", "field", "name", "metric::MetricA::score"))),
+                        "as",
+                        "value"))));
+        TestSuiteRequestDto updateRequest = TestSuiteRequestDto.builder()
+                .name(created.getName())
+                .description(created.getDescription())
+                .deploymentRef(DeploymentReferenceDto.builder()
+                        .id("deployment-1")
+                        .name("Deployment One")
+                        .version("v1")
+                        .build())
+                .endpointRef(buildEndpointContract("/v1/chat"))
+                .datasetId(created.getDatasetId())
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
+                .testCaseOverallScore(testCaseOverallScoreDefinition)
+                .build();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch(created.getVersion() != null ? "\"" + created.getVersion() + "\"" : "0");
+        ResponseEntity<String> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + created.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(updateRequest, headers),
+                String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     @DisplayName("Should persist and return overallScoreThreshold on create")
     void shouldPersistAndReturnOverallScoreThresholdOnCreate() {
         // Given: a create request including overallScoreThreshold
@@ -826,6 +906,68 @@ public abstract class TestSuiteFunctionalTests extends BaseFunctionalTest {
         assertThat(fetched.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(fetched.getBody()).isNotNull();
         assertThat(fetched.getBody().getOverallScoreThreshold()).isEqualTo(0.9);
+    }
+
+    @Test
+    @DisplayName("Should default metricScoreAggregation to AVG on create when omitted")
+    void shouldDefaultMetricScoreAggregationToAvgOnCreate() {
+        TestSuiteResponseDto created = createTestSuite("Aggregation Suite Default");
+
+        assertThat(created.getMetricScoreAggregation()).isEqualTo(MetricScoreAggregation.AVG);
+    }
+
+    @Test
+    @DisplayName("Should persist metricScoreAggregation on create and keep it when an update omits it")
+    void shouldPersistMetricScoreAggregationAndKeepItWhenUpdateOmitsIt() {
+        TestSuiteRequestDto request = buildTestSuiteRequest("Aggregation Suite Explicit", "Description");
+        request.setMetricScoreAggregation(MetricScoreAggregation.MIN);
+        ResponseEntity<TestSuiteResponseDto> createdResponse =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(createdResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto created = createdResponse.getBody();
+        assertThat(created).isNotNull();
+        assertThat(created.getMetricScoreAggregation()).isEqualTo(MetricScoreAggregation.MIN);
+
+        TestSuiteRequestDto update = buildTestSuiteRequest("Aggregation Suite Explicit", "Updated");
+        update.setDatasetId(created.getDatasetId());
+        update.setMetricScoreAggregation(MetricScoreAggregation.MAX);
+        TestSuiteResponseDto updated = putSuite(created, update);
+        assertThat(updated.getMetricScoreAggregation()).isEqualTo(MetricScoreAggregation.MAX);
+
+        TestSuiteRequestDto omitting = buildTestSuiteRequest("Aggregation Suite Explicit", "Updated again");
+        omitting.setDatasetId(created.getDatasetId());
+        TestSuiteResponseDto kept = putSuite(updated, omitting);
+        assertThat(kept.getMetricScoreAggregation()).isEqualTo(MetricScoreAggregation.MAX);
+
+        TestSuiteResponseDto fetched =
+                restTemplate.getForObject(apiUrl("/test-suites/" + created.getId()), TestSuiteResponseDto.class);
+        assertThat(fetched.getMetricScoreAggregation()).isEqualTo(MetricScoreAggregation.MAX);
+    }
+
+    @Test
+    @DisplayName("Should return 400 for an unknown metricScoreAggregation value")
+    void shouldReturn400ForUnknownMetricScoreAggregation() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        String body = "{\"name\":\"Bad Aggregation\",\"metricScoreAggregation\":\"MEDIAN\"}";
+
+        ResponseEntity<String> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), new HttpEntity<>(body, headers), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    private TestSuiteResponseDto putSuite(TestSuiteResponseDto current, TestSuiteRequestDto update) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setIfMatch("\"" + current.getVersion() + "\"");
+        ResponseEntity<TestSuiteResponseDto> response = restTemplate.exchange(
+                apiUrl("/test-suites/" + current.getId()),
+                HttpMethod.PUT,
+                new HttpEntity<>(update, headers),
+                TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        return response.getBody();
     }
 
     @Test

@@ -3,6 +3,7 @@
   "name": "Updated Suite",
   "description": "Updated description",
   "suiteType": "DEPLOYMENT",
+  "metricScoreAggregation": "AVG",
   "deploymentRef": {
     "id": "deploy-001",
     "name": "Production",

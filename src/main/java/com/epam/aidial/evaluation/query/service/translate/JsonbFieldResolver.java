@@ -46,6 +46,8 @@ public class JsonbFieldResolver {
     private static final String EXTRACTED_COLUMNS_FIELD = "extracted_columns";
     private static final String METRIC_VALUES_FIELD = "metric_values";
     private static final String METRIC_INFOS_FIELD = "metric_infos";
+    private static final String METRIC_SCORES_FIELD = "metric_scores";
+    private static final String METRIC_SCORES_COLUMN_PREFIX = METRIC_SCORES_FIELD + COLUMN_SEPARATOR;
     private static final String DEPLOYMENT_REF_FIELD = "deployment_ref";
     private static final String MCP_DEPLOYMENT_REF_FIELD = "mcp_deployment_ref";
     private static final String DEPLOYMENT_REF_PREFIX = DEPLOYMENT_REF_FIELD + COLUMN_SEPARATOR;
@@ -73,6 +75,9 @@ public class JsonbFieldResolver {
         }
         if (name.startsWith(METRIC_COLUMN_PREFIX)) {
             return metricPath(bindings, suffix(name, METRIC_COLUMN_PREFIX), name);
+        }
+        if (name.startsWith(METRIC_SCORES_COLUMN_PREFIX)) {
+            return metricScoresPath(bindings, suffix(name, METRIC_SCORES_COLUMN_PREFIX), name);
         }
         if (name.startsWith(DEPLOYMENT_REF_PREFIX)) {
             return textPath(bindings, DEPLOYMENT_REF_FIELD, suffix(name, DEPLOYMENT_REF_PREFIX), name);
@@ -114,6 +119,27 @@ public class JsonbFieldResolver {
         final String metricName = suffix.substring(0, separator);
         final String outputField = suffix.substring(separator + COLUMN_SEPARATOR.length());
         return jsonPathAccessor.jsonbAtAsNumeric(column, DSL.val(metricName), DSL.val(outputField));
+    }
+
+    /**
+     * Resolves {@code metric_scores::<metricName>::<stat>} (e.g. {@code metric_scores::Accuracy.score::avg})
+     * against the {@code test_case_metric_scores} entity's {@code metric_scores} JSONB column — same
+     * two-level numeric path shape as {@link #metricPath}, split on the <strong>last</strong>
+     * {@code ::} occurrence since a metric name may itself contain dots but never {@code ::}.
+     */
+    private Field<?> metricScoresPath(Map<String, QueryFieldBinding> bindings, String suffix, String fullName) {
+        final Field<JSONB> column = jsonbColumn(bindings, METRIC_SCORES_FIELD);
+        if (column == null) {
+            return null;
+        }
+        final int separator = suffix.lastIndexOf(COLUMN_SEPARATOR);
+        if (separator <= 0 || separator == suffix.length() - COLUMN_SEPARATOR.length()) {
+            throw new ValidationException("metric_scores field must be of the form "
+                    + "'metric_scores::<metricName>::<stat>': '" + fullName + "'");
+        }
+        final String metricName = suffix.substring(0, separator);
+        final String stat = suffix.substring(separator + COLUMN_SEPARATOR.length());
+        return jsonPathAccessor.jsonbAtAsNumeric(column, DSL.val(metricName), DSL.val(stat));
     }
 
     private static String suffix(String name, String prefix) {

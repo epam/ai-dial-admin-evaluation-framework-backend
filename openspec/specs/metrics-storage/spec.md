@@ -171,52 +171,44 @@ Status: **Implemented**
 - **THEN** the service SHALL generate one, preserving the existing external-API contract
 
 ### Requirement: Database schema for eval summary scores
-The analytics database SHALL contain a `test_case_eval_scores` table storing per-row overall score/pass-fail, computed via SQL and joined into the eval-summary read surface (not native columns on `test_case_eval_summaries`). The table SHALL carry no denormalized run/computation/test-case context — every read reaches it via a join to `test_case_eval_summaries`, which already carries that context — so `eval_summary_id` is the only key needed.
+The analytics database SHALL contain a `test_case_eval_scores` table storing one row per `(test_suite_run_id, test_case_id, computation_id)`, computed via SQL and joined into the eval-summary read surface (not native columns on `test_case_eval_summaries`). The table SHALL carry `test_suite_run_id`, `test_case_id`, `test_case_name`, `computation_id`, and `execution_status`, denormalized/aggregated at write time, so the table can also be read directly (deduplicated — see the `test_case_eval_scores` Query DSL entity requirement below) without a join. The primary key SHALL be a surrogate `id` column. A unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` SHALL enforce at most one row per test case per computation.
 Status: **Implemented**
 
 #### Scenario: Table structure
-- **WHEN** the analytics Flyway migration V1.19 is applied
-- **THEN** the `test_case_eval_scores` table SHALL have exactly the columns: `eval_summary_id` (VARCHAR(36), NOT NULL, PK), `score` (DOUBLE PRECISION, nullable), `passed` (BOOLEAN, nullable), `computed_at_ms` (BIGINT, NOT NULL) — no other columns and no secondary indexes
-
-#### Scenario: Primary key is the scored row's own id
-- **WHEN** the migration is applied
-- **THEN** `eval_summary_id` SHALL be the primary key — a 1:1 (or 0:1, since a row without a computable score is simply never inserted) relationship with `test_case_eval_summaries.id`, needing no surrogate PK
+- **WHEN** the analytics Flyway migration V1.21 is applied
+- **THEN** the `test_case_eval_scores` table SHALL have the columns: `id` (VARCHAR(36), NOT NULL, PK), `test_suite_run_id` (VARCHAR(36), NOT NULL), `test_case_id` (VARCHAR(36), NOT NULL), `test_case_name` (VARCHAR(255), NOT NULL), `computation_id` (VARCHAR(36), NOT NULL), `execution_status` (VARCHAR(20), NOT NULL), `score` (DOUBLE PRECISION, nullable), `passed` (BOOLEAN, nullable), `computed_at_ms` (BIGINT, NOT NULL), and a unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)`
 
 #### Scenario: A row's absence and a present-but-null row read identically
-- **WHEN** a `test_case_eval_summaries` row has no matching `test_case_eval_scores` row (no `overallScore` configured, or a rejected query shape), versus a matching row whose `score` is itself SQL NULL (e.g. a population-dependent CustomFunction)
+- **WHEN** a test case has no matching `test_case_eval_scores` row (no `overallScore` configured, or a rejected query shape), versus a matching row whose `score` is itself SQL NULL (e.g. a population-dependent CustomFunction, or an `execution_status = FAILED` aggregate)
 - **THEN** both SHALL read back as `score = null, passed = null` via the LEFT JOIN — a client cannot and need not distinguish the two cases
 
 ### Requirement: Batch write eval summary scores (internal only)
-The in-process metric evaluation engine SHALL write `test_case_eval_scores` rows via `TestCaseEvalScoreService.batchCreate()`, one batch per Phase-2 flush, immediately after that flush's `test_case_eval_summaries` batch write succeeds. There SHALL be no external REST endpoint for this table — it is populated only by the internal engine and read only via the LEFT JOIN into the existing eval-summary endpoints.
+The in-process metric evaluation engine SHALL write `test_case_eval_scores` rows via `TestCaseEvalScoreService.batchInsert()`, one batch per chunk of test cases after the last Phase-2 flush, immediately after that chunk's `test_case_metric_scores_aggregated` batch write, with exactly one item per distinct test case (not one per raw `test_case_eval_summaries` row). There SHALL be no external REST endpoint for this table — it is populated only by the internal engine and read directly via the `test_case_eval_scores` Query DSL entity. The `eval_summaries` read surface SHALL NOT join to this table.
 Status: **Implemented**
 
-#### Scenario: One score batch write per flush
-- **WHEN** a Phase-2 flush writes N `test_case_eval_summaries` rows and the suite has an `overallScore` definition configured
-- **THEN** at most one `test_case_eval_scores` batch write SHALL follow, containing an entry for every row id the score computation returned a result for
+#### Scenario: One score batch write per flush, one item per test case
+- **WHEN** a Phase-2 flush writes N `test_case_eval_summaries` rows spanning M distinct test cases and the suite has an `overallScore` definition configured
+- **THEN** at most one `test_case_eval_scores` batch write SHALL follow, containing at most one item per test case (never one per raw row), each carrying that test case's `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id`/`execution_status`
 
-#### Scenario: Idempotent retry
-- **WHEN** a score batch write is retried for ids already present
-- **THEN** the insert SHALL use `ON CONFLICT (eval_summary_id) DO NOTHING`, so duplicates are silently skipped
+#### Scenario: A repeated write for the same test case is ignored
+- **WHEN** a score batch write is retried, or a later flush recomputes a score, for a `(test_suite_run_id, test_case_id, computation_id)` already present
+- **THEN** the insert SHALL use `ON CONFLICT (test_suite_run_id, test_case_id, computation_id) DO NOTHING`, leaving the existing row unchanged
 
 #### Scenario: A failed score write does not fail the run
 - **WHEN** the score computation or batch write throws an unexpected error
-- **THEN** the error SHALL be logged and the run SHALL continue — `score`/`passed` are regenerable derived data, unlike the eval summaries themselves
+- **THEN** the error SHALL be logged and the run SHALL continue — `score`/`passed`/`execution_status` are regenerable derived data, unlike the eval summaries themselves
 
-### Requirement: Overall score and pass/fail exposed in eval summary responses
-`EvalSummaryResponseDto` and `EvalSummaryDetailResponseDto` SHALL expose `score` (Double, nullable) and `passed` (Boolean, nullable), populated via a LEFT JOIN to `test_case_eval_scores` in all four `PostgresEvalSummaryRepository` query builders (list, export, export-with-bodies, detail) — not a native column on `test_case_eval_summaries`. Both fields SHALL be omitted from the JSON payload when `null` (`@JsonInclude(NON_NULL)`), consistent with other optional eval-summary fields.
+### Requirement: `test_case_eval_scores` Query DSL entity
+The system SHALL expose `test_case_eval_scores` as a Query DSL entity of the same name, presenting exactly one row per test case per computation (guaranteed by the table's unique constraint, so no dedup is needed). The entity SHALL support the `computation_id eq "latest"` sentinel, resolved the same way as `metric_score_results`. This entity SHALL be reachable through the existing generic query endpoint (`POST /api/v1/queries/execute`), and is the sole read surface for a test case's `score`/`passed` — the `eval_summaries` entity and REST endpoints do not expose either field.
 Status: **Implemented**
 
-#### Scenario: List response includes score and passed
-- **WHEN** a client calls the eval summaries list endpoint for a run whose rows have a matching `test_case_eval_scores` row
-- **THEN** each returned item SHALL include `score` and `passed`, reflecting the joined values
+#### Scenario: The freshest legacy row wins when only legacy rows disagree
+- **WHEN** a test case has only legacy rows for a key, and they disagree on `score` (different `computed_at_ms` values), with no new-format row present
+- **THEN** the entity SHALL surface the value from the legacy row with the greatest `computed_at_ms`
 
-#### Scenario: Detail response includes score and passed
-- **WHEN** a client calls the get-single-eval-summary endpoint
-- **THEN** the response SHALL include `score` and `passed`, populated via the same join
-
-#### Scenario: Null score/passed omitted from the response
-- **WHEN** a row has no matching `test_case_eval_scores` row, or one with `score = NULL`
-- **THEN** the response SHALL omit `score`/`passed` from the JSON payload rather than emitting explicit `null` values
+#### Scenario: `computation_id eq "latest"` resolves to the run's latest computation
+- **WHEN** a structured query against `test_case_eval_scores` filters by a single `test_suite_run_id` and `computation_id eq "latest"`
+- **THEN** the sentinel SHALL resolve to that run's most recently computed computation before translation, the same way it does for `metric_score_results`
 
 ### Requirement: Batch write run metric snapshots
 The service SHALL support persisting run metric snapshots both via the external REST API (`POST /api/v1/run-metric-snapshots`) and via internal writes from the in-process metric evaluation engine. Both paths SHALL go through `RunMetricSnapshotService.batchCreate()`, sharing the same validation, mapping, and persistence logic with idempotent `ON CONFLICT DO NOTHING`. The write SHALL execute in a meta-database transaction, so the run-existence check and the snapshot insert are atomic.
@@ -536,16 +528,16 @@ Status: **Implemented**
 
 ## Implementation Notes
 - Controller: `EvalSummaryController` — `@LogExecution`, `@Validated`; `RunMetricSnapshotController` (`/api/v1/run-metric-snapshots`) — `@LogExecution`, `@Validated`; `RunMetricSnapshotDeprecatedController` (`/api/v1/analytics/run-metric-snapshots`, `@Deprecated(forRemoval = true)`) — delegates to the same service
-- Service: `EvalSummaryService` in `service.domain.analytics` — reads run from meta for validation, writes to analytics; `RunMetricSnapshotService` in `service.domain` — `@Transactional("metaTransactionManager")`, reads the run and writes the snapshot in one meta transaction; `TestCaseEvalScoreService.batchCreate(computedAtMs, items)` in `service.domain.analytics` — `@Transactional("analyticsTransactionManager")`, internal-only (no controller, no external REST endpoint)
-- Repository: `PostgresEvalSummaryRepository` — typed jOOQ `DSLContext` with `@Qualifier("analyticsDsl")`, batch insert with ON CONFLICT DO NOTHING; `findAll()`/`count()`/`aggregate()` project a list-tier column set (excludes `metric_infos`, `extraction_warnings`, `request_body`, `response_body`); `findById()` (and the export-with-bodies list query) LEFT JOINs `test_case_run_results` to include `request_body`, `response_body`, and all columns including `metric_infos` and `extraction_warnings`; also LEFT JOINs `test_case_eval_scores` (all four query builders) to expose `score`/`passed`; `findLatestComputationId(runId)` resolves "latest" for the read path; `existsByRunIdAndComputationId(runId, computationId)` answers export's explicit-computation existence check via `fetchExists`; `PostgresRunMetricSnapshotRepository` (`data.db.repository`) — typed jOOQ `DSLContext` with `@Qualifier("metaDsl")` against the meta `run_metric_snapshots` table, and its own `findLatestComputationId` is retained for Query DSL metric-family discovery only; `TestCaseEvalScoreRepository`/`PostgresTestCaseEvalScoreRepository` — `saveAll`, jOOQ batch insert, `onConflict(EVAL_SUMMARY_ID).doNothing()`
-- Computation resolution: `ComputationResolver` in `service.domain.analytics` — maps `computation` (explicit UUID | `latest` | `null`) to a `computationId`, resolving `latest` through `EvalSummaryRepository.findLatestComputationId`; shared by list, count, aggregate, export, preview, and the `metric_score_results` `"latest"`-sentinel path
-- Model: `EvalSummary` — JSONB fields as `String` (raw JSON) in data model; includes `extractionWarnings`, `requestBody`, `responseBody` (nullable); `RunMetricSnapshot` (`data.db.model`) — bindings as `String` (raw JSON); `TestCaseEvalScore` (`data.db.analytics.model`) — `evalSummaryId`, `score` (nullable), `passed` (nullable), `computedAtMs`
+- Service: `EvalSummaryService` in `service.domain.analytics` — reads run from meta for validation, writes to analytics; `RunMetricSnapshotService` in `service.domain` — `@Transactional("metaTransactionManager")`, reads the run and writes the snapshot in one meta transaction; `TestCaseEvalScoreService.batchInsert(computedAtMs, items)` in `service.domain.analytics` — `@Transactional("analyticsTransactionManager")`, internal-only (no controller, no external REST endpoint)
+- Repository: `PostgresEvalSummaryRepository` — typed jOOQ `DSLContext` with `@Qualifier("analyticsDsl")`, batch insert with ON CONFLICT DO NOTHING; `findAll()`/`count()`/`aggregate()` project a list-tier column set (excludes `metric_infos`, `extraction_warnings`, `request_body`, `response_body`); `findById()` (and the export-with-bodies list query) LEFT JOINs `test_case_run_results` to include `request_body`, `response_body`, and all columns including `metric_infos` and `extraction_warnings`; it does **not** join `test_case_eval_scores` — `eval_summaries` never exposes `score`/`passed` (see the `test_case_eval_scores` Query DSL entity requirement above); `findLatestComputationId(runId)` resolves "latest" for the read path; `existsByRunIdAndComputationId(runId, computationId)` answers export's explicit-computation existence check via `fetchExists`; `PostgresRunMetricSnapshotRepository` (`data.db.repository`) — typed jOOQ `DSLContext` with `@Qualifier("metaDsl")` against the meta `run_metric_snapshots` table, and its own `findLatestComputationId` is retained for Query DSL metric-family discovery only; `TestCaseEvalScoreRepository`/`PostgresTestCaseEvalScoreRepository` — `saveAll`, jOOQ batch insert, `onConflict(TEST_SUITE_RUN_ID, TEST_CASE_ID, COMPUTATION_ID).doNothing()` (insert-only); `PostgresTestCaseEvalScoreEntityResolver` (`query.service.repository`) — the `test_case_eval_scores` Query DSL entity, a derived-table projection over the same jOOQ table, reusing `MetricScoreLatestComputationDefaulter` for `"latest"`; `TestCaseEvalScoresSchemaProvider` (`query.service`) — static base schema, reads the resolver's `SCORES` table constant directly rather than depending on the vendor-gated resolver bean
+- Computation resolution: `ComputationResolver` in `service.domain.analytics` — maps `computation` (explicit UUID | `latest` | `null`) to a `computationId`, resolving `latest` through `EvalSummaryRepository.findLatestComputationId`; shared by list, count, aggregate, export, preview, and the `metric_score_results`/`test_case_eval_scores` `"latest"`-sentinel path
+- Model: `EvalSummary` — JSONB fields as `String` (raw JSON) in data model; includes `extractionWarnings`, `requestBody`, `responseBody` (nullable); `RunMetricSnapshot` (`data.db.model`) — bindings as `String` (raw JSON); `TestCaseEvalScore` (`data.db.analytics.model`) — `id`, `testSuiteRunId`, `testCaseId`, `testCaseName`, `computationId`, `executionStatus`, `score` (nullable), `passed` (nullable), `computedAtMs`
 - Cursor: Reuse existing `Cursor` record and `CursorCodec` from analytics layer
 - Mapper: `EvalSummaryMapper` (MapStruct) — maps between model and DTOs; `@AfterMapping` defaults `extractionWarnings` to `"[]"` if null; `RunMetricSnapshotMapper`
-- DTOs: `EvalSummaryResponseDto` (excludes `metricInfos`, `extractionWarnings`, `requestBody`, `responseBody` for list; includes `score`/`passed`, `@JsonInclude(NON_NULL)`), `EvalSummaryDetailResponseDto` (includes all fields for get-by-id, nullable fields use `@JsonInclude(NON_NULL)`, including `score`/`passed`), `EvalSummaryBatchWriteRequestDto` (items MAY carry `id`), `RunMetricSnapshotResponseDto`, `RunMetricSnapshotBatchWriteRequestDto` (both in `service.domain.dto`), `MetricAggregationResponseDto`, `TestCaseEvalScoreBatchWriteItemDto` (`service.domain.dto.analytics`: `evalSummaryId`, `score`, `passed`)
+- DTOs: `EvalSummaryResponseDto` (excludes `metricInfos`, `extractionWarnings`, `requestBody`, `responseBody` for list; does not expose `score`/`passed`), `EvalSummaryDetailResponseDto` (includes all fields for get-by-id, nullable fields use `@JsonInclude(NON_NULL)`; does not expose `score`/`passed`), `EvalSummaryBatchWriteRequestDto` (items MAY carry `id`), `RunMetricSnapshotResponseDto`, `RunMetricSnapshotBatchWriteRequestDto` (both in `service.domain.dto`), `MetricAggregationResponseDto`, `TestCaseEvalScoreBatchWriteItemDto` (`service.domain.dto.analytics`: `testSuiteRunId`, `testCaseId`, `testCaseName`, `computationId`, `executionStatus`, `score`, `passed`)
 - Filter whitelist: New `FilterWhitelists.EVAL_SUMMARIES` with JSONB_NUMERIC type for metric value filtering
-- Migrations: `V1.5__CreateTestCaseEvalSummariesTable.sql`, `V1.7__AddExtractionWarningsToEvalSummaries.sql`, `V1.8__NormalizeErrorShapedMetricValues.sql`, `V1.15__AddEvalSummariesRunComputedAtIndex.sql`, `V1.19__CreateTestCaseEvalScoresTable.sql` in `db/migration/analytics/POSTGRES/`
-- Computation semantics (per-row `GROUP BY id` graft, `CustomFunction` handling, threshold comparison) are owned by the `eval-summary-scoring` capability; this capability owns storage (`test_case_eval_scores`), the internal batch-write path, and API exposure via the join.
-- Filtering/sorting the list endpoint by `score`/`passed` is explicitly deferred to a follow-up change.
+- Migrations: `V1.5__CreateTestCaseEvalSummariesTable.sql`, `V1.7__AddExtractionWarningsToEvalSummaries.sql`, `V1.8__NormalizeErrorShapedMetricValues.sql`, `V1.15__AddEvalSummariesRunComputedAtIndex.sql`, `V1.19__CreateTestCaseEvalScoresTable.sql`, `V1.21__AddRunCaseContextToTestCaseEvalScores.sql` in `db/migration/analytics/POSTGRES/`
+- Computation semantics (per-row `GROUP BY id` graft, `CustomFunction` handling, threshold comparison) are owned by the `eval-summary-scoring` capability; this capability owns storage (`test_case_eval_scores`) and the internal batch-write path — API exposure is solely through the `test_case_eval_scores` Query DSL entity, not through `eval_summaries`.
+- Filtering/sorting the list endpoint by `score`/`passed` is moot — `eval_summaries` does not expose either field; a client needing to filter/sort by score queries the `test_case_eval_scores` Query DSL entity instead.
 - Run metric snapshots live in the **meta** database: table created by `db/migration/meta/POSTGRES/V1.32__CreateRunMetricSnapshotsTable.sql` (with an `ON DELETE CASCADE` foreign key to `test_suite_runs`), backfilled once from the analytics copy by the Java migration `V1_33__CopyRunMetricSnapshotsFromAnalytics`. The analytics `V1.6__CreateRunMetricSnapshotsTable.sql` table is frozen and unread — retained only so analytics `V1.8` and `V1.12` still apply on a fresh install — and is excluded from analytics jOOQ codegen (see `typed-sql-dsl`).
 - Filter whitelist: `data.db.repository.sql.FilterWhitelists.RUN_METRIC_SNAPSHOTS` backs the required `runId eq <uuid>` filter on both the canonical and deprecated `GET` endpoints; both paths are registered in `OpenApiQueryParamCustomizer`'s `REGISTRY` against that same whitelist.

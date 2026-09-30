@@ -47,6 +47,7 @@ class RunComparisonServiceTest {
     private static final UUID COMPUTATION_A = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID COMPUTATION_B = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static final UUID UNMATCHED_ID = UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    private static final UUID UNMATCHED_TEST_CASE_ID = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
 
     private static final int MAX_UNMATCHED = 10;
 
@@ -208,6 +209,28 @@ class RunComparisonServiceTest {
     }
 
     @Test
+    @DisplayName("Should report each run's own distinct unmatched test case ids alongside its unmatched row ids")
+    void shouldReportUnmatchedTestCaseIds() {
+        stubRuns(null, null);
+        stubComputations();
+        stubStats(RUN_A, new EvalSummaryMatchStats(2L, 1L, 1L, BigDecimal.ONE));
+        stubStats(RUN_B, new EvalSummaryMatchStats(1L, 1L, 1L, BigDecimal.ONE));
+        when(evalSummaryRepository.findUnmatchedIds(RUN_A, COMPUTATION_A, RUN_B, COMPUTATION_B))
+                .thenReturn(List.of(UNMATCHED_ID));
+        when(evalSummaryRepository.findUnmatchedTestCaseIds(RUN_A, COMPUTATION_A, RUN_B, COMPUTATION_B))
+                .thenReturn(List.of(UNMATCHED_TEST_CASE_ID));
+        when(evalSummaryRepository.findUnmatchedIds(RUN_B, COMPUTATION_B, RUN_A, COMPUTATION_A))
+                .thenReturn(List.of());
+        when(evalSummaryRepository.findUnmatchedTestCaseIds(RUN_B, COMPUTATION_B, RUN_A, COMPUTATION_A))
+                .thenReturn(List.of());
+
+        RunComparisonResponseDto response = service.compare(List.of(RUN_A, RUN_B));
+
+        assertThat(response.getRuns().get(0).getUnmatchedEvalTestCaseIds()).containsExactly(UNMATCHED_TEST_CASE_ID);
+        assertThat(response.getRuns().get(1).getUnmatchedEvalTestCaseIds()).isEmpty();
+    }
+
+    @Test
     @DisplayName("Should report a null average duration when a run matched nothing")
     void shouldReportNullAverageWhenNothingMatched() {
         stubRuns(null, null);
@@ -236,7 +259,7 @@ class RunComparisonServiceTest {
     }
 
     @Test
-    @DisplayName("Should pass each run's own definition, computation and exclusion list to the aggregator")
+    @DisplayName("Should pass each run's own definition, computation and unmatched test case ids to the aggregator")
     void shouldPassPerRunInputsToAggregator() {
         OverallScoreDefinition definitionA = new Mean();
         stubRuns(definitionA, null);
@@ -245,6 +268,8 @@ class RunComparisonServiceTest {
         stubStats(RUN_B, new EvalSummaryMatchStats(2L, 1L, 1L, BigDecimal.ONE));
         when(evalSummaryRepository.findUnmatchedIds(RUN_A, COMPUTATION_A, RUN_B, COMPUTATION_B))
                 .thenReturn(List.of(UNMATCHED_ID));
+        when(evalSummaryRepository.findUnmatchedTestCaseIds(RUN_A, COMPUTATION_A, RUN_B, COMPUTATION_B))
+                .thenReturn(List.of(UNMATCHED_TEST_CASE_ID));
         when(evalSummaryRepository.findUnmatchedIds(RUN_B, COMPUTATION_B, RUN_A, COMPUTATION_A))
                 .thenReturn(List.of());
         when(metricFieldDiscoverer.discover(any())).thenReturn(List.of(new MetricField("metric::A::score", "A.score")));
@@ -257,12 +282,12 @@ class RunComparisonServiceTest {
         assertThat(captor.getAllValues().get(0)).satisfies(request -> {
             assertThat(request.runId()).isEqualTo(RUN_A);
             assertThat(request.computationId()).isEqualTo(COMPUTATION_A);
-            assertThat(request.unmatchedEvalSummaryIds()).containsExactly(UNMATCHED_ID);
+            assertThat(request.unmatchedTestCaseIds()).containsExactly(UNMATCHED_TEST_CASE_ID);
             assertThat(request.overallScoreDefinition()).isSameAs(definitionA);
         });
         // Run B's definition is its own — null here — never run A's.
         assertThat(captor.getAllValues().get(1).overallScoreDefinition()).isNull();
-        assertThat(captor.getAllValues().get(1).unmatchedEvalSummaryIds()).isEmpty();
+        assertThat(captor.getAllValues().get(1).unmatchedTestCaseIds()).isEmpty();
     }
 
     @Test
@@ -308,6 +333,8 @@ class RunComparisonServiceTest {
 
     private void stubUnmatched() {
         when(evalSummaryRepository.findUnmatchedIds(any(), any(), any(), any())).thenReturn(List.of());
+        when(evalSummaryRepository.findUnmatchedTestCaseIds(any(), any(), any(), any()))
+                .thenReturn(List.of());
     }
 
     private static MetricScoreValueDto score() {

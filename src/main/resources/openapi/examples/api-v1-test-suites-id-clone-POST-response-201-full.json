@@ -4,6 +4,7 @@
     "name": "My Test Suite (Copy)",
     "description": "Suite for endpoint smoke tests",
     "suiteType": "DEPLOYMENT",
+    "metricScoreAggregation": "AVG",
     "deploymentRef": {
       "id": "deploy-001",
       "name": "Production",

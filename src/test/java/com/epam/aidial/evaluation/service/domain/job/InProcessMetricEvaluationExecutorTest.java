@@ -7,8 +7,10 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -20,12 +22,16 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.client.metricprovider.dto.EvaluationResponseDto;
 import com.epam.aidial.evaluation.client.metricprovider.dto.MetricOutputFieldDto;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
+import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
-import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
+import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseExecutionStatusAggregator;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseScoreComputer;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
@@ -35,8 +41,10 @@ import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.TestCaseEvalScoreService;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseMetricScoreAggregatedService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -53,6 +61,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -100,10 +109,19 @@ class InProcessMetricEvaluationExecutorTest {
     private MetricFieldDiscoverer metricFieldDiscoverer;
 
     @Mock
-    private EvalSummaryRowScoreComputer evalSummaryRowScoreComputer;
+    private TestCaseScoreComputer testCaseScoreComputer;
 
     @Mock
     private TestCaseEvalScoreService testCaseEvalScoreService;
+
+    @Mock
+    private TestCaseExecutionStatusAggregator testCaseExecutionStatusAggregator;
+
+    @Mock
+    private TestCaseMetricScoreAggregator testCaseMetricScoreAggregator;
+
+    @Mock
+    private TestCaseMetricScoreAggregatedService testCaseMetricScoreAggregatedService;
 
     @Mock
     private Clock clock;
@@ -118,6 +136,16 @@ class InProcessMetricEvaluationExecutorTest {
                 .when(runMetricSnapshotRepository.findByRunIdAndComputationId(any(), any()))
                 .thenReturn(List.of());
         lenient().when(metricFieldDiscoverer.discover(any())).thenReturn(List.of());
+        // Default: every test case id passed to the aggregator comes back SUCCESS, so existing
+        // score-computation tests don't need their own stub. Tests exercising the FAILED-aggregate
+        // path override this per-test.
+        lenient()
+                .when(testCaseExecutionStatusAggregator.aggregate(any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(2);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> ExecutionStatus.SUCCESS));
+                });
     }
 
     @Test
@@ -183,7 +211,7 @@ class InProcessMetricEvaluationExecutorTest {
     }
 
     @Test
-    @DisplayName("score/passed are computed via EvalSummaryRowScoreComputer and written right after the batch flush")
+    @DisplayName("score/passed are computed via TestCaseScoreComputer and written right after the batch flush")
     void writesRowScoresAfterFlush() throws Exception {
         UUID runId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
@@ -231,10 +259,10 @@ class InProcessMetricEvaluationExecutorTest {
         doReturn(values).when(outputMapper).buildMetricValues(any());
         doReturn(null).when(outputMapper).buildMetricInfos(any());
 
-        when(evalSummaryRowScoreComputer.computeBatch(any(), any(), any(), any(), any()))
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
-                    List<UUID> ids = invocation.getArgument(4);
+                    List<UUID> ids = invocation.getArgument(5);
                     return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.8));
                 });
 
@@ -242,11 +270,14 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
 
         List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
         assertThat(scoreItems).hasSize(1);
-        assertThat(scoreItems.get(0).getEvalSummaryId()).isNotNull();
+        assertThat(scoreItems.get(0).getTestSuiteRunId()).isEqualTo(runId);
+        assertThat(scoreItems.get(0).getTestCaseId()).isNotNull();
+        assertThat(scoreItems.get(0).getTestCaseName()).isNotBlank();
+        assertThat(scoreItems.get(0).getComputationId()).isNotNull();
         assertThat(scoreItems.get(0).getScore()).isEqualTo(0.8);
         assertThat(scoreItems.get(0).getPassed()).isTrue();
     }
@@ -263,10 +294,10 @@ class InProcessMetricEvaluationExecutorTest {
         when(resultRepository.findAll(any(), any(), any(), eq(100)))
                 .thenReturn(new CursorPage<>(List.of(result), null, false));
 
-        when(evalSummaryRowScoreComputer.computeBatch(any(), any(), any(), any(), any()))
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
-                    List<UUID> ids = invocation.getArgument(4);
+                    List<UUID> ids = invocation.getArgument(5);
                     return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.9));
                 });
 
@@ -274,7 +305,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
-        verify(testCaseEvalScoreService).batchCreate(anyLong(), scoreCaptor.capture());
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
 
         assertThat(scoreCaptor.getValue()).hasSize(1);
         assertThat(scoreCaptor.getValue().get(0).getScore()).isEqualTo(0.9);
@@ -295,8 +326,448 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(evalSummaryRowScoreComputer, never()).computeBatch(any(), any(), any(), any(), any());
+        verify(testCaseScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
         verifyNoInteractions(testCaseEvalScoreService);
+    }
+
+    @Test
+    @DisplayName("Aggregated metric scores are written before row scores, since row scores read them back")
+    void aggregatedMetricScoresWrittenBeforeRowScores() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L, null, new Mean(), null);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        MetricField metricField = new MetricField("metric::Accuracy::score", "Accuracy.score");
+        when(metricFieldDiscoverer.discover(any())).thenReturn(List.of(metricField));
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(5);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.8));
+                });
+        List<TestCaseMetricScoreAggregatedBatchWriteItemDto> aggregatedItems =
+                List.of(TestCaseMetricScoreAggregatedBatchWriteItemDto.builder()
+                        .testSuiteRunId(runId)
+                        .testCaseId(result.getTestCaseId())
+                        .computationId(context.getComputationId())
+                        .metricScores("{\"Accuracy.score\":{\"avg\":0.8,\"min\":0.8,\"max\":0.8,\"count\":1}}")
+                        .build());
+        when(testCaseMetricScoreAggregator.aggregate(any(), any(), any())).thenReturn(aggregatedItems);
+
+        executor.execute(context);
+
+        InOrder inOrder = inOrder(testCaseMetricScoreAggregatedService, testCaseEvalScoreService);
+        inOrder.verify(testCaseMetricScoreAggregatedService).batchInsert(anyLong(), eq(aggregatedItems));
+        inOrder.verify(testCaseEvalScoreService).batchInsert(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "A test case whose rows span several flush batches is aggregated and scored once, after the last flush")
+    void testCaseSpanningBatchesAggregatedAndScoredOnce() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+        UUID sharedTestCaseId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContextWithBatchSize(
+                runId,
+                suiteId,
+                List.of(),
+                10000L,
+                1,
+                null,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                new Mean(),
+                null);
+
+        TestCaseRunResult turn0 = successResult(runId, suiteId, "tc1").toBuilder()
+                .testCaseId(sharedTestCaseId)
+                .build();
+        TestCaseRunResult turn1 = successResult(runId, suiteId, "tc1").toBuilder()
+                .testCaseId(sharedTestCaseId)
+                .build();
+        Cursor nextCursor = new Cursor(1L, UUID.randomUUID());
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(turn0), nextCursor, true))
+                .thenReturn(new CursorPage<>(List.of(turn1), null, false));
+        when(metricFieldDiscoverer.discover(any()))
+                .thenReturn(List.of(new MetricField("metric::Accuracy::score", "Accuracy.score")));
+
+        executor.execute(context);
+
+        verify(evalSummaryBatchWriteClient, times(2)).batchWrite(any(), any(), any(), any(), any());
+        verify(testCaseMetricScoreAggregator, times(1))
+                .aggregate(eq(runId), eq(context.getComputationId()), eq(List.of(sharedTestCaseId)));
+        verify(testCaseExecutionStatusAggregator, times(1))
+                .aggregate(eq(runId), eq(context.getComputationId()), eq(List.of(sharedTestCaseId)));
+    }
+
+    @Test
+    @DisplayName("Aggregation and scoring still run for already-flushed test cases when a later flush fails")
+    void aggregationRunsAfterLaterFlushFailure() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContextWithBatchSize(
+                runId,
+                suiteId,
+                List.of(),
+                10000L,
+                1,
+                null,
+                Executors.newVirtualThreadPerTaskExecutor(),
+                new Mean(),
+                null);
+
+        TestCaseRunResult first = successResult(runId, suiteId, "tc1");
+        TestCaseRunResult second = successResult(runId, suiteId, "tc2");
+        Cursor nextCursor = new Cursor(1L, UUID.randomUUID());
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(first), nextCursor, true))
+                .thenReturn(new CursorPage<>(List.of(second), null, false));
+        when(metricFieldDiscoverer.discover(any()))
+                .thenReturn(List.of(new MetricField("metric::Accuracy::score", "Accuracy.score")));
+        doNothing()
+                .doThrow(new RuntimeException("db down"))
+                .when(evalSummaryBatchWriteClient)
+                .batchWrite(any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> executor.execute(context))
+                .as("the original flush failure is not masked by the post-pass")
+                .isInstanceOf(AnalyticsWriteException.class);
+
+        verify(testCaseMetricScoreAggregator)
+                .aggregate(eq(runId), eq(context.getComputationId()), eq(List.of(first.getTestCaseId())));
+    }
+
+    @Test
+    @DisplayName("Aggregated metric score computation failure does not fail the flush or suppress row-score writes")
+    void aggregatedMetricScoreFailureDoesNotFailFlush() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L, null, new Mean(), null);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        MetricField metricField = new MetricField("metric::Accuracy::score", "Accuracy.score");
+        when(metricFieldDiscoverer.discover(any())).thenReturn(List.of(metricField));
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(5);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.8));
+                });
+        when(testCaseMetricScoreAggregator.aggregate(any(), any(), any())).thenThrow(new RuntimeException("boom"));
+
+        executor.execute(context);
+
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), any());
+        verifyNoInteractions(testCaseMetricScoreAggregatedService);
+    }
+
+    @Test
+    @DisplayName("A metric execution failure makes the test case's execution-status aggregate FAILED, "
+            + "skipping score computation and writing score/passed as null")
+    void failedAggregateSkipsScoreComputation() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Exact Match")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L, null, new Mean(), 0.5);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        // The provider reports a per-field error — this already flips this row's own execution_status
+        // to FAILED via InProcessMetricEvaluationExecutor.checkForErrors, independent of the aggregate.
+        EvaluationResponseDto response = EvaluationResponseDto.builder()
+                .metricName("exact_match")
+                .output(Map.of(
+                        "exact_match",
+                        MetricOutputFieldDto.builder().type("error").build()))
+                .build();
+        when(worker.evaluate(eq(tsmd), eq(result), any(Semaphore.class), eq(context)))
+                .thenReturn(response);
+        when(clock.millis()).thenReturn(1_000L, 1_000L, 1_050L);
+
+        ObjectNode values = objectMapper.createObjectNode();
+        values.putObject("Exact Match").putNull("exact_match");
+        doReturn(values).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
+
+        // Simulates what the real TestCaseExecutionStatusAggregator would compute given this row is FAILED.
+        doAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(2);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> ExecutionStatus.FAILED));
+                })
+                .when(testCaseExecutionStatusAggregator)
+                .aggregate(any(), any(), any());
+
+        executor.execute(context);
+
+        verify(testCaseScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
+
+        List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
+        assertThat(scoreItems).hasSize(1);
+        assertThat(scoreItems.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(scoreItems.get(0).getScore()).isNull();
+        assertThat(scoreItems.get(0).getPassed()).isNull();
+    }
+
+    @Test
+    @DisplayName("A condition-skipped metric leaves the aggregate SUCCESS and the score is computed as before")
+    void conditionSkipOnlyStillComputesScore() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .condition("turn.last")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L, null, new Mean(), 0.5);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.skip());
+        doReturn(objectMapper.createObjectNode()).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
+
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(5);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> 0.8));
+                });
+
+        executor.execute(context);
+
+        verify(worker, never()).evaluate(any(), any(), any(Semaphore.class), any());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
+
+        List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
+        assertThat(scoreItems).hasSize(1);
+        assertThat(scoreItems.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.SUCCESS);
+        assertThat(scoreItems.get(0).getScore()).isEqualTo(0.8);
+        assertThat(scoreItems.get(0).getPassed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("A SUCCESS test case with zero numeric metric samples stays absent from test_case_eval_scores, "
+            + "unchanged from before this class tracked execution_status")
+    void successAggregateWithNoScoreStaysAbsentFromWrite() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Accuracy")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .condition("turn.last")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L, null, new Mean(), 0.5);
+
+        TestCaseRunResult result = successResult(runId, suiteId, "tc1");
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        when(conditionExpressionEvaluator.evaluate(any(), any())).thenReturn(ConditionDecision.skip());
+        doReturn(objectMapper.createObjectNode()).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
+
+        // Simulates test_case_metric_scores_aggregated having no row for this test case at all (every
+        // metric condition-skipped, so it never surfaces in that aggregator's jsonb_each-driven join): the
+        // GROUP BY test_case_id query returns no result for this id — the same "absent, not zero" behavior
+        // documented in test-case-metric-score-aggregation. The default @BeforeEach stub already reports
+        // SUCCESS for every test case, so no override is needed for that.
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+                .thenReturn(Map.of());
+
+        executor.execute(context);
+
+        verify(testCaseEvalScoreService)
+                .batchInsert(anyLong(), argThat((List<TestCaseEvalScoreBatchWriteItemDto> items) -> items.isEmpty()));
+    }
+
+    @Test
+    @DisplayName("A fully-failed test case with no metrics at all still gets a written test_case_eval_scores item")
+    void failedResultWithNoMetricsStillGetsScoreRow() {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(), 10000L, null, new Mean(), 0.5);
+
+        TestCaseRunResult result = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(UUID.randomUUID())
+                .testCaseName("tc1")
+                .runIndex(0)
+                .executionStatus(ExecutionStatus.TIMEOUT)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(result), null, false));
+
+        // Simulates the real aggregator seeing this run's only row as non-SUCCESS with empty metric_values —
+        // it never surfaces in TestCaseMetricScoreAggregator's jsonb_each-driven join, but this aggregator
+        // scans test_case_eval_summaries directly and still reports it.
+        doAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(2);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> ExecutionStatus.FAILED));
+                })
+                .when(testCaseExecutionStatusAggregator)
+                .aggregate(any(), any(), any());
+
+        executor.execute(context);
+
+        verify(testCaseScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
+
+        List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
+        assertThat(scoreItems)
+                .as("previously such a test case would be silently absent from test_case_eval_scores")
+                .hasSize(1);
+        assertThat(scoreItems.get(0).getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(scoreItems.get(0).getScore()).isNull();
+        assertThat(scoreItems.get(0).getPassed()).isNull();
+    }
+
+    @Test
+    @DisplayName("A test case's execution_status is written once per test case, not once per row "
+            + "in the batch, even when one of its turns failed and another succeeded")
+    void executionStatusAndScoreAreBroadcastAcrossAllRowsOfOneTestCase() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID suiteId = UUID.randomUUID();
+        UUID sharedTestCaseId = UUID.randomUUID();
+
+        AggregatedMetricDefinition tsmd = AggregatedMetricDefinition.builder()
+                .id(UUID.randomUUID())
+                .name("Exact Match")
+                .declarationProviderId("dial")
+                .metricDeclarationName("exact_match")
+                .build();
+        MetricEvaluationContext context = buildContext(runId, suiteId, List.of(tsmd), 10000L, null, new Mean(), 0.5);
+
+        // Turn 0 succeeds; turn 1's metric reports a provider error, flipping only turn 1's own row to
+        // FAILED — the test case's aggregated status (mocked below, as the real aggregator would compute
+        // from these two rows) must still come out FAILED and be broadcast to BOTH rows, not just turn 1's.
+        TestCaseRunResult turn0 = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(sharedTestCaseId)
+                .testCaseName("tc1")
+                .runIndex(0)
+                .turnIndex(0)
+                .totalTurns(2)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        TestCaseRunResult turn1 = TestCaseRunResult.builder()
+                .id(UUID.randomUUID())
+                .testSuiteRunId(runId)
+                .testSuiteId(suiteId)
+                .testCaseId(sharedTestCaseId)
+                .testCaseName("tc1")
+                .runIndex(0)
+                .turnIndex(1)
+                .totalTurns(2)
+                .executionStatus(ExecutionStatus.SUCCESS)
+                .testCaseData("{}")
+                .extractedColumns("{}")
+                .build();
+        when(resultRepository.findAll(any(), any(), any(), eq(100)))
+                .thenReturn(new CursorPage<>(List.of(turn0, turn1), null, false));
+
+        EvaluationResponseDto successResponse = EvaluationResponseDto.builder()
+                .metricName("exact_match")
+                .output(Map.of(
+                        "exact_match",
+                        MetricOutputFieldDto.builder()
+                                .type("value")
+                                .value(BigDecimal.ONE)
+                                .build()))
+                .build();
+        EvaluationResponseDto errorResponse = EvaluationResponseDto.builder()
+                .metricName("exact_match")
+                .output(Map.of(
+                        "exact_match",
+                        MetricOutputFieldDto.builder().type("error").build()))
+                .build();
+        when(worker.evaluate(eq(tsmd), eq(turn0), any(Semaphore.class), eq(context)))
+                .thenReturn(successResponse);
+        when(worker.evaluate(eq(tsmd), eq(turn1), any(Semaphore.class), eq(context)))
+                .thenReturn(errorResponse);
+
+        doReturn(objectMapper.createObjectNode()).when(outputMapper).buildMetricValues(any());
+        doReturn(null).when(outputMapper).buildMetricInfos(any());
+
+        // Simulates the real aggregator, which would see one FAILED row (turn1) and one SUCCESS row
+        // (turn0) for this shared test case id, and report the OR'd result: FAILED.
+        doAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<UUID> ids = invocation.getArgument(2);
+                    return ids.stream().collect(Collectors.toMap(id -> id, id -> ExecutionStatus.FAILED));
+                })
+                .when(testCaseExecutionStatusAggregator)
+                .aggregate(any(), any(), any());
+
+        executor.execute(context);
+
+        verify(testCaseScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
+        verify(testCaseEvalScoreService).batchInsert(anyLong(), scoreCaptor.capture());
+
+        List<TestCaseEvalScoreBatchWriteItemDto> scoreItems = scoreCaptor.getValue();
+        assertThat(scoreItems)
+                .as("one test_case_eval_scores item per distinct test case in the flush batch, "
+                        + "not one per raw eval-summary row")
+                .hasSize(1);
+        assertThat(scoreItems)
+                .as("the item carries the test case's broadcast/aggregated execution_status")
+                .allSatisfy(item -> {
+                    assertThat(item.getTestCaseId()).isEqualTo(sharedTestCaseId);
+                    assertThat(item.getExecutionStatus()).isEqualTo(ExecutionStatus.FAILED);
+                    assertThat(item.getScore()).isNull();
+                    assertThat(item.getPassed()).isNull();
+                });
     }
 
     @Test

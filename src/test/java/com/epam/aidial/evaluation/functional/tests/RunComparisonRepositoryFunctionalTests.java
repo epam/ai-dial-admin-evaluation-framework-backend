@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
+import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import java.math.BigDecimal;
 import java.util.List;
@@ -237,5 +238,52 @@ public abstract class RunComparisonRepositoryFunctionalTests extends BaseFunctio
         assertThat(statsA.avgExecDurationMs()).isNull();
         assertThat(evalSummaryRepository.findUnmatchedIds(runA, computationA, runB, computationB))
                 .containsExactly(onlyUnderCurrentComputation);
+    }
+
+    @Test
+    @DisplayName("Should return one test case id per unmatched test case, not one per unmatched row")
+    void shouldDedupeUnmatchedTestCaseIds() {
+        UUID multiTurnCase = UUID.randomUUID();
+        // Two turns of the same test case, both unmatched — must collapse to one id, not two.
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runA)
+                .computationId(computationA)
+                .testCaseId(multiTurnCase)
+                .testCaseName("MultiTurn")
+                .turnIndex(0)
+                .totalTurns(2)
+                .createdAtMs(CREATED_AT_MS)
+                .build());
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runA)
+                .computationId(computationA)
+                .testCaseId(multiTurnCase)
+                .testCaseName("MultiTurn")
+                .turnIndex(1)
+                .totalTurns(2)
+                .createdAtMs(CREATED_AT_MS)
+                .build());
+        UUID matchedCase = analyticsTestDataHelper.createEvalSummary(
+                suiteId, runA, computationA, "Matched", ExecutionStatus.SUCCESS.name(), 100L, CREATED_AT_MS);
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId, runB, computationB, "Matched", ExecutionStatus.SUCCESS.name(), 100L, CREATED_AT_MS);
+        assertThat(matchedCase).isNotEqualTo(multiTurnCase);
+
+        assertThat(evalSummaryRepository.findUnmatchedTestCaseIds(runA, computationA, runB, computationB))
+                .containsExactly(multiTurnCase);
+    }
+
+    @Test
+    @DisplayName("Should return an empty test case id list when every row matches")
+    void shouldReturnEmptyTestCaseIdsWhenFullyMatched() {
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId, runA, computationA, "Shared", ExecutionStatus.SUCCESS.name(), 100L, CREATED_AT_MS);
+        analyticsTestDataHelper.createEvalSummary(
+                suiteId, runB, computationB, "Shared", ExecutionStatus.SUCCESS.name(), 100L, CREATED_AT_MS);
+
+        assertThat(evalSummaryRepository.findUnmatchedTestCaseIds(runA, computationA, runB, computationB))
+                .isEmpty();
     }
 }

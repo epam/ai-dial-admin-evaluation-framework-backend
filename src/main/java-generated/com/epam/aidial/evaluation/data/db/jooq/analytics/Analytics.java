@@ -7,6 +7,7 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregated;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
 
 import java.util.Arrays;
@@ -47,6 +48,11 @@ public class Analytics extends SchemaImpl {
     public final TestCaseEvalSummaries TEST_CASE_EVAL_SUMMARIES = TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES;
 
     /**
+     * The table <code>analytics.test_case_metric_scores_aggregated</code>.
+     */
+    public final TestCaseMetricScoresAggregated TEST_CASE_METRIC_SCORES_AGGREGATED = TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED;
+
+    /**
      * The table <code>analytics.test_case_run_results</code>.
      */
     public final TestCaseRunResults TEST_CASE_RUN_RESULTS = TestCaseRunResults.TEST_CASE_RUN_RESULTS;
@@ -70,6 +76,7 @@ public class Analytics extends SchemaImpl {
             MetricScoreResult.METRIC_SCORE_RESULT,
             TestCaseEvalScores.TEST_CASE_EVAL_SCORES,
             TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES,
+            TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED,
             TestCaseRunResults.TEST_CASE_RUN_RESULTS
         );
     }

@@ -7,6 +7,7 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregated;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
 
 
@@ -30,6 +31,11 @@ public class Tables {
      * The table <code>analytics.test_case_eval_summaries</code>.
      */
     public static final TestCaseEvalSummaries TEST_CASE_EVAL_SUMMARIES = TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES;
+
+    /**
+     * The table <code>analytics.test_case_metric_scores_aggregated</code>.
+     */
+    public static final TestCaseMetricScoresAggregated TEST_CASE_METRIC_SCORES_AGGREGATED = TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED;
 
     /**
      * The table <code>analytics.test_case_run_results</code>.

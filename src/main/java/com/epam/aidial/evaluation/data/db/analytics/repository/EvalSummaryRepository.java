@@ -99,4 +99,16 @@ public interface EvalSummaryRepository {
      * exclusion is needed.
      */
     List<UUID> findUnmatchedIds(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId);
+
+    /**
+     * Distinct {@code test_case_id}s among {@code runId}'s unmatched rows (see {@link #findUnmatchedIds}) —
+     * one entry per test case that has at least one non-matching row, not one entry per unmatched row. A
+     * test case whose rows only partly matched (e.g. one turn matched, another did not) still appears here,
+     * since a caller correlating against the per-test-case {@code test_case_eval_scores} entity needs the
+     * test case's identity, not its individual row ids.
+     *
+     * <p>Deterministically ordered, so identical requests return an identical list. An empty result means
+     * every row of the run matched, same as an empty {@link #findUnmatchedIds}.
+     */
+    List<UUID> findUnmatchedTestCaseIds(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId);
 }

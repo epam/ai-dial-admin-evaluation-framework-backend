@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 import com.epam.aidial.evaluation.configuration.properties.MetricEvaluationProperties;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +43,9 @@ public class MetricEvaluationContext {
 
     /** Suite's snapshotted pass/fail threshold; null = not configured. */
     private final Double overallScoreThreshold;
+
+    /** Suite's snapshotted metric score aggregation (avg/min/max leaf); null = default {@code AVG}. */
+    private final MetricScoreAggregation metricScoreAggregation;
 
     /**
      * The chain's request labels in index order: element 0 is request #0's {@code requestName},

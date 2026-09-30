@@ -21,6 +21,7 @@
   "suiteSnapshot": {
     "snapshotVersion": "1",
     "suiteType": "DEPLOYMENT",
+    "metricScoreAggregation": "AVG",
     "deploymentRef": {
       "id": "gpt-35-turbo",
       "name": "GPT-3.5 Turbo",

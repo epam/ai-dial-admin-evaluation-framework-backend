@@ -7,10 +7,12 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregated;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.MetricScoreResultRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalScoresRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalSummariesRecord;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseMetricScoresAggregatedRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseRunResultsRecord;
 
 import org.jooq.TableField;
@@ -31,8 +33,10 @@ public class Keys {
     // -------------------------------------------------------------------------
 
     public static final UniqueKey<MetricScoreResultRecord> METRIC_SCORE_RESULT_PKEY = Internal.createUniqueKey(MetricScoreResult.METRIC_SCORE_RESULT, DSL.name("metric_score_result_pkey"), new TableField[] { MetricScoreResult.METRIC_SCORE_RESULT.ID }, true);
-    public static final UniqueKey<TestCaseEvalScoresRecord> TEST_CASE_EVAL_SCORES_PKEY = Internal.createUniqueKey(TestCaseEvalScores.TEST_CASE_EVAL_SCORES, DSL.name("test_case_eval_scores_pkey"), new TableField[] { TestCaseEvalScores.TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID }, true);
+    public static final UniqueKey<TestCaseEvalScoresRecord> TEST_CASE_EVAL_SCORES_PKEY = Internal.createUniqueKey(TestCaseEvalScores.TEST_CASE_EVAL_SCORES, DSL.name("test_case_eval_scores_pkey"), new TableField[] { TestCaseEvalScores.TEST_CASE_EVAL_SCORES.ID }, true);
+    public static final UniqueKey<TestCaseEvalScoresRecord> UQ_TEST_CASE_EVAL_SCORES_NATURAL_KEY = Internal.createUniqueKey(TestCaseEvalScores.TEST_CASE_EVAL_SCORES, DSL.name("uq_test_case_eval_scores_natural_key"), new TableField[] { TestCaseEvalScores.TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID, TestCaseEvalScores.TEST_CASE_EVAL_SCORES.TEST_CASE_ID, TestCaseEvalScores.TEST_CASE_EVAL_SCORES.COMPUTATION_ID }, true);
     public static final UniqueKey<TestCaseEvalSummariesRecord> TEST_CASE_EVAL_SUMMARIES_PKEY = Internal.createUniqueKey(TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES, DSL.name("test_case_eval_summaries_pkey"), new TableField[] { TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.ID }, true);
+    public static final UniqueKey<TestCaseMetricScoresAggregatedRecord> TEST_CASE_METRIC_SCORES_AGGREGATED_PKEY = Internal.createUniqueKey(TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED, DSL.name("test_case_metric_scores_aggregated_pkey"), new TableField[] { TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED.ID }, true);
     public static final UniqueKey<TestCaseRunResultsRecord> TEST_CASE_RUN_RESULTS_PKEY = Internal.createUniqueKey(TestCaseRunResults.TEST_CASE_RUN_RESULTS, DSL.name("test_case_run_results_pkey"), new TableField[] { TestCaseRunResults.TEST_CASE_RUN_RESULTS.CREATED_AT_MS, TestCaseRunResults.TEST_CASE_RUN_RESULTS.ID }, true);
     public static final UniqueKey<TestCaseRunResultsRecord> UQ_RESULTS_RUN_CASE_INDEX = Internal.createUniqueKey(TestCaseRunResults.TEST_CASE_RUN_RESULTS, DSL.name("uq_results_run_case_index"), new TableField[] { TestCaseRunResults.TEST_CASE_RUN_RESULTS.TEST_SUITE_RUN_ID, TestCaseRunResults.TEST_CASE_RUN_RESULTS.TEST_CASE_ID, TestCaseRunResults.TEST_CASE_RUN_RESULTS.RUN_INDEX, TestCaseRunResults.TEST_CASE_RUN_RESULTS.REQUEST_INDEX, TestCaseRunResults.TEST_CASE_RUN_RESULTS.TURN_INDEX, TestCaseRunResults.TEST_CASE_RUN_RESULTS.CREATED_AT_MS }, true);
 }

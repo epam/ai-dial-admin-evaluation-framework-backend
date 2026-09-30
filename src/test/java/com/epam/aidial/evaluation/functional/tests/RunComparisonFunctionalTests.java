@@ -10,10 +10,13 @@ import com.epam.aidial.evaluation.functional.helper.AnalyticsTestDataHelper;
 import com.epam.aidial.evaluation.functional.helper.EvalSummaryFixture;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricScoreComputationExecutor;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseMetricScoreAggregatedService;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.MetricScoreValueDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunComparisonResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.RunComparisonRunDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.job.MetricScoreComputationContext;
 import java.util.List;
 import java.util.UUID;
@@ -56,6 +59,12 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
 
     @Autowired
     private MetricScoreComputationExecutor phaseThreeExecutor;
+
+    @Autowired
+    private TestCaseMetricScoreAggregator testCaseMetricScoreAggregator;
+
+    @Autowired
+    private TestCaseMetricScoreAggregatedService testCaseMetricScoreAggregatedService;
 
     private UUID suiteId;
     private UUID runA;
@@ -194,6 +203,65 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         assertThat(score(sideB, "AVG", METRIC_FIELD)).isCloseTo(0.5, within(1e-9));
         // Both sides now describe the same two rows, so their statistics agree.
         assertThat(score(sideA, "AVG", METRIC_FIELD)).isEqualTo(score(sideB, "AVG", METRIC_FIELD));
+    }
+
+    @Test
+    @DisplayName("Should exclude an unmatched test case from a mean overall computed over per-test-case scores")
+    void shouldExcludeUnmatchedTestCaseFromMeanOverall() {
+        // Mean resolves against test_case_metric_scores_aggregated, so this is the fixture that proves the
+        // test_case_id exclusion reaches that entity too — previously it ran unfiltered there.
+        metaTestDataHelper.setRunSuiteSnapshot(runA, snapshotWithMeanOverall());
+        seedSnapshot(runA, computationA);
+        seedSnapshot(runB, computationB);
+        final UUID keptTestCaseId = UUID.randomUUID();
+        final UUID unmatchedTestCaseId = UUID.randomUUID();
+        analyticsTestDataHelper.createEvalSummary(fixture(runA, computationA, "Keep", 0.5)
+                .testCaseId(keptTestCaseId)
+                .build());
+        // Present only in A, with an extreme value so leaking it into the overall is unmistakable.
+        analyticsTestDataHelper.createEvalSummary(fixture(runA, computationA, "OnlyInA", 9.0)
+                .testCaseId(unmatchedTestCaseId)
+                .build());
+        seedScore(runB, computationB, "Keep", 0.5);
+        aggregateMetricScores(runA, computationA, keptTestCaseId, unmatchedTestCaseId);
+
+        final RunComparisonRunDto sideA = compare(runA, runB).getRuns().get(0);
+
+        assertThat(sideA.getUnmatchedEvalTestCaseIds()).containsExactly(unmatchedTestCaseId);
+        // 4.75 if the unmatched test case leaked into the mean.
+        assertThat(score(sideA, "overall", "overall")).isCloseTo(0.5, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("Should exclude the whole test case when only some of its turns are unmatched")
+    void shouldExcludeWholeTestCaseWhenOnlySomeTurnsUnmatched() {
+        seedSnapshot(runA, computationA);
+        seedSnapshot(runB, computationB);
+        final UUID conversationId = UUID.randomUUID();
+        // A's conversation has 3 turns, B's only 2, so turn 2 is unmatched — but exclusion is per test case,
+        // so turns 0 and 1 (low value) leave the aggregate along with it.
+        for (int turn = 0; turn < 3; turn++) {
+            analyticsTestDataHelper.createEvalSummary(fixture(runA, computationA, "Conversation", 0.25)
+                    .testCaseId(conversationId)
+                    .turnIndex(turn)
+                    .totalTurns(3)
+                    .build());
+        }
+        for (int turn = 0; turn < 2; turn++) {
+            analyticsTestDataHelper.createEvalSummary(fixture(runB, computationB, "Conversation", 0.25)
+                    .turnIndex(turn)
+                    .totalTurns(2)
+                    .build());
+        }
+        seedScore(runA, computationA, "Other", 0.5);
+        seedScore(runB, computationB, "Other", 0.5);
+
+        final RunComparisonRunDto sideA = compare(runA, runB).getRuns().get(0);
+
+        assertThat(sideA.getUnmatchedEvalTestCaseIds()).containsExactly(conversationId);
+        // Only "Other" remains; MIN would be 0.25 if any of the conversation's turns stayed in.
+        assertThat(score(sideA, "MIN", METRIC_FIELD)).isEqualTo(0.5);
+        assertThat(score(sideA, "MAX", METRIC_FIELD)).isEqualTo(0.5);
     }
 
     @Test
@@ -348,8 +416,14 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         metaTestDataHelper.createRunMetricSnapshot(runA, computationA, METRIC, OUTPUT_SCHEMA, COMPUTED_AT_MS);
         metaTestDataHelper.createRunMetricSnapshot(runA, computationA, "Ghost", OUTPUT_SCHEMA, COMPUTED_AT_MS);
         seedSnapshot(runB, computationB);
-        seedScore(runA, computationA, "Case", 0.5);
+        final UUID testCaseId = UUID.randomUUID();
+        analyticsTestDataHelper.createEvalSummary(
+                fixture(runA, computationA, "Case", 0.5).testCaseId(testCaseId).build());
         seedScore(runB, computationB, "Case", 0.5);
+        // A Mean/WeightedMean overall reads test_case_metric_scores_aggregated, not raw eval summaries — a
+        // live run populates it as it executes (InProcessMetricEvaluationExecutor#writeAggregatedMetricScores),
+        // so a fixture that only seeds eval summaries must reproduce that step explicitly.
+        aggregateMetricScores(runA, computationA, testCaseId);
 
         final RunComparisonRunDto sideA = compare(runA, runB).getRuns().get(0);
 
@@ -458,6 +532,7 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
         seedSnapshot(cancelledRun, computationB);
         seedScore(runA, computationA, "Case", 0.5);
         seedScore(cancelledRun, computationB, "Case", 0.5);
+        aggregateAllTestCases(cancelledRun, computationB);
 
         final RunComparisonResponseDto response = compare(runA, cancelledRun);
 
@@ -563,6 +638,10 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     private RunComparisonResponseDto compare(UUID first, UUID second) {
+        // Statistics read the aggregated table, which Phase 2 populates in production; fixtures seed eval
+        // summaries directly, so reproduce that step (insert-only, so a prior explicit call is harmless).
+        aggregateAllTestCases(runA, computationA);
+        aggregateAllTestCases(runB, computationB);
         final ResponseEntity<RunComparisonResponseDto> response = restTemplate.getForEntity(
                 apiUrl("/analytics/metric-scores/comparison?runIds={first},{second}"),
                 RunComparisonResponseDto.class,
@@ -628,12 +707,34 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     private void computePhaseThree(UUID runId, UUID computationId) {
+        aggregateAllTestCases(runId, computationId);
         phaseThreeExecutor.execute(MetricScoreComputationContext.builder()
                 .testSuiteRunId(runId)
                 .testSuiteId(suiteId)
                 .computationId(computationId)
                 .computedAtMs(COMPUTED_AT_MS)
                 .build());
+    }
+
+    /**
+     * Mirrors {@code InProcessMetricEvaluationExecutor#writeAggregatedMetricScores}: a live run computes and
+     * upserts {@code test_case_metric_scores_aggregated} from that run's eval summaries as it executes, and
+     * this is what a {@code Mean}/{@code WeightedMean} overall then reads (both Phase 3's own and this
+     * comparison's, since {@code FilteredMetricScoreAggregator} reuses the same resolver unchanged). A fixture
+     * that seeds eval summaries directly, bypassing that executor, must reproduce this step explicitly for any
+     * test exercising a {@code Mean}/{@code WeightedMean} overall.
+     */
+    private void aggregateMetricScores(UUID runId, UUID computationId, UUID... testCaseIds) {
+        final List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items =
+                testCaseMetricScoreAggregator.aggregate(runId, computationId, List.of(testCaseIds));
+        testCaseMetricScoreAggregatedService.batchInsert(COMPUTED_AT_MS, items);
+    }
+
+    private void aggregateAllTestCases(UUID runId, UUID computationId) {
+        final List<UUID> testCaseIds = analyticsTestDataHelper.findDistinctTestCaseIds(runId, computationId);
+        if (!testCaseIds.isEmpty()) {
+            aggregateMetricScores(runId, computationId, testCaseIds.toArray(UUID[]::new));
+        }
     }
 
     private static List<String> triples(RunComparisonRunDto run) {

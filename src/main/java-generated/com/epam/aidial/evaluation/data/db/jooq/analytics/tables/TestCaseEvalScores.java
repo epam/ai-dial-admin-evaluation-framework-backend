@@ -8,7 +8,9 @@ import com.epam.aidial.evaluation.data.db.jooq.analytics.Analytics;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.Keys;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalScoresRecord;
 
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
@@ -51,9 +53,35 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
     }
 
     /**
-     * The column <code>analytics.test_case_eval_scores.eval_summary_id</code>.
+     * The column <code>analytics.test_case_eval_scores.id</code>.
      */
-    public final TableField<TestCaseEvalScoresRecord, String> EVAL_SUMMARY_ID = createField(DSL.name("eval_summary_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+    public final TableField<TestCaseEvalScoresRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
+    /**
+     * The column
+     * <code>analytics.test_case_eval_scores.test_suite_run_id</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> TEST_SUITE_RUN_ID = createField(DSL.name("test_suite_run_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.test_case_id</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> TEST_CASE_ID = createField(DSL.name("test_case_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.test_case_name</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> TEST_CASE_NAME = createField(DSL.name("test_case_name"), SQLDataType.VARCHAR(255).nullable(false), this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.computation_id</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> COMPUTATION_ID = createField(DSL.name("computation_id"), SQLDataType.VARCHAR(36).nullable(false), this, "");
+
+    /**
+     * The column <code>analytics.test_case_eval_scores.execution_status</code>.
+     */
+    public final TableField<TestCaseEvalScoresRecord, String> EXECUTION_STATUS = createField(DSL.name("execution_status"), SQLDataType.VARCHAR(20).nullable(false), this, "");
 
     /**
      * The column <code>analytics.test_case_eval_scores.score</code>.
@@ -109,6 +137,11 @@ public class TestCaseEvalScores extends TableImpl<TestCaseEvalScoresRecord> {
     @Override
     public UniqueKey<TestCaseEvalScoresRecord> getPrimaryKey() {
         return Keys.TEST_CASE_EVAL_SCORES_PKEY;
+    }
+
+    @Override
+    public List<UniqueKey<TestCaseEvalScoresRecord>> getUniqueKeys() {
+        return Arrays.asList(Keys.UQ_TEST_CASE_EVAL_SCORES_NATURAL_KEY);
     }
 
     @Override

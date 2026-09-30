@@ -9,23 +9,29 @@ import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
-import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseExecutionStatusAggregator;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseScoreComputer;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.service.domain.ConditionContext;
 import com.epam.aidial.evaluation.service.domain.ConditionDecision;
 import com.epam.aidial.evaluation.service.domain.ConditionExpressionEvaluator;
 import com.epam.aidial.evaluation.service.domain.OutputSchemaFieldExtractor;
 import com.epam.aidial.evaluation.service.domain.analytics.TestCaseEvalScoreService;
+import com.epam.aidial.evaluation.service.domain.analytics.TestCaseMetricScoreAggregatedService;
 import com.epam.aidial.evaluation.service.domain.dto.RunMetricSnapshotBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.EvalSummaryBatchWriteItemDto;
 import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseEvalScoreBatchWriteItemDto;
+import com.epam.aidial.evaluation.service.domain.dto.analytics.TestCaseMetricScoreAggregatedBatchWriteItemDto;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -39,6 +45,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.ListUtils;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -69,8 +76,11 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private final ConditionExpressionEvaluator conditionExpressionEvaluator;
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final MetricFieldDiscoverer metricFieldDiscoverer;
-    private final EvalSummaryRowScoreComputer evalSummaryRowScoreComputer;
+    private final TestCaseScoreComputer testCaseScoreComputer;
     private final TestCaseEvalScoreService testCaseEvalScoreService;
+    private final TestCaseExecutionStatusAggregator testCaseExecutionStatusAggregator;
+    private final TestCaseMetricScoreAggregator testCaseMetricScoreAggregator;
+    private final TestCaseMetricScoreAggregatedService testCaseMetricScoreAggregatedService;
     private final Clock clock;
 
     @Override
@@ -89,11 +99,12 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                 context.getAggregatedTsmds().size());
 
         writeRunMetricSnapshots(context);
-        List<String> metricFieldNames = discoverMetricFieldNames(context);
+        List<MetricField> metricFields = discoverMetricFields(context);
 
         Map<String, Semaphore> providerSemaphores = buildProviderSemaphores(context);
         List<FilterCondition> filters = buildRunIdFilters(context);
         List<EvalSummaryBatchWriteItemDto> buffer = new ArrayList<>();
+        Map<UUID, String> testCaseNames = new LinkedHashMap<>();
         Cursor cursor = null;
 
         ExecutorService executor = context.getExecutor();
@@ -110,18 +121,22 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                             result.getTestCaseId(),
                             result.getExecutionStatus());
 
-                    if (result.getExecutionStatus() != ExecutionStatus.SUCCESS) {
-                        buffer.add(buildPropagatedItem(result, context));
-                    } else {
-                        buffer.add(evaluateAndBuild(result, context, providerSemaphores, executor));
-                    }
+                    final EvalSummaryBatchWriteItemDto item = result.getExecutionStatus() != ExecutionStatus.SUCCESS
+                            ? buildPropagatedItem(result, context)
+                            : evaluateAndBuild(result, context, providerSemaphores, executor);
+                    buffer.add(item);
+                    testCaseNames.putIfAbsent(item.getTestCaseId(), item.getTestCaseName());
                 }
 
-                flushIfNeeded(buffer, context, metricFieldNames);
+                flushIfNeeded(buffer, context, metricFields);
                 cursor = page.nextCursor();
             } while (cursor != null);
         } finally {
-            flushRemaining(buffer, context, metricFieldNames);
+            try {
+                flushRemaining(buffer, context, metricFields);
+            } finally {
+                writeTestCaseMetricScores(testCaseNames, context, metricFields);
+            }
         }
 
         log.info("Metric evaluation completed for run {}", context.getTestSuiteRunId());
@@ -152,16 +167,16 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     /**
-     * The run's discovered numeric metric field names, read back once via the same
-     * {@link MetricFieldDiscoverer} Phase 3 uses — so a {@code Mean} overall score's divisor can never
-     * disagree between the two phases for the same run. One query per {@link #execute} call, not per flush.
+     * The run's discovered numeric metric fields, read back once via the same {@link MetricFieldDiscoverer}
+     * Phase 3 uses — so a {@code Mean} overall score's divisor can never disagree between the two phases for
+     * the same run, and so {@link #writeAggregatedMetricScores} reuses the exact same field discovery
+     * {@link #writeTestCaseScores} does (via {@link MetricField#flattenedName()}), rather than re-deriving it. One
+     * query per {@link #execute} call, not per flush.
      */
-    private List<String> discoverMetricFieldNames(MetricEvaluationContext context) {
+    private List<MetricField> discoverMetricFields(MetricEvaluationContext context) {
         List<RunMetricSnapshot> snapshots = runMetricSnapshotRepository.findByRunIdAndComputationId(
                 context.getTestSuiteRunId(), context.getComputationId());
-        return metricFieldDiscoverer.discover(snapshots).stream()
-                .map(MetricField::flattenedName)
-                .toList();
+        return metricFieldDiscoverer.discover(snapshots);
     }
 
     private Map<String, Semaphore> buildProviderSemaphores(MetricEvaluationContext context) {
@@ -394,21 +409,27 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     private void flushIfNeeded(
-            List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
+            List<EvalSummaryBatchWriteItemDto> buffer,
+            MetricEvaluationContext context,
+            List<MetricField> metricFields) {
         if (buffer.size() >= context.getBatchSize()) {
-            doFlush(buffer, context, metricFieldNames);
+            doFlush(buffer, context, metricFields);
         }
     }
 
     private void flushRemaining(
-            List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
+            List<EvalSummaryBatchWriteItemDto> buffer,
+            MetricEvaluationContext context,
+            List<MetricField> metricFields) {
         if (!buffer.isEmpty()) {
-            doFlush(buffer, context, metricFieldNames);
+            doFlush(buffer, context, metricFields);
         }
     }
 
     private void doFlush(
-            List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
+            List<EvalSummaryBatchWriteItemDto> buffer,
+            MetricEvaluationContext context,
+            List<MetricField> metricFields) {
         // Drain the buffer before writing so a failed batch is never re-sent by the caller's
         // finally { flushRemaining(...) } — EvalSummaryBatchWriteClient chunks internally and may
         // have already committed some chunks before throwing.
@@ -422,8 +443,6 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     context.getComputedAtMs(),
                     items);
             log.debug("Flushed {} eval summaries for run {}", items.size(), context.getTestSuiteRunId());
-
-            writeRowScores(items, context, metricFieldNames);
         } catch (RuntimeException e) {
             log.error("Batch write failed for run {}: {}", context.getTestSuiteRunId(), e.getMessage(), e);
             throw new AnalyticsWriteException(
@@ -432,38 +451,120 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     /**
-     * Computes and writes per-row {@code score}/{@code passed} for this flush's batch, right after its
-     * {@code test_case_eval_summaries} rows are committed — one extra SQL query per batch (not per row),
-     * reusing {@link EvalSummaryRowScoreComputer}. Skipped entirely when the suite has no {@code overallScore}
-     * definition. A batch-write failure here is logged but does not cancel the run: score/passed are
-     * regenerable derived data, unlike the eval summaries themselves.
+     * Runs once after the last eval-summary flush, so every test case's rows are complete: aggregates and
+     * scores each test case exactly once, in chunks of the context batch size. Per chunk the aggregation
+     * MUST run before the scoring, because {@link #writeTestCaseScores}' Mean/WeightedMean/CustomFunction
+     * computation reads {@code test_case_metric_scores_aggregated}, which {@link
+     * #writeAggregatedMetricScores} populates.
      */
-    private void writeRowScores(
-            List<EvalSummaryBatchWriteItemDto> buffer, MetricEvaluationContext context, List<String> metricFieldNames) {
+    private void writeTestCaseMetricScores(
+            Map<UUID, String> testCaseNames, MetricEvaluationContext context, List<MetricField> metricFields) {
+        for (List<UUID> chunk : ListUtils.partition(new ArrayList<>(testCaseNames.keySet()), context.getBatchSize())) {
+            writeAggregatedMetricScores(chunk, context, metricFields);
+            writeTestCaseScores(chunk, testCaseNames, context, metricFields);
+        }
+    }
+
+    /**
+     * Computes and writes exactly one {@code test_case_eval_scores} row per test case in the chunk —
+     * never one per raw {@code test_case_eval_summaries} row — reusing {@link
+     * TestCaseScoreComputer}, which reads the just-written {@code test_case_metric_scores_aggregated}
+     * data (see {@link #writeAggregatedMetricScores}, which MUST run first). Every row written here carries
+     * {@code eval_summary_id = NULL}: it is computed from, and corresponds 1:1 to, the one-row-per-test-case
+     * aggregated row, so no broadcast/dedup is needed on this path (see {@code
+     * PostgresTestCaseEvalScoreRepository}'s partial-unique-index insert-if-absent). First computes each test case's
+     * aggregated {@code execution_status} (see {@link TestCaseExecutionStatusAggregator}) — OR-ed across
+     * <strong>all</strong> of that test case's rows for the computation, not just this batch — and issues the
+     * score SQL query only for test cases whose aggregate is {@code SUCCESS}; a {@code FAILED}-aggregate test
+     * case gets {@code score = null} without its id ever reaching that query. A {@code FAILED} test case
+     * always gets a written row regardless of whether it has any numeric metric samples; a {@code SUCCESS}
+     * test case only gets one when the score query actually returned a value for it — preserving {@code
+     * test_case_metric_scores_aggregated}'s "absent = no numeric sample" contract for the SUCCESS case (a
+     * metric-less/all-condition-skipped SUCCESS test case stays absent from both tables). Skipped entirely
+     * when the suite has no {@code overallScore} definition. A batch-write failure here is logged but does
+     * not cancel the run: score/passed/execution_status are regenerable derived data, unlike the eval
+     * summaries themselves.
+     */
+    private void writeTestCaseScores(
+            List<UUID> testCaseIds,
+            Map<UUID, String> testCaseNamesById,
+            MetricEvaluationContext context,
+            List<MetricField> metricFields) {
         if (context.getOverallScoreDefinition() == null) {
             return;
         }
         try {
-            List<UUID> rowIds =
-                    buffer.stream().map(EvalSummaryBatchWriteItemDto::getId).toList();
-            Map<UUID, Double> scoresById = evalSummaryRowScoreComputer.computeBatch(
-                    context.getOverallScoreDefinition(),
-                    metricFieldNames,
-                    context.getTestSuiteRunId(),
-                    context.getComputationId(),
-                    rowIds);
-            if (scoresById.isEmpty()) {
+            Map<UUID, ExecutionStatus> statusByTestCase = testCaseExecutionStatusAggregator.aggregate(
+                    context.getTestSuiteRunId(), context.getComputationId(), testCaseIds);
+            if (statusByTestCase.isEmpty()) {
                 return;
             }
-            List<TestCaseEvalScoreBatchWriteItemDto> items = buffer.stream()
-                    .filter(item -> scoresById.containsKey(item.getId()))
-                    .map(item -> toScoreItem(item, scoresById.get(item.getId()), context))
+            List<UUID> successTestCaseIds = statusByTestCase.entrySet().stream()
+                    .filter(entry -> entry.getValue() == ExecutionStatus.SUCCESS)
+                    .map(Map.Entry::getKey)
                     .toList();
-            testCaseEvalScoreService.batchCreate(context.getComputedAtMs(), items);
+            Map<UUID, Double> scoresByTestCase = successTestCaseIds.isEmpty()
+                    ? Map.of()
+                    : testCaseScoreComputer.computeByTestCase(
+                            context.getOverallScoreDefinition(),
+                            metricFields,
+                            MetricScoreAggregation.orDefault(context.getMetricScoreAggregation()),
+                            context.getTestSuiteRunId(),
+                            context.getComputationId(),
+                            successTestCaseIds);
+            List<TestCaseEvalScoreBatchWriteItemDto> items = statusByTestCase.entrySet().stream()
+                    // A FAILED test case always gets a row (score=null), even with zero numeric
+                    // samples — the point of this aggregation. A SUCCESS test case only gets one when
+                    // it actually has a computed score, preserving test_case_metric_scores_aggregated's
+                    // existing "absent = no numeric sample" contract: a SUCCESS test case with nothing
+                    // numeric (e.g. every metric condition-skipped) stays absent from both tables, same
+                    // as before this change.
+                    .filter(entry ->
+                            entry.getValue() == ExecutionStatus.FAILED || scoresByTestCase.containsKey(entry.getKey()))
+                    .map(entry -> toScoreItem(
+                            entry.getKey(),
+                            testCaseNamesById.get(entry.getKey()),
+                            scoresByTestCase.get(entry.getKey()),
+                            entry.getValue(),
+                            context))
+                    .toList();
+            testCaseEvalScoreService.batchInsert(context.getComputedAtMs(), items);
             log.debug("Wrote {} eval summary scores for run {}", items.size(), context.getTestSuiteRunId());
         } catch (RuntimeException e) {
             log.warn(
-                    "Per-row score computation/write failed for run {}, computation {}: {}",
+                    "Per-test-case score computation/write failed for run {}, computation {}: {}",
+                    context.getTestSuiteRunId(),
+                    context.getComputationId(),
+                    e.getMessage(),
+                    e);
+        }
+    }
+
+    /**
+     * Computes and writes the per-test-case {@code metric_scores} aggregation for the chunk's test cases,
+     * reusing {@link TestCaseMetricScoreAggregator}. Runs <strong>before</strong> {@link
+     * #writeTestCaseScores}, which reads this data back for {@code Mean}/{@code WeightedMean}/{@code
+     * CustomFunction}. Called only after the last eval-summary flush, so each test case's row set is
+     * complete and its aggregate is inserted exactly once. Skipped entirely when the run has no discovered
+     * metric fields. A failure here is logged but does not cancel the run: {@code metric_scores} is
+     * regenerable derived data, unlike the eval summaries themselves — kept as its own {@code
+     * try}/{@code catch}, isolated from {@link #writeTestCaseScores}'s, so a failure in one does not
+     * suppress the other's own error visibility.
+     */
+    private void writeAggregatedMetricScores(
+            List<UUID> testCaseIds, MetricEvaluationContext context, List<MetricField> metricFields) {
+        if (metricFields.isEmpty()) {
+            return;
+        }
+        try {
+            List<TestCaseMetricScoreAggregatedBatchWriteItemDto> items = testCaseMetricScoreAggregator.aggregate(
+                    context.getTestSuiteRunId(), context.getComputationId(), testCaseIds);
+            testCaseMetricScoreAggregatedService.batchInsert(context.getComputedAtMs(), items);
+            log.debug(
+                    "Wrote {} test case metric score aggregates for run {}", items.size(), context.getTestSuiteRunId());
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Aggregated metric score computation/write failed for run {}, computation {}: {}",
                     context.getTestSuiteRunId(),
                     context.getComputationId(),
                     e.getMessage(),
@@ -472,13 +573,22 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     }
 
     private TestCaseEvalScoreBatchWriteItemDto toScoreItem(
-            EvalSummaryBatchWriteItemDto item, Double score, MetricEvaluationContext context) {
-        Boolean passed = (score != null && context.getOverallScoreThreshold() != null)
-                ? score >= context.getOverallScoreThreshold()
+            UUID testCaseId,
+            String testCaseName,
+            Double score,
+            ExecutionStatus executionStatus,
+            MetricEvaluationContext context) {
+        Double effectiveScore = executionStatus == ExecutionStatus.FAILED ? null : score;
+        Boolean passed = (effectiveScore != null && context.getOverallScoreThreshold() != null)
+                ? effectiveScore >= context.getOverallScoreThreshold()
                 : null;
         return TestCaseEvalScoreBatchWriteItemDto.builder()
-                .evalSummaryId(item.getId())
-                .score(score)
+                .testSuiteRunId(context.getTestSuiteRunId())
+                .testCaseId(testCaseId)
+                .testCaseName(testCaseName)
+                .computationId(context.getComputationId())
+                .executionStatus(executionStatus)
+                .score(effectiveScore)
                 .passed(passed)
                 .build();
     }

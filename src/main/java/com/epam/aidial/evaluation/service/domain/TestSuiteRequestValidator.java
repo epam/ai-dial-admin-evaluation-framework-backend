@@ -12,6 +12,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RunnerValidationConstants;
+import com.epam.aidial.evaluation.runner.dto.overallscore.CustomFunction;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.service.JsonataEvaluationService;
@@ -227,6 +228,22 @@ public class TestSuiteRequestValidator {
             } catch (ValidationException ex) {
                 throw new ValidationException(prefix + "requestTemplate.body.jsonataContent: " + ex.getMessage());
             }
+        }
+    }
+
+    /**
+     * Rejects a {@link CustomFunction} {@code testCaseOverallScore} with a hard 400. Per test case,
+     * only {@code Mean}/{@code WeightedMean} make sense — both are structurally metric-only (a
+     * {@code WeightedMetric} names a {@code metricName}/{@code outputField} pair, never a {@code data::}
+     * or {@code response::} field), and a population-dependent {@code CustomFunction} like {@code roc_auc}
+     * is meaningless for a single test case. {@code overallScore} (the run-level definition) is
+     * unrestricted and may still be any {@link com.epam.aidial.evaluation.runner.dto.overallscore
+     * .OverallScoreDefinition}, including {@code CustomFunction}.
+     */
+    public void validateTestCaseOverallScore(TestSuiteRequestDto dto) {
+        if (dto.getTestCaseOverallScore() instanceof CustomFunction) {
+            throw new ValidationException(
+                    "testCaseOverallScore must be mean or weighted_mean; custom_function is only valid for overallScore");
         }
     }
 

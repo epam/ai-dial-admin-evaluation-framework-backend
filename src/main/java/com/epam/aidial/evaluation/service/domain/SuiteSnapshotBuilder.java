@@ -5,6 +5,7 @@ import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.DatasetReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +38,7 @@ public class SuiteSnapshotBuilder {
                 // Frozen at snapshot time so per-row `passed` stays stable even if the suite's live
                 // threshold is edited after the run starts.
                 .overallScoreThreshold(suite.getOverallScoreThreshold())
+                .metricScoreAggregation(MetricScoreAggregation.orDefault(suite.getMetricScoreAggregation()))
                 // Request chain: additionalRequests is always '[]' for MCP_TOOL (enforced at write time by
                 // TestSuiteRequestValidator), so mapping it unconditionally is equivalent to gating it on
                 // suiteType and keeps this builder's common section the single place chain fields are set.

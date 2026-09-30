@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;
@@ -26,5 +27,9 @@ public class MetricScoreComputationContext {
     private final UUID testSuiteId;
     private final UUID computationId;
     private final OverallScoreDefinition overallScoreDefinition;
+
+    @Builder.Default
+    private final MetricScoreAggregation metricScoreAggregation = MetricScoreAggregation.AVG;
+
     private final long computedAtMs;
 }

@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Guards the code-defined metric-score queries: every built-in statistic MUST be an aggregate
- * {@link StructuredQuery} over {@code eval_summaries} selecting a single {@code value}, run/computation
+ * {@link StructuredQuery} over {@code test_case_metric_scores} selecting a single {@code value}, run/computation
  * scoped, and reference {@code :metricField} (the default {@code overall} is the single metric's
  * average, so it too is {@code avg(:metricField)}).
  */
@@ -56,9 +56,9 @@ class BuiltInMetricStatisticsTest {
         assertThat(params(selectExpr)).contains(MetricScoreConstants.PARAM_METRIC_FIELD);
     }
 
-    /** Shared shape: aggregate over eval_summaries, single {@code value} alias, run/computation scoped. */
+    /** Shared shape: aggregate over test_case_metric_scores, single {@code value} alias, run/computation scoped. */
     private static void assertAggregateValueQuery(StructuredQuery query) {
-        assertThat(query.entity()).isEqualTo(MetricScoreConstants.ENTITY_EVAL_SUMMARIES);
+        assertThat(query.entity()).isEqualTo(MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES);
         assertThat(query.mode()).isEqualTo(QueryMode.AGGREGATE);
         assertThat(query.select()).hasSize(1);
         assertThat(query.select().getFirst().as()).isEqualTo(MetricScoreConstants.VALUE_ALIAS);

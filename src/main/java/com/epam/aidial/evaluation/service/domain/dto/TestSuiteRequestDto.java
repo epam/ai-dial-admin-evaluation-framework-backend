@@ -12,6 +12,7 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RunnerValidationConstants;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -145,6 +146,13 @@ public class TestSuiteRequestDto {
                     + "Must be between 0.0 and 1.0 (inclusive). Null = no threshold configured.",
             example = "0.8")
     private Double overallScoreThreshold;
+
+    @Schema(
+            description = "Which per-test-case leaf of the aggregated metric scores (`AVG`, `MIN` or `MAX`) is used "
+                    + "when scores and built-in statistics are computed over the aggregated metrics table. "
+                    + "Null = `AVG` on create; on update null keeps the current value.",
+            example = "AVG")
+    private MetricScoreAggregation metricScoreAggregation;
 
     @Schema(
             description =

@@ -215,7 +215,12 @@ public abstract class CsvImportPlainGoldenFunctionalTests extends BaseFunctional
     }
 
     private String normalise(Object snapshot) {
-        return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(stripVolatile(snapshot)) + "\n";
+        // The default pretty printer emits the OS line separator; goldens are LF so Windows runs match too.
+        return objectMapper
+                        .writerWithDefaultPrettyPrinter()
+                        .writeValueAsString(stripVolatile(snapshot))
+                        .replace("\r\n", "\n")
+                + "\n";
     }
 
     private static Object stripVolatile(Object value) {

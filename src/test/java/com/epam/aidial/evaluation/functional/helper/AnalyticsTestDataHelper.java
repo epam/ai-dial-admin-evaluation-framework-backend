@@ -1,5 +1,6 @@
 package com.epam.aidial.evaluation.functional.helper;
 
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
@@ -74,6 +75,16 @@ public class AnalyticsTestDataHelper {
         return count != null ? count : 0L;
     }
 
+    /** Distinct {@code test_case_id}s of a run's computation — for seeding Phase 2.5's aggregation in tests. */
+    public List<UUID> findDistinctTestCaseIds(UUID runId, UUID computationId) {
+        return analyticsDsl
+                .selectDistinct(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID)
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()))
+                .fetch(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID)));
+    }
+
     public List<Map<String, Object>> findEvalSummariesByRunId(UUID runId) {
         return analyticsDsl
                 .select(
@@ -91,6 +102,20 @@ public class AnalyticsTestDataHelper {
                         TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .fetch(AnalyticsTestDataHelper::recordToMap);
+    }
+
+    /** Reads {@code test_case_eval_scores} rows for a run directly, bypassing the Query DSL entity. */
+    public List<Map<String, Object>> findTestCaseEvalScoresByRunId(UUID runId) {
+        return analyticsDsl
+                .select(
+                        TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
+                        TEST_CASE_EVAL_SCORES.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SCORES.EXECUTION_STATUS,
+                        TEST_CASE_EVAL_SCORES.SCORE,
+                        TEST_CASE_EVAL_SCORES.PASSED)
+                .from(TEST_CASE_EVAL_SCORES)
+                .where(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID.eq(runId.toString()))
                 .fetch(AnalyticsTestDataHelper::recordToMap);
     }
 
@@ -234,7 +259,9 @@ public class AnalyticsTestDataHelper {
                 .set(
                         TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
                         UUID.randomUUID().toString())
-                .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, UUID.randomUUID().toString())
+                .set(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
+                        fixture.getTestCaseId().toString())
                 .set(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME, fixture.getTestCaseName())
                 .set(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX, fixture.getRunIndex())
                 .set(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX, fixture.getRequestIndex())

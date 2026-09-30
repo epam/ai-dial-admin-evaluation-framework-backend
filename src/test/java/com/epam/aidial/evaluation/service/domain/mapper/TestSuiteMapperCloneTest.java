@@ -8,6 +8,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteCloneRequestDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
@@ -63,6 +64,7 @@ class TestSuiteMapperCloneTest {
         assertThat(cloned.getMcpDeploymentRef()).isEqualTo(source.getMcpDeploymentRef());
         assertThat(cloned.getToolRef()).isEqualTo(source.getToolRef());
         assertThat(cloned.getOverallScoreThreshold()).isEqualTo(source.getOverallScoreThreshold());
+        assertThat(cloned.getMetricScoreAggregation()).isEqualTo(MetricScoreAggregation.MAX);
         assertThat(cloned.getCreatedBy()).isEqualTo(createdBy);
         assertThat(cloned.getVersion()).isEqualTo(0L);
     }
@@ -437,6 +439,7 @@ class TestSuiteMapperCloneTest {
                 .mcpDeploymentRef(null)
                 .toolRef(null)
                 .overallScoreThreshold(0.8)
+                .metricScoreAggregation(MetricScoreAggregation.MAX)
                 .valid(true)
                 .validationWarnings("[]")
                 .version(3L)

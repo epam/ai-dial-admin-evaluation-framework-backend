@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.runner.dto;
 
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
@@ -98,6 +99,12 @@ public class SuiteSnapshotDto {
                     + "Fixed for the life of the run regardless of later edits to the suite's live threshold. "
                     + "Additive-optional: absent in snapshots written before this field existed.")
     private Double overallScoreThreshold;
+
+    @Schema(
+            description = "Per-suite metric score aggregation (`AVG`, `MIN`, `MAX`) captured at snapshot time; "
+                    + "selects the per-test-case leaf read from the aggregated metrics table. Additive-optional: "
+                    + "absent in snapshots written before this field existed, which are treated as `AVG`.")
+    private MetricScoreAggregation metricScoreAggregation;
 
     public static final String CURRENT_VERSION = "2";
 

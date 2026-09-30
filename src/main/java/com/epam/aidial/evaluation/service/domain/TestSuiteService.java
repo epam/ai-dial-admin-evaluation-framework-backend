@@ -138,6 +138,7 @@ public class TestSuiteService {
         testSuiteRequestValidator.validateSuiteTypeFields(testSuiteRequestDto);
         testSuiteRequestValidator.validateTestSuiteSchemas(testSuiteRequestDto);
         testSuiteRequestValidator.validateTemplateLimits(testSuiteRequestDto);
+        testSuiteRequestValidator.validateTestCaseOverallScore(testSuiteRequestDto);
         validateTargetPrivateDatasetFree(null, testSuiteRequestDto.getDatasetId());
         // Suites may be created in the unbound state (datasetId == null); the schema is empty
         // and the suite cannot run until a datasetId is set.
@@ -185,6 +186,7 @@ public class TestSuiteService {
         testSuiteRequestValidator.validateSuiteTypeFields(testSuiteRequestDto);
         testSuiteRequestValidator.validateTestSuiteSchemas(testSuiteRequestDto);
         testSuiteRequestValidator.validateTemplateLimits(testSuiteRequestDto);
+        testSuiteRequestValidator.validateTestCaseOverallScore(testSuiteRequestDto);
         // Resolves through DatasetSchemaProvider which throws EntityNotFoundException on miss.
         // When the suite is unbound (or being unbound) the schema is empty — no provider call.
         List<FieldDefinitionDto> datasetSchema = testSuiteRequestDto.getDatasetId() != null

@@ -4,7 +4,8 @@
 Compare two runs of one test suite over only the eval-summary rows they have in common, so that
 run-level metric statistics, `overall` and average execution duration describe a single population and are
 therefore comparable. Also returns the identity of each run's non-matching rows, so a client can reproduce
-the same population in a follow-up structured query.
+the same population in a follow-up structured query — and, since scoring is now computed per test case
+(`test_case_eval_scores`), the distinct test case ids those non-matching rows belong to.
 
 Status: **Implemented**
 
@@ -12,7 +13,7 @@ Status: **Implemented**
 
 
 ### Requirement: Matched-row metric-score comparison endpoint
-The system SHALL expose `GET /api/v1/analytics/metric-scores/comparison?runIds=<uuidA>,<uuidB>`, which accepts exactly two distinct test suite run ids belonging to the **same** test suite and returns, for each run: its `runId`, its resolved `computationId`, `totalRowCount`, `matchedRowCount`, `matchedSuccessRowCount`, `avgExecDurationMs`, `unmatchedEvalSummaryIds`, and a `scores` array of `{metricScoreName, metricName, value}` entries.
+The system SHALL expose `GET /api/v1/analytics/metric-scores/comparison?runIds=<uuidA>,<uuidB>`, which accepts exactly two distinct test suite run ids belonging to the **same** test suite and returns, for each run: its `runId`, its resolved `computationId`, `totalRowCount`, `matchedRowCount`, `matchedSuccessRowCount`, `avgExecDurationMs`, `unmatchedEvalSummaryIds`, `unmatchedEvalTestCaseIds`, and a `scores` array of `{metricScoreName, metricName, value}` entries.
 
 The `runs` array SHALL be ordered as the ids were requested, and SHALL be a JSON array rather than an object keyed by run id. All counts SHALL be per-run; the system SHALL NOT guarantee that the two runs report an equal `matchedRowCount`, because a run holding duplicate match keys legitimately matches more rows than its counterpart.
 
@@ -21,7 +22,7 @@ Status: **Implemented**
 
 #### Scenario: Two runs of one suite are compared
 - **WHEN** a client requests the comparison of two distinct runs of the same suite, each having eval summaries and a resolvable computation
-- **THEN** the response contains one entry per run, each with its `computationId`, the three row counts, its `avgExecDurationMs`, its `unmatchedEvalSummaryIds`, and its recomputed `scores`
+- **THEN** the response contains one entry per run, each with its `computationId`, the three row counts, its `avgExecDurationMs`, its `unmatchedEvalSummaryIds`, its `unmatchedEvalTestCaseIds`, and its recomputed `scores`
 
 #### Scenario: Response order follows request order
 - **WHEN** a client requests `runIds=<uuidB>,<uuidA>`
@@ -183,6 +184,24 @@ Status: **Implemented**
 - **WHEN** one run has a resolvable computation but no eval-summary rows
 - **THEN** that run reports `totalRowCount` 0, `matchedRowCount` 0, an empty `unmatchedEvalSummaryIds` and an empty `scores`, and the request still succeeds
 
+### Requirement: Excluded-test-case identity for correlation with per-test-case scoring
+The system SHALL return, per run, `unmatchedEvalTestCaseIds` — the distinct `test_case_id`s among that run's `unmatchedEvalSummaryIds` rows — so that a client can correlate an unmatched row with the per-test-case `test_case_eval_scores` entity without re-deriving the test case identity from individual row ids.
+
+A test case SHALL appear in `unmatchedEvalTestCaseIds` if **any** of its rows for that run and computation is unmatched, even when some of its other rows did match (e.g. one turn of a multi-turn test case matched while another did not). `unmatchedEvalTestCaseIds` is therefore a **projection** of `unmatchedEvalSummaryIds` onto test case identity, not an independent exclusion list, and its size MAY be smaller than `size(unmatchedEvalSummaryIds)` when a test case contributes more than one unmatched row. An empty list SHALL mean the same thing as an empty `unmatchedEvalSummaryIds`: every row of the run matched.
+Status: **Implemented**
+
+#### Scenario: A multi-row test case collapses to one id
+- **WHEN** a test case has two unmatched rows (e.g. two turns) for a run
+- **THEN** `unmatchedEvalTestCaseIds` contains that test case's id exactly once, not twice
+
+#### Scenario: Full overlap returns an empty list
+- **WHEN** every row of a run matched
+- **THEN** that run's `unmatchedEvalTestCaseIds` is an empty array
+
+#### Scenario: A partially-matched test case still appears
+- **WHEN** a multi-turn test case has one turn that matched and one that did not
+- **THEN** that test case's id appears in `unmatchedEvalTestCaseIds`, even though it is not entirely absent from the matched population
+
 ### Requirement: Comparison always uses each run's latest computation
 The system SHALL resolve each run's computation to that run's most recent one, and SHALL NOT accept a client-supplied computation override. The resolved computation SHALL be used both for row matching and for aggregation, and SHALL be reported as `computationId` in the response.
 Status: **Implemented**
@@ -250,10 +269,12 @@ Status: **Implemented**
 - Orchestration: `query/service/metricscore/RunComparisonService` — lives alongside the rest of the
   Query DSL classes it drives (`StructuredQueryService`); `LayeredArchitectureTest` folds `query.*` into
   the `service` layer, so this is an ordinary `web` → `service` edge.
-- Matching: `PostgresEvalSummaryRepository.countMatches` / `findUnmatchedIds` — a per-side left join against
-  the other run's `DISTINCT` key set, carrying the three counts and the duration average as four aggregates
-  on one statement. Measured plans: hash left join for the counts, merge anti join for the ids (see the
-  change's `design.md`).
+- Matching: `PostgresEvalSummaryRepository.countMatches` / `findUnmatchedIds` / `findUnmatchedTestCaseIds` — a
+  per-side left join against the other run's `DISTINCT` key set, carrying the three counts and the duration
+  average as four aggregates on one statement. `findUnmatchedTestCaseIds` is the same anti-join with a
+  `SELECT DISTINCT (test_case_id, lower(test_case_name))` projection instead of `id`, ordered on the same
+  columns so it stays deterministic. Measured plans: hash left join for the counts, merge anti join for the
+  ids (see the change's `design.md`).
 - Recomputation: `FilteredMetricScoreAggregator` runs Phase 3's own query definitions
   (`BuiltInMetricStatistics`, `OverallScoreDefinitionResolver`) with one ANDed `not(id in [...])` predicate,
   which is what makes full-overlap parity with the persisted values structural rather than coincidental.

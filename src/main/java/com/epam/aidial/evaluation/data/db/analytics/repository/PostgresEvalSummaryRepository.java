@@ -1,6 +1,5 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
@@ -165,8 +164,6 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS,
-                        TEST_CASE_EVAL_SCORES.SCORE,
-                        TEST_CASE_EVAL_SCORES.PASSED,
                         TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
                         TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS,
                         TEST_CASE_RUN_RESULTS.REQUEST_BODY,
@@ -174,8 +171,6 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .leftJoin(TEST_CASE_RUN_RESULTS)
                 .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID))
-                .leftJoin(TEST_CASE_EVAL_SCORES)
-                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
                 .where(TEST_CASE_EVAL_SUMMARIES.ID.eq(id.toString()))
                 .fetchOptional(recordMapper::mapExportWithBodies);
     }
@@ -333,6 +328,21 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .fetch(r -> UUID.fromString(r.value1()));
     }
 
+    @Override
+    public List<UUID> findUnmatchedTestCaseIds(
+            UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId) {
+        Table<?> probe = otherRunKeys(otherRunId, otherComputationId);
+
+        return dsl.selectDistinct(
+                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME))
+                .from(TEST_CASE_EVAL_SUMMARIES)
+                .leftJoin(probe)
+                .on(matchCondition(probe))
+                .where(runScope(runId, computationId).and(probeKey(probe).isNull()))
+                .orderBy(DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME), TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID)
+                .fetch(r -> UUID.fromString(r.value1()));
+    }
+
     /**
      * The other run's <strong>distinct</strong> match keys, as a derived table to left-join against.
      *
@@ -440,13 +450,9 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
                         TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
-                        TEST_CASE_EVAL_SCORES.SCORE,
-                        TEST_CASE_EVAL_SCORES.PASSED,
                         TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
                         TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
                 .from(TEST_CASE_EVAL_SUMMARIES)
-                .leftJoin(TEST_CASE_EVAL_SCORES)
-                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
                 .where(condition)
                 .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
     }
@@ -474,13 +480,9 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS,
-                        TEST_CASE_EVAL_SCORES.SCORE,
-                        TEST_CASE_EVAL_SCORES.PASSED,
                         TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
                         TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
                 .from(TEST_CASE_EVAL_SUMMARIES)
-                .leftJoin(TEST_CASE_EVAL_SCORES)
-                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
                 .where(condition)
                 .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
     }
@@ -508,8 +510,6 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
                         TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
                         TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS,
-                        TEST_CASE_EVAL_SCORES.SCORE,
-                        TEST_CASE_EVAL_SCORES.PASSED,
                         TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
                         TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS,
                         TEST_CASE_RUN_RESULTS.REQUEST_BODY,
@@ -517,8 +517,6 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .leftJoin(TEST_CASE_RUN_RESULTS)
                 .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID))
-                .leftJoin(TEST_CASE_EVAL_SCORES)
-                .on(TEST_CASE_EVAL_SCORES.EVAL_SUMMARY_ID.eq(TEST_CASE_EVAL_SUMMARIES.ID))
                 .where(condition)
                 .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
     }

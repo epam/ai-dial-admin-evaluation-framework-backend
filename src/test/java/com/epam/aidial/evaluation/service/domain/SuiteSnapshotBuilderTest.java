@@ -19,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
+import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.List;
@@ -220,6 +221,42 @@ class SuiteSnapshotBuilderTest {
             SuiteSnapshotDto snapshot = builder.build(suite, dataset);
 
             assertThat(snapshot.getOverallScoreThreshold()).isEqualTo(0.8);
+        }
+
+        @Test
+        @DisplayName("snapshots the suite's metricScoreAggregation, defaulting to AVG when unset")
+        void buildsSnapshotWithMetricScoreAggregation() {
+            UUID datasetId = UUID.randomUUID();
+            TestSuite explicit = suiteWithAggregation(datasetId, MetricScoreAggregation.MIN);
+            TestSuite unset = suiteWithAggregation(datasetId, null);
+            Dataset dataset = Dataset.builder()
+                    .id(datasetId)
+                    .name("Dataset A")
+                    .version(1L)
+                    .testCaseSchema("[]")
+                    .build();
+
+            when(jsonbMapper.mapInputBindings("[]")).thenReturn(List.of());
+            when(jsonbMapper.mapResponseColumns("[]")).thenReturn(List.of());
+            when(jsonbMapper.mapFieldDefinitions("[]")).thenReturn(List.of());
+
+            assertThat(builder.build(explicit, dataset).getMetricScoreAggregation())
+                    .isEqualTo(MetricScoreAggregation.MIN);
+            assertThat(builder.build(unset, dataset).getMetricScoreAggregation())
+                    .isEqualTo(MetricScoreAggregation.AVG);
+        }
+
+        private TestSuite suiteWithAggregation(UUID datasetId, MetricScoreAggregation aggregation) {
+            return TestSuite.builder()
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .datasetId(datasetId)
+                    .deploymentRef("{}")
+                    .endpointRef("{}")
+                    .requestTemplate("{}")
+                    .inputBindings("[]")
+                    .responseColumns("[]")
+                    .metricScoreAggregation(aggregation)
+                    .build();
         }
 
         @Test

@@ -31,15 +31,15 @@ import org.springframework.stereotype.Component;
 
 /**
  * Recomputes the built-in metric-score statistics and the run-level {@code overall} over a <em>subset</em> of
- * a run's eval summaries, without persisting anything.
+ * a run's test cases, without persisting anything.
  *
- * <p>The whole component is one idea: run the queries Phase 3 itself runs, with a single row-exclusion
+ * <p>The whole component is one idea: run the queries Phase 3 itself runs, with a single test-case-exclusion
  * predicate ANDed onto each. {@link BuiltInMetricStatistics} and {@link OverallScoreDefinitionResolver} are
  * used unchanged, which is what makes agreement with the persisted full-population values structural rather
  * than merely tested — there is no second implementation that could drift.
  *
- * <p>The predicate is stated as an <strong>exclusion</strong>, {@code NOT (id IN (…))}, because two runs of
- * one suite over the same dataset match every row: the common case then excludes nothing, and
+ * <p>The predicate is stated as an <strong>exclusion</strong>, {@code NOT (test_case_id IN (…))}, because two
+ * runs of one suite over the same dataset match every row: the common case then excludes nothing, and
  * {@linkplain #exclusionPredicate(List) grafts no predicate at all}, so Phase 3's query runs verbatim and no
  * ids are bound. There is no {@code not_in} operator in the DSL and none is needed.
  */
@@ -49,15 +49,13 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class FilteredMetricScoreAggregator {
 
-    private static final String FIELD_ID = "id";
-
     private final BuiltInMetricStatistics builtInStatistics;
     private final OverallScoreDefinitionResolver overallScoreDefinitionResolver;
     private final StructuredQueryService structuredQueryService;
 
     /**
      * Computes every built-in statistic for every discovered metric field, plus {@code overall} when it
-     * applies, over the run's rows minus {@code request.unmatchedEvalSummaryIds()}.
+     * applies, over the run's test cases minus {@code request.unmatchedTestCaseIds()}.
      *
      * <p>A statistic whose aggregate is SQL NULL is <strong>omitted</strong>, exactly as Phase 3 omits it, so
      * no returned entry carries a null value. A {@link ValidationException} on one statistic is logged and
@@ -69,26 +67,28 @@ public class FilteredMetricScoreAggregator {
         if (request.metricFields().isEmpty()) {
             return List.of();
         }
-        final FilterNode idPredicate = exclusionPredicate(request.unmatchedEvalSummaryIds());
+        final FilterNode testCasePredicate = exclusionPredicate(request.unmatchedTestCaseIds());
         final List<MetricScoreValueDto> values = new ArrayList<>();
 
         for (final BuiltInMetricStatistics.MetricStatistic statistic : builtInStatistics.perMetric()) {
-            values.addAll(computePerMetric(statistic, idPredicate, request));
+            values.addAll(computePerMetric(statistic, testCasePredicate, request));
         }
-        computeOverall(idPredicate, request).ifPresent(values::add);
+        computeOverall(testCasePredicate, request).ifPresent(values::add);
         return values;
     }
 
     /** Each built-in statistic, once per metric field, binding {@code :metricField} as Phase 3 does. */
     private List<MetricScoreValueDto> computePerMetric(
             BuiltInMetricStatistics.MetricStatistic statistic,
-            FilterNode idPredicate,
+            FilterNode testCasePredicate,
             FilteredMetricScoreRequest request) {
-        final StructuredQuery query = withIdPredicate(statistic.query(), idPredicate);
+        final StructuredQuery query = withExclusionPredicate(statistic.query(), testCasePredicate);
         final List<MetricScoreValueDto> values = new ArrayList<>();
         for (final MetricField metricField : request.metricFields()) {
             final Map<String, Expr> params = runAndComputationIdParams(request);
-            params.put(MetricScoreConstants.PARAM_METRIC_FIELD, new FieldExpr(metricField.flattenedName()));
+            params.put(
+                    MetricScoreConstants.PARAM_METRIC_FIELD,
+                    new FieldExpr(metricField.aggregatedFieldName(request.metricScoreAggregation())));
             final Double value = executeScalar(
                     query, params, MetricScoreConstants.VALUE_ALIAS, statistic.name(), metricField.flattenedName());
             if (value != null) {
@@ -104,25 +104,30 @@ public class FilteredMetricScoreAggregator {
      * that metric's average).
      *
      * <p>Kept separate from the per-metric loop because a {@code CustomFunction} definition resolves to a
-     * complete {@link StructuredQuery} rather than a liftable expression — which is also why
-     * {@link OverallScoreDefinitionResolver} needs no changes here.
+     * complete {@link StructuredQuery} rather than a liftable expression. Mirrors
+     * {@code MetricScoreComputationExecutor#computeOverallScore} exactly, so a {@code Mean}/
+     * {@code WeightedMean}/{@code CustomFunction} ends up on the same entity here as it does in the
+     * persisted Phase 3 computation.
      */
-    private Optional<MetricScoreValueDto> computeOverall(FilterNode idPredicate, FilteredMetricScoreRequest request) {
+    private Optional<MetricScoreValueDto> computeOverall(
+            FilterNode testCasePredicate, FilteredMetricScoreRequest request) {
         final boolean isDefault = request.overallScoreDefinition() == null;
         if (isDefault && request.metricFields().size() != 1) {
             return Optional.empty();
         }
-        final StructuredQuery resolved = isDefault
+        final StructuredQuery query = isDefault
                 ? builtInStatistics.defaultOverall()
                 // The resolver MUST see the run's full discovered field list: a mean divides by its size, so
                 // any filtered subset would silently change the divisor.
                 : overallScoreDefinitionResolver.resolve(
-                        request.overallScoreDefinition(), flattenedFieldNames(request.metricFields()));
-        if (resolved == null) {
+                        request.overallScoreDefinition(),
+                        metricKeys(request.metricFields()),
+                        request.metricScoreAggregation());
+        if (query == null) {
             // Unparseable custom_function; already logged by the resolver.
             return Optional.empty();
         }
-        final String valueAlias = findValueAlias(resolved);
+        final String valueAlias = findValueAlias(query);
         if (valueAlias == null) {
             return Optional.empty();
         }
@@ -131,10 +136,11 @@ public class FilteredMetricScoreAggregator {
         if (isDefault) {
             params.put(
                     MetricScoreConstants.PARAM_METRIC_FIELD,
-                    new FieldExpr(request.metricFields().getFirst().flattenedName()));
+                    new FieldExpr(
+                            request.metricFields().getFirst().aggregatedFieldName(request.metricScoreAggregation())));
         }
         final Double value = executeScalar(
-                withIdPredicate(resolved, idPredicate),
+                withExclusionPredicate(query, testCasePredicate),
                 params,
                 valueAlias,
                 MetricScoreConstants.SCORE_OVERALL,
@@ -144,17 +150,21 @@ public class FilteredMetricScoreAggregator {
     }
 
     /**
-     * Returns a copy of {@code query} with {@code idPredicate} ANDed onto its filter, leaving every other
-     * component untouched. A null {@code idPredicate} returns {@code query} itself, so the no-exclusion case
+     * Returns a copy of {@code query} with {@code exclusionPredicate} ANDed onto its filter, leaving every
+     * other component untouched. A null predicate returns {@code query} itself, so the no-exclusion case
      * runs Phase 3's query verbatim.
+     *
+     * <p>The predicate is on {@code test_case_id}, a column of both {@code eval_summaries} and the
+     * pre-aggregated {@code test_case_metric_scores} ({@code Mean}/{@code WeightedMean} overall), so the
+     * same predicate is valid for every entity a score can resolve to.
      */
-    StructuredQuery withIdPredicate(StructuredQuery query, FilterNode idPredicate) {
-        if (idPredicate == null) {
+    StructuredQuery withExclusionPredicate(StructuredQuery query, FilterNode exclusionPredicate) {
+        if (exclusionPredicate == null) {
             return query;
         }
         final FilterNode filter = query.filter() == null
-                ? idPredicate
-                : new LogicalNode(LogicalOp.AND, List.of(query.filter(), idPredicate));
+                ? exclusionPredicate
+                : new LogicalNode(LogicalOp.AND, List.of(query.filter(), exclusionPredicate));
         return new StructuredQuery(
                 query.entity(),
                 filter,
@@ -168,22 +178,22 @@ public class FilteredMetricScoreAggregator {
     }
 
     /**
-     * {@code NOT (id IN (…))} over the rows to leave out, or {@code null} when there are none.
+     * {@code NOT (test_case_id IN (…))} over the test cases to leave out, or {@code null} when there are none.
      *
      * <p>Null rather than an empty {@code in} array on purpose: the translator rejects an empty array, and
      * grafting nothing is both cheaper and the case where agreement with the persisted values is a tautology.
-     * Safe from the classic {@code NOT IN} null trap because {@code id} is a primary-key component and no
+     * Safe from the classic {@code NOT IN} null trap because {@code test_case_id} is never null and no
      * element of the list is null.
      */
-    FilterNode exclusionPredicate(List<UUID> unmatchedEvalSummaryIds) {
-        if (unmatchedEvalSummaryIds == null || unmatchedEvalSummaryIds.isEmpty()) {
+    FilterNode exclusionPredicate(List<UUID> unmatchedTestCaseIds) {
+        if (unmatchedTestCaseIds == null || unmatchedTestCaseIds.isEmpty()) {
             return null;
         }
-        final List<Expr> items = unmatchedEvalSummaryIds.stream()
+        final List<Expr> items = unmatchedTestCaseIds.stream()
                 .<Expr>map(id -> new ValueExpr(ValueType.UUID, id.toString()))
                 .toList();
-        final ComparisonNode membership =
-                new ComparisonNode(ComparisonOp.IN, List.of(new FieldExpr(FIELD_ID), new ArrayExpr(items)));
+        final ComparisonNode membership = new ComparisonNode(
+                ComparisonOp.IN, List.of(new FieldExpr(MetricScoreConstants.FIELD_TEST_CASE_ID), new ArrayExpr(items)));
         return new LogicalNode(LogicalOp.NOT, List.of(membership));
     }
 
@@ -192,14 +202,15 @@ public class FilteredMetricScoreAggregator {
      *
      * <p>The built-in paths always produce a single {@link MetricScoreConstants#VALUE_ALIAS} column, but a
      * {@code CustomFunction} is stored opaquely and never validated as a runnable query, so its shape is
-     * checked here and it may use an alias of its own.
+     * checked here and it may use an alias of its own. The final entity is one of two valid targets:
+     * {@code eval_summaries} (the default overall, or any {@code CustomFunction}, unretargeted) or
+     * {@code test_case_metric_scores} ({@code Mean}/{@code WeightedMean}) — anything else means the
+     * definition targets an entity Phase 3 itself would never resolve to.
      */
     private String findValueAlias(StructuredQuery query) {
-        if (!MetricScoreConstants.ENTITY_EVAL_SUMMARIES.equals(query.entity())) {
-            log.warn(
-                    "Skipping metric score 'overall': definition targets entity '{}', expected '{}'",
-                    query.entity(),
-                    MetricScoreConstants.ENTITY_EVAL_SUMMARIES);
+        if (!MetricScoreConstants.ENTITY_EVAL_SUMMARIES.equals(query.entity())
+                && !MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES.equals(query.entity())) {
+            log.warn("Skipping metric score 'overall': definition targets unexpected entity '{}'", query.entity());
             return null;
         }
         if (query.mode() != QueryMode.AGGREGATE) {
@@ -248,8 +259,8 @@ public class FilteredMetricScoreAggregator {
         return params;
     }
 
-    private static List<String> flattenedFieldNames(List<MetricField> metricFields) {
-        return metricFields.stream().map(MetricField::flattenedName).toList();
+    private static List<String> metricKeys(List<MetricField> metricFields) {
+        return metricFields.stream().map(MetricField::metricName).toList();
     }
 
     private static MetricScoreValueDto value(String scoreName, String metricName, Double value) {

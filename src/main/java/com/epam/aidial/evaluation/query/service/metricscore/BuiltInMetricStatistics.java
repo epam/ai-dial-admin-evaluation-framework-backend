@@ -35,8 +35,11 @@ import org.springframework.stereotype.Component;
  * </ul>
  *
  * <p>Every query selects a single {@link MetricScoreConstants#VALUE_ALIAS value} aggregate over the
- * {@code eval_summaries} entity, scoped to the run/computation via the {@code :runId}/{@code :computationId}
- * params. A statistic's {@code name} is the persisted {@code metric_score_name}.
+ * {@code test_case_metric_scores} entity — one row per test case, so every test case counts equally
+ * regardless of how many turns/requests/reruns produced its rows — scoped to the run/computation via the
+ * {@code :runId}/{@code :computationId} params. {@code :metricField} is bound by the caller to
+ * {@code MetricField#aggregatedFieldName}, i.e. the suite's chosen per-test-case leaf (avg/min/max). A statistic's {@code name} is the persisted
+ * {@code metric_score_name}.
  */
 @Component
 @LogExecution
@@ -48,13 +51,25 @@ public class BuiltInMetricStatistics {
     private static final String FN_PERCENTILE_CONT = "percentile_cont";
 
     private final List<MetricStatistic> perMetric = List.of(
-            new MetricStatistic("AVG", aggregate(fn(FN_AVG, metricField()))),
-            new MetricStatistic("P10", aggregate(fn(FN_PERCENTILE_CONT, decimal("0.1"), metricField()))),
-            new MetricStatistic("P90", aggregate(fn(FN_PERCENTILE_CONT, decimal("0.9"), metricField()))),
-            new MetricStatistic("MIN", aggregate(fn(FN_MIN, metricField()))),
-            new MetricStatistic("MAX", aggregate(fn(FN_MAX, metricField()))));
+            new MetricStatistic(
+                    "AVG", aggregate(MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, fn(FN_AVG, metricField()))),
+            new MetricStatistic(
+                    "P10",
+                    aggregate(
+                            MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES,
+                            fn(FN_PERCENTILE_CONT, decimal("0.1"), metricField()))),
+            new MetricStatistic(
+                    "P90",
+                    aggregate(
+                            MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES,
+                            fn(FN_PERCENTILE_CONT, decimal("0.9"), metricField()))),
+            new MetricStatistic(
+                    "MIN", aggregate(MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, fn(FN_MIN, metricField()))),
+            new MetricStatistic(
+                    "MAX", aggregate(MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, fn(FN_MAX, metricField()))));
 
-    private final StructuredQuery defaultOverall = aggregate(fn(FN_AVG, metricField()));
+    private final StructuredQuery defaultOverall =
+            aggregate(MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, fn(FN_AVG, metricField()));
 
     /** The per-metric statistics (AVG/P10/P90/MIN/MAX), in stable order; each binds {@code :metricField}. */
     public List<MetricStatistic> perMetric() {
@@ -78,13 +93,22 @@ public class BuiltInMetricStatistics {
      * without duplicating the run-scoping filter construction.
      */
     public StructuredQuery aggregateSelecting(Expr selectExpr) {
-        return aggregate(selectExpr);
+        return aggregate(MetricScoreConstants.ENTITY_TEST_CASE_METRIC_SCORES, selectExpr);
     }
 
-    /** Aggregate query selecting a single {@code value} over {@code eval_summaries}, run/computation scoped. */
-    private static StructuredQuery aggregate(Expr selectExpr) {
+    /**
+     * As {@link #aggregateSelecting(Expr)}, but over a caller-specified entity — e.g.
+     * {@code test_case_metric_scores} for {@link OverallScoreDefinitionResolver}'s {@code Mean}/
+     * {@code WeightedMean} queries, which target that entity directly rather than {@code eval_summaries}.
+     */
+    public StructuredQuery aggregateSelecting(String entity, Expr selectExpr) {
+        return aggregate(entity, selectExpr);
+    }
+
+    /** Aggregate query selecting a single {@code value} over {@code entity}, run/computation scoped. */
+    private static StructuredQuery aggregate(String entity, Expr selectExpr) {
         return new StructuredQuery(
-                MetricScoreConstants.ENTITY_EVAL_SUMMARIES,
+                entity,
                 runScopedFilter(),
                 QueryMode.AGGREGATE,
                 false,

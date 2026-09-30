@@ -114,15 +114,21 @@ Status: **Implemented**
 
 ### Requirement: ZIP export fails when a file cannot be downloaded
 If any EF-owned file referenced by the exported test cases cannot be downloaded, the ZIP export SHALL fail:
-- the response SHALL carry the error status mapped from the storage failure (HTTP 502 for a missing or unreachable file, including transport errors) and a message naming the file reference;
+- the response SHALL carry the error status mapped from the storage failure (HTTP 502 for a missing or unreachable file, including transport errors);
+- the error message SHALL name the test case (name and id) that references the file, and the file reference;
+- the error body SHALL be JSON (`ErrorView`) regardless of the request's `Accept` header (e.g. `text/csv`, `application/zip`);
 - the system SHALL NOT send a partial or truncated archive;
-- the error response SHALL NOT carry `Content-Type: application/zip`.
+- the error response SHALL NOT carry `Content-Type: application/zip` or a `Content-Disposition` attachment header.
 
 Status: **Implemented**
 
 #### Scenario: Referenced file missing from storage
 - **WHEN** a client exports a dataset as ZIP and one referenced dataset file no longer exists in DIAL storage
-- **THEN** the system SHALL return an error response naming that reference, and no ZIP body
+- **THEN** the system SHALL return HTTP 502 with a JSON error naming the referencing test case's name and id and the reference, and no ZIP body
+
+#### Scenario: Download-typed Accept header
+- **WHEN** the same export is requested with `Accept: text/csv` or `Accept: application/zip`
+- **THEN** the system SHALL still return the HTTP 502 JSON error, not an empty 500
 
 ### Requirement: ZIP import schema from the manifest
 When a ZIP carries a valid manifest, the dataset schema resulting from the import SHALL be:

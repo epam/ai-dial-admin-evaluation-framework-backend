@@ -263,9 +263,10 @@ public class TestCaseController {
         }
     }
 
-    @GetMapping(
-            value = "export.csv",
-            produces = {"text/csv; charset=UTF-8", "application/zip"})
+    // No `produces` on purpose: the success content type is set on the response directly, and a `produces`
+    // restriction would stop the JSON ErrorView from being written for a `text/csv`/`application/zip` Accept
+    // header (a 500 with an empty body instead of the real error).
+    @GetMapping("export.csv")
     @Operation(
             summary = "Export test cases as CSV or ZIP",
             description = "Exports as plain CSV by default. When the dataset schema contains FILE-type fields and "
@@ -275,11 +276,19 @@ public class TestCaseController {
                     + "files/{n}/{filename} entry per distinct EF-owned file reference. A public/… reference is "
                     + "kept verbatim in the CSV with no archive entry. The archive is built in full before the "
                     + "response starts; if a referenced file cannot be downloaded from DIAL storage, the request "
-                    + "fails with an error status naming the reference and no ZIP is sent. "
+                    + "fails with a JSON error naming the test case (name and id) and the reference, and no ZIP "
+                    + "is sent. "
                     + "Set materializeFiles=false to export raw DIAL file paths in a plain CSV.")
-    @ApiResponse(responseCode = "200", description = "CSV file or ZIP archive")
+    @ApiResponse(
+            responseCode = "200",
+            description = "CSV file or ZIP archive",
+            content = {@Content(mediaType = "text/csv"), @Content(mediaType = "application/zip")})
+    @ApiResponse(responseCode = "400", description = "Invalid delimiter or filter")
     @ApiResponse(responseCode = "404", description = "Dataset not found")
-    @ApiResponse(responseCode = "502", description = "A referenced file could not be downloaded from DIAL storage")
+    @ApiResponse(
+            responseCode = "502",
+            description = "A referenced file could not be downloaded from DIAL storage (the message names the test "
+                    + "case and the reference)")
     public void exportCsv(
             @Parameter(description = "Dataset ID") @PathVariable UUID datasetId,
             @Parameter(description = "CSV delimiter. Single ASCII character. Default: comma.")

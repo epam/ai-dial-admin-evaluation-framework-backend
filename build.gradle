@@ -19,10 +19,10 @@ buildscript {
                 because("CVE-2026-64607: connection leak on Content-Encoding decode error exhausts the pool")
             }
         }
-        // Jackson 3 is pulled in transitively by jOOQ codegen; 3.1.4 and earlier are vulnerable to
-        // CVE-2026-59889 (@JsonView bypass for @JsonUnwrapped containers). The BOM keeps the whole
-        // Jackson family on one version instead of bumping jackson-databind alone.
-        classpath platform('tools.jackson:jackson-bom:3.1.5')
+        // Jackson 3 is pulled in transitively by jOOQ codegen; 3.2.1 and earlier are vulnerable to
+        // CVE-2026-59889 (@JsonView bypass) and CVE-2026-68497 (unbounded numeric parsing DoS).
+        // The BOM keeps the whole Jackson family on one version instead of bumping databind alone.
+        classpath platform('tools.jackson:jackson-bom:3.2.2')
         // Dependencies for the generateJooq task (Zonky + Flyway + jOOQ codegen)
         classpath "io.zonky.test:embedded-postgres:${embedded_postgres_version}"
         classpath "org.flywaydb:flyway-core:${flyway_version}"
@@ -113,6 +113,10 @@ repositories {
 
 dependencies {
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
+    // CVE-2026-68497 (jackson-databind unbounded numeric parsing CPU DoS): Boot 4.1.1 manages
+    // Jackson 2.21.5 / 3.1.5; override both families via their BOMs until Boot catches up.
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.2')
+    implementation platform('tools.jackson:jackson-bom:3.2.2')
 
     // Shared execution engine module
     implementation project(':evaluation-runner-core')

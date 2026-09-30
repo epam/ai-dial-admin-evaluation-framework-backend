@@ -36,8 +36,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
-@DisplayName("EvalSummaryRowScoreComputer")
-class EvalSummaryRowScoreComputerTest {
+@DisplayName("TestCaseScoreComputer")
+class TestCaseScoreComputerTest {
 
     private static final UUID RUN_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID COMPUTATION_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
@@ -49,7 +49,7 @@ class EvalSummaryRowScoreComputerTest {
     private final BuiltInMetricStatistics builtInStatistics = new BuiltInMetricStatistics();
     private final StructuredQueryService structuredQueryService = mock(StructuredQueryService.class);
 
-    private final EvalSummaryRowScoreComputer computer = new EvalSummaryRowScoreComputer(
+    private final TestCaseScoreComputer computer = new TestCaseScoreComputer(
             new OverallScoreDefinitionResolver(builtInStatistics, objectMapper), structuredQueryService);
 
     @Test

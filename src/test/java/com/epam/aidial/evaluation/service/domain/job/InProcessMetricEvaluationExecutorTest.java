@@ -27,11 +27,11 @@ import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
 import com.epam.aidial.evaluation.data.db.analytics.repository.TestCaseRunResultRepository;
 import com.epam.aidial.evaluation.data.db.model.AggregatedMetricDefinition;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
-import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
 import com.epam.aidial.evaluation.query.service.metricscore.TestCaseExecutionStatusAggregator;
 import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseScoreComputer;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
@@ -109,7 +109,7 @@ class InProcessMetricEvaluationExecutorTest {
     private MetricFieldDiscoverer metricFieldDiscoverer;
 
     @Mock
-    private EvalSummaryRowScoreComputer evalSummaryRowScoreComputer;
+    private TestCaseScoreComputer testCaseScoreComputer;
 
     @Mock
     private TestCaseEvalScoreService testCaseEvalScoreService;
@@ -211,7 +211,7 @@ class InProcessMetricEvaluationExecutorTest {
     }
 
     @Test
-    @DisplayName("score/passed are computed via EvalSummaryRowScoreComputer and written right after the batch flush")
+    @DisplayName("score/passed are computed via TestCaseScoreComputer and written right after the batch flush")
     void writesRowScoresAfterFlush() throws Exception {
         UUID runId = UUID.randomUUID();
         UUID suiteId = UUID.randomUUID();
@@ -259,7 +259,7 @@ class InProcessMetricEvaluationExecutorTest {
         doReturn(values).when(outputMapper).buildMetricValues(any());
         doReturn(null).when(outputMapper).buildMetricInfos(any());
 
-        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     List<UUID> ids = invocation.getArgument(5);
@@ -294,7 +294,7 @@ class InProcessMetricEvaluationExecutorTest {
         when(resultRepository.findAll(any(), any(), any(), eq(100)))
                 .thenReturn(new CursorPage<>(List.of(result), null, false));
 
-        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     List<UUID> ids = invocation.getArgument(5);
@@ -326,7 +326,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(evalSummaryRowScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
+        verify(testCaseScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
         verifyNoInteractions(testCaseEvalScoreService);
     }
 
@@ -344,7 +344,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         MetricField metricField = new MetricField("metric::Accuracy::score", "Accuracy.score");
         when(metricFieldDiscoverer.discover(any())).thenReturn(List.of(metricField));
-        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     List<UUID> ids = invocation.getArgument(5);
@@ -459,7 +459,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         MetricField metricField = new MetricField("metric::Accuracy::score", "Accuracy.score");
         when(metricFieldDiscoverer.discover(any())).thenReturn(List.of(metricField));
-        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     List<UUID> ids = invocation.getArgument(5);
@@ -520,7 +520,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(evalSummaryRowScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
+        verify(testCaseScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
@@ -556,7 +556,7 @@ class InProcessMetricEvaluationExecutorTest {
         doReturn(objectMapper.createObjectNode()).when(outputMapper).buildMetricValues(any());
         doReturn(null).when(outputMapper).buildMetricInfos(any());
 
-        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     List<UUID> ids = invocation.getArgument(5);
@@ -607,7 +607,7 @@ class InProcessMetricEvaluationExecutorTest {
         // GROUP BY test_case_id query returns no result for this id — the same "absent, not zero" behavior
         // documented in test-case-metric-score-aggregation. The default @BeforeEach stub already reports
         // SUCCESS for every test case, so no override is needed for that.
-        when(evalSummaryRowScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
+        when(testCaseScoreComputer.computeByTestCase(any(), any(), any(), any(), any(), any()))
                 .thenReturn(Map.of());
 
         executor.execute(context);
@@ -651,7 +651,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(evalSummaryRowScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
+        verify(testCaseScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);
@@ -749,7 +749,7 @@ class InProcessMetricEvaluationExecutorTest {
 
         executor.execute(context);
 
-        verify(evalSummaryRowScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
+        verify(testCaseScoreComputer, never()).computeByTestCase(any(), any(), any(), any(), any(), any());
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TestCaseEvalScoreBatchWriteItemDto>> scoreCaptor = ArgumentCaptor.forClass(List.class);

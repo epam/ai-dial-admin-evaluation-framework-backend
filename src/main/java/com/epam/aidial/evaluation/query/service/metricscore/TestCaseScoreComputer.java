@@ -59,7 +59,7 @@ import org.springframework.stereotype.Component;
 @Component
 @LogExecution
 @RequiredArgsConstructor
-public class EvalSummaryRowScoreComputer {
+public class TestCaseScoreComputer {
 
     private final OverallScoreDefinitionResolver overallScoreDefinitionResolver;
     private final StructuredQueryService structuredQueryService;

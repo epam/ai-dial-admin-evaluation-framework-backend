@@ -120,13 +120,10 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
                 .contains(
                         new QuerySchemaFieldDto("test_suite_run_id", QueryFieldType.UUID, "test_suite_run_id"),
                         new QuerySchemaFieldDto("test_case_data", QueryFieldType.OBJECT, "test_case_data"),
-                        new QuerySchemaFieldDto("metric_values", QueryFieldType.OBJECT, "metric_values"),
-                        // score/passed come from the joined test_case_eval_scores table, not a column of
-                        // test_case_eval_summaries itself — must be advertised explicitly (see
-                        // EvalSummariesSchemaProvider) to match what PostgresEvalSummaryEntityResolver
-                        // actually accepts as queryable fields.
-                        new QuerySchemaFieldDto("score", QueryFieldType.DECIMAL, "score"),
-                        new QuerySchemaFieldDto("passed", QueryFieldType.BOOLEAN, "passed"));
+                        new QuerySchemaFieldDto("metric_values", QueryFieldType.OBJECT, "metric_values"))
+                // score/passed live on the dedicated test_case_eval_scores entity, not eval_summaries
+                .noneMatch(field -> field.name().equals("score"))
+                .noneMatch(field -> field.name().equals("passed"));
     }
 
     @Test
@@ -150,11 +147,9 @@ public abstract class QuerySchemaDiscoveryFunctionalTests extends BaseFunctional
                         new QuerySchemaFieldDto("metric::Accuracy::score", QueryFieldType.DECIMAL, "metric_values"),
                         new QuerySchemaFieldDto(
                                 "metric::Accuracy::explanation", QueryFieldType.DECIMAL, "metric_values"),
-                        new QuerySchemaFieldDto("metricInfo::Accuracy", QueryFieldType.OBJECT, "metric_infos"),
-                        // score/passed are not flattenable JSONB fields, so the detailed schema keeps them
-                        // as-is from the base schema, same as any other plain column.
-                        new QuerySchemaFieldDto("score", QueryFieldType.DECIMAL, "score"),
-                        new QuerySchemaFieldDto("passed", QueryFieldType.BOOLEAN, "passed"))
+                        new QuerySchemaFieldDto("metricInfo::Accuracy", QueryFieldType.OBJECT, "metric_infos"))
+                .noneMatch(field -> field.name().equals("score"))
+                .noneMatch(field -> field.name().equals("passed"))
                 .noneMatch(field -> field.name().equals("test_case_data"))
                 .noneMatch(field -> field.name().equals("metric_values"))
                 .noneMatch(field -> field.name().equals("metric_infos"));

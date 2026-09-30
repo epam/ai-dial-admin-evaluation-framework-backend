@@ -354,12 +354,12 @@ Status: **Implemented**
 - **THEN** `runMetricSnapshotRepository.findByRunIdAndComputationId` SHALL be called exactly once for the whole `execute()` call, and every flush's per-row score computation SHALL use the same discovered field list
 
 ### Requirement: Per-test-case score computed and written once after the last flush
-After the last Phase-2 flush (also when the loop ends early because a flush failed), the executor SHALL compute a score once per test case, in chunks of the batch size, each chunk after its `test_case_metric_scores_aggregated` rows are inserted (via `EvalSummaryRowScoreComputer`, see `eval-summary-scoring`) and write the results to `test_case_eval_scores` (via `TestCaseEvalScoreService.batchCreate(...)`, see `metrics-storage`). The definition fed into this computation is the suite's *effective* per-row score definition — the snapshotted `testCaseOverallScore` when present, otherwise the snapshotted `overallScore` (see `test-suites`) — resolved once per run before Phase 2 starts. This SHALL be skipped entirely when the effective definition is absent (neither `testCaseOverallScore` nor `overallScore` configured).
+After the last Phase-2 flush (also when the loop ends early because a flush failed), the executor SHALL compute a score once per test case, in chunks of the batch size, each chunk after its `test_case_metric_scores_aggregated` rows are inserted (via `TestCaseScoreComputer`, see `eval-summary-scoring`) and write the results to `test_case_eval_scores` (via `TestCaseEvalScoreService.batchCreate(...)`, see `metrics-storage`). The definition fed into this computation is the suite's *effective* per-row score definition — the snapshotted `testCaseOverallScore` when present, otherwise the snapshotted `overallScore` (see `test-suites`) — resolved once per run before Phase 2 starts. This SHALL be skipped entirely when the effective definition is absent (neither `testCaseOverallScore` nor `overallScore` configured).
 Status: **Implemented**
 
 #### Scenario: Score computation skipped without a definition
 - **WHEN** the suite's snapshotted `testCaseOverallScore` and `overallScore` are both absent
-- **THEN** `EvalSummaryRowScoreComputer.computeBatch` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run
+- **THEN** `TestCaseScoreComputer.computeBatch` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run
 
 #### Scenario: Score computation runs once per test case chunk when a definition is configured
 - **WHEN** the suite's snapshotted `testCaseOverallScore` or `overallScore` is present
@@ -525,6 +525,6 @@ Status: **Implemented**
   phase-boundary check.
 - `MetricEvaluationContext` carries `overallScoreDefinition` (`OverallScoreDefinition`) and `overallScoreThreshold` (`Double`), sourced from the run's snapshot (`snapshot.getOverallScore()` / `snapshot.getOverallScoreThreshold()`) in `TestSuiteEvaluationJob.buildMetricEvaluationContext`.
 - `InProcessMetricEvaluationExecutor.buildItem` generates `EvalSummaryBatchWriteItemDto.id` via `UUID.randomUUID()` (replacing the id-generation that previously happened inside `EvalSummaryMapper.toEntity`); `EvalSummaryMapper.toEntity` now falls back to generating one only when the item's `id` is absent, preserving the external batch-write API's existing contract.
-- `writeRowScores` (new private method on `InProcessMetricEvaluationExecutor`) computes `passed = (score != null && threshold != null) ? score >= threshold : null` in Java after receiving `EvalSummaryRowScoreComputer`'s `Map<UUID, Double>`.
+- `writeRowScores` (new private method on `InProcessMetricEvaluationExecutor`) computes `passed = (score != null && threshold != null) ? score >= threshold : null` in Java after receiving `TestCaseScoreComputer`'s `Map<UUID, Double>`.
 - RunMetricSnapshot writes target the **meta** database: `RunMetricSnapshotService.batchCreate()` runs under `@Transactional("metaTransactionManager")` against meta `run_metric_snapshots` (see `metrics-storage`). EvalSummary writes are unchanged and continue against the analytics database via `EvalSummaryBatchWriteClient` → `EvalSummaryService.batchCreate()`.
 - `InProcessMetricEvaluationExecutor`'s call order is unchanged — the snapshot batch-write still precedes the first `/evaluate` dispatch; it simply lands in a different database.

@@ -9,11 +9,11 @@ import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterOperator;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
-import com.epam.aidial.evaluation.query.service.metricscore.EvalSummaryRowScoreComputer;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricField;
 import com.epam.aidial.evaluation.query.service.metricscore.MetricFieldDiscoverer;
 import com.epam.aidial.evaluation.query.service.metricscore.TestCaseExecutionStatusAggregator;
 import com.epam.aidial.evaluation.query.service.metricscore.TestCaseMetricScoreAggregator;
+import com.epam.aidial.evaluation.query.service.metricscore.TestCaseScoreComputer;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
@@ -76,7 +76,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     private final ConditionExpressionEvaluator conditionExpressionEvaluator;
     private final RunMetricSnapshotRepository runMetricSnapshotRepository;
     private final MetricFieldDiscoverer metricFieldDiscoverer;
-    private final EvalSummaryRowScoreComputer evalSummaryRowScoreComputer;
+    private final TestCaseScoreComputer testCaseScoreComputer;
     private final TestCaseEvalScoreService testCaseEvalScoreService;
     private final TestCaseExecutionStatusAggregator testCaseExecutionStatusAggregator;
     private final TestCaseMetricScoreAggregator testCaseMetricScoreAggregator;
@@ -468,7 +468,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
     /**
      * Computes and writes exactly one {@code test_case_eval_scores} row per test case in the chunk —
      * never one per raw {@code test_case_eval_summaries} row — reusing {@link
-     * EvalSummaryRowScoreComputer}, which reads the just-written {@code test_case_metric_scores_aggregated}
+     * TestCaseScoreComputer}, which reads the just-written {@code test_case_metric_scores_aggregated}
      * data (see {@link #writeAggregatedMetricScores}, which MUST run first). Every row written here carries
      * {@code eval_summary_id = NULL}: it is computed from, and corresponds 1:1 to, the one-row-per-test-case
      * aggregated row, so no broadcast/dedup is needed on this path (see {@code
@@ -505,7 +505,7 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
                     .toList();
             Map<UUID, Double> scoresByTestCase = successTestCaseIds.isEmpty()
                     ? Map.of()
-                    : evalSummaryRowScoreComputer.computeByTestCase(
+                    : testCaseScoreComputer.computeByTestCase(
                             context.getOverallScoreDefinition(),
                             metricFields,
                             MetricScoreAggregation.orDefault(context.getMetricScoreAggregation()),

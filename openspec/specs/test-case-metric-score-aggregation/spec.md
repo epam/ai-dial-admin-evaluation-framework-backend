@@ -3,7 +3,7 @@
 ## Purpose
 This spec defines the per-test-case, per-computation aggregation of raw eval-summary metric values —
 avg/min/max/count per metric, collapsed across every `run_index`/`request_index`/`turn_index` combination
-— into a new `test_case_metric_scores_aggregated` table, computed during Phase 2's flush cycle. This table
+— into a new `test_case_metric_scores_aggregated` table, computed once after Phase 2's final flush, in chunks of the batch size. This table
 is the data source both `eval-summary-scoring`'s per-test-case score and `metric-score-statistics`'s
 run-level `overall` are rebuilt on top of, so a metric's partial presence no longer skews a score and every
 test case counts equally regardless of row count.
@@ -47,11 +47,11 @@ Status: **Implemented**
 - **WHEN** one row of a test case has a metric's output value as `null` and a second row of the same test case has no key for that metric in `metric_values` at all
 - **THEN** the metric's `count` is 1, reflecting only the null row — the row where the metric is absent contributes nothing
 
-### Requirement: Aggregation runs once after Phase 2's last flush, fail-soft
+### Requirement: Aggregation runs once after Phase 2's final flush, fail-soft
 The system SHALL compute and persist the aggregation for every test case of the computation exactly once,
 after the last `test_case_eval_summaries` flush (and also when a flush failure or cancellation ends the
-loop early, for the test cases already seen), in chunks of the context batch size and immediately before
-each chunk's score is written (see `eval-summary-scoring`). Because every row of a test case exists by
+loop early, for the test cases already seen), in chunks of the context batch size, immediately before
+each chunk's test case score computation (see `eval-summary-scoring`). Because every row of a test case exists by
 then, each test case is aggregated over its **entire** row set and inserted once
 (`INSERT ... ON CONFLICT (test_suite_run_id, test_case_id, computation_id) DO NOTHING`) — the table is
 insert-only. A failure computing or writing the aggregation SHALL be logged and SHALL NOT fail the run.
@@ -96,8 +96,8 @@ Status: **Implemented**
   (static base schema only — no per-run detailed-schema flattening, since the spec's own scenario only
   requires the field to be queryable via `JsonbFieldResolver`, independent of what the schema-discovery
   endpoint advertises).
-- Hooked into `InProcessMetricEvaluationExecutor.doFlush`, running **before** the per-row score write
-  (`eval-summary-scoring`), since that computation reads `test_case_metric_scores_aggregated`.
+- Hooked into `InProcessMetricEvaluationExecutor.writeTestCaseMetricScores`, running once after the final flush (in chunks), **before** the per-test-case score write
+  (see `eval-summary-scoring`), since that computation reads `test_case_metric_scores_aggregated`.
 - The `metric_scores` JSONB key is `<metricName>` in the metric-field-discovery sense, i.e.
   `<tsmdName>.<outputField>` (`MetricField.metricName()`'s own format) — not the bare TSMD name, which
   would collide across a TSMD's distinct output fields (e.g. a classifier's `label` and `probability`).

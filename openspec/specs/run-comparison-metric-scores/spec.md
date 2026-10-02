@@ -92,8 +92,8 @@ Status: **Implemented**
 - **WHEN** a matched row's test case executed successfully but one of its metrics returned an error, leaving its other metrics with usable values
 - **THEN** the row is excluded from `matchedSuccessRowCount` while its healthy metrics' values still contribute to those metrics' statistics, so a metric's denominator exceeds `matchedSuccessRowCount`
 
-### Requirement: Statistics and overall score recomputed over matched rows only
-The system SHALL recompute, per run and over only that run's matched rows, each built-in per-metric statistic for every numeric metric field discovered from the run's metric snapshots, plus the run-level `overall` score derived from the run's suite-snapshot `overallScore` definition.
+### Requirement: Statistics and overall score recomputed over matched test cases
+The system SHALL recompute, per run, each built-in per-metric statistic for every numeric metric field discovered from the run's metric snapshots, plus the run-level `overall` score. The population SHALL be scoped not to matched rows exactly, but to the **entire set of rows belonging to test cases that have at least one matched row**. This means a test case whose row count differs between the two runs (some rows matched, some unmatched) contributes all of its rows to its own run's statistics, not just the matched rows.
 
 `overall` SHALL follow the same inclusion rule as the persisted computation: a non-null definition is always computed; a null definition is computed only when the run has exactly one discovered numeric metric field. The definition SHALL be resolved against the run's **full** discovered field list, never a subset, so that a mean's divisor is unchanged.
 

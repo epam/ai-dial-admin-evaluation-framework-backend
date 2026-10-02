@@ -469,10 +469,9 @@ public class InProcessMetricEvaluationExecutor implements MetricEvaluationExecut
      * Computes and writes exactly one {@code test_case_eval_scores} row per test case in the chunk —
      * never one per raw {@code test_case_eval_summaries} row — reusing {@link
      * TestCaseScoreComputer}, which reads the just-written {@code test_case_metric_scores_aggregated}
-     * data (see {@link #writeAggregatedMetricScores}, which MUST run first). Every row written here carries
-     * {@code eval_summary_id = NULL}: it is computed from, and corresponds 1:1 to, the one-row-per-test-case
-     * aggregated row, so no broadcast/dedup is needed on this path (see {@code
-     * PostgresTestCaseEvalScoreRepository}'s partial-unique-index insert-if-absent). First computes each test case's
+     * data (see {@link #writeAggregatedMetricScores}, which MUST run first). The write uses
+     * {@code ON CONFLICT (test_suite_run_id, test_case_id, computation_id) DO NOTHING}, enforcing
+     * one row per test case per computation (see {@code PostgresTestCaseEvalScoreRepository}). First computes each test case's
      * aggregated {@code execution_status} (see {@link TestCaseExecutionStatusAggregator}) — OR-ed across
      * <strong>all</strong> of that test case's rows for the computation, not just this batch — and issues the
      * score SQL query only for test cases whose aggregate is {@code SUCCESS}; a {@code FAILED}-aggregate test

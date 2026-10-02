@@ -183,15 +183,15 @@ Status: **Implemented**
 - **THEN** both SHALL read back as `score = null, passed = null` via the LEFT JOIN — a client cannot and need not distinguish the two cases
 
 ### Requirement: Batch write eval summary scores (internal only)
-The in-process metric evaluation engine SHALL write `test_case_eval_scores` rows via `TestCaseEvalScoreService.batchInsert()`, one batch per chunk of test cases after the last Phase-2 flush, immediately after that chunk's `test_case_metric_scores_aggregated` batch write, with exactly one item per distinct test case (not one per raw `test_case_eval_summaries` row). There SHALL be no external REST endpoint for this table — it is populated only by the internal engine and read directly via the `test_case_eval_scores` Query DSL entity. The `eval_summaries` read surface SHALL NOT join to this table.
+The in-process metric evaluation engine SHALL write `test_case_eval_scores` rows via `TestCaseEvalScoreService.batchInsert()`, in chunks of the batch-size, once after the last Phase-2 flush completes and all `test_case_eval_summaries` rows are written. For each chunk of test cases, immediately after that chunk's `test_case_metric_scores_aggregated` aggregation, it SHALL write exactly one item per distinct test case (not one per raw `test_case_eval_summaries` row). There SHALL be no external REST endpoint for this table — it is populated only by the internal engine and read directly via the `test_case_eval_scores` Query DSL entity. The `eval_summaries` read surface SHALL NOT join to this table.
 Status: **Implemented**
 
-#### Scenario: One score batch write per flush, one item per test case
-- **WHEN** a Phase-2 flush writes N `test_case_eval_summaries` rows spanning M distinct test cases and the suite has an `overallScore` definition configured
-- **THEN** at most one `test_case_eval_scores` batch write SHALL follow, containing at most one item per test case (never one per raw row), each carrying that test case's `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id`/`execution_status`
+#### Scenario: Score batch writes once after final flush, chunked by test case
+- **WHEN** all Phase-2 flushes are complete and the suite has an `overallScore` definition configured, spanning M distinct test cases total
+- **THEN** the executor SHALL batch the test case ids into chunks of the configured batch size, and for each chunk issue one aggregation (to `test_case_metric_scores_aggregated`) followed by one score computation and batch write to `test_case_eval_scores`, containing exactly one item per test case in the chunk (never one per raw row), each carrying that test case's `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id`/`execution_status`
 
-#### Scenario: A repeated write for the same test case is ignored
-- **WHEN** a score batch write is retried, or a later flush recomputes a score, for a `(test_suite_run_id, test_case_id, computation_id)` already present
+#### Scenario: A repeated write for the same test case is idempotent
+- **WHEN** a score batch write is retried (e.g. on a transient error), or a subsequent Phase 2 execution recomputes a score, for a `(test_suite_run_id, test_case_id, computation_id)` already present
 - **THEN** the insert SHALL use `ON CONFLICT (test_suite_run_id, test_case_id, computation_id) DO NOTHING`, leaving the existing row unchanged
 
 #### Scenario: A failed score write does not fail the run

@@ -40,6 +40,8 @@ Both try-out endpoints (`POST …/test-cases/{id}/try-it-out` and `POST …/try-
 
 Both template-variables endpoints (`GET …/template-variables` at suite and test-case level) return the whole chain keyed by request index, each request resolved from its own template, bindings and endpoint; map keys use the same index semantics as `resolved-request`'s `requestIndex` (0 = suite request, n = `additionalRequests[n-1]`).
 
+Try-out variables mode (`POST …/try-it-out`) takes `variables` keyed by request index too (`{"0": {…}, "1": {…}}`, same index semantics as the template-variables response and `resolved-request?requestIndex`). In a chain each request resolves only with its **own** entry, which replaces that request's own `inputBindings`; there is no shared flat variables map, so the same variable name can carry different values per request. Values extracted by earlier requests still reach later requests' JSONata bodies through the accumulated frame. An index outside the chain is a 400.
+
 For a streaming (SSE) request in a chain, try-out extracts from the same document a run assembles (`StreamingResponseAccumulator` — OpenAI-mode deltas folded into `choices[0].message`), not from the `{"events":[…]}` envelope the response DTO displays; a stream that times out or is truncated counts as a failed invocation and stops the chain.
 
 See [multi-request-suite spec](../../openspec/specs/multi-request-suite/spec.md).

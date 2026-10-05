@@ -1,5 +1,7 @@
 {
   "variables": {
-    "prompt": "Hello"
+    "0": {
+      "prompt": "Hello"
+    }
   }
 }

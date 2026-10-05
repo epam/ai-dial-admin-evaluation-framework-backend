@@ -60,14 +60,14 @@ Status: **Implemented**
 - **NOTE**: the check is a coarse presence check (`multiTurnData != null`), not a `PerTurnBindingDetector`-based collapse check — it rejects even when the data would collapse to a single turn, matching the existing run-creation guard's coarseness.
 
 ### Requirement: Try it out with variables
-The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/try-it-out` accepting a `variables` map (`Map<String, Object>`) in the request body. Each entry maps a template variable name to its constant value. The system SHALL resolve the suite's request template by treating each variable as a constant-value binding, send the resolved request to the DIAL Core deployment, and return the response.
+The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/try-it-out` accepting a `variables` object in the request body, keyed by **request index** (`"0"` = the suite's own request, `"n"` = `additionalRequests[n-1]`; the same index semantics as the template-variables response and `resolved-request?requestIndex`). Each value maps template variable names to constant values for that request. The system SHALL resolve each request's template by treating each of that request's variables as a constant-value binding, send the resolved request(s) to the DIAL Core deployment, and return the response.
+
+Status: **Implemented**
 
 #### Scenario: Successful try-it-out with variables
-- **WHEN** authenticated user sends POST to `/api/v1/test-suites/{testSuiteId}/try-it-out` with body `{ "variables": { "prompt": "Hello", "model": "gpt-4" } }`
-- **AND** the test suite has a valid `deploymentRef`, `requestTemplate`, and `endpointRef`
-- **THEN** the system SHALL load the suite, deserialize JSONB fields via `JsonbMapper` (`deploymentRef` → `DeploymentReferenceDto`, `endpointRef` → `EndpointContractDto`, `requestTemplate` → `RequestTemplateDto`). The suite's `inputBindings` are NOT deserialized — they are fully replaced by the user-provided variables.
-- **AND** convert the variables map to constant-value `InputBindingDto` entries (each map entry becomes an `InputBindingDto` with `templateVariable` = key and `constantValue` = value)
-- **AND** resolve the suite's request template by calling package-private `ResolvedRequestService.resolve(template, convertedBindings, emptyMap)` (same `service.domain` package)
+- **WHEN** authenticated user sends POST to `/api/v1/test-suites/{testSuiteId}/try-it-out` with body `{ "variables": { "0": { "prompt": "Hello", "model": "gpt-4" } } }`
+- **AND** the test suite has a valid `deploymentRef`, `requestTemplate`, and `endpointRef` and no `additionalRequests`
+- **THEN** the system SHALL resolve the suite's request template with `prompt` and `model` as constant-value bindings; the suite's own `inputBindings` SHALL NOT be used — they are fully replaced by the user-provided variables of index `0`
 - **AND** send the resolved request to the DIAL Core deployment
 - **AND** return HTTP 200 with `TryItOutResponseDto`
 
@@ -76,18 +76,37 @@ The system SHALL provide `POST /api/v1/test-suites/{testSuiteId}/try-it-out` acc
 - **THEN** the system SHALL return HTTP 400 with error code `VALIDATION_ERROR`
 
 #### Scenario: Empty variables map is valid
-- **WHEN** user sends try-it-out request with `variables` as an empty map `{}`
+- **WHEN** user sends try-it-out request with `variables` as an empty object `{}`
 - **AND** the template has no `${{...}}` placeholders (fully static)
 - **THEN** the system SHALL accept the request and proceed with resolution and invocation
 
+#### Scenario: Missing or null request entry means no variables for that request
+- **WHEN** user sends try-it-out request whose `variables` has no key `"i"`, or maps `"i"` to null, for a request index `i` of the suite
+- **THEN** request `i` SHALL be resolved with no constant bindings: its placeholders fall through to their default values, or produce a `REQUIRED` warning and the existing `Unresolved required template variables` rejection
+
 #### Scenario: Variable with null value
-- **WHEN** user sends try-it-out request with a variable mapped to null (e.g., `{ "variables": { "myVar": null } }`)
-- **THEN** the system SHALL skip that entry when converting to `InputBindingDto` (treat it as if the variable was not provided)
+- **WHEN** user sends try-it-out request with a variable mapped to null (e.g., `{ "variables": { "0": { "myVar": null } } }`)
+- **THEN** the system SHALL skip that entry when building bindings (treat it as if the variable was not provided)
 - **AND** the template variable will fall through to its default value (if any) or produce a `REQUIRED` warning if no default exists
 
 #### Scenario: Variable with blank key
-- **WHEN** user sends try-it-out request with a blank key in the variables map (e.g., `{ "variables": { "": "value" } }`)
-- **THEN** the system SHALL skip that entry when converting to `InputBindingDto` (a blank key cannot match any `${{var}}` placeholder)
+- **WHEN** user sends try-it-out request with a blank variable name (e.g., `{ "variables": { "0": { "": "value" } } }`)
+- **THEN** the system SHALL skip that entry when building bindings (a blank key cannot match any `${{var}}` placeholder)
+
+#### Scenario: Non-integer request index
+- **WHEN** user sends try-it-out request whose `variables` has a key that is not an integer (e.g., the legacy flat shape `{ "variables": { "prompt": "Hello" } }`)
+- **THEN** the system SHALL return HTTP 400 with error code `VALIDATION_ERROR` without invoking the deployment
+- **AND** the rejection SHALL happen while reading the request body, before the suite is looked up (so it takes precedence over a 404 for a non-existent suite)
+
+#### Scenario: Request index out of range
+- **WHEN** user sends try-it-out request whose `variables` has a key `i` with `i < 0` or `i > N`, where `N` is the number of the suite's `additionalRequests`
+- **THEN** the system SHALL return HTTP 400 with error code `VALIDATION_ERROR` and message `variables: request index <i> is out of range (chain length <N+1>)`, naming the first offending key in iteration order
+- **AND** SHALL NOT invoke the deployment for any request
+- **AND** suite-configuration preconditions (missing deployment reference, request template, endpoint reference, or a misconfigured `additionalRequests[i]`) SHALL be checked first and take precedence over the index rejection
+
+#### Scenario: Non-zero request index on a single-request suite
+- **WHEN** user sends try-it-out request with key `"1"` for a `DEPLOYMENT` suite without `additionalRequests`
+- **THEN** the system SHALL return HTTP 400 with error code `VALIDATION_ERROR` and message `variables: request index 1 is out of range (chain length 1)` without invoking the deployment
 
 #### Scenario: Test suite not found
 - **WHEN** user sends try-it-out request with non-existent `testSuiteId`
@@ -176,14 +195,20 @@ The system SHALL support try-it-out for MCP_TOOL suites via `POST /api/v1/test-s
 
 ### Requirement: Try it out with MCP tool call (variables)
 
-The system SHALL support try-it-out with variables for MCP_TOOL suites via `POST /api/v1/test-suites/{testSuiteId}/try-it-out`. Each variable entry maps an argument template variable name to its constant value.
+The system SHALL support try-it-out with variables for MCP_TOOL suites via `POST /api/v1/test-suites/{testSuiteId}/try-it-out`. MCP suites have a single request, so only index `"0"` is meaningful; its entries map argument template variable names to constant values.
+
+Status: **Implemented**
 
 #### Scenario: Successful MCP try-it-out with variables
-- **WHEN** authenticated user sends POST to `/api/v1/test-suites/{testSuiteId}/try-it-out` with `{ "variables": { "search_query": "MCP protocol" } }`
+- **WHEN** authenticated user sends POST to `/api/v1/test-suites/{testSuiteId}/try-it-out` with `{ "variables": { "0": { "search_query": "MCP protocol" } } }`
 - **AND** the test suite has `suiteType = MCP_TOOL`
-- **THEN** the system SHALL convert the variables map to constant-value `InputBindingDto` entries via `convertVariablesToBindings()` (each map entry becomes a binding with `templateVariable` = key and `constantValue` = value — same conversion as HTTP try-it-out with variables)
-- **AND** resolve tool arguments via `McpRequestResolver.resolveWithVariables(argumentTemplate, convertedBindings, variables)`
+- **THEN** the system SHALL resolve the tool arguments using the index-`0` variables as constant-value bindings (same per-entry rules as HTTP try-it-out with variables)
 - **AND** execute the MCP tool call and return the response
+
+#### Scenario: MCP try-it-out rejects a non-zero request index
+- **WHEN** user sends try-it-out request with `variables` containing any key other than `"0"` for an `MCP_TOOL` suite
+- **THEN** the system SHALL return HTTP 400 with error code `VALIDATION_ERROR` and message `variables: request index <i> is out of range (chain length 1)` without invoking the MCP tool
+- **AND** MCP preconditions (missing MCP deployment or tool reference) SHALL be checked first
 
 ---
 
@@ -369,12 +394,18 @@ Status: **Implemented**
 ---
 
 ### Requirement: TryItOutWithVariablesRequestDto structure
-The request body for the suite-level try-it-out endpoint.
+The request body for the suite-level try-it-out endpoint SHALL carry a request-index-keyed `variables` object.
+
+Status: **Implemented**
 
 #### Scenario: Request structure
 - **WHEN** client sends a try-it-out with variables request
 - **THEN** `TryItOutWithVariablesRequestDto` SHALL include:
-  - `variables` (`Map<String, Object>`, required, not null, may be empty) — template variable names mapped to their constant values. An empty map is valid when the template has no placeholders.
+  - `variables` (JSON object, required, not null, may be empty) — keys are request indices serialized as JSON strings (`"0"`, `"1"`, …); each value is an object (or null) mapping template variable names to constant values for that request. An empty object is valid when no request has placeholders.
+
+#### Scenario: OpenAPI documents the indexed shape
+- **WHEN** a client reads `/v3/api-docs`
+- **THEN** the try-it-out-with-variables operation SHALL expose request examples `minimal`, `full` and `chained` in the indexed shape, `chained` carrying entries for indices `0` and `1`
 
 ---
 
@@ -454,11 +485,13 @@ The system SHALL expose OpenAPI annotations on both try-it-out endpoints with de
 ---
 
 ### Requirement: `tryWithVariables` remains single-turn
-The variables-based try-it-out endpoint (`POST /api/v1/test-suites/{testSuiteId}/try-it-out`) SHALL remain single-turn. It has no bound test case and therefore no `multiTurnData` source.
+The variables-based try-it-out endpoint (`POST /api/v1/test-suites/{testSuiteId}/try-it-out`) SHALL remain single-turn per request. It has no bound test case and therefore no `multiTurnData` source.
+
+Status: **Implemented**
 
 #### Scenario: Variables-based try-it-out is unaffected by multi-turn support
-- **WHEN** authenticated user sends POST to `/api/v1/test-suites/{testSuiteId}/try-it-out` with a `variables` map
-- **THEN** the system SHALL resolve and invoke exactly one request, as before
+- **WHEN** authenticated user sends POST to `/api/v1/test-suites/{testSuiteId}/try-it-out` with a `variables` object
+- **THEN** the system SHALL resolve and invoke exactly one turn per chain request (exactly one request for a suite without `additionalRequests`)
 
 ---
 
@@ -487,11 +520,34 @@ Status: **Implemented**
 - **WHEN** the resolved `model` matches the suite's deployment ID
 - **THEN** Try-It-Out SHALL invoke DIAL Core using its existing response contract
 
+---
+
+### Requirement: Variables are scoped per chain request
+For a suite with `additionalRequests`, variables-mode try-it-out SHALL resolve request `i` using constant bindings built only from `variables["i"]`, wholesale-replacing that request's own `inputBindings`. Variables given for one request SHALL NOT be visible to any other request. Values extracted into the accumulated frame by earlier requests' response columns SHALL remain available to later requests as in a run.
+
+Status: **Implemented**
+
+#### Scenario: Same variable name carries different values per request
+- **WHEN** a suite's request `0` and `additionalRequests[0]` both use `${{user_message}}`
+- **AND** user sends `{ "variables": { "0": { "user_message": "first" }, "1": { "user_message": "second" } } }`
+- **THEN** request `0` SHALL be invoked with `user_message` resolved to `"first"`
+- **AND** request `1` SHALL be invoked with `user_message` resolved to `"second"`
+
+#### Scenario: A request's variables do not leak into another request
+- **WHEN** user sends `{ "variables": { "0": { "temperature": 0.2 } } }` for a two-request suite whose request `1` uses `${{temperature}}` with a default value
+- **THEN** request `1` SHALL resolve `temperature` to its default value, not `0.2`
+
+#### Scenario: Frame values from earlier requests still resolve
+- **WHEN** request `0` extracts response column `configId` and request `1`'s JSONata body (`jsonataContent`) references `$configId`
+- **AND** `variables` has no entry for index `1`
+- **THEN** request `1`'s body SHALL resolve `$configId` from the accumulated frame (frame values are visible to JSONata bodies only, not to `${{…}}` placeholders, as in a run)
+
 ## Implementation Notes
 
 - Modified: `TryItOutService` — branch by `suiteType`: HTTP flow (existing) or MCP flow (new)
 - MCP test-case flow: loads suite-level `inputBindings`, determines effective bindings (test case `inputBindingsOverride` > suite bindings) → `McpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData)` → `McpToolInvoker.callTool(id, tool, args, token, transport)` → `McpResponseSerializer.serialize()` → build `TryItOutResponseDto`
-- MCP variables flow: `convertVariablesToBindings(variables)` → `McpRequestResolver.resolveWithVariables(argumentTemplate, convertedBindings, variables)` → same invocation chain
+- MCP variables flow: `TryItOutVariableBindings.toBindingsByRequest(variables, 1).get(0)` → `McpRequestResolver.resolveWithVariables(argumentTemplate, bindings, variables[0] or {})` → same invocation chain
+- HTTP variables flow: `TryItOutVariableBindings.toBindingsByRequest(variables, 1 + additionalRequests.size())` validates indices (after suite preconditions, before any invocation) and returns request index → constant bindings; the single-request path resolves with entry `0`, the chain path passes the map to `runChain`, which looks bindings up by `RequestExecutionSpec.requestIndex()` (absent → empty list)
 - MCP transport propagation: `TryItOutService` reads `mcpDeploymentRef.transport`, defaults to `McpTransport.STREAMABLE_HTTP` when null, passes to `McpToolInvoker`
 - Reuse `TryItOutResponseDto` structure — `resolvedRequest.body` contains arguments as JSON, `response.body` contains serialized MCP response
 - Resolved request-model validation: `TryItOutService.invokeTurn` calls `RequestModelValidator.validateForExecution` before building the URL — deliberately not inside `validateResolutionResult`, which the single-invocation path shares. `invokeAndBuildResponse` converts the resulting `RequestBodyValidationException` into the established HTTP 400 via `toTryItOutValidationException`, which appends a `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR` warning to the returned `resolvedRequest`; `runChain` catches it separately from `RequestBodyEvaluationException` and builds the status-code-zero `buildModelValidationFailureResult` envelope that retains the resolved request in both the top-level response and `history`, stopping the chain.

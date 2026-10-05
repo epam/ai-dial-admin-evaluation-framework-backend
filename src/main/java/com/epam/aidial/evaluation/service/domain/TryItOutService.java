@@ -108,6 +108,7 @@ public class TryItOutService {
     private final OpenTelemetry openTelemetry;
     private final GrafanaLinkBuilder grafanaLinkBuilder;
     private final Clock clock;
+    private final TryItOutVariableBindings variableBindings;
     private final SseEventParser sseEventParser;
     private final EvaluationRunProperties evaluationRunProperties;
     private final DialCoreProperties dialCoreProperties;
@@ -178,14 +179,14 @@ public class TryItOutService {
      * extraction fails to re-produce a column does not erase the previous turn's value.
      *
      * <p>Each invocation uses its own spec's {@code endpointRef} HTTP method. When {@code
-     * bindingsOverride} is non-null (variables mode, design D8) it wholesale-replaces every request's own
-     * {@code inputBindings}.
+     * bindingsByRequest} is non-null (variables mode, design D8) the entry for a request's {@code
+     * requestIndex} (empty when absent) wholesale-replaces that request's own {@code inputBindings}.
      */
     private TryItOutResponseDto runChain(
             ResolvedRequestService.ChainPlan plan,
             DeploymentReferenceDto deploymentRef,
             UUID testSuiteId,
-            List<InputBindingDto> bindingsOverride) {
+            Map<Integer, List<InputBindingDto>> bindingsByRequest) {
         Map<String, Object> frame = Map.of();
         final List<TryItOutResponseDto> history = new ArrayList<>();
 
@@ -198,7 +199,9 @@ public class TryItOutService {
         chain:
         for (ResolvedRequestService.RequestPlan requestPlan : plan.requestPlans()) {
             final RequestExecutionSpec spec = requestPlan.spec();
-            final List<InputBindingDto> bindings = bindingsOverride != null ? bindingsOverride : spec.inputBindings();
+            final List<InputBindingDto> bindings = bindingsByRequest != null
+                    ? bindingsByRequest.getOrDefault(spec.requestIndex(), List.of())
+                    : spec.inputBindings();
             final int totalTurns = requestPlan.turnDataList().size();
 
             for (int turnIndex = 0; turnIndex < totalTurns; turnIndex++) {
@@ -390,7 +393,7 @@ public class TryItOutService {
             ExecutionStatus status,
             String extractionDocumentJson) {}
 
-    public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<String, Object> variables) {
+    public TryItOutResponseDto tryWithVariables(UUID testSuiteId, Map<Integer, Map<String, Object>> variables) {
         TestSuite suite = loadSuite(testSuiteId);
 
         if (isMcpSuite(suite)) {
@@ -399,9 +402,11 @@ public class TryItOutService {
             ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
             validateMcpPreconditions(mcpRef, toolRef);
 
-            List<InputBindingDto> bindings = convertVariablesToBindings(variables);
+            final List<InputBindingDto> bindings =
+                    variableBindings.toBindingsByRequest(variables, 1).get(0);
+            final Map<String, Object> requestVariables = variables.get(0) != null ? variables.get(0) : Map.of();
             McpRequestResolver.ResolutionResult resolutionResult =
-                    mcpRequestResolver.resolveWithVariables(argumentTemplate, bindings, variables);
+                    mcpRequestResolver.resolveWithVariables(argumentTemplate, bindings, requestVariables);
             validateMcpResolutionResult(resolutionResult);
             return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
         }
@@ -412,13 +417,15 @@ public class TryItOutService {
                 jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
         validateChainPreconditions(deploymentRef, endpointRef, suite.getRequestTemplate(), additionalRequests);
 
-        List<InputBindingDto> bindings = convertVariablesToBindings(variables);
+        final int requestCount = 1 + (additionalRequests != null ? additionalRequests.size() : 0);
+        final Map<Integer, List<InputBindingDto>> bindingsByRequest =
+                variableBindings.toBindingsByRequest(variables, requestCount);
 
         if (additionalRequests == null || additionalRequests.isEmpty()) {
             // Single-request fast path keeps the pre-existing lenient resolution (design D8), plus the
             // additive extraction fields (D6).
             RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
-            ResolvedRequestDto resolved = requestResolver.resolve(template, bindings, Map.of());
+            ResolvedRequestDto resolved = requestResolver.resolve(template, bindingsByRequest.get(0), Map.of());
             validateResolutionResult(resolved);
             return invokeAndBuildResponse(
                     resolved,
@@ -428,12 +435,12 @@ public class TryItOutService {
                     jsonbMapper.mapResponseColumns(suite.getResponseColumns()));
         }
 
-        // Multi-request suite: run the chain with every request single-turn and the converted variables
-        // wholesale-replacing each request's own inputBindings (design D8). The additionalRequests list
+        // Multi-request suite: run the chain with every request single-turn and each request's own variables
+        // wholesale-replacing that request's inputBindings (design D8). The additionalRequests list
         // mapped above is reused, so the JSONB is deserialized once per try-out.
         final ResolvedRequestService.ChainPlan plan =
                 resolvedRequestService.planChainForVariables(testSuiteId, additionalRequests);
-        return runChain(plan, deploymentRef, testSuiteId, bindings);
+        return runChain(plan, deploymentRef, testSuiteId, bindingsByRequest);
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {
@@ -507,26 +514,6 @@ public class TryItOutService {
         if (hasBodyEvaluationError) {
             throw new TryItOutValidationException("Request body template failed to evaluate", resolved);
         }
-    }
-
-    private List<InputBindingDto> convertVariablesToBindings(Map<String, Object> variables) {
-        if (variables == null || variables.isEmpty()) {
-            return List.of();
-        }
-        List<InputBindingDto> bindings = new ArrayList<>();
-        for (Map.Entry<String, Object> entry : variables.entrySet()) {
-            if (entry.getKey() == null || entry.getKey().isBlank()) {
-                continue;
-            }
-            if (entry.getValue() == null) {
-                continue;
-            }
-            bindings.add(InputBindingDto.builder()
-                    .templateVariable(entry.getKey())
-                    .constantValue(entry.getValue())
-                    .build());
-        }
-        return bindings;
     }
 
     private boolean isMcpSuite(TestSuite suite) {

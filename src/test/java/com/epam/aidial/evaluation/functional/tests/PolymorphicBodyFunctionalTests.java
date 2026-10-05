@@ -245,7 +245,7 @@ public abstract class PolymorphicBodyFunctionalTests extends BaseFunctionalTest 
                         new DeploymentInvocationResult(200, false, Map.of("reply", "done"), null, new HttpHeaders()));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "Variable prompt"))
+                .variables(Map.of(0, Map.of("prompt", "Variable prompt")))
                 .build();
 
         ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(

@@ -69,8 +69,10 @@ by a `type` property, with exactly three variants:
   query at write time. This variant is **not** retargeted onto `test_case_metric_scores` — at Phase 3
   computation time the system SHALL resolve and execute it directly against `eval_summaries`, ungrouped,
   exactly as before this change: a test case's row count still weights its contribution to the result.
-  This is an accepted, out-of-scope limitation for this capability, the same as the per-metric AVG/P10/
-  P90/MIN/MAX statistics (`BuiltInMetricStatistics`) and run-comparison (`FilteredMetricScoreAggregator`).
+  This is an accepted, out-of-scope limitation for this capability. Unlike `custom_function`, the per-metric
+  AVG/P10/P90/MIN/MAX statistics (`BuiltInMetricStatistics`) and run-comparison (`FilteredMetricScoreAggregator`)
+  were retargeted onto `test_case_metric_scores` by this change and no longer carry this row-count-weighting
+  limitation.
   This variant is **not** subject to the `mean`/`weighted_mean` null-exclusion handling — a `custom_function`
   expression's own `avg`/`add`/`multiply`/`divide` calls retain standard SQL null-arithmetic semantics
   unless the expression itself uses `coalesce`.
@@ -92,7 +94,7 @@ Status: **Implemented**
 
 #### Scenario: Default overall for a single-metric run
 - **WHEN** a run with exactly one numeric metric field completes (suite has no `overall_score`, i.e. the column is NULL)
-- **THEN** an `overall` result is produced equal to that metric's average, computed by executing the default `avg(:metricField)` query bound to that field over raw `eval_summaries`
+- **THEN** an `overall` result is produced equal to that metric's average, computed by executing the default `avg(:metricField)` query bound to that field over `test_case_metric_scores`
 
 #### Scenario: Default overall skipped for a multi-metric run
 - **WHEN** a run with more than one numeric metric field completes (suite has no `overall_score`)

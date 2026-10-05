@@ -302,7 +302,7 @@ Status: **Implemented**
 - **THEN** `metricEvalDurationMs` SHALL be `0`
 
 ### Requirement: EvalSummary assembly from TestCaseRunResult
-The system SHALL build one EvalSummary per TestCaseRunResult, copying context fields from the result and adding computed metric values. Each item SHALL carry a client-generated `id`, assigned before the batch write, so a subsequent per-row score computation can reference it without a re-query.
+The system SHALL build one EvalSummary per TestCaseRunResult, copying context fields from the result and adding computed metric values. Each item SHALL carry a client-generated `id`, assigned before the batch write.
 Status: **Implemented**
 
 #### Scenario: Field mapping from result to summary
@@ -322,12 +322,12 @@ Status: **Implemented**
 - **THEN** the EvalSummary SHALL have `executionStatus = FAILED`
 
 ### Requirement: EvalSummary batch writing via service-layer client
-The `EvalSummaryBatchWriteClient` SHALL convert internal EvalSummary models to the existing `EvalSummaryBatchWriteRequestDto` and delegate to `EvalSummaryService.batchCreate()`. The executor SHALL buffer EvalSummary records and flush them through the client at configurable thresholds. Immediately after each successful flush, the executor SHALL compute and write that batch's per-row `score`/`passed` (see the new per-row score requirement below) — a second write, not a follow-up `UPDATE` on the just-written rows.
+The `EvalSummaryBatchWriteClient` SHALL convert internal EvalSummary models to the existing `EvalSummaryBatchWriteRequestDto` and delegate to `EvalSummaryService.batchCreate()`. The executor SHALL buffer EvalSummary records and flush them through the client at configurable thresholds. Test case scores (one row per test case, sourced from `test_case_metric_scores` and held in its own `test_case_eval_scores` entity — never joined onto `eval_summaries`) are computed and written separately, after all flushes complete (see the per-test-case score requirement below), not after each individual flush.
 Status: **Implemented**
 
 #### Scenario: Batch flush on size
 - **WHEN** the buffer reaches `metric-evaluation.batch-size` (default: 100) records
-- **THEN** the executor SHALL flush the buffer via `EvalSummaryBatchWriteClient`, which converts models to DTOs and calls `EvalSummaryService.batchCreate()`, then compute and write per-row scores for that same batch
+- **THEN** the executor SHALL flush the buffer via `EvalSummaryBatchWriteClient`, which converts models to DTOs and calls `EvalSummaryService.batchCreate()`
 
 #### Scenario: Chunking to respect existing batch size limit
 - **WHEN** the number of items to write exceeds the existing `analytics.eval-summaries.batch.max-items` limit
@@ -335,31 +335,35 @@ Status: **Implemented**
 
 #### Scenario: Final flush on completion
 - **WHEN** all test cases have been processed
-- **THEN** the executor SHALL flush any remaining buffered records via the client, then compute and write per-row scores for that final batch
+- **THEN** the executor SHALL flush any remaining buffered records via the client before proceeding to per-test-case score computation (see the per-test-case score requirement below)
 
 #### Scenario: Flush on cancellation
 - **WHEN** the run is cancelled during metric evaluation
-- **THEN** the executor SHALL flush all records accumulated for fully evaluated results via the client before returning
+- **THEN** the executor SHALL flush all records accumulated for fully evaluated results via the client before returning. Per-test-case score computation is still attempted, as scores are regenerable derived data.
 
 #### Scenario: Batch write failure
 - **WHEN** a batch write via the service fails
 - **THEN** the executor SHALL log the error and let the failure propagate; the job SHALL mark the run FAILED with error category `INTERNAL` and code `ANALYTICS_WRITE_FAILED`. The failure SHALL NOT be expressed as a cancellation and the run SHALL NOT end `CANCELLED` because of it.
 
 ### Requirement: Metric field names discovered once per metric evaluation run
-Before iterating result pages, the executor SHALL discover the run's numeric metric field names once — via `runMetricSnapshotRepository.findByRunIdAndComputationId(...)` followed by `MetricFieldDiscoverer.discover(...)`, the same mechanism Phase 3 uses — and reuse that list for every flush's per-row score computation within the same `execute()` call. This SHALL be one query per `execute()` call, not one per flush, and SHALL guarantee a `Mean` overall score's divisor can never disagree between Phase 2 and Phase 3 for the same run.
+Before iterating result pages, the executor SHALL discover the run's numeric metric field names once — via `runMetricSnapshotRepository.findByRunIdAndComputationId(...)` followed by `MetricFieldDiscoverer.discover(...)`, the same mechanism Phase 3 uses — and reuse that list for the per-test-case score computation (see the per-test-case score requirement below) within the same `execute()` call. This SHALL be one query per `execute()` call, not one per flush, and SHALL guarantee a `Mean` overall score's divisor can never disagree between Phase 2 and Phase 3 for the same run.
 Status: **Implemented**
 
-#### Scenario: Field names discovered once, reused across flushes
+#### Scenario: Field names discovered once, reused for score computation
 - **WHEN** a run with multiple flush batches computes a `Mean` overall score
-- **THEN** `runMetricSnapshotRepository.findByRunIdAndComputationId` SHALL be called exactly once for the whole `execute()` call, and every flush's per-row score computation SHALL use the same discovered field list
+- **THEN** `runMetricSnapshotRepository.findByRunIdAndComputationId` SHALL be called exactly once for the whole `execute()` call, and the per-test-case score computation after the final flush SHALL use this same discovered field list
 
 ### Requirement: Per-test-case score computed and written once after the last flush
-After the last Phase-2 flush (also when the loop ends early because a flush failed), the executor SHALL compute a score once per test case, in chunks of the batch size, each chunk after its `test_case_metric_scores_aggregated` rows are inserted (via `TestCaseScoreComputer`, see `eval-summary-scoring`) and write the results to `test_case_eval_scores` (via `TestCaseEvalScoreService.batchCreate(...)`, see `metrics-storage`). The definition fed into this computation is the suite's *effective* per-row score definition — the snapshotted `testCaseOverallScore` when present, otherwise the snapshotted `overallScore` (see `test-suites`) — resolved once per run before Phase 2 starts. This SHALL be skipped entirely when the effective definition is absent (neither `testCaseOverallScore` nor `overallScore` configured).
+After the last Phase-2 flush (also when the loop ends early because a flush failed), the executor SHALL compute a score once per test case, in chunks of the batch size, each chunk after its `test_case_metric_scores_aggregated` rows are inserted (via `TestCaseScoreComputer`, see `eval-summary-scoring`) and write the results to `test_case_eval_scores` (via `TestCaseEvalScoreService.batchInsert(...)`, see `metrics-storage`). The definition fed into this computation is the suite's *effective* per-row score definition — the snapshotted `testCaseOverallScore` when present, otherwise the snapshotted `overallScore` unless that is a `CustomFunction` (see `test-suites`) — resolved once per run before Phase 2 starts. This SHALL be skipped entirely when the effective definition is absent: neither `testCaseOverallScore` nor `overallScore` configured, or `testCaseOverallScore` absent and `overallScore` is a `CustomFunction`.
 Status: **Implemented**
 
 #### Scenario: Score computation skipped without a definition
 - **WHEN** the suite's snapshotted `testCaseOverallScore` and `overallScore` are both absent
-- **THEN** `TestCaseScoreComputer.computeBatch` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run
+- **THEN** `TestCaseScoreComputer.computeByTestCase` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run
+
+#### Scenario: Score computation skipped when overallScore is a CustomFunction and testCaseOverallScore is absent
+- **WHEN** the suite's snapshotted `testCaseOverallScore` is absent and its snapshotted `overallScore` is a `CustomFunction`
+- **THEN** `TestCaseScoreComputer.computeByTestCase` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run, even though `overallScore` is configured
 
 #### Scenario: Score computation runs once per test case chunk when a definition is configured
 - **WHEN** the suite's snapshotted `testCaseOverallScore` or `overallScore` is present
@@ -525,6 +529,6 @@ Status: **Implemented**
   phase-boundary check.
 - `MetricEvaluationContext` carries `overallScoreDefinition` (`OverallScoreDefinition`) and `overallScoreThreshold` (`Double`), sourced from the run's snapshot (`snapshot.getOverallScore()` / `snapshot.getOverallScoreThreshold()`) in `TestSuiteEvaluationJob.buildMetricEvaluationContext`.
 - `InProcessMetricEvaluationExecutor.buildItem` generates `EvalSummaryBatchWriteItemDto.id` via `UUID.randomUUID()` (replacing the id-generation that previously happened inside `EvalSummaryMapper.toEntity`); `EvalSummaryMapper.toEntity` now falls back to generating one only when the item's `id` is absent, preserving the external batch-write API's existing contract.
-- `writeRowScores` (new private method on `InProcessMetricEvaluationExecutor`) computes `passed = (score != null && threshold != null) ? score >= threshold : null` in Java after receiving `TestCaseScoreComputer`'s `Map<UUID, Double>`.
+- `writeTestCaseScores` (private method on `InProcessMetricEvaluationExecutor`) computes `passed = (score != null && threshold != null) ? score >= threshold : null` in Java after receiving `TestCaseScoreComputer`'s `Map<UUID, Double>`.
 - RunMetricSnapshot writes target the **meta** database: `RunMetricSnapshotService.batchCreate()` runs under `@Transactional("metaTransactionManager")` against meta `run_metric_snapshots` (see `metrics-storage`). EvalSummary writes are unchanged and continue against the analytics database via `EvalSummaryBatchWriteClient` → `EvalSummaryService.batchCreate()`.
 - `InProcessMetricEvaluationExecutor`'s call order is unchanged — the snapshot batch-write still precedes the first `/evaluate` dispatch; it simply lands in a different database.

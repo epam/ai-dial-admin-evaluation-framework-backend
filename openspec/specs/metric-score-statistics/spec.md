@@ -11,7 +11,7 @@ managing metric-score results.
 ## Requirements
 
 ### Requirement: Predefined per-metric statistics defined in code
-The system SHALL provide predefined per-metric statistics — AVG, P10, P90, MIN, and MAX — **defined in code** as typed structured-query objects (`BuiltInMetricStatistics`). Each SHALL be a self-contained query over the `eval_summaries` entity in aggregate mode that selects a single aliased `value`. P10 and P90 SHALL use `percentile_cont` with the fraction (0.1, 0.9) bound as a literal. A statistic's name (e.g. `AVG`, `P90`) is the persisted `metric_score_name` of its results.
+The system SHALL provide predefined per-metric statistics — AVG, P10, P90, MIN, and MAX — **defined in code** as typed structured-query objects (`BuiltInMetricStatistics`). Each SHALL be a self-contained query over the `test_case_metric_scores` entity (see `test-case-metric-score-aggregation`) in aggregate mode that selects a single aliased `value`, computing one aggregate across all test cases of a run (one row per test case, so every test case contributes exactly one sample regardless of its row count). P10 and P90 SHALL use `percentile_cont` with the fraction (0.1, 0.9) bound as a literal. A statistic's name (e.g. `AVG`, `P90`) is the persisted `metric_score_name` of its results.
 Status: **Implemented**
 
 #### Scenario: Percentile statistic is available
@@ -69,23 +69,21 @@ by a `type` property, with exactly three variants:
   query at write time. This variant is **not** retargeted onto `test_case_metric_scores` — at Phase 3
   computation time the system SHALL resolve and execute it directly against `eval_summaries`, ungrouped,
   exactly as before this change: a test case's row count still weights its contribution to the result.
-  This is an accepted, out-of-scope limitation for this capability, the same as the per-metric AVG/P10/
-  P90/MIN/MAX statistics (`BuiltInMetricStatistics`) and run-comparison (`FilteredMetricScoreAggregator`).
+  This is an accepted, out-of-scope limitation for this capability. Unlike `custom_function`, the per-metric
+  AVG/P10/P90/MIN/MAX statistics (`BuiltInMetricStatistics`) and run-comparison (`FilteredMetricScoreAggregator`)
+  were retargeted onto `test_case_metric_scores` by this change and no longer carry this row-count-weighting
+  limitation.
   This variant is **not** subject to the `mean`/`weighted_mean` null-exclusion handling — a `custom_function`
   expression's own `avg`/`add`/`multiply`/`divide` calls retain standard SQL null-arithmetic semantics
   unless the expression itself uses `coalesce`.
 
 When the column is NULL, `overall` is computed from the built-in **default** (the single metric's
-`avg(:metricField)` over raw `eval_summaries`) — unchanged from before this typed model and unaffected by
-the per-test-case aggregation introduced for `mean`/`weighted_mean`, and distinct from the `mean` variant
-(which must be explicitly set and, unlike the default, is computed for any metric count). The default is
-likewise **not** coalesced to `0` — it is only ever computed when the run resolves to exactly one numeric
-metric field, so there is no multi-term composition for a missing metric to poison.
+`avg(:metricField)` over `test_case_metric_scores`, one row per test case, the same source as the per-metric built-in statistics). The default is computed **only when the run
+resolves to exactly one numeric metric field** — `overall` is then that metric's average; with more than one metric the default produces **no** `overall` result.
 
 At computation time (Phase 3) the system SHALL resolve the run's `overall` definition from the snapshot
-via an `OverallScoreDefinitionResolver`. For `mean` and `weighted_mean`, the resolved query SHALL target
-the `test_case_metric_scores` entity (equal per-test-case weighting); for `custom_function` and the
-default, the resolved query SHALL target `eval_summaries` as before. In every case computation SHALL happen
+via an `OverallScoreDefinitionResolver`. For `mean`, `weighted_mean`, and the default, the resolved query SHALL target
+the `test_case_metric_scores` entity (equal per-test-case weighting); for `custom_function`, the resolved query SHALL target `eval_summaries` (per the limitation noted above). In every case computation SHALL happen
 **through the structured-query DSL** (not hardcoded), persisting a single result with `metric_score_name`
 and `metric_name` both equal to `overall`. A non-null definition (any of the three variants) SHALL be
 computed **regardless of metric count**. The default (null column) SHALL be computed **only when the run
@@ -96,7 +94,7 @@ Status: **Implemented**
 
 #### Scenario: Default overall for a single-metric run
 - **WHEN** a run with exactly one numeric metric field completes (suite has no `overall_score`, i.e. the column is NULL)
-- **THEN** an `overall` result is produced equal to that metric's average, computed by executing the default `avg(:metricField)` query bound to that field over raw `eval_summaries`
+- **THEN** an `overall` result is produced equal to that metric's average, computed by executing the default `avg(:metricField)` query bound to that field over `test_case_metric_scores`
 
 #### Scenario: Default overall skipped for a multi-metric run
 - **WHEN** a run with more than one numeric metric field completes (suite has no `overall_score`)

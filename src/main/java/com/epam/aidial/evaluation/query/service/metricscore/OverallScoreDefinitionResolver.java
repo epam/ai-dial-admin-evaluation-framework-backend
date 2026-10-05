@@ -44,8 +44,9 @@ import tools.jackson.databind.ObjectMapper;
  *   <li>{@link CustomFunction} — the stored raw expression, converted to a {@link StructuredQuery}
  *       verbatim (the caller supplies the full query, including its own run-scoping filter), and executed
  *       against {@code eval_summaries} unchanged — an opaque, client-authored expression we don't control
- *       and don't retarget, an accepted out-of-scope weight-skew limitation (same as
- *       {@code BuiltInMetricStatistics}/{@code FilteredMetricScoreAggregator}). NOT subject to the
+ *       and don't retarget, an accepted out-of-scope weight-skew limitation. Unlike this variant,
+ *       {@code BuiltInMetricStatistics} and {@code FilteredMetricScoreAggregator} were retargeted onto
+ *       {@code test_case_metric_scores} and no longer carry it. NOT subject to the
  *       {@code mean}/{@code weighted_mean} null-to-zero coalescing.
  * </ul>
  */

@@ -889,7 +889,7 @@ Arbitrary JSON detail objects, keyed by metric name and nested by output name.
 
 ## Table: `test_case_eval_scores` (Analytics DB)
 
-Per-test-case overall score/pass-fail, one row per `(test_suite_run_id, test_case_id, computation_id)`, computed via SQL once per test case after the last flush of Phase 2 — reusing `OverallScoreDefinitionResolver`'s output (the `StructuredQuery` built from the suite's `overallScore` definition) over `test_case_metric_scores_aggregated`. A present row with `score = NULL` (e.g. a population-dependent `CustomFunction` like `roc_auc` degenerating on a single-row group) and a row's total absence look identical to a client querying this table directly, by design; `eval_summaries` does not join to this table (see `docs/patterns/eval-summaries-read-surface.md`). Created in V1.19, re-created in V1.21.
+Per-test-case overall score/pass-fail, one row per `(test_suite_run_id, test_case_id, computation_id)`, computed via SQL once per test case after the last flush of Phase 2 — reusing `OverallScoreDefinitionResolver`'s output (the `StructuredQuery` built from the suite's `overallScore` definition) over `test_case_metric_scores_aggregated`. A present row with `score = NULL` and a row's total absence look identical to a client querying this table directly, by design; `eval_summaries` does not join to this table (see `docs/patterns/eval-summaries-read-surface.md`). Created in V1.19, re-created in V1.21.
 
 > **Note:** This table resides in the **analytics database**. Foreign key references to meta DB entities are soft FKs — no physical constraint.
 
@@ -901,7 +901,7 @@ Per-test-case overall score/pass-fail, one row per `(test_suite_run_id, test_cas
 | `test_case_name` | VARCHAR(255) | NOT NULL | - | Test case name; set once at insert |
 | `computation_id` | VARCHAR(36) | NOT NULL | - | Computation id |
 | `execution_status` | VARCHAR(20) | NOT NULL | - | Per-test-case aggregate: `FAILED` if *any* of that test case's `test_case_eval_summaries` rows for the computation has `execution_status <> SUCCESS` (a metric execution failure, or an upstream TIMEOUT/ERROR/FAILED row — collapsed uniformly to `FAILED`), else `SUCCESS`. Computed by `TestCaseExecutionStatusAggregator`, independent of `test_case_metric_scores_aggregated`. A condition-skipped metric never flips a row's own status, so it does not affect this aggregate. When `FAILED`, `score`/`passed` are always `NULL` — the score SQL is not even issued for that test case |
-| `score` | DOUBLE PRECISION | NULL | - | Per-test-case overall score, computed via SQL from the suite's `overallScore` definition, **only when `execution_status = SUCCESS`**; null when the definition's aggregate is itself SQL NULL (e.g. `roc_auc` on a single-row group) or when `execution_status = FAILED` |
+| `score` | DOUBLE PRECISION | NULL | - | Per-test-case overall score, computed via SQL from the suite's `overallScore` definition, **only when `execution_status = SUCCESS`**; null when the definition's `Mean`/`WeightedMean` aggregate itself evaluates to SQL NULL, or when `execution_status = FAILED` (`CustomFunction` is rejected as a `testCaseOverallScore` at write time, so it never reaches this table) |
 | `passed` | BOOLEAN | NULL | - | `score >= overallScoreThreshold` as captured in the run's suite snapshot at run-start time; null if `score` or the threshold is null |
 | `computed_at_ms` | BIGINT | NOT NULL | - | Computation timestamp |
 
@@ -928,7 +928,8 @@ entire row set for the computation, and inserted with `ON CONFLICT DO NOTHING` �
 insert-only. Introduced in V1.20.
 
 This table backs the equal-per-test-case-weighting rebuild of both `test_case_eval_scores`' per-row score
-and `metric_score_result`'s run-level `overall` for `Mean`/`WeightedMean`/`CustomFunction` — see those
+and `metric_score_result`'s run-level `overall` for `Mean`/`WeightedMean` — `CustomFunction` is a deliberate
+exception, still computed over raw `eval_summaries` (see the `roc_auc_score` section below) — see those
 sections and `docs/patterns/` for the scoring mechanics.
 
 > **Note:** This table resides in the **analytics database**. `test_suite_run_id`/`test_case_id` are soft
@@ -1018,7 +1019,7 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 
 `roc_auc_score(y double precision[], p double precision[]) RETURNS double precision` — computes the ROC AUC score (rank-sum / Mann-Whitney formulation) for a binary classifier. `y` holds the actual class (0/1) and `p` the predicted probability, paired positionally by array index (both arrays must be built from the same row scan, e.g. `array_agg(y)`/`array_agg(p)` in the same `SELECT`). Returns `NULL` when either class is absent (no positive/negative pair to rank). Introduced in `V1.11__CreateRocAucScoreFunction.sql`; invoked from the Query DSL's `roc_auc(label, probability)` function (`query.service.translate.function.BuiltInQueryFunctions`), usable anywhere a `FnExpr` is valid, including a suite's custom `overallScore` expression.
 
-When used as a suite's `overallScore` and computed per row (`test_case_eval_scores`, see above), a `GROUP BY id` group has exactly one row, so its `array_agg` has one element — only one class is ever present, `NULLIF(n_pos * n_neg, 0)` is `NULL`, and the function returns `NULL` for every row. This is a natural degeneration, not an error: `roc_auc` is inherently population-dependent and has no single-row meaning.
+When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` and executes directly against `eval_summaries`, ungrouped, over the run's whole population (see `metric-score-statistics`) — so `array_agg(y)`/`array_agg(p)` span every row and both classes are typically present. A `CustomFunction` is rejected outright as a `testCaseOverallScore` at suite write time (`TestSuiteRequestValidator.validateTestCaseOverallScore`, see `eval-summary-scoring`), precisely because a population-dependent function like `roc_auc` has no single-test-case meaning: it can never reach the per-test-case `test_case_eval_scores`/`test_case_metric_scores` computation (which grafts `GROUP BY test_case_id`, not `GROUP BY id`, and only for `Mean`/`WeightedMean`), so the single-row degeneration described in earlier revisions of this doc cannot occur.
 
 ---
 

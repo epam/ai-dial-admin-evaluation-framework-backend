@@ -178,9 +178,9 @@ Status: **Implemented**
 - **WHEN** the analytics Flyway migration V1.21 is applied
 - **THEN** the `test_case_eval_scores` table SHALL have the columns: `id` (VARCHAR(36), NOT NULL, PK), `test_suite_run_id` (VARCHAR(36), NOT NULL), `test_case_id` (VARCHAR(36), NOT NULL), `test_case_name` (VARCHAR(255), NOT NULL), `computation_id` (VARCHAR(36), NOT NULL), `execution_status` (VARCHAR(20), NOT NULL), `score` (DOUBLE PRECISION, nullable), `passed` (BOOLEAN, nullable), `computed_at_ms` (BIGINT, NOT NULL), and a unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)`
 
-#### Scenario: A row's absence and a present-but-null row read identically
-- **WHEN** a test case has no matching `test_case_eval_scores` row (no `overallScore` configured, or a rejected query shape), versus a matching row whose `score` is itself SQL NULL (e.g. a population-dependent CustomFunction, or an `execution_status = FAILED` aggregate)
-- **THEN** both SHALL read back as `score = null, passed = null` via the LEFT JOIN — a client cannot and need not distinguish the two cases
+#### Scenario: A row's absence and a present-but-null row are distinguishable
+- **WHEN** a test case has no matching `test_case_eval_scores` row (no `overallScore` configured, or a rejected query shape), versus a matching row whose `score` is itself SQL NULL (an `execution_status = FAILED` aggregate, or a `Mean`/`WeightedMean` aggregate that itself evaluates to SQL NULL)
+- **THEN** a client querying the `test_case_eval_scores` Query DSL entity directly SHALL be able to distinguish the two cases by row presence — no row versus a row present with `score = null, passed = null`
 
 ### Requirement: Batch write eval summary scores (internal only)
 The in-process metric evaluation engine SHALL write `test_case_eval_scores` rows via `TestCaseEvalScoreService.batchInsert()`, in chunks of the batch-size, once after the last Phase-2 flush completes and all `test_case_eval_summaries` rows are written. For each chunk of test cases, immediately after that chunk's `test_case_metric_scores_aggregated` aggregation, it SHALL write exactly one item per distinct test case (not one per raw `test_case_eval_summaries` row). There SHALL be no external REST endpoint for this table — it is populated only by the internal engine and read directly via the `test_case_eval_scores` Query DSL entity. The `eval_summaries` read surface SHALL NOT join to this table.

@@ -15,7 +15,7 @@ Status: **Implemented**
 ## Requirements
 
 ### Requirement: Evaluation executor interface
-The system SHALL define an `EvaluationExecutor` interface with a single `execute(EvaluationContext)` method. The `EvaluationContext` SHALL carry: `runId`, `testSuiteId`, execution settings (concurrency, timeout, retry, rate limit), the run's worker executor (owned and shut down by the run owner, never by the executor implementation), a progress callback, and a result sink. This interface enables swapping in-process execution with K8s Job submission without changing orchestration code.
+The system SHALL define an `EvaluationExecutor` interface with a single `execute(EvaluationContext)` method. The `EvaluationContext` SHALL carry: `runId`, `testSuiteId`, execution settings (concurrency, timeout, retry, rate limit), the run's worker executor (owned and shut down by the run owner, never by the executor implementation), a progress callback, a result sink, and a `credential` (`CallerCredential`, carrying either a bearer JWT or an API key — including a DIAL Core per-request key, which is simply an `API_KEY`-kind credential). This interface enables swapping in-process execution with K8s Job submission without changing orchestration code.
 Status: **Implemented**
 
 #### Scenario: In-process executor is the default
@@ -26,8 +26,13 @@ Status: **Implemented**
 - **WHEN** `TestSuiteEvaluationJob` dispatches a run
 - **THEN** it SHALL construct an `EvaluationContext` from the run's `RunConfigDto` (with system defaults for omitted fields) carrying the run's registered worker executor, and pass it to the executor. The run's executor SHALL be registered before async dispatch so a cancel request can reach it even if the job thread has not started yet.
 
+#### Scenario: EvaluationContext credential is kind-agnostic
+- **WHEN** `dial-app-proxy.enabled=true` and a run is dispatched from `EvalExecuteInternalController` with a PRK
+- **THEN** the `EvaluationContext` constructed for the run SHALL carry an `API_KEY`-kind `CallerCredential` (the PRK)
+- **AND** deployment invocations SHALL use that credential's `headerName()`/`headerValue()` exactly as they already do for a `BEARER`-kind credential — no branching logic is added to `DialCoreDeploymentInvoker`, `EvaluationWorker`, `DeploymentTurnInvoker`, or `McpToolInvoker`
+
 ### Requirement: In-process evaluation execution
-The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (one per test case per run index) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. For legacy runs without a snapshot (no `test_case_run_inputs` rows), it SHALL fall back to reading live test cases from the suite.
+The `InProcessEvaluationExecutor` SHALL read test inputs from the `test_case_run_inputs` table (populated at snapshot phase) in pages, dispatch execution tasks (one per test case per run index) bounded by the configured concurrency level, collect results, and flush them to analytics DB in batches. For legacy runs without a snapshot (no `test_case_run_inputs` rows), it SHALL fall back to reading live test cases from the suite. When `dial-app-proxy.enabled=true`, the executor is started from `EvalExecuteInternalController` (triggered by the DIAL Core Application Route, with an `API_KEY`-kind credential) via the existing `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` method; when `dial-app-proxy.enabled=false`, the executor is started by the legacy dispatch from `TestSuiteRunService.dispatchEvaluation` with a `BEARER`-kind credential. Both paths call the same `dispatch` method — only the caller and the credential's kind differ.
 Status: **Implemented**
 
 #### Scenario: Snapshot path — pages from inputs table
@@ -37,6 +42,16 @@ Status: **Implemented**
 #### Scenario: Legacy path — falls back to live test cases
 - **WHEN** `test_case_run_inputs` rows do NOT exist for the run (legacy run without snapshot)
 - **THEN** the executor SHALL fall back to paging through live test cases from `testCaseRepository.findEnabledValidByTestSuiteId()`, wrapping each `TestCase` as a `TestCaseRunInput` struct for uniform worker interface.
+
+#### Scenario: DIAL App mode — executor started from internal endpoint
+- **WHEN** `dial-app-proxy.enabled=true`
+- **AND** `EvalExecuteInternalController` receives a valid, already-authenticated trigger for `runId`
+- **THEN** `TestSuiteEvaluationJob.dispatch(runId, credential, false)` SHALL be called directly from the controller, with `credential` sourced from `AuthorizationTokenHolder.getCredential()`
+- **AND** `DialRouteTriggerClient` (not `TokenPropagationHelper`/`AuthorizationTokenHolder`-based in-process dispatch) SHALL have been the mechanism that caused DIAL Core to call this endpoint
+
+#### Scenario: Legacy mode — executor started with JWT propagation
+- **WHEN** `dial-app-proxy.enabled=false`
+- **THEN** eval execution SHALL be started via `TestSuiteRunService.dispatchEvaluation`'s existing direct call to `TestSuiteEvaluationJob.dispatch(runId, credential, skipDeploymentPhase)` with a `BEARER`-kind credential (existing behavior, unchanged)
 
 #### Scenario: Sequential execution (default)
 - **WHEN** `concurrencyLevel` is 1 (default)

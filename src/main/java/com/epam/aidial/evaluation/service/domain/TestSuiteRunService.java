@@ -1,5 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerClient;
+import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -38,6 +40,7 @@ import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
@@ -74,6 +77,8 @@ public class TestSuiteRunService {
     private final ObjectMapper objectMapper;
     private final EvalResultsImportService evalResultsImportService;
     private final EvalResultsCsvParser evalResultsCsvParser;
+    private final Optional<DialRouteTriggerClient> dialRouteTriggerClient;
+    private final Optional<DialAppProperties> dialAppProperties;
 
     @Qualifier("metaTransactionManager")
     private final PlatformTransactionManager metaTransactionManager;
@@ -297,14 +302,32 @@ public class TestSuiteRunService {
      * Dispatches Phase 1–3 (or Phase 2/3 only, when {@code skipDeploymentPhase} is {@code true}) via
      * {@link TestSuiteEvaluationJob#dispatch}. If the executor rejects the submission, invokes
      * {@code onRejected} so each caller can apply its own failure-compensation logic.
+     *
+     * <p>When `dial-app-proxy.enabled=true` and a caller JWT is available (the {@link #createRun} path),
+     * dispatches via DIAL Core's Application Route by calling {@link DialRouteTriggerClient#triggerEvalRun}
+     * on a virtual thread. {@link #importResultsAndEvaluate} calls this with {@code credential == null} (it
+     * has no caller JWT to trigger a DIAL Core route with) — DIAL App mode has no PRK-issuing leg for that
+     * flow, so it deliberately falls back to the existing direct, in-process
+     * {@link TestSuiteEvaluationJob#dispatch} path instead of attempting a trigger call with a null
+     * credential (which would NPE inside {@link DialRouteTriggerClient}). This preserves
+     * {@code importResultsAndEvaluate}'s existing behavior unchanged regardless of the flag.
      */
     private void dispatchEvaluation(
             UUID runId, CallerCredential credential, boolean skipDeploymentPhase, Runnable onRejected) {
-        try {
-            evaluationJob.dispatch(runId, credential, skipDeploymentPhase);
-        } catch (RejectedExecutionException ex) {
-            log.warn("Executor rejected job submission for run {}: {}", runId, ex.getMessage(), ex);
-            onRejected.run();
+        if (dialAppProperties.isPresent()
+                && dialAppProperties.get().isEnabled()
+                && dialRouteTriggerClient.isPresent()
+                && credential != null) {
+            // DIAL App mode: trigger via DIAL Core route, which will call back to the internal endpoint
+            log.info("Dispatching eval via DIAL App mode (route trigger): runId={}", runId);
+            Thread.startVirtualThread(() -> dialRouteTriggerClient.get().triggerEvalRun(runId, credential));
+        } else {
+            try {
+                evaluationJob.dispatch(runId, credential, skipDeploymentPhase);
+            } catch (RejectedExecutionException ex) {
+                log.warn("Executor rejected job submission for run {}: {}", runId, ex.getMessage(), ex);
+                onRejected.run();
+            }
         }
     }
 

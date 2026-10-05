@@ -35,6 +35,8 @@ public enum ErrorCode {
     PRIVATE_TRANSITION_INVALID_BINDING_COUNT,
     /** POST /test-suites/{id}/runs on a suite with datasetId=null. */
     SUITE_HAS_NO_DATASET,
+    /** POST /api/internal/runs/{runId}/execute for a run that already has an active dispatch. */
+    RUN_ALREADY_ACTIVE,
     INTERNAL_ERROR,
     /** Upstream (Core) rejected token after we accepted it; we return 502. */
     UPSTREAM_AUTH_ERROR,

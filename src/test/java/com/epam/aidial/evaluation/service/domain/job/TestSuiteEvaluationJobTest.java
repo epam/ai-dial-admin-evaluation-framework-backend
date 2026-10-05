@@ -812,7 +812,7 @@ class TestSuiteEvaluationJobTest {
         void cleansUpAndRethrowsErrorFromExecutorSubmission() {
             final UUID runId = UUID.randomUUID();
             final RunHandle handle = mock(RunHandle.class);
-            when(registry.register(runId)).thenReturn(handle);
+            when(registry.registerIfAbsent(runId)).thenReturn(Optional.of(handle));
             final OutOfMemoryError error = new OutOfMemoryError("unable to create native thread");
             doThrow(error).when(taskExecutor).execute(any());
 

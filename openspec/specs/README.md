@@ -67,6 +67,8 @@ Specs for external service integrations.
 
 - **[dial-core-client](dial-core-client/spec.md)** — Implemented
   DIAL Core API proxy — unified deployment listing (models + applications + toolsets via `/v1/deployments`), type/interface query param filtering, toolset detail retrieval, caller user-info fetch (`/v1/user/info`), caller-credential propagation (bearer JWT or `Api-Key`, chosen by credential kind), upstream error mapping, deployment invocation.
+- **[dial-app-auth](dial-app-auth/spec.md)** — Implemented
+  DIAL Application Route integration for per-request key auth and file auto-sharing, reusing the existing DIAL API-Key auth and caller-credential propagation infrastructure.
 - **[app-schema-route-resolution](app-schema-route-resolution/spec.md)** — Implemented
   Application route resolution inherited from app type schemas via DIAL Core schema API, schema route DTOs, merge behavior.
 - **[mcp-tool-invocation](mcp-tool-invocation/spec.md)** — Implemented

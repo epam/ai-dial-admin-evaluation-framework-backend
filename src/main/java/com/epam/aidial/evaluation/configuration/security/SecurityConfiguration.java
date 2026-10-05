@@ -107,6 +107,12 @@ public class SecurityConfiguration {
                         .permitAll()
                         .requestMatchers("/api/v1/**")
                         .authenticated()
+                        // Matcher is registered unconditionally (harmless when dial-app-proxy.enabled=false):
+                        // only EvalExecuteInternalController actually exposes a path under /api/internal/**,
+                        // and that bean is itself @ConditionalOnProperty on dial-app-proxy.enabled, so the path
+                        // 404s when the flag is off rather than exposing a live, merely-authenticated endpoint.
+                        .requestMatchers("/api/internal/**")
+                        .authenticated()
                         .requestMatchers(mcpEndpoint)
                         .authenticated()
                         .anyRequest()

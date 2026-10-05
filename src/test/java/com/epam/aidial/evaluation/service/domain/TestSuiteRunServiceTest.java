@@ -8,11 +8,14 @@ import static org.mockito.ArgumentMatchers.anyChar;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerClient;
+import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
@@ -23,6 +26,8 @@ import com.epam.aidial.evaluation.query.service.QueryDslRunnableTestCaseSelector
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
+import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
@@ -40,6 +45,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -98,6 +105,12 @@ class TestSuiteRunServiceTest {
     private EvalResultsCsvParser evalResultsCsvParser;
 
     @Mock
+    private DialRouteTriggerClient dialRouteTriggerClient;
+
+    @Mock
+    private DialAppProperties dialAppProperties;
+
+    @Mock
     private PlatformTransactionManager metaTransactionManager;
 
     private TestSuiteRunService service;
@@ -128,6 +141,8 @@ class TestSuiteRunServiceTest {
                 new ObjectMapper(),
                 evalResultsImportService,
                 evalResultsCsvParser,
+                Optional.of(dialRouteTriggerClient),
+                Optional.of(dialAppProperties),
                 metaTransactionManager);
 
         testSuiteId = UUID.randomUUID();
@@ -139,6 +154,7 @@ class TestSuiteRunServiceTest {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.clearSynchronization();
         }
+        AuthorizationTokenHolder.clearToken();
     }
 
     private TestSuite validBoundSuite() {
@@ -291,6 +307,69 @@ class TestSuiteRunServiceTest {
             verify(testSuiteRunRepository)
                     .countByTestSuiteIdAndStatuses(eq(testSuiteId), suiteStatusesCaptor.capture());
             assertThat(suiteStatusesCaptor.getValue()).contains(RunStatus.CANCELLING.name());
+        }
+    }
+
+    @Nested
+    @DisplayName("dispatchEvaluation branching")
+    class DispatchEvaluationBranching {
+
+        private final UUID runId = UUID.randomUUID();
+
+        @Test
+        @DisplayName("calls DialRouteTriggerClient when dial-app-proxy.enabled=true and credential is not null")
+        void callsDialRouteTriggerClientWhenEnabled() throws InterruptedException {
+            when(dialAppProperties.isEnabled()).thenReturn(true);
+            CallerCredential credential = CallerCredential.bearer("jwt-token");
+
+            CountDownLatch latch = new CountDownLatch(1);
+            doAnswer(invocation -> {
+                        latch.countDown();
+                        return null;
+                    })
+                    .when(dialRouteTriggerClient)
+                    .triggerEvalRun(any(UUID.class), any(CallerCredential.class));
+
+            invokeDispatchEvaluation(runId, credential, false);
+
+            // Wait for virtual thread to complete
+            assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
+            verify(dialRouteTriggerClient).triggerEvalRun(runId, credential);
+            verify(evaluationJob, never()).dispatch(any(), any(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("calls TestSuiteEvaluationJob when dial-app-proxy.enabled=false")
+        void callsJobDispatchWhenDisabled() {
+            when(dialAppProperties.isEnabled()).thenReturn(false);
+            CallerCredential credential = CallerCredential.bearer("jwt-token");
+
+            invokeDispatchEvaluation(runId, credential, false);
+
+            verify(evaluationJob).dispatch(runId, credential, false);
+            verify(dialRouteTriggerClient, never()).triggerEvalRun(any(), any());
+        }
+
+        @Test
+        @DisplayName("calls TestSuiteEvaluationJob when credential is null even if flag is enabled")
+        void callsJobWhenCredentialNullDespiteEnabled() {
+            when(dialAppProperties.isEnabled()).thenReturn(true);
+
+            invokeDispatchEvaluation(runId, null, false);
+
+            verify(evaluationJob).dispatch(runId, null, false);
+            verify(dialRouteTriggerClient, never()).triggerEvalRun(any(), any());
+        }
+
+        private void invokeDispatchEvaluation(UUID runId, CallerCredential credential, boolean skipDeploymentPhase) {
+            try {
+                var method = TestSuiteRunService.class.getDeclaredMethod(
+                        "dispatchEvaluation", UUID.class, CallerCredential.class, boolean.class, Runnable.class);
+                method.setAccessible(true);
+                method.invoke(service, runId, credential, skipDeploymentPhase, (Runnable) () -> {});
+            } catch (ReflectiveOperationException ex) {
+                throw new RuntimeException(ex);
+            }
         }
     }
 

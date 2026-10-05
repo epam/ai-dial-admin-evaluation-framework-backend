@@ -34,6 +34,7 @@ import com.epam.aidial.evaluation.functional.tests.DatasetMigrationFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.DatasetScopedTestCaseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetVisibilityFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DeploymentFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.DialAppModeFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalResultsImportFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryAggregationFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.EvalSummaryExportFunctionalTests;
@@ -796,4 +797,18 @@ public class PostgresFunctionalTests extends FunctionalTests {
             verify(metricProviderClientFromContext, never()).getMetrics("disabled-test-provider");
         }
     }
+
+    @Nested
+    @TestPropertySource(
+            properties = {
+                "dial-app-proxy.enabled=true",
+                "dial-app-proxy.deployment-name=EF",
+                "dial-app-proxy.heartbeat-interval-ms=30000",
+                "dial-app-proxy.trigger-read-timeout-ms=43200000",
+                "config.rest.security.api-key.enabled=true",
+                "config.rest.security.api-key.core-url=http://localhost:1",
+                "config.rest.security.api-key.roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.startup-probe=false"
+            })
+    class DialAppModeTests extends DialAppModeFunctionalTests {}
 }

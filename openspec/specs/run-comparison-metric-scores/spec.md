@@ -276,7 +276,8 @@ Status: **Implemented**
   columns so it stays deterministic. Measured plans: hash left join for the counts, merge anti join for the
   ids (see the change's `design.md`).
 - Recomputation: `FilteredMetricScoreAggregator` runs Phase 3's own query definitions
-  (`BuiltInMetricStatistics`, `OverallScoreDefinitionResolver`) with one ANDed `not(id in [...])` predicate,
+  (`BuiltInMetricStatistics`, `OverallScoreDefinitionResolver`) with one ANDed
+  `not(test_case_id in [...])` predicate (scoped to the unmatched test case ids, not row ids),
   which is what makes full-overlap parity with the persisted values structural rather than coincidental.
   Field discovery is shared with Phase 3 via `MetricFieldDiscoverer`.
 - Cap: `analytics.comparison.max-unmatched-rows` (`RunComparisonProperties`).

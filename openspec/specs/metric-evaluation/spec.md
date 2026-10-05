@@ -359,11 +359,11 @@ Status: **Implemented**
 
 #### Scenario: Score computation skipped without a definition
 - **WHEN** the suite's snapshotted `testCaseOverallScore` and `overallScore` are both absent
-- **THEN** `TestCaseScoreComputer.computeBatch` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run
+- **THEN** `TestCaseScoreComputer.computeByTestCase` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run
 
 #### Scenario: Score computation skipped when overallScore is a CustomFunction and testCaseOverallScore is absent
 - **WHEN** the suite's snapshotted `testCaseOverallScore` is absent and its snapshotted `overallScore` is a `CustomFunction`
-- **THEN** `TestCaseScoreComputer.computeBatch` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run, even though `overallScore` is configured
+- **THEN** `TestCaseScoreComputer.computeByTestCase` SHALL NOT be invoked and no `test_case_eval_scores` write SHALL occur for that run, even though `overallScore` is configured
 
 #### Scenario: Score computation runs once per test case chunk when a definition is configured
 - **WHEN** the suite's snapshotted `testCaseOverallScore` or `overallScore` is present
@@ -529,6 +529,6 @@ Status: **Implemented**
   phase-boundary check.
 - `MetricEvaluationContext` carries `overallScoreDefinition` (`OverallScoreDefinition`) and `overallScoreThreshold` (`Double`), sourced from the run's snapshot (`snapshot.getOverallScore()` / `snapshot.getOverallScoreThreshold()`) in `TestSuiteEvaluationJob.buildMetricEvaluationContext`.
 - `InProcessMetricEvaluationExecutor.buildItem` generates `EvalSummaryBatchWriteItemDto.id` via `UUID.randomUUID()` (replacing the id-generation that previously happened inside `EvalSummaryMapper.toEntity`); `EvalSummaryMapper.toEntity` now falls back to generating one only when the item's `id` is absent, preserving the external batch-write API's existing contract.
-- `writeRowScores` (new private method on `InProcessMetricEvaluationExecutor`) computes `passed = (score != null && threshold != null) ? score >= threshold : null` in Java after receiving `TestCaseScoreComputer`'s `Map<UUID, Double>`.
+- `writeTestCaseScores` (private method on `InProcessMetricEvaluationExecutor`) computes `passed = (score != null && threshold != null) ? score >= threshold : null` in Java after receiving `TestCaseScoreComputer`'s `Map<UUID, Double>`.
 - RunMetricSnapshot writes target the **meta** database: `RunMetricSnapshotService.batchCreate()` runs under `@Transactional("metaTransactionManager")` against meta `run_metric_snapshots` (see `metrics-storage`). EvalSummary writes are unchanged and continue against the analytics database via `EvalSummaryBatchWriteClient` → `EvalSummaryService.batchCreate()`.
 - `InProcessMetricEvaluationExecutor`'s call order is unchanged — the snapshot batch-write still precedes the first `/evaluate` dispatch; it simply lands in a different database.

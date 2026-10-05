@@ -171,7 +171,7 @@ Status: **Implemented**
 - **THEN** the service SHALL generate one, preserving the existing external-API contract
 
 ### Requirement: Database schema for eval summary scores
-The analytics database SHALL contain a `test_case_eval_scores` table storing one row per `(test_suite_run_id, test_case_id, computation_id)`, computed via SQL and joined into the eval-summary read surface (not native columns on `test_case_eval_summaries`). The table SHALL carry `test_suite_run_id`, `test_case_id`, `test_case_name`, `computation_id`, and `execution_status`, denormalized/aggregated at write time, so the table can also be read directly (deduplicated — see the `test_case_eval_scores` Query DSL entity requirement below) without a join. The primary key SHALL be a surrogate `id` column. A unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` SHALL enforce at most one row per test case per computation.
+The analytics database SHALL contain a `test_case_eval_scores` table storing one row per `(test_suite_run_id, test_case_id, computation_id)`, computed via SQL and exposed only through its own `test_case_eval_scores` Query DSL entity (never joined onto `eval_summaries` or any other table; not native columns on `test_case_eval_summaries`). The table SHALL carry `test_suite_run_id`, `test_case_id`, `test_case_name`, `computation_id`, and `execution_status`, denormalized/aggregated at write time, so the table can also be read directly (deduplicated — see the `test_case_eval_scores` Query DSL entity requirement below) without a join. The primary key SHALL be a surrogate `id` column. A unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` SHALL enforce at most one row per test case per computation.
 Status: **Implemented**
 
 #### Scenario: Table structure
@@ -201,10 +201,6 @@ Status: **Implemented**
 ### Requirement: `test_case_eval_scores` Query DSL entity
 The system SHALL expose `test_case_eval_scores` as a Query DSL entity of the same name, presenting exactly one row per test case per computation (guaranteed by the table's unique constraint, so no dedup is needed). The entity SHALL support the `computation_id eq "latest"` sentinel, resolved the same way as `metric_score_results`. This entity SHALL be reachable through the existing generic query endpoint (`POST /api/v1/queries/execute`), and is the sole read surface for a test case's `score`/`passed` — the `eval_summaries` entity and REST endpoints do not expose either field.
 Status: **Implemented**
-
-#### Scenario: The freshest legacy row wins when only legacy rows disagree
-- **WHEN** a test case has only legacy rows for a key, and they disagree on `score` (different `computed_at_ms` values), with no new-format row present
-- **THEN** the entity SHALL surface the value from the legacy row with the greatest `computed_at_ms`
 
 #### Scenario: `computation_id eq "latest"` resolves to the run's latest computation
 - **WHEN** a structured query against `test_case_eval_scores` filters by a single `test_suite_run_id` and `computation_id eq "latest"`

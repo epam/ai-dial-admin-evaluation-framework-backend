@@ -419,15 +419,45 @@ For template variables with `${{var:default}}` syntax, the default value is the 
 - **THEN** system SHALL record a validation warning: "Required field 'user_prompt' has no value in data"
 
 ### Requirement: Template variable extraction convenience API
-The service SHALL provide `GET /api/v1/test-suites/{id}/template-variables` to return all extracted template variables with metadata.
+The service SHALL provide `GET /api/v1/test-suites/{id}/template-variables` to return all extracted template variables with metadata, **grouped by request index** across the suite's request chain.
+
+The response SHALL be a JSON object whose keys are request indices (decimal strings) and whose values are lists of `TemplateVariableDto`:
+- key `"0"` — the suite's own request (`requestTemplate`, `inputBindings`, `endpointRef`);
+- key `"n"` (n ≥ 1) — `additionalRequests[n - 1]`, using that request's own `requestTemplate`, `inputBindings` and `endpointRef` (nothing is inherited from request #0).
+
+Every index `0..N` of the chain SHALL be present, in chain order, even when its list is empty. The dataset test-case schema used for type inference is shared across all requests. Each request is resolved independently, so the same variable name MAY appear under several keys with different bindings, types and resolved values.
+
+Status: **Implemented**
 
 #### Scenario: Extract variables from suite template
-- **WHEN** client calls `GET /api/v1/test-suites/{id}/template-variables`
-- **THEN** system SHALL return a list of `TemplateVariableDto` entries extracted from `requestTemplate`
+- **WHEN** client calls `GET /api/v1/test-suites/{id}/template-variables` for a suite without `additionalRequests`
+- **THEN** system SHALL return `{"0": [...]}` — a single entry whose list holds the `TemplateVariableDto` entries extracted from `requestTemplate`
+
+#### Scenario: Extract variables from every request of a chain
+- **WHEN** a suite's request #0 is `GET /settings` with no placeholders and `additionalRequests[0]` is `POST /chat/completions` whose body contains `${{user_message}}` and `${{temperature}}`
+- **THEN** `GET /api/v1/test-suites/{id}/template-variables` SHALL return `{"0": [], "1": [user_message, temperature]}`
+
+#### Scenario: Additional request uses its own bindings
+- **WHEN** `additionalRequests[0].inputBindings` binds `user_message` to `constantValue: "hi"` and the suite-level `inputBindings` binds `user_message` to `dataField: "question"`
+- **THEN** the entry for `user_message` under key `"1"` SHALL carry the `constantValue` binding and `resolvedValue = "hi"`
+- **AND** an entry for `user_message` under key `"0"` (if request #0 uses it) SHALL carry the `dataField` binding
+
+#### Scenario: Additional request uses its own endpoint for type inference
+- **WHEN** `additionalRequests[0].endpointRef` declares `temperature` as `NUMBER` and request #0's `endpointRef` does not declare it
+- **THEN** the entry for `temperature` under key `"1"` SHALL have `effectiveType: "NUMBER"`
+
+#### Scenario: Request without placeholders maps to an empty list
+- **WHEN** a chain request has a null `requestTemplate` or a template with no placeholders
+- **THEN** its key SHALL be present with an empty list
+
+#### Scenario: OpenAPI declares the map response
+- **WHEN** a client reads `/v3/api-docs`
+- **THEN** the `200` response of both template-variables operations SHALL be declared under `application/json` as an object whose `additionalProperties` are arrays of `TemplateVariableDto`
+- **AND** both operations SHALL carry `minimal` and `full` response examples in the map shape
 
 #### Scenario: TemplateVariableDto structure
 - **WHEN** system extracts template variables
-- **THEN** each `TemplateVariableDto` SHALL include: `name` (String — the variable name), `sources` (Set of `TemplateVariableSource` enum — BODY, URL, QUERY, HEADER), `hasDefault` (boolean), `defaultValue` (String, nullable — raw default from `${{var:default}}`), `binding` (InputBindingDto, nullable — resolved binding from suite's `inputBindings`), `declaredType` (SchemaFieldType, nullable — the type explicitly declared in the placeholder syntax via `|type`; null when no type hint is present), `effectiveType` (SchemaFieldType, non-null — the fully resolved type determined by the priority chain below), `resolvedValue` (Object, nullable — the resolved typed value for this variable, see resolution rules below)
+- **THEN** each `TemplateVariableDto` SHALL include: `name` (String — the variable name), `sources` (Set of `TemplateVariableSource` enum — BODY, URL, QUERY, HEADER for HTTP requests; ARGUMENT for MCP suites), `hasDefault` (boolean), `defaultValue` (String, nullable — raw default from `${{var:default}}`), `binding` (InputBindingDto, nullable — resolved binding from that request's own `inputBindings`: the suite-level list for key `"0"`, `additionalRequests[n - 1].inputBindings` for key `"n"`), `declaredType` (SchemaFieldType, nullable — the type explicitly declared in the placeholder syntax via `|type`; null when no type hint is present), `effectiveType` (SchemaFieldType, non-null — the fully resolved type determined by the priority chain below), `resolvedValue` (Object, nullable — the resolved typed value for this variable, see resolution rules below)
 
 The legacy `inferredType` field is replaced by `effectiveType`. The JSON property name SHALL be `effectiveType`.
 
@@ -464,8 +494,8 @@ The legacy `inferredType` field is replaced by `effectiveType`. The JSON propert
 - **THEN** system SHALL respond with HTTP 404
 
 #### Scenario: TestSuite with no template
-- **WHEN** client calls the endpoint for a TestSuite with `requestTemplate: null`
-- **THEN** system SHALL return an empty list
+- **WHEN** client calls the endpoint for a TestSuite with `requestTemplate: null` and no `additionalRequests`
+- **THEN** system SHALL return `{"0": []}`
 
 #### Scenario: Suite-level resolvedValue for constant-value binding
 - **WHEN** a template variable has a binding with `constantValue` (e.g., `constantValue: "gpt-4"`)
@@ -488,11 +518,17 @@ The legacy `inferredType` field is replaced by `effectiveType`. The JSON propert
 - **THEN** `resolvedValue` SHALL be `null`
 
 ### Requirement: Template variables API for TestCase (effective template)
-The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables` to return template variables for a specific test case: the suite's template and bindings resolved against that test case's `data`. The test case is looked up dataset-scoped via the suite's `datasetId`. Per-test-case `requestTemplateOverride` / `inputBindingsOverride` were removed when test cases moved to datasets, so the "effective" template/bindings are always the suite's; the only difference from `GET /api/v1/test-suites/{testSuiteId}/template-variables` is that `resolvedValue` is fully resolved using the test case's `data`. For `MCP_TOOL` suites, variables are extracted from `argumentTemplate`; for HTTP suites, from `requestTemplate`. The test-case schema used for type inference is sourced from the suite's dataset.
+The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables` to return template variables for a specific test case: the suite's template and bindings resolved against that test case's `data`. The test case is looked up dataset-scoped via the suite's `datasetId`. Per-test-case `requestTemplateOverride` / `inputBindingsOverride` were removed when test cases moved to datasets, so the "effective" template/bindings are always the suite's; the only difference from `GET /api/v1/test-suites/{testSuiteId}/template-variables` is that `resolvedValue` is fully resolved using the test case's `data`. For `MCP_TOOL` suites, variables are extracted from `argumentTemplate`; for HTTP suites, from `requestTemplate` and every `additionalRequests[i].requestTemplate`. The response has the same request-index-keyed shape as the suite endpoint (key `"0"` = suite's own request, key `"n"` = `additionalRequests[n - 1]` with its own bindings and endpoint). The test-case schema used for type inference is sourced from the suite's dataset; the test case's `data` is shared across all requests of the chain.
+
+Status: **Implemented**
 
 #### Scenario: Extract variables for a test case
 - **WHEN** client calls `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables`
-- **THEN** system SHALL return a list of `TemplateVariableDto` entries (same structure as the suite endpoint) extracted from the suite's `requestTemplate` (or `argumentTemplate` for `MCP_TOOL` suites), with `binding` populated from the suite's `inputBindings`
+- **THEN** system SHALL return an object keyed by request index (same shape as the suite endpoint) whose lists hold `TemplateVariableDto` entries extracted from each chain request's `requestTemplate` (or, under key `"0"` only, `argumentTemplate` for `MCP_TOOL` suites), with `binding` populated from that request's own `inputBindings`
+
+#### Scenario: Additional request variables resolved from test case data
+- **WHEN** `additionalRequests[0]` binds `user_message` to `dataField: "question"` and the test case has `data = {"question": "What is AI?"}`
+- **THEN** the entry for `user_message` under key `"1"` SHALL have `resolvedValue = "What is AI?"`
 
 #### Scenario: resolvedValue resolved from test case data
 - **WHEN** the test case exists in the suite's dataset
@@ -511,8 +547,8 @@ The service SHALL provide `GET /api/v1/test-suites/{testSuiteId}/test-cases/{tes
 - **THEN** system SHALL respond with HTTP 404 for any `testCaseId`
 
 #### Scenario: Suite with no template
-- **WHEN** the suite has `requestTemplate: null` (HTTP suite) or `argumentTemplate: null` (MCP suite)
-- **THEN** system SHALL return an empty list
+- **WHEN** the suite has `requestTemplate: null` and no `additionalRequests` (HTTP suite) or `argumentTemplate: null` (MCP suite)
+- **THEN** system SHALL return `{"0": []}`
 
 #### Scenario: Test-case-level resolvedValue for constant-value binding
 - **WHEN** a template variable has a binding with `constantValue`
@@ -547,7 +583,7 @@ The `TemplateVariableSource` enum SHALL define: `BODY`, `URL`, `QUERY`, `HEADER`
 
 ### Requirement: Template variables for MCP suites
 
-The `TemplateVariableService` SHALL support MCP_TOOL suites via `GET /api/v1/test-suites/{id}/template-variables` and `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables`. When the suite type is `MCP_TOOL`, the service SHALL extract variables from the `argumentTemplate` (not `requestTemplate`) and resolve them using the MCP-specific resolution path with input bindings support.
+The `TemplateVariableService` SHALL support MCP_TOOL suites via `GET /api/v1/test-suites/{id}/template-variables` and `GET /api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables`. When the suite type is `MCP_TOOL`, the service SHALL extract variables from the `argumentTemplate` (not `requestTemplate`) and resolve them using the MCP-specific resolution path with input bindings support. MCP suites have no request chain, so both endpoints SHALL return a single-entry object `{"0": [...]}`.
 
 MCP suites support the same `inputBindings` mechanism as HTTP suites. The resolution priority for MCP template variables follows the same chain as `McpRequestResolver`: binding `constantValue` > binding `dataField` lookup > direct variable name lookup > template default > `null`.
 
@@ -583,7 +619,7 @@ Status: **Implemented**
 
 #### Scenario: MCP suite with null argument template
 - **WHEN** an MCP_TOOL suite has `argumentTemplate` as null
-- **THEN** the template variables endpoint SHALL return an empty list
+- **THEN** the template variables endpoint SHALL return `{"0": []}`
 
 #### Scenario: MCP variable extraction uses TemplateVariableExtractor
 - **WHEN** extracting variables from an MCP argument template
@@ -829,3 +865,5 @@ Status: **Implemented**
 - JSON request-body evaluation seam (`service.domain`): `JsonataSourcePreprocessor` (textual `${{}}` placeholder substitution into raw body-text per the three substitution modes), `TemplateContentResolver` (Map `content` structural-resolution path and `jsonataContent` preprocess-only path converge on one body-text output), `RequestBodyEvaluator` (JSONata-evaluates the resolved body text via `JsonataEvaluationService`/`DashjoinJsonataEvaluationService`, enforces the JSON-object runtime contract). `TestSuiteRequestValidator` rejects an invalid `jsonataContent` JSONata source and a body with both `content` and `jsonataContent` set, as well as a `responseColumns[i].name` colliding with `JsonataReservedNames` (see `response-columns` spec) at suite create/update time. `ResolvedRequestService`'s preview path is wired through `RequestBodyEvaluator` so `GET .../resolved-request` reflects the JSONata-evaluated body.
 - `JsonataProperties` (`@ConfigurationProperties(prefix = "jsonata")`: `evaluationTimeoutMs`, `maxRecursionDepth`) bounds JSONata evaluation via `Frame.setRuntimeBounds`; defaults live in `application.yml`, documented in `docs/configuration.md`.
 - Resolved request-model validation (fixed-path model-selecting APIs): `RequestModelValidator` and `RequestBodyValidationException` (`evaluation-runner-core`, `com.epam.aidial.evaluation.runner.service` / `.exception`), with the canonical paths in `runner.constants.ModelSelectingEndpointPaths` — also consumed by `DialCoreUrlBuilder`. `validateContent` serves `SuiteValidationService`'s static plain-`content` check; `validateForExecution` throws for consumers at the pre-invocation boundary (`TurnLoopExecutor` for runs and CLI, `TryItOutService` for Try-It-Out). Error codes: `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` and `ValidationWarningCode.REQUEST_BODY_VALIDATION_ERROR`. Placeholder detection reuses `TemplateContentResolver.PLACEHOLDER_PATTERN` with `find()` semantics. The `GET .../resolved-request` preview does not run this check.
+- `service.domain.TemplateVariableService` — iterates the chain (`requestTemplate` + `additionalRequests`) and builds the index-keyed map.
+- `web.controller.TemplateVariableController` — both endpoints return the map; OpenAPI examples under `src/main/resources/openapi/examples/api-v1-test-suites-testSuiteId{,-test-cases-testCaseId}-template-variables-GET-response-200-{minimal,full}.json`.

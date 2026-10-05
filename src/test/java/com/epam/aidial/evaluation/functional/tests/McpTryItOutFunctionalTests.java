@@ -160,23 +160,24 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
     void shouldReturnMcpSuiteTemplateVariables() {
         TestSuiteResponseDto suite = createMcpSuiteWithTestCaseSchema();
 
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suite.getId() + "/template-variables"),
                 HttpMethod.GET,
                 null,
                 new ParameterizedTypeReference<>() {});
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).hasSize(1);
-        TemplateVariableDto var = response.getBody().get(0);
+        assertThat(response.getBody()).containsOnlyKeys("0");
+        assertThat(response.getBody().get("0")).hasSize(1);
+        TemplateVariableDto var = response.getBody().get("0").get(0);
         assertThat(var.getName()).isEqualTo("userQuery");
         assertThat(var.getSources()).containsExactly(TemplateVariableSource.ARGUMENT);
         assertThat(var.getEffectiveType()).isEqualTo(SchemaFieldType.STRING);
         assertThat(var.getResolvedValue()).isNull();
     }
 
-    // Note: per-test-case template-variables endpoint was removed in task group 11
-    // (TemplateVariableService simplified to suite-scoped only).
+    // Note: the per-test-case template-variables endpoint exists and is covered by
+    // TemplateVariableFunctionalTests (both endpoints return a map keyed by request index).
 
     // --- Helpers ---
 

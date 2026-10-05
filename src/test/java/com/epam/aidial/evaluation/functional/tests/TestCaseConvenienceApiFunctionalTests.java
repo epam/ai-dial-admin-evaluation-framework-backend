@@ -42,8 +42,7 @@ public abstract class TestCaseConvenienceApiFunctionalTests extends BaseFunction
     @Autowired
     private ObjectMapper objectMapper;
 
-    // Note: per-test-case template-variables endpoint was removed in task group 11
-    // (TemplateVariableService simplified to suite-scoped only); its tests have been deleted in bulk.
+    // Note: the per-test-case template-variables endpoint is covered by TemplateVariableFunctionalTests.
 
     // --- Resolved-request API (10.5) ---
 

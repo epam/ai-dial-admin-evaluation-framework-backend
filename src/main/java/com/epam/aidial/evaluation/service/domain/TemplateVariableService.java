@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
@@ -17,6 +18,7 @@ import com.epam.aidial.evaluation.service.domain.dto.TemplateVariableDto;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,6 +31,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Extracts template variables from a suite's requestTemplate, resolves bindings,
  * infers types (priority: declared > endpointRef schema > dataset testCaseSchema > STRING),
  * and populates resolved values. The test-case schema is sourced from the suite's referenced dataset.
+ *
+ * <p>Both entry points return the whole request chain as a map keyed by request index (insertion/chain
+ * order): key 0 is the suite's own request, key {@code n} is {@code additionalRequests[n - 1]} resolved
+ * with that request's own template, bindings and endpoint. MCP suites yield only key 0.
  *
  * <p>The test-case entry point ({@link #getTestCaseTemplateVariables(UUID, UUID)}) additionally
  * resolves each variable's {@code resolvedValue} against that test case's dataset-owned {@code data};
@@ -48,7 +54,7 @@ public class TemplateVariableService {
     private final TestCaseService testCaseService;
 
     @Transactional(value = "metaTransactionManager", readOnly = true)
-    public List<TemplateVariableDto> getTemplateVariables(UUID testSuiteId) {
+    public Map<Integer, List<TemplateVariableDto>> getTemplateVariables(UUID testSuiteId) {
         TestSuite suite = testSuiteRepository
                 .findById(testSuiteId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found: " + testSuiteId));
@@ -58,17 +64,7 @@ public class TemplateVariableService {
         List<FieldDefinitionDto> testCaseSchema =
                 suite.getDatasetId() != null ? datasetSchemaProvider.getSchema(suite.getDatasetId()) : List.of();
 
-        if (suite.getSuiteType() == SuiteType.MCP_TOOL) {
-            ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
-            List<InputBindingDto> bindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
-            return resolveMcpVariables(argumentTemplate, bindings, testCaseSchema, null);
-        }
-
-        RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
-        List<InputBindingDto> bindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
-        EndpointContractDto endpoint = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
-
-        return resolveVariables(template, bindings, testCaseSchema, endpoint, null);
+        return buildChainVariables(suite, testCaseSchema, null);
     }
 
     /**
@@ -79,7 +75,7 @@ public class TemplateVariableService {
      * is that {@code resolvedValue} is resolved from the test case's data.
      */
     @Transactional(value = "metaTransactionManager", readOnly = true)
-    public List<TemplateVariableDto> getTestCaseTemplateVariables(UUID testSuiteId, UUID testCaseId) {
+    public Map<Integer, List<TemplateVariableDto>> getTestCaseTemplateVariables(UUID testSuiteId, UUID testCaseId) {
         TestSuite suite = testSuiteRepository
                 .findById(testSuiteId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found: " + testSuiteId));
@@ -95,17 +91,44 @@ public class TemplateVariableService {
 
         List<FieldDefinitionDto> testCaseSchema = datasetSchemaProvider.getSchema(suite.getDatasetId());
 
+        return buildChainVariables(suite, testCaseSchema, data);
+    }
+
+    /**
+     * Builds the per-request variable map in chain order. MCP suites have no chain: only key 0
+     * (from {@code argumentTemplate}). HTTP suites: key 0 from the suite's own template/bindings/endpoint,
+     * key {@code i + 1} from {@code additionalRequests[i]}'s own template/bindings/endpoint (nothing is
+     * inherited from request 0). Every index is present, with an empty list when it has no placeholders.
+     */
+    private Map<Integer, List<TemplateVariableDto>> buildChainVariables(
+            TestSuite suite, List<FieldDefinitionDto> testCaseSchema, Map<String, Object> data) {
+        Map<Integer, List<TemplateVariableDto>> result = new LinkedHashMap<>();
         if (suite.getSuiteType() == SuiteType.MCP_TOOL) {
             ArgumentTemplateDto argumentTemplate = jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate());
             List<InputBindingDto> bindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
-            return resolveMcpVariables(argumentTemplate, bindings, testCaseSchema, data);
+            result.put(0, resolveMcpVariables(argumentTemplate, bindings, testCaseSchema, data));
+            return result;
         }
 
         RequestTemplateDto template = jsonbMapper.mapRequestTemplate(suite.getRequestTemplate());
         List<InputBindingDto> bindings = jsonbMapper.mapInputBindings(suite.getInputBindings());
         EndpointContractDto endpoint = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
+        result.put(0, resolveVariables(template, bindings, testCaseSchema, endpoint, data));
 
-        return resolveVariables(template, bindings, testCaseSchema, endpoint, data);
+        List<RequestDefinitionDto> additionalRequests =
+                jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
+        for (int i = 0; i < additionalRequests.size(); i++) {
+            RequestDefinitionDto request = additionalRequests.get(i);
+            result.put(
+                    i + 1,
+                    resolveVariables(
+                            request.getRequestTemplate(),
+                            request.getInputBindings(),
+                            testCaseSchema,
+                            request.getEndpointRef(),
+                            data));
+        }
+        return result;
     }
 
     /**

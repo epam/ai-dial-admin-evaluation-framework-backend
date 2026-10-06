@@ -99,10 +99,7 @@ public class TestSuiteEvaluationJob {
      */
     public void dispatch(UUID runId, CallerCredential credential, boolean skipDeploymentPhase) {
         var handleOpt = registry.registerIfAbsent(runId);
-        if (handleOpt.isEmpty()) {
-            throw new RunAlreadyActiveException(runId);
-        }
-        RunHandle handle = handleOpt.get();
+        RunHandle handle = handleOpt.orElseThrow(() -> new RunAlreadyActiveException(runId));
         try {
             taskExecutor.execute(() -> run(runId, credential, skipDeploymentPhase, handle));
         } catch (RuntimeException | Error e) {

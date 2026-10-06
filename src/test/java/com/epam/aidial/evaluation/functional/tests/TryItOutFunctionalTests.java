@@ -4,6 +4,7 @@ import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpoint
 import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths.OPENAI_RESPONSES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -37,10 +38,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.databind.JsonNode;
 
 @DisplayName("Try It Out Functional Tests")
 public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctionalTest {
@@ -270,7 +274,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                         200, false, Map.of("id", "chatcmpl-2"), null, new HttpHeaders()));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "Hello from variables"))
+                .variables(Map.of(0, Map.of("prompt", "Hello from variables")))
                 .build();
 
         ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
@@ -318,7 +322,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
     @DisplayName("Should return 404 for non-existent suite (variables path)")
     void shouldReturn404ForNonExistentSuiteVariables() {
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "Hello"))
+                .variables(Map.of(0, Map.of("prompt", "Hello")))
                 .build();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -332,7 +336,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         TestSuite suite = createSuiteWithoutDeploymentRef();
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "Hello"))
+                .variables(Map.of(0, Map.of("prompt", "Hello")))
                 .build();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -346,7 +350,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         TestSuiteResponseDto suite = createSuiteWithoutTemplate();
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "Hello"))
+                .variables(Map.of(0, Map.of("prompt", "Hello")))
                 .build();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -364,7 +368,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                         HttpStatus.BAD_GATEWAY, "Failed to connect to DIAL Core deployment"));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "Hello"))
+                .variables(Map.of(0, Map.of("prompt", "Hello")))
                 .build();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -383,7 +387,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                         "DIAL Core deployment did not respond within the configured timeout"));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "Hello"))
+                .variables(Map.of(0, Map.of("prompt", "Hello")))
                 .build();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -407,7 +411,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                         200, false, Map.of("id", "chatcmpl-1"), null, new HttpHeaders()));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "Hello"))
+                .variables(Map.of(0, Map.of("prompt", "Hello")))
                 .build();
 
         ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
@@ -536,7 +540,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                 .thenReturn(chatReply("var answer"));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "HelloVars"))
+                .variables(Map.of(1, Map.of("prompt", "HelloVars")))
                 .build();
 
         ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
@@ -551,9 +555,9 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         assertThat(body.getHistory().get(0).getTotalRequests()).isEqualTo(2);
         assertThat(body.getHistory().get(1).getRequestName()).isEqualTo("followup");
 
-        // Variables mode wholesale-replaces every chain element's own inputBindings: the additional
-        // request's body still sees $configId (the real prior response's extracted column) plus the
-        // user-supplied "prompt" variable.
+        // Variables are keyed by request index: entry "1" replaces the additional request's own
+        // inputBindings, so its body sees $configId (the real prior response's extracted column) plus
+        // the "prompt" variable supplied for request 1.
         String secondRequestBody = objectMapper.writeValueAsString(
                 body.getHistory().get(1).getResolvedRequest().getBody());
         assertThat(secondRequestBody).contains("9").contains("HelloVars");
@@ -569,7 +573,7 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                         new DeploymentInvocationResult(500, false, Map.of("error", "boom"), null, new HttpHeaders()));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("prompt", "x"))
+                .variables(Map.of(1, Map.of("prompt", "x")))
                 .build();
 
         ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
@@ -839,6 +843,137 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
                                 .expression("choices[0].message.content")
                                 .type(SchemaFieldType.STRING)
                                 .build()))
+                        .build()))
+                .build();
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
+    }
+
+    @Test
+    @DisplayName("Should resolve the same variable name per request from its own indexed entry")
+    void shouldResolveSameVariableNameWithDifferentValuesPerRequest() {
+        TestSuiteResponseDto suite = createUserMessageChainSuite();
+
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(chatReply("a"))
+                .thenReturn(chatReply("b"));
+
+        TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
+                .variables(Map.of(
+                        0, Map.of("user_message", "first"),
+                        1, Map.of("user_message", "second")))
+                .build();
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"),
+                jsonEntity(request),
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        TryItOutResponseDto body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getHistory()).hasSize(2);
+        String first = objectMapper.writeValueAsString(
+                body.getHistory().get(0).getResolvedRequest().getBody());
+        String second = objectMapper.writeValueAsString(
+                body.getHistory().get(1).getResolvedRequest().getBody());
+        assertThat(first).contains("first").doesNotContain("second");
+        assertThat(second).contains("second").doesNotContain("first");
+    }
+
+    @Test
+    @DisplayName("Should return 400 VALIDATION_ERROR without invoking DIAL Core for the legacy flat variables body")
+    void shouldReturn400ForLegacyFlatVariablesBody() {
+        TestSuiteResponseDto suite = createUserMessageChainSuite();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> entity = new HttpEntity<>("{\"variables\":{\"prompt\":\"Hello\"}}", headers);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"), entity, String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("VALIDATION_ERROR");
+        verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should return 400 VALIDATION_ERROR naming the index and chain length when the request index "
+            + "is out of range")
+    void shouldReturn400ForRequestIndexOutOfRange() {
+        TestSuiteResponseDto suite = createUserMessageChainSuite();
+
+        TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
+                .variables(Map.of(2, Map.of("user_message", "x")))
+                .build();
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .contains("VALIDATION_ERROR")
+                .contains("variables: request index 2 is out of range (chain length 2)");
+        verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Should publish minimal, full and chained try-it-out request examples in the indexed shape")
+    void openApiSpecDeclaresIndexedTryItOutRequestExamples() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode examples = objectMapper
+                .readTree(apiDocs.getBody())
+                .path("paths")
+                .path("/api/v1/test-suites/{testSuiteId}/try-it-out")
+                .path("post")
+                .path("requestBody")
+                .path("content")
+                .path("application/json")
+                .path("examples");
+
+        assertThat(examples.propertyNames()).contains("minimal", "full", "chained");
+        JsonNode chained =
+                objectMapper.readTree(examples.path("chained").path("value").asString());
+        assertThat(chained.path("variables").propertyNames()).containsExactly("0", "1");
+    }
+
+    private TestSuiteResponseDto createUserMessageChainSuite() {
+        TestSuiteRequestDto req = TestSuiteRequestDto.builder()
+                .name("Chain UserMessage " + UUID.randomUUID())
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/v1/configure")
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/v1/configure")
+                        .body(JsonRequestBodyDto.builder()
+                                .jsonataContent("{\"msg\": \"${{user_message}}\"}")
+                                .build())
+                        .build())
+                .inputBindings(List.of())
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name("followup")
+                        .endpointRef(EndpointContractDto.builder()
+                                .method(HttpMethod.POST)
+                                .relativeUrlPattern("/v1/followup")
+                                .build())
+                        .requestTemplate(RequestTemplateDto.builder()
+                                .urlTemplate("/v1/followup")
+                                .body(JsonRequestBodyDto.builder()
+                                        .jsonataContent("{\"msg\": \"${{user_message}}\"}")
+                                        .build())
+                                .build())
+                        .inputBindings(List.of())
                         .build()))
                 .build();
         ResponseEntity<TestSuiteResponseDto> response =

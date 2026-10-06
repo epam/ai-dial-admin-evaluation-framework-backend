@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ParameterDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ParameterLocation;
+import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
@@ -37,6 +38,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @DisplayName("Template Variable Functional Tests")
@@ -63,7 +65,7 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
     void shouldReturnTemplateVariablesForSuiteWithVariables() {
         TestSuiteResponseDto suite = createSuiteWithTemplate();
 
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suite.getId() + "/template-variables"),
                 HttpMethod.GET,
                 null,
@@ -71,16 +73,16 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody()).isNotEmpty();
+        assertThat(response.getBody().get("0")).isNotEmpty();
 
         // Check that "prompt" variable is found in BODY
-        assertThat(response.getBody())
+        assertThat(response.getBody().get("0"))
                 .anyMatch(v -> "prompt".equals(v.getName())
                         && v.getSources().contains(TemplateVariableSource.BODY)
                         && !v.isHasDefault());
 
         // Check that "temperature" variable is found in BODY with default
-        assertThat(response.getBody())
+        assertThat(response.getBody().get("0"))
                 .anyMatch(v -> "temperature".equals(v.getName())
                         && v.getSources().contains(TemplateVariableSource.BODY)
                         && v.isHasDefault()
@@ -101,7 +103,7 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
                         && (w.getCode() == ValidationWarningCode.REQUIRED
                                 || w.getCode() == ValidationWarningCode.ADDITIONAL));
 
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suite.getId() + "/template-variables"),
                 HttpMethod.GET,
                 null,
@@ -109,18 +111,18 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody())
+        assertThat(response.getBody().get("0"))
                 .anyMatch(v -> "prompt".equals(v.getName())
                         && v.getSources().contains(TemplateVariableSource.BODY)
                         && v.getSources().size() == 1);
     }
 
     @Test
-    @DisplayName("Should return empty list for suite without template")
+    @DisplayName("Should return {\"0\": []} for suite without template")
     void shouldReturnEmptyListForSuiteWithoutTemplate() {
         TestSuiteResponseDto suite = createSuiteWithoutTemplate();
 
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suite.getId() + "/template-variables"),
                 HttpMethod.GET,
                 null,
@@ -128,7 +130,8 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody()).isEmpty();
+        assertThat(response.getBody()).containsOnlyKeys("0");
+        assertThat(response.getBody().get("0")).isEmpty();
     }
 
     @Test
@@ -136,7 +139,7 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
     void shouldResolveBindingForTemplateVariables() {
         TestSuiteResponseDto suite = createSuiteWithTemplate();
 
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suite.getId() + "/template-variables"),
                 HttpMethod.GET,
                 null,
@@ -146,7 +149,7 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
         assertThat(response.getBody()).isNotNull();
 
         // "prompt" should have binding to "promptField"
-        TemplateVariableDto promptVar = response.getBody().stream()
+        TemplateVariableDto promptVar = response.getBody().get("0").stream()
                 .filter(v -> "prompt".equals(v.getName()))
                 .findFirst()
                 .orElse(null);
@@ -160,7 +163,7 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
     void shouldInferTypeFromTestCaseSchemaViaBinding() {
         TestSuiteResponseDto suite = createSuiteWithTemplate();
 
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suite.getId() + "/template-variables"),
                 HttpMethod.GET,
                 null,
@@ -170,7 +173,7 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
         assertThat(response.getBody()).isNotNull();
 
         // "prompt" is bound to "promptField" which is STRING in testCaseSchema
-        TemplateVariableDto promptVar = response.getBody().stream()
+        TemplateVariableDto promptVar = response.getBody().get("0").stream()
                 .filter(v -> "prompt".equals(v.getName()))
                 .findFirst()
                 .orElse(null);
@@ -226,7 +229,7 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
         assertThat(createResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         UUID suiteId = createResponse.getBody().getId();
 
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suiteId + "/template-variables"),
                 HttpMethod.GET,
                 null,
@@ -234,16 +237,16 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody()).hasSize(4);
+        assertThat(response.getBody().get("0")).hasSize(4);
 
-        assertThat(response.getBody())
+        assertThat(response.getBody().get("0"))
                 .anyMatch(v -> "version".equals(v.getName()) && v.getSources().contains(TemplateVariableSource.URL));
-        assertThat(response.getBody())
+        assertThat(response.getBody().get("0"))
                 .anyMatch(v -> "apiKey".equals(v.getName()) && v.getSources().contains(TemplateVariableSource.QUERY));
-        assertThat(response.getBody())
+        assertThat(response.getBody().get("0"))
                 .anyMatch(
                         v -> "headerVal".equals(v.getName()) && v.getSources().contains(TemplateVariableSource.HEADER));
-        assertThat(response.getBody())
+        assertThat(response.getBody().get("0"))
                 .anyMatch(v -> "prompt".equals(v.getName()) && v.getSources().contains(TemplateVariableSource.BODY));
     }
 
@@ -476,6 +479,122 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
         assertThat(userQuery.getSources()).contains(TemplateVariableSource.ARGUMENT);
     }
 
+    // --- Per-request grouping (GH #217) ---
+
+    @Test
+    @DisplayName("Should group suite template variables per request across the chain, request #0 empty")
+    void shouldGroupSuiteTemplateVariablesPerRequestForChain() {
+        SuiteTestCase fixture = createChainSuiteWithTestCase("{\"question\":\"Hi there\"}");
+
+        Map<String, List<TemplateVariableDto>> byRequest = getTemplateVariablesByRequest(fixture.suiteId());
+
+        assertThat(List.copyOf(byRequest.keySet())).containsExactly("0", "1");
+        assertThat(byRequest.get("0")).isEmpty();
+        assertThat(byRequest.get("1"))
+                .extracting(TemplateVariableDto::getName)
+                .containsExactlyInAnyOrder("user_message", "temperature");
+    }
+
+    @Test
+    @DisplayName("Should resolve additional-request variable from test case data under key 1")
+    void shouldResolveChainVariableFromTestCaseDataUnderKeyOne() {
+        SuiteTestCase fixture = createChainSuiteWithTestCase("{\"question\":\"Hi there\"}");
+
+        Map<String, List<TemplateVariableDto>> byRequest =
+                getTestCaseTemplateVariablesByRequest(fixture.suiteId(), fixture.testCaseId());
+
+        assertThat(List.copyOf(byRequest.keySet())).containsExactly("0", "1");
+        assertThat(byRequest.get("0")).isEmpty();
+        assertThat(findVar(byRequest.get("1"), "user_message").getResolvedValue())
+                .isEqualTo("Hi there");
+    }
+
+    @Test
+    @DisplayName("OpenAPI spec declares both template-variables 200 responses as object of TemplateVariableDto arrays "
+            + "with minimal and full examples")
+    void openApiSpecDeclaresTemplateVariablesAsObjectOfArrays() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl() + "/v3/api-docs", String.class);
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode root = objectMapper.readTree(apiDocs.getBody());
+
+        for (String path : List.of(
+                "/api/v1/test-suites/{testSuiteId}/template-variables",
+                "/api/v1/test-suites/{testSuiteId}/test-cases/{testCaseId}/template-variables")) {
+            JsonNode operation = root.path("paths").path(path).path("get");
+            assertThat(operation.isMissingNode())
+                    .as("operation %s registered", path)
+                    .isFalse();
+
+            JsonNode json =
+                    operation.path("responses").path("200").path("content").path("application/json");
+            JsonNode schema = json.path("schema");
+            assertThat(schema.path("type").asString())
+                    .as("%s schema type", path)
+                    .isEqualTo("object");
+            JsonNode additional = schema.path("additionalProperties");
+            assertThat(additional.path("type").asString())
+                    .as("%s additionalProperties type", path)
+                    .isEqualTo("array");
+            assertThat(additional.path("items").path("$ref").asString())
+                    .as("%s items ref", path)
+                    .endsWith("/TemplateVariableDto");
+            assertThat(json.path("examples").propertyNames())
+                    .as("%s examples", path)
+                    .contains("minimal", "full");
+        }
+    }
+
+    /**
+     * Chain suite: request #0 is {@code GET /settings} with no placeholders; additionalRequests[0] is
+     * {@code POST /chat/completions} with {@code user_message} (bound to dataset field {@code question}) and
+     * {@code temperature}. Seeds one test case.
+     */
+    private SuiteTestCase createChainSuiteWithTestCase(String dataJson) {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("question")
+                .type(SchemaFieldType.STRING)
+                .build()));
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Chain TemplateVar Suite " + UUID.randomUUID())
+                .description("GH 217 repro: request #0 without placeholders, request #1 with placeholders")
+                .deploymentRef(buildDeploymentRef())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.GET)
+                        .relativeUrlPattern("/settings")
+                        .build())
+                .datasetId(datasetId)
+                .requestTemplate(
+                        RequestTemplateDto.builder().urlTemplate("/settings").build())
+                .inputBindings(List.of())
+                .additionalRequests(List.of(RequestDefinitionDto.builder()
+                        .name("chat")
+                        .endpointRef(EndpointContractDto.builder()
+                                .method(HttpMethod.POST)
+                                .relativeUrlPattern("/chat/completions")
+                                .build())
+                        .requestTemplate(RequestTemplateDto.builder()
+                                .urlTemplate("/chat/completions")
+                                .body(JsonRequestBodyDto.builder()
+                                        .content(Map.of(
+                                                "message", "${{user_message}}",
+                                                "temperature", "${{temperature}}"))
+                                        .build())
+                                .build())
+                        .inputBindings(List.of(InputBindingDto.builder()
+                                .templateVariable("user_message")
+                                .dataField("question")
+                                .build()))
+                        .build()))
+                .build();
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID suiteId = response.getBody().getId();
+        UUID testCaseId =
+                metaTestDataHelper.seedTestCaseInDataset(datasetId, "chain-tc-" + UUID.randomUUID(), dataJson);
+        return new SuiteTestCase(suiteId, testCaseId);
+    }
+
     /** Identifiers for a suite plus a seeded test case in its dataset. */
     private record SuiteTestCase(UUID suiteId, UUID testCaseId) {}
 
@@ -534,7 +653,12 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
     }
 
     private List<TemplateVariableDto> getTestCaseTemplateVariables(UUID suiteId, UUID testCaseId) {
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        return getTestCaseTemplateVariablesByRequest(suiteId, testCaseId).get("0");
+    }
+
+    private Map<String, List<TemplateVariableDto>> getTestCaseTemplateVariablesByRequest(
+            UUID suiteId, UUID testCaseId) {
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suiteId + "/test-cases/" + testCaseId + "/template-variables"),
                 HttpMethod.GET,
                 null,
@@ -574,7 +698,11 @@ public abstract class TemplateVariableFunctionalTests extends BaseFunctionalTest
     }
 
     private List<TemplateVariableDto> getTemplateVariables(UUID suiteId) {
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        return getTemplateVariablesByRequest(suiteId).get("0");
+    }
+
+    private Map<String, List<TemplateVariableDto>> getTemplateVariablesByRequest(UUID suiteId) {
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suiteId + "/template-variables"),
                 HttpMethod.GET,
                 null,

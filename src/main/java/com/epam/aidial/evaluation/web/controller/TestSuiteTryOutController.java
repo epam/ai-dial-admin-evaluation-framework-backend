@@ -33,7 +33,9 @@ public class TestSuiteTryOutController {
             summary = "Try it out with variables",
             description =
                     "Resolves the suite's request template using the provided variables as constant-value bindings, "
-                            + "sends the resolved request to the DIAL Core deployment, and returns the response.")
+                            + "sends the resolved request to the DIAL Core deployment, and returns the response. "
+                            + "Variables are keyed by request index (\"0\" = suite request, \"n\" = additionalRequests[n-1]); "
+                            + "each request resolves only with its own entry.")
     @ApiResponse(
             responseCode = "200",
             description = "Try-it-out completed successfully",
@@ -44,7 +46,8 @@ public class TestSuiteTryOutController {
     @ApiResponse(
             responseCode = "400",
             description =
-                    "Validation error (missing deployment/template/endpoint, null variables, or unresolved variables)")
+                    "Validation error (missing deployment/template/endpoint, null variables, unresolved variables, "
+                            + "or request index out of range or non-integer)")
     @ApiResponse(responseCode = "404", description = "Test suite not found")
     @ApiResponse(responseCode = "502", description = "DIAL Core unreachable")
     @ApiResponse(responseCode = "504", description = "DIAL Core timeout")

@@ -1,0 +1,11 @@
+{
+  "variables": {
+    "0": {
+      "user_message": "What is the capital of France?"
+    },
+    "1": {
+      "user_message": "And what is its population?",
+      "temperature": 0.2
+    }
+  }
+}

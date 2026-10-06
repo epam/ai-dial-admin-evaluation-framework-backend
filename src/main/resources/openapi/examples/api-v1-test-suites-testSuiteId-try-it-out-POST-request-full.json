@@ -1,8 +1,10 @@
 {
   "variables": {
-    "prompt": "Tell me about AI",
-    "model": "gpt-4",
-    "temperature": 0.7,
-    "max_tokens": 1000
+    "0": {
+      "prompt": "Tell me about AI",
+      "model": "gpt-4",
+      "temperature": 0.7,
+      "max_tokens": 1000
+    }
   }
 }

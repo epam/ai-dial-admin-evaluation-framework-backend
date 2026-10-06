@@ -28,16 +28,19 @@ import com.epam.aidial.evaluation.runner.client.mcp.McpToolInvoker;
 import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import com.epam.aidial.evaluation.runner.config.properties.EvaluationRunProperties;
 import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
+import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
 import com.epam.aidial.evaluation.runner.dto.KeyValueTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningCode;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
@@ -183,6 +186,7 @@ class TryItOutServiceTest {
                 openTelemetry,
                 grafanaLinkBuilder,
                 FIXED_CLOCK,
+                new TryItOutVariableBindings(),
                 sseEventParser,
                 evaluationRunProperties,
                 dialCoreProperties,
@@ -1199,7 +1203,7 @@ class TryItOutServiceTest {
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
-            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello"));
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("prompt", "Hello")));
 
             assertThat(result).isNotNull();
             assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
@@ -1224,7 +1228,7 @@ class TryItOutServiceTest {
             when(requestResolver.resolve(any(), anyList(), anyMap()))
                     .thenReturn(fixedPathResolvedRequest(ANTHROPIC_MESSAGES, "other-deployment"));
 
-            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello")))
+            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("prompt", "Hello"))))
                     .isInstanceOf(TryItOutValidationException.class)
                     .asInstanceOf(InstanceOfAssertFactories.type(TryItOutValidationException.class))
                     .extracting(TryItOutValidationException::getResolvedRequest)
@@ -1255,7 +1259,7 @@ class TryItOutServiceTest {
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
 
-            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello"));
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("prompt", "Hello")));
 
             assertThat(result).isNotNull();
             assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
@@ -1282,7 +1286,7 @@ class TryItOutServiceTest {
             Map<String, Object> variables = new HashMap<>();
             variables.put("prompt", "Hello");
             variables.put("nullVar", null);
-            service.tryWithVariables(SUITE_ID, variables);
+            service.tryWithVariables(SUITE_ID, Map.of(0, variables));
 
             ArgumentCaptor<List<InputBindingDto>> captor = ArgumentCaptor.forClass(List.class);
             verify(requestResolver).resolve(any(), captor.capture(), anyMap());
@@ -1312,7 +1316,7 @@ class TryItOutServiceTest {
             variables.put("", "value");
             variables.put("  ", "value2");
             variables.put("valid", "ok");
-            service.tryWithVariables(SUITE_ID, variables);
+            service.tryWithVariables(SUITE_ID, Map.of(0, variables));
 
             ArgumentCaptor<List<InputBindingDto>> captor = ArgumentCaptor.forClass(List.class);
             verify(requestResolver).resolve(any(), captor.capture(), anyMap());
@@ -1360,7 +1364,7 @@ class TryItOutServiceTest {
                             eq(HttpMethod.POST), eq("/path"), headersCaptor.capture(), paramsCaptor.capture(), any()))
                     .thenReturn(nonStreamingResult(200, null));
 
-            service.tryWithVariables(SUITE_ID, Map.of());
+            service.tryWithVariables(SUITE_ID, Map.of(0, Map.of()));
 
             HttpHeaders capturedHeaders = headersCaptor.getValue();
             assertThat(capturedHeaders.get("X-Custom")).containsExactly("v1", "v2");
@@ -1369,10 +1373,10 @@ class TryItOutServiceTest {
         }
 
         @Test
-        @DisplayName("executes the chain for a multi-request suite, applying the converted variables to every "
-                + "request (a chain element's own inputBindings are ignored) and threading real extracted "
-                + "columns as the next request's frame")
-        void shouldExecuteChainWithVariablesAppliedToEveryRequest() {
+        @DisplayName("executes the chain for a multi-request suite, resolving each request only with its own "
+                + "variables entry (own inputBindings are ignored) and threading real extracted columns as the "
+                + "next request's frame")
+        void shouldExecuteChainWithPerRequestVariables() {
             TestSuite suite = buildSuite("{}", "{}", "{}");
             suite.setAdditionalRequests("[{}]");
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
@@ -1414,7 +1418,7 @@ class TryItOutServiceTest {
                     .templateVariable("prompt")
                     .constantValue("Hello")
                     .build());
-            when(requestResolver.resolveForRun(eq(template0), eq(expectedBindings), eq(Map.of()), eq(Map.of())))
+            when(requestResolver.resolveForRun(eq(template0), eq(List.of()), eq(Map.of()), eq(Map.of())))
                     .thenReturn(buildResolvedRequest());
             Map<String, Object> frameAfterRequestZero = Map.of("configId", "cfg-42");
             when(requestResolver.resolveForRun(
@@ -1429,14 +1433,180 @@ class TryItOutServiceTest {
                     .thenReturn(new ResponseColumnExtractor.ExtractionResult(
                             "{\"configId\":\"cfg-42\"}", "[]", frameAfterRequestZero));
 
-            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello"));
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of(1, Map.of("prompt", "Hello")));
 
             assertThat(result.getHistory()).hasSize(2);
             assertThat(result.getHistory().get(0).getRequestIndex()).isEqualTo(0);
             assertThat(result.getHistory().get(1).getRequestName()).isEqualTo("followup");
+            verify(requestResolver).resolveForRun(template0, List.of(), Map.of(), Map.of());
             verify(requestResolver).resolveForRun(template1, expectedBindings, Map.of(), frameAfterRequestZero);
             verify(requestResolver, never()).resolveForRun(any(), eq(ignoredBindings), any(), any());
         }
+
+        @Test
+        @DisplayName("resolves the same variable name to different values in requests 0 and 1")
+        void shouldResolveSameNameWithDifferentValuesPerRequest() {
+            final TwoRequestChain chain = stubTwoRequestChain();
+
+            service.tryWithVariables(
+                    SUITE_ID, Map.of(0, Map.of("user_message", "first"), 1, Map.of("user_message", "second")));
+
+            verify(requestResolver).resolveForRun(chain.template0(), userMessage("first"), Map.of(), Map.of());
+            verify(requestResolver).resolveForRun(chain.template1(), userMessage("second"), Map.of(), Map.of());
+        }
+
+        @Test
+        @DisplayName("resolves a request without a variables entry with empty bindings")
+        void shouldResolveRequestWithoutEntryWithEmptyBindings() {
+            final TwoRequestChain chain = stubTwoRequestChain();
+
+            service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("user_message", "first")));
+
+            verify(requestResolver).resolveForRun(chain.template0(), userMessage("first"), Map.of(), Map.of());
+            verify(requestResolver).resolveForRun(chain.template1(), List.of(), Map.of(), Map.of());
+        }
+
+        @Test
+        @DisplayName("rejects an out-of-range request index before invoking any request")
+        void shouldRejectOutOfRangeIndexInChain() {
+            stubTwoRequestChain();
+
+            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of(2, Map.of("user_message", "x"))))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("variables: request index 2 is out of range (chain length 2)");
+
+            verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("rejects key 1 for a single-request suite before invoking")
+        void shouldRejectIndexOneForSingleRequestSuite() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+
+            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of(1, Map.of("prompt", "x"))))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("variables: request index 1 is out of range (chain length 1)");
+
+            verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("a failing suite precondition wins over an out-of-range request index")
+        void shouldReportPreconditionFailureBeforeBadIndex() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(null);
+
+            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of(5, Map.of("prompt", "x"))))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("Deployment reference is required for try-it-out");
+
+            verify(deploymentInvoker, never()).invokeWithStreaming(any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("MCP suite resolves with index-0 bindings and the index-0 inner map as data")
+        void shouldUseIndexZeroForMcpSuite() {
+            stubMcpSuite();
+            final Map<String, Object> inner = Map.of("search_query", "MCP");
+            final ValidationWarningDto required = ValidationWarningDto.builder()
+                    .code(ValidationWarningCode.REQUIRED)
+                    .fieldName("other")
+                    .build();
+            when(mcpRequestResolver.resolveWithVariables(any(), anyList(), anyMap()))
+                    .thenReturn(McpRequestResolver.ResolutionResult.builder()
+                            .arguments(Map.of())
+                            .warnings(List.of(required))
+                            .build());
+
+            // The REQUIRED warning aborts before invocation, which keeps the test on the resolve call
+            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of(0, inner)))
+                    .isInstanceOf(TryItOutValidationException.class);
+
+            verify(mcpRequestResolver)
+                    .resolveWithVariables(
+                            any(),
+                            eq(List.of(InputBindingDto.builder()
+                                    .templateVariable("search_query")
+                                    .constantValue("MCP")
+                                    .build())),
+                            eq(inner));
+        }
+
+        @Test
+        @DisplayName("MCP suite rejects key 1 without invoking the tool")
+        void shouldRejectIndexOneForMcpSuite() {
+            stubMcpSuite();
+
+            assertThatThrownBy(() -> service.tryWithVariables(SUITE_ID, Map.of(1, Map.of("search_query", "x"))))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("variables: request index 1 is out of range (chain length 1)");
+
+            verify(mcpToolInvoker, never()).callTool(any(), any(), any(), any(), any());
+        }
+
+        private List<InputBindingDto> userMessage(String value) {
+            return List.of(InputBindingDto.builder()
+                    .templateVariable("user_message")
+                    .constantValue(value)
+                    .build());
+        }
+
+        private void stubMcpSuite() {
+            TestSuite suite = TestSuite.builder()
+                    .id(SUITE_ID)
+                    .suiteType(SuiteType.MCP_TOOL)
+                    .mcpDeploymentRef("{}")
+                    .toolRef("{}")
+                    .argumentTemplate("{}")
+                    .build();
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.mapMcpDeploymentRef("{}"))
+                    .thenReturn(McpDeploymentReferenceDto.builder().id("mcp").build());
+            when(jsonbMapper.mapToolRef("{}"))
+                    .thenReturn(ToolReferenceDto.builder().name("search").build());
+            when(jsonbMapper.mapArgumentTemplate("{}"))
+                    .thenReturn(ArgumentTemplateDto.builder().build());
+        }
+
+        private TwoRequestChain stubTwoRequestChain() {
+            TestSuite suite = buildSuite("{}", "{}", "{}");
+            suite.setAdditionalRequests("[{}]");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.map("{}")).thenReturn(buildDeploymentRef());
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            RequestTemplateDto template0 =
+                    RequestTemplateDto.builder().urlTemplate("/req0").build();
+            RequestTemplateDto template1 =
+                    RequestTemplateDto.builder().urlTemplate("/req1").build();
+            when(jsonbMapper.mapAdditionalRequests("[{}]"))
+                    .thenReturn(List.of(RequestDefinitionDto.builder()
+                            .endpointRef(buildEndpointRef())
+                            .requestTemplate(template1)
+                            .build()));
+            RequestExecutionSpec spec0 =
+                    new RequestExecutionSpec(0, 2, null, buildEndpointRef(), template0, List.of(), List.of());
+            RequestExecutionSpec spec1 =
+                    new RequestExecutionSpec(1, 2, null, buildEndpointRef(), template1, List.of(), List.of());
+            lenient()
+                    .when(resolvedRequestService.planChainForVariables(eq(SUITE_ID), any()))
+                    .thenReturn(new ResolvedRequestService.ChainPlan(List.of(
+                            new ResolvedRequestService.RequestPlan(spec0, List.of(Map.of())),
+                            new ResolvedRequestService.RequestPlan(spec1, List.of(Map.of())))));
+            lenient()
+                    .when(requestResolver.resolveForRun(any(), any(), any(), any()))
+                    .thenReturn(buildResolvedRequest());
+            lenient().when(urlBuilder.buildUrl(any(), any())).thenReturn("/path");
+            lenient()
+                    .when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, null));
+            return new TwoRequestChain(template0, template1);
+        }
+
+        private record TwoRequestChain(RequestTemplateDto template0, RequestTemplateDto template1) {}
 
         @Test
         @DisplayName("stops the variables-mode chain and never invokes later requests when an earlier request "
@@ -1483,7 +1653,7 @@ class TryItOutServiceTest {
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(500, Map.of("error", "boom")));
 
-            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hello"));
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("prompt", "Hello")));
 
             assertThat(result.getHistory()).hasSize(1);
             assertThat(result.getHistory().get(0).getResponse().getStatusCode()).isEqualTo(500);
@@ -1832,7 +2002,7 @@ class TryItOutServiceTest {
             when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
                     .thenReturn(nonStreamingResult(200, null));
 
-            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of("prompt", "Hi"));
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("prompt", "Hi")));
 
             assertThat(result.getDurationMs()).isGreaterThanOrEqualTo(0L);
         }

@@ -248,7 +248,8 @@ class TemplateVariableServiceTest {
                             .type(SchemaFieldType.FILE)
                             .build()));
 
-            List<TemplateVariableDto> vars = wiredService.getTemplateVariables(suiteId);
+            List<TemplateVariableDto> vars =
+                    wiredService.getTemplateVariables(suiteId).get(0);
 
             assertThat(vars).hasSize(1);
             assertThat(vars.get(0).getName()).isEqualTo("doc");
@@ -285,7 +286,8 @@ class TemplateVariableServiceTest {
                             .type(SchemaFieldType.STRING)
                             .build()));
 
-            List<TemplateVariableDto> vars = wiredService.getTemplateVariables(suiteId);
+            List<TemplateVariableDto> vars =
+                    wiredService.getTemplateVariables(suiteId).get(0);
 
             assertThat(vars).hasSize(1);
             assertThat(vars.get(0).getName()).isEqualTo("query");
@@ -313,7 +315,8 @@ class TemplateVariableServiceTest {
                             .type(SchemaFieldType.FILE)
                             .build()));
 
-            List<TemplateVariableDto> vars = wiredService.getTemplateVariables(suiteId);
+            List<TemplateVariableDto> vars =
+                    wiredService.getTemplateVariables(suiteId).get(0);
 
             assertThat(vars).hasSize(1);
             assertThat(vars.get(0).getName()).isEqualTo("doc");
@@ -381,7 +384,9 @@ class TemplateVariableServiceTest {
                             .build()));
             stubTestCase(Map.of("promptField", "Hello"));
 
-            List<TemplateVariableDto> vars = wiredService.getTestCaseTemplateVariables(suiteId, testCaseId);
+            List<TemplateVariableDto> vars = wiredService
+                    .getTestCaseTemplateVariables(suiteId, testCaseId)
+                    .get(0);
 
             assertThat(vars).hasSize(1);
             assertThat(vars.get(0).getName()).isEqualTo("prompt");
@@ -398,7 +403,9 @@ class TemplateVariableServiceTest {
             when(datasetSchemaProvider.getSchema(datasetId)).thenReturn(List.of());
             stubTestCase(Map.of());
 
-            List<TemplateVariableDto> vars = wiredService.getTestCaseTemplateVariables(suiteId, testCaseId);
+            List<TemplateVariableDto> vars = wiredService
+                    .getTestCaseTemplateVariables(suiteId, testCaseId)
+                    .get(0);
 
             assertThat(vars).hasSize(1);
             assertThat(vars.get(0).getResolvedValue()).isEqualTo("gpt-4");
@@ -418,7 +425,9 @@ class TemplateVariableServiceTest {
                             .build()));
             stubTestCase(Map.of());
 
-            List<TemplateVariableDto> vars = wiredService.getTestCaseTemplateVariables(suiteId, testCaseId);
+            List<TemplateVariableDto> vars = wiredService
+                    .getTestCaseTemplateVariables(suiteId, testCaseId)
+                    .get(0);
 
             assertThat(vars).hasSize(1);
             assertThat(vars.get(0).getEffectiveType()).isEqualTo(SchemaFieldType.FILE);
@@ -465,7 +474,7 @@ class TemplateVariableServiceTest {
         }
 
         @Test
-        @DisplayName("empty list when the HTTP suite has a null requestTemplate")
+        @DisplayName("single key 0 with empty list when the HTTP suite has a null requestTemplate")
         void emptyListWhenHttpTemplateNull() {
             TestSuite suite = httpSuite(null, "[]");
             when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(suite));
@@ -473,11 +482,12 @@ class TemplateVariableServiceTest {
             stubTestCase(Map.of());
 
             assertThat(wiredService.getTestCaseTemplateVariables(suiteId, testCaseId))
-                    .isEmpty();
+                    .containsOnlyKeys(0)
+                    .containsEntry(0, List.of());
         }
 
         @Test
-        @DisplayName("empty list when the MCP_TOOL suite has a null argumentTemplate")
+        @DisplayName("single key 0 with empty list when the MCP_TOOL suite has a null argumentTemplate")
         void emptyListWhenMcpArgumentTemplateNull() {
             TestSuite suite = TestSuite.builder()
                     .id(suiteId)
@@ -491,7 +501,8 @@ class TemplateVariableServiceTest {
             stubTestCase(Map.of());
 
             assertThat(wiredService.getTestCaseTemplateVariables(suiteId, testCaseId))
-                    .isEmpty();
+                    .containsOnlyKeys(0)
+                    .containsEntry(0, List.of());
         }
 
         @Test
@@ -512,11 +523,189 @@ class TemplateVariableServiceTest {
                             .build()));
             stubTestCase(Map.of("userQuery", "What is AI?"));
 
-            List<TemplateVariableDto> vars = wiredService.getTestCaseTemplateVariables(suiteId, testCaseId);
+            List<TemplateVariableDto> vars = wiredService
+                    .getTestCaseTemplateVariables(suiteId, testCaseId)
+                    .get(0);
 
             assertThat(vars).hasSize(1);
             assertThat(vars.get(0).getName()).isEqualTo("userQuery");
             assertThat(vars.get(0).getResolvedValue()).isEqualTo("What is AI?");
+        }
+    }
+
+    @Nested
+    @DisplayName("per-request chain extraction")
+    class ChainExtraction {
+
+        private final TestSuiteRepository testSuiteRepository = mock(TestSuiteRepository.class);
+        private final DatasetSchemaProvider datasetSchemaProvider = mock(DatasetSchemaProvider.class);
+        private final TestCaseService testCaseService = mock(TestCaseService.class);
+        private final JsonbMapper jsonbMapper =
+                new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()));
+
+        private final TemplateVariableService wiredService = new TemplateVariableService(
+                testSuiteRepository,
+                datasetSchemaProvider,
+                extractor,
+                endpointSchemaExtractor,
+                jsonbMapper,
+                resolver,
+                testCaseService);
+
+        private final UUID suiteId = UUID.randomUUID();
+        private final UUID datasetId = UUID.randomUUID();
+        private final UUID testCaseId = UUID.randomUUID();
+
+        private static final String NO_PLACEHOLDER_TEMPLATE =
+                "{\"body\":{\"contentType\":\"application/json\",\"content\":{\"a\":\"b\"}}}";
+        private static final String MESSAGE_TEMPLATE = "{\"body\":{\"contentType\":\"application/json\","
+                + "\"content\":{\"msg\":\"${{user_message}}\",\"t\":\"${{temperature}}\"}}}";
+        private static final String TEMPERATURE_ENDPOINT = "{\"method\":\"POST\",\"relativeUrlPattern\":\"/chat\","
+                + "\"requestBodySchema\":{\"contentType\":\"application/json\","
+                + "\"schema\":{\"type\":\"object\",\"properties\":{\"temperature\":{\"type\":\"number\"}}}}}";
+
+        private TestSuite chainSuite(String additionalRequestsJson) {
+            return TestSuite.builder()
+                    .id(suiteId)
+                    .datasetId(datasetId)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .requestTemplate(NO_PLACEHOLDER_TEMPLATE)
+                    .inputBindings("[{\"templateVariable\":\"user_message\",\"dataField\":\"question\"}]")
+                    .additionalRequests(additionalRequestsJson)
+                    .build();
+        }
+
+        private void stubSuite(TestSuite suite) {
+            when(testSuiteRepository.findById(suiteId)).thenReturn(Optional.of(suite));
+            when(datasetSchemaProvider.getSchema(datasetId)).thenReturn(List.of());
+        }
+
+        @Test
+        @DisplayName("chain returns keys 0..N in order; request 1 uses own constant binding and own endpoint type")
+        void chainUsesPerRequestBindingsAndEndpoint() {
+            String additional = "[{\"name\":\"r1\",\"endpointRef\":" + TEMPERATURE_ENDPOINT + ",\"requestTemplate\":"
+                    + MESSAGE_TEMPLATE + ",\"inputBindings\":[{\"templateVariable\":\"user_message\","
+                    + "\"constantValue\":\"hi\"}]},{\"name\":\"r2\"}]";
+            stubSuite(chainSuite(additional));
+
+            Map<Integer, List<TemplateVariableDto>> result = wiredService.getTemplateVariables(suiteId);
+
+            assertThat(result.keySet()).containsExactly(0, 1, 2);
+            assertThat(result.get(0)).isEmpty();
+            assertThat(result.get(2)).isEmpty();
+            TemplateVariableDto message = result.get(1).stream()
+                    .filter(v -> v.getName().equals("user_message"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(message.getBinding().getConstantValue()).isEqualTo("hi");
+            assertThat(message.getResolvedValue()).isEqualTo("hi");
+            TemplateVariableDto temperature = result.get(1).stream()
+                    .filter(v -> v.getName().equals("temperature"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(temperature.getEffectiveType()).isEqualTo(SchemaFieldType.NUMBER);
+        }
+
+        @Test
+        @DisplayName("suite without additionalRequests returns only key 0")
+        void noChainReturnsSingleKey() {
+            stubSuite(chainSuite(null));
+
+            assertThat(wiredService.getTemplateVariables(suiteId))
+                    .containsOnlyKeys(0)
+                    .containsEntry(0, List.of());
+        }
+
+        @Test
+        @DisplayName("suite with null requestTemplate and no additionalRequests returns only key 0 with empty list")
+        void nullTemplateNoChainReturnsSingleEmptyKey() {
+            TestSuite suite = TestSuite.builder()
+                    .id(suiteId)
+                    .datasetId(datasetId)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .requestTemplate(null)
+                    .inputBindings("[]")
+                    .additionalRequests(null)
+                    .build();
+            stubSuite(suite);
+
+            assertThat(wiredService.getTemplateVariables(suiteId))
+                    .containsOnlyKeys(0)
+                    .containsEntry(0, List.of());
+        }
+
+        @Test
+        @DisplayName("same variable name in request 0 and request 1 resolves from each request's own binding")
+        void sameVariableNameUsesEachRequestsOwnBinding() {
+            TestSuite suite = TestSuite.builder()
+                    .id(suiteId)
+                    .datasetId(datasetId)
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .requestTemplate(MESSAGE_TEMPLATE)
+                    .inputBindings("[{\"templateVariable\":\"user_message\",\"dataField\":\"question\"}]")
+                    .additionalRequests("[{\"name\":\"r1\",\"requestTemplate\":" + MESSAGE_TEMPLATE
+                            + ",\"inputBindings\":[{\"templateVariable\":\"user_message\","
+                            + "\"constantValue\":\"hi\"}]}]")
+                    .build();
+            stubSuite(suite);
+
+            Map<Integer, List<TemplateVariableDto>> result = wiredService.getTemplateVariables(suiteId);
+
+            TemplateVariableDto first = result.get(0).stream()
+                    .filter(v -> v.getName().equals("user_message"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(first.getBinding().getDataField()).isEqualTo("question");
+            assertThat(first.getBinding().getConstantValue()).isNull();
+            assertThat(first.getResolvedValue()).isNull();
+            TemplateVariableDto second = result.get(1).stream()
+                    .filter(v -> v.getName().equals("user_message"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(second.getBinding().getConstantValue()).isEqualTo("hi");
+            assertThat(second.getResolvedValue()).isEqualTo("hi");
+        }
+
+        @Test
+        @DisplayName("MCP suite with persisted additionalRequests still returns only key 0")
+        void mcpSuiteIgnoresAdditionalRequests() {
+            TestSuite suite = TestSuite.builder()
+                    .id(suiteId)
+                    .datasetId(datasetId)
+                    .suiteType(SuiteType.MCP_TOOL)
+                    .argumentTemplate("{\"arguments\":{\"query\":\"${{query}}\"}}")
+                    .inputBindings("[]")
+                    .additionalRequests("[{\"name\":\"r1\",\"requestTemplate\":" + MESSAGE_TEMPLATE + "}]")
+                    .build();
+            stubSuite(suite);
+
+            Map<Integer, List<TemplateVariableDto>> result = wiredService.getTemplateVariables(suiteId);
+
+            assertThat(result).containsOnlyKeys(0);
+            assertThat(result.get(0)).extracting(TemplateVariableDto::getName).containsExactly("query");
+        }
+
+        @Test
+        @DisplayName("test-case level resolves request 1 dataField binding from test case data")
+        void testCaseLevelResolvesRequestOneFromData() {
+            String additional = "[{\"requestTemplate\":" + MESSAGE_TEMPLATE
+                    + ",\"inputBindings\":[{\"templateVariable\":\"user_message\",\"dataField\":\"question\"}]}]";
+            stubSuite(chainSuite(additional));
+            when(testCaseService.getById(datasetId, testCaseId, false))
+                    .thenReturn(TestCaseResponseDto.builder()
+                            .id(testCaseId)
+                            .data(Map.of("question", "What is AI?"))
+                            .build());
+
+            Map<Integer, List<TemplateVariableDto>> result =
+                    wiredService.getTestCaseTemplateVariables(suiteId, testCaseId);
+
+            assertThat(result.keySet()).containsExactly(0, 1);
+            TemplateVariableDto message = result.get(1).stream()
+                    .filter(v -> v.getName().equals("user_message"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(message.getResolvedValue()).isEqualTo("What is AI?");
         }
     }
 }

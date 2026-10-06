@@ -38,6 +38,10 @@ Chain execution is **fail-fast**: a failing call aborts its own request's remain
 
 Both try-out endpoints (`POST …/test-cases/{id}/try-it-out` and `POST …/try-it-out` variables mode) execute the full chain when a suite has `additionalRequests`: the accumulated frame and the identity stamps mirror run semantics. A history entry's `extractedColumns`, however, is **that one invocation's own extraction** — deliberately *not* the run row's accumulated `extracted_columns` (which folds in everything earlier requests/turns produced). The accumulated view lives only in the frame threaded to the next invocation. `GET …/resolved-request?requestIndex=N` remains resolution-only preview with an empty frame; it never invokes anything.
 
+Both template-variables endpoints (`GET …/template-variables` at suite and test-case level) return the whole chain keyed by request index, each request resolved from its own template, bindings and endpoint; map keys use the same index semantics as `resolved-request`'s `requestIndex` (0 = suite request, n = `additionalRequests[n-1]`).
+
+Try-out variables mode (`POST …/try-it-out`) takes `variables` keyed by request index too (`{"0": {…}, "1": {…}}`, same index semantics as the template-variables response and `resolved-request?requestIndex`). In a chain each request resolves only with its **own** entry, which replaces that request's own `inputBindings`; there is no shared flat variables map, so the same variable name can carry different values per request. Values extracted by earlier requests still reach later requests' JSONata bodies through the accumulated frame. An index outside the chain is a 400.
+
 For a streaming (SSE) request in a chain, try-out extracts from the same document a run assembles (`StreamingResponseAccumulator` — OpenAI-mode deltas folded into `choices[0].message`), not from the `{"events":[…]}` envelope the response DTO displays; a stream that times out or is truncated counts as a failed invocation and stops the chain.
 
 See [multi-request-suite spec](../../openspec/specs/multi-request-suite/spec.md).

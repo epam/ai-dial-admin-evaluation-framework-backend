@@ -1,0 +1,18 @@
+{
+  "0": [
+    {
+      "name": "user_message",
+      "sources": ["BODY"],
+      "hasDefault": false,
+      "defaultValue": null,
+      "binding": {
+        "templateVariable": "user_message",
+        "dataField": "promptField",
+        "constantValue": null
+      },
+      "declaredType": null,
+      "effectiveType": "STRING",
+      "resolvedValue": null
+    }
+  ]
+}

@@ -3,7 +3,9 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.runner.client.mcp.McpInvocationException;
@@ -80,7 +82,7 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
                 .thenReturn(result);
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("userQuery", "Hello from variables"))
+                .variables(Map.of(0, Map.of("userQuery", "Hello from variables")))
                 .build();
 
         ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
@@ -95,6 +97,25 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
     }
 
     @Test
+    @DisplayName("Should return 400 VALIDATION_ERROR without invoking the MCP tool for a non-zero request index")
+    void shouldReturn400ForNonZeroRequestIndex() {
+        TestSuiteResponseDto suite = createMcpSuiteWithTestCaseSchema();
+
+        TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
+                .variables(Map.of(1, Map.of("userQuery", "test")))
+                .build();
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/try-it-out"), jsonEntity(request), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .contains("VALIDATION_ERROR")
+                .contains("variables: request index 1 is out of range (chain length 1)");
+        verify(mcpToolInvoker, never()).callTool(any(), any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("Should return 502 when MCP tool invocation fails")
     void shouldReturn502ForMcpConnectionError() {
         TestSuiteResponseDto suite = createMcpSuiteWithTestCaseSchema();
@@ -104,7 +125,7 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
                         new McpInvocationException(502, "MCP_CONNECTION_ERROR", "Failed to connect to MCP endpoint"));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("userQuery", "test"))
+                .variables(Map.of(0, Map.of("userQuery", "test")))
                 .build();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -122,7 +143,7 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
                 .thenThrow(new McpInvocationException(504, "MCP_TIMEOUT", "MCP tool invocation timed out"));
 
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("userQuery", "test"))
+                .variables(Map.of(0, Map.of("userQuery", "test")))
                 .build();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -145,7 +166,7 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
     @DisplayName("Should return 404 for non-existent MCP suite (variables path)")
     void shouldReturn404ForNonExistentMcpSuiteVariables() {
         TryItOutWithVariablesRequestDto request = TryItOutWithVariablesRequestDto.builder()
-                .variables(Map.of("userQuery", "test"))
+                .variables(Map.of(0, Map.of("userQuery", "test")))
                 .build();
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -160,23 +181,24 @@ public abstract class McpTryItOutFunctionalTests extends AbstractMcpFunctionalTe
     void shouldReturnMcpSuiteTemplateVariables() {
         TestSuiteResponseDto suite = createMcpSuiteWithTestCaseSchema();
 
-        ResponseEntity<List<TemplateVariableDto>> response = restTemplate.exchange(
+        ResponseEntity<Map<String, List<TemplateVariableDto>>> response = restTemplate.exchange(
                 apiUrl("/test-suites/" + suite.getId() + "/template-variables"),
                 HttpMethod.GET,
                 null,
                 new ParameterizedTypeReference<>() {});
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).hasSize(1);
-        TemplateVariableDto var = response.getBody().get(0);
+        assertThat(response.getBody()).containsOnlyKeys("0");
+        assertThat(response.getBody().get("0")).hasSize(1);
+        TemplateVariableDto var = response.getBody().get("0").get(0);
         assertThat(var.getName()).isEqualTo("userQuery");
         assertThat(var.getSources()).containsExactly(TemplateVariableSource.ARGUMENT);
         assertThat(var.getEffectiveType()).isEqualTo(SchemaFieldType.STRING);
         assertThat(var.getResolvedValue()).isNull();
     }
 
-    // Note: per-test-case template-variables endpoint was removed in task group 11
-    // (TemplateVariableService simplified to suite-scoped only).
+    // Note: the per-test-case template-variables endpoint exists and is covered by
+    // TemplateVariableFunctionalTests (both endpoints return a map keyed by request index).
 
     // --- Helpers ---
 

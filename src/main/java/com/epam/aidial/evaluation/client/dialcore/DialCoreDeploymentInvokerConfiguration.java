@@ -1,10 +1,12 @@
 package com.epam.aidial.evaluation.client.dialcore;
 
+import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.config.properties.DialCoreProperties;
 import io.opentelemetry.api.OpenTelemetry;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -34,6 +36,26 @@ public class DialCoreDeploymentInvokerConfiguration {
 
         return RestClient.builder()
                 .baseUrl(properties.getBaseUrl())
+                .requestFactory(requestFactory)
+                .requestInterceptor(DialCoreClientConfiguration.callerCredentialInterceptor())
+                .requestInterceptor(DialCoreClientConfiguration.tracingInterceptor(openTelemetry))
+                .build();
+    }
+
+    @Bean("dialRouteTriggerRestClient")
+    @ConditionalOnProperty(name = "dial-app-proxy.enabled", havingValue = "true")
+    public RestClient dialRouteTriggerRestClient(
+            DialCoreProperties coreProperties, DialAppProperties dialAppProperties, OpenTelemetry openTelemetry) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofMillis(coreProperties.getConnectTimeoutMs()))
+                .build();
+
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofMillis(dialAppProperties.getTriggerReadTimeoutMs()));
+
+        return RestClient.builder()
+                .baseUrl(coreProperties.getBaseUrl())
                 .requestFactory(requestFactory)
                 .requestInterceptor(DialCoreClientConfiguration.callerCredentialInterceptor())
                 .requestInterceptor(DialCoreClientConfiguration.tracingInterceptor(openTelemetry))

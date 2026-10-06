@@ -69,6 +69,28 @@ Status: **Implemented**
 - **WHEN** `config.rest.security.api-key.enabled=false` (the default) or `config.rest.security.mode=none`
 - **THEN** the service SHALL NOT attempt Api-Key introspection, regardless of any `Api-Key` header present
 
+### Requirement: Internal eval execute endpoint authenticated by the existing DIAL API-Key chain
+When `dial-app-proxy.enabled=true`, the path `/api/internal/**` SHALL be added to the Spring Security configuration's authenticated path set, protected by the same filter chain as `/api/v1/**` (JWT resource server + `ApiKeyAuthenticationFilter`/`CoreApiKeyIntrospector`). This path SHALL NOT be excluded from authentication (no `permitAll`) — a DIAL Core per-request key presented in the `Api-Key` header is authenticated the same way any other DIAL API key is authenticated today. `dial-app-proxy.enabled=true` SHALL require `config.rest.security.api-key.enabled=true`; the application SHALL fail fast at startup otherwise.
+
+Status: **Implemented**
+
+#### Scenario: Internal endpoint authenticated like any other API-Key caller
+- **WHEN** a request arrives at `/api/internal/runs/{runId}/execute` with a valid `Api-Key` header
+- **THEN** Spring Security SHALL authenticate it via the existing `ApiKeyAuthenticationFilter`/`CoreApiKeyIntrospector` chain
+- **AND** the request SHALL reach `EvalExecuteInternalController` only once authenticated
+
+#### Scenario: Internal endpoint rejects unauthenticated requests
+- **WHEN** a request arrives at `/api/internal/runs/{runId}/execute` without a header the existing chain can authenticate
+- **THEN** Spring Security SHALL return HTTP 401, the same as it would for `/api/v1/**`
+
+#### Scenario: Public endpoints unaffected
+- **WHEN** a request arrives at `/api/v1/**`
+- **THEN** the existing JWT/OIDC security rules SHALL apply unchanged
+
+#### Scenario: Startup fails fast on misconfiguration
+- **WHEN** `dial-app-proxy.enabled=true` and `config.rest.security.api-key.enabled=false`
+- **THEN** the application SHALL fail to start rather than exposing an endpoint with no viable authentication mechanism
+
 ### Requirement: DIAL Core introspection response handling
 The service SHALL parse two DIAL Core `/v1/user/info` response shapes — a
 project-key shape (`{roles, project}`) and a JWT-rooted per-request-key
@@ -185,7 +207,7 @@ Status: **Implemented**
 - **THEN** the tool body SHALL observe the same captured credential and kind that a REST handler would observe for an equivalently authenticated request
 
 ### Requirement: Forward the caller's credential to DIAL Core in its native header
-Every call the service makes on behalf of a caller to DIAL Core, or to a service reached with the caller's own credential, SHALL present that caller's captured credential in the header that credential kind requires: `Authorization: Bearer <jwt>` for a bearer caller, `Api-Key: <key>` for an API-key caller. This SHALL hold for deployment and toolset metadata reads, user-info lookups, try-out and run-execution deployment invocations, and MCP `tools/list` / `tools/call` requests routed through DIAL Core's MCP proxy, whether the call originates from a REST request, an MCP tool call, or a run's worker threads. Calls the service makes for its own account (for example file-storage access authenticated with the configured service-account key) SHALL be unaffected.
+Every call the service makes on behalf of a caller to DIAL Core, or to a service reached with the caller's own credential, SHALL present that caller's captured credential in the header that credential kind requires: `Authorization: Bearer <jwt>` for a bearer caller, `Api-Key: <key>` for an API-key caller. This SHALL hold for deployment and toolset metadata reads, user-info lookups, try-out and run-execution deployment invocations, and MCP `tools/list` / `tools/call` requests routed through DIAL Core's MCP proxy, whether the call originates from a REST request, an MCP tool call, or a run's worker threads. An API-key caller's credential includes a DIAL Core per-request key (PRK) captured on `/api/internal/**` (DIAL App mode) — a PRK is simply an `API_KEY`-kind `CallerCredential`, requiring no separate "PRK mode" branching anywhere in the invocation path. Calls the service makes for its own account (for example file-storage access authenticated with the configured service-account key) SHALL be unaffected.
 Status: **Implemented**
 
 #### Scenario: API-key caller reaching DIAL Core
@@ -199,6 +221,15 @@ Status: **Implemented**
 #### Scenario: Run execution on worker threads
 - **WHEN** a run dispatched by an API-key caller invokes deployments or MCP tools from its own worker threads
 - **THEN** those requests SHALL carry the dispatching caller's `Api-Key` credential
+
+#### Scenario: API-key credential used for a PRK-authenticated run
+- **WHEN** `dial-app-proxy.enabled=true` and a run was dispatched (via `EvalExecuteInternalController`) with an `API_KEY`-kind `CallerCredential` (the PRK)
+- **THEN** all outbound DIAL Core deployment-invocation calls for that run SHALL use `Api-Key: <prk>`
+- **AND** no `Authorization` header SHALL be set for those calls
+
+#### Scenario: Non-eval DIAL Core calls unaffected
+- **WHEN** a DIAL Core call is made outside of eval execution context (e.g., deployment listing, file management via the service's own configured API key)
+- **THEN** those calls SHALL continue to use whatever credential they already use today, unaffected by DIAL App mode
 
 #### Scenario: Structured-query service call
 - **WHEN** an API-key-authenticated caller triggers a structured-query (DSL) call to the dial-adas service, which is reached with the caller's own credential

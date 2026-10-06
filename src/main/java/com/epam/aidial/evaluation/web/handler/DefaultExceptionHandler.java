@@ -21,6 +21,7 @@ import com.epam.aidial.evaluation.service.domain.exception.TooManyRunsException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationException;
 import com.epam.aidial.evaluation.service.domain.exception.UnsupportedSnapshotVersionException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
+import com.epam.aidial.evaluation.service.domain.job.RunAlreadyActiveException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.sql.SQLException;
@@ -393,6 +394,19 @@ public class DefaultExceptionHandler {
     public ErrorView handleRunNotTerminalError(HttpServletRequest req, RunNotTerminalException ex) {
         logUncaught(ex);
         return new ErrorView(req, HttpStatus.CONFLICT, ErrorCode.RUN_NOT_TERMINAL, ex.getMessage());
+    }
+
+    /**
+     * Thrown by {@link com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob#dispatch} when
+     * a {@link com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry} handle is already
+     * registered for the run — e.g. a concurrent trigger of
+     * {@code POST /api/internal/runs/{runId}/execute}.
+     */
+    @ResponseStatus(HttpStatus.CONFLICT)
+    @ExceptionHandler(RunAlreadyActiveException.class)
+    public ErrorView handleRunAlreadyActiveError(HttpServletRequest req, RunAlreadyActiveException ex) {
+        logUncaught(ex);
+        return new ErrorView(req, HttpStatus.CONFLICT, ErrorCode.RUN_ALREADY_ACTIVE, ex.getMessage());
     }
 
     @ResponseStatus(HttpStatus.CONFLICT)

@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.service.domain.job;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,23 @@ public class ActiveRunRegistry {
         RunHandle handle = new RunHandle(runExecutorFactory.newWorkerExecutor());
         handles.put(runId, handle);
         return handle;
+    }
+
+    /**
+     * Atomically registers a new {@link RunHandle} for the given run id, but only if no handle is
+     * already registered. Returns an empty Optional if a handle is already registered (indicating
+     * the run is already active/dispatched and a concurrent trigger attempt was made), or an
+     * Optional containing the newly-registered handle on success.
+     */
+    public Optional<RunHandle> registerIfAbsent(UUID runId) {
+        RunHandle newHandle = new RunHandle(runExecutorFactory.newWorkerExecutor());
+        RunHandle existing = handles.putIfAbsent(runId, newHandle);
+        if (existing != null) {
+            // A handle is already registered. Close the one we just created since it will not be used.
+            newHandle.close();
+            return Optional.empty();
+        }
+        return Optional.of(newHandle);
     }
 
     /** Cancels the run's handle, if one is registered on this instance. No-op otherwise. */

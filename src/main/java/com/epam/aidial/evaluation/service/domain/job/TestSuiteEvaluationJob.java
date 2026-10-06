@@ -95,9 +95,11 @@ public class TestSuiteEvaluationJob {
      * before the job thread starts still finds it) and submits {@link #run} to the shared run executor.
      * If submission itself fails (executor rejection or any other exception), the handle is removed and
      * closed before the exception is rethrown, so callers keep their existing rejection-compensation logic.
+     * If a handle is already registered for this runId, throws {@link RunAlreadyActiveException}.
      */
     public void dispatch(UUID runId, CallerCredential credential, boolean skipDeploymentPhase) {
-        RunHandle handle = registry.register(runId);
+        var handleOpt = registry.registerIfAbsent(runId);
+        RunHandle handle = handleOpt.orElseThrow(() -> new RunAlreadyActiveException(runId));
         try {
             taskExecutor.execute(() -> run(runId, credential, skipDeploymentPhase, handle));
         } catch (RuntimeException | Error e) {

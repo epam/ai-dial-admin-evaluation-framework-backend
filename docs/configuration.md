@@ -243,6 +243,17 @@ An alternative to OIDC/JWT bearer tokens: a caller may authenticate with an `Api
 | `config.rest.security.api-key.user-claims-role-claim` | `API_KEY_USER_CLAIMS_ROLE_CLAIM` | `roles` | No | `config.rest.security.api-key.enabled=true` | Claim name read out of the introspection response's `userClaims` object to obtain the caller's raw roles. |
 | `config.rest.security.api-key.startup-probe` | `API_KEY_STARTUP_PROBE` | `true` | No | `config.rest.security.api-key.enabled=true` | When `true`, the service calls DIAL Core's `/v1/user/info` at startup to verify connectivity and fails to start if Core is unreachable or misconfigured. |
 
+### 3.5 DIAL Application Mode
+
+When enabled, evaluation runs are triggered via a DIAL Core Application Route using the user's JWT, and DIAL Core's per-request key (PRK) is used for deployment invocations instead of the JWT. **Requires `config.rest.security.api-key.enabled=true`** as a hard prerequisite, since the internal eval endpoint (`POST /api/internal/runs/{runId}/execute`) is authenticated by the DIAL API-Key auth chain.
+
+| Property | Environment Variable | Default | Required | Applied when | Description |
+|---|---|---|---|---|---|
+| `dial-app-proxy.enabled` | `DIAL_APP_PROXY_ENABLED` | `false` | No | - | Enables DIAL Application Routes mode. When `false`, eval runs are dispatched in-process with the user's JWT (existing behavior). When `true`, runs are triggered via DIAL Core's Application Route, which generates a per-request key (PRK) for deployment invocations. **Requires `config.rest.security.api-key.enabled=true`.** |
+| `dial-app-proxy.deployment-name` | `DIAL_APP_PROXY_DEPLOYMENT_NAME` | `EF` | No | `dial-app-proxy.enabled=true` | Name of the DIAL Core deployment under which EF is registered as an application. This name appears in the route URL: `POST /v1/deployments/{deploymentName}/route/api/internal/runs/{runId}/execute`. |
+| `dial-app-proxy.heartbeat-interval-ms` | `DIAL_APP_PROXY_HEARTBEAT_INTERVAL_MS` | `30000` | No | `dial-app-proxy.enabled=true` | Interval, in milliseconds, at which the internal eval endpoint emits a heartbeat SSE event to keep the DIAL Core connection alive. DIAL Core's idle timeout is 300s; a 30s heartbeat provides a 10x safety margin. |
+| `dial-app-proxy.trigger-read-timeout-ms` | `DIAL_APP_PROXY_TRIGGER_READ_TIMEOUT_MS` | `43200000` | No | `dial-app-proxy.enabled=true` | Read timeout, in milliseconds, for the `DialRouteTriggerClient` HTTP call to DIAL Core's Application Route. Set to a high value (default 12 hours) to allow long-running eval connections to remain open without timing out. |
+
 ---
 
 ## 4. Data Layer
@@ -389,6 +400,41 @@ Opt-in extension that attaches a derived `total_cost` key to each row of a `row`
 | `query-dsl.extension.test-suite-run.cost.enabled` | `QUERY_DSL_EXTENSION_TEST_SUITE_RUN_COST_ENABLED` | `false` | No | - | Enables the `total_cost` result-page extension for row-mode `test_suite_runs` structured queries. When `false` (default), no dial-adas lookup is performed for the query and no `total_cost` key is added to any row. |
 | `query-dsl.extension.test-suite-run.cost.timeout-sec` | `QUERY_DSL_EXTENSION_TEST_SUITE_RUN_COST_TIMEOUT_SEC` | `2` | Conditional | `query-dsl.extension.test-suite-run.cost.enabled=true` | Authoritative end-to-end deadline, in seconds, for the request thread's wait on the per-page cost lookup; also sets both the connect and read timeout of the dedicated extension dial-adas client as a best-effort cleanup backstop, never a second deadline. Minimum `1`. |
 
+### 5.7 DIAL Application Route Registration
+
+When `dial-app-proxy.enabled=true`, EF must be registered as a DIAL Application via a DIAL Application Route so that DIAL Core can trigger eval runs and issue per-request keys (PRKs). The following DIAL Core deployment/application configuration is required (exact format depends on your DIAL Core version; this is a reference):
+
+```json
+{
+  "applications": {
+    "EF": {
+      "displayName": "Evaluation Framework",
+      "routes": {
+        "run_execute": {
+          "paths": ["/api/internal/runs/[^/]+/execute$"],
+          "methods": ["POST"],
+          "rewritePath": true,
+          "upstreams": [{"endpoint": "http://ef-backend:8080"}],
+          "attachmentPaths": {
+            "requestBody": []
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Route Details:**
+- **Public URL:** `POST /v1/deployments/EF/route/api/internal/runs/{runId}/execute`
+- **EF receives at:** `POST http://ef-backend:8080/api/internal/runs/{runId}/execute`
+- **DIAL Core injects:** `Api-Key: <per-request-key>` header, `X-DIAL-APPLICATION-ID: EF` header (inferred from the route context)
+- **Deployment name:** must match `dial-app-proxy.deployment-name` configuration (default `EF`)
+
+**Bucket access:** EF's DIAL Core deployment registration must grant bucket access to EF's file bucket (configured as `dial.file-storage.bucket-alias`, default `@ef`) so that DIAL Core's auto-sharing mechanism can propagate file access from EF to evaluated deployments when file references are included in test case requests. Consult your DIAL Core documentation on deploying and registering applications with bucket access.
+
+**Network isolation (recommended):** Withholding `/api/internal/**` from public ingress is a recommended (but not strictly required) defense-in-depth measure. Authentication is enforced by the DIAL API-Key auth chain regardless; this is an additional security layer.
+
 ---
 
 ## 6. Evaluation Engine
@@ -398,7 +444,7 @@ Opt-in extension that attaches a derived `total_cost` key to each row of a `row`
 | Property | Environment Variable | Default | Required | Applied when | Description |
 |---|---|---|---|---|---|
 | `test-suite-run.sse.timeout-minutes` | `TEST_SUITE_RUN_SSE_TIMEOUT_MINUTES` | `30` | No | - | SSE client connection timeout in minutes. |
-| `test-suite-run.sse.cleanup-interval-ms` | `TEST_SUITE_RUN_SSE_CLEANUP_INTERVAL_MS` | `300000` | No | - | Interval at which stale SSE emitters are pruned, in milliseconds. |
+| `test-suite-run.sse.cleanup-interval-ms` | `TEST_SUITE_RUN_SSE_CLEANUP_INTERVAL_MS` | `300000` | No | - | Default heartbeat interval for SSE emitters that were not created with a custom interval (e.g. the internal DIAL App endpoint's 30s), in milliseconds. A stale emitter is pruned once a heartbeat send fails. |
 
 ### 6.2 Test Suite Run — Execution Settings
 

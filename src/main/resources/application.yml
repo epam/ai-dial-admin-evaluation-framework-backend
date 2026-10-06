@@ -97,6 +97,13 @@ dial:
     connect-timeout-ms: ${DIAL_ADAS_CONNECT_TIMEOUT_MS:5000}
     read-timeout-ms: ${DIAL_ADAS_READ_TIMEOUT_MS:30000}
 
+# DIAL Application mode configuration (proxy mode)
+dial-app-proxy:
+  enabled: ${DIAL_APP_PROXY_ENABLED:false}
+  deployment-name: ${DIAL_APP_PROXY_DEPLOYMENT_NAME:EF}
+  heartbeat-interval-ms: ${DIAL_APP_PROXY_HEARTBEAT_INTERVAL_MS:30000}
+  trigger-read-timeout-ms: ${DIAL_APP_PROXY_TRIGGER_READ_TIMEOUT_MS:43200000}
+
 # Validation configuration
 validation:
   max-warnings-per-case: 5

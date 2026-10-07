@@ -1,12 +1,17 @@
 package com.epam.aidial.evaluation.web.security.apikey;
 
 import com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties;
+import com.epam.aidial.evaluation.configuration.properties.security.JwtProvidersProperties;
 import com.epam.aidial.evaluation.configuration.properties.security.JwtSecurityProperties;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
+import com.epam.aidial.evaluation.web.security.ClaimPathExtractor;
+import com.epam.aidial.evaluation.web.security.JwtProviderUtils;
 import jakarta.annotation.PostConstruct;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -41,6 +46,17 @@ public class CoreApiKeyIntrospector {
 
     private final ApiKeyProperties properties;
     private final JwtSecurityProperties jwtSecurityProperties;
+
+    /**
+     * Present only when {@code config.rest.security.mode=oidc} ({@link JwtProvidersProperties} is
+     * conditional on that property and can be independently absent while API-key auth is enabled via
+     * {@code config.rest.security.api-key.enabled}, e.g. a {@code mode=none} deployment). When absent,
+     * or when no configured provider's accepted-issuer set matches the token's {@code iss}, role
+     * resolution falls back to the flat {@link ApiKeyProperties#getUserClaimsRoleClaim()}.
+     */
+    private final Optional<JwtProvidersProperties> jwtProvidersProperties;
+
+    private final JwtProviderUtils jwtProviderUtils;
 
     @PostConstruct
     public void probeCore() {
@@ -96,7 +112,7 @@ public class CoreApiKeyIntrospector {
                         jwtSecurityProperties.getUserClaim());
                 throw new BadCredentialsException("Malformed Core user-info response");
             }
-            List<String> userClaimsRoles = extractRoles(userClaims.get(properties.getUserClaimsRoleClaim()));
+            List<String> userClaimsRoles = resolveUserClaimsRoles(userClaimsRaw, userClaims);
             return new IntrospectionResult(principal, userClaimsRoles, false);
         }
 
@@ -126,6 +142,59 @@ public class CoreApiKeyIntrospector {
             throw new BadCredentialsException("Invalid API key");
         }
         return body;
+    }
+
+    /**
+     * Resolves JWT-rooted roles for Core's {@code userClaims} map: when a configured identity provider
+     * matches the token's {@code iss}, uses that provider's {@code roleClaims} (same resolution as
+     * bearer-JWT authorities, see {@link com.epam.aidial.evaluation.web.security.JwtAuthenticationConverterFactory});
+     * otherwise falls back to the flat {@link ApiKeyProperties#getUserClaimsRoleClaim()}. Operates on the
+     * raw, pre-flattening {@code userClaimsRaw} map (not {@code userClaims}) so a dot-separated nested
+     * {@code roleClaims} path can traverse the original claim structure that {@link #normalizeUserClaims}
+     * would otherwise flatten away.
+     */
+    private List<String> resolveUserClaimsRoles(Map<?, ?> userClaimsRaw, Map<String, List<String>> userClaims) {
+        Optional<JwtProvidersProperties.ProviderConfig> provider = resolveProvider(userClaimsRaw);
+        if (provider.isPresent()) {
+            Set<String> roles = ClaimPathExtractor.extractRoles(provider.get().getRoleClaims(), userClaimsRaw);
+            if (!roles.isEmpty()) {
+                return List.copyOf(roles);
+            }
+            log.warn(
+                    "Core {} userClaims matched a configured provider but its roleClaims {} yielded no roles; "
+                            + "falling back to '{}'",
+                    USER_INFO_PATH,
+                    provider.get().getRoleClaims(),
+                    properties.getUserClaimsRoleClaim());
+        }
+        return extractRoles(userClaims.get(properties.getUserClaimsRoleClaim()));
+    }
+
+    private Optional<JwtProvidersProperties.ProviderConfig> resolveProvider(Map<?, ?> userClaimsRaw) {
+        if (jwtProvidersProperties.isEmpty()) {
+            log.debug(
+                    "JwtProvidersProperties bean absent (config.rest.security.mode=none); using flat role claim '{}'",
+                    properties.getUserClaimsRoleClaim());
+            return Optional.empty();
+        }
+        if (!(userClaimsRaw.get("iss") instanceof String issuer) || StringUtils.isBlank(issuer)) {
+            log.debug(
+                    "Core {} userClaims is missing a non-blank 'iss'; using flat role claim '{}'",
+                    USER_INFO_PATH,
+                    properties.getUserClaimsRoleClaim());
+            return Optional.empty();
+        }
+        for (JwtProvidersProperties.ProviderConfig config :
+                jwtProvidersProperties.get().getProviders().values()) {
+            if (jwtProviderUtils.getAcceptedIssuers(config).contains(issuer)) {
+                return Optional.of(config);
+            }
+        }
+        log.debug(
+                "No configured provider accepts issuer '{}'; using flat role claim '{}'",
+                issuer,
+                properties.getUserClaimsRoleClaim());
+        return Optional.empty();
     }
 
     private List<String> extractRoles(Object rolesClaim) {

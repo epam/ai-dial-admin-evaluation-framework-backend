@@ -9,11 +9,16 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.epam.aidial.evaluation.configuration.properties.security.ApiKeyProperties;
+import com.epam.aidial.evaluation.configuration.properties.security.JwtProvidersProperties;
 import com.epam.aidial.evaluation.configuration.properties.security.JwtSecurityProperties;
+import com.epam.aidial.evaluation.web.security.JwtProviderUtils;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -43,7 +48,8 @@ class CoreApiKeyIntrospectorTest {
         JwtSecurityProperties jwtSecurityProperties = new JwtSecurityProperties();
         jwtSecurityProperties.setUserClaim("sub");
 
-        introspector = new CoreApiKeyIntrospector(restClient, properties, jwtSecurityProperties);
+        introspector = new CoreApiKeyIntrospector(
+                restClient, properties, jwtSecurityProperties, Optional.empty(), new JwtProviderUtils());
     }
 
     @Test
@@ -205,11 +211,115 @@ class CoreApiKeyIntrospectorTest {
         JwtSecurityProperties jwtSecurityProperties = new JwtSecurityProperties();
         jwtSecurityProperties.setUserClaim("sub");
 
-        CoreApiKeyIntrospector disabledProbeIntrospector =
-                new CoreApiKeyIntrospector(restClient, properties, jwtSecurityProperties);
+        CoreApiKeyIntrospector disabledProbeIntrospector = new CoreApiKeyIntrospector(
+                restClient, properties, jwtSecurityProperties, Optional.empty(), new JwtProviderUtils());
 
         disabledProbeIntrospector.probeCore();
 
         disabledProbeServer.verify();
+    }
+
+    @Nested
+    @DisplayName("multi-issuer role resolution")
+    class MultiIssuerRoleResolution {
+
+        private static final String AZURE_ISSUER = "https://login.microsoftonline.com/tenant-id/v2.0";
+        private static final String KEYCLOAK_ISSUER = "https://keycloak.aks.dev.dial.parts/realms/dial";
+
+        private MockRestServiceServer providerServer;
+        private CoreApiKeyIntrospector providerIntrospector;
+
+        @BeforeEach
+        void setUpProviders() {
+            RestClient.Builder builder = RestClient.builder().baseUrl("http://core");
+            providerServer = MockRestServiceServer.bindTo(builder).build();
+            RestClient restClient = builder.build();
+
+            ApiKeyProperties properties = new ApiKeyProperties(new ObjectMapper());
+            properties.setCoreUrl("http://core");
+            // Deliberately different from both providers' roleClaims, to prove the per-issuer
+            // resolution (not this flat fallback) is what actually produced the result.
+            properties.setUserClaimsRoleClaim("fallback_roles");
+            properties.setStartupProbe(true);
+
+            JwtSecurityProperties jwtSecurityProperties = new JwtSecurityProperties();
+            jwtSecurityProperties.setUserClaim("sub");
+
+            JwtProvidersProperties jwtProvidersProperties = new JwtProvidersProperties();
+            JwtProvidersProperties.ProviderConfig azure = new JwtProvidersProperties.ProviderConfig();
+            azure.setIssuer(AZURE_ISSUER);
+            azure.setRoleClaims(List.of("roles"));
+            JwtProvidersProperties.ProviderConfig keycloak = new JwtProvidersProperties.ProviderConfig();
+            keycloak.setIssuer(KEYCLOAK_ISSUER);
+            keycloak.setRoleClaims(List.of("dial_roles"));
+            jwtProvidersProperties.getProviders().put("azure", azure);
+            jwtProvidersProperties.getProviders().put("keycloak", keycloak);
+
+            providerIntrospector = new CoreApiKeyIntrospector(
+                    restClient,
+                    properties,
+                    jwtSecurityProperties,
+                    Optional.of(jwtProvidersProperties),
+                    new JwtProviderUtils());
+        }
+
+        @Test
+        @DisplayName("resolves Entra roles via the azure provider's roleClaims")
+        void resolvesEntraRolesViaAzureProvider() {
+            providerServer
+                    .expect(requestTo("http://core/v1/user/info"))
+                    .andRespond(withSuccess(
+                            "{\"userClaims\":{\"sub\":\"user-1\",\"iss\":\"" + AZURE_ISSUER
+                                    + "\",\"roles\":[\"admin\"]}}",
+                            MediaType.APPLICATION_JSON));
+
+            IntrospectionResult result = providerIntrospector.introspect("key-azure");
+
+            assertThat(result.rawRoles()).containsExactly("admin");
+        }
+
+        @Test
+        @DisplayName("resolves Keycloak roles via the keycloak provider's roleClaims")
+        void resolvesKeycloakRolesViaKeycloakProvider() {
+            providerServer
+                    .expect(requestTo("http://core/v1/user/info"))
+                    .andRespond(withSuccess(
+                            "{\"userClaims\":{\"sub\":\"user-1\",\"iss\":\"" + KEYCLOAK_ISSUER
+                                    + "\",\"dial_roles\":[\"viewer\"]}}",
+                            MediaType.APPLICATION_JSON));
+
+            IntrospectionResult result = providerIntrospector.introspect("key-keycloak");
+
+            assertThat(result.rawRoles()).containsExactly("viewer");
+        }
+
+        @Test
+        @DisplayName("falls back to the flat claim when no provider matches the issuer")
+        void fallsBackToFlatClaimWhenNoProviderMatchesIssuer() {
+            providerServer
+                    .expect(requestTo("http://core/v1/user/info"))
+                    .andRespond(withSuccess(
+                            "{\"userClaims\":{\"sub\":\"user-1\",\"iss\":\"https://unknown-issuer.example.com/\","
+                                    + "\"fallback_roles\":[\"legacy\"]}}",
+                            MediaType.APPLICATION_JSON));
+
+            IntrospectionResult result = providerIntrospector.introspect("key-unknown-issuer");
+
+            assertThat(result.rawRoles()).containsExactly("legacy");
+        }
+
+        @Test
+        @DisplayName("falls back to the flat claim when iss is missing from userClaims")
+        void fallsBackToFlatClaimWhenIssuerMissing() {
+            providerServer
+                    .expect(requestTo("http://core/v1/user/info"))
+                    .andRespond(withSuccess(
+                            "{\"userClaims\":{\"sub\":\"user-1\",\"fallback_roles\":[\"legacy\"]}}",
+                            MediaType.APPLICATION_JSON));
+
+            IntrospectionResult result = providerIntrospector.introspect("key-no-iss");
+
+            assertThat(result.rawRoles()).containsExactly("legacy");
+        }
     }
 }

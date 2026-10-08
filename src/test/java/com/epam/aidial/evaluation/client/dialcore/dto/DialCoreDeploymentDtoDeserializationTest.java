@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.client.dialcore.dto;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.core.type.TypeReference;
@@ -142,8 +143,8 @@ class DialCoreDeploymentDtoDeserializationTest {
         assertThat(model.getLimits().getMaxTotalTokens()).isEqualTo(8192);
         assertThat(model.getLimits().getMaxCompletionTokens()).isEqualTo(4096);
         assertThat(model.getPricing().getUnit()).isEqualTo("token");
-        assertThat(model.getPricing().getPrompt().get("rate")).isEqualTo("0.01");
-        assertThat(model.getPricing().getCompletion().get("rate")).isEqualTo("0.02");
+        assertThat(((Map<?, ?>) model.getPricing().getPrompt()).get("rate")).isEqualTo("0.01");
+        assertThat(((Map<?, ?>) model.getPricing().getCompletion()).get("rate")).isEqualTo("0.02");
 
         DialCoreApplicationDto application = (DialCoreApplicationDto) deployments.get(1);
         assertThat(application.getApplicationProperties()).containsEntry("temperature", 0.5);

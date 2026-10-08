@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.client.dialcore.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,6 +17,6 @@ import tools.jackson.databind.annotation.JsonNaming;
 public class DialCorePricingDto {
 
     private String unit;
-    private Map<String, Object> prompt;
-    private Map<String, Object> completion;
+    private Object prompt;
+    private Object completion;
 }

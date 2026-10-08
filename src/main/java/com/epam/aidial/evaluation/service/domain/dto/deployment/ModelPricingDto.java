@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.service.domain.dto.deployment;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

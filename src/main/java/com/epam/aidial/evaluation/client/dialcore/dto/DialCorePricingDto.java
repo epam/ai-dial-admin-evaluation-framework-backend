@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.client.dialcore.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

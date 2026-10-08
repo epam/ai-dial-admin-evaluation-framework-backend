@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.web.security;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -9,10 +10,12 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Shared, stateless claim-path extraction used to resolve role values out of a claims map by one or
- * more dot-separated paths (e.g. {@code "resource_access.dial-core.roles"}). Used by {@link
+ * more dot-separated paths (e.g. {@code "resource_access.dial-core.roles"}), plus {@link
+ * #extractRoleValues} to normalize a single already-extracted claim value the same way. Used by {@link
  * MultiPathGrantedAuthoritiesConverter} (bearer-JWT authorities, keyed by {@code Jwt.getClaims()}) and
- * by {@code CoreApiKeyIntrospector} (DIAL Core introspection's raw {@code userClaims} map), so the two
- * authentication paths resolve per-issuer role claims identically.
+ * by {@code CoreApiKeyIntrospector} (DIAL Core introspection's raw {@code userClaims} map, plus its
+ * top-level {@code roles} field and flat role-claim fallback), so the two authentication paths resolve
+ * role claims identically.
  *
  * <p>Deliberately a plain static-method utility, not a Spring bean: neither caller holds it as an
  * injected dependency ({@link MultiPathGrantedAuthoritiesConverter} is manually {@code new}'d per
@@ -49,6 +52,21 @@ public final class ClaimPathExtractor {
             }
         }
         return roles;
+    }
+
+    /**
+     * Normalizes a single already-extracted claim value (a {@code String}, a {@code Collection<String>}, or
+     * anything else) into a role list, the same way {@link #extractRoles} does for each path it resolves.
+     * For a caller that already has the raw claim value in hand (e.g. a top-level field read directly off a
+     * parsed response) rather than a path to resolve.
+     */
+    public static List<String> extractRoleValues(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        Set<String> roles = new LinkedHashSet<>();
+        addRoleValues(value, roles);
+        return List.copyOf(roles);
     }
 
     private static void addRoleValues(Object value, Set<String> roles) {

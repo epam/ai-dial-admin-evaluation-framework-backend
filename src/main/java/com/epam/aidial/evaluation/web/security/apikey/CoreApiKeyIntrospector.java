@@ -96,7 +96,7 @@ public class CoreApiKeyIntrospector {
 
     public IntrospectionResult introspect(String apiKey) {
         Map<String, Object> response = callCore(apiKey);
-        List<String> rawRoles = extractRoles(response.get("roles"));
+        List<String> rawRoles = ClaimPathExtractor.extractRoleValues(response.get("roles"));
 
         if (response.get("project") instanceof String project && StringUtils.isNotBlank(project)) {
             return new IntrospectionResult(project, rawRoles, true);
@@ -167,7 +167,7 @@ public class CoreApiKeyIntrospector {
                     provider.get().getRoleClaims(),
                     properties.getUserClaimsRoleClaim());
         }
-        return extractRoles(userClaims.get(properties.getUserClaimsRoleClaim()));
+        return ClaimPathExtractor.extractRoleValues(userClaims.get(properties.getUserClaimsRoleClaim()));
     }
 
     private Optional<JwtProvidersProperties.ProviderConfig> resolveProvider(Map<?, ?> userClaimsRaw) {
@@ -195,19 +195,6 @@ public class CoreApiKeyIntrospector {
                 issuer,
                 properties.getUserClaimsRoleClaim());
         return Optional.empty();
-    }
-
-    private List<String> extractRoles(Object rolesClaim) {
-        if (rolesClaim instanceof List<?> list) {
-            return list.stream()
-                    .filter(String.class::isInstance)
-                    .map(String.class::cast)
-                    .toList();
-        }
-        if (rolesClaim instanceof String s) {
-            return List.of(s);
-        }
-        return List.of();
     }
 
     private static Map<String, List<String>> normalizeUserClaims(Map<?, ?> raw) {

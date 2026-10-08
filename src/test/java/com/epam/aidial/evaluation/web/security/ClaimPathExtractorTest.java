@@ -82,4 +82,28 @@ class ClaimPathExtractorTest {
 
         assertThat(roles).isEmpty();
     }
+
+    @Test
+    @DisplayName("extractRoleValues normalizes an already-extracted String value")
+    void extractRoleValuesNormalizesStringValue() {
+        List<String> roles = ClaimPathExtractor.extractRoleValues("admin");
+
+        assertThat(roles).containsExactly("admin");
+    }
+
+    @Test
+    @DisplayName("extractRoleValues normalizes an already-extracted collection, skipping non-String entries")
+    void extractRoleValuesNormalizesCollectionValue() {
+        List<String> roles = ClaimPathExtractor.extractRoleValues(List.of("admin", "viewer"));
+
+        assertThat(roles).containsExactlyInAnyOrder("admin", "viewer");
+    }
+
+    @Test
+    @DisplayName("extractRoleValues returns empty for a null value")
+    void extractRoleValuesReturnsEmptyForNull() {
+        List<String> roles = ClaimPathExtractor.extractRoleValues(null);
+
+        assertThat(roles).isEmpty();
+    }
 }

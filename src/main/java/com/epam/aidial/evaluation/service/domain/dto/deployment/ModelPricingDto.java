@@ -18,8 +18,8 @@ public class ModelPricingDto {
     private String unit;
 
     @Schema(description = "Prompt price")
-    private Map<String, Object> prompt;
+    private Object prompt;
 
     @Schema(description = "Completion price")
-    private Map<String, Object> completion;
+    private Object completion;
 }

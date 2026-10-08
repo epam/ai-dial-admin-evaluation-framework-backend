@@ -18,6 +18,6 @@ import tools.jackson.databind.annotation.JsonNaming;
 public class DialCorePricingDto {
 
     private String unit;
-    private Map<String, Object> prompt;
-    private Map<String, Object> completion;
+    private Object prompt;
+    private Object completion;
 }

@@ -294,6 +294,21 @@ class CoreApiKeyIntrospectorTest {
         }
 
         @Test
+        @DisplayName("resolves Entra roles when Core wraps 'iss' as a single-element array")
+        void resolvesEntraRolesWhenIssuerIsArrayWrapped() {
+            providerServer
+                    .expect(requestTo("http://core/v1/user/info"))
+                    .andRespond(withSuccess(
+                            "{\"userClaims\":{\"sub\":[\"user-1\"],\"iss\":[\"" + AZURE_ISSUER
+                                    + "\"],\"roles\":[\"admin\"]}}",
+                            MediaType.APPLICATION_JSON));
+
+            IntrospectionResult result = providerIntrospector.introspect("key-azure-array-iss");
+
+            assertThat(result.rawRoles()).containsExactly("admin");
+        }
+
+        @Test
         @DisplayName("falls back to the flat claim when no provider matches the issuer")
         void fallsBackToFlatClaimWhenNoProviderMatchesIssuer() {
             providerServer

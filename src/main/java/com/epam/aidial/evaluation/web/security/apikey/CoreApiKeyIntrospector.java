@@ -177,7 +177,11 @@ public class CoreApiKeyIntrospector {
                     properties.getUserClaimsRoleClaim());
             return Optional.empty();
         }
-        if (!(userClaimsRaw.get("iss") instanceof String issuer) || StringUtils.isBlank(issuer)) {
+        // Core's userClaims response wraps every claim value, including 'iss', as a JSON array
+        // (single-element for a scalar OIDC claim) rather than a bare string, so 'iss' must be
+        // normalized the same way as any other userClaims value before comparison.
+        String issuer = firstNonBlank(ClaimPathExtractor.extractRoleValues(userClaimsRaw.get("iss")));
+        if (StringUtils.isBlank(issuer)) {
             log.debug(
                     "Core {} userClaims is missing a non-blank 'iss'; using flat role claim '{}'",
                     USER_INFO_PATH,

@@ -8,9 +8,9 @@ Status: **Planned**
 
 ## Key Terms
 - **Dataset**: An entity owning a `testCaseSchema` (list of `FieldDefinitionDto`) and the collection of `TestCase` rows that conform to that schema. Identity: `id` (UUID), `name` (globally unique on `LOWER(name)`).
-- **testCaseSchema**: A JSONB list of `FieldDefinitionDto` (name, displayName, type ∈ `STRING`/`INTEGER`/`NUMBER`/`BOOLEAN`/`OBJECT`/`ARRAY`/`FILE`, required, description). Defines the shape every TestCase's `data` map must conform to. Owned by Dataset, sourced by TestSuite via `DatasetSchemaProvider` at validation/snapshot time.
+- **testCaseSchema**: A JSONB list of `FieldDefinitionDto` (server-assigned `id`, name, displayName, type ∈ `STRING`/`INTEGER`/`NUMBER`/`BOOLEAN`/`OBJECT`/`ARRAY`/`FILE`, required, description). Defines the shape every TestCase's `data` map must conform to. Owned by Dataset, sourced by TestSuite via `DatasetSchemaProvider` at validation/snapshot time.
 - **DatasetSchemaProvider**: An injectable `@Component` returning `List<FieldDefinitionDto>` for a given `datasetId`. Used to break the would-be circular dependency between `DatasetService` and `TestSuiteService`.
-- **Dataset-rooted RevalidationTask**: The async task spawned by a dataset PUT that mutates `testCaseSchema`. Runs two phases — Phase 1 (test cases, fail-fast) and Phase 2 (dependent suites, per-suite resilient). See `test-cases` spec for Phase 1 semantics and `test-suites` spec for Phase 2 semantics.
+- **Dataset-rooted RevalidationTask**: The task run synchronously by a dataset PUT (or import) that mutates `testCaseSchema`. Runs two phases — Phase 1 (test cases, fail-fast) and Phase 2 (dependent suites, per-suite resilient). See `test-cases` spec for Phase 1 semantics and `test-suites` spec for Phase 2 semantics.
 
 ## Requirements
 
@@ -60,11 +60,11 @@ Status: **Planned**
 
 #### Scenario: Update dataset (schema change)
 - **WHEN** client calls `PUT /api/v1/datasets/{id}` with `If-Match: <version>` and a body where `testCaseSchema` differs from the stored value
-- **THEN** system SHALL update the dataset (ignoring any `visibility` field in the body), bump `version`, prune any data fields removed from the schema from every TestCase in the dataset, spawn an async `RevalidationTask` rooted at this dataset, and return HTTP 202 with `RevalidationTaskDto` (status `PENDING`); the persisted `visibility` SHALL remain unchanged
+- **THEN** system SHALL update the dataset (ignoring any `visibility` field in the body), bump `version`, prune any data fields removed from the schema from every TestCase in the dataset, rename the data keys of renamed fields (see "Dataset schema field rename preserves data"), run the `RevalidationTask` rooted at this dataset synchronously (see "Dataset-rooted RevalidationTask trigger"), and return HTTP 202 with `RevalidationTaskDto` (status `PENDING` as created); the persisted `visibility` SHALL remain unchanged
 
 #### Scenario: Optimistic concurrency conflict
 - **WHEN** client calls `PUT /api/v1/datasets/{id}` with an `If-Match` value that does not match the current `version`
-- **THEN** system SHALL respond with HTTP 412 and error code `VERSION_CONFLICT`
+- **THEN** system SHALL respond with HTTP 409 and error code `VERSION_CONFLICT`
 
 #### Scenario: Missing If-Match header
 - **WHEN** client calls `PUT /api/v1/datasets/{id}` without an `If-Match` header
@@ -279,7 +279,7 @@ Status: **Planned**
 - **THEN** the payload SHALL include `id` (UUID), `name`, `description`, `visibility` (one of `PUBLIC`/`PRIVATE`), `testCaseSchema` (list of `FieldDefinitionDto`), `isValid` (boolean), `validationWarnings` (list of structured warnings), `version` (Long), `createdBy`, `createdAt` (epoch ms), `updatedAt` (epoch ms)
 
 ### Requirement: Dataset testCaseSchema structure and validation
-The system SHALL validate the `testCaseSchema` on every dataset create/update: schema is a list of `FieldDefinitionDto` entries where each entry's `name` is non-blank, unique within the schema (case-insensitive), at most 255 characters, and matches the identifier pattern that prohibits the `:` character; `type` is one of `STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`; `displayName` is at most 255 characters; `description` is at most 2000 characters; `required` is a boolean; `perTurn` is a boolean (default `false`) that marks the field's **scope** — `true` = per-turn (the field's value may vary between turns of a multi-turn case and lives in each `multiTurnData[i]` map), `false`/absent = shared (test-case-level, constant across turns, lives in the `data` map). Scope is a schema-level declaration and applies uniformly to every test case in the dataset. A missing `perTurn` SHALL be treated as `false`, so schemas authored before this field are unchanged.
+The system SHALL validate the `testCaseSchema` on every dataset create/update: schema is a list of `FieldDefinitionDto` entries where each entry's `name` is non-blank, unique within the schema (case-insensitive), at most 255 characters, and matches the identifier pattern that prohibits the `:` character; `type` is one of `STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`, `OBJECT`, `ARRAY`, `FILE`; `displayName` is at most 255 characters; `description` is at most 2000 characters; `required` is a boolean; `perTurn` is a boolean (default `false`) that marks the field's **scope** — `true` = per-turn (the field's value may vary between turns of a multi-turn case and lives in each `multiTurnData[i]` map), `false`/absent = shared (test-case-level, constant across turns, lives in the `data` map). Scope is a schema-level declaration and applies uniformly to every test case in the dataset. A missing `perTurn` SHALL be treated as `false`, so schemas authored before this field are unchanged. `id` is optional on input and governed by the "Dataset schema field identity" requirement.
 Status: **Planned**
 
 #### Scenario: Empty schema accepted
@@ -311,12 +311,16 @@ Status: **Planned**
 - **THEN** the request SHALL succeed and that field's values SHALL be expected in each turn's `multiTurnData[i]` map (not in the shared `data` map) for multi-turn cases in this dataset
 
 ### Requirement: Schema-driven data cleanup on dataset schema change
-When a dataset PUT removes one or more fields from `testCaseSchema`, the system SHALL strip those keys from the `data` map of every TestCase under the dataset before completing the update. This cleanup runs synchronously within the dataset update transaction so that no TestCase carries orphan fields by the time the dataset PUT returns 202.
+When a dataset PUT removes one or more fields from `testCaseSchema`, the system SHALL strip those keys from the `data` map and from every `multiTurnData` element of every TestCase under the dataset before completing the update. Removal is determined per "Dataset schema field identity"; a renamed field is not removed. This cleanup runs synchronously within the dataset update transaction so that no TestCase carries orphan fields by the time the dataset PUT returns.
 Status: **Planned**
 
 #### Scenario: Schema field removal prunes orphan data
 - **WHEN** client updates a dataset removing field `legacyColumn` from `testCaseSchema`
 - **THEN** every TestCase whose `data` contained `legacyColumn` SHALL have that key removed from `data` before the dataset PUT returns
+
+#### Scenario: Renamed field is not pruned
+- **WHEN** client updates a dataset sending field `{id: B, name: "column3"}` where the current schema has `{id: B, name: "column2"}`
+- **THEN** no value SHALL be pruned; the values under `column2` SHALL be available under `column3`
 
 #### Scenario: Schema field addition does not modify test case data
 - **WHEN** client updates a dataset adding a new field `newColumn` (required=false)
@@ -343,7 +347,7 @@ Status: **Planned**
 - **THEN** the `SchemaValidationService` cache SHALL NOT be evicted; the suite path is no longer the schema owner; if the suite is rebound to a different dataset, the lookup is a cache miss for the new key (populated on first use) and the prior key remains populated for other suites that still reference it
 
 ### Requirement: Dataset-rooted RevalidationTask trigger
-The system SHALL spawn an async `RevalidationTask` exactly when a dataset PUT mutates `testCaseSchema` (any diff in the field list — name, type, required flag, displayName, description, or ordering). Dataset PUTs that change only `name` or `description` SHALL NOT spawn a task. The dataset PUT response is HTTP 202 with `RevalidationTaskDto` when a task is spawned, HTTP 200 with `DatasetResponseDto` otherwise.
+The system SHALL run a `RevalidationTask` exactly when a dataset PUT mutates `testCaseSchema` (any difference in the stored field list — e.g. name, type, required flag, displayName, description, `perTurn`, a newly assigned field `id`, or ordering). Dataset PUTs that change only `name` or `description` SHALL NOT run a task. The task SHALL run synchronously within the dataset update — both phases (test-case coercion/validation and refresh of every referencing suite's validity) complete before the PUT returns. The dataset PUT response is HTTP 202 with `RevalidationTaskDto` when a task is run, HTTP 200 with `DatasetResponseDto` otherwise.
 Status: **Planned**
 
 #### Scenario: Metadata-only edit returns 200
@@ -354,9 +358,13 @@ Status: **Planned**
 - **WHEN** client updates a dataset adding a new field to `testCaseSchema`
 - **THEN** system SHALL respond with HTTP 202 and return `RevalidationTaskDto` with `status: PENDING`; the task is rooted at the dataset (FK `dataset_id`)
 
+#### Scenario: Revalidation results visible when the PUT returns
+- **WHEN** a client's schema-changing PUT on a dataset bound to a suite returns
+- **THEN** the persisted task row SHALL already be in a terminal status and the bound suite's `isValid` / `validationWarnings` SHALL already reflect the new schema
+
 #### Scenario: Concurrent dataset PUT while task is RUNNING
-- **WHEN** a `RevalidationTask` is in status `RUNNING` for a dataset and a new schema-changing PUT arrives
-- **THEN** system SHALL process the new PUT (updating the schema and bumping version) and spawn a second task with status `PENDING`; the in-flight task continues against the schema it was started with, and the new task runs after the in-flight one completes (sequential per-dataset task scheduling: the executor gate filters `WHERE dataset_id = ? AND status IN ('PENDING','RUNNING')` and skips pickup of a new PENDING while any RUNNING task exists for the same dataset; queued PENDINGs are FIFO by `created_at`. See `design.md` for the mechanism rationale)
+- **WHEN** two schema-changing PUTs for the same dataset arrive concurrently, each carrying the dataset's then-current version
+- **THEN** exactly one SHALL succeed with its own task; the other SHALL be rejected with HTTP 409 `VERSION_CONFLICT` and SHALL change nothing
 
 #### Scenario: RevalidationTaskDto JSON wire shape
 - **WHEN** a client receives a `RevalidationTaskDto` (from POST/PUT /datasets/{id} returning 202, or from GET /datasets/{id}/revalidation-tasks*)
@@ -367,8 +375,8 @@ Status: **Planned**
 - **THEN** system SHALL respond with HTTP 202; the response body SHALL be a `RevalidationTaskDto` JSON containing `"datasetId": "<id>"` matching the path parameter and SHALL NOT contain a `testSuiteId` field at all (not even as `null`); the `task.status` value SHALL be `"PENDING"`
 
 #### Scenario: POST /datasets/{id}/test-cases CSV import returns 202 with datasetId-rooted task
-- **WHEN** client calls `POST /api/v1/datasets/{id}/test-cases/import` (or `.../import.csv`) with an importMode that results in a schema change on the dataset (OVERRIDE with auto-detected schema, MERGE with new columns, or APPEND against an empty schema)
-- **THEN** the response SHALL include a `RevalidationTaskDto` JSON containing `"datasetId": "<id>"` matching the path parameter and SHALL NOT contain a `testSuiteId` field at all; HTTP status SHALL be 202 when the response payload is purely the task, or 200 with an embedded task object when the response also carries import counts (exact wrapper shape is left to implementation but the `datasetId`/`testSuiteId` wire-shape rule is binding)
+- **WHEN** client calls `POST /api/v1/datasets/{id}/test-cases/import` (or `.../import.csv`) with an importMode that changes the dataset's schema
+- **THEN** a dataset-rooted task (`dataset_id` = the path id, no `testSuiteId`) SHALL be recorded and listed by `GET /api/v1/datasets/{id}/revalidation-tasks`; the import response itself carries import counts only (see the `test-cases` requirement "Import persists the schema through the dataset update rules")
 
 ### Requirement: List and detail revalidation tasks under datasets
 The system SHALL expose subresources under datasets to list and inspect revalidation tasks rooted at this dataset.
@@ -481,6 +489,105 @@ Status: **Planned**
 #### Scenario: Swagger UI shows the dependent-suites endpoint
 - **WHEN** user opens Swagger UI
 - **THEN** the `GET /api/v1/datasets/{datasetId}/test-suites` operation SHALL appear under the "Datasets" tag with a summary describing the listing of dependent suites, an array-of-`DatasetDependentSuiteDto` response schema with an example, and documented 200 and 404 responses
+
+### Requirement: Dataset schema field identity
+Every field of a persisted dataset `testCaseSchema` SHALL carry a server-assigned `id` (UUID string). The `id` identifies a field within one dataset schema only; it is NOT a key for test-case data, bindings, filters, or CSV/ZIP columns — `name` remains the field's key everywhere. Clients SHALL NOT mint ids: on every schema write the server resolves each incoming field's `id` as follows:
+- a field carrying an `id` keeps it, and that `id` MUST belong to a field of the dataset's current schema;
+- a field without an `id` is the same field as the current-schema field with the exactly equal `name` (case-sensitive), unless that current field is already claimed by another entry of the same request; it takes that field's `id` (or a newly generated one when the stored field has none) and is not a removal;
+- otherwise the field is new and receives a newly generated `id`.
+
+Field names MUST be unique within a request (case-insensitive), with or without ids. A current field is **removed** when no request entry resolves to it, and **renamed** when its `id` resolves to an entry with a different `name`.
+
+The `id` SHALL be returned on every `testCaseSchema` entry of `DatasetResponseDto`. Run snapshots SHALL carry the field `id` as captured; snapshots written before this requirement carry none and SHALL remain readable.
+Status: **Planned**
+
+#### Scenario: Create assigns ids
+- **WHEN** a client creates a dataset with `testCaseSchema: [{name: "prompt", type: "STRING"}]`
+- **THEN** the response's `testCaseSchema[0].id` SHALL be a UUID string and a subsequent `GET` SHALL return the same `id`
+
+#### Scenario: Create rejects client-supplied id
+- **WHEN** a client creates a dataset with any `testCaseSchema` entry carrying an `id`
+- **THEN** the system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`; no dataset SHALL be persisted
+
+#### Scenario: Update rejects unknown id
+- **WHEN** a client updates a dataset with a `testCaseSchema` entry whose `id` is not the `id` of any field in the dataset's current schema
+- **THEN** the system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`; neither the schema nor any test case SHALL change
+
+#### Scenario: Update rejects duplicate id
+- **WHEN** a client updates a dataset with two `testCaseSchema` entries carrying the same `id`
+- **THEN** the system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`; neither the schema nor any test case SHALL change
+
+#### Scenario: Field without id is matched by name
+- **WHEN** the current schema has `{id: A, name: "prompt"}` and a client updates the dataset with `[{name: "prompt", type: "STRING"}]` (no `id`)
+- **THEN** the persisted field SHALL keep `id: A` and no test-case data SHALL be removed
+
+#### Scenario: Name match does not steal a claimed id
+- **WHEN** the current schema has `{id: A, name: "a"}` and a client sends `[{id: A, name: "b"}, {name: "a"}]`
+- **THEN** `b` SHALL keep `id: A` (a rename of `a`) and the second entry SHALL be a new field with a freshly generated `id`
+
+#### Scenario: Update rejects duplicate names
+- **WHEN** a client updates a dataset with `[{id: A, name: "x"}, {id: B, name: "X"}]`
+- **THEN** the system SHALL respond with HTTP 400 and error code `VALIDATION_ERROR`; neither the schema nor any test case SHALL change
+
+#### Scenario: Stored field without id is matched by name
+- **WHEN** a stored schema field `prompt` carries no `id` and a client updates the dataset with `[{name: "prompt", type: "STRING"}]`
+- **THEN** the persisted `prompt` SHALL carry a newly generated `id` and no test-case data SHALL be removed
+
+#### Scenario: Run snapshot carries field ids
+- **WHEN** a run is started for a suite bound to a dataset whose schema fields carry ids
+- **THEN** the run's snapshot `testCaseSchema` SHALL contain the same `id` on every field
+
+#### Scenario: New field gets a fresh id
+- **WHEN** a client updates a dataset adding `{name: "newColumn", type: "STRING"}` (no `id`, no same-named current field)
+- **THEN** the persisted `newColumn` SHALL carry a newly generated `id` distinct from every other field's `id`
+
+### Requirement: Dataset schema field rename preserves data
+On dataset update, a request field whose `id` equals a current-schema field's `id` but whose `name` differs SHALL be treated as a **rename** of that field. Before the update completes, the system SHALL move every value stored under the old name to the new name, in the shared `data` map and in every element of `multiTurnData`, for every test case of the dataset. All renames of one request SHALL be applied as one simultaneous mapping, so swaps (`a→b`, `b→a`) and chains (`a→b`, `b→c`) preserve every value. A rename SHALL NOT relocate a value between `data` and `multiTurnData`, even when the same request flips the field's `perTurn`; misplacement is reported by revalidation, as for any `perTurn` change. A rename that also changes the field's `type` SHALL move the values and leave coercion to revalidation.
+Status: **Planned**
+
+#### Scenario: Rename keeps the column's values
+- **WHEN** the schema is `[{id: A, name: "column1"}, {id: B, name: "column2"}]`, a test case has `data: {column1: "x", column2: "y"}`, and a client updates the schema to `[{id: A, name: "column1"}, {id: B, name: "column3"}]`
+- **THEN** the test case's `data` SHALL be `{column1: "x", column3: "y"}`
+
+#### Scenario: Rename moves per-turn values in every turn
+- **WHEN** field `{id: P, name: "q", perTurn: true}` is renamed to `question` and a test case has `multiTurnData: [{q: "1"}, {q: "2"}]`
+- **THEN** the test case's `multiTurnData` SHALL be `[{question: "1"}, {question: "2"}]`
+
+#### Scenario: Swap preserves both values
+- **WHEN** fields `{id: A, name: "a"}` and `{id: B, name: "b"}` are updated to `{id: A, name: "b"}` and `{id: B, name: "a"}`, and a test case has `data: {a: 1, b: 2}`
+- **THEN** the test case's `data` SHALL be `{b: 1, a: 2}`
+
+#### Scenario: Rename with perTurn flip does not relocate
+- **WHEN** shared field `{id: A, name: "ctx"}` is renamed to `context` and flipped to `perTurn: true` in the same request, and a multi-turn test case has `data: {ctx: "v"}`
+- **THEN** the test case SHALL have `data: {context: "v"}` with `multiTurnData` unchanged, and revalidation SHALL report `context` as misplaced
+
+#### Scenario: Rename with type change is coerced by revalidation
+- **WHEN** field `{id: A, name: "score", type: "STRING"}` is renamed to `points` with `type: "INTEGER"` and a test case has `data: {score: "5"}`
+- **THEN** the test case SHALL end with `data: {points: 5}` once the update's revalidation has run
+
+#### Scenario: Old client without ids renames as delete + create
+- **WHEN** a client sends the renamed field without an `id` (`[{name: "column3"}]` replacing `column2`)
+- **THEN** the system SHALL treat it as removal of `column2` plus a new field `column3`, exactly as before field ids existed
+
+### Requirement: Field rename restricted on shared datasets
+A dataset update containing at least one rename (see "Dataset schema field rename preserves data") SHALL be allowed only when the dataset is `PRIVATE`, or is `PUBLIC` with no suite bound to it. A rename on a `PUBLIC` dataset with one or more bound suites SHALL be rejected, because renaming would silently invalidate suites owned by other users. A suite bound concurrently with the update SHALL NOT slip past this check. Updates without renames (adding, removing, or re-typing fields; metadata edits) are unaffected by this requirement.
+Status: **Planned**
+
+#### Scenario: Rename on PRIVATE dataset succeeds
+- **WHEN** a client renames a field of a `PRIVATE` dataset bound to its suite
+- **THEN** the update SHALL succeed, the data SHALL be moved, and the bound suite's validity SHALL reflect the renamed schema when the response is returned
+
+#### Scenario: Rename on unbound PUBLIC dataset succeeds
+- **WHEN** a client renames a field of a `PUBLIC` dataset that no suite references
+- **THEN** the update SHALL succeed and the data SHALL be moved
+
+#### Scenario: Rename on bound PUBLIC dataset is rejected
+- **WHEN** a client renames a field of a `PUBLIC` dataset referenced by at least one suite
+- **THEN** the system SHALL respond with HTTP 409 and error code `DATASET_FIELD_RENAME_FORBIDDEN`; neither the schema, the dataset version, nor any test case SHALL change
+
+#### Scenario: Non-rename edit on bound PUBLIC dataset is allowed
+- **WHEN** a client adds or removes a field of a `PUBLIC` dataset referenced by suites, without renaming any field
+- **THEN** the update SHALL proceed as before this requirement
 
 ## Implementation notes
 

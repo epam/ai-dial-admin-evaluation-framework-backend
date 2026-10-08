@@ -35,6 +35,8 @@ public enum ErrorCode {
     PRIVATE_TRANSITION_INVALID_BINDING_COUNT,
     /** POST /test-suites/{id}/runs on a suite with datasetId=null. */
     SUITE_HAS_NO_DATASET,
+    /** PUT /datasets/{id} renamed a schema field on a PUBLIC dataset that is bound to at least one suite. */
+    DATASET_FIELD_RENAME_FORBIDDEN,
     /** POST /api/internal/runs/{runId}/execute for a run that already has an active dispatch. */
     RUN_ALREADY_ACTIVE,
     INTERNAL_ERROR,

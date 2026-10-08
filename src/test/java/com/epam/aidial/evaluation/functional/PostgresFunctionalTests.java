@@ -31,6 +31,9 @@ import com.epam.aidial.evaluation.functional.tests.DatasetCrudFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetDetachFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetFileFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetMigrationFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.DatasetSchemaFieldIdBackfillFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.DatasetSchemaFieldIdImportFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.DatasetSchemaFieldRenameFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetScopedTestCaseFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DatasetVisibilityFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.DeploymentFunctionalTests;
@@ -105,6 +108,7 @@ import com.epam.aidial.evaluation.functional.tests.TestCaseMetricScoreAggregatio
 import com.epam.aidial.evaluation.functional.tests.TestCaseMetricScoreAggregatorFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseMetricScoresStructuredQueryFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseQueryAndFilterFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.TestCaseRenameDataFieldsFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestCaseRunInputsRetentionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteCloneFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.TestSuiteDatasetFunctionalTests;
@@ -335,6 +339,15 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class DatasetMigrationTests extends DatasetMigrationFunctionalTests {}
+
+    @Nested
+    class DatasetSchemaFieldIdBackfillTests extends DatasetSchemaFieldIdBackfillFunctionalTests {}
+
+    @Nested
+    class DatasetSchemaFieldRenameTests extends DatasetSchemaFieldRenameFunctionalTests {}
+
+    @Nested
+    class DatasetSchemaFieldIdImportTests extends DatasetSchemaFieldIdImportFunctionalTests {}
 
     @Nested
     class DeploymentTests extends DeploymentFunctionalTests {}
@@ -690,6 +703,9 @@ public class PostgresFunctionalTests extends FunctionalTests {
 
     @Nested
     class TestCaseQueryAndFilterTests extends TestCaseQueryAndFilterFunctionalTests {}
+
+    @Nested
+    class TestCaseRenameDataFieldsTests extends TestCaseRenameDataFieldsFunctionalTests {}
 
     @Nested
     @DisplayName("Metric provider sync job")

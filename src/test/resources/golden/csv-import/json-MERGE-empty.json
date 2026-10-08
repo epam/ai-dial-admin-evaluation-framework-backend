@@ -86,18 +86,22 @@
     "status" : 200
   },
   "testCaseSchema" : [ {
+    "id" : "<uuid>",
     "name" : "meta",
     "required" : false,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "tags",
     "required" : false,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "newObj",
     "required" : false,
     "type" : "OBJECT"
   }, {
+    "id" : "<uuid>",
     "name" : "newArr",
     "required" : false,
     "type" : "ARRAY"

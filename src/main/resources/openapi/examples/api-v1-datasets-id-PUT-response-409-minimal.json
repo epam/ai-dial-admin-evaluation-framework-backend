@@ -1,0 +1,8 @@
+{
+  "path": "/api/v1/datasets/550e8400-e29b-41d4-a716-446655440000",
+  "method": "PUT",
+  "status": 409,
+  "code": "DATASET_FIELD_RENAME_FORBIDDEN",
+  "error": "Conflict",
+  "message": "Cannot rename fields of PUBLIC dataset 550e8400-e29b-41d4-a716-446655440000: it is bound to 2 test suite(s)"
+}

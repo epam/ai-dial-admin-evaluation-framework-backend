@@ -383,7 +383,7 @@ Status: **Planned**
 
 #### Scenario: Auto-detected schema is persisted on the dataset
 - **WHEN** CSV import commits and schema auto-detection or merge occurs
-- **THEN** system SHALL persist the new or merged schema to the **Dataset's** `testCaseSchema`, bump dataset `version`, and (if schema actually changed) spawn the dataset-rooted `RevalidationTask` to coerce and revalidate existing test cases against the new schema
+- **THEN** system SHALL persist the new or merged schema to the **Dataset's** `testCaseSchema` through the dataset update rules (see "Import persists the schema through the dataset update rules"), bump dataset `version`, and run the dataset-rooted `RevalidationTask` to coerce and revalidate the test cases against the new schema; when the resulting schema equals the current one (ignoring field `id`s), the system SHALL NOT persist it, SHALL NOT bump `version` and SHALL NOT run a task
 
 #### Scenario: Schema-change side-effects from import
 - **WHEN** an import in OVERRIDE or MERGE mode results in a schema change
@@ -1557,6 +1557,42 @@ Status: **Implemented**
 #### Scenario: Genuine final-state duplicate within a permutation still rejected
 - **WHEN** a batch operation assigns the same final `testCaseName` to two items (a real duplicate, not a permutation)
 - **THEN** system SHALL respond with HTTP 409 (UNIQUE_CONSTRAINT_VIOLATION) and roll back all changes
+
+### Requirement: Import persists the schema through the dataset update rules
+Whenever a CSV or ZIP import persists a dataset `testCaseSchema` (OVERRIDE, MERGE with new fields, or any mode into an empty schema), the persisted schema SHALL obey the same rules as a dataset PUT: field ids are resolved by name per the `datasets` requirement "Dataset schema field identity" (an imported column whose name equals a current field keeps that field's `id`; any other column gets a new `id`), and current fields absent from the imported schema are removed with their data pruned. Imports are name-based and never rename a field, so the "Field rename restricted on shared datasets" rule never rejects an import. A dataset-rooted revalidation SHALL run when, and only when, the persisted schema differs from the dataset's previous schema, and it SHALL run after the imported rows have been written and coerced. An import SHALL lock the dataset before its first test-case write and SHALL compute and persist the schema from the dataset as committed at that point: another import into the same dataset SHALL wait for the lock, and a concurrent dataset PUT SHALL either be applied entirely before the lock (and then be seen by the import) or after the import commits — never interleaved, and never reverted by the import. A PUT carrying the pre-import version SHALL be rejected with HTTP 409 `VERSION_CONFLICT` when the import persisted a schema change (which bumps the dataset `version`); an import that persists no schema leaves the version unchanged. ZIP-specific preparation (manifest parsing, column-type planning and file uploads) runs before the lock is taken. A field name that differs only in case from an existing field is a duplicate name, so an import producing one (e.g. a MERGE column `Prompt` against a stored `prompt`) SHALL be rejected with HTTP 400 and roll back.
+Status: **Planned**
+
+#### Scenario: OVERRIDE keeps ids of surviving columns
+- **WHEN** the dataset schema is `[{id: A, name: "prompt"}, {id: B, name: "legacy"}]` and a client imports a CSV with `importMode=OVERRIDE` and columns `prompt, answer`
+- **THEN** the persisted schema SHALL contain `prompt` with `id: A` and `answer` with a newly generated `id`, and SHALL NOT contain `legacy`
+
+#### Scenario: MERGE keeps existing ids and adds new ones
+- **WHEN** the dataset schema is `[{id: A, name: "prompt"}]` and a client imports a CSV with `importMode=MERGE` and columns `prompt, answer`
+- **THEN** the persisted schema SHALL be `prompt` with `id: A` followed by `answer` with a newly generated `id`
+
+#### Scenario: OVERRIDE into a bound PUBLIC dataset is not rejected
+- **WHEN** a client imports with `importMode=OVERRIDE` into a `PUBLIC` dataset referenced by suites, dropping one current column
+- **THEN** the import SHALL succeed as before field ids existed (no HTTP 409)
+
+#### Scenario: Revalidation sees coerced rows
+- **WHEN** an import persists a changed schema
+- **THEN** exactly one revalidation task SHALL be recorded for the import, and it SHALL evaluate the imported rows after their values were coerced to the persisted schema's types
+
+#### Scenario: Re-import with an unchanged schema runs no revalidation
+- **WHEN** a client imports with `importMode=OVERRIDE` a CSV whose columns and inferred types reproduce the dataset's current schema exactly
+- **THEN** the rows SHALL be replaced and no revalidation task SHALL be recorded
+
+#### Scenario: PUT based on the pre-import dataset is rejected
+- **WHEN** an import that persists a changed schema commits, and a dataset PUT carrying the dataset's pre-import version arrives while, or after, it runs
+- **THEN** the PUT SHALL be rejected with HTTP 409 `VERSION_CONFLICT` and SHALL change nothing; the imported rows and schema SHALL stay intact
+
+#### Scenario: Import does not revert a committed rename
+- **WHEN** a dataset PUT renaming `column2` to `column3` commits, and an import with `importMode=MERGE` into the same dataset then runs
+- **THEN** the import SHALL see `column3` (not `column2`) as the current field, and the persisted schema SHALL keep `column3` with its original `id`
+
+#### Scenario: MERGE column differing only in case is rejected
+- **WHEN** the dataset schema contains `prompt` and a client imports a CSV with `importMode=MERGE` and a column `Prompt`
+- **THEN** the system SHALL return HTTP 400 `VALIDATION_ERROR` naming the duplicate field, and SHALL NOT persist any row or schema change
 
 ## Implementation Notes
 - Controllers: TestCaseController, TestCaseBulkPatchController, TestSuiteController (revalidation endpoints), MetricDeclarationController.

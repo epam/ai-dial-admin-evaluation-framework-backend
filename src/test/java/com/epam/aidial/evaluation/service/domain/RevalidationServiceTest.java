@@ -171,7 +171,7 @@ class RevalidationServiceTest {
     }
 
     // -----------------------------------------------------------------------
-    // runDatasetRevalidationAsync — happy path
+    // runDatasetRevalidation — happy path
     // -----------------------------------------------------------------------
 
     @Test
@@ -211,7 +211,7 @@ class RevalidationServiceTest {
                         .warnings(List.of())
                         .build());
 
-        service.runDatasetRevalidationAsync(taskId, datasetId);
+        service.runDatasetRevalidation(taskId, datasetId);
 
         // Per-suite Phase 2 work for both
         verify(testSuiteMetricDefinitionService).revalidateAllForSuite(eq(suiteA), any(), any());
@@ -263,7 +263,7 @@ class RevalidationServiceTest {
                         .warnings(List.of())
                         .build());
 
-        service.runDatasetRevalidationAsync(taskId, datasetId);
+        service.runDatasetRevalidation(taskId, datasetId);
 
         // suiteA and suiteC are fully revalidated despite suiteB throwing
         verify(testSuiteMetricDefinitionService).revalidateAllForSuite(eq(suiteA), any(), any());
@@ -305,7 +305,7 @@ class RevalidationServiceTest {
                 .when(testSuiteMetricDefinitionService)
                 .revalidateAllForSuite(eq(suiteA), any(), any());
 
-        service.runDatasetRevalidationAsync(taskId, datasetId);
+        service.runDatasetRevalidation(taskId, datasetId);
 
         // suiteB completed normally
         verify(testSuiteMetricDefinitionService).revalidateAllForSuite(eq(suiteB), any(), any());
@@ -342,7 +342,7 @@ class RevalidationServiceTest {
 
         when(testSuiteRepository.findSuitesReferencingDataset(datasetId)).thenReturn(List.of());
 
-        service.runDatasetRevalidationAsync(taskId, datasetId);
+        service.runDatasetRevalidation(taskId, datasetId);
 
         // Validation update is never reached because the coerce-write guard failed
         verify(testCaseRepository, never())
@@ -355,7 +355,7 @@ class RevalidationServiceTest {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("runDatasetRevalidationAsync: when dataset disappears after task save, task ends FAILED with reason")
+    @DisplayName("runDatasetRevalidation: when dataset disappears after task save, task ends FAILED with reason")
     void async_datasetGoneAfterStart_endsFailed() {
         RevalidationTask task = pendingTask(0);
         AtomicInteger counter = new AtomicInteger(0);
@@ -372,7 +372,7 @@ class RevalidationServiceTest {
         });
         when(datasetRepository.findById(datasetId)).thenReturn(Optional.empty());
 
-        service.runDatasetRevalidationAsync(taskId, datasetId);
+        service.runDatasetRevalidation(taskId, datasetId);
 
         ArgumentCaptor<RevalidationTask> cap = ArgumentCaptor.forClass(RevalidationTask.class);
         verify(revalidationTaskRepository, atLeast(2)).update(cap.capture());
@@ -383,11 +383,11 @@ class RevalidationServiceTest {
     }
 
     @Test
-    @DisplayName("runDatasetRevalidationAsync: when task id does not resolve, no updates are issued")
+    @DisplayName("runDatasetRevalidation: when task id does not resolve, no updates are issued")
     void async_taskIdMissing_silentlyReturns() {
         when(revalidationTaskRepository.findById(taskId)).thenReturn(Optional.empty());
 
-        service.runDatasetRevalidationAsync(taskId, datasetId);
+        service.runDatasetRevalidation(taskId, datasetId);
 
         verify(revalidationTaskRepository, never()).update(any());
     }

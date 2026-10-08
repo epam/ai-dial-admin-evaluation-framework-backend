@@ -1,9 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
-import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
-import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
@@ -25,6 +23,8 @@ import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
 import com.epam.aidial.evaluation.service.domain.csv.ParsedCsvRow;
 import com.epam.aidial.evaluation.service.domain.csv.ResolvedSchemaHints;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvColumnInfoDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
@@ -32,7 +32,6 @@ import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportWarningDto;
-import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationDetector;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
@@ -68,11 +67,9 @@ public class CsvImportService {
     private static final String TURN_INDEX_HEADER = "turnIndex";
     private static final int SAMPLE_ROWS_LIMIT = 10;
 
-    private final DatasetRepository datasetRepository;
-    private final DatasetSchemaProvider datasetSchemaProvider;
+    private final DatasetService datasetService;
     private final TestCaseRepository testCaseRepository;
     private final TestCaseValidationService testCaseValidationService;
-    private final RevalidationService revalidationService;
     private final CsvImportProperties csvImportProperties;
     private final CsvCellParser csvCellParser;
     private final SchemaTypeCoercer schemaTypeCoercer;
@@ -115,10 +112,8 @@ public class CsvImportService {
             CsvConflictStrategy conflictStrategy,
             CsvImportSchemaHints hints) {
         validateFileSize(contentLength);
-        if (!datasetRepository.existsById(datasetId)) {
-            throw new EntityNotFoundException("Dataset not found: " + datasetId);
-        }
-        List<FieldDefinitionDto> testCaseSchema = datasetSchemaProvider.getSchema(datasetId);
+        List<FieldDefinitionDto> testCaseSchema =
+                datasetService.getById(datasetId).getTestCaseSchema();
 
         try (CSVParser parser = CsvFormats.importParser(inputStream, delimiter)) {
             List<String> headers = parseHeader(parser);
@@ -259,8 +254,9 @@ public class CsvImportService {
     /**
      * Parse and persist CSV rows with configurable import mode and conflict strategy.
      * Processes CSV in batches (configurable batch size) without loading entire file into memory.
-     * When the dataset schema is persisted (OVERRIDE / APPEND-with-empty-schema / MERGE-with-new-fields),
-     * triggers a dataset-rooted revalidation task so downstream suites pick up the new schema.
+     * The dataset row is locked first via {@code DatasetService.getByIdForUpdate}. When the schema changes
+     * (OVERRIDE / APPEND-with-empty-schema / MERGE-with-new-fields) it is persisted after the fixup pass via
+     * {@code DatasetService.update}, which revalidates only when the schema actually changed.
      */
     @Transactional("metaTransactionManager")
     public CsvImportResultDto importCsv(
@@ -301,9 +297,8 @@ public class CsvImportService {
             CsvConflictStrategy conflictStrategy,
             CsvImportSchemaHints hints) {
         validateFileSize(contentLength);
-        Dataset dataset = datasetRepository
-                .findById(datasetId)
-                .orElseThrow(() -> new EntityNotFoundException("Dataset not found: " + datasetId));
+        // Lock first (design D6): before any test-case write, matching DatasetService.update's lock order.
+        DatasetResponseDto dataset = datasetService.getByIdForUpdate(datasetId);
         if (expectedVersion != null && !expectedVersion.equals(dataset.getVersion())) {
             throw new VersionConflictException(
                     "Dataset version conflict: expected " + expectedVersion + " but current is " + dataset.getVersion(),
@@ -311,7 +306,7 @@ public class CsvImportService {
                     expectedVersion);
         }
 
-        List<FieldDefinitionDto> testCaseSchema = datasetSchemaProvider.getSchema(datasetId);
+        List<FieldDefinitionDto> testCaseSchema = dataset.getTestCaseSchema();
 
         try (CSVParser parser = CsvFormats.importParser(inputStream, delimiter)) {
             List<String> headers = parseHeader(parser);
@@ -425,17 +420,6 @@ public class CsvImportService {
             // Post-stream membership set (design D3): the observed multi-turn gate, exact after streaming.
             Set<String> finalMultiTurnColumns = sawMultiTurnCase ? allDataFieldNames : Set.of();
 
-            // Schema persistence after streaming completes
-            boolean schemaPersisted = persistSchema(
-                    datasetId,
-                    mode,
-                    schemaEmpty,
-                    bindings,
-                    testCaseSchema,
-                    inferredTypes,
-                    finalMultiTurnColumns,
-                    resolvedHints);
-
             // Post-persist fixup: coerce values to the schema's *effective* (final, hints-aware) type per
             // column, never to the raw per-cell inference. With a manifest or a fileColumns hint (design
             // D4), the persisted type can differ from what inference alone would say (e.g. a manifest
@@ -450,11 +434,10 @@ public class CsvImportService {
                 fixupTestCases(datasetId, changedColumns, effectiveTypes, finalSchema);
             }
 
-            // Trigger dataset-rooted revalidation when the dataset schema was persisted.
-            // This refreshes Phase-2 suite-level validation for every suite referencing this dataset.
-            if (schemaPersisted) {
-                revalidationService.startDatasetRevalidation(datasetId);
-            }
+            // Schema persistence after streaming and fixup (design D6): DatasetService.update runs the
+            // dataset-rooted revalidation itself, and only when the resolved schema differs, so it sees the
+            // coerced rows.
+            persistSchema(dataset, mode, schemaEmpty, bindings, inferredTypes, finalMultiTurnColumns, resolvedHints);
 
             CsvImportResultDto.CsvImportResultDtoBuilder builder = CsvImportResultDto.builder()
                     .totalRows(totalRows)
@@ -759,7 +742,8 @@ public class CsvImportService {
 
     /**
      * Persists the dataset's test_case_schema for OVERRIDE / empty-schema / MERGE-with-new-fields cases.
-     * Returns true when the dataset schema column was updated (which also bumps the dataset version).
+     * Persists via {@code DatasetService.update} (which also bumps the dataset version); skipped when the
+     * schema is unchanged ignoring field ids.
      *
      * <p>The MERGE branch only attempts a delta when {@code inferredTypes} is non-empty (a cheap way to
      * skip the work when the CSV plainly added no new column) <b>or</b> {@code hints} has driving fields.
@@ -774,47 +758,54 @@ public class CsvImportService {
      * turns out to have no CSV column. Plain CSV ({@link CsvImportSchemaHints#EMPTY}) never has driving
      * fields, so this keeps the exact old gate for plain CSV.
      */
-    private boolean persistSchema(
-            UUID datasetId,
+    private void persistSchema(
+            DatasetResponseDto dataset,
             CsvImportMode mode,
             boolean schemaEmpty,
             List<ColumnBinding> bindings,
-            List<FieldDefinitionDto> testCaseSchema,
             Map<String, SchemaFieldType> inferredTypes,
             Set<String> multiTurnColumns,
             ResolvedSchemaHints hints) {
+        final List<FieldDefinitionDto> testCaseSchema = dataset.getTestCaseSchema();
+        List<FieldDefinitionDto> newSchema = null;
         if (mode == CsvImportMode.OVERRIDE || schemaEmpty) {
             // Build full auto-detected schema from inferred types (OVERRIDE, APPEND+empty, MERGE+empty)
-            List<FieldDefinitionDto> newSchema = schemaFieldBuilder.buildFromBindings(
+            newSchema = schemaFieldBuilder.buildFromBindings(
                     bindings, inferredTypes, testCaseSchema, multiTurnColumns, hints);
-            String schemaJson = serializeSchema(newSchema);
-            datasetRepository.updateTestCaseSchema(datasetId, schemaJson);
-            return true;
-        }
-        if (mode == CsvImportMode.MERGE
+        } else if (mode == CsvImportMode.MERGE
                 && (!inferredTypes.isEmpty() || !hints.drivingFields().isEmpty())) {
             // Merge: add only new fields (those not already in the existing schema)
             List<FieldDefinitionDto> delta = schemaFieldBuilder.buildMergeDelta(
                     testCaseSchema, bindings, inferredTypes, multiTurnColumns, hints);
             if (!delta.isEmpty()) {
-                List<FieldDefinitionDto> mergedSchema =
-                        new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
-                mergedSchema.addAll(delta);
-                String schemaJson = serializeSchema(mergedSchema);
-                datasetRepository.updateTestCaseSchema(datasetId, schemaJson);
-                return true;
+                newSchema = new ArrayList<>(testCaseSchema != null ? testCaseSchema : List.of());
+                newSchema.addAll(delta);
             }
         }
-        // APPEND with existing schema: no schema update
-        return false;
+        // APPEND with existing schema / MERGE without new fields: no schema update
+        if (newSchema == null || sameSchemaIgnoringIds(testCaseSchema, newSchema)) {
+            return;
+        }
+        // Metadata carried unchanged from the locked read; visibility is ignored by update.
+        final DatasetRequestDto request = DatasetRequestDto.builder()
+                .name(dataset.getName())
+                .description(dataset.getDescription())
+                .testCaseSchema(newSchema)
+                .build();
+        datasetService.update(dataset.getId(), request, dataset.getVersion());
     }
 
-    private String serializeSchema(List<FieldDefinitionDto> schema) {
-        try {
-            return objectMapper.writeValueAsString(schema);
-        } catch (JacksonException e) {
-            throw new IllegalStateException("Failed to serialize schema", e);
+    /** True when the import would reproduce the stored schema; skipping then avoids a pointless version bump. */
+    private boolean sameSchemaIgnoringIds(List<FieldDefinitionDto> current, List<FieldDefinitionDto> candidate) {
+        final List<FieldDefinitionDto> currentNoIds = withoutIds(current);
+        return !currentNoIds.isEmpty() && currentNoIds.equals(withoutIds(candidate));
+    }
+
+    private List<FieldDefinitionDto> withoutIds(List<FieldDefinitionDto> schema) {
+        if (schema == null) {
+            return List.of();
         }
+        return schema.stream().map(f -> f.toBuilder().id(null).build()).toList();
     }
 
     // -------------------------------------------------------------------------

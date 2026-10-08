@@ -458,6 +458,48 @@ public class PostgresTestCaseRepository implements TestCaseRepository {
     }
 
     @Override
+    public int renameDataFields(UUID datasetId, Map<String, String> renames) {
+        if (renames == null || renames.isEmpty()) {
+            return 0;
+        }
+        // Parallel bound text[] arrays (old keys / new keys); names are never inlined. The jsonb `?` / `?|`
+        // operators collide with JDBC placeholders, so the equivalent jsonb_exists / jsonb_exists_any functions
+        // are used. Every new key is read from the ORIGINAL object, so swaps and chains are simultaneous.
+        // Aliases (m, src, dst, e, elem, t, ord) do not shadow the column expressions `data` / `elem`.
+        // multi_turn_data is rewritten only when it is a JSONB array, and only its object elements; every other
+        // shape is passed through untouched (same guard as removeDataFields). The UPDATE only touches rows that
+        // hold at least one old key. updated_at_ms is deliberately not bumped (matches removeDataFields).
+        final List<String> oldKeys = new ArrayList<>(renames.keySet());
+        final List<String> newKeys = oldKeys.stream().map(renames::get).toList();
+        final Field<String[]> oldArray = DSL.array(oldKeys.toArray(String[]::new));
+        final Field<String[]> newArray = DSL.array(newKeys.toArray(String[]::new));
+        final String dataRename = renameExpression("data", "{0}", "{1}");
+        final String turnRename = renameExpression("t.elem", "{0}", "{1}");
+        return dsl.execute(
+                "UPDATE test_cases SET "
+                        + "data = CASE WHEN jsonb_typeof(data) = 'object' THEN " + dataRename + " ELSE data END, "
+                        + "multi_turn_data = CASE WHEN jsonb_typeof(multi_turn_data) = 'array' THEN "
+                        + "(SELECT COALESCE(jsonb_agg(CASE WHEN jsonb_typeof(t.elem) = 'object' "
+                        + "THEN " + turnRename + " ELSE t.elem END ORDER BY t.ord), '[]'::jsonb) "
+                        + "FROM jsonb_array_elements(multi_turn_data) WITH ORDINALITY AS t(elem, ord)) "
+                        + "ELSE multi_turn_data END "
+                        + "WHERE dataset_id = {2} AND ("
+                        + "(jsonb_typeof(data) = 'object' AND jsonb_exists_any(data, {0}::text[])) "
+                        + "OR (jsonb_typeof(multi_turn_data) = 'array' AND EXISTS ("
+                        + "SELECT 1 FROM jsonb_array_elements(multi_turn_data) AS e(elem) "
+                        + "WHERE jsonb_typeof(e.elem) = 'object' AND jsonb_exists_any(e.elem, {0}::text[]))))",
+                oldArray,
+                newArray,
+                DSL.val(datasetId.toString()));
+    }
+
+    private static String renameExpression(String column, String oldArg, String newArg) {
+        return "((" + column + " - " + oldArg + "::text[]) || COALESCE((SELECT jsonb_object_agg(m.dst, "
+                + column + " -> m.src) FROM unnest(" + oldArg + "::text[], " + newArg
+                + "::text[]) AS m(src, dst) WHERE jsonb_exists(" + column + ", m.src)), '{}'::jsonb))";
+    }
+
+    @Override
     public List<String> findExistingNamesByDatasetIdAndNamesLower(UUID datasetId, List<String> lowerNames) {
         if (lowerNames == null || lowerNames.isEmpty()) {
             return List.of();

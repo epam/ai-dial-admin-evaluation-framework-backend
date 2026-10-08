@@ -72,6 +72,42 @@ class ZipManifestSerializerTest {
     }
 
     @Test
+    @DisplayName("write omits field ids from the manifest JSON and does not mutate the input")
+    void write_withFieldIds_omitsIdFromJson() {
+        FieldDefinitionDto field = FieldDefinitionDto.builder()
+                .id("11111111-1111-1111-1111-111111111111")
+                .name("prompt")
+                .type(SchemaFieldType.STRING)
+                .build();
+        ZipManifest manifest = new ZipManifest(ZipManifest.CURRENT_FORMAT_VERSION, List.of(field), List.of());
+
+        String json = new String(serializer.write(manifest), StandardCharsets.UTF_8);
+
+        assertThat(json).doesNotContain("11111111-1111");
+        assertThat(new ObjectMapper()
+                        .readTree(json)
+                        .get("testCaseSchema")
+                        .get(0)
+                        .path("id")
+                        .isString())
+                .isFalse();
+        assertThat(field.getId()).isEqualTo("11111111-1111-1111-1111-111111111111");
+    }
+
+    @Test
+    @DisplayName("read drops field ids found in the manifest JSON")
+    void read_withFieldIds_returnsFieldsWithNullId() {
+        String json = "{\"formatVersion\":1,\"testCaseSchema\":[{\"id\":\"foreign-id\","
+                + "\"name\":\"prompt\",\"type\":\"STRING\"}],\"files\":[]}";
+
+        ZipManifest read = serializer.read(json.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(read.testCaseSchema()).hasSize(1);
+        assertThat(read.testCaseSchema().getFirst().getId()).isNull();
+        assertThat(read.testCaseSchema().getFirst().getName()).isEqualTo("prompt");
+    }
+
+    @Test
     @DisplayName("a file entry without contentType (older or hand-made archive) reads with a null content type")
     void read_fileEntryWithoutContentType_hasNullContentType() {
         String json = "{\"formatVersion\":1,\"testCaseSchema\":[],"
@@ -166,6 +202,19 @@ class ZipManifestSerializerTest {
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("duplicate")
                 .hasMessageContaining("document");
+    }
+
+    @Test
+    @DisplayName("read throws ValidationException on field names differing only by case")
+    void read_withCaseInsensitiveDuplicateFieldName_throwsValidationException() {
+        String json = "{\"formatVersion\":1,\"testCaseSchema\":["
+                + "{\"name\":\"prompt\",\"type\":\"STRING\"},"
+                + "{\"name\":\"Prompt\",\"type\":\"STRING\"}]}";
+
+        assertThatThrownBy(() -> serializer.read(json.getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("duplicate")
+                .hasMessageContaining("Prompt");
     }
 
     @Test

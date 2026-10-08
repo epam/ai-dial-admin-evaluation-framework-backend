@@ -2,7 +2,9 @@ package com.epam.aidial.evaluation.client.dialcore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
@@ -11,6 +13,7 @@ import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.RequestMatcher;
@@ -137,6 +141,8 @@ class DialRouteTriggerClientTest {
         FailingInputStream stream = new FailingInputStream();
         server.expect(req -> {}).andRespond(withSuccess(new InputStreamResource(stream), MediaType.TEXT_EVENT_STREAM));
 
+        // Proves the two failure modes don't bleed into each other: a stream-phase IOException (after a
+        // successful initial POST) is swallowed here, never surfacing as a DialRouteTriggerException.
         assertThatCode(() -> client.triggerEvalRun(RUN_ID, credential)).doesNotThrowAnyException();
 
         server.verify();
@@ -145,6 +151,32 @@ class DialRouteTriggerClientTest {
                 .filter(e -> e.getMessage().getFormattedMessage().contains("IOException while consuming"))
                 .toList();
         assertThat(warnLogs).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("throws DialRouteTriggerException instead of swallowing a 403 from the initial trigger call")
+    void throwsOnForbiddenFromInitialTriggerCall() {
+        CallerCredential credential = CallerCredential.bearer("jwt-token");
+        server.expect(req -> {}).andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertThatThrownBy(() -> client.triggerEvalRun(RUN_ID, credential))
+                .isInstanceOf(DialRouteTriggerException.class);
+
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("throws DialRouteTriggerException when the initial trigger call cannot reach Core")
+    void throwsOnConnectionFailureFromInitialTriggerCall() {
+        CallerCredential credential = CallerCredential.bearer("jwt-token");
+        server.expect(req -> {}).andRespond(req -> {
+            throw new IOException(new SocketTimeoutException("timeout"));
+        });
+
+        assertThatThrownBy(() -> client.triggerEvalRun(RUN_ID, credential))
+                .isInstanceOf(DialRouteTriggerException.class);
+
+        server.verify();
     }
 
     private List<LogEvent> streamClosedLogs() {

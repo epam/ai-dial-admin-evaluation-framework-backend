@@ -71,10 +71,8 @@ repositories {
 
 dependencies {
     implementation platform(SpringBootPlugin.BOM_COORDINATES)
-    // CVE-2026-68497 (jackson-databind unbounded numeric parsing CPU DoS): Boot 4.1.1 manages
-    // Jackson 2.21.5 / 3.1.5; override both families via their BOMs until Boot catches up.
-    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.2')
-    implementation platform('tools.jackson:jackson-bom:3.2.2')
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.22.3')
+    implementation platform('tools.jackson:jackson-bom:3.2.3')
 
     // Core Spring (no web, no security, no JDBC)
     implementation 'org.springframework.boot:spring-boot-starter'

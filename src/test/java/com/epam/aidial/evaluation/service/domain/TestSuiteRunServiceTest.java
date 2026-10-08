@@ -6,15 +6,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyChar;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerClient;
+import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerException;
 import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
@@ -336,6 +339,26 @@ class TestSuiteRunServiceTest {
             assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
             verify(dialRouteTriggerClient).triggerEvalRun(runId, credential);
             verify(evaluationJob, never()).dispatch(any(), any(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("marks the run FAILED when DialRouteTriggerClient throws DialRouteTriggerException")
+        void marksRunFailedWhenRouteTriggerThrows() {
+            when(dialAppProperties.isEnabled()).thenReturn(true);
+            CallerCredential credential = CallerCredential.bearer("jwt-token");
+
+            doThrow(new DialRouteTriggerException("boom", new RuntimeException("cause")))
+                    .when(dialRouteTriggerClient)
+                    .triggerEvalRun(any(UUID.class), any(CallerCredential.class));
+            when(evaluationJob.buildErrorDetails(eq("DIAL_APP_ROUTE_TRIGGER_FAILED"), any(), anyString(), isNull()))
+                    .thenReturn("{}");
+
+            invokeDispatchEvaluation(runId, credential, false);
+
+            // The mark-failed call happens on the virtual thread after triggerEvalRun throws, so this
+            // must poll rather than rely on a latch counted down before the throw.
+            verify(testSuiteRunRepository, timeout(2000))
+                    .updateToFailed(eq(runId), anyString(), anyString(), anyLong(), anyLong());
         }
 
         @Test

@@ -61,8 +61,8 @@ class DeploymentMapperTest {
                         .build())
                 .pricing(DialCorePricingDto.builder()
                         .unit("token")
-                        .prompt("0.15")
-                        .completion("0.60")
+                        .prompt(Map.of("rate", "0.15"))
+                        .completion(Map.of("rate", "0.60"))
                         .build())
                 .build();
 
@@ -107,8 +107,8 @@ class DeploymentMapperTest {
                         .build())
                 .pricing(DialCorePricingDto.builder()
                         .unit("token")
-                        .prompt("0.15")
-                        .completion("0.60")
+                        .prompt(Map.of("rate", "0.15"))
+                        .completion(Map.of("rate", "0.60"))
                         .build())
                 .build();
 

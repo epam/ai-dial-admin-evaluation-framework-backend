@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.service.domain;
 
 import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerClient;
+import com.epam.aidial.evaluation.client.dialcore.DialRouteTriggerException;
 import com.epam.aidial.evaluation.configuration.properties.dialapp.DialAppProperties;
 import com.epam.aidial.evaluation.configuration.properties.testsuite.TestSuiteRunProperties;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
@@ -320,7 +321,19 @@ public class TestSuiteRunService {
                 && credential != null) {
             // DIAL App mode: trigger via DIAL Core route, which will call back to the internal endpoint
             log.info("Dispatching eval via DIAL App mode (route trigger): runId={}", runId);
-            Thread.startVirtualThread(() -> dialRouteTriggerClient.get().triggerEvalRun(runId, credential));
+            Thread.startVirtualThread(() -> {
+                try {
+                    dialRouteTriggerClient.get().triggerEvalRun(runId, credential);
+                } catch (DialRouteTriggerException ex) {
+                    log.warn(
+                            "DIAL App mode route trigger failed for run {}; marking run FAILED: {}",
+                            runId,
+                            ex.getMessage(),
+                            ex);
+                    markRunFailed(
+                            runId, "Failed to trigger evaluation via DIAL Core route", "DIAL_APP_ROUTE_TRIGGER_FAILED");
+                }
+            });
         } else {
             try {
                 evaluationJob.dispatch(runId, credential, skipDeploymentPhase);

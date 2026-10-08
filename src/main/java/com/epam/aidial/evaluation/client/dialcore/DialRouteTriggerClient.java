@@ -11,8 +11,11 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Fires eval execution by calling DIAL Core's Application Route and consuming the SSE stream
@@ -40,24 +43,40 @@ public class DialRouteTriggerClient {
      * @param runId the run id to trigger
      * @param jwtCredential the user's JWT (BEARER-kind credential); used once for DIAL Core
      *     validation
+     * @throws DialRouteTriggerException if the initial trigger call fails (non-2xx response, e.g. a
+     *     403 from a rejected JWT, or a connectivity/timeout failure) before EF's own internal
+     *     endpoint is ever reached. Callers are expected to react by failing the run (see {@code
+     *     TestSuiteRunService.dispatchEvaluation}), since no dispatch has happened on this instance.
+     *     A failure during SSE-stream consumption after a successful initial POST does NOT throw this
+     *     — see {@link #consumeStream}.
      */
     public void triggerEvalRun(UUID runId, CallerCredential jwtCredential) {
         String deploymentName = dialAppProperties.getDeploymentName();
         String routeUrl = String.format("/v1/deployments/%s/route/api/internal/runs/%s/execute", deploymentName, runId);
 
+        final ResponseEntity<InputStream> response;
         try {
-            var response = dialRouteTriggerRestClient
+            response = dialRouteTriggerRestClient
                     .post()
                     .uri(routeUrl)
                     .header(jwtCredential.headerName(), jwtCredential.headerValue())
                     .retrieve()
                     .toEntity(InputStream.class);
+        } catch (RestClientResponseException e) {
+            log.warn(
+                    "DIAL Core route trigger rejected for run {} with status {}: {}",
+                    runId,
+                    e.getStatusCode(),
+                    e.getMessage(),
+                    e);
+            throw new DialRouteTriggerException("DIAL Core route trigger rejected with status " + e.getStatusCode(), e);
+        } catch (ResourceAccessException e) {
+            log.warn("DIAL Core route trigger failed to reach Core for run {}: {}", runId, e.getMessage(), e);
+            throw new DialRouteTriggerException("DIAL Core route trigger failed to reach Core", e);
+        }
 
-            if (response != null && response.getBody() != null) {
-                consumeStream(runId, response.getBody());
-            }
-        } catch (Exception e) {
-            log.warn("DIAL Core route trigger failed for run {}: {}", runId, e.getMessage(), e);
+        if (response.getBody() != null) {
+            consumeStream(runId, response.getBody());
         }
     }
 

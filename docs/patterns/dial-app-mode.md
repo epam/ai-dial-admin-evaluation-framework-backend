@@ -93,6 +93,24 @@ This ordering is specific to the internal endpoint's dispatch-then-stream patter
 `TestSuiteRunSseService.createEmitter`) only ever subscribes to runs that already exist and are not being
 dispatched by that same request, so it has no equivalent race and is unaffected by this change.
 
+## Pre-dispatch trigger failure handling
+
+`DialRouteTriggerClient.triggerEvalRun`'s initial POST to DIAL Core's Application Route can fail before
+EF's own internal endpoint is ever reached (403 from a rejected JWT, DNS/connection failure, read
+timeout) — i.e. before `EvalExecuteInternalController.executeRun` runs and before `ActiveRunRegistry`/
+`TestSuiteEvaluationJob` are touched for this run. Since this happens entirely within the DIAL Core call,
+not inside the proxied SSE stream, it is a distinct failure mode from a stream-phase disconnect (which is
+already handled by the SSE emitter's `onDisconnect` → `ActiveRunRegistry.cancel`, see above).
+
+`triggerEvalRun` narrows its catch to `RestClientResponseException` (non-2xx, e.g. 403) and
+`ResourceAccessException` (connectivity/timeout) and rethrows both as `DialRouteTriggerException`
+(`client.dialcore`) rather than swallowing them — `client.*` must not depend on `.service`/`.data.db`
+(layering rule), so it cannot call `markRunFailed` itself. `TestSuiteRunService.dispatchEvaluation`'s DIAL
+App branch (which already depends on both layers) catches `DialRouteTriggerException` on the virtual
+thread and calls its existing `markRunFailed(runId, ..., "DIAL_APP_ROUTE_TRIGGER_FAILED")`, transitioning
+the run from `PENDING` to `FAILED` and notifying SSE listeners — instead of leaving it stuck in `PENDING`
+forever. `consumeStream`'s own internal `IOException` handling (stream-phase) is unaffected.
+
 ## Security
 
 `/api/internal/**` is added to the same authenticated matcher set as `/api/v1/**` in
@@ -108,7 +126,11 @@ layer.
   but `isEnabled()==false`.
 - `TestSuiteRunService` dispatch branch: cover all three cases — flag off; flag on with a non-null
   credential (route trigger called); flag on with a null credential (falls back to direct dispatch, import
-  flow).
+  flow). Also cover the trigger-failure case: `DialRouteTriggerClient` throwing `DialRouteTriggerException`
+  results in `markRunFailed` being called for that run.
+- `DialRouteTriggerClient`: assert a 403 (or connection failure) from the initial trigger POST throws
+  `DialRouteTriggerException` rather than being swallowed, and that a stream-phase `IOException` (after a
+  successful initial POST) still does not throw it.
 - `EvalExecuteInternalController`: assert `dispatch`'s `RunAlreadyActiveException` surfaces as HTTP 409 via
   `DefaultExceptionHandler` (not a local catch-and-map), and that on that path
   `TestSuiteRunSseService.discardEmitter` is called so the pre-created emitter is not left tracked. Also

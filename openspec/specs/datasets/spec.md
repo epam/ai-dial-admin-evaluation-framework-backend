@@ -570,7 +570,9 @@ Status: **Planned**
 - **THEN** the system SHALL treat it as removal of `column2` plus a new field `column3`, exactly as before field ids existed
 
 ### Requirement: Field rename restricted on shared datasets
-A dataset update containing at least one rename (see "Dataset schema field rename preserves data") SHALL be allowed only when the dataset is `PRIVATE`, or is `PUBLIC` with no suite bound to it. A rename on a `PUBLIC` dataset with one or more bound suites SHALL be rejected, because renaming would silently invalidate suites owned by other users. A suite bound concurrently with the update SHALL NOT slip past this check. Updates without renames (adding, removing, or re-typing fields; metadata edits) are unaffected by this requirement.
+A dataset update containing at least one rename (see "Dataset schema field rename preserves data") SHALL be allowed only when the dataset is `PRIVATE`, or is `PUBLIC` with no suite bound to it. A rename on a `PUBLIC` dataset with one or more committed bound suites SHALL be rejected, because renaming would silently invalidate suites owned by other users. Updates without renames (adding, removing, or re-typing fields; metadata edits) are unaffected by this requirement.
+
+**Current limitation:** suite create/rebind validation occurs before its save acquires the dataset-row lock. If that validation reads the old schema and the save commits after a concurrent rename, the rename transaction may not observe the uncommitted binding. The rename can therefore succeed and the suite can subsequently persist validity computed from the old schema. This interleaving is not currently serialized or repaired by the rename transaction.
 Status: **Planned**
 
 #### Scenario: Rename on PRIVATE dataset succeeds
@@ -582,8 +584,12 @@ Status: **Planned**
 - **THEN** the update SHALL succeed and the data SHALL be moved
 
 #### Scenario: Rename on bound PUBLIC dataset is rejected
-- **WHEN** a client renames a field of a `PUBLIC` dataset referenced by at least one suite
+- **WHEN** a client renames a field of a `PUBLIC` dataset referenced by at least one committed suite
 - **THEN** the system SHALL respond with HTTP 409 and error code `DATASET_FIELD_RENAME_FORBIDDEN`; neither the schema, the dataset version, nor any test case SHALL change
+
+#### Scenario: Concurrent suite binding can escape the rename guard
+- **WHEN** a suite create/rebind validates against the old schema before a concurrent rename and commits its binding after the rename transaction checks for dependent suites
+- **THEN** the rename MAY succeed and the suite MAY persist validity computed from the old schema; this interleaving is a current limitation
 
 #### Scenario: Non-rename edit on bound PUBLIC dataset is allowed
 - **WHEN** a client adds or removes a field of a `PUBLIC` dataset referenced by suites, without renaming any field

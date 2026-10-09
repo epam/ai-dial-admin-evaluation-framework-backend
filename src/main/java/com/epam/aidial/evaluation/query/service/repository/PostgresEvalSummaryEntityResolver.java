@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.query.service.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES_ACTIVE;
 
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
@@ -49,7 +50,7 @@ public class PostgresEvalSummaryEntityResolver implements StructuredQueryEntityR
 
     @Override
     public Table<?> table() {
-        return TEST_CASE_EVAL_SUMMARIES;
+        return TEST_CASE_EVAL_SUMMARIES_ACTIVE;
     }
 
     @Override

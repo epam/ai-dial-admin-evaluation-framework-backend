@@ -33,6 +33,7 @@ import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
+import com.epam.aidial.evaluation.service.domain.analytics.RunDeletionService;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
@@ -108,6 +109,9 @@ class TestSuiteRunServiceTest {
     private EvalResultsCsvParser evalResultsCsvParser;
 
     @Mock
+    private RunDeletionService runDeletionService;
+
+    @Mock
     private DialRouteTriggerClient dialRouteTriggerClient;
 
     @Mock
@@ -146,6 +150,7 @@ class TestSuiteRunServiceTest {
                 evalResultsCsvParser,
                 Optional.of(dialRouteTriggerClient),
                 Optional.of(dialAppProperties),
+                runDeletionService,
                 metaTransactionManager);
 
         testSuiteId = UUID.randomUUID();
@@ -530,6 +535,82 @@ class TestSuiteRunServiceTest {
             when(testSuiteRunRepository.findById(unknownRunId)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.ensureRunExists(unknownRunId)).isInstanceOf(EntityNotFoundException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("deleteRun")
+    class DeleteRun {
+
+        private final UUID runId = UUID.randomUUID();
+
+        @Test
+        @DisplayName("calls tombstone write before meta delete for COMPLETED run")
+        void callsTombstoneBeforeDeleteForCompletedRun() {
+            TestSuiteRun completedRun = TestSuiteRun.builder()
+                    .id(runId)
+                    .status(RunStatus.COMPLETED.name())
+                    .build();
+            when(testSuiteRunRepository.findById(runId)).thenReturn(Optional.of(completedRun));
+            when(testSuiteRunRepository.deleteById(runId)).thenReturn(true);
+
+            service.deleteRun(runId);
+
+            // Verify tombstone write happened
+            verify(runDeletionService).markDeleted(eq(runId));
+            verify(testSuiteRunRepository).deleteById(eq(runId));
+        }
+
+        @Test
+        @DisplayName("does not proceed to meta delete if tombstone-write throws exception")
+        void doesNotDeleteMetaIfTombstoneWriteFails() {
+            TestSuiteRun failedRun = TestSuiteRun.builder()
+                    .id(runId)
+                    .status(RunStatus.FAILED.name())
+                    .build();
+            when(testSuiteRunRepository.findById(runId)).thenReturn(Optional.of(failedRun));
+            doThrow(new RuntimeException("Analytics DB error"))
+                    .when(runDeletionService)
+                    .markDeleted(runId);
+
+            assertThatThrownBy(() -> service.deleteRun(runId))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("Analytics DB error");
+
+            // Verify meta delete was never attempted
+            verify(testSuiteRunRepository, never()).deleteById(any());
+        }
+
+        @Test
+        @DisplayName("throws InvalidOperationException when run is not terminal")
+        void throwsForNonTerminalRun() {
+            TestSuiteRun runningRun = TestSuiteRun.builder()
+                    .id(runId)
+                    .status(RunStatus.RUNNING.name())
+                    .build();
+            when(testSuiteRunRepository.findById(runId)).thenReturn(Optional.of(runningRun));
+
+            assertThatThrownBy(() -> service.deleteRun(runId))
+                    .isInstanceOf(InvalidOperationException.class)
+                    .hasMessageContaining("Cannot delete a test suite run with status RUNNING");
+
+            // Verify neither tombstone nor meta delete was attempted
+            verify(runDeletionService, never()).markDeleted(any());
+            verify(testSuiteRunRepository, never()).deleteById(any());
+        }
+
+        @Test
+        @DisplayName("throws EntityNotFoundException when run does not exist")
+        void throwsWhenRunNotFound() {
+            when(testSuiteRunRepository.findById(runId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.deleteRun(runId))
+                    .isInstanceOf(EntityNotFoundException.class)
+                    .hasMessageContaining("TestSuiteRun not found");
+
+            // Verify neither tombstone nor meta delete was attempted
+            verify(runDeletionService, never()).markDeleted(any());
+            verify(testSuiteRunRepository, never()).deleteById(any());
         }
     }
 }

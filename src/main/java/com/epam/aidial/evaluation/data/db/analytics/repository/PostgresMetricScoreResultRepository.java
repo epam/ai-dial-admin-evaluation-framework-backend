@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT_ACTIVE;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.MetricScoreResultRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricScoreResult;
@@ -61,10 +62,13 @@ public class PostgresMetricScoreResultRepository implements MetricScoreResultRep
 
     @Override
     public List<MetricScoreResult> findByRunAndComputation(UUID runId, UUID computationId) {
-        return dsl.selectFrom(METRIC_SCORE_RESULT)
-                .where(METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .and(METRIC_SCORE_RESULT.COMPUTATION_ID.eq(computationId.toString()))
-                .orderBy(METRIC_SCORE_RESULT.METRIC_SCORE_NAME.asc(), METRIC_SCORE_RESULT.METRIC_NAME.asc())
-                .fetch(recordMapper::map);
+        return dsl.select(METRIC_SCORE_RESULT_ACTIVE.asterisk())
+                .from(METRIC_SCORE_RESULT_ACTIVE)
+                .where(METRIC_SCORE_RESULT_ACTIVE.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .and(METRIC_SCORE_RESULT_ACTIVE.COMPUTATION_ID.eq(computationId.toString()))
+                .orderBy(
+                        METRIC_SCORE_RESULT_ACTIVE.METRIC_SCORE_NAME.asc(),
+                        METRIC_SCORE_RESULT_ACTIVE.METRIC_NAME.asc())
+                .fetch(r -> recordMapper.map(r.into(METRIC_SCORE_RESULT)));
     }
 }

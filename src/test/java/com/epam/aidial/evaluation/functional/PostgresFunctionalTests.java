@@ -89,6 +89,7 @@ import com.epam.aidial.evaluation.functional.tests.RevalidationTaskFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.RocAucScoreFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonRepositoryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunDeletionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
@@ -827,4 +828,7 @@ public class PostgresFunctionalTests extends FunctionalTests {
                 "config.rest.security.api-key.startup-probe=false"
             })
     class DialAppModeTests extends DialAppModeFunctionalTests {}
+
+    @Nested
+    class RunDeletionTests extends RunDeletionFunctionalTests {}
 }

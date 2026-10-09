@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS_ACTIVE;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.TestCaseRunResultRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
@@ -94,15 +95,17 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
             List<FilterCondition> filters, Long runCreatedAtMs, Cursor cursor, int size) {
         Condition condition = buildBaseCondition(filters, runCreatedAtMs);
         if (cursor != null) {
-            condition = condition.and(DSL.row(TEST_CASE_RUN_RESULTS.CREATED_AT_MS, TEST_CASE_RUN_RESULTS.ID)
-                    .lt(DSL.row(cursor.createdAt(), cursor.id().toString())));
+            condition =
+                    condition.and(DSL.row(TEST_CASE_RUN_RESULTS_ACTIVE.CREATED_AT_MS, TEST_CASE_RUN_RESULTS_ACTIVE.ID)
+                            .lt(DSL.row(cursor.createdAt(), cursor.id().toString())));
         }
 
-        List<TestCaseRunResult> rows = dsl.selectFrom(TEST_CASE_RUN_RESULTS)
+        List<TestCaseRunResult> rows = dsl.select(TEST_CASE_RUN_RESULTS_ACTIVE.asterisk())
+                .from(TEST_CASE_RUN_RESULTS_ACTIVE)
                 .where(condition)
-                .orderBy(TEST_CASE_RUN_RESULTS.CREATED_AT_MS.desc(), TEST_CASE_RUN_RESULTS.ID.desc())
+                .orderBy(TEST_CASE_RUN_RESULTS_ACTIVE.CREATED_AT_MS.desc(), TEST_CASE_RUN_RESULTS_ACTIVE.ID.desc())
                 .limit(size + 1)
-                .fetch(recordMapper::map);
+                .fetch(r -> recordMapper.map(r.into(TEST_CASE_RUN_RESULTS)));
 
         boolean hasMore = rows.size() > size;
         List<TestCaseRunResult> content = hasMore ? rows.subList(0, size) : rows;
@@ -118,16 +121,19 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
 
     @Override
     public Optional<TestCaseRunResult> findById(UUID id) {
-        return dsl.selectFrom(TEST_CASE_RUN_RESULTS)
-                .where(TEST_CASE_RUN_RESULTS.ID.eq(id.toString()))
-                .fetchOptional(recordMapper::map);
+        return dsl.select(TEST_CASE_RUN_RESULTS_ACTIVE.asterisk())
+                .from(TEST_CASE_RUN_RESULTS_ACTIVE)
+                .where(TEST_CASE_RUN_RESULTS_ACTIVE.ID.eq(id.toString()))
+                .fetchOptional(r -> recordMapper.map(r.into(TEST_CASE_RUN_RESULTS)));
     }
 
     @Override
     public long count(List<FilterCondition> filters, Long runCreatedAtMs) {
         Condition condition = buildBaseCondition(filters, runCreatedAtMs);
-        Long count =
-                dsl.selectCount().from(TEST_CASE_RUN_RESULTS).where(condition).fetchOne(0, Long.class);
+        Long count = dsl.selectCount()
+                .from(TEST_CASE_RUN_RESULTS_ACTIVE)
+                .where(condition)
+                .fetchOne(0, Long.class);
         return count != null ? count : 0L;
     }
 
@@ -135,7 +141,7 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
         Condition condition =
                 whereBuilder.build(filters != null ? filters : List.of(), FilterWhitelists.ANALYTICS_RESULTS);
         if (runCreatedAtMs != null) {
-            condition = condition.and(TEST_CASE_RUN_RESULTS.CREATED_AT_MS.eq(runCreatedAtMs));
+            condition = condition.and(TEST_CASE_RUN_RESULTS_ACTIVE.CREATED_AT_MS.eq(runCreatedAtMs));
         }
         return condition;
     }

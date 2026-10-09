@@ -5,10 +5,16 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResultActive;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunDeletions;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScoresActive;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummariesActive;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregated;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregatedActive;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResultsActive;
 
 import java.util.Arrays;
 import java.util.List;
@@ -38,9 +44,24 @@ public class Analytics extends SchemaImpl {
     public final MetricScoreResult METRIC_SCORE_RESULT = MetricScoreResult.METRIC_SCORE_RESULT;
 
     /**
+     * The table <code>analytics.metric_score_result_active</code>.
+     */
+    public final MetricScoreResultActive METRIC_SCORE_RESULT_ACTIVE = MetricScoreResultActive.METRIC_SCORE_RESULT_ACTIVE;
+
+    /**
+     * The table <code>analytics.run_deletions</code>.
+     */
+    public final RunDeletions RUN_DELETIONS = RunDeletions.RUN_DELETIONS;
+
+    /**
      * The table <code>analytics.test_case_eval_scores</code>.
      */
     public final TestCaseEvalScores TEST_CASE_EVAL_SCORES = TestCaseEvalScores.TEST_CASE_EVAL_SCORES;
+
+    /**
+     * The table <code>analytics.test_case_eval_scores_active</code>.
+     */
+    public final TestCaseEvalScoresActive TEST_CASE_EVAL_SCORES_ACTIVE = TestCaseEvalScoresActive.TEST_CASE_EVAL_SCORES_ACTIVE;
 
     /**
      * The table <code>analytics.test_case_eval_summaries</code>.
@@ -48,14 +69,30 @@ public class Analytics extends SchemaImpl {
     public final TestCaseEvalSummaries TEST_CASE_EVAL_SUMMARIES = TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES;
 
     /**
+     * The table <code>analytics.test_case_eval_summaries_active</code>.
+     */
+    public final TestCaseEvalSummariesActive TEST_CASE_EVAL_SUMMARIES_ACTIVE = TestCaseEvalSummariesActive.TEST_CASE_EVAL_SUMMARIES_ACTIVE;
+
+    /**
      * The table <code>analytics.test_case_metric_scores_aggregated</code>.
      */
     public final TestCaseMetricScoresAggregated TEST_CASE_METRIC_SCORES_AGGREGATED = TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED;
 
     /**
+     * The table
+     * <code>analytics.test_case_metric_scores_aggregated_active</code>.
+     */
+    public final TestCaseMetricScoresAggregatedActive TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE = TestCaseMetricScoresAggregatedActive.TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE;
+
+    /**
      * The table <code>analytics.test_case_run_results</code>.
      */
     public final TestCaseRunResults TEST_CASE_RUN_RESULTS = TestCaseRunResults.TEST_CASE_RUN_RESULTS;
+
+    /**
+     * The table <code>analytics.test_case_run_results_active</code>.
+     */
+    public final TestCaseRunResultsActive TEST_CASE_RUN_RESULTS_ACTIVE = TestCaseRunResultsActive.TEST_CASE_RUN_RESULTS_ACTIVE;
 
     /**
      * No further instances allowed
@@ -74,10 +111,16 @@ public class Analytics extends SchemaImpl {
     public final List<Table<?>> getTables() {
         return Arrays.asList(
             MetricScoreResult.METRIC_SCORE_RESULT,
+            MetricScoreResultActive.METRIC_SCORE_RESULT_ACTIVE,
+            RunDeletions.RUN_DELETIONS,
             TestCaseEvalScores.TEST_CASE_EVAL_SCORES,
+            TestCaseEvalScoresActive.TEST_CASE_EVAL_SCORES_ACTIVE,
             TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES,
+            TestCaseEvalSummariesActive.TEST_CASE_EVAL_SUMMARIES_ACTIVE,
             TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED,
-            TestCaseRunResults.TEST_CASE_RUN_RESULTS
+            TestCaseMetricScoresAggregatedActive.TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE,
+            TestCaseRunResults.TEST_CASE_RUN_RESULTS,
+            TestCaseRunResultsActive.TEST_CASE_RUN_RESULTS_ACTIVE
         );
     }
 }

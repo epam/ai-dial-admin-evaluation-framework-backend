@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.query.service.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_METRIC_SCORES_AGGREGATED;
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE;
 
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
@@ -50,7 +51,7 @@ public class PostgresTestCaseMetricScoreAggregatedEntityResolver implements Stru
 
     @Override
     public Table<?> table() {
-        return TEST_CASE_METRIC_SCORES_AGGREGATED;
+        return TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE;
     }
 
     @Override

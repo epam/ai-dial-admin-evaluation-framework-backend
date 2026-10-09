@@ -291,6 +291,14 @@ public class PostgresTestSuiteRunRepository implements TestSuiteRunRepository {
         return dsl.nextval(TEST_SUITE_RUN_NAME_SEQ);
     }
 
+    @Override
+    public List<UUID> findIdsByTestSuiteId(UUID testSuiteId) {
+        return dsl.select(TEST_SUITE_RUNS.ID)
+                .from(TEST_SUITE_RUNS)
+                .where(TEST_SUITE_RUNS.TEST_SUITE_ID.eq(testSuiteId.toString()))
+                .fetch(record -> UUID.fromString(record.get(TEST_SUITE_RUNS.ID)));
+    }
+
     private long count(Condition condition) {
         Long count = dsl.selectCount().from(TEST_SUITE_RUNS).where(condition).fetchOne(0, Long.class);
         return count != null ? count : 0L;

@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.query.service.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT_ACTIVE;
 
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
@@ -50,7 +51,7 @@ public class PostgresMetricScoreResultEntityResolver implements StructuredQueryE
 
     @Override
     public Table<?> table() {
-        return METRIC_SCORE_RESULT;
+        return METRIC_SCORE_RESULT_ACTIVE;
     }
 
     @Override

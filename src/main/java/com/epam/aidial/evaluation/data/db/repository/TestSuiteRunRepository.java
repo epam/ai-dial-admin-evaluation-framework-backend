@@ -62,4 +62,14 @@ public interface TestSuiteRunRepository {
     int failOrphanedRuns(List<String> orphanedStatuses, String failedStatus, String errorMessage, String errorDetails);
 
     long nextRunNameSequenceValue();
+
+    /**
+     * Returns all run IDs owned by a test suite.
+     * Used for soft-deletion cascades when a suite is deleted, to ensure all of its runs
+     * are tombstoned in the analytics DB before the cascade delete removes the meta rows.
+     *
+     * @param testSuiteId the suite to look up
+     * @return list of run UUIDs owned by this suite (may be empty)
+     */
+    List<UUID> findIdsByTestSuiteId(UUID testSuiteId);
 }

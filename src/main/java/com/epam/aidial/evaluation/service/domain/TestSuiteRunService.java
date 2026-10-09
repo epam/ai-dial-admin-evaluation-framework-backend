@@ -23,6 +23,7 @@ import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
+import com.epam.aidial.evaluation.service.domain.analytics.RunDeletionService;
 import com.epam.aidial.evaluation.service.domain.dto.RunErrorCategory;
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
@@ -80,6 +81,7 @@ public class TestSuiteRunService {
     private final EvalResultsCsvParser evalResultsCsvParser;
     private final Optional<DialRouteTriggerClient> dialRouteTriggerClient;
     private final Optional<DialAppProperties> dialAppProperties;
+    private final RunDeletionService runDeletionService;
 
     @Qualifier("metaTransactionManager")
     private final PlatformTransactionManager metaTransactionManager;
@@ -471,7 +473,24 @@ public class TestSuiteRunService {
                     "Cannot delete a test suite run with status " + run.getStatus() + ". " + reason);
         }
 
+        // Write analytics tombstone before meta deletion so the read paths immediately exclude this run
+        runDeletionService.markDeleted(runId);
         testSuiteRunRepository.deleteById(runId);
+    }
+
+    /**
+     * Marks all runs owned by a suite as deleted in the analytics database.
+     * Used during suite deletion to ensure analytics data is excluded from reads
+     * before the meta-level cascade delete removes the run rows.
+     *
+     * @param testSuiteId the suite whose runs should be tombstoned
+     */
+    public void tombstoneAllRunsForSuite(UUID testSuiteId) {
+        List<UUID> runIds = testSuiteRunRepository.findIdsByTestSuiteId(testSuiteId);
+        runIds.forEach(runDeletionService::markDeleted);
+        if (!runIds.isEmpty()) {
+            log.debug("Tombstoned {} runs for suite {}", runIds.size(), testSuiteId);
+        }
     }
 
     @Transactional("metaTransactionManager")

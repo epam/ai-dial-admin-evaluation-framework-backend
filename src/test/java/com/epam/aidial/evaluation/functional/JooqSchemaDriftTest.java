@@ -144,4 +144,32 @@ class JooqSchemaDriftTest {
             }
         }
     }
+
+    @Test
+    void analyticsTablesWithRunIdHaveActiveViews() throws SQLException {
+        try (Connection conn = analyticsDataSource.getConnection()) {
+            // Query information_schema to find all tables with test_suite_run_id column
+            var stmt = conn.createStatement();
+            var resultSet = stmt.executeQuery("SELECT table_name FROM information_schema.columns "
+                    + "WHERE table_schema = 'public' AND column_name = 'test_suite_run_id' "
+                    + "AND table_type = 'BASE TABLE' ORDER BY table_name");
+
+            Set<String> tablesWithRunId = new java.util.HashSet<>();
+            while (resultSet.next()) {
+                tablesWithRunId.add(resultSet.getString("table_name"));
+            }
+
+            // Verify each table has a corresponding _active view
+            for (String tableName : tablesWithRunId) {
+                String viewName = tableName + "_active";
+                var viewStmt = conn.createStatement();
+                var viewResultSet = viewStmt.executeQuery("SELECT table_name FROM information_schema.views "
+                        + "WHERE table_schema = 'public' AND table_name = '" + viewName + "'");
+
+                assertThat(viewResultSet.next())
+                        .as("Table '%s' has test_suite_run_id but missing _active view '%s'", tableName, viewName)
+                        .isTrue();
+            }
+        }
+    }
 }

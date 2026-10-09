@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-09-29 (meta V1.35, analytics V1.19)
+> **Last sync**: 2026-10-09 (meta V1.35, analytics V1.22)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -33,6 +33,7 @@ This document describes the current database schema as implemented by Flyway mig
 | `test_case_eval_summaries` | Metric-enriched test case results (denormalized) | `(created_at_ms, id)` (composite) |
 | `test_case_eval_scores` | Per-test-case overall score/pass-fail, computed via SQL; the sole read surface for it (its own deduplicated `test_case_eval_scores` Query DSL entity — `eval_summaries` does not join to it) | `id` (VARCHAR(36)) |
 | `test_case_metric_scores_aggregated` | Per-test-case, per-computation aggregation of raw metric values (avg/min/max/count), collapsed across turn/request/run index | `id` (VARCHAR(36)) |
+| `run_deletions` | Tombstone table for soft-deletion of analytics rows; one row per deleted run, preserving the append-only invariant. All analytics read paths exclude tombstoned runs via `_active` views. | `test_suite_run_id` (VARCHAR(36)) |
 | `run_metric_snapshots` | **FROZEN** — superseded by the meta table of the same name; not read or written by any code path | `id` (VARCHAR(36)) |
 
 ---
@@ -1015,6 +1016,37 @@ Computed aggregated metric statistics per run, append-only per computation. One 
 
 ---
 
+## Table: `run_deletions` (Analytics DB)
+
+Soft-deletion tombstone table for marking analytics data as excluded from read paths. Preserves the append-only invariant: when a test suite run is deleted, a single row is appended here rather than updating or deleting existing analytics rows. All analytics tables with run-scoping columns have companion `_active` database views that exclude tombstoned runs via anti-join.
+
+> **Note:** This table resides in the **analytics database**. It is append-only; rows are never updated or deleted.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `test_suite_run_id` | VARCHAR(36) | NOT NULL | - | Primary key; identifies the deleted run (soft FK to meta `test_suite_runs.id`, present at tombstone write time, may not exist in meta after cascade deletion) |
+| `deleted_at_ms` | BIGINT | NOT NULL | - | Epoch-millisecond timestamp when the run was marked as deleted |
+
+### Primary Key
+
+`test_suite_run_id`
+
+### Active Views
+
+Five companion views exclude tombstoned runs via anti-join:
+
+| View Name | Based On Table | Purpose |
+|-----------|---|---------|
+| `test_case_run_results_active` | `test_case_run_results` | Exclude test case run results for deleted runs |
+| `test_case_eval_summaries_active` | `test_case_eval_summaries` | Exclude metric-enriched test case results for deleted runs |
+| `test_case_eval_scores_active` | `test_case_eval_scores` | Exclude per-test-case overall scores for deleted runs |
+| `test_case_metric_scores_aggregated_active` | `test_case_metric_scores_aggregated` | Exclude aggregated metric scores for deleted runs |
+| `metric_score_result_active` | `metric_score_result` | Exclude metric statistics for deleted runs |
+
+All read paths — Query DSL entity resolvers, direct repository methods, exports, and aggregates — are repointed at the corresponding `_active` view. Writes (e.g., inserting new eval summaries) continue targeting the base table.
+
+---
+
 ## Stored Function: `roc_auc_score` (Analytics DB)
 
 `roc_auc_score(y double precision[], p double precision[]) RETURNS double precision` — computes the ROC AUC score (rank-sum / Mann-Whitney formulation) for a binary classifier. `y` holds the actual class (0/1) and `p` the predicted probability, paired positionally by array index (both arrays must be built from the same row scan, e.g. `array_agg(y)`/`array_agg(p)` in the same `SELECT`). Returns `NULL` when either class is absent (no positive/negative pair to rank). Introduced in `V1.11__CreateRocAucScoreFunction.sql`; invoked from the Query DSL's `roc_auc(label, probability)` function (`query.service.translate.function.BuiltInQueryFunctions`), usable anywhere a `FnExpr` is valid, including a suite's custom `overallScore` expression.
@@ -1089,6 +1121,7 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.19 | `V1.19__CreateTestCaseEvalScoresTable.sql` | Created test_case_eval_scores table (`eval_summary_id` PK, nullable `score`/`passed`, `computed_at_ms`); no denormalized context, no secondary indexes — every read joins to test_case_eval_summaries |
 | V1.20 | `V1.20__CreateTestCaseMetricScoresAggregatedTable.sql` | Created test_case_metric_scores_aggregated table (`id` PK, `test_suite_run_id`/`test_case_id`/`computation_id`, `metric_scores` JSONB NOT NULL DEFAULT '{}', `created_at_ms` (set once, immutable across upserts), `computed_at_ms`); unique index on `(test_suite_run_id, test_case_id, computation_id)`, lookup index on `computation_id` |
 | V1.21 | `V1.21__AddRunCaseContextToTestCaseEvalScores.sql` | Dropped and re-created test_case_eval_scores (`id` PK; `test_suite_run_id`/`test_case_id`/`test_case_name`/`computation_id`/`execution_status` NOT NULL; nullable `score`/`passed`; `computed_at_ms`); `eval_summary_id` removed; unique constraint `uq_test_case_eval_scores_natural_key` on `(test_suite_run_id, test_case_id, computation_id)` |
+| V1.22 | `V1.22__CreateRunDeletionsTable.sql` | Created `run_deletions` tombstone table (`test_suite_run_id` PK, `deleted_at_ms` NOT NULL) for soft-deletion of analytics rows; created five companion `_active` views (`test_case_run_results_active`, `test_case_eval_summaries_active`, `test_case_eval_scores_active`, `test_case_metric_scores_aggregated_active`, `metric_score_result_active`), each anti-joining against `run_deletions` to exclude tombstoned runs |
 
 ---
 

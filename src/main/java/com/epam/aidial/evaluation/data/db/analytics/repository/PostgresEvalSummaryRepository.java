@@ -1,6 +1,7 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES_ACTIVE;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_RUN_RESULTS;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.EvalSummaryRecordMapper;
@@ -10,7 +11,7 @@ import com.epam.aidial.evaluation.data.db.analytics.model.MetricAggregationResul
 import com.epam.aidial.evaluation.data.db.analytics.model.MetricPath;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.Cursor;
 import com.epam.aidial.evaluation.data.db.analytics.model.cursor.CursorPage;
-import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummariesActive;
 import com.epam.aidial.evaluation.data.db.model.filter.FilterCondition;
 import com.epam.aidial.evaluation.data.db.repository.sql.FilterWhitelists;
 import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
@@ -143,35 +144,35 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     @Override
     public Optional<EvalSummary> findById(UUID id) {
         return dsl.select(List.of(
-                        TEST_CASE_EVAL_SUMMARIES.ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME,
-                        TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TOTAL_REQUESTS,
-                        TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
-                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
-                        TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
-                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
-                        TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
-                        TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
-                        TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS,
-                        TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
-                        TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_RUN_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_RUN_RESULT_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RUN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.REQUEST_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TOTAL_REQUESTS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TURN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_DATA,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXTRACTED_COLUMNS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXECUTION_STATUS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_EVAL_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RESPONSE_STATUS_CODE,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_VALUES,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_INFOS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXTRACTION_WARNINGS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTED_AT_MS,
                         TEST_CASE_RUN_RESULTS.REQUEST_BODY,
                         TEST_CASE_RUN_RESULTS.RESPONSE_BODY))
-                .from(TEST_CASE_EVAL_SUMMARIES)
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .leftJoin(TEST_CASE_RUN_RESULTS)
-                .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID))
-                .where(TEST_CASE_EVAL_SUMMARIES.ID.eq(id.toString()))
+                .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_RUN_RESULT_ID))
+                .where(TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID.eq(id.toString()))
                 .fetchOptional(recordMapper::mapExportWithBodies);
     }
 
@@ -179,7 +180,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     public long count(List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs) {
         Condition condition = buildBaseCondition(filters, computationId, runCreatedAtMs);
         Long count = dsl.selectCount()
-                .from(TEST_CASE_EVAL_SUMMARIES)
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .where(condition)
                 .fetchOne(0, Long.class);
         return count != null ? count : 0L;
@@ -187,12 +188,14 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
 
     @Override
     public Optional<UUID> findLatestComputationId(UUID runId) {
-        return dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
-                .from(TEST_CASE_EVAL_SUMMARIES)
-                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .orderBy(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.asc())
+        return dsl.select(TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID)
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
+                .where(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .orderBy(
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTED_AT_MS.desc(),
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID.asc())
                 .limit(1)
-                .fetchOptional(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)));
+                .fetchOptional(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID)));
     }
 
     @Override
@@ -205,12 +208,12 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         Table<?> runIdsTable = DSL.unnest(ids).as(RUN_IDS_TABLE, RUN_ID_COLUMN);
         Field<String> runIdField = runIdsTable.field(RUN_ID_COLUMN, String.class);
 
-        Table<Record1<String>> latestPerRun = DSL.lateral(dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
-                        .from(TEST_CASE_EVAL_SUMMARIES)
-                        .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runIdField))
+        Table<Record1<String>> latestPerRun = DSL.lateral(dsl.select(TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID)
+                        .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
+                        .where(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_RUN_ID.eq(runIdField))
                         .orderBy(
-                                TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(),
-                                TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.asc())
+                                TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTED_AT_MS.desc(),
+                                TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID.asc())
                         .limit(1))
                 .as(LATEST_TABLE, COMPUTATION_ID_COLUMN);
         Field<String> latestComputationIdField = latestPerRun.field(COMPUTATION_ID_COLUMN, String.class);
@@ -226,9 +229,9 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     @Override
     public boolean existsByRunIdAndComputationId(UUID runId, UUID computationId) {
         return dsl.fetchExists(dsl.selectOne()
-                .from(TEST_CASE_EVAL_SUMMARIES)
-                .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString())));
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
+                .where(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .and(TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID.eq(computationId.toString())));
     }
 
     @Override
@@ -251,7 +254,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         }
 
         Record row = dsl.select(selectFields)
-                .from(TEST_CASE_EVAL_SUMMARIES)
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .where(condition)
                 .fetchOne();
 
@@ -287,13 +290,13 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                         DSL.count().as(TOTAL_ROWS),
                         DSL.count(probeKey(probe)).as(MATCHED_ROWS),
                         DSL.count()
-                                .filterWhere(matched.and(
-                                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS.eq(ExecutionStatus.SUCCESS.name())))
+                                .filterWhere(matched.and(TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXECUTION_STATUS.eq(
+                                        ExecutionStatus.SUCCESS.name())))
                                 .as(MATCHED_SUCCESS_ROWS),
-                        DSL.avg(TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS)
+                        DSL.avg(TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXEC_DURATION_MS)
                                 .filterWhere(matched)
                                 .as(AVG_EXEC_DURATION_MS))
-                .from(TEST_CASE_EVAL_SUMMARIES)
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .leftJoin(probe)
                 .on(matchCondition(probe))
                 .where(runScope(runId, computationId))
@@ -314,17 +317,17 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     public List<UUID> findUnmatchedIds(UUID runId, UUID computationId, UUID otherRunId, UUID otherComputationId) {
         Table<?> probe = otherRunKeys(otherRunId, otherComputationId);
 
-        return dsl.select(TEST_CASE_EVAL_SUMMARIES.ID)
-                .from(TEST_CASE_EVAL_SUMMARIES)
+        return dsl.select(TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID)
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .leftJoin(probe)
                 .on(matchCondition(probe))
                 .where(runScope(runId, computationId).and(probeKey(probe).isNull()))
                 .orderBy(
-                        DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME),
-                        TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.ID)
+                        DSL.lower(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_NAME),
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RUN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.REQUEST_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TURN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID)
                 .fetch(r -> UUID.fromString(r.value1()));
     }
 
@@ -334,12 +337,15 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         Table<?> probe = otherRunKeys(otherRunId, otherComputationId);
 
         return dsl.selectDistinct(
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID, DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME))
-                .from(TEST_CASE_EVAL_SUMMARIES)
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_ID,
+                        DSL.lower(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_NAME))
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .leftJoin(probe)
                 .on(matchCondition(probe))
                 .where(runScope(runId, computationId).and(probeKey(probe).isNull()))
-                .orderBy(DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME), TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID)
+                .orderBy(
+                        DSL.lower(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_NAME),
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_ID)
                 .fetch(r -> UUID.fromString(r.value1()));
     }
 
@@ -353,7 +359,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     private Table<?> otherRunKeys(UUID otherRunId, UUID otherComputationId) {
         // Aliased so the derived table's own scan is unambiguous against the outer query's use of the
         // same table — without it the inner predicates read as if they might be correlated.
-        TestCaseEvalSummaries other = TEST_CASE_EVAL_SUMMARIES.as(OTHER_RUN_ALIAS);
+        TestCaseEvalSummariesActive other = TEST_CASE_EVAL_SUMMARIES_ACTIVE.as(OTHER_RUN_ALIAS);
         return dsl.selectDistinct(
                         DSL.lower(other.TEST_CASE_NAME).as(PROBE_NAME_LOWER),
                         other.RUN_INDEX,
@@ -377,10 +383,13 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
 
     private Condition matchCondition(Table<?> probe) {
         return probeKey(probe)
-                .eq(DSL.lower(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME))
-                .and(probe.field(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.RUN_INDEX))
-                .and(probe.field(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX))
-                .and(probe.field(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX).eq(TEST_CASE_EVAL_SUMMARIES.TURN_INDEX));
+                .eq(DSL.lower(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_NAME))
+                .and(probe.field(TEST_CASE_EVAL_SUMMARIES_ACTIVE.RUN_INDEX)
+                        .eq(TEST_CASE_EVAL_SUMMARIES_ACTIVE.RUN_INDEX))
+                .and(probe.field(TEST_CASE_EVAL_SUMMARIES_ACTIVE.REQUEST_INDEX)
+                        .eq(TEST_CASE_EVAL_SUMMARIES_ACTIVE.REQUEST_INDEX))
+                .and(probe.field(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TURN_INDEX)
+                        .eq(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TURN_INDEX));
     }
 
     /**
@@ -388,10 +397,10 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
      * of them coexist in the table, so omitting it would match rows across computations.
      */
     private Condition runScope(UUID runId, UUID computationId) {
-        return TEST_CASE_EVAL_SUMMARIES
+        return TEST_CASE_EVAL_SUMMARIES_ACTIVE
                 .TEST_SUITE_RUN_ID
                 .eq(runId.toString())
-                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()));
+                .and(TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID.eq(computationId.toString()));
     }
 
     private CursorPage<EvalSummary> findAllInternal(
@@ -404,8 +413,9 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
             boolean includeBodies) {
         Condition condition = buildBaseCondition(filters, computationId, runCreatedAtMs);
         if (cursor != null) {
-            condition = condition.and(DSL.row(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, TEST_CASE_EVAL_SUMMARIES.ID)
-                    .lt(DSL.row(cursor.createdAt(), cursor.id().toString())));
+            condition = condition.and(
+                    DSL.row(TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS, TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID)
+                            .lt(DSL.row(cursor.createdAt(), cursor.id().toString())));
         }
 
         List<EvalSummary> rows;
@@ -431,102 +441,108 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
 
     private SelectLimitStep<Record> buildListQuery(Condition condition) {
         return dsl.select(List.of(
-                        TEST_CASE_EVAL_SUMMARIES.ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME,
-                        TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TOTAL_REQUESTS,
-                        TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
-                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
-                        TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
-                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
-                        TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
-                        TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
-                        TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
-                        TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
-                .from(TEST_CASE_EVAL_SUMMARIES)
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_RUN_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_RUN_RESULT_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RUN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.REQUEST_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TOTAL_REQUESTS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TURN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_DATA,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXTRACTED_COLUMNS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXECUTION_STATUS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_EVAL_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RESPONSE_STATUS_CODE,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_VALUES,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTED_AT_MS))
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .where(condition)
-                .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
+                .orderBy(
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS.desc(),
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID.desc());
     }
 
     private SelectLimitStep<Record> buildExportQuery(Condition condition) {
         return dsl.select(List.of(
-                        TEST_CASE_EVAL_SUMMARIES.ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME,
-                        TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TOTAL_REQUESTS,
-                        TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
-                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
-                        TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
-                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
-                        TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
-                        TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
-                        TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS,
-                        TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
-                        TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS))
-                .from(TEST_CASE_EVAL_SUMMARIES)
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_RUN_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_RUN_RESULT_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RUN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.REQUEST_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TOTAL_REQUESTS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TURN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_DATA,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXTRACTED_COLUMNS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXECUTION_STATUS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_EVAL_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RESPONSE_STATUS_CODE,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_VALUES,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_INFOS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXTRACTION_WARNINGS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTED_AT_MS))
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .where(condition)
-                .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
+                .orderBy(
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS.desc(),
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID.desc());
     }
 
     private SelectLimitStep<Record> buildExportWithBodiesQuery(Condition condition) {
         return dsl.select(List.of(
-                        TEST_CASE_EVAL_SUMMARIES.ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_NAME,
-                        TEST_CASE_EVAL_SUMMARIES.RUN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.REQUEST_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TOTAL_REQUESTS,
-                        TEST_CASE_EVAL_SUMMARIES.TURN_INDEX,
-                        TEST_CASE_EVAL_SUMMARIES.TOTAL_TURNS,
-                        TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID,
-                        TEST_CASE_EVAL_SUMMARIES.TEST_CASE_DATA,
-                        TEST_CASE_EVAL_SUMMARIES.EXTRACTED_COLUMNS,
-                        TEST_CASE_EVAL_SUMMARIES.EXECUTION_STATUS,
-                        TEST_CASE_EVAL_SUMMARIES.EXEC_DURATION_MS,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_EVAL_DURATION_MS,
-                        TEST_CASE_EVAL_SUMMARIES.RESPONSE_STATUS_CODE,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES,
-                        TEST_CASE_EVAL_SUMMARIES.METRIC_INFOS,
-                        TEST_CASE_EVAL_SUMMARIES.EXTRACTION_WARNINGS,
-                        TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS,
-                        TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_SUITE_RUN_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_RUN_RESULT_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_NAME,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RUN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.REQUEST_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TOTAL_REQUESTS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TURN_INDEX,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TOTAL_TURNS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_DATA,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXTRACTED_COLUMNS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXECUTION_STATUS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXEC_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_EVAL_DURATION_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.RESPONSE_STATUS_CODE,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_VALUES,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_INFOS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.EXTRACTION_WARNINGS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS,
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTED_AT_MS,
                         TEST_CASE_RUN_RESULTS.REQUEST_BODY,
                         TEST_CASE_RUN_RESULTS.RESPONSE_BODY))
-                .from(TEST_CASE_EVAL_SUMMARIES)
+                .from(TEST_CASE_EVAL_SUMMARIES_ACTIVE)
                 .leftJoin(TEST_CASE_RUN_RESULTS)
-                .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID))
+                .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES_ACTIVE.TEST_CASE_RUN_RESULT_ID))
                 .where(condition)
-                .orderBy(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.ID.desc());
+                .orderBy(
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS.desc(),
+                        TEST_CASE_EVAL_SUMMARIES_ACTIVE.ID.desc());
     }
 
     private Condition buildBaseCondition(List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs) {
         Condition condition =
                 whereBuilder.build(filters != null ? filters : List.of(), FilterWhitelists.EVAL_SUMMARIES);
-        condition = condition.and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()));
+        condition = condition.and(TEST_CASE_EVAL_SUMMARIES_ACTIVE.COMPUTATION_ID.eq(computationId.toString()));
         if (runCreatedAtMs != null) {
-            condition = condition.and(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.eq(runCreatedAtMs));
+            condition = condition.and(TEST_CASE_EVAL_SUMMARIES_ACTIVE.CREATED_AT_MS.eq(runCreatedAtMs));
         }
         return condition;
     }
@@ -534,7 +550,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     @SuppressWarnings("unchecked")
     private static Field<String> buildMetricAccessor(MetricPath metric) {
         // (metric_values -> :metricName ->> :outputName) — path components bound as params
-        Field<JSONB> jsonbField = TEST_CASE_EVAL_SUMMARIES.METRIC_VALUES;
+        Field<JSONB> jsonbField = TEST_CASE_EVAL_SUMMARIES_ACTIVE.METRIC_VALUES;
         return DSL.field(
                 "({0}->{1}->>{2})",
                 String.class, jsonbField, DSL.val(metric.metricName()), DSL.val(metric.outputName()));

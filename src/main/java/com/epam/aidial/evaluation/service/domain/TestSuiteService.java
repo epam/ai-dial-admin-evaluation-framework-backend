@@ -79,6 +79,7 @@ public class TestSuiteService {
     private final TestSuiteMetricDefinitionService testSuiteMetricDefinitionService;
     private final FileService fileService;
     private final Clock clock;
+    private final TestSuiteRunService testSuiteRunService;
 
     @Qualifier("metaTransactionManager")
     private final PlatformTransactionManager metaTransactionManager;
@@ -244,6 +245,8 @@ public class TestSuiteService {
                 boundVisibility =
                         datasetQueryService.getVisibility(boundDatasetId).orElse(null);
             }
+            // Tombstone all runs owned by this suite in analytics before the meta-level cascade delete
+            testSuiteRunService.tombstoneAllRunsForSuite(id);
             testSuiteRepository.deleteById(id);
             if (boundVisibility == DatasetVisibility.PRIVATE) {
                 // Test cases cascade via the dataset FK. The suite's runs and their snapshots

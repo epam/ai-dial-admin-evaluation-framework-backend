@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.data.db.model.TestSuite;
 import com.epam.aidial.evaluation.data.db.model.TestSuiteRun;
@@ -25,6 +26,8 @@ import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRunRequestDto;
@@ -92,6 +95,37 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
         assertThat(terminal.getSuiteSnapshot()).isNotNull();
         assertThat(terminal.getSuiteSnapshot().getSnapshotVersion()).isEqualTo(SuiteSnapshotDto.CURRENT_VERSION);
         assertThat(terminal.getSuiteSnapshot().getSuiteType()).isEqualTo("DEPLOYMENT");
+    }
+
+    @Test
+    @DisplayName("run snapshot testCaseSchema carries the dataset's field ids")
+    void snapshotTestCaseSchemaCarriesFieldIds() {
+        ResponseEntity<DatasetResponseDto> created = restTemplate.postForEntity(
+                apiUrl("/datasets"),
+                jsonEntity(DatasetRequestDto.builder()
+                        .name("snap-ids-" + UUID.randomUUID())
+                        .visibility(DatasetVisibility.PUBLIC)
+                        .testCaseSchema(List.of(FieldDefinitionDto.builder()
+                                .name("query")
+                                .type(SchemaFieldType.STRING)
+                                .required(true)
+                                .build()))
+                        .build()),
+                DatasetResponseDto.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String fieldId = created.getBody().getTestCaseSchema().getFirst().getId();
+        assertThat(fieldId).isNotBlank();
+
+        TestSuiteResponseDto suite = createTestSuiteWithTestCase(
+                "Snapshot Field Ids Suite", null, created.getBody().getId());
+        mockDeploymentSuccess();
+
+        UUID runId = createRun(suite.getId());
+        TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 15);
+
+        assertThat(terminal.getSuiteSnapshot().getTestCaseSchema())
+                .extracting(FieldDefinitionDto::getId)
+                .containsExactly(fieldId);
     }
 
     @Test
@@ -441,6 +475,17 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
     }
 
     private TestSuiteResponseDto createTestSuiteWithTestCase(String name, String deploymentType) {
+        return createTestSuiteWithTestCase(
+                name,
+                deploymentType,
+                newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                        .name("query")
+                        .type(SchemaFieldType.STRING)
+                        .required(true)
+                        .build())));
+    }
+
+    private TestSuiteResponseDto createTestSuiteWithTestCase(String name, String deploymentType, UUID datasetId) {
         TestSuiteRequestDto request = TestSuiteRequestDto.builder()
                 .name(name)
                 .description("Description for " + name)
@@ -454,11 +499,7 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
                         .method(HttpMethod.POST)
                         .relativeUrlPattern("/v1/chat")
                         .build())
-                .datasetId(newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
-                        .name("query")
-                        .type(SchemaFieldType.STRING)
-                        .required(true)
-                        .build())))
+                .datasetId(datasetId)
                 .requestTemplate(
                         RequestTemplateDto.builder().urlTemplate("/v1/chat").build())
                 .build();
@@ -469,9 +510,9 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
         TestSuiteResponseDto suite = response.getBody();
         assertThat(suite).isNotNull();
 
-        UUID datasetId = metaTestDataHelper.getDatasetId(suite.getId());
+        UUID suiteDatasetId = metaTestDataHelper.getDatasetId(suite.getId());
         restTemplate.postForEntity(
-                apiUrl("/datasets/" + datasetId + "/test-cases"),
+                apiUrl("/datasets/" + suiteDatasetId + "/test-cases"),
                 jsonEntity(TestCaseRequestDto.builder()
                         .testCaseName("Test Case 1")
                         .data(Map.of("query", "test query"))

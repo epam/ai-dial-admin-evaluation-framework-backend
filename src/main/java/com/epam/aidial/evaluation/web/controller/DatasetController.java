@@ -16,6 +16,7 @@ import com.epam.aidial.evaluation.service.domain.dto.DatasetVisibilityTransition
 import com.epam.aidial.evaluation.service.domain.dto.page.PageResponseMapper;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
+import com.epam.aidial.evaluation.web.handler.ErrorView;
 import com.epam.aidial.evaluation.web.pagination.FilterParam;
 import com.epam.aidial.evaluation.web.pagination.PaginationParamResolver;
 import io.swagger.v3.oas.annotations.Operation;
@@ -227,6 +228,8 @@ public class DatasetController {
             summary = "Update a dataset",
             description =
                     "Updates an existing dataset. Requires If-Match header with current version for optimistic locking. "
+                            + "Each schema field has a server-assigned `id`: echo it back to keep the field identity, so a changed `name` "
+                            + "is a rename that moves stored test-case values; omit it to match by name. "
                             + "If testCaseSchema changed, returns 202 Accepted with a revalidation task. "
                             + "The `visibility` field is silently ignored — visibility is immutable via PUT; "
                             + "use PATCH /api/v1/datasets/{id}/visibility instead.",
@@ -253,7 +256,11 @@ public class DatasetController {
                             schema = @Schema(implementation = RevalidationTaskDto.class)))
     @ApiResponse(responseCode = "400", description = "Invalid request body")
     @ApiResponse(responseCode = "404", description = "Dataset not found")
-    @ApiResponse(responseCode = "409", description = "Version conflict (stale ETag) or name already in use")
+    @ApiResponse(
+            responseCode = "409",
+            description = "Version conflict (VERSION_CONFLICT), name already in use, or a schema field was renamed on "
+                    + "a PUBLIC dataset that is bound to at least one test suite (DATASET_FIELD_RENAME_FORBIDDEN)",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorView.class)))
     public ResponseEntity<?> update(
             @Parameter(description = "Dataset ID") @PathVariable UUID id,
             @Parameter(description = "Current version (from ETag) for optimistic locking")

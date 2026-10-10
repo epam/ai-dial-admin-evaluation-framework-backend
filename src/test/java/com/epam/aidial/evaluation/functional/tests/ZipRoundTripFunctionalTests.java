@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.data.db.model.RunStatus;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
@@ -18,11 +19,13 @@ import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.FileMetadataDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
 import com.epam.aidial.evaluation.service.domain.zip.ZipManifest;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -31,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,6 +50,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 
 /**
  * End-to-end round trip and multi-request coverage for the {@code support-rich-zip-test-case-import}
@@ -184,7 +189,9 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
         ResponseEntity<CsvImportResultDto> response = importZip(destinationDatasetId, zip, "OVERRIDE", "FAIL");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 
+        // Field ids are per dataset and never travel in the manifest, so the destination mints its own.
         assertThat(getDataset(destinationDatasetId).getTestCaseSchema())
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("id")
                 .containsExactlyInAnyOrderElementsOf(getDataset(sourceDatasetId).getTestCaseSchema());
 
         List<TestCaseResponseDto> destCases = listTestCases(destinationDatasetId);
@@ -441,6 +448,81 @@ public abstract class ZipRoundTripFunctionalTests extends AbstractMultiTurnFunct
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return response.getBody();
+    }
+
+    // --- dataset-schema-field-ids: manifest carries no ids in either direction ---
+
+    @Test
+    @DisplayName("An exported ZIP manifest carries no field ids")
+    void exportedManifestHasNoFieldIds() throws IOException {
+        DatasetRequestDto request = DatasetRequestDto.builder()
+                .name("manifest-ids-" + UUID.randomUUID())
+                .visibility(DatasetVisibility.PUBLIC)
+                .testCaseSchema(List.of(
+                        FieldDefinitionDto.builder()
+                                .name("prompt")
+                                .type(SchemaFieldType.STRING)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("doc")
+                                .type(SchemaFieldType.FILE)
+                                .build()))
+                .build();
+        ResponseEntity<DatasetResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/datasets"), jsonEntity(request), DatasetResponseDto.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        UUID datasetId = created.getBody().getId();
+        assertThat(created.getBody().getTestCaseSchema())
+                .allSatisfy(f -> assertThat(f.getId()).isNotBlank());
+        FileMetadataDto file = uploadDatasetFile(datasetId, "a.bin", "A".getBytes(StandardCharsets.UTF_8));
+        metaTestDataHelper.seedTestCaseInDataset(
+                datasetId, "Case", "{\"prompt\":\"p\",\"doc\":\"" + file.getPath() + "\"}");
+
+        byte[] zip = exportZip(datasetId);
+
+        JsonNode schema = readManifestEntry(zip).path("testCaseSchema");
+        assertThat(schema.size()).isEqualTo(2);
+        for (JsonNode field : schema) {
+            assertThat(field.has("id")).isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("Importing a manifest that carries foreign field ids succeeds and does not adopt them")
+    void importManifestWithForeignIdsSucceeds() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("prompt")
+                .type(SchemaFieldType.STRING)
+                .build()));
+        ZipManifest manifest = new ZipManifest(
+                1,
+                List.of(FieldDefinitionDto.builder()
+                        .id("foreign-id-from-another-dataset")
+                        .name("prompt")
+                        .type(SchemaFieldType.STRING)
+                        .build()),
+                List.of());
+        byte[] zip = createZip(Map.of(
+                "test-cases.csv", "testCaseName,prompt\nRow1,hello".getBytes(StandardCharsets.UTF_8),
+                "manifest.json", writeManifest(manifest)));
+
+        ResponseEntity<CsvImportResultDto> response = importZip(datasetId, zip, "OVERRIDE", "FAIL");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getDataset(datasetId).getTestCaseSchema().get(0).getId())
+                .isNotEqualTo("foreign-id-from-another-dataset");
+    }
+
+    private JsonNode readManifestEntry(byte[] zip) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zip))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if ("manifest.json".equals(entry.getName())) {
+                    return objectMapper.readTree(zis.readAllBytes());
+                }
+            }
+        }
+        throw new AssertionError("manifest.json not found in exported ZIP");
     }
 
     // --- shared helpers ---

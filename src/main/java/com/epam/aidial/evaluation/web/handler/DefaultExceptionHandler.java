@@ -349,7 +349,8 @@ public class DefaultExceptionHandler {
             case PRIVATE_DATASET_REBIND_FORBIDDEN,
                     PRIVATE_DATASET_ALREADY_BOUND,
                     PRIVATE_TRANSITION_INVALID_BINDING_COUNT,
-                    SUITE_HAS_NO_DATASET -> HttpStatus.CONFLICT;
+                    SUITE_HAS_NO_DATASET,
+                    DATASET_FIELD_RENAME_FORBIDDEN -> HttpStatus.CONFLICT;
         };
     }
 
@@ -362,6 +363,7 @@ public class DefaultExceptionHandler {
             case PRIVATE_DATASET_ALREADY_BOUND -> ErrorCode.PRIVATE_DATASET_ALREADY_BOUND;
             case PRIVATE_TRANSITION_INVALID_BINDING_COUNT -> ErrorCode.PRIVATE_TRANSITION_INVALID_BINDING_COUNT;
             case SUITE_HAS_NO_DATASET -> ErrorCode.SUITE_HAS_NO_DATASET;
+            case DATASET_FIELD_RENAME_FORBIDDEN -> ErrorCode.DATASET_FIELD_RENAME_FORBIDDEN;
         };
     }
 

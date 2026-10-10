@@ -111,7 +111,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [RequestBodySerializerRegistry](docs/patterns/request-body-serializer-registry.md) | Strategy pattern for JSON / multipart / urlencoded request bodies |
 | [JSONB_NUMERIC Multi-Level Path Filtering](docs/patterns/jsonb-numeric-filtering.md) | Two-level JSONB filtering with parameterized path components |
 | [Typed SQL DSL (jOOQ)](docs/patterns/jooq-typed-sql-dsl.md) | Codegen pipeline, drift guard, DSLContext config, RecordMapper convention |
-| [Dataset Entity](docs/patterns/dataset-entity.md) | `DatasetSchemaProvider`, `dataset.id` vs `suite.id`, visibility rules, exclusion via `testCaseFilter` |
+| [Dataset Entity](docs/patterns/dataset-entity.md) | `DatasetSchemaProvider`, `dataset.id` vs `suite.id`, visibility rules, exclusion via `testCaseFilter`; schema field `id` (rename ≠ delete+create, guard after save, prune-then-rename, imports lock first and go through `DatasetService.update`) |
 | [Suite Run Snapshot Phase](docs/patterns/suite-run-snapshot.md) | Snapshot tx, `40001` retry, inconsistent-snapshot guard, version handling |
 | [Run cancellation](docs/patterns/run-cancellation.md) | Per-run executor teardown + guarded status writes; never interrupt the job thread; keep worker HTTP clients interruptible (JDK factory); thread mode (virtual default, platform opt-out) comes from `RunExecutorFactory` |
 | [Selective Column Projection (TOAST)](docs/patterns/selective-column-projection.md) | Column-tier constants to avoid TOAST decompression on bulk queries |

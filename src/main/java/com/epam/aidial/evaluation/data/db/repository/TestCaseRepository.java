@@ -157,6 +157,17 @@ public interface TestCaseRepository {
     void removeDataFields(UUID datasetId, Collection<String> fieldNames);
 
     /**
+     * Renames data keys ({@code old -> new}) in {@code data} and, element-wise, in {@code multi_turn_data}
+     * (only when it is a JSONB array of objects) for every test case of the dataset, preserving values
+     * (including explicit JSON {@code null}). All new keys are read from the original object, so swaps and
+     * chains are applied simultaneously. Only rows holding at least one old key are rewritten;
+     * {@code updated_at_ms} is not bumped. No-op for an empty map.
+     *
+     * @return number of rows rewritten
+     */
+    int renameDataFields(UUID datasetId, Map<String, String> renames);
+
+    /**
      * Returns the test_case_name values (as stored) for rows whose {@code LOWER(test_case_name)}
      * matches any entry in {@code lowerNames} and belong to the given dataset.
      * Used for preview collision detection.

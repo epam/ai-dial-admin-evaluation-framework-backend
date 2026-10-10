@@ -5,6 +5,7 @@
   "visibility": "PRIVATE",
   "testCaseSchema": [
     {
+      "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       "name": "question",
       "displayName": "Question",
       "type": "STRING",
@@ -12,6 +13,7 @@
       "perTurn": true
     },
     {
+      "id": "a3bb189e-8bf9-3888-9912-ace4e6543002",
       "name": "expected_answer",
       "displayName": "Expected Answer",
       "type": "STRING",
@@ -19,6 +21,7 @@
       "perTurn": true
     },
     {
+      "id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
       "name": "tags",
       "displayName": "Tags",
       "type": "STRING",

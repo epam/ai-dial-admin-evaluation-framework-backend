@@ -492,6 +492,18 @@ public class TestCaseService {
         testCaseRepository.removeDataFields(datasetId, fieldNames);
     }
 
+    /**
+     * Renames data keys ({@code old -> new}) in every test case of the dataset (including per-turn values).
+     * Thin pass-through to the repository; no-op for an empty map.
+     */
+    @Transactional("metaTransactionManager")
+    public void renameDataFields(UUID datasetId, Map<String, String> renames) {
+        if (renames == null || renames.isEmpty()) {
+            return;
+        }
+        testCaseRepository.renameDataFields(datasetId, renames);
+    }
+
     @Transactional("metaTransactionManager")
     public long deleteAll(UUID datasetId, List<String> filter) {
         ensureDatasetExists(datasetId);

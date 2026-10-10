@@ -30,7 +30,6 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
 
@@ -57,7 +56,8 @@ public class RevalidationService {
     private final ResponseColumnUnionResolver responseColumnUnionResolver;
 
     /**
-     * Starts async re-validation rooted at the given dataset. Returns immediately with task descriptor.
+     * Runs re-validation rooted at the given dataset synchronously, in the caller's transaction. Returns the
+     * task descriptor as created (PENDING); the final status is persisted on the task row.
      * Phase 1 reprocesses every test case in the dataset against the dataset's testCaseSchema;
      * Phase 2 fans out to every suite that references the dataset and refreshes its (isValid,
      * validationWarnings, TSMD validation) tuple.
@@ -78,12 +78,11 @@ public class RevalidationService {
                 .build();
         revalidationTaskRepository.save(task);
 
-        runDatasetRevalidationAsync(task.getId(), datasetId);
+        runDatasetRevalidation(task.getId(), datasetId);
         return toDto(task);
     }
 
-    @Async
-    public void runDatasetRevalidationAsync(UUID taskId, UUID datasetId) {
+    public void runDatasetRevalidation(UUID taskId, UUID datasetId) {
         try {
             RevalidationTask task = revalidationTaskRepository.findById(taskId).orElse(null);
             if (task == null) {
@@ -432,7 +431,7 @@ public class RevalidationService {
     }
 
     /**
-     * Pure-data carrier for the Phase 1 result, returned to {@link #runDatasetRevalidationAsync}
+     * Pure-data carrier for the Phase 1 result, returned to {@link #runDatasetRevalidation}
      * so the summary log line and downstream Phase 2 can read the totals without poking at
      * the {@link RevalidationTask} entity (which is being concurrently written).
      */

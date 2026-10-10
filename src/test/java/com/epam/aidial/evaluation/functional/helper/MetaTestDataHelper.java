@@ -125,6 +125,21 @@ public class MetaTestDataHelper {
         return tc.getId();
     }
 
+    /** Seeds a test case carrying both a shared {@code data} map and per-turn {@code multi_turn_data}. */
+    @Transactional("metaTransactionManager")
+    public UUID seedTestCaseInDataset(UUID datasetId, String name, String dataJson, String multiTurnDataJson) {
+        TestCase tc = TestCase.builder()
+                .datasetId(datasetId)
+                .testCaseName(name)
+                .data(dataJson)
+                .multiTurnData(multiTurnDataJson)
+                .valid(true)
+                .validationWarnings("[]")
+                .build();
+        testCaseRepository.save(tc);
+        return tc.getId();
+    }
+
     /**
      * Seeds a single multi-turn test case with caller-supplied {@code name} and {@code multiTurnDataJson}
      * (a JSON array of per-turn data maps) into the dataset, and returns its generated id. Mirrors
@@ -693,5 +708,23 @@ public class MetaTestDataHelper {
         int sqlStart = migrationSql.indexOf('\n', beginIdx) + 1;
         String backfillSql = migrationSql.substring(sqlStart, endIdx).trim();
         metaDsl.execute(backfillSql);
+    }
+
+    /** Executes the V1.36 dataset-schema field-id backfill script from its classpath copy. */
+    public void applyV1_36FieldIdBackfill() {
+        final String path = "/db/migration/meta/POSTGRES/V1.36__AddIdsToDatasetSchemaFields.sql";
+        try (InputStream is = getClass().getResourceAsStream(path)) {
+            if (is == null) {
+                throw new IllegalStateException(path + " not found on classpath");
+            }
+            metaDsl.execute(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read " + path, e);
+        }
+    }
+
+    /** Returns the raw stored {@code test_case_schema} JSON of a dataset. */
+    public String findDatasetSchemaJson(UUID datasetId) {
+        return datasetRepository.findById(datasetId).orElseThrow().getTestCaseSchema();
     }
 }

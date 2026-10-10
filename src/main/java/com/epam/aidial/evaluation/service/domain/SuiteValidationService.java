@@ -68,7 +68,7 @@ public class SuiteValidationService {
 
     /**
      * Model-based overload used by Phase 2 of dataset-rooted revalidation
-     * ({@link RevalidationService#runDatasetRevalidationAsync}). Reverse-maps the JSONB-backed
+     * ({@link RevalidationService#runDatasetRevalidation}). Reverse-maps the JSONB-backed
      * {@link TestSuite} columns into a transient {@link TestSuiteRequestDto} and forwards the
      * dataset's typed schema (since the suite no longer owns {@code testCaseSchema}).
      *

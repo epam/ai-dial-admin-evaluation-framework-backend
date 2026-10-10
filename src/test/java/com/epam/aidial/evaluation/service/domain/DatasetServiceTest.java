@@ -34,6 +34,7 @@ import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRule
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.InvalidOperationException;
 import com.epam.aidial.evaluation.service.domain.exception.UniqueConstraintViolationException;
+import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.exception.VersionConflictException;
 import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.mapper.DatasetMapper;
@@ -41,6 +42,7 @@ import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -118,6 +120,7 @@ class DatasetServiceTest {
                 revalidationService,
                 schemaValidationService,
                 fileService,
+                new DatasetSchemaFieldIdResolver(),
                 metaTransactionManager,
                 sortParser,
                 filterParser,
@@ -156,7 +159,7 @@ class DatasetServiceTest {
     void updateUnchangedSchemaDoesNotStartRevalidation() {
         UUID id = UUID.randomUUID();
         String existingSchema =
-                "[{\"name\":\"q\",\"type\":\"STRING\",\"required\":true,\"displayName\":null,\"description\":null}]";
+                "[{\"id\":\"id-q\",\"name\":\"q\",\"type\":\"STRING\",\"required\":true,\"displayName\":null,\"description\":null}]";
         Dataset existing = Dataset.builder()
                 .id(id)
                 .name("D")
@@ -226,7 +229,7 @@ class DatasetServiceTest {
                 .id(id)
                 .name("D")
                 .testCaseSchema("[{\"required\":true,\"description\":null,\"displayName\":null,"
-                        + "\"type\":\"STRING\",\"name\":\"q\"}]")
+                        + "\"type\":\"STRING\",\"name\":\"q\",\"id\":\"id-q\"}]")
                 .validationWarnings("[]")
                 .version(1L)
                 .build();
@@ -302,6 +305,206 @@ class DatasetServiceTest {
         assertThatThrownBy(() -> service.update(id, request, null))
                 .isInstanceOf(UniqueConstraintViolationException.class)
                 .hasMessageContaining("New");
+    }
+
+    // -----------------------------------------------------------------------
+    // create / update — field ids, rename guard
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("create with an id on a schema field is rejected with ValidationException and nothing is saved")
+    void createWithFieldIdRejected() {
+        DatasetRequestDto request = DatasetRequestDto.builder()
+                .name("D")
+                .visibility(DatasetVisibility.PUBLIC)
+                .testCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .id("client-id")
+                        .name("q")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+        when(authorResolver.getCreatedBy(any())).thenReturn("alice");
+
+        assertThatThrownBy(() -> service.create(request, null)).isInstanceOf(ValidationException.class);
+
+        verify(datasetRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("create assigns a fresh id to every schema field before saving")
+    void createAssignsFieldIds() {
+        DatasetRequestDto request = DatasetRequestDto.builder()
+                .name("D")
+                .visibility(DatasetVisibility.PUBLIC)
+                .testCaseSchema(List.of(
+                        FieldDefinitionDto.builder()
+                                .name("a")
+                                .type(SchemaFieldType.STRING)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("b")
+                                .type(SchemaFieldType.STRING)
+                                .build()))
+                .build();
+        when(authorResolver.getCreatedBy(any())).thenReturn("alice");
+        when(datasetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DatasetResponseDto response = service.create(request, null);
+
+        assertThat(response.getTestCaseSchema())
+                .allSatisfy(f -> assertThat(f.getId()).isNotBlank());
+    }
+
+    private Dataset datasetWithSchema(UUID id, DatasetVisibility visibility) {
+        return Dataset.builder()
+                .id(id)
+                .name("D")
+                .visibility(visibility)
+                .testCaseSchema("[{\"id\":\"id-a\",\"name\":\"a\",\"type\":\"STRING\",\"required\":false},"
+                        + "{\"id\":\"id-b\",\"name\":\"b\",\"type\":\"STRING\",\"required\":false}]")
+                .validationWarnings("[]")
+                .version(1L)
+                .build();
+    }
+
+    private DatasetRequestDto renameAlphaToGamma() {
+        return DatasetRequestDto.builder()
+                .name("D")
+                .testCaseSchema(List.of(
+                        FieldDefinitionDto.builder()
+                                .id("id-a")
+                                .name("c")
+                                .type(SchemaFieldType.STRING)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .id("id-b")
+                                .name("b")
+                                .type(SchemaFieldType.STRING)
+                                .build()))
+                .build();
+    }
+
+    @Test
+    @DisplayName("update rename on a bound PUBLIC dataset throws DATASET_FIELD_RENAME_FORBIDDEN after the save")
+    void updateRenameOnBoundPublicRejectedAfterSave() {
+        UUID id = UUID.randomUUID();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PUBLIC)));
+        when(datasetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(testSuiteService.countReferencingDataset(id)).thenReturn(2L);
+
+        assertThatThrownBy(() -> service.update(id, renameAlphaToGamma(), 1L))
+                .isInstanceOfSatisfying(
+                        DatasetVisibilityRuleException.class,
+                        ex -> assertThat(ex.getErrorCode())
+                                .isEqualTo(DatasetVisibilityErrorCode.DATASET_FIELD_RENAME_FORBIDDEN));
+
+        InOrder order = inOrder(datasetRepository, testSuiteService);
+        order.verify(datasetRepository).save(any());
+        order.verify(testSuiteService).countReferencingDataset(id);
+        verify(testCaseService, never()).renameDataFields(any(), any());
+    }
+
+    @Test
+    @DisplayName("update rename on an unbound PUBLIC dataset succeeds and renames data")
+    void updateRenameOnUnboundPublicSucceeds() {
+        UUID id = UUID.randomUUID();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PUBLIC)));
+        when(datasetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(testSuiteService.countReferencingDataset(id)).thenReturn(0L);
+
+        service.update(id, renameAlphaToGamma(), 1L);
+
+        verify(testCaseService).renameDataFields(id, Map.of("a", "c"));
+    }
+
+    @Test
+    @DisplayName("update rename on a PRIVATE dataset skips the binding count and renames data")
+    void updateRenameOnPrivateSkipsGuard() {
+        UUID id = UUID.randomUUID();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PRIVATE)));
+        when(datasetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.update(id, renameAlphaToGamma(), 1L);
+
+        verify(testSuiteService, never()).countReferencingDataset(any());
+        verify(testCaseService).renameDataFields(id, Map.of("a", "c"));
+    }
+
+    @Test
+    @DisplayName("update without renames on a bound PUBLIC dataset does not run the guard")
+    void updateWithoutRenamesSkipsGuard() {
+        UUID id = UUID.randomUUID();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PUBLIC)));
+        when(datasetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        DatasetRequestDto request = DatasetRequestDto.builder()
+                .name("D")
+                .testCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .id("id-a")
+                        .name("a")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+
+        service.update(id, request, 1L);
+
+        verify(testSuiteService, never()).countReferencingDataset(any());
+        verify(testCaseService).removeDataFields(id, List.of("b"));
+    }
+
+    @Test
+    @DisplayName("update prunes removed fields before renaming")
+    void updatePrunesBeforeRename() {
+        UUID id = UUID.randomUUID();
+        // old {a,b}; incoming {id-a renamed to b}; old b removed
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PRIVATE)));
+        when(datasetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        DatasetRequestDto request = DatasetRequestDto.builder()
+                .name("D")
+                .testCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .id("id-a")
+                        .name("b")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+
+        service.update(id, request, 1L);
+
+        InOrder order = inOrder(testCaseService);
+        order.verify(testCaseService).removeDataFields(id, List.of("b"));
+        order.verify(testCaseService).renameDataFields(id, Map.of("a", "b"));
+    }
+
+    @Test
+    @DisplayName("update with an unknown field id throws ValidationException and does not save")
+    void updateUnknownIdRejected() {
+        UUID id = UUID.randomUUID();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PRIVATE)));
+        DatasetRequestDto request = DatasetRequestDto.builder()
+                .name("D")
+                .testCaseSchema(List.of(FieldDefinitionDto.builder()
+                        .id("nope")
+                        .name("a")
+                        .type(SchemaFieldType.STRING)
+                        .build()))
+                .build();
+
+        assertThatThrownBy(() -> service.update(id, request, 1L)).isInstanceOf(ValidationException.class);
+
+        verify(datasetRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("getByIdForUpdate reads via findByIdForUpdate and maps to a DTO")
+    void getByIdForUpdateUsesLockedRead() {
+        UUID id = UUID.randomUUID();
+        when(datasetRepository.findByIdForUpdate(id))
+                .thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PUBLIC)));
+
+        DatasetResponseDto dto = service.getByIdForUpdate(id);
+
+        assertThat(dto.getId()).isEqualTo(id);
+        verify(datasetRepository).findByIdForUpdate(id);
+        verify(datasetRepository, never()).findById(any());
     }
 
     // -----------------------------------------------------------------------

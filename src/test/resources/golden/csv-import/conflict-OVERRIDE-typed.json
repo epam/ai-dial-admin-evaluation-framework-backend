@@ -72,10 +72,12 @@
     "status" : 200
   },
   "testCaseSchema" : [ {
+    "id" : "<uuid>",
     "name" : "prompt",
     "required" : false,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "code",
     "required" : false,
     "type" : "INTEGER"

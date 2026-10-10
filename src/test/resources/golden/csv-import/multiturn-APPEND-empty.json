@@ -84,16 +84,19 @@
     "status" : 200
   },
   "testCaseSchema" : [ {
+    "id" : "<uuid>",
     "name" : "prompt",
     "perTurn" : true,
     "required" : false,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "reply",
     "perTurn" : true,
     "required" : false,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "note",
     "perTurn" : true,
     "required" : false,

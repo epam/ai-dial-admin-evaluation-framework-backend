@@ -19,10 +19,15 @@ import lombok.NoArgsConstructor;
  * remains the sole writer/validator of the schema; this module only ever reads a snapshot copy.
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class FieldDefinitionDto {
+
+    @Schema(
+            description = "Server-assigned field identity. Echo it back unchanged on update to preserve the field"
+                    + " (including across a rename); omit it for new fields; never invent one.")
+    private String id;
 
     @NotBlank
     @Size(max = 255)

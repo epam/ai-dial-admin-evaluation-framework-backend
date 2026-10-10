@@ -12,9 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
-import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
-import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
@@ -27,6 +25,8 @@ import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
 import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
 import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
@@ -38,7 +38,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,13 +63,7 @@ import tools.jackson.databind.ObjectMapper;
 class CsvImportServiceSchemaHintsTest {
 
     @Mock
-    private DatasetRepository datasetRepository;
-
-    @Mock
-    private DatasetSchemaProvider datasetSchemaProvider;
-
-    @Mock
-    private RevalidationService revalidationService;
+    private DatasetService datasetService;
 
     @Mock
     private TestCaseRepository testCaseRepository;
@@ -97,11 +90,9 @@ class CsvImportServiceSchemaHintsTest {
         CsvCellParser csvCellParser = new CsvCellParser();
         SchemaTypeCoercer schemaTypeCoercer = new SchemaTypeCoercer();
         service = new CsvImportService(
-                datasetRepository,
-                datasetSchemaProvider,
+                datasetService,
                 testCaseRepository,
                 testCaseValidationService,
-                revalidationService,
                 csvImportProperties,
                 csvCellParser,
                 schemaTypeCoercer,
@@ -145,27 +136,35 @@ class CsvImportServiceSchemaHintsTest {
         return service.importCsv(datasetId, is, csv.length(), ',', null, mode, CsvConflictStrategy.FAIL, hints);
     }
 
-    private Dataset datasetWithSchema(String schemaJson) {
-        Dataset dataset = new Dataset();
-        dataset.setId(datasetId);
-        dataset.setVersion(0L);
-        dataset.setTestCaseSchema(schemaJson);
+    private DatasetResponseDto datasetWithSchema(String schemaJson) {
         List<FieldDefinitionDto> parsed;
         try {
             parsed = objectMapper.readValue(schemaJson, new TypeReference<>() {});
         } catch (Exception e) {
             throw new IllegalArgumentException("invalid schema json in test fixture: " + schemaJson, e);
         }
-        lenient().when(datasetSchemaProvider.getSchema(datasetId)).thenReturn(parsed);
+        DatasetResponseDto dataset = DatasetResponseDto.builder()
+                .id(datasetId)
+                .name("ds")
+                .version(0L)
+                .testCaseSchema(parsed)
+                .build();
+        lenient().when(datasetService.getByIdForUpdate(datasetId)).thenReturn(dataset);
+        lenient().when(datasetService.getById(datasetId)).thenReturn(dataset);
         return dataset;
     }
 
+    /** Asserts exactly one schema-persisting update and returns the schema it carried, serialized as JSON. */
+    private String persistedSchemaJson() {
+        ArgumentCaptor<DatasetRequestDto> requestCaptor = ArgumentCaptor.forClass(DatasetRequestDto.class);
+        verify(datasetService).update(eq(datasetId), requestCaptor.capture(), eq(0L));
+        return objectMapper.writeValueAsString(requestCaptor.getValue().getTestCaseSchema());
+    }
+
     private List<FieldDefinitionDto> persistedSchema() {
-        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository)
-                .updateTestCaseSchema(org.mockito.ArgumentMatchers.eq(datasetId), schemaCaptor.capture());
+        String persistedJson = persistedSchemaJson();
         try {
-            return objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+            return objectMapper.readValue(persistedJson, new TypeReference<>() {});
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
@@ -186,8 +185,7 @@ class CsvImportServiceSchemaHintsTest {
     @DisplayName("OVERRIDE + manifest: manifest-listed field persists verbatim, including FILE type, "
             + "required, displayName and description")
     void overrideWithManifestPersistsManifestFieldVerbatim() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         FieldDefinitionDto manifestDocument = FieldDefinitionDto.builder()
@@ -212,8 +210,7 @@ class CsvImportServiceSchemaHintsTest {
     @Test
     @DisplayName("OVERRIDE + manifest: a CSV column the manifest does not list is still inferred")
     void overrideWithManifestInfersUnlistedColumn() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         FieldDefinitionDto manifestDocument = FieldDefinitionDto.builder()
@@ -233,8 +230,7 @@ class CsvImportServiceSchemaHintsTest {
     @Test
     @DisplayName("OVERRIDE + manifest: a manifest field absent from the CSV is still persisted")
     void overrideWithManifestKeepsFieldWithNoCsvColumn() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         FieldDefinitionDto manifestExtra = FieldDefinitionDto.builder()
@@ -253,8 +249,7 @@ class CsvImportServiceSchemaHintsTest {
     @Test
     @DisplayName("MERGE + manifest: a new field's definition comes from the manifest, existing fields unaffected")
     void mergeWithManifestTakesNewFieldFromManifest() {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         FieldDefinitionDto manifestAttachment = FieldDefinitionDto.builder()
                 .name("attachment")
@@ -279,8 +274,7 @@ class CsvImportServiceSchemaHintsTest {
     @Test
     @DisplayName("APPEND + non-empty schema + manifest: manifest ignored entirely, schema not updated")
     void appendWithManifestIgnoresManifest() {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         FieldDefinitionDto manifestAttachment = FieldDefinitionDto.builder()
                 .name("attachment")
@@ -292,7 +286,7 @@ class CsvImportServiceSchemaHintsTest {
         String csv = "testCaseName,prompt\nRow1,hello";
         importCsv(csv, CsvImportMode.APPEND, hints);
 
-        verify(datasetRepository, never()).updateTestCaseSchema(any(), any());
+        verify(datasetService, never()).update(any(), any(), any());
     }
 
     // -------------------------------------------------------------------------
@@ -303,8 +297,7 @@ class CsvImportServiceSchemaHintsTest {
     @DisplayName("Multi-turn CSV + manifest into empty schema: a manifest-declared shared column stays "
             + "shared, is stored in shared data, and reports no shared-column conflict")
     void manifestKeepsSharedColumnSharedInMultiTurnImport() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         FieldDefinitionDto manifestContext = FieldDefinitionDto.builder()
@@ -339,8 +332,7 @@ class CsvImportServiceSchemaHintsTest {
     @Test
     @DisplayName("No manifest: a legacy-style CSV column named in fileColumns is persisted as FILE")
     void fileColumnsHintTypesLegacyColumnAsFile() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(), Set.of("document"));
@@ -354,8 +346,7 @@ class CsvImportServiceSchemaHintsTest {
     @Test
     @DisplayName("No manifest: a column already declared in the dataset schema is unaffected by fileColumns")
     void fileColumnsHintDoesNotAffectAlreadyDeclaredColumn() {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         // "prompt" is already declared in the dataset schema; APPEND + non-empty schema never re-derives it,
         // regardless of the fileColumns hint.
@@ -364,14 +355,13 @@ class CsvImportServiceSchemaHintsTest {
         String csv = "testCaseName,prompt\nRow1,hello";
         importCsv(csv, CsvImportMode.APPEND, hints);
 
-        verify(datasetRepository, never()).updateTestCaseSchema(any(), any());
+        verify(datasetService, never()).update(any(), any(), any());
     }
 
     @Test
     @DisplayName("Preview: no manifest, fileColumns hint types autoDetectedSchema column as FILE")
     void previewFileColumnsHintTypesColumnAsFile() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.existsById(datasetId)).thenReturn(true);
+        datasetWithSchema("[]");
 
         CsvImportSchemaHints hints = new CsvImportSchemaHints(List.of(), Set.of("document"));
         String csv = "testCaseName,document\nRow1,@ef/datasets/x/report.pdf";
@@ -418,8 +408,7 @@ class CsvImportServiceSchemaHintsTest {
             + "boolean-looking value is coerced to a string, not to the raw inferred INTEGER/BOOLEAN type; "
             + "an INTEGER-declared column matching the natural inference is unaffected")
     void fixupCoercesToManifestTypeNotInferredTypeSingleTurn() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         useRealMapSerialization();
 
@@ -470,8 +459,7 @@ class CsvImportServiceSchemaHintsTest {
             + "boolean-looking per-turn values is coerced to a string in every turn map, not to the raw "
             + "inferred INTEGER/BOOLEAN type")
     void fixupCoercesToManifestTypeNotInferredTypeMultiTurn() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         useRealMapSerialization();
 
@@ -537,10 +525,9 @@ class CsvImportServiceSchemaHintsTest {
             + "text stays a plain string")
     @SuppressWarnings("unchecked")
     void fixupReparsesManifestObjectAndArrayColumnsSingleTurn() {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"meta\",\"type\":\"STRING\",\"required\":false},"
+        datasetWithSchema("[{\"name\":\"meta\",\"type\":\"STRING\",\"required\":false},"
                 + "{\"name\":\"tags\",\"type\":\"STRING\",\"required\":false},"
                 + "{\"name\":\"note\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         useRealMapSerialization();
 
@@ -600,9 +587,7 @@ class CsvImportServiceSchemaHintsTest {
             + "turn map")
     @SuppressWarnings("unchecked")
     void fixupReparsesManifestObjectColumnMultiTurn() {
-        Dataset dataset =
-                datasetWithSchema("[{\"name\":\"meta\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"meta\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         useRealMapSerialization();
 
@@ -683,8 +668,7 @@ class CsvImportServiceSchemaHintsTest {
             + "text verbatim ('007', '1.50', 'TRUE'), not the heuristically inferred INTEGER/NUMBER/BOOLEAN "
             + "value; an undeclared numeric column still infers INTEGER")
     void manifestStringColumnsPreserveRawTextSingleTurn() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         useRealMapSerialization();
 
@@ -724,8 +708,7 @@ class CsvImportServiceSchemaHintsTest {
     @DisplayName("OVERRIDE + manifest, multi-turn: a STRING-declared per-turn column is stored with the raw "
             + "cell text verbatim in every turn map")
     void manifestStringColumnsPreserveRawTextMultiTurn() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         useRealMapSerialization();
 
@@ -752,8 +735,7 @@ class CsvImportServiceSchemaHintsTest {
     @DisplayName("Preview: OVERRIDE + manifest STRING columns show the raw cell text in the sample row, "
             + "matching what import would store")
     void previewShowsRawTextForManifestStringColumns() {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.existsById(datasetId)).thenReturn(true);
+        datasetWithSchema("[]");
 
         FieldDefinitionDto manifestCode = FieldDefinitionDto.builder()
                 .name("code")
@@ -786,8 +768,7 @@ class CsvImportServiceSchemaHintsTest {
             + "the old heuristically-coerced value '7', not the raw text — this is unrelated to the "
             + "manifest fix and must not change")
     void plainCsvAppendIntoExistingStringFieldKeepsOldLossyValue() {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"code\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"code\",\"type\":\"STRING\",\"required\":false}]");
         useRealMapSerialization();
 
         String csv = "testCaseName,code\nRow1,007";
@@ -809,8 +790,7 @@ class CsvImportServiceSchemaHintsTest {
             + "out an existing declared type for a non-manifest-driven OVERRIDE import")
     @SuppressWarnings("unchecked")
     void plainCsvOverrideIntoExistingObjectFieldParsesJsonAsBefore() {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"meta\",\"type\":\"OBJECT\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"meta\",\"type\":\"OBJECT\",\"required\":false}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         useRealMapSerialization();
 
@@ -840,8 +820,7 @@ class CsvImportServiceSchemaHintsTest {
     @DisplayName("MERGE + manifest: a new FILE column with all-blank cells is still appended with the "
             + "manifest's definition")
     void mergeAppendsManifestFieldEvenWhenAllCellsBlank() {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         FieldDefinitionDto manifestAttachment = FieldDefinitionDto.builder()
                 .name("attachment")
@@ -867,13 +846,12 @@ class CsvImportServiceSchemaHintsTest {
     @DisplayName("Plain CSV (no hints), MERGE: a new column with all-blank cells is still never appended — "
             + "unchanged from before the manifest fix")
     void plainCsvMergeDoesNotAppendAllBlankNewColumn() {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         String csv = "testCaseName,prompt,attachment\nRow1,hello,";
         InputStream is = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
         service.importCsv(datasetId, is, csv.length(), ',', null, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
 
-        verify(datasetRepository, never()).updateTestCaseSchema(any(), any());
+        verify(datasetService, never()).update(any(), any(), any());
     }
 }

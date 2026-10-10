@@ -5,8 +5,10 @@ import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,7 +45,7 @@ public class ZipManifestSerializer {
      */
     public byte[] write(ZipManifest manifest) {
         try {
-            return objectMapper.writeValueAsBytes(manifest);
+            return objectMapper.writeValueAsBytes(withoutFieldIds(manifest));
         } catch (JacksonException e) {
             log.error("Failed to serialize ZIP manifest: {}", e.getMessage(), e);
             throw new IllegalStateException("Failed to serialize ZIP manifest", e);
@@ -74,9 +76,28 @@ public class ZipManifestSerializer {
         if (manifest.formatVersion() != ZipManifest.CURRENT_FORMAT_VERSION) {
             throw new ValidationException("Unsupported manifest.json formatVersion: " + manifest.formatVersion());
         }
-        validateFields(manifest.testCaseSchema());
-        validateFiles(manifest.files());
-        return manifest;
+        final ZipManifest stripped = withoutFieldIds(manifest);
+        validateFields(stripped.testCaseSchema());
+        validateFiles(stripped.files());
+        return stripped;
+    }
+
+    /**
+     * Returns a copy of the manifest whose schema fields carry no {@code id}: field ids are dataset-local
+     * identity, so they are never exported and any parsed from an archive are dropped (otherwise foreign
+     * ids would fail the unknown-id check on update). Null entries are kept so validation still reports
+     * them; the caller's objects are never mutated.
+     */
+    private ZipManifest withoutFieldIds(ZipManifest manifest) {
+        if (manifest.testCaseSchema() == null) {
+            return manifest;
+        }
+        final List<FieldDefinitionDto> fields =
+                new ArrayList<>(manifest.testCaseSchema().size());
+        for (FieldDefinitionDto field : manifest.testCaseSchema()) {
+            fields.add(field == null ? null : field.toBuilder().id(null).build());
+        }
+        return new ZipManifest(manifest.formatVersion(), fields, manifest.files());
     }
 
     private void validateFields(List<FieldDefinitionDto> fields) {
@@ -94,7 +115,7 @@ public class ZipManifestSerializer {
                 throw new ValidationException("Invalid manifest.json field '" + fieldLabel + "': "
                         + violation.getPropertyPath() + " " + violation.getMessage());
             }
-            if (!seenNames.add(field.getName())) {
+            if (!seenNames.add(field.getName().toLowerCase(Locale.ROOT))) {
                 throw new ValidationException(
                         "Invalid manifest.json: duplicate testCaseSchema field name '" + field.getName() + "'");
             }

@@ -32,11 +32,9 @@ import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.mapper.DatasetMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +45,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
@@ -70,6 +69,7 @@ public class DatasetService {
     private final RevalidationService revalidationService;
     private final SchemaValidationService schemaValidationService;
     private final FileService fileService;
+    private final DatasetSchemaFieldIdResolver fieldIdResolver;
 
     @Qualifier("metaTransactionManager")
     private final PlatformTransactionManager metaTransactionManager;
@@ -134,6 +134,8 @@ public class DatasetService {
         validateVisibilityBinding(requestDto);
         String createdBy = authorResolver.getCreatedBy(jwt);
         DatasetRequestDto normalized = normalizeRequest(requestDto);
+        normalized.setTestCaseSchema(
+                fieldIdResolver.resolveForCreate(normalized.getTestCaseSchema()).schema());
         Dataset dataset = datasetMapper.toEntity(normalized, createdBy);
 
         try {
@@ -255,11 +257,10 @@ public class DatasetService {
         }
 
         DatasetRequestDto normalized = normalizeRequest(requestDto);
-
-        // Compute removed schema fields BEFORE the mapper mutates `existing` so we can
-        // prune orphan keys from every test case in the dataset after the dataset itself is saved.
-        List<String> removedFields = computeRemovedFields(existing, normalized);
-        boolean schemaChanged = isSchemaChanged(existing, normalized);
+        final SchemaFieldResolution resolution =
+                fieldIdResolver.resolveForUpdate(currentSchemaOf(existing), normalized.getTestCaseSchema());
+        normalized.setTestCaseSchema(resolution.schema());
+        final boolean schemaChanged = isSchemaChanged(existing, normalized);
 
         datasetMapper.update(existing, normalized);
         if (normalized.getCreatedBy() != null) {
@@ -268,9 +269,10 @@ public class DatasetService {
 
         try {
             Dataset updated = datasetRepository.save(existing);
-            if (!removedFields.isEmpty()) {
-                testCaseService.removeDataFields(id, removedFields);
-            }
+            // Guard runs AFTER the save: the save's UPDATE holds the dataset row lock, which serializes
+            // against the suite-binding trigger, so the binding count below cannot race a bind.
+            rejectRenameOnBoundPublicDataset(updated, resolution.renames());
+            applyDataFieldChanges(id, resolution);
             DatasetResponseDto datasetDto = datasetMapper.toDto(updated);
             RevalidationTaskDto revalidationTask = null;
             if (schemaChanged) {
@@ -287,6 +289,47 @@ public class DatasetService {
             throw ex;
         } catch (OptimisticLockException ex) {
             throw new VersionConflictException(ex.getMessage(), id, expectedVersion);
+        }
+    }
+
+    /**
+     * Reads the dataset under a row lock ({@code SELECT ... FOR UPDATE}). Only meaningful inside the
+     * caller's meta transaction, hence {@code MANDATORY} propagation.
+     */
+    @Transactional(value = "metaTransactionManager", propagation = Propagation.MANDATORY)
+    public DatasetResponseDto getByIdForUpdate(UUID id) {
+        log.debug("Fetching Dataset by id for update: {}", id);
+        return datasetRepository
+                .findByIdForUpdate(id)
+                .map(datasetMapper::toDto)
+                .orElseThrow(() -> new EntityNotFoundException("Dataset not found with id: " + id));
+    }
+
+    private List<FieldDefinitionDto> currentSchemaOf(Dataset existing) {
+        final List<FieldDefinitionDto> current = jsonbMapper.mapFieldDefinitions(existing.getTestCaseSchema());
+        return current != null ? current : List.of();
+    }
+
+    private void rejectRenameOnBoundPublicDataset(Dataset dataset, Map<String, String> renames) {
+        if (renames.isEmpty() || dataset.getVisibility() != DatasetVisibility.PUBLIC) {
+            return;
+        }
+        final long boundCount = testSuiteService.countReferencingDataset(dataset.getId());
+        if (boundCount > 0) {
+            throw new DatasetVisibilityRuleException(
+                    DatasetVisibilityErrorCode.DATASET_FIELD_RENAME_FORBIDDEN,
+                    "Cannot rename fields of PUBLIC dataset " + dataset.getId() + ": it is bound to " + boundCount
+                            + " test suite(s)");
+        }
+    }
+
+    /** Prune first, then rename: a removed field's old name may be a rename target. */
+    private void applyDataFieldChanges(UUID id, SchemaFieldResolution resolution) {
+        if (!resolution.removedNames().isEmpty()) {
+            testCaseService.removeDataFields(id, resolution.removedNames());
+        }
+        if (!resolution.renames().isEmpty()) {
+            testCaseService.renameDataFields(id, resolution.renames());
         }
     }
 
@@ -421,33 +464,6 @@ public class DatasetService {
             dto.setTestCaseSchema(List.of());
         }
         return dto;
-    }
-
-    /**
-     * Returns the field names that exist in the current dataset schema but are absent from the new schema.
-     * MUST be called before mapper.update() mutates the existing entity.
-     */
-    private List<String> computeRemovedFields(Dataset existing, DatasetRequestDto normalized) {
-        List<FieldDefinitionDto> oldSchema = jsonbMapper.mapFieldDefinitions(existing.getTestCaseSchema());
-        List<FieldDefinitionDto> newSchema = normalized.getTestCaseSchema();
-        if (oldSchema == null || oldSchema.isEmpty()) {
-            return List.of();
-        }
-        Set<String> newNames = new HashSet<>();
-        if (newSchema != null) {
-            for (FieldDefinitionDto f : newSchema) {
-                if (f.getName() != null) {
-                    newNames.add(f.getName());
-                }
-            }
-        }
-        List<String> removed = new ArrayList<>();
-        for (FieldDefinitionDto f : oldSchema) {
-            if (f.getName() != null && !newNames.contains(f.getName())) {
-                removed.add(f.getName());
-            }
-        }
-        return removed;
     }
 
     /**

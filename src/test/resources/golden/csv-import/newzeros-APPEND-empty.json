@@ -60,10 +60,12 @@
     "status" : 200
   },
   "testCaseSchema" : [ {
+    "id" : "<uuid>",
     "name" : "zip",
     "required" : false,
     "type" : "INTEGER"
   }, {
+    "id" : "<uuid>",
     "name" : "ratio",
     "required" : false,
     "type" : "NUMBER"

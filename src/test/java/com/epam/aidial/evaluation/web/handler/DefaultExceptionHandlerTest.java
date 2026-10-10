@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.web.handler;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode;
 import com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityRuleException;
 import java.sql.SQLException;
 import org.jooq.exception.DataAccessException;
@@ -36,6 +37,18 @@ class DefaultExceptionHandlerTest {
         assertThat(response.getBody().getMessage())
                 .isEqualTo(DatasetVisibilityRuleException.PRIVATE_DATASET_ALREADY_BOUND_MESSAGE)
                 .doesNotContain("SQL [", "update \"test_suites\"");
+    }
+
+    @Test
+    @DisplayName("DATASET_FIELD_RENAME_FORBIDDEN maps to HTTP 409 with the same wire code")
+    void datasetFieldRenameForbiddenBecomes409() {
+        ResponseEntity<ErrorView> response = handler.handleDatasetVisibilityRuleError(
+                request(),
+                new DatasetVisibilityRuleException(DatasetVisibilityErrorCode.DATASET_FIELD_RENAME_FORBIDDEN, "no"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo(ErrorCode.DATASET_FIELD_RENAME_FORBIDDEN.name());
     }
 
     @Test

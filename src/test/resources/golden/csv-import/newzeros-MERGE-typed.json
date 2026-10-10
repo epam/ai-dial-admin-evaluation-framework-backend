@@ -86,39 +86,48 @@
     "status" : 200
   },
   "testCaseSchema" : [ {
+    "id" : "<uuid>",
     "name" : "prompt",
     "required" : true,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "code",
     "required" : false,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "count",
     "required" : false,
     "type" : "INTEGER"
   }, {
+    "id" : "<uuid>",
     "name" : "meta",
     "required" : false,
     "type" : "OBJECT"
   }, {
+    "id" : "<uuid>",
     "name" : "tags",
     "required" : false,
     "type" : "ARRAY"
   }, {
+    "id" : "<uuid>",
     "name" : "attachment",
     "required" : false,
     "type" : "FILE"
   }, {
+    "id" : "<uuid>",
     "name" : "reply",
     "perTurn" : true,
     "required" : false,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "zip",
     "required" : false,
     "type" : "INTEGER"
   }, {
+    "id" : "<uuid>",
     "name" : "ratio",
     "required" : false,
     "type" : "NUMBER"

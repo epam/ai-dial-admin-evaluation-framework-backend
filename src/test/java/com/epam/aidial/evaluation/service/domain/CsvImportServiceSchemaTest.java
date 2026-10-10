@@ -13,9 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.configuration.properties.csv.CsvImportProperties;
-import com.epam.aidial.evaluation.data.db.model.Dataset;
 import com.epam.aidial.evaluation.data.db.model.TestCase;
-import com.epam.aidial.evaluation.data.db.repository.DatasetRepository;
 import com.epam.aidial.evaluation.data.db.repository.TestCaseRepository;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
@@ -25,6 +23,8 @@ import com.epam.aidial.evaluation.service.domain.csv.CsvSchemaFieldBuilder;
 import com.epam.aidial.evaluation.service.domain.csv.CsvTestCaseGrouper;
 import com.epam.aidial.evaluation.service.domain.csv.MultiTurnRunAssembler;
 import com.epam.aidial.evaluation.service.domain.csv.SchemaTypeCoercer;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.ValidationResult;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvConflictStrategy;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportMode;
@@ -36,7 +36,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,13 +53,7 @@ import tools.jackson.databind.ObjectMapper;
 class CsvImportServiceSchemaTest {
 
     @Mock
-    private DatasetRepository datasetRepository;
-
-    @Mock
-    private DatasetSchemaProvider datasetSchemaProvider;
-
-    @Mock
-    private RevalidationService revalidationService;
+    private DatasetService datasetService;
 
     @Mock
     private TestCaseRepository testCaseRepository;
@@ -87,11 +80,9 @@ class CsvImportServiceSchemaTest {
         CsvCellParser csvCellParser = new CsvCellParser();
         SchemaTypeCoercer schemaTypeCoercer = new SchemaTypeCoercer();
         service = new CsvImportService(
-                datasetRepository,
-                datasetSchemaProvider,
+                datasetService,
                 testCaseRepository,
                 testCaseValidationService,
-                revalidationService,
                 csvImportProperties,
                 csvCellParser,
                 schemaTypeCoercer,
@@ -146,85 +137,86 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("OVERRIDE mode: always replaces schema with auto-detected from CSV (even if schema was non-empty)")
     void overrideModeAlwaysReplacesSchema() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"oldField\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"oldField\",\"type\":\"STRING\",\"required\":false}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String csv = "testCaseName,newField\nRow1,hello";
         importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
-        assertThat(schemaCaptor.getValue()).contains("newField");
-        assertThat(schemaCaptor.getValue()).doesNotContain("oldField");
+        String persistedJson = persistedSchemaJson();
+        assertThat(persistedJson).contains("newField");
+        assertThat(persistedJson).doesNotContain("oldField");
     }
 
     @Test
     @DisplayName("APPEND mode with empty schema: auto-detects and persists schema")
     void appendEmptySchemaAutoDetects() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
 
         String csv = "testCaseName,score\nRow1,42";
         importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
-        assertThat(schemaCaptor.getValue()).contains("score");
+        String persistedJson = persistedSchemaJson();
+        assertThat(persistedJson).contains("score");
     }
 
     @Test
     @DisplayName("APPEND mode with existing schema: no schema update")
     void appendExistingSchemaNoUpdate() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         String csv = "testCaseName,prompt,unknownCol\nRow1,hello,extra";
         importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
 
-        verify(datasetRepository, never()).updateTestCaseSchema(any(), any());
+        verify(datasetService, never()).update(any(), any(), any());
     }
 
     @Test
-    @DisplayName("MERGE mode: new columns are added to schema, updateTestCaseSchema called")
+    @DisplayName("OVERRIDE reproducing the current schema (ignoring ids): no dataset update")
+    void overrideReproducingSchemaSkipsUpdate() throws Exception {
+        datasetWithSchema("[{\"id\":\"f1\",\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
+        when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
+
+        importCsv("testCaseName,prompt\nRow1,hello", CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
+
+        verify(datasetService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("MERGE mode: new columns are added to schema, one datasetService.update call")
     void mergeModeAddsNewColumns() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         String csv = "testCaseName,prompt,newField\nRow1,hello,world";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
-        assertThat(schemaCaptor.getValue()).contains("prompt");
-        assertThat(schemaCaptor.getValue()).contains("newField");
+        String persistedJson = persistedSchemaJson();
+        assertThat(persistedJson).contains("prompt");
+        assertThat(persistedJson).contains("newField");
     }
 
     @Test
     @DisplayName("MERGE mode: no new columns — schema NOT updated (version not bumped)")
     void mergeModeNoNewColumnsSkipsUpdate() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         String csv = "testCaseName,prompt\nRow1,hello";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
 
-        verify(datasetRepository, never()).updateTestCaseSchema(any(), any());
+        verify(datasetService, never()).update(any(), any(), any());
     }
 
     @Test
     @DisplayName("MERGE mode with empty schema: auto-detects all columns and persists schema")
     void mergeModeEmptySchemaAutoDetects() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
 
         String csv = "testCaseName,score,label\nRow1,42,good";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
-        assertThat(schemaCaptor.getValue()).contains("score");
-        assertThat(schemaCaptor.getValue()).contains("label");
+        String persistedJson = persistedSchemaJson();
+        assertThat(persistedJson).contains("score");
+        assertThat(persistedJson).contains("label");
     }
 
     // -------------------------------------------------------------------------
@@ -234,8 +226,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("APPEND + non-empty schema: unknown CSV columns are NOT stored in data")
     void appendWithSchemaDiscardsUnknownColumns() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         String csv = "testCaseName,prompt,unknownCol\nRow1,hello,should_be_discarded";
         importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
@@ -252,8 +243,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("APPEND + empty schema: all CSV columns ARE stored in data")
     void appendEmptySchemaKeepsAllColumns() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
 
         String csv = "testCaseName,col1,col2\nRow1,v1,v2";
         importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
@@ -268,8 +258,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("MERGE + non-empty schema: new CSV columns ARE stored in data (not discarded)")
     void mergeStoresNewColumnsInData() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
 
         String csv = "testCaseName,prompt,newField\nRow1,hello,world";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
@@ -284,8 +273,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("OVERRIDE: all CSV columns ARE stored in data")
     void overrideStoresAllColumns() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(1L);
 
         String csv = "testCaseName,prompt,extra\nRow1,hello,world";
@@ -305,8 +293,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("SKIP strategy + within-CSV duplicate: first row kept, skippedCount=1")
     void skipStrategyWithinCsvDupFirstWins() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         // First insert returns 1 (inserted), second returns 0 (skipped)
         when(testCaseRepository.insertOrSkip(any())).thenReturn(1).thenReturn(0);
 
@@ -321,8 +308,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("OVERRIDE conflict strategy + within-CSV duplicate: last wins, overriddenCount=1")
     void overrideStrategyWithinCsvDupLastWins() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         // First upsert: new insert (false), second upsert: replaces (true)
         when(testCaseRepository.insertOrOverride(any())).thenReturn(false).thenReturn(true);
 
@@ -337,8 +323,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("skippedCount and overriddenCount are null when conflictStrategy=FAIL")
     void failStrategyCountsAreNull() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
 
         String csv = "testCaseName\nRow1";
         CsvImportResultDto result = importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
@@ -354,8 +339,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("OVERRIDE + non-empty schema: validation uses CSV-derived schema, not old schema")
     void overrideWithExistingSchemaValidatesAgainstCsvHeaders() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"oldField\",\"type\":\"STRING\",\"required\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"oldField\",\"type\":\"STRING\",\"required\":true}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String csv = "testCaseName,newField\nRow1,hello";
@@ -371,8 +355,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("OVERRIDE + empty schema: validation uses CSV-derived schema")
     void overrideWithEmptySchemaValidatesAgainstCsvHeaders() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String csv = "testCaseName,col1,col2\nRow1,a,b";
@@ -387,8 +370,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("MERGE + non-empty schema with new columns: validation uses merged schema")
     void mergeWithNewColumnsValidatesAgainstMergedSchema() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true}]");
 
         String csv = "testCaseName,prompt,newMetric\nRow1,hello,5";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
@@ -405,8 +387,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("MERGE + non-empty schema, no new columns: validation uses existing schema")
     void mergeNoNewColumnsValidatesAgainstExistingSchema() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true}]");
 
         String csv = "testCaseName,prompt\nRow1,hello";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
@@ -421,8 +402,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("MERGE + empty schema: validation uses CSV-derived schema")
     void mergeEmptySchemaValidatesAgainstCsvHeaders() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
 
         String csv = "testCaseName,score,label\nRow1,42,good";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
@@ -436,8 +416,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("APPEND + empty schema: validation uses CSV-derived schema")
     void appendEmptySchemaValidatesAgainstCsvHeaders() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
 
         String csv = "testCaseName,col1\nRow1,v1";
         importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
@@ -452,8 +431,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("APPEND + non-empty schema: validation uses existing schema unchanged")
     void appendExistingSchemaValidatesAgainstExistingSchema() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":true}]");
 
         String csv = "testCaseName,prompt\nRow1,hello";
         importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
@@ -480,9 +458,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("OVERRIDE: validation schema carries perTurn forward from the dataset's current schema")
     void overrideValidationSchemaCarriesPerTurn() throws Exception {
-        Dataset dataset =
-                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String csv = "testCaseName,prompt\nRow1,hello";
@@ -497,17 +473,15 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("OVERRIDE: persisted schema carries perTurn forward from the dataset's current schema")
     void overridePersistedSchemaCarriesPerTurn() throws Exception {
-        Dataset dataset =
-                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true},"
+                + "{\"name\":\"gone\",\"type\":\"STRING\",\"required\":false}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String csv = "testCaseName,prompt\nRow1,hello";
         importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
-        List<FieldDefinitionDto> persisted = objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+        String persistedJson = persistedSchemaJson();
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(persistedJson, new TypeReference<>() {});
         assertThat(persisted).hasSize(1);
         assertThat(persisted.getFirst().getPerTurn()).isTrue();
     }
@@ -516,9 +490,7 @@ class CsvImportServiceSchemaTest {
     @DisplayName("OVERRIDE: an undeclared CSV column is over-approximated per-turn in the validation schema "
             + "(design D2), but persists shared when the CSV has no multi-turn case (design D3)")
     void overrideNewColumnHasNoPerTurn() throws Exception {
-        Dataset dataset =
-                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String csv = "testCaseName,prompt,newField\nRow1,hello,world";
@@ -533,10 +505,8 @@ class CsvImportServiceSchemaTest {
         // validation, harmless here since this CSV's single-turn path never reads perTurn.
         assertThat(validationNewField.getPerTurn()).isTrue();
 
-        ArgumentCaptor<String> schemaJsonCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaJsonCaptor.capture());
-        List<FieldDefinitionDto> persisted =
-                objectMapper.readValue(schemaJsonCaptor.getValue(), new TypeReference<>() {});
+        String persistedJson = persistedSchemaJson();
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(persistedJson, new TypeReference<>() {});
         FieldDefinitionDto persistedNewField = persisted.stream()
                 .filter(f -> "newField".equals(f.getName()))
                 .findFirst()
@@ -549,9 +519,7 @@ class CsvImportServiceSchemaTest {
     @DisplayName("MERGE: existing perTurn field passes through unchanged; the new delta field is "
             + "over-approximated per-turn in the validation schema (D2) but persists shared (D3)")
     void mergeCarriesPerTurnOnExistingFieldOnly() throws Exception {
-        Dataset dataset =
-                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
 
         String csv = "testCaseName,prompt,newMetric\nRow1,hello,5";
         importCsv(csv, CsvImportMode.MERGE, CsvConflictStrategy.FAIL);
@@ -561,10 +529,8 @@ class CsvImportServiceSchemaTest {
         assertThat(validationSchema.getFirst().getPerTurn()).isTrue();
         assertThat(validationSchema.get(1).getPerTurn()).isTrue();
 
-        ArgumentCaptor<String> schemaJsonCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaJsonCaptor.capture());
-        List<FieldDefinitionDto> persisted =
-                objectMapper.readValue(schemaJsonCaptor.getValue(), new TypeReference<>() {});
+        String persistedJson = persistedSchemaJson();
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(persistedJson, new TypeReference<>() {});
         FieldDefinitionDto persistedNewMetric = persisted.stream()
                 .filter(f -> "newMetric".equals(f.getName()))
                 .findFirst()
@@ -575,9 +541,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("Fixup re-validation schema (buildFinalSchema) carries perTurn forward")
     void fixupFinalSchemaCarriesPerTurn() throws Exception {
-        Dataset dataset =
-                datasetWithSchema("[{\"name\":\"col1\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"col1\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         when(warningsSerializer.serializeMap(any())).thenAnswer(inv -> {
@@ -622,9 +586,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("Preview: autoDetectedSchema carries perTurn forward from the dataset's current schema")
     void previewAutoDetectedSchemaCarriesPerTurn() throws Exception {
-        Dataset dataset =
-                datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
-        when(datasetRepository.existsById(datasetId)).thenReturn(true);
+        datasetWithSchema("[{\"name\":\"prompt\",\"type\":\"STRING\",\"required\":false,\"perTurn\":true}]");
 
         String csv = "testCaseName,prompt\nRow1,hello";
         InputStream is = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
@@ -646,16 +608,14 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("Multi-turn CSV into empty schema: persisted schema marks every undeclared column perTurn=true")
     void multiTurnCsvEmptySchemaMarksColumnsPerTurn() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String csv = "testCaseName,turnIndex,message\nConv1,0,hi\nConv1,1,hello";
         importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
-        List<FieldDefinitionDto> persisted = objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+        String persistedJson = persistedSchemaJson();
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(persistedJson, new TypeReference<>() {});
         FieldDefinitionDto message = persisted.stream()
                 .filter(f -> "message".equals(f.getName()))
                 .findFirst()
@@ -667,16 +627,14 @@ class CsvImportServiceSchemaTest {
     @DisplayName("Single-turn-only CSV into empty schema: persisted schema still omits perTurn (empty "
             + "membership set reproduces today's derivation)")
     void singleTurnOnlyCsvEmptySchemaLeavesPerTurnAbsent() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String csv = "testCaseName,message\nRow1,hi";
         importCsv(csv, CsvImportMode.OVERRIDE, CsvConflictStrategy.FAIL);
 
-        ArgumentCaptor<String> schemaCaptor = ArgumentCaptor.forClass(String.class);
-        verify(datasetRepository).updateTestCaseSchema(eq(datasetId), schemaCaptor.capture());
-        List<FieldDefinitionDto> persisted = objectMapper.readValue(schemaCaptor.getValue(), new TypeReference<>() {});
+        String persistedJson = persistedSchemaJson();
+        List<FieldDefinitionDto> persisted = objectMapper.readValue(persistedJson, new TypeReference<>() {});
         FieldDefinitionDto message = persisted.stream()
                 .filter(f -> "message".equals(f.getName()))
                 .findFirst()
@@ -687,8 +645,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("Preview: multi-turn CSV against empty schema marks autoDetectedSchema columns perTurn=true")
     void previewMultiTurnCsvEmptySchemaMarksColumnsPerTurn() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.existsById(datasetId)).thenReturn(true);
+        datasetWithSchema("[]");
 
         String csv = "testCaseName,turnIndex,message\nConv1,0,hi\nConv1,1,hello";
         InputStream is = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
@@ -710,8 +667,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("Fixup: empty schema with mixed types (INTEGER widened to STRING) coerces integers to strings")
     void fixupCoercesValuesWhenSchemaWidensToString() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
 
         // Override serializeMap to produce real JSON (needed for fixup data comparison)
         when(warningsSerializer.serializeMap(any())).thenAnswer(inv -> {
@@ -753,8 +709,7 @@ class CsvImportServiceSchemaTest {
     @Test
     @DisplayName("APPEND + existing schema: no fixup pass runs")
     void appendExistingSchemaNoFixup() throws Exception {
-        Dataset dataset = datasetWithSchema("[{\"name\":\"col1\",\"type\":\"STRING\",\"required\":false}]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[{\"name\":\"col1\",\"type\":\"STRING\",\"required\":false}]");
 
         String csv = "testCaseName,col1\nRow1,42";
         importCsv(csv, CsvImportMode.APPEND, CsvConflictStrategy.FAIL);
@@ -771,8 +726,7 @@ class CsvImportServiceSchemaTest {
     @DisplayName("Fixup: per-turn values are coerced to the newly inferred type and the turn array is persisted "
             + "(today's inspects-data-only pass is inert for a turn-only case; this is the fix)")
     void fixupCoercesPerTurnValues() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String storedTurnsJson = "[{\"col1\":42},{\"col1\":\"hello\"}]";
@@ -810,8 +764,7 @@ class CsvImportServiceSchemaTest {
     @DisplayName("Fixup: a multi-turn case is re-validated via validateMultiTurn against the FULL schema, "
             + "not validateTestCase against shared data alone")
     void fixupValidatesMultiTurnCaseAsMultiTurn() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         String storedTurnsJson = "[{\"col1\":42},{\"col1\":\"hello\"}]";
@@ -849,8 +802,7 @@ class CsvImportServiceSchemaTest {
     @DisplayName("Fixup: a case whose stored turn array is unreadable is skipped entirely — never added to "
             + "the batch update, so it is never rewritten as single-turn")
     void fixupSkipsUnreadableTurnArray() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
 
         // Valid JSON, wrong shape for List<Map<String,Object>> (elements are numbers, not objects) — a real
@@ -891,8 +843,7 @@ class CsvImportServiceSchemaTest {
             + "path — shared data is still coerced, but the column is written back unchanged rather than "
             + "silently overwritten with []")
     void fixupTreatsJsonNullMultiTurnDataAsSingleTurn() throws Exception {
-        Dataset dataset = datasetWithSchema("[]");
-        when(datasetRepository.findById(datasetId)).thenReturn(Optional.of(dataset));
+        datasetWithSchema("[]");
         when(testCaseRepository.deleteAllByDatasetId(any(), anyList())).thenReturn(0L);
         // deserializeTurnsStrict returns null for the JSON literal "null", same as for an absent column —
         // this must NOT be confused with the unreadable-shape case (which throws).
@@ -942,18 +893,28 @@ class CsvImportServiceSchemaTest {
         return service.importCsv(datasetId, is, csv.length(), ',', null, mode, strategy);
     }
 
-    private Dataset datasetWithSchema(String schemaJson) {
-        Dataset dataset = new Dataset();
-        dataset.setId(datasetId);
-        dataset.setVersion(0L);
-        dataset.setTestCaseSchema(schemaJson);
+    private DatasetResponseDto datasetWithSchema(String schemaJson) {
         List<FieldDefinitionDto> parsed;
         try {
             parsed = objectMapper.readValue(schemaJson, new TypeReference<>() {});
         } catch (Exception e) {
             throw new IllegalArgumentException("invalid schema json in test fixture: " + schemaJson, e);
         }
-        lenient().when(datasetSchemaProvider.getSchema(datasetId)).thenReturn(parsed);
+        DatasetResponseDto dataset = DatasetResponseDto.builder()
+                .id(datasetId)
+                .name("ds")
+                .version(0L)
+                .testCaseSchema(parsed)
+                .build();
+        lenient().when(datasetService.getByIdForUpdate(datasetId)).thenReturn(dataset);
+        lenient().when(datasetService.getById(datasetId)).thenReturn(dataset);
         return dataset;
+    }
+
+    /** Asserts exactly one schema-persisting update and returns the schema it carried, serialized as JSON. */
+    private String persistedSchemaJson() {
+        ArgumentCaptor<DatasetRequestDto> requestCaptor = ArgumentCaptor.forClass(DatasetRequestDto.class);
+        verify(datasetService).update(eq(datasetId), requestCaptor.capture(), eq(0L));
+        return objectMapper.writeValueAsString(requestCaptor.getValue().getTestCaseSchema());
     }
 }

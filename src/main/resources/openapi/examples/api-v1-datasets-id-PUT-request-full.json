@@ -1,0 +1,28 @@
+{
+  "name": "My Dataset",
+  "description": "Renames expected_answer to reference_answer (same id => values move with it) and adds a new field (no id => server assigns one)",
+  "visibility": "PUBLIC",
+  "testCaseSchema": [
+    {
+      "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "name": "question",
+      "displayName": "Question",
+      "type": "STRING",
+      "required": true,
+      "description": "The user question to send to the model"
+    },
+    {
+      "id": "a3bb189e-8bf9-3888-9912-ace4e6543002",
+      "name": "reference_answer",
+      "displayName": "Reference Answer",
+      "type": "STRING",
+      "required": false
+    },
+    {
+      "name": "tags",
+      "displayName": "Tags",
+      "type": "STRING",
+      "required": false
+    }
+  ]
+}

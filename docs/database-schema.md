@@ -1,7 +1,7 @@
 # Database Schema Reference
 
 > **Status**: Synchronized with Flyway migrations
-> **Last sync**: 2026-09-29 (meta V1.35, analytics V1.19)
+> **Last sync**: 2026-09-29 (meta V1.36, analytics V1.19)
 > **Databases**: Meta (PostgreSQL) + Analytics (PostgreSQL)
 
 This document describes the current database schema as implemented by Flyway migrations.
@@ -74,10 +74,12 @@ Central owner of `testCaseSchema` and the test-case table. Multiple test suites 
 ```json
 [
   {
+    "id": "string (server-assigned UUID; stable across renames; backfilled by V1.36)",
     "name": "string",
     "type": "STRING|INTEGER|NUMBER|BOOLEAN|OBJECT|ARRAY|FILE",
     "required": true,
-    "description": "string"
+    "description": "string",
+    "perTurn": false
   }
 ]
 ```
@@ -1064,6 +1066,7 @@ When used as a suite's `overallScore`, `roc_auc` resolves as a `CustomFunction` 
 | V1.33 | `V1_33__CopyRunMetricSnapshotsFromAnalytics.java` | **Java migration** — copies historical snapshot rows from the analytics database into the meta table. Registered explicitly in `MetaFlywayConfiguration` via `.javaMigrations(...)` (it is constructor-injected with the analytics `DataSource`), so it is NOT present in this migration directory. Skips rows whose run no longer exists in meta (logging the dropped count), and skips entirely when the analytics source table is absent (fresh install). There is no vendor branch: `DatasourceValidationConfiguration` already hard-fails startup for any `datasource.analytics.vendor` other than `POSTGRES`, before either Flyway bean can even be constructed, which would make a vendor check inside the migration unreachable. |
 | V1.34 | `V1.34__ReplaceRunMetricSnapshotsRunIndex.sql` | Replaced the single-column `idx_run_metric_snapshots_run` on `run_metric_snapshots` with composite index `idx_run_metric_snapshots_run_computed_at` on `(test_suite_run_id, computed_at_ms DESC, computation_id DESC)`, for the `test_suite_runs` query entity's `metric_names` lookup and `findLatestComputationId`; the old index was a strict prefix of the new one, so every existing `WHERE test_suite_run_id = ?` reader remains served. |
 | V1.35 | `V1.35__AddMetricScoreAggregationToTestSuites.sql` | Added `metric_score_aggregation` VARCHAR(10) NOT NULL DEFAULT 'AVG' to test_suites (`AVG`/`MIN`/`MAX`: per-test-case leaf of the aggregated metric scores used by built-in statistics, overall score, per-test-case score and run comparison) |
+| V1.36 | `V1.36__AddIdsToDatasetSchemaFields.sql` | Data-only backfill: adds a server-assigned string `id` (UUID) to every field of `datasets.test_case_schema` that lacks one or has `"id": null`. Preserves array order; leaves existing ids and non-array values untouched; idempotent; does not bump `version`/`updated_at_ms`. |
 
 ### Analytics Database (`db/migration/analytics/POSTGRES/`)
 

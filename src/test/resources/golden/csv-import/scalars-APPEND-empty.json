@@ -93,22 +93,27 @@
     "status" : 200
   },
   "testCaseSchema" : [ {
+    "id" : "<uuid>",
     "name" : "prompt",
     "required" : false,
     "type" : "STRING"
   }, {
+    "id" : "<uuid>",
     "name" : "code",
     "required" : false,
     "type" : "INTEGER"
   }, {
+    "id" : "<uuid>",
     "name" : "count",
     "required" : false,
     "type" : "INTEGER"
   }, {
+    "id" : "<uuid>",
     "name" : "flag",
     "required" : false,
     "type" : "BOOLEAN"
   }, {
+    "id" : "<uuid>",
     "name" : "newNum",
     "required" : false,
     "type" : "NUMBER"

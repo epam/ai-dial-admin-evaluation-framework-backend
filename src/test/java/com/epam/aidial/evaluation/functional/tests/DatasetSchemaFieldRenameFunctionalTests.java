@@ -224,9 +224,11 @@ public abstract class DatasetSchemaFieldRenameFunctionalTests extends BaseFuncti
         assertThat(first.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(second.getBody()).contains("VERSION_CONFLICT");
-        assertThat(datasetRepository.findById(dataset.getId()).orElseThrow().getTestCaseSchema())
-                .contains("a1")
-                .doesNotContain("a2");
+        // Compare parsed names: the raw JSON also carries random UUID field ids, which can contain "a2".
+        final List<FieldDefinitionDto> stored = objectMapper.readValue(
+                datasetRepository.findById(dataset.getId()).orElseThrow().getTestCaseSchema(),
+                new TypeReference<>() {});
+        assertThat(stored).extracting(FieldDefinitionDto::getName).containsExactly("a1");
     }
 
     @Test

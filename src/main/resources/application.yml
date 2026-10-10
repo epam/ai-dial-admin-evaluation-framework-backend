@@ -162,7 +162,7 @@ test-suite-run:
     default-request-timeout-ms: ${TEST_SUITE_RUN_EXEC_DEFAULT_TIMEOUT:600000}
     max-request-timeout-ms: ${TEST_SUITE_RUN_EXEC_MAX_TIMEOUT:1200000}
     result-batch-size: 100
-    max-response-size-bytes: 5242880  # 5MB
+    max-response-size-bytes: ${TEST_SUITE_RUN_EXEC_MAX_RESP_BODY_BYTES:52428800} # 50 MB
     header-blacklist:
       - Authorization
       - Host

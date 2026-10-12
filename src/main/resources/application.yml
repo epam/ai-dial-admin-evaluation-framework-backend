@@ -134,7 +134,7 @@ test-case:
     max-item-operations: 500
     max-delete-ids: 10000
   multi-turn:
-    max-turns: 10
+    max-turns: ${TEST_CASE_MULTI_TURN_MAX_TURNS:30}
 
 # Analytics results configuration
 analytics:

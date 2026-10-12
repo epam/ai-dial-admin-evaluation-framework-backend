@@ -24,7 +24,7 @@ Status: **Implemented**
 - **THEN** both are stored and the case is multi-turn; the shared fields are visible to every turn (see the merged-view execution requirement)
 
 ### Requirement: Turn-count bounds
-`multiTurnData`, when present, MUST contain at least one element. The maximum number of turns SHALL be configurable (default 10); exceeding it does not reject the request but marks the case `is_valid=false` with an invalidating warning.
+`multiTurnData`, when present, MUST contain at least one element. The maximum number of turns SHALL be configurable (default 30); exceeding it does not reject the request but marks the case `is_valid=false` with an invalidating warning.
 Status: **Implemented**
 
 #### Scenario: Empty multiTurnData rejected

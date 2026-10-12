@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.functional.tests;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
+import com.epam.aidial.evaluation.data.db.model.DatasetVisibility;
 import com.epam.aidial.evaluation.functional.helper.MetaTestDataHelper;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
@@ -14,6 +15,7 @@ import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
+import com.epam.aidial.evaluation.service.domain.dto.DatasetVisibilityTransitionDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportPreviewDto;
 import com.epam.aidial.evaluation.service.domain.dto.csv.CsvImportResultDto;
@@ -64,7 +66,7 @@ public abstract class CsvImportModeFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("9.1 OVERRIDE mode replaces existing schema with auto-detected schema from CSV")
     void overrideModeReplacesExistingSchema() {
-        TestSuiteResponseDto suite = createTestSuiteWithSchema();
+        TestSuiteResponseDto suite = createPrivateTestSuiteWithSchema();
 
         String csv = "testCaseName,newField\nRow1,hello";
         ResponseEntity<CsvImportResultDto> response = importCsv(suite.getId(), csv, "OVERRIDE", "FAIL");
@@ -512,7 +514,7 @@ public abstract class CsvImportModeFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("9.16 Schema cleanup: removing a field from dataset schema removes that key from all test case data")
     void removingSchemaFieldCleansUpTestCaseData() {
-        TestSuiteResponseDto suite = createTestSuiteWithSchema(); // dataset has prompt, expected
+        TestSuiteResponseDto suite = createPrivateTestSuiteWithSchema(); // dataset has prompt, expected
         importCsv(suite.getId(), "testCaseName,prompt,expected\nRow1,hello,world", "OVERRIDE", "FAIL");
 
         // Fetch dataset (OVERRIDE import bumps its version)
@@ -646,7 +648,7 @@ public abstract class CsvImportModeFunctionalTests extends BaseFunctionalTest {
     @Test
     @DisplayName("OVERRIDE + existing schema: imported test cases are valid (no stale-schema warnings)")
     void overrideWithExistingSchemaImportedTestCasesAreValid() {
-        TestSuiteResponseDto suite = createTestSuiteWithSchema(); // has prompt, expected
+        TestSuiteResponseDto suite = createPrivateTestSuiteWithSchema(); // has prompt, expected
 
         String csv = "testCaseName,newField\nRow1,hello\nRow2,world";
         ResponseEntity<CsvImportResultDto> response = importCsv(suite.getId(), csv, "OVERRIDE", "FAIL");
@@ -903,6 +905,22 @@ public abstract class CsvImportModeFunctionalTests extends BaseFunctionalTest {
                 restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(req), TestSuiteResponseDto.class);
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return r.getBody();
+    }
+
+    private TestSuiteResponseDto createPrivateTestSuiteWithSchema() {
+        final TestSuiteResponseDto suite = createTestSuiteWithSchema();
+        final DatasetVisibilityTransitionDto request = DatasetVisibilityTransitionDto.builder()
+                .visibility(DatasetVisibility.PRIVATE)
+                .build();
+        final ResponseEntity<DatasetResponseDto> response = restTemplate.exchange(
+                apiUrl("/datasets/" + suite.getDatasetId() + "/visibility"),
+                HttpMethod.PATCH,
+                jsonEntity(request),
+                DatasetResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getVisibility()).isEqualTo(DatasetVisibility.PRIVATE);
+        return suite;
     }
 
     private DatasetResponseDto getDataset(UUID datasetId) {

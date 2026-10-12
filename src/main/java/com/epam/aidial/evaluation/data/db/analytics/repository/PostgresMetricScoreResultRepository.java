@@ -61,12 +61,11 @@ public class PostgresMetricScoreResultRepository implements MetricScoreResultRep
 
     @Override
     public List<MetricScoreResult> findByRunAndComputation(UUID runId, UUID computationId) {
-        return dsl.select(METRIC_SCORE_RESULT.asterisk())
-                .from(METRIC_SCORE_RESULT)
+        return dsl.selectFrom(METRIC_SCORE_RESULT)
                 .where(METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID.eq(runId.toString()))
                 .and(METRIC_SCORE_RESULT.COMPUTATION_ID.eq(computationId.toString()))
                 .and(RunDeletionFilter.notDeleted(METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID))
                 .orderBy(METRIC_SCORE_RESULT.METRIC_SCORE_NAME.asc(), METRIC_SCORE_RESULT.METRIC_NAME.asc())
-                .fetch(r -> recordMapper.map(r.into(METRIC_SCORE_RESULT)));
+                .fetch(recordMapper::map);
     }
 }

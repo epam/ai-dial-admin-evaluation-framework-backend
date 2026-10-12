@@ -98,12 +98,11 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
                     .lt(DSL.row(cursor.createdAt(), cursor.id().toString())));
         }
 
-        List<TestCaseRunResult> rows = dsl.select(TEST_CASE_RUN_RESULTS.asterisk())
-                .from(TEST_CASE_RUN_RESULTS)
+        List<TestCaseRunResult> rows = dsl.selectFrom(TEST_CASE_RUN_RESULTS)
                 .where(condition)
                 .orderBy(TEST_CASE_RUN_RESULTS.CREATED_AT_MS.desc(), TEST_CASE_RUN_RESULTS.ID.desc())
                 .limit(size + 1)
-                .fetch(r -> recordMapper.map(r.into(TEST_CASE_RUN_RESULTS)));
+                .fetch(recordMapper::map);
 
         boolean hasMore = rows.size() > size;
         List<TestCaseRunResult> content = hasMore ? rows.subList(0, size) : rows;
@@ -119,11 +118,10 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
 
     @Override
     public Optional<TestCaseRunResult> findById(UUID id) {
-        return dsl.select(TEST_CASE_RUN_RESULTS.asterisk())
-                .from(TEST_CASE_RUN_RESULTS)
+        return dsl.selectFrom(TEST_CASE_RUN_RESULTS)
                 .where(TEST_CASE_RUN_RESULTS.ID.eq(id.toString()))
                 .and(RunDeletionFilter.notDeleted(TEST_CASE_RUN_RESULTS.TEST_SUITE_RUN_ID))
-                .fetchOptional(r -> recordMapper.map(r.into(TEST_CASE_RUN_RESULTS)));
+                .fetchOptional(recordMapper::map);
     }
 
     @Override

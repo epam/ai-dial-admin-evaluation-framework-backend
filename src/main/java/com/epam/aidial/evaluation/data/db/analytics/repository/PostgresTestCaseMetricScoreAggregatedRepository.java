@@ -60,12 +60,11 @@ public class PostgresTestCaseMetricScoreAggregatedRepository implements TestCase
 
     @Override
     public List<TestCaseMetricScoreAggregated> findByRunIdAndComputationId(UUID runId, UUID computationId) {
-        return dsl.select(TEST_CASE_METRIC_SCORES_AGGREGATED.asterisk())
-                .from(TEST_CASE_METRIC_SCORES_AGGREGATED)
+        return dsl.selectFrom(TEST_CASE_METRIC_SCORES_AGGREGATED)
                 .where(TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID.eq(runId.toString()))
                 .and(TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTATION_ID.eq(computationId.toString()))
                 .and(RunDeletionFilter.notDeleted(TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID))
-                .fetch(r -> recordMapper.map(r.into(TEST_CASE_METRIC_SCORES_AGGREGATED)));
+                .fetch(recordMapper::map);
     }
 
     private static JSONB toJsonb(String json) {

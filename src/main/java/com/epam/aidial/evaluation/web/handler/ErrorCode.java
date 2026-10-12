@@ -37,6 +37,8 @@ public enum ErrorCode {
     SUITE_HAS_NO_DATASET,
     /** PUT /datasets/{id} renamed a schema field on a PUBLIC dataset that is bound to at least one suite. */
     DATASET_FIELD_RENAME_FORBIDDEN,
+    /** A dataset update or import removed a schema field from a PUBLIC dataset bound to at least one suite. */
+    DATASET_FIELD_REMOVAL_FORBIDDEN,
     /** POST /api/internal/runs/{runId}/execute for a run that already has an active dispatch. */
     RUN_ALREADY_ACTIVE,
     INTERNAL_ERROR,

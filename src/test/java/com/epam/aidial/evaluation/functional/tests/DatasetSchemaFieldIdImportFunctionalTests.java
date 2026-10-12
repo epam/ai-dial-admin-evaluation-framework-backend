@@ -65,17 +65,20 @@ public abstract class DatasetSchemaFieldIdImportFunctionalTests extends BaseFunc
     }
 
     @Test
-    @DisplayName("OVERRIDE into a PUBLIC dataset bound to a suite, dropping a column, succeeds without 409")
-    void overrideDroppingColumnOnBoundPublicSucceeds() {
+    @DisplayName("OVERRIDE into a bound PUBLIC dataset dropping a column returns 409 and preserves the schema")
+    void overrideDroppingColumnOnBoundPublicRejected() {
         final DatasetResponseDto dataset = createDataset(field("a"), field("b"));
         createSuite(dataset.getId());
 
         final ResponseEntity<String> response = importCsv(dataset.getId(), "testCaseName,a\nRow1,x", "OVERRIDE");
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(getDataset(dataset.getId()).getTestCaseSchema())
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("DATASET_FIELD_REMOVAL_FORBIDDEN");
+        final DatasetResponseDto after = getDataset(dataset.getId());
+        assertThat(after.getVersion()).isEqualTo(dataset.getVersion());
+        assertThat(after.getTestCaseSchema())
                 .extracting(FieldDefinitionDto::getName)
-                .containsExactly("a");
+                .containsExactly("a", "b");
     }
 
     @Test

@@ -569,8 +569,8 @@ Status: **Planned**
 - **WHEN** a client sends the renamed field without an `id` (`[{name: "column3"}]` replacing `column2`)
 - **THEN** the system SHALL treat it as removal of `column2` plus a new field `column3`, exactly as before field ids existed
 
-### Requirement: Field rename restricted on shared datasets
-A dataset update containing at least one rename (see "Dataset schema field rename preserves data") SHALL be allowed only when the dataset is `PRIVATE`, or is `PUBLIC` with no suite bound to it. A rename on a `PUBLIC` dataset with one or more committed bound suites SHALL be rejected, because renaming would silently invalidate suites owned by other users. Updates without renames (adding, removing, or re-typing fields; metadata edits) are unaffected by this requirement.
+### Requirement: Destructive schema changes restricted on shared datasets
+A dataset update containing at least one rename (see "Dataset schema field rename preserves data") or removing at least one schema field SHALL be allowed only when the dataset is `PRIVATE`, or is `PUBLIC` with no suite bound to it. A rename or removal on a `PUBLIC` dataset with one or more committed bound suites SHALL be rejected, because either change can silently invalidate suites owned by other users. Additions, field re-typing and metadata edits are unaffected by this requirement.
 
 **Current limitation:** suite create/rebind validation occurs before its save acquires the dataset-row lock. If that validation reads the old schema and the save commits after a concurrent rename, the rename transaction may not observe the uncommitted binding. The rename can therefore succeed and the suite can subsequently persist validity computed from the old schema. This interleaving is not currently serialized or repaired by the rename transaction.
 Status: **Planned**
@@ -587,12 +587,16 @@ Status: **Planned**
 - **WHEN** a client renames a field of a `PUBLIC` dataset referenced by at least one committed suite
 - **THEN** the system SHALL respond with HTTP 409 and error code `DATASET_FIELD_RENAME_FORBIDDEN`; neither the schema, the dataset version, nor any test case SHALL change
 
+#### Scenario: Field removal on bound PUBLIC dataset is rejected
+- **WHEN** a client removes a field from a `PUBLIC` dataset referenced by at least one committed suite
+- **THEN** the system SHALL respond with HTTP 409 and error code `DATASET_FIELD_REMOVAL_FORBIDDEN`; neither the schema, the dataset version, nor any test case SHALL change
+
 #### Scenario: Concurrent suite binding can escape the rename guard
 - **WHEN** a suite create/rebind validates against the old schema before a concurrent rename and commits its binding after the rename transaction checks for dependent suites
 - **THEN** the rename MAY succeed and the suite MAY persist validity computed from the old schema; this interleaving is a current limitation
 
-#### Scenario: Non-rename edit on bound PUBLIC dataset is allowed
-- **WHEN** a client adds or removes a field of a `PUBLIC` dataset referenced by suites, without renaming any field
+#### Scenario: Non-destructive edit on bound PUBLIC dataset is allowed
+- **WHEN** a client adds or re-types a field of a `PUBLIC` dataset referenced by suites, without renaming or removing any field
 - **THEN** the update SHALL proceed as before this requirement
 
 ## Implementation notes
@@ -607,4 +611,3 @@ Status: **Planned**
 - New filter/sort whitelists: registered with `FilterWhitelists` and `SortWhitelists`; new entry in `OpenApiQueryParamCustomizer` for the list endpoint.
 - Revalidation-task subresources reuse the existing `RevalidationTaskRepository` (rebound from `test_suite_id` to `dataset_id`) and `RevalidationService`.
 - Dependent-suites endpoint: new `@GetMapping("/{id}/test-suites")` on `web.controller.DatasetController`; new `DatasetService.getDependentSuites(UUID)` (dataset existence check via `getById`, then delegates to `TestSuiteService.getDependentSuiteSummaries`); new `TestSuiteRepository.findSuiteSummariesReferencingDataset(UUID)` with selective column projection (`id`, `name`, `description` only) to avoid TOAST decompression; new pure-carrier `data.db.model.TestSuiteSummary` record; new DTO `service.domain.dto.DatasetDependentSuiteDto`.
-

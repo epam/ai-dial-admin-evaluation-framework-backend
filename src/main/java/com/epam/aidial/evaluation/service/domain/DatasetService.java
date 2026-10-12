@@ -1,5 +1,8 @@
 package com.epam.aidial.evaluation.service.domain;
 
+import static com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode.DATASET_FIELD_REMOVAL_FORBIDDEN;
+import static com.epam.aidial.evaluation.service.domain.exception.DatasetVisibilityErrorCode.DATASET_FIELD_RENAME_FORBIDDEN;
+
 import com.epam.aidial.evaluation.data.db.exception.InvalidFilterException;
 import com.epam.aidial.evaluation.data.db.exception.OptimisticLockException;
 import com.epam.aidial.evaluation.data.db.model.Dataset;
@@ -33,7 +36,6 @@ import com.epam.aidial.evaluation.service.domain.mapper.DatasetMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -271,7 +273,7 @@ public class DatasetService {
             Dataset updated = datasetRepository.save(existing);
             // Guard runs AFTER the save: the save's UPDATE holds the dataset row lock, which serializes
             // against the suite-binding trigger, so the binding count below cannot race a bind.
-            rejectRenameOnBoundPublicDataset(updated, resolution.renames());
+            rejectDestructiveSchemaChangeOnBoundPublicDataset(updated, resolution);
             applyDataFieldChanges(id, resolution);
             DatasetResponseDto datasetDto = datasetMapper.toDto(updated);
             RevalidationTaskDto revalidationTask = null;
@@ -310,16 +312,22 @@ public class DatasetService {
         return current != null ? current : List.of();
     }
 
-    private void rejectRenameOnBoundPublicDataset(Dataset dataset, Map<String, String> renames) {
-        if (renames.isEmpty() || dataset.getVisibility() != DatasetVisibility.PUBLIC) {
+    private void rejectDestructiveSchemaChangeOnBoundPublicDataset(Dataset dataset, SchemaFieldResolution resolution) {
+        if (dataset.getVisibility() != DatasetVisibility.PUBLIC
+                || (resolution.renames().isEmpty() && resolution.removedNames().isEmpty())) {
             return;
         }
+
         final long boundCount = testSuiteService.countReferencingDataset(dataset.getId());
         if (boundCount > 0) {
+            final boolean hasRenames = !resolution.renames().isEmpty();
+            final DatasetVisibilityErrorCode errorCode =
+                    hasRenames ? DATASET_FIELD_RENAME_FORBIDDEN : DATASET_FIELD_REMOVAL_FORBIDDEN;
+            final String action = hasRenames ? "rename" : "remove";
             throw new DatasetVisibilityRuleException(
-                    DatasetVisibilityErrorCode.DATASET_FIELD_RENAME_FORBIDDEN,
-                    "Cannot rename fields of PUBLIC dataset " + dataset.getId() + ": it is bound to " + boundCount
-                            + " test suite(s)");
+                    errorCode,
+                    "Cannot " + action + " fields of PUBLIC dataset " + dataset.getId() + ": it is bound to "
+                            + boundCount + " test suite(s)");
         }
     }
 

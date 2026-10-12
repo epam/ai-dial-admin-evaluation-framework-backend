@@ -258,8 +258,9 @@ public class DatasetController {
     @ApiResponse(responseCode = "404", description = "Dataset not found")
     @ApiResponse(
             responseCode = "409",
-            description = "Version conflict (VERSION_CONFLICT), name already in use, or a schema field was renamed on "
-                    + "a PUBLIC dataset that is bound to at least one test suite (DATASET_FIELD_RENAME_FORBIDDEN)",
+            description = "Version conflict (VERSION_CONFLICT), name already in use, or a schema field was renamed or "
+                    + "removed on a PUBLIC dataset that is bound to at least one test suite "
+                    + "(DATASET_FIELD_RENAME_FORBIDDEN or DATASET_FIELD_REMOVAL_FORBIDDEN)",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorView.class)))
     public ResponseEntity<?> update(
             @Parameter(description = "Dataset ID") @PathVariable UUID id,

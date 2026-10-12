@@ -99,10 +99,15 @@ public abstract class RevalidationTaskFunctionalTests extends BaseFunctionalTest
         // Change the dataset schema — spawns revalidation
         DatasetRequestDto update = DatasetRequestDto.builder()
                 .name(dataset.getName())
-                .testCaseSchema(List.of(FieldDefinitionDto.builder()
-                        .name("renamed")
-                        .type(SchemaFieldType.STRING)
-                        .build()))
+                .testCaseSchema(List.of(
+                        FieldDefinitionDto.builder()
+                                .name("q")
+                                .type(SchemaFieldType.STRING)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("additional")
+                                .type(SchemaFieldType.STRING)
+                                .build()))
                 .build();
 
         HttpHeaders headers = new HttpHeaders();

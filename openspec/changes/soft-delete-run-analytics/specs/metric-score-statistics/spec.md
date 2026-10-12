@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Metric score result reads exclude deleted runs
-Reads of `metric_score_result` — through the `metric_score_results` Query DSL entity and through direct repository reads (`PostgresMetricScoreResultRepository.findByRunAndComputation`) alike — SHALL exclude rows belonging to a test suite run that has an analytics tombstone (see `run-analytics-deletion`). The table SHALL be read through a `metric_score_result_active` database view rather than the base table for every such read path.
+Reads of `metric_score_result` — through the `metric_score_results` Query DSL entity and through direct repository reads (`PostgresMetricScoreResultRepository.findByRunAndComputation`) alike — SHALL exclude rows belonging to a test suite run that has an analytics tombstone (see `run-analytics-deletion`). The exclusion SHALL be applied in the read query itself, as an anti-join against `run_deletions`.
 Status: **Implemented**
 
 #### Scenario: `metric_score_results` Query DSL entity excludes a deleted run's rows

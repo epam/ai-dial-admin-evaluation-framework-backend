@@ -1,7 +1,6 @@
 package com.epam.aidial.evaluation.data.db.analytics.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_METRIC_SCORES_AGGREGATED;
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE;
 
 import com.epam.aidial.evaluation.data.db.analytics.mapper.TestCaseMetricScoreAggregatedRecordMapper;
 import com.epam.aidial.evaluation.data.db.analytics.model.TestCaseMetricScoreAggregated;
@@ -61,10 +60,11 @@ public class PostgresTestCaseMetricScoreAggregatedRepository implements TestCase
 
     @Override
     public List<TestCaseMetricScoreAggregated> findByRunIdAndComputationId(UUID runId, UUID computationId) {
-        return dsl.select(TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE.asterisk())
-                .from(TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE)
-                .where(TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .and(TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE.COMPUTATION_ID.eq(computationId.toString()))
+        return dsl.select(TEST_CASE_METRIC_SCORES_AGGREGATED.asterisk())
+                .from(TEST_CASE_METRIC_SCORES_AGGREGATED)
+                .where(TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .and(TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTATION_ID.eq(computationId.toString()))
+                .and(RunDeletionFilter.notDeleted(TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID))
                 .fetch(r -> recordMapper.map(r.into(TEST_CASE_METRIC_SCORES_AGGREGATED)));
     }
 

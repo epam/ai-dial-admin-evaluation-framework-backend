@@ -1,12 +1,15 @@
 package com.epam.aidial.evaluation.query.service.repository;
 
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES_ACTIVE;
+import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SCORES;
 
+import com.epam.aidial.evaluation.data.db.analytics.repository.RunDeletionFilter;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Map;
+import java.util.Optional;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -28,15 +31,15 @@ public class PostgresTestCaseEvalScoreEntityResolver implements StructuredQueryE
     /** Public so {@code TestCaseEvalScoresSchemaProvider} (a different package) can derive its schema
      *  from the exact same field list without depending on this vendor-gated bean's own lifecycle. */
     public static final Table<?> SCORES = DSL.select(
-                    TEST_CASE_EVAL_SCORES_ACTIVE.TEST_SUITE_RUN_ID,
-                    TEST_CASE_EVAL_SCORES_ACTIVE.TEST_CASE_ID,
-                    TEST_CASE_EVAL_SCORES_ACTIVE.TEST_CASE_NAME,
-                    TEST_CASE_EVAL_SCORES_ACTIVE.COMPUTATION_ID,
-                    TEST_CASE_EVAL_SCORES_ACTIVE.EXECUTION_STATUS,
-                    TEST_CASE_EVAL_SCORES_ACTIVE.SCORE,
-                    TEST_CASE_EVAL_SCORES_ACTIVE.PASSED,
-                    TEST_CASE_EVAL_SCORES_ACTIVE.COMPUTED_AT_MS)
-            .from(TEST_CASE_EVAL_SCORES_ACTIVE)
+                    TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID,
+                    TEST_CASE_EVAL_SCORES.TEST_CASE_ID,
+                    TEST_CASE_EVAL_SCORES.TEST_CASE_NAME,
+                    TEST_CASE_EVAL_SCORES.COMPUTATION_ID,
+                    TEST_CASE_EVAL_SCORES.EXECUTION_STATUS,
+                    TEST_CASE_EVAL_SCORES.SCORE,
+                    TEST_CASE_EVAL_SCORES.PASSED,
+                    TEST_CASE_EVAL_SCORES.COMPUTED_AT_MS)
+            .from(TEST_CASE_EVAL_SCORES)
             .asTable("test_case_eval_scores");
 
     private final DSLContext dsl;
@@ -65,6 +68,11 @@ public class PostgresTestCaseEvalScoreEntityResolver implements StructuredQueryE
     @Override
     public Table<?> table() {
         return SCORES;
+    }
+
+    @Override
+    public Optional<Condition> baseCondition() {
+        return Optional.of(RunDeletionFilter.notDeleted(SCORES.field(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID)));
     }
 
     @Override

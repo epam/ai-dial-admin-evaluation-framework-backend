@@ -6,12 +6,12 @@ This matters more now because analytics is planned to move to ClickHouse in the 
 
 ## What Changes
 
-- Introduce a new append-only `run_deletions` table in the analytics DB (`run_id`, `deleted_at_ms`), one row per deleted run. No existing analytics row is ever updated — deletion is represented by appending a tombstone, not mutating result rows.
-- `TestSuiteRunService.deleteRun` now also triggers an analytics-side tombstone write, via a new analytics-domain service method (not a direct repository injection — preserves the existing cross-domain-service rule). The tombstone insert happens before the meta-DB hard delete, inside the same `@Transactional("metaTransactionManager")` call: if the tombstone write fails, the meta transaction rolls back and the whole `deleteRun` call is safely retryable. The insert is idempotent (`INSERT ... ON CONFLICT DO NOTHING` on `run_id`).
+- Introduce a new append-only `run_deletions` table in the analytics DB (`test_suite_run_id`, `deleted_at_ms`), one row per deleted run. No existing analytics row is ever updated — deletion is represented by appending a tombstone, not mutating result rows.
+- `TestSuiteRunService.deleteRun` now also triggers an analytics-side tombstone write, via a new analytics-domain service method (not a direct repository injection — preserves the existing cross-domain-service rule). The tombstone insert happens before the meta-DB hard delete, as its own committed analytics transaction (cross-database writes cannot be atomic): if the tombstone write fails, the meta-DB row is not deleted and the whole `deleteRun` call is safely retryable. The insert is idempotent (`INSERT ... ON CONFLICT DO NOTHING` on `test_suite_run_id`), so a retry after a failure on either side is safe.
 - `TestSuiteService.delete` (suite deletion) also writes a tombstone for every run owned by the suite before deleting the suite row. Suite deletion today removes its runs purely via a DB-level `ON DELETE CASCADE` FK, bypassing `deleteRun` entirely — without this, suite-cascade-deleted runs' analytics rows would remain permanently visible despite both the run and the suite being gone.
 - Meta DB's `test_suite_runs` deletion behavior is **unchanged** — it remains a real, synchronous hard delete with existing FK cascades. This change does not touch `PostgresTestSuiteRunRepository.deleteById` or the `test_suite_runs` Query DSL entity resolver (that resolver already reflects deletion correctly, since the meta row is simply gone).
-- For every analytics table that carries a run-scoping column directly (`test_case_eval_summaries`, `test_case_eval_scores`, and any others identified during design), add a companion `<table>_active` database view that excludes tombstoned runs via an anti-join against `run_deletions`. Every analytics read path for those tables — Query DSL entity resolvers, direct repository reads, export/aggregate queries — is repointed at the `_active` view instead of the base table.
-- Add a schema-introspection test asserting every analytics table with a run-scoping column has a matching `<table>_active` view, so a future run-scoped analytics table cannot be added without the exclusion view (prevents silent drift).
+- Every analytics read path over a run-scoped table (`test_case_run_results`, `test_case_eval_summaries`, `test_case_eval_scores`, `test_case_metric_scores_aggregated`, `metric_score_result`) excludes tombstoned runs via a `NOT EXISTS` anti-join against `run_deletions`, defined once in `RunDeletionFilter` and applied in each repository read method and, for the Query DSL, through a resolver-level `baseCondition()` the query builder ANDs onto every select. Query DSL entity names and columns are unchanged, so no frontend change is needed.
+- Add a registry test asserting every analytics table with a run-scoping column is registered as tombstone-filtered, plus functional tests that verify exclusion through every read path, so a future run-scoped table cannot be added unfiltered.
 - **Out of scope for this change** (explicitly deferred):
   - No physical reclamation/retention job for tombstoned analytics rows — `run_deletions` and the underlying rows persist indefinitely after this change; a cleanup job is a separate, future change.
   - No backfill of tombstones for runs already deleted before this change ships (those orphans remain exactly as invisible/untracked as they are today).
@@ -20,12 +20,12 @@ This matters more now because analytics is planned to move to ClickHouse in the 
 ## Capabilities
 
 ### New Capabilities
-- `run-analytics-deletion`: the `run_deletions` tombstone table, the analytics-domain service method that writes a tombstone on run deletion, and the `<table>_active` views (plus the schema-introspection coverage test) that exclude tombstoned runs from every analytics read path.
+- `run-analytics-deletion`: the `run_deletions` tombstone table, the analytics-domain service method that writes a tombstone on run deletion, and the tombstone predicate (plus the registry and behavioural tests) that excludes tombstoned runs from every analytics read path.
 
 ### Modified Capabilities
 - `test-suite-runs`: `deleteRun` gains a new step — writing an analytics tombstone via the analytics-domain service before the existing meta-DB hard delete — with the operation remaining safely retryable on partial failure.
 - `test-suites`: suite deletion gains a new step — writing an analytics tombstone for every run owned by the suite, before the suite row is deleted and its runs cascade — so suite-cascade-deleted runs' analytics data is excluded from reads the same as single-run deletion.
-- `metrics-storage`: reads of `test_case_eval_summaries` and `test_case_eval_scores` (Query DSL entities and direct repository reads alike) exclude rows belonging to deleted runs, via the new `_active` views.
+- `metrics-storage`: reads of `test_case_eval_summaries` and `test_case_eval_scores` (Query DSL entities and direct repository reads alike) exclude rows belonging to deleted runs, via the tombstone predicate.
 - `analytics-eval-results`: reads of `test_case_run_results` (direct repository reads — export/listing; no Query DSL entity exists for this table) exclude rows belonging to deleted runs.
 - `test-case-metric-score-aggregation`: reads of `test_case_metric_scores_aggregated` (the `test_case_metric_scores` Query DSL entity, plus direct repository reads) exclude rows belonging to deleted runs.
 - `metric-score-statistics`: reads of `metric_score_result` (the `metric_score_results` Query DSL entity, plus direct repository reads) exclude rows belonging to deleted runs.
@@ -35,9 +35,8 @@ This matters more now because analytics is planned to move to ClickHouse in the 
 ## Impact
 
 - **New table**: `run_deletions` (analytics DB) — new Flyway migration under `src/main/resources/db/migration/analytics/POSTGRES/` (`V{major}.{minor}__add_run_deletions.sql`), following the existing meta-after-analytics migration ordering.
-- **New views**: one `<table>_active` view per affected run-scoped analytics table, added in the same or a follow-up Flyway migration; `./gradlew generateJooq` must be run and the generated diff committed (`src/main/java-generated/`) per existing convention.
-- **Modified code**: `TestSuiteRunService.deleteRun` (new call to an analytics-domain service), a new analytics-domain service method + its repository method for the tombstone insert, every affected `StructuredQueryEntityResolver`'s `table()` (repointed at the view), any repository method reading those tables directly (exports, aggregates).
-- **New test**: schema-introspection test enforcing every run-scoped analytics table has a matching `_active` view.
-- **Docs**: `docs/database-schema.md` update for the new table/views (required whenever a Flyway migration changes schema).
+- **Modified code**: `TestSuiteRunService.deleteRun` (new call to an analytics-domain service), a new analytics-domain service method + its repository method for the tombstone insert, every affected `StructuredQueryEntityResolver`'s `table()` (given a base condition), any repository method reading those tables directly (exports, aggregates).
+- **New tests**: registry test (`JooqSchemaDriftTest`) and behavioural `RunDeletionFunctionalTests` covering all five tables.
+- **Docs**: `docs/database-schema.md` update for the new table (required whenever a Flyway migration changes schema).
 - **No API contract change** — this is entirely an internal data-visibility fix; no new/changed endpoints, request/response DTOs, or OpenAPI examples.
 - **No config changes.**

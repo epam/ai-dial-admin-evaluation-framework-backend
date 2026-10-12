@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Eval summary and eval score reads exclude deleted runs
-Reads of `test_case_eval_summaries` and `test_case_eval_scores` — through their respective Query DSL entities (`eval_summaries`, `test_case_eval_scores`) and through direct repository reads (`PostgresEvalSummaryRepository`'s list/export/aggregate/comparison methods; `findById`) alike — SHALL exclude rows belonging to a test suite run that has an analytics tombstone (see `run-analytics-deletion`). Both tables SHALL be read through a corresponding `<table>_active` database view rather than the base table for every such read path.
+Reads of `test_case_eval_summaries` and `test_case_eval_scores` — through their respective Query DSL entities (`eval_summaries`, `test_case_eval_scores`) and through direct repository reads (`PostgresEvalSummaryRepository`'s list/export/aggregate/comparison methods; `findById`) alike — SHALL exclude rows belonging to a test suite run that has an analytics tombstone (see `run-analytics-deletion`). The exclusion SHALL be applied in the read query itself, as an anti-join against `run_deletions`.
 Status: **Implemented**
 
 #### Scenario: Eval summaries list excludes a deleted run's rows

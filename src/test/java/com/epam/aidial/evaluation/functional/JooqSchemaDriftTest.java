@@ -145,31 +145,43 @@ class JooqSchemaDriftTest {
         }
     }
 
-    @Test
-    void analyticsTablesWithRunIdHaveActiveViews() throws SQLException {
-        try (Connection conn = analyticsDataSource.getConnection()) {
-            // Query information_schema to find all tables with test_suite_run_id column
-            var stmt = conn.createStatement();
-            var resultSet = stmt.executeQuery("SELECT table_name FROM information_schema.columns "
-                    + "WHERE table_schema = 'public' AND column_name = 'test_suite_run_id' "
-                    + "AND table_type = 'BASE TABLE' ORDER BY table_name");
+    /**
+     * Run-scoped analytics tables whose every read path ANDs {@code RunDeletionFilter.notDeleted(...)} and
+     * is covered by {@code RunDeletionFunctionalTests}. The frozen analytics {@code run_metric_snapshots}
+     * is superseded by the meta-DB table and deliberately not filtered.
+     */
+    private static final Set<String> TOMBSTONE_FILTERED_TABLES = Set.of(
+            "test_case_run_results",
+            "test_case_eval_summaries",
+            "test_case_eval_scores",
+            "test_case_metric_scores_aggregated",
+            "metric_score_result");
 
-            Set<String> tablesWithRunId = new java.util.HashSet<>();
+    private static final Set<String> FROZEN_TABLES = Set.of("run_metric_snapshots");
+
+    @Test
+    void everyAnalyticsTableWithRunIdIsTombstoneFiltered() throws SQLException {
+        Set<String> tablesWithRunId = new java.util.TreeSet<>();
+        try (Connection conn = analyticsDataSource.getConnection();
+                var stmt = conn.createStatement();
+                var resultSet = stmt.executeQuery("SELECT c.table_name FROM information_schema.columns c "
+                        + "JOIN information_schema.tables t ON t.table_schema = c.table_schema "
+                        + "AND t.table_name = c.table_name "
+                        + "WHERE c.table_schema = 'public' AND c.column_name = 'test_suite_run_id' "
+                        + "AND t.table_type = 'BASE TABLE' AND c.table_name <> 'run_deletions'")) {
             while (resultSet.next()) {
                 tablesWithRunId.add(resultSet.getString("table_name"));
             }
-
-            // Verify each table has a corresponding _active view
-            for (String tableName : tablesWithRunId) {
-                String viewName = tableName + "_active";
-                var viewStmt = conn.createStatement();
-                var viewResultSet = viewStmt.executeQuery("SELECT table_name FROM information_schema.views "
-                        + "WHERE table_schema = 'public' AND table_name = '" + viewName + "'");
-
-                assertThat(viewResultSet.next())
-                        .as("Table '%s' has test_suite_run_id but missing _active view '%s'", tableName, viewName)
-                        .isTrue();
-            }
         }
+
+        tablesWithRunId.removeAll(TOMBSTONE_FILTERED_TABLES);
+        tablesWithRunId.removeAll(FROZEN_TABLES);
+
+        assertThat(tablesWithRunId)
+                .as("Analytics tables with test_suite_run_id not registered as tombstone-filtered. For each: AND "
+                        + "RunDeletionFilter.notDeleted(...) into every read path (repository methods and the "
+                        + "entity resolver's baseCondition()), extend RunDeletionFunctionalTests, then add the table "
+                        + "to TOMBSTONE_FILTERED_TABLES")
+                .isEmpty();
     }
 }

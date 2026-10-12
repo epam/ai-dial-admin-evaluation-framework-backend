@@ -24,8 +24,8 @@ Status: **Implemented**
 - **WHEN** a client retries `DELETE /api/v1/test-suite-runs/{id}` for a run whose tombstone was already written in a prior, partially-failed attempt
 - **THEN** the tombstone write SHALL succeed without error (no duplicate row, no exception), and the meta-DB row deletion SHALL proceed as normal
 
-### Requirement: Analytics reads exclude rows of deleted runs via database views
-For every analytics table carrying a run-scoping column (`test_case_run_results`, `test_case_eval_summaries`, `test_case_eval_scores`, `test_case_metric_scores_aggregated`, `metric_score_result`), the system SHALL provide a companion `<table>_active` database view that excludes rows whose run has a matching `run_deletions` tombstone. Every read of these tables — Query DSL entity resolvers and direct repository reads alike — SHALL read through the `<table>_active` view rather than the base table.
+### Requirement: Analytics reads exclude rows of deleted runs
+For every analytics table carrying a run-scoping column (`test_case_run_results`, `test_case_eval_summaries`, `test_case_eval_scores`, `test_case_metric_scores_aggregated`, `metric_score_result`), every read of the table — Query DSL entities and direct repository reads alike — SHALL exclude rows whose run has a matching `run_deletions` tombstone, by anti-joining `run_deletions` on the run-scoping column in the read query itself. Entity names and column sets exposed through the Query DSL SHALL be unchanged. Query DSL entities SHALL apply the exclusion through a resolver-level base condition that the query builder ANDs onto every select of that entity, subqueries included; writes SHALL NOT be filtered.
 Status: **Implemented**
 
 #### Scenario: A deleted run's rows are excluded from a Query DSL read
@@ -38,16 +38,20 @@ Status: **Implemented**
 
 #### Scenario: An active run's rows are unaffected
 - **WHEN** a read targets a run that has no `run_deletions` tombstone
-- **THEN** all of that run's matching rows SHALL be returned exactly as if the view did not exist
+- **THEN** all of that run's matching rows SHALL be returned exactly as if the exclusion did not exist
 
-### Requirement: Schema-introspection test prevents future drift
-The system SHALL include a test that queries the analytics database's schema metadata for every table carrying a run-scoping column and asserts a corresponding `<table>_active` view exists, independent of which application code references that view.
+### Requirement: Registry test prevents future drift
+The system SHALL include a test that queries the analytics database's schema metadata for every base table carrying a run-scoping column and asserts each is registered as tombstone-filtered (or explicitly frozen), so a new run-scoped table cannot be added without its read paths being filtered and covered by the deletion functional tests.
 Status: **Implemented**
 
-#### Scenario: A new run-scoped table without its active view fails the build
-- **WHEN** a new analytics table carrying a run-scoping column is added without a corresponding `<table>_active` view
-- **THEN** the schema-introspection test SHALL fail, naming the missing view
+#### Scenario: A new run-scoped table that is not registered fails the build
+- **WHEN** a new analytics table carrying a run-scoping column is added without being registered as tombstone-filtered
+- **THEN** the registry test SHALL fail, naming the unregistered table
 
-#### Scenario: All current run-scoped tables have active views
-- **WHEN** the schema-introspection test runs against the current schema
+#### Scenario: All current run-scoped tables are registered
+- **WHEN** the registry test runs against the current schema
 - **THEN** it SHALL pass for all five run-scoped analytics tables
+
+#### Scenario: Registered tables are verified behaviourally
+- **WHEN** the deletion functional tests delete a run and a suite
+- **THEN** every direct repository read and every Query DSL entity over the five tables SHALL return no row of the deleted run and SHALL still return the rows of a live run

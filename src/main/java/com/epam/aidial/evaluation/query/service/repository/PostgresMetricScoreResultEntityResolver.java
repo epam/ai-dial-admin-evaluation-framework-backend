@@ -1,14 +1,16 @@
 package com.epam.aidial.evaluation.query.service.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT;
-import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.METRIC_SCORE_RESULT_ACTIVE;
 
 import com.epam.aidial.evaluation.constants.MetricScoreConstants;
+import com.epam.aidial.evaluation.data.db.analytics.repository.RunDeletionFilter;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Map;
+import java.util.Optional;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -51,7 +53,12 @@ public class PostgresMetricScoreResultEntityResolver implements StructuredQueryE
 
     @Override
     public Table<?> table() {
-        return METRIC_SCORE_RESULT_ACTIVE;
+        return METRIC_SCORE_RESULT;
+    }
+
+    @Override
+    public Optional<Condition> baseCondition() {
+        return Optional.of(RunDeletionFilter.notDeleted(METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID));
     }
 
     @Override

@@ -1,9 +1,8 @@
-## 1. Schema: tombstone table and active views
+## 1. Schema: tombstone table
 
 - [x] 1.1 Add Flyway migration `V1.22__CreateRunDeletionsTable.sql` (analytics DB) creating `run_deletions(test_suite_run_id VARCHAR(36) PRIMARY KEY, deleted_at_ms BIGINT NOT NULL)`, no foreign keys
-- [x] 1.2 In the same migration, create the five `<table>_active` views (`test_case_run_results_active`, `test_case_eval_summaries_active`, `test_case_eval_scores_active`, `test_case_metric_scores_aggregated_active`, `metric_score_result_active`), each `SELECT *` from its base table anti-joined (`NOT EXISTS`/`LEFT JOIN ... IS NULL`) against `run_deletions` on `test_suite_run_id`
-- [x] 1.3 Run `./gradlew generateJooq`; commit the generated diff under `src/main/java-generated/` (new `RUN_DELETIONS` table class plus the five `*_ACTIVE` view classes)
-- [x] 1.4 Update `docs/database-schema.md` with the new `run_deletions` table and the five `_active` views
+- [x] 1.2 Run `./gradlew generateJooq`; commit the generated diff under `src/main/java-generated/` (new `RUN_DELETIONS` table class)
+- [x] 1.3 Update `docs/database-schema.md` with the new `run_deletions` table and the read-path exclusion rule
 
 ## 2. Tombstone write path
 
@@ -18,31 +17,29 @@
 - [x] 3.2 Add `TestSuiteRunService.tombstoneAllRunsForSuite(UUID suiteId)` — looks up the suite's run ids via `findIdsByTestSuiteId` and calls `RunDeletionService.markDeleted` for each
 - [x] 3.3 Call `tombstoneAllRunsForSuite` from `TestSuiteService.delete`'s existing `TransactionTemplate` block, before `testSuiteRepository.deleteById(id)` fires the cascade
 - [x] 3.4 Unit test: `deleteRun` calls the tombstone write before the meta delete, and a tombstone-write failure prevents the meta delete from being attempted
-- [x] 3.5 Functional test (`PostgresFunctionalTests`): deleting a terminal run with existing analytics rows (across all five tables) excludes those rows from every affected read path afterward
+- [x] 3.5 Functional test (`PostgresFunctionalTests`): deleting a terminal run with existing analytics rows (across all five tables) excludes those rows from every affected read path afterward, and leaves a live run's rows visible
 - [x] 3.6 Functional test: deleting a suite with one or more runs excludes each of those runs' analytics rows from every affected read path afterward (covers the suite-cascade path, not just single-run deletion)
-- [x] 3.7 Functional test: retrying `DELETE /api/v1/test-suite-runs/{id}` after a simulated tombstone-write failure succeeds without error (idempotent recovery)
+- [x] 3.7 Functional test: re-writing an existing tombstone is a no-op and the run stays excluded (a true mid-delete failure cannot be injected without test-only seams)
 
-## 4. Repoint reads at the active views
+## 4. Filter reads by tombstone predicate
 
-- [x] 4.1 `PostgresEvalSummaryEntityResolver.table()` → `TEST_CASE_EVAL_SUMMARIES_ACTIVE`
-- [x] 4.2 `PostgresTestCaseEvalScoreEntityResolver`'s derived-table projection → `FROM TEST_CASE_EVAL_SCORES_ACTIVE` instead of the bare table, keeping its existing column projection/aliasing unchanged
-- [x] 4.3 `PostgresTestCaseMetricScoreAggregatedEntityResolver.table()` → `TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE`
-- [x] 4.4 `PostgresMetricScoreResultEntityResolver.table()` → `METRIC_SCORE_RESULT_ACTIVE`
-- [x] 4.5 `PostgresTestCaseRunResultRepository`'s direct-read methods (`findAll`, `findById`, `count`) → read from `TEST_CASE_RUN_RESULTS_ACTIVE`
-- [x] 4.6 `PostgresEvalSummaryRepository`'s direct-read methods (`findAllForExport*`, `findById`, `count`, `aggregate`, `countMatches`, `findUnmatchedIds`, `findUnmatchedTestCaseIds`, `findLatestComputationId(s)`, `existsByRunIdAndComputationId`) → read from `TEST_CASE_EVAL_SUMMARIES_ACTIVE`; writes (`saveAll`) continue targeting the base table
-- [x] 4.7 `PostgresTestCaseMetricScoreAggregatedRepository.findByRunIdAndComputationId` → read from `TEST_CASE_METRIC_SCORES_AGGREGATED_ACTIVE`
-- [x] 4.8 `PostgresMetricScoreResultRepository.findByRunAndComputation` → read from `METRIC_SCORE_RESULT_ACTIVE`
-- [x] 4.9 Verify via `EXPLAIN` that the view's anti-join is pulled up / stays index-backed for at least one high-traffic path (`test_case_eval_summaries_active` run-scoped lookup, and the layered `test_case_eval_scores_active` derived select), per the precedent in `docs/patterns/test-suite-runs-query-entity.md`
-- [x] 4.10 Functional/unit test updates for each repository/resolver confirming reads still return non-deleted rows unchanged (regression coverage for the view swap itself, independent of the delete-exclusion tests in section 3)
+- [x] 4.1 Add `RunDeletionFilter.notDeleted(Field<String>)` (`data.db.analytics.repository`) — the single `NOT EXISTS (… run_deletions …)` definition
+- [x] 4.2 Add `StructuredQueryEntityResolver.baseCondition()` (default empty); `StructuredQueryBuilder.build` and `countRows` AND it onto the entity's select (subqueries go through `build`)
+- [x] 4.3 Override `baseCondition()` in `PostgresEvalSummaryEntityResolver`, `PostgresTestCaseEvalScoreEntityResolver` (over its derived `SCORES` table), `PostgresTestCaseMetricScoreAggregatedEntityResolver`, `PostgresMetricScoreResultEntityResolver`; `table()` returns the base table
+- [x] 4.4 `PostgresTestCaseRunResultRepository` (`findAll`, `findById`, `count`) AND the predicate
+- [x] 4.5 `PostgresEvalSummaryRepository` (`findAllForExport*`, `findById`, `count`, `aggregate`, `countMatches`, `findUnmatched*`, `findLatestComputationId(s)`, `existsByRunIdAndComputationId`, and the other-run probe table) AND the predicate; `saveAll` untouched
+- [x] 4.6 `PostgresTestCaseMetricScoreAggregatedRepository.findByRunIdAndComputationId` and `PostgresMetricScoreResultRepository.findByRunAndComputation` AND the predicate
+- [x] 4.7 Verified via `EXPLAIN (ANALYZE)` on ~50k summary/score rows with 200k tombstones: run-scoped lookups on `test_case_eval_summaries`, the `test_case_eval_scores` derived select, and the `findLatestComputationId` shape all plan as the existing run index scan plus a `Nested Loop Anti Join` probing `run_deletions_pkey` (Index Only Scan); multi-run `IN` queries use a `Hash Anti Join`
+- [x] 4.8 Regression: the existing query/repository functional suites pass unchanged (live rows still returned)
 
-## 5. Drift-prevention test
+## 5. Drift-prevention and behavioural tests
 
-- [x] 5.1 Add a schema-introspection test (e.g. near `JooqSchemaDriftTest`) that queries `information_schema.columns` for every analytics table with a `test_suite_run_id` column and asserts a `<table>_active` view exists for each
-- [x] 5.2 Run the test against the current schema and confirm it passes for all five run-scoped tables
+- [x] 5.1 `JooqSchemaDriftTest`: every analytics base table with a `test_suite_run_id` column must be registered in `TOMBSTONE_FILTERED_TABLES` (or the frozen set)
+- [x] 5.2 Rewrite `RunDeletionFunctionalTests` to seed all five tables for a deleted run and a live control run and assert, via production repository reads and every run-scoped Query DSL entity, that only the deleted run disappears (single-run delete, suite delete, idempotent tombstone re-write)
 
 ## 6. Spec and documentation maintenance
 
 - [ ] 6.1 Update `openspec/specs/README.md` per the Spec Index Maintenance Policy — add the new `run-analytics-deletion` spec folder entry
-- [ ] 6.2 Add a new pattern doc (e.g. `docs/patterns/run-deletion-tombstone.md`) describing the tombstone-table + `_active`-view mechanism, and add it to `docs/patterns/README.md` and the AGENTS.md "Unique Patterns" table — this is a new, reusable cross-cutting pattern, not a one-off feature
-- [ ] 6.3 Update `openspec/config.yaml` per the Config Maintenance Policy — note the new tombstone + active-view convention as the project's pattern for soft-visibility exclusion on append-only analytics data
+- [ ] 6.2 Add a new pattern doc (e.g. `docs/patterns/run-deletion-tombstone.md`) describing the tombstone-table + `RunDeletionFilter` predicate mechanism, and add it to `docs/patterns/README.md` and the AGENTS.md "Unique Patterns" table — this is a new, reusable cross-cutting pattern, not a one-off feature
+- [ ] 6.3 Update `openspec/config.yaml` per the Config Maintenance Policy — note the new tombstone + shared-predicate convention as the project's pattern for soft-visibility exclusion on append-only analytics data
 - [ ] 6.4 Note (do not act on yet): the delta specs under this change's `specs/` sync into `openspec/specs/` at archive time per this project's `rules.archive` checklist (see `CLAUDE.md`) — no separate sync task needed here

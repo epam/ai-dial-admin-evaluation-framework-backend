@@ -13,6 +13,7 @@ import com.epam.aidial.evaluation.configuration.properties.analytics.RunComparis
 import com.epam.aidial.evaluation.data.db.analytics.model.EvalSummaryMatchStats;
 import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryRepository;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
+import com.epam.aidial.evaluation.runner.dto.DatasetReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.Mean;
@@ -43,6 +44,8 @@ class RunComparisonServiceTest {
     private static final UUID RUN_A = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID RUN_B = UUID.fromString("22222222-2222-2222-2222-222222222222");
     private static final UUID SUITE_ID = UUID.fromString("33333333-3333-3333-3333-333333333333");
+    private static final UUID DATASET_ID = UUID.fromString("55555555-5555-5555-5555-555555555555");
+    private static final UUID OTHER_DATASET_ID = UUID.fromString("66666666-6666-6666-6666-666666666666");
     private static final UUID OTHER_SUITE_ID = UUID.fromString("44444444-4444-4444-4444-444444444444");
     private static final UUID COMPUTATION_A = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID COMPUTATION_B = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
@@ -105,14 +108,68 @@ class RunComparisonServiceTest {
     }
 
     @Test
-    @DisplayName("Should reject runs belonging to different suites")
-    void shouldRejectDifferentSuites() {
-        when(testSuiteRunService.getRun(RUN_A)).thenReturn(run(RUN_A, SUITE_ID, snapshot(null)));
-        when(testSuiteRunService.getRun(RUN_B)).thenReturn(run(RUN_B, OTHER_SUITE_ID, snapshot(null)));
+    @DisplayName("Should aggregate runs of different suites that share a snapshot dataset")
+    void shouldAcceptDifferentSuites() {
+        stubTwoRuns(SUITE_ID, DATASET_ID, OTHER_SUITE_ID, DATASET_ID);
+        stubComputations();
+        stubStats(RUN_A, new EvalSummaryMatchStats(1L, 1L, 1L, BigDecimal.ONE));
+        stubStats(RUN_B, new EvalSummaryMatchStats(1L, 1L, 1L, BigDecimal.ONE));
+        stubUnmatched();
+        when(aggregator.aggregate(any())).thenReturn(List.of(score()));
+
+        assertThat(service.compare(List.of(RUN_A, RUN_B)).getRuns()).hasSize(2);
+
+        verify(aggregator, times(2)).aggregate(any());
+    }
+
+    @Test
+    @DisplayName("Should reject runs of different suites with different datasets")
+    void shouldRejectDifferentSuitesDifferentDatasets() {
+        stubTwoRuns(SUITE_ID, DATASET_ID, OTHER_SUITE_ID, OTHER_DATASET_ID);
 
         assertThatThrownBy(() -> service.compare(List.of(RUN_A, RUN_B)))
                 .isInstanceOf(InvalidOperationException.class)
-                .hasMessageContaining("different test suites");
+                .hasMessageContaining("neither a test suite nor a dataset");
+    }
+
+    @Test
+    @DisplayName("Should reject runs of different suites when one snapshot has no dataset")
+    void shouldRejectDifferentSuitesOneDatasetMissing() {
+        stubTwoRuns(SUITE_ID, DATASET_ID, OTHER_SUITE_ID, null);
+
+        assertThatThrownBy(() -> service.compare(List.of(RUN_A, RUN_B)))
+                .isInstanceOf(InvalidOperationException.class)
+                .hasMessageContaining("neither a test suite nor a dataset");
+    }
+
+    @Test
+    @DisplayName("Should reject runs of different suites whose dataset references both have a null id")
+    void shouldRejectDifferentSuitesNullDatasetIds() {
+        final SuiteSnapshotDto snapshotA = snapshot(null);
+        snapshotA.setDatasetRef(new DatasetReferenceDto());
+        final SuiteSnapshotDto snapshotB = snapshot(null);
+        snapshotB.setDatasetRef(new DatasetReferenceDto());
+        when(testSuiteRunService.getRun(RUN_A)).thenReturn(run(RUN_A, SUITE_ID, snapshotA));
+        when(testSuiteRunService.getRun(RUN_B)).thenReturn(run(RUN_B, OTHER_SUITE_ID, snapshotB));
+
+        assertThatThrownBy(() -> service.compare(List.of(RUN_A, RUN_B)))
+                .isInstanceOf(InvalidOperationException.class)
+                .hasMessageContaining("neither a test suite nor a dataset");
+    }
+
+    @Test
+    @DisplayName("Should aggregate runs of the same suite even when their datasets differ")
+    void shouldAcceptSameSuiteDifferentDatasets() {
+        stubTwoRuns(SUITE_ID, DATASET_ID, SUITE_ID, OTHER_DATASET_ID);
+        stubComputations();
+        stubStats(RUN_A, new EvalSummaryMatchStats(1L, 1L, 1L, BigDecimal.ONE));
+        stubStats(RUN_B, new EvalSummaryMatchStats(1L, 1L, 1L, BigDecimal.ONE));
+        stubUnmatched();
+        when(aggregator.aggregate(any())).thenReturn(List.of(score()));
+
+        assertThat(service.compare(List.of(RUN_A, RUN_B)).getRuns()).hasSize(2);
+
+        verify(aggregator, times(2)).aggregate(any());
     }
 
     @Test
@@ -126,13 +183,13 @@ class RunComparisonServiceTest {
     }
 
     @Test
-    @DisplayName("Should prefer the different-suite failure over a missing snapshot on the other run")
-    void shouldApplySuiteGuardBeforeSnapshotGuard() {
-        // Guard order is observable: run B is legacy AND from another suite, and the suite mismatch wins.
+    @DisplayName("Should fail a different-suite legacy run with the missing-snapshot error")
+    void shouldFailDifferentSuiteLegacyRunOnSnapshotGuard() {
         when(testSuiteRunService.getRun(RUN_A)).thenReturn(run(RUN_A, SUITE_ID, snapshot(null)));
         when(testSuiteRunService.getRun(RUN_B)).thenReturn(run(RUN_B, OTHER_SUITE_ID, null));
 
-        assertThatThrownBy(() -> service.compare(List.of(RUN_A, RUN_B))).isInstanceOf(InvalidOperationException.class);
+        assertThatThrownBy(() -> service.compare(List.of(RUN_A, RUN_B)))
+                .isInstanceOf(SnapshotSuiteMissingException.class);
     }
 
     @Test
@@ -337,6 +394,11 @@ class RunComparisonServiceTest {
                 .thenReturn(List.of());
     }
 
+    private void stubTwoRuns(UUID suiteA, UUID datasetA, UUID suiteB, UUID datasetB) {
+        when(testSuiteRunService.getRun(RUN_A)).thenReturn(run(RUN_A, suiteA, snapshot(null, datasetA)));
+        when(testSuiteRunService.getRun(RUN_B)).thenReturn(run(RUN_B, suiteB, snapshot(null, datasetB)));
+    }
+
     private static MetricScoreValueDto score() {
         return MetricScoreValueDto.builder()
                 .metricScoreName("AVG")
@@ -354,8 +416,15 @@ class RunComparisonServiceTest {
     }
 
     private static SuiteSnapshotDto snapshot(OverallScoreDefinition definition) {
+        return snapshot(definition, null);
+    }
+
+    private static SuiteSnapshotDto snapshot(OverallScoreDefinition definition, UUID datasetId) {
         SuiteSnapshotDto snapshot = new SuiteSnapshotDto();
         snapshot.setOverallScore(definition);
+        if (datasetId != null) {
+            snapshot.setDatasetRef(DatasetReferenceDto.builder().id(datasetId).build());
+        }
         return snapshot;
     }
 

@@ -39,7 +39,7 @@
 
 ## 6. Spec and documentation maintenance
 
-- [ ] 6.1 Update `openspec/specs/README.md` per the Spec Index Maintenance Policy — add the new `run-analytics-deletion` spec folder entry
-- [ ] 6.2 Add a new pattern doc (e.g. `docs/patterns/run-deletion-tombstone.md`) describing the tombstone-table + `RunDeletionFilter` predicate mechanism, and add it to `docs/patterns/README.md` and the AGENTS.md "Unique Patterns" table — this is a new, reusable cross-cutting pattern, not a one-off feature
-- [ ] 6.3 Update `openspec/config.yaml` per the Config Maintenance Policy — note the new tombstone + shared-predicate convention as the project's pattern for soft-visibility exclusion on append-only analytics data
+- [x] 6.1 Update `openspec/specs/README.md` per the Spec Index Maintenance Policy — add the new `run-analytics-deletion` spec folder entry
+- [x] 6.2 Add a new pattern doc (e.g. `docs/patterns/run-deletion-tombstone.md`) describing the tombstone-table + `RunDeletionFilter` predicate mechanism, and add it to `docs/patterns/README.md` and the AGENTS.md "Unique Patterns" table — this is a new, reusable cross-cutting pattern, not a one-off feature
+- [x] 6.3 Update `openspec/config.yaml` per the Config Maintenance Policy — note the new tombstone + shared-predicate convention as the project's pattern for soft-visibility exclusion on append-only analytics data
 - [ ] 6.4 Note (do not act on yet): the delta specs under this change's `specs/` sync into `openspec/specs/` at archive time per this project's `rules.archive` checklist (see `CLAUDE.md`) — no separate sync task needed here

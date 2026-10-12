@@ -100,6 +100,9 @@ context: |
     with the history entry. The meta Flyway bean runs AFTER the analytics one (`metaFlywayMigration` takes the analytics `Flyway` bean as a parameter), so a meta
     migration may read a fully migrated analytics database; a cross-datasource read skips with a log, rather than failing, when its source table is absent
     (see docs/patterns/dual-datasource.md)
+  - Run deletion is a soft-visibility exclusion on append-only analytics data: deleting a run/suite appends a `run_deletions` tombstone (written before the meta-DB delete, idempotent) and never updates analytics rows;
+    every read of a run-scoped analytics table ANDs `RunDeletionFilter.notDeleted(<table>.test_suite_run_id)` (repository methods directly, Query DSL entities via `StructuredQueryEntityResolver.baseCondition()`);
+    a new analytics table with `test_suite_run_id` MUST be registered in `JooqSchemaDriftTest` and covered by `RunDeletionFunctionalTests` (see docs/patterns/run-deletion-tombstone.md)
   - Run cancellation is interrupt-driven: each run owns one thread-per-task executor built by `RunExecutorFactory` (virtual by default, `spring.threads.virtual.enabled=false` → platform threads) (`RunHandle`, held in the per-JVM `ActiveRunRegistry`); cancel = `shutdownNow()`; the orchestrating job thread is never interrupted and decides the terminal status via guarded DB writes (affected-row counts). Never add polled cancellation flags or grace-period drains (see docs/patterns/run-cancellation.md)
 
   # Naming Conventions

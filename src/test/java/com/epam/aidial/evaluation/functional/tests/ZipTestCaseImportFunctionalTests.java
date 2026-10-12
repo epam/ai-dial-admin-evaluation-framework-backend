@@ -111,6 +111,26 @@ public abstract class ZipTestCaseImportFunctionalTests extends BaseFunctionalTes
     }
 
     @Test
+    @DisplayName("OVERRIDE ZIP import cannot remove a field from a bound PUBLIC dataset")
+    void overrideRemovingFieldFromBoundPublicDataset_isRejected() {
+        UUID datasetId = newDataset(fileSchema());
+        metaTestDataHelper.createTestSuite("zip-import-bound-" + UUID.randomUUID(), datasetId);
+        String csv = "testCaseName,document\nRow1,files/1/report.pdf";
+        byte[] zip = createZip(Map.of(
+                "test-cases.csv", csv.getBytes(StandardCharsets.UTF_8),
+                "files/1/report.pdf", "Report bytes".getBytes(StandardCharsets.UTF_8)));
+
+        ResponseEntity<String> response = importZipRaw(datasetId, zip, "OVERRIDE", "FAIL");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("DATASET_FIELD_REMOVAL_FORBIDDEN");
+        assertThat(getDataset(datasetId).getTestCaseSchema())
+                .extracting(FieldDefinitionDto::getName)
+                .containsExactly("prompt", "document");
+        assertThat(listDatasetFiles(datasetId)).isEmpty();
+    }
+
+    @Test
     @DisplayName("APPEND into a non-empty schema does not upload files for a column the schema lacks")
     void appendMode_doesNotUploadFileForColumnSchemaLacks() {
         UUID datasetId = newDataset(List.of(FieldDefinitionDto.builder()

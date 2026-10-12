@@ -431,11 +431,12 @@ class DatasetServiceTest {
     }
 
     @Test
-    @DisplayName("update without renames on a bound PUBLIC dataset does not run the guard")
-    void updateWithoutRenamesSkipsGuard() {
+    @DisplayName("update removal on a bound PUBLIC dataset throws DATASET_FIELD_REMOVAL_FORBIDDEN after the save")
+    void updateRemovalOnBoundPublicRejectedAfterSave() {
         UUID id = UUID.randomUUID();
         when(datasetRepository.findById(id)).thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PUBLIC)));
         when(datasetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(testSuiteService.countReferencingDataset(id)).thenReturn(1L);
         DatasetRequestDto request = DatasetRequestDto.builder()
                 .name("D")
                 .testCaseSchema(List.of(FieldDefinitionDto.builder()
@@ -445,10 +446,46 @@ class DatasetServiceTest {
                         .build()))
                 .build();
 
+        assertThatThrownBy(() -> service.update(id, request, 1L))
+                .isInstanceOfSatisfying(
+                        DatasetVisibilityRuleException.class,
+                        ex -> assertThat(ex.getErrorCode())
+                                .isEqualTo(DatasetVisibilityErrorCode.DATASET_FIELD_REMOVAL_FORBIDDEN));
+
+        InOrder order = inOrder(datasetRepository, testSuiteService);
+        order.verify(datasetRepository).save(any());
+        order.verify(testSuiteService).countReferencingDataset(id);
+        verify(testCaseService, never()).removeDataFields(any(), any());
+    }
+
+    @Test
+    @DisplayName("update addition on a bound PUBLIC dataset does not run the destructive-change guard")
+    void updateAdditionOnBoundPublicSkipsGuard() {
+        UUID id = UUID.randomUUID();
+        when(datasetRepository.findById(id)).thenReturn(Optional.of(datasetWithSchema(id, DatasetVisibility.PUBLIC)));
+        when(datasetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        DatasetRequestDto request = DatasetRequestDto.builder()
+                .name("D")
+                .testCaseSchema(List.of(
+                        FieldDefinitionDto.builder()
+                                .id("id-a")
+                                .name("a")
+                                .type(SchemaFieldType.STRING)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .id("id-b")
+                                .name("b")
+                                .type(SchemaFieldType.STRING)
+                                .build(),
+                        FieldDefinitionDto.builder()
+                                .name("c")
+                                .type(SchemaFieldType.STRING)
+                                .build()))
+                .build();
+
         service.update(id, request, 1L);
 
         verify(testSuiteService, never()).countReferencingDataset(any());
-        verify(testCaseService).removeDataFields(id, List.of("b"));
     }
 
     @Test

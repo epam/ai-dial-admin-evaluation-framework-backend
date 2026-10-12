@@ -143,6 +143,25 @@ public abstract class DatasetSchemaFieldRenameFunctionalTests extends BaseFuncti
     }
 
     @Test
+    @DisplayName("field removal on a PUBLIC dataset bound to a suite returns 409 and changes nothing")
+    void removalOnBoundPublicRejected() {
+        final DatasetResponseDto dataset = createDataset(field("a"), field("b"));
+        final UUID tc = seed(dataset.getId(), "{\"a\":\"x\",\"b\":\"y\"}");
+        createSuite(dataset.getId(), "a");
+
+        final ResponseEntity<String> response = put(dataset, List.of(withId(dataset, 0, "a")));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("DATASET_FIELD_REMOVAL_FORBIDDEN");
+        final DatasetResponseDto after = getDataset(dataset.getId());
+        assertThat(after.getVersion()).isEqualTo(dataset.getVersion());
+        assertThat(after.getTestCaseSchema())
+                .extracting(FieldDefinitionDto::getName)
+                .containsExactly("a", "b");
+        assertThat(dataOf(dataset.getId(), tc)).isEqualTo(Map.of("a", "x", "b", "y"));
+    }
+
+    @Test
     @DisplayName("rename on an unbound PUBLIC dataset succeeds")
     void renameOnUnboundPublicSucceeds() {
         final DatasetResponseDto dataset = createDataset(field("a"));

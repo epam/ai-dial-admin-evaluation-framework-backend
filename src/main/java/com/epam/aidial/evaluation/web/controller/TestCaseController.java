@@ -182,7 +182,8 @@ public class TestCaseController {
     @ApiResponse(
             responseCode = "409",
             description = "Version conflict (If-Match) or name collision (conflictStrategy=FAIL); "
-                    + "no files remain written or overwritten")
+                    + "schema field removal from a PUBLIC dataset bound to at least one test suite "
+                    + "(DATASET_FIELD_REMOVAL_FORBIDDEN); no files remain written or overwritten")
     public CsvImportResultDto importCsv(
             @Parameter(description = "Dataset ID") @PathVariable UUID datasetId,
             @Parameter(description = "CSV or ZIP file") @RequestParam("file") MultipartFile file,

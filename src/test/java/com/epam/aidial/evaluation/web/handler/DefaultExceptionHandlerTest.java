@@ -52,6 +52,18 @@ class DefaultExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("DATASET_FIELD_REMOVAL_FORBIDDEN maps to HTTP 409 with the same wire code")
+    void datasetFieldRemovalForbiddenBecomes409() {
+        ResponseEntity<ErrorView> response = handler.handleDatasetVisibilityRuleError(
+                request(),
+                new DatasetVisibilityRuleException(DatasetVisibilityErrorCode.DATASET_FIELD_REMOVAL_FORBIDDEN, "no"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo(ErrorCode.DATASET_FIELD_REMOVAL_FORBIDDEN.name());
+    }
+
+    @Test
     @DisplayName("An unrelated exception still yields 500 INTERNAL_ERROR")
     void unrelatedExceptionStillYields500() {
         ResponseEntity<ErrorView> response = handler.handleGeneralError(request(), new IllegalStateException("boom"));

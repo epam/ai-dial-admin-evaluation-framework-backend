@@ -20,6 +20,14 @@ Status: **Planned**
 - **WHEN** a suite with one or more test suite runs is deleted
 - **THEN** an analytics tombstone SHALL be written for each of the suite's run ids before the suite row (and its runs, via cascade) is deleted, so every one of those runs' analytics rows becomes excluded from reads
 
+#### Scenario: Meta delete failure after tombstones were written is retryable
+- **WHEN** a suite delete writes tombstones for some or all of the suite's runs and then the meta-DB delete fails (e.g. the transaction rolls back)
+- **THEN** the suite and its runs SHALL remain, the operation SHALL be retryable by calling `DELETE /api/v1/test-suites/{id}` again, and the retry SHALL write no duplicate tombstones (the tombstone insert is idempotent) and SHALL complete the suite delete
+
+#### Scenario: Tombstone write failure partway through the run list is retryable
+- **WHEN** the tombstone write fails for one of the suite's runs after earlier runs' tombstones were written
+- **THEN** the suite row SHALL NOT be deleted, and calling `DELETE /api/v1/test-suites/{id}` again SHALL no-op the existing tombstones, write the missing ones, and complete the delete
+
 #### Scenario: Suite with no runs deletes without any tombstone write
 - **WHEN** a suite with zero test suite runs is deleted
 - **THEN** no analytics tombstone write SHALL be attempted

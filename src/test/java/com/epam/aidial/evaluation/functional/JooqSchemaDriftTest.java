@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -161,7 +162,7 @@ class JooqSchemaDriftTest {
 
     @Test
     void everyAnalyticsTableWithRunIdIsTombstoneFiltered() throws SQLException {
-        Set<String> tablesWithRunId = new java.util.TreeSet<>();
+        Set<String> tablesWithRunId = new TreeSet<>();
         try (Connection conn = analyticsDataSource.getConnection();
                 var stmt = conn.createStatement();
                 var resultSet = stmt.executeQuery("SELECT c.table_name FROM information_schema.columns c "

@@ -34,7 +34,7 @@ This matters more now because analytics is planned to move to ClickHouse in the 
 
 ## Impact
 
-- **New table**: `run_deletions` (analytics DB) — new Flyway migration under `src/main/resources/db/migration/analytics/POSTGRES/` (`V{major}.{minor}__add_run_deletions.sql`), following the existing meta-after-analytics migration ordering.
+- **New table**: `run_deletions` (analytics DB) — new Flyway migration under `src/main/resources/db/migration/analytics/POSTGRES/` (`V1.22__CreateRunDeletionsTable.sql`), following the existing meta-after-analytics migration ordering.
 - **Modified code**: `TestSuiteRunService.deleteRun` (new call to an analytics-domain service), a new analytics-domain service method + its repository method for the tombstone insert, every affected `StructuredQueryEntityResolver`'s `table()` (given a base condition), any repository method reading those tables directly (exports, aggregates).
 - **New tests**: registry test (`JooqSchemaDriftTest`) and behavioural `RunDeletionFunctionalTests` covering all five tables.
 - **Docs**: `docs/database-schema.md` update for the new table (required whenever a Flyway migration changes schema).

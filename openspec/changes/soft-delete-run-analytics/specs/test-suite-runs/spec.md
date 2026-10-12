@@ -16,6 +16,10 @@ Status: **Implemented**
 - **WHEN** a run holding analytics rows (`test_case_run_results`, `test_case_eval_summaries`, `test_case_eval_scores`, `test_case_metric_scores_aggregated`, `metric_score_result`) is deleted
 - **THEN** those rows SHALL remain physically present, because no foreign key can span the meta and analytics databases, but SHALL become excluded from every read of those tables (see `run-analytics-deletion`). Callers MUST NOT rely on run deletion to reclaim analytics storage.
 
+#### Scenario: Rejected delete writes no tombstone
+- **WHEN** a delete request is rejected (HTTP 409 for a non-terminal run, or HTTP 404 for an unknown run)
+- **THEN** no analytics tombstone SHALL be written for that run id
+
 #### Scenario: Analytics tombstone write failure leaves the run undeleted and retryable
 - **WHEN** the analytics tombstone write fails for any reason
 - **THEN** the meta-DB row SHALL NOT be deleted, the run SHALL remain exactly as it was before the delete call, and the client MAY retry the same `DELETE` request

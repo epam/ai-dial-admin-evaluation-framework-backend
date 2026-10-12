@@ -12,8 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Manages the soft-deletion of test suite run analytics data.
  * When a run is deleted, a tombstone row is inserted into the analytics {@code run_deletions} table.
- * All analytics read paths (Query DSL entities and repository methods) are repointed at {@code _active}
- * database views that exclude tombstoned runs via anti-join.
+ * All analytics read paths (Query DSL entities and repository methods) AND the
+ * {@code RunDeletionFilter.notDeleted} anti-join predicate onto their queries, so tombstoned runs are excluded.
  *
  * <p>The tombstone insert is idempotent (INSERT ... ON CONFLICT DO NOTHING), making the deletion
  * operation safely retryable: if {@code markDeleted} is called twice for the same run, the second

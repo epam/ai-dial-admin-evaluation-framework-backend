@@ -6,7 +6,7 @@
 
 ## 2. Tombstone write path
 
-- [x] 2.1 Add `RunDeletionRepository`/`PostgresRunDeletionRepository` (`data.db.analytics.repository`) with an idempotent `insert(String testSuiteRunId, long deletedAtMs)` using `INSERT ... ON CONFLICT (test_suite_run_id) DO NOTHING`, following the existing `saveAll` idiom (`@ConditionalOnProperty(datasource.analytics.vendor=POSTGRES)`, `@Qualifier("analyticsDsl")`, `@LogExecution`)
+- [x] 2.1 Add `RunDeletionRepository`/`PostgresRunDeletionRepository` (`data.db.analytics.repository`) with an idempotent `insert(UUID testSuiteRunId, long deletedAtMs)` using `INSERT ... ON CONFLICT (test_suite_run_id) DO NOTHING`, following the existing `saveAll` idiom (`@ConditionalOnProperty(datasource.analytics.vendor=POSTGRES)`, `@Qualifier("analyticsDsl")`, `@LogExecution`)
 - [x] 2.2 Add `RunDeletionService` (`service.domain.analytics`) with `markDeleted(UUID runId)`, `@Transactional("analyticsTransactionManager")`, `@LogExecution`, delegating to the repository
 - [x] 2.3 Add `TestSuiteRunRepository.findIdsByTestSuiteId(UUID suiteId)` (and its Postgres implementation) returning the suite's run ids
 - [x] 2.4 Add unit tests for `RunDeletionService`/`RunDeletionRepository` covering a first insert and an idempotent repeated insert for the same run id
@@ -42,4 +42,4 @@
 - [x] 6.1 Update `openspec/specs/README.md` per the Spec Index Maintenance Policy — add the new `run-analytics-deletion` spec folder entry
 - [x] 6.2 Add a new pattern doc (e.g. `docs/patterns/run-deletion-tombstone.md`) describing the tombstone-table + `RunDeletionFilter` predicate mechanism, and add it to `docs/patterns/README.md` and the AGENTS.md "Unique Patterns" table — this is a new, reusable cross-cutting pattern, not a one-off feature
 - [x] 6.3 Update `openspec/config.yaml` per the Config Maintenance Policy — note the new tombstone + shared-predicate convention as the project's pattern for soft-visibility exclusion on append-only analytics data
-- [ ] 6.4 Note (do not act on yet): the delta specs under this change's `specs/` sync into `openspec/specs/` at archive time per this project's `rules.archive` checklist (see `CLAUDE.md`) — no separate sync task needed here
+- [x] 6.4 Note: the delta specs under this change's `specs/` sync into `openspec/specs/` at archive time per this project's `rules.archive` checklist (see `CLAUDE.md`) — no separate sync task needed here

@@ -6,6 +6,7 @@ import com.epam.aidial.evaluation.data.db.analytics.repository.EvalSummaryReposi
 import com.epam.aidial.evaluation.data.db.model.RunMetricSnapshot;
 import com.epam.aidial.evaluation.data.db.repository.RunMetricSnapshotRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import com.epam.aidial.evaluation.runner.dto.DatasetReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
@@ -20,6 +21,7 @@ import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -28,7 +30,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Compares two runs of one suite over their shared eval-summary rows, recomputing each run's metric scores
+ * Compares two runs over their shared eval-summary rows, recomputing each run's metric scores
  * across only those rows and returning the ids of the rows that did not match.
  */
 @Slf4j
@@ -68,7 +70,7 @@ public class RunComparisonService {
     }
 
     /**
-     * @param runIds exactly two distinct runs of the same suite, in the order they should be reported
+     * @param runIds exactly two distinct runs, in the order they should be reported
      * @return one entry per run, in request order
      */
     public RunComparisonResponseDto compare(List<UUID> runIds) {
@@ -77,9 +79,9 @@ public class RunComparisonService {
         // Meta reads first, outside the analytics transaction.
         final TestSuiteRunResponseDto first = testSuiteRunService.getRun(runIds.get(0));
         final TestSuiteRunResponseDto second = testSuiteRunService.getRun(runIds.get(1));
-        requireSameSuite(first, second);
         requireSnapshot(first);
         requireSnapshot(second);
+        requireSharedSuiteOrDataset(first, second);
 
         // ComputationResolver requires an ambient analytics transaction (its own contract). Resolving
         // both computations up front keeps that contract satisfied without extending it to the meta
@@ -165,12 +167,6 @@ public class RunComparisonService {
         }
     }
 
-    private void requireSameSuite(TestSuiteRunResponseDto first, TestSuiteRunResponseDto second) {
-        if (!first.getTestSuiteId().equals(second.getTestSuiteId())) {
-            throw new InvalidOperationException("Runs belong to different test suites and cannot be compared");
-        }
-    }
-
     /**
      * Rejects a run without a suite snapshot, matching the export path's treatment of legacy runs. The
      * snapshot's schema <em>version</em> is deliberately not gated: only {@code overallScore} and
@@ -182,6 +178,26 @@ public class RunComparisonService {
             throw new SnapshotSuiteMissingException(
                     "Run " + run.getId() + " has no suite_snapshot; legacy runs cannot be compared");
         }
+    }
+
+    /**
+     * Runs are comparable when they belong to the same test suite or were snapshotted against the same
+     * dataset. Both snapshots are non-null here ({@link #requireSnapshot} ran first).
+     */
+    private void requireSharedSuiteOrDataset(TestSuiteRunResponseDto first, TestSuiteRunResponseDto second) {
+        if (Objects.equals(first.getTestSuiteId(), second.getTestSuiteId())) {
+            return;
+        }
+        final DatasetReferenceDto firstDataset = first.getSuiteSnapshot().getDatasetRef();
+        final DatasetReferenceDto secondDataset = second.getSuiteSnapshot().getDatasetRef();
+        if (firstDataset != null
+                && secondDataset != null
+                && firstDataset.getId() != null
+                && firstDataset.getId().equals(secondDataset.getId())) {
+            return;
+        }
+        throw new InvalidOperationException("Runs " + first.getId() + " and " + second.getId()
+                + " share neither a test suite nor a dataset; they cannot be compared");
     }
 
     private UUID requireComputation(UUID runId) {

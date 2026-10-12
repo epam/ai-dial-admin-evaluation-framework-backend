@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Compares two runs of one suite over the eval-summary rows they have in common.
+ * Compares two runs over the eval-summary rows they have in common.
  */
 @Slf4j
 @RestController
@@ -40,10 +40,12 @@ public class RunComparisonController {
             summary = "Compare two runs over their shared test cases",
             description = "Recomputes each run's metric-score statistics, `overall` and average execution "
                     + "duration over only the eval-summary rows whose match key "
-                    + "(`lower(test_case_name)` + `run_index` + `turn_index`) also occurs in the other run, so "
+                    + "(`lower(test_case_name)` + `run_index` + `request_index` + `turn_index`) "
+                    + "also occurs in the other run, so "
                     + "the two runs' numbers describe the same population and are comparable. Nothing is "
                     + "persisted — the run's own full-population `metric_score_results` are untouched.\n\n"
-                    + "Both runs must belong to the same suite. Each run's **latest** computation is used; "
+                    + "The runs must share a test suite or a snapshot dataset. "
+                    + "Each run's **latest** computation is used; "
                     + "there is no override. Run status is not gated: a CANCELLED or partially-completed run "
                     + "still has rows worth comparing.\n\n"
                     + "`unmatchedEvalSummaryIds` names the rows that did **not** match, so a follow-up query "
@@ -79,15 +81,14 @@ public class RunComparisonController {
     @ApiResponse(responseCode = "404", description = "Either run id is unknown")
     @ApiResponse(
             responseCode = "409",
-            description = "The runs belong to different suites, a run has no metric computation, or a run's "
-                    + "non-matching row count exceeds `analytics.comparison.max-unmatched-rows`")
+            description = "A run has no metric computation, the runs share neither a test suite nor a "
+                    + "dataset, or a run's non-matching row count exceeds `analytics.comparison.max-unmatched-rows`")
     @ApiResponse(
             responseCode = "422",
             description = "Either run has no `suite_snapshot` (legacy runs cannot be compared)")
     public RunComparisonResponseDto compare(
             @Parameter(
-                            description = "Exactly two distinct run ids of the same suite, in the order they "
-                                    + "should be reported",
+                            description = "Exactly two distinct run ids, in the order they should be reported",
                             example = "3fa85f64-5717-4562-b3fc-2c963f66afa6,9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d")
                     @RequestParam
                     @Size(min = 2, max = 2)

@@ -39,7 +39,7 @@ import org.springframework.stereotype.Component;
  * than merely tested — there is no second implementation that could drift.
  *
  * <p>The predicate is stated as an <strong>exclusion</strong>, {@code NOT (test_case_id IN (…))}, because two
- * runs of one suite over the same dataset match every row: the common case then excludes nothing, and
+ * runs over the same dataset match every row: the common case then excludes nothing, and
  * {@linkplain #exclusionPredicate(List) grafts no predicate at all}, so Phase 3's query runs verbatim and no
  * ids are bound. There is no {@code not_in} operator in the DSL and none is needed.
  */

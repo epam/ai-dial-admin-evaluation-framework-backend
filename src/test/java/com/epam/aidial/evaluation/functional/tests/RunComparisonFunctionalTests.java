@@ -457,14 +457,48 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     @Test
-    @DisplayName("Should reject runs of different suites with 409")
-    void shouldRejectRunsOfDifferentSuites() {
+    @DisplayName("Should compare runs of different suites sharing a dataset with 200 and recomputed scores")
+    void shouldCompareRunsOfDifferentSuitesSharingDataset() {
+        final UUID otherSuiteId = metaTestDataHelper
+                .createTestSuite("other-" + UUID.randomUUID(), metaTestDataHelper.getDatasetId(suiteId))
+                .getId();
+        final UUID foreignRun =
+                metaTestDataHelper.createTestSuiteRun(otherSuiteId).getId();
+        final UUID foreignComputation = UUID.randomUUID();
+        seedSnapshot(runA, computationA);
+        seedSnapshot(foreignRun, foreignComputation);
+        seedScore(runA, computationA, "Keep", 0.25);
+        seedScore(runA, computationA, "OnlyInA", 9.0);
+        analyticsTestDataHelper.createEvalSummary(fixture(otherSuiteId, foreignRun, foreignComputation, "Keep", 0.75)
+                .build());
+
+        final RunComparisonResponseDto response = compare(runA, computationA, foreignRun, foreignComputation);
+        final RunComparisonRunDto sideA = response.getRuns().get(0);
+        final RunComparisonRunDto sideForeign = response.getRuns().get(1);
+
+        assertThat(sideA.getMatchedRowCount()).isEqualTo(1L);
+        assertThat(sideA.getTotalRowCount()).isEqualTo(2L);
+        assertThat(sideA.getUnmatchedEvalSummaryIds()).hasSize(1);
+        assertThat(sideForeign.getMatchedRowCount()).isEqualTo(1L);
+        assertThat(sideForeign.getUnmatchedEvalSummaryIds()).isEmpty();
+        // Each side's scores are recomputed over its own matched row only (A's 9.0 outlier is excluded).
+        assertThat(score(sideA, "MAX", METRIC_FIELD)).isEqualTo(0.25);
+        assertThat(score(sideForeign, "MAX", METRIC_FIELD)).isEqualTo(0.75);
+    }
+
+    @Test
+    @DisplayName("Should reject runs of different suites over different datasets with 409")
+    void shouldRejectRunsOfDifferentSuitesOverDifferentDatasets() {
         final UUID otherSuiteId =
                 metaTestDataHelper.createTestSuite("other-" + UUID.randomUUID()).getId();
         final UUID foreignRun =
                 metaTestDataHelper.createTestSuiteRun(otherSuiteId).getId();
+        final UUID foreignComputation = UUID.randomUUID();
         seedSnapshot(runA, computationA);
-        seedSnapshot(foreignRun, computationB);
+        seedSnapshot(foreignRun, foreignComputation);
+        seedScore(runA, computationA, "Keep", 0.25);
+        analyticsTestDataHelper.createEvalSummary(fixture(otherSuiteId, foreignRun, foreignComputation, "Keep", 0.75)
+                .build());
 
         final ResponseEntity<String> response = compareRaw(runA, foreignRun);
 
@@ -638,10 +672,15 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
     }
 
     private RunComparisonResponseDto compare(UUID first, UUID second) {
+        return compare(first, computationA, second, computationB);
+    }
+
+    /** Aggregates the run/computation pairs actually compared, so a run seeded under its own computation counts. */
+    private RunComparisonResponseDto compare(UUID first, UUID firstComputation, UUID second, UUID secondComputation) {
         // Statistics read the aggregated table, which Phase 2 populates in production; fixtures seed eval
         // summaries directly, so reproduce that step (insert-only, so a prior explicit call is harmless).
-        aggregateAllTestCases(runA, computationA);
-        aggregateAllTestCases(runB, computationB);
+        aggregateAllTestCases(first, firstComputation);
+        aggregateAllTestCases(second, secondComputation);
         final ResponseEntity<RunComparisonResponseDto> response = restTemplate.getForEntity(
                 apiUrl("/analytics/metric-scores/comparison?runIds={first},{second}"),
                 RunComparisonResponseDto.class,
@@ -696,8 +735,14 @@ public abstract class RunComparisonFunctionalTests extends BaseFunctionalTest {
 
     private EvalSummaryFixture.EvalSummaryFixtureBuilder fixture(
             UUID runId, UUID computationId, String testCaseName, double score) {
+        return fixture(suiteId, runId, computationId, testCaseName, score);
+    }
+
+    /** Eval summaries carry the owning run's own suite id, so a foreign suite's run must pass its own. */
+    private EvalSummaryFixture.EvalSummaryFixtureBuilder fixture(
+            UUID owningSuiteId, UUID runId, UUID computationId, String testCaseName, double score) {
         return EvalSummaryFixture.builder()
-                .suiteId(suiteId)
+                .suiteId(owningSuiteId)
                 .runId(runId)
                 .computationId(computationId)
                 .testCaseName(testCaseName)

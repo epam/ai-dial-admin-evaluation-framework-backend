@@ -43,6 +43,11 @@ import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
+import io.opentelemetry.context.Scope;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -51,6 +56,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -344,6 +350,35 @@ class TestSuiteRunServiceTest {
             assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
             verify(dialRouteTriggerClient).triggerEvalRun(runId, credential);
             verify(evaluationJob, never()).dispatch(any(), any(), anyBoolean());
+        }
+
+        @Test
+        @DisplayName("propagates the caller's OpenTelemetry context to the DialRouteTriggerClient virtual thread")
+        void propagatesTraceContextToRouteTriggerThread() throws InterruptedException {
+            when(dialAppProperties.isEnabled()).thenReturn(true);
+            CallerCredential credential = CallerCredential.bearer("jwt-token");
+            SpanContext callerSpanContext = SpanContext.create(
+                    "0af7651916cd43dd8448eb211c80319c",
+                    "b7ad6b7169203331",
+                    TraceFlags.getSampled(),
+                    TraceState.getDefault());
+
+            AtomicReference<SpanContext> observed = new AtomicReference<>();
+            CountDownLatch latch = new CountDownLatch(1);
+            doAnswer(invocation -> {
+                        observed.set(Span.current().getSpanContext());
+                        latch.countDown();
+                        return null;
+                    })
+                    .when(dialRouteTriggerClient)
+                    .triggerEvalRun(any(UUID.class), any(CallerCredential.class));
+
+            try (Scope ignored = Span.wrap(callerSpanContext).makeCurrent()) {
+                invokeDispatchEvaluation(runId, credential, false);
+            }
+
+            assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
+            assertThat(observed.get()).isEqualTo(callerSpanContext);
         }
 
         @Test

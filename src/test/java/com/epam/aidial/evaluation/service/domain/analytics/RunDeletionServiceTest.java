@@ -3,11 +3,13 @@ package com.epam.aidial.evaluation.service.domain.analytics;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunDeletionRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -62,5 +64,34 @@ class RunDeletionServiceTest {
         // (idempotence is enforced at the DB layer via ON CONFLICT DO NOTHING,
         // not at the service layer, so we expect two calls)
         verify(deletionRepository, times(2)).insert(eq(RUN_ID), eq(EXPECTED_MS));
+    }
+
+    @Test
+    @DisplayName("markDeleted(List) batch-inserts all run IDs with one shared timestamp")
+    void markDeletedBatchInsertsAllWithSameTimestamp() {
+        // Arrange
+        Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneId.of("UTC"));
+        runDeletionService = new RunDeletionService(deletionRepository, fixedClock);
+        List<UUID> runIds = List.of(RUN_ID, UUID.fromString("22222222-2222-2222-2222-222222222222"));
+
+        // Act
+        runDeletionService.markDeleted(runIds);
+
+        // Assert
+        verify(deletionRepository, times(1)).insertAll(eq(runIds), eq(EXPECTED_MS));
+    }
+
+    @Test
+    @DisplayName("markDeleted(List) does not touch the repository for an empty list")
+    void markDeletedBatchSkipsEmptyList() {
+        // Arrange
+        Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneId.of("UTC"));
+        runDeletionService = new RunDeletionService(deletionRepository, fixedClock);
+
+        // Act
+        runDeletionService.markDeleted(List.of());
+
+        // Assert
+        verifyNoInteractions(deletionRepository);
     }
 }

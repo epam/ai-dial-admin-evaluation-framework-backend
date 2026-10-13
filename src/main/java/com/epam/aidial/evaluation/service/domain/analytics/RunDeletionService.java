@@ -3,6 +3,7 @@ package com.epam.aidial.evaluation.service.domain.analytics;
 import com.epam.aidial.evaluation.data.db.analytics.repository.RunDeletionRepository;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.time.Clock;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,5 +40,21 @@ public class RunDeletionService {
         long deletedAtMs = clock.millis();
         deletionRepository.insert(runId, deletedAtMs);
         log.debug("Marked run {} as deleted at {}", runId, deletedAtMs);
+    }
+
+    /**
+     * Marks several runs as deleted in one batch insert, all sharing the same deletion timestamp.
+     * Idempotent and transactional within the analytics datasource.
+     *
+     * @param runIds the UUIDs of the runs to mark as deleted
+     */
+    @Transactional("analyticsTransactionManager")
+    public void markDeleted(List<UUID> runIds) {
+        if (runIds.isEmpty()) {
+            return;
+        }
+        long deletedAtMs = clock.millis();
+        deletionRepository.insertAll(runIds, deletedAtMs);
+        log.debug("Marked {} runs as deleted at {}", runIds.size(), deletedAtMs);
     }
 }

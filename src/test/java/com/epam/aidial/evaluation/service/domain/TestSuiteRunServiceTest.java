@@ -595,7 +595,7 @@ class TestSuiteRunServiceTest {
                     .hasMessageContaining("Cannot delete a test suite run with status RUNNING");
 
             // Verify neither tombstone nor meta delete was attempted
-            verify(runDeletionService, never()).markDeleted(any());
+            verify(runDeletionService, never()).markDeleted(any(UUID.class));
             verify(testSuiteRunRepository, never()).deleteById(any());
         }
 
@@ -609,7 +609,7 @@ class TestSuiteRunServiceTest {
                     .hasMessageContaining("TestSuiteRun not found");
 
             // Verify neither tombstone nor meta delete was attempted
-            verify(runDeletionService, never()).markDeleted(any());
+            verify(runDeletionService, never()).markDeleted(any(UUID.class));
             verify(testSuiteRunRepository, never()).deleteById(any());
         }
     }

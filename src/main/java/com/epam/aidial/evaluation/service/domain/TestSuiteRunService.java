@@ -487,7 +487,7 @@ public class TestSuiteRunService {
      */
     public void tombstoneAllRunsForSuite(UUID testSuiteId) {
         List<UUID> runIds = testSuiteRunRepository.findIdsByTestSuiteId(testSuiteId);
-        runIds.forEach(runDeletionService::markDeleted);
+        runDeletionService.markDeleted(runIds);
         if (!runIds.isEmpty()) {
             log.debug("Tombstoned {} runs for suite {}", runIds.size(), testSuiteId);
         }
@@ -495,7 +495,7 @@ public class TestSuiteRunService {
 
     @Transactional("metaTransactionManager")
     public TestSuiteRunResponseDto updateRunName(UUID runId, String newName) {
-        TestSuiteRun run = testSuiteRunRepository
+        testSuiteRunRepository
                 .findById(runId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuiteRun not found with id: " + runId));
 

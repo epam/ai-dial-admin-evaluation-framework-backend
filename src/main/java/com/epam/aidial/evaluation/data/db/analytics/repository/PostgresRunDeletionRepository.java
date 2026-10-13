@@ -3,10 +3,12 @@ package com.epam.aidial.evaluation.data.db.analytics.repository;
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.RUN_DELETIONS;
 
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
+import org.jooq.Query;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
@@ -39,5 +41,25 @@ public class PostgresRunDeletionRepository implements RunDeletionRepository {
                 .doNothing()
                 .execute();
         log.debug("Inserted or skipped deletion tombstone for run {}", testSuiteRunId);
+    }
+
+    /**
+     * Idempotently inserts tombstone rows for many runs as one JDBC batch of
+     * INSERT ... ON CONFLICT (test_suite_run_id) DO NOTHING statements (no bind-parameter limit).
+     */
+    @Override
+    public void insertAll(List<UUID> testSuiteRunIds, long deletedAtMs) {
+        if (testSuiteRunIds.isEmpty()) {
+            return;
+        }
+        final List<Query> queries = testSuiteRunIds.stream()
+                .<Query>map(id -> dsl.insertInto(RUN_DELETIONS)
+                        .set(RUN_DELETIONS.TEST_SUITE_RUN_ID, id.toString())
+                        .set(RUN_DELETIONS.DELETED_AT_MS, deletedAtMs)
+                        .onConflict(RUN_DELETIONS.TEST_SUITE_RUN_ID)
+                        .doNothing())
+                .toList();
+        dsl.batch(queries).execute();
+        log.debug("Inserted or skipped deletion tombstones for {} runs", testSuiteRunIds.size());
     }
 }

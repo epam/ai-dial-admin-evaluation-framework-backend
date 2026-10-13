@@ -3,6 +3,8 @@ package com.epam.aidial.evaluation.query.service.repository;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
 import java.util.Map;
+import java.util.Optional;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 
@@ -34,6 +36,16 @@ public interface StructuredQueryEntityResolver {
      *     does not carry whatever this entity requires to resolve its bindings
      */
     Map<String, QueryFieldBinding> bindings(StructuredQuery query);
+
+    /**
+     * A condition {@code StructuredQueryBuilder} ANDs onto every select of this entity's {@link #table()},
+     * independent of the caller's filter — including selects compiled for subqueries. Default is none;
+     * entities backed by a run-scoped analytics table return
+     * {@code RunDeletionFilter.notDeleted(<table>.TEST_SUITE_RUN_ID)} so tombstoned runs are never visible.
+     */
+    default Optional<Condition> baseCondition() {
+        return Optional.empty();
+    }
 
     /**
      * Pre-translation rewrite hook, run once against the top-level query before it reaches the

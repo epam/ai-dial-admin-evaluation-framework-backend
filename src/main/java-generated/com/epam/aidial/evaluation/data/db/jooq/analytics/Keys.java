@@ -5,11 +5,13 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunDeletions;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregated;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseRunResults;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.MetricScoreResultRecord;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.RunDeletionsRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalScoresRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseEvalSummariesRecord;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.records.TestCaseMetricScoresAggregatedRecord;
@@ -33,6 +35,7 @@ public class Keys {
     // -------------------------------------------------------------------------
 
     public static final UniqueKey<MetricScoreResultRecord> METRIC_SCORE_RESULT_PKEY = Internal.createUniqueKey(MetricScoreResult.METRIC_SCORE_RESULT, DSL.name("metric_score_result_pkey"), new TableField[] { MetricScoreResult.METRIC_SCORE_RESULT.ID }, true);
+    public static final UniqueKey<RunDeletionsRecord> RUN_DELETIONS_PKEY = Internal.createUniqueKey(RunDeletions.RUN_DELETIONS, DSL.name("run_deletions_pkey"), new TableField[] { RunDeletions.RUN_DELETIONS.TEST_SUITE_RUN_ID }, true);
     public static final UniqueKey<TestCaseEvalScoresRecord> TEST_CASE_EVAL_SCORES_PKEY = Internal.createUniqueKey(TestCaseEvalScores.TEST_CASE_EVAL_SCORES, DSL.name("test_case_eval_scores_pkey"), new TableField[] { TestCaseEvalScores.TEST_CASE_EVAL_SCORES.ID }, true);
     public static final UniqueKey<TestCaseEvalScoresRecord> UQ_TEST_CASE_EVAL_SCORES_NATURAL_KEY = Internal.createUniqueKey(TestCaseEvalScores.TEST_CASE_EVAL_SCORES, DSL.name("uq_test_case_eval_scores_natural_key"), new TableField[] { TestCaseEvalScores.TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID, TestCaseEvalScores.TEST_CASE_EVAL_SCORES.TEST_CASE_ID, TestCaseEvalScores.TEST_CASE_EVAL_SCORES.COMPUTATION_ID }, true);
     public static final UniqueKey<TestCaseEvalSummariesRecord> TEST_CASE_EVAL_SUMMARIES_PKEY = Internal.createUniqueKey(TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES, DSL.name("test_case_eval_summaries_pkey"), new TableField[] { TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS, TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES.ID }, true);

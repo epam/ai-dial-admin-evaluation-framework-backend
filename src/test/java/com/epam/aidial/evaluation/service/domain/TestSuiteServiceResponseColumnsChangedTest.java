@@ -81,6 +81,7 @@ class TestSuiteServiceResponseColumnsChangedTest {
                 testSuiteMetricDefinitionService,
                 mock(FileService.class),
                 mock(Clock.class),
+                mock(TestSuiteRunService.class),
                 mock(PlatformTransactionManager.class),
                 mock(SortParser.class),
                 mock(FilterParser.class),

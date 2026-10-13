@@ -20,8 +20,8 @@ class ApiKeyAuthorityResolverTest {
         ApiKeyProperties properties = new ApiKeyProperties(new ObjectMapper());
         properties.setEnabled(true);
         properties.setCoreUrl("http://core");
-        properties.setRolesMapping("{\"admin\":[\"admin\"],\"default\":[\"viewer\"]}");
-        properties.setDefaultRolesMapping("{\"ConfigAdmin\":[\"admin\"]}");
+        properties.setKeyRolesMapping("{\"admin\":[\"admin\"],\"default\":[\"viewer\"]}");
+        properties.setJwtRolesMapping("{\"ConfigAdmin\":[\"admin\"]}");
         properties.validate();
 
         resolver = new ApiKeyAuthorityResolver(properties);
@@ -36,8 +36,8 @@ class ApiKeyAuthorityResolverTest {
     }
 
     @Test
-    @DisplayName("shouldMapJwtRootedRolesViaDefaultRolesMapping")
-    void shouldMapJwtRootedRolesViaDefaultRolesMapping() {
+    @DisplayName("shouldMapJwtRootedRolesViaJwtRolesMapping")
+    void shouldMapJwtRootedRolesViaJwtRolesMapping() {
         var authorities = resolver.resolve(List.of("ConfigAdmin"), false);
 
         assertThat(authorities).extracting(GrantedAuthority::getAuthority).containsExactly("admin");

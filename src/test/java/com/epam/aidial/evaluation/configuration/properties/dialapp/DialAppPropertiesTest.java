@@ -95,7 +95,7 @@ class DialAppPropertiesTest {
         ApiKeyProperties apiKeyProperties = new ApiKeyProperties(new ObjectMapper());
         apiKeyProperties.setEnabled(true);
         apiKeyProperties.setCoreUrl("http://core");
-        apiKeyProperties.setRolesMapping("{\"admin\":[\"admin\"]}");
+        apiKeyProperties.setKeyRolesMapping("{\"admin\":[\"admin\"]}");
         apiKeyProperties.validate();
         when(apiKeyPropertiesProvider.getIfAvailable()).thenReturn(apiKeyProperties);
 

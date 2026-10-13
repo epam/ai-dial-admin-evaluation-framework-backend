@@ -5,6 +5,7 @@ package com.epam.aidial.evaluation.data.db.jooq.analytics;
 
 
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.MetricScoreResult;
+import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.RunDeletions;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalScores;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseEvalSummaries;
 import com.epam.aidial.evaluation.data.db.jooq.analytics.tables.TestCaseMetricScoresAggregated;
@@ -36,6 +37,11 @@ public class Analytics extends SchemaImpl {
      * The table <code>analytics.metric_score_result</code>.
      */
     public final MetricScoreResult METRIC_SCORE_RESULT = MetricScoreResult.METRIC_SCORE_RESULT;
+
+    /**
+     * The table <code>analytics.run_deletions</code>.
+     */
+    public final RunDeletions RUN_DELETIONS = RunDeletions.RUN_DELETIONS;
 
     /**
      * The table <code>analytics.test_case_eval_scores</code>.
@@ -74,6 +80,7 @@ public class Analytics extends SchemaImpl {
     public final List<Table<?>> getTables() {
         return Arrays.asList(
             MetricScoreResult.METRIC_SCORE_RESULT,
+            RunDeletions.RUN_DELETIONS,
             TestCaseEvalScores.TEST_CASE_EVAL_SCORES,
             TestCaseEvalSummaries.TEST_CASE_EVAL_SUMMARIES,
             TestCaseMetricScoresAggregated.TEST_CASE_METRIC_SCORES_AGGREGATED,

@@ -120,6 +120,7 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
     public Optional<TestCaseRunResult> findById(UUID id) {
         return dsl.selectFrom(TEST_CASE_RUN_RESULTS)
                 .where(TEST_CASE_RUN_RESULTS.ID.eq(id.toString()))
+                .and(RunDeletionFilter.notDeleted(TEST_CASE_RUN_RESULTS.TEST_SUITE_RUN_ID))
                 .fetchOptional(recordMapper::map);
     }
 
@@ -134,6 +135,7 @@ public class PostgresTestCaseRunResultRepository implements TestCaseRunResultRep
     private Condition buildBaseCondition(List<FilterCondition> filters, Long runCreatedAtMs) {
         Condition condition =
                 whereBuilder.build(filters != null ? filters : List.of(), FilterWhitelists.ANALYTICS_RESULTS);
+        condition = condition.and(RunDeletionFilter.notDeleted(TEST_CASE_RUN_RESULTS.TEST_SUITE_RUN_ID));
         if (runCreatedAtMs != null) {
             condition = condition.and(TEST_CASE_RUN_RESULTS.CREATED_AT_MS.eq(runCreatedAtMs));
         }

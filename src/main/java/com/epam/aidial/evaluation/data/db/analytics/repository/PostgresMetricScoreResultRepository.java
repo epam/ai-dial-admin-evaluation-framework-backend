@@ -64,6 +64,7 @@ public class PostgresMetricScoreResultRepository implements MetricScoreResultRep
         return dsl.selectFrom(METRIC_SCORE_RESULT)
                 .where(METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID.eq(runId.toString()))
                 .and(METRIC_SCORE_RESULT.COMPUTATION_ID.eq(computationId.toString()))
+                .and(RunDeletionFilter.notDeleted(METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID))
                 .orderBy(METRIC_SCORE_RESULT.METRIC_SCORE_NAME.asc(), METRIC_SCORE_RESULT.METRIC_NAME.asc())
                 .fetch(recordMapper::map);
     }

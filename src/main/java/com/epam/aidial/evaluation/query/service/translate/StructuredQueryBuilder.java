@@ -81,6 +81,7 @@ public class StructuredQueryBuilder {
         final SelectQuery<Record> select = dsl.selectQuery();
         select.addFrom(table);
         select.addConditions(filterTranslator.toCondition(query.filter(), bindings));
+        resolver.baseCondition().ifPresent(select::addConditions);
 
         final QueryMode mode = query.mode();
         // Names that are select outputs (aliases / projected fields), so sort can reference the output
@@ -104,7 +105,10 @@ public class StructuredQueryBuilder {
         final DSLContext dsl = resolver.dsl();
         final Table<?> table = resolver.table();
         final Map<String, QueryFieldBinding> bindings = resolver.bindings(query);
-        final Condition where = filterTranslator.toCondition(query.filter(), bindings);
+        final Condition where = resolver.baseCondition()
+                .map(base ->
+                        filterTranslator.toCondition(query.filter(), bindings).and(base))
+                .orElseGet(() -> filterTranslator.toCondition(query.filter(), bindings));
         final Integer count = dsl.selectCount().from(table).where(where).fetchOne(0, Integer.class);
         return count == null ? 0 : count;
     }

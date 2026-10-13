@@ -34,13 +34,13 @@ public class ApiKeyProperties {
     private int cacheTtlSeconds;
     private int cacheMaxSize;
     private int requestTimeoutMs;
-    private String rolesMapping;
-    private String defaultRolesMapping;
+    private String keyRolesMapping;
+    private String jwtRolesMapping;
     private String userClaimsRoleClaim;
     private boolean startupProbe;
 
-    private Map<String, List<String>> parsedRolesMapping = Collections.emptyMap();
-    private Map<String, List<String>> parsedDefaultRolesMapping = Collections.emptyMap();
+    private Map<String, List<String>> parsedKeyRolesMapping = Collections.emptyMap();
+    private Map<String, List<String>> parsedJwtRolesMapping = Collections.emptyMap();
 
     public ApiKeyProperties(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -58,13 +58,12 @@ public class ApiKeyProperties {
                     "config.rest.security.api-key.enabled=true requires config.rest.security.api-key.core-url to be set");
         }
 
-        parsedRolesMapping = parseRolesMapping(rolesMapping, "config.rest.security.api-key.roles-mapping");
-        parsedDefaultRolesMapping =
-                parseRolesMapping(defaultRolesMapping, "config.rest.security.api-key.default-roles-mapping");
-        if (parsedRolesMapping.isEmpty() && parsedDefaultRolesMapping.isEmpty()) {
+        parsedKeyRolesMapping = parseRolesMapping(keyRolesMapping, "config.rest.security.api-key.key-roles-mapping");
+        parsedJwtRolesMapping = parseRolesMapping(jwtRolesMapping, "config.rest.security.api-key.jwt-roles-mapping");
+        if (parsedKeyRolesMapping.isEmpty() && parsedJwtRolesMapping.isEmpty()) {
             throw new IllegalStateException("config.rest.security.api-key.enabled=true requires at least one of "
-                    + "config.rest.security.api-key.roles-mapping (used for project-key callers) or "
-                    + "config.rest.security.api-key.default-roles-mapping (used for JWT-rooted per-request keys) "
+                    + "config.rest.security.api-key.key-roles-mapping (used for project-key callers) or "
+                    + "config.rest.security.api-key.jwt-roles-mapping (used for JWT-rooted per-request keys) "
                     + "to map at least one role to an authority. Otherwise every authenticated API-key caller "
                     + "would be rejected.");
         }
@@ -74,8 +73,8 @@ public class ApiKeyProperties {
                         + "project-key mapped roles: {}, JWT-rooted mapped roles: {}",
                 coreUrl,
                 cacheTtlSeconds,
-                parsedRolesMapping.keySet(),
-                parsedDefaultRolesMapping.keySet());
+                parsedKeyRolesMapping.keySet(),
+                parsedJwtRolesMapping.keySet());
     }
 
     private Map<String, List<String>> parseRolesMapping(String json, String propertyName) {

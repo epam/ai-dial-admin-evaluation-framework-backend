@@ -137,6 +137,7 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [MCP Server (inbound)](docs/patterns/mcp-server.md) | `mcp` layer as a peer of `web`; request-thread caller model on two library behaviours (+ D-F2c fallback); executor never throws; error table + binding-layer limitation; session model (`STATELESS` default, `STREAMABLE` opt-in) |
 | [ZIP archive round trip](docs/patterns/zip-archive-round-trip.md) | `public/` refs verbatim, EF-owned files re-uploaded with same-name overwrite; manifest decides schema on OVERRIDE; uploads before the tx with a backup/restore journal |
 | [DIAL App mode (Application Routes)](docs/patterns/dial-app-mode.md) | Feature-flagged DIAL Application Route integration (`dial-app-proxy.enabled`) for long-running evals and PRK-based file auto-sharing; reuses `CallerCredential`/`ApiKeyAuthenticationFilter`/`ActiveRunRegistry` rather than introducing PRK-specific state; `DialRouteTriggerClient` fires eval via DIAL Core, `EvalExecuteInternalController` receives and dispatches, `TestSuiteRunSseService` emits configurable-heartbeat SSE events |
+| [Run deletion tombstone](docs/patterns/run-deletion-tombstone.md) | Soft-visibility exclusion on append-only analytics data: `run_deletions` tombstone written before the meta delete (idempotent), `RunDeletionFilter.notDeleted` ANDed into every read of a run-scoped analytics table, `StructuredQueryEntityResolver.baseCondition()` for Query DSL entities; a new run-scoped analytics table must be registered in `JooqSchemaDriftTest` |
 
 ### Inline conventions
 

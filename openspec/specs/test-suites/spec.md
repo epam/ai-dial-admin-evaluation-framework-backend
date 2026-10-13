@@ -215,7 +215,7 @@ Status: **Planned**
 - **THEN** system SHALL NOT spawn an async `RevalidationTask`; suite-side validation is synchronous; async tasks are only spawned by dataset PUTs that mutate `testCaseSchema`
 
 ### Requirement: Delete a TestSuite
-The service SHALL allow deleting a TestSuite by id. The deletion SHALL cascade only to suite-owned children (TSMDs, runs, etc.). The referenced `Dataset` SHALL NOT be deleted (it may be shared with other suites). Test cases SHALL NOT be deleted (they live in the dataset and are reachable from any other suite referencing the same dataset). The delete response SHALL NOT include a `deletedTestCases` count.
+The service SHALL allow deleting a TestSuite by id. The deletion SHALL cascade only to suite-owned children (TSMDs, runs, etc.). The referenced `Dataset` SHALL NOT be deleted (it may be shared with other suites). Test cases SHALL NOT be deleted (they live in the dataset and are reachable from any other suite referencing the same dataset). The delete response SHALL NOT include a `deletedTestCases` count. Before the suite row is deleted (and its runs cascade via the meta-DB foreign key), the system SHALL write an analytics tombstone (see `run-analytics-deletion`) for every run owned by the suite, so those runs' analytics rows become excluded from reads the same as a run deleted individually via `DELETE /api/v1/test-suite-runs/{id}`.
 Status: **Planned**
 
 #### Scenario: Existing id
@@ -229,6 +229,22 @@ Status: **Planned**
 #### Scenario: Missing id
 - **WHEN** client calls `DELETE /api/v1/test-suites/{id}` for a non-existent TestSuite
 - **THEN** system SHALL respond with HTTP 404
+
+#### Scenario: Suite deletion tombstones every owned run's analytics data
+- **WHEN** a suite with one or more test suite runs is deleted
+- **THEN** an analytics tombstone SHALL be written for each of the suite's run ids before the suite row (and its runs, via cascade) is deleted, so every one of those runs' analytics rows becomes excluded from reads
+
+#### Scenario: Meta delete failure after tombstones were written is retryable
+- **WHEN** a suite delete writes tombstones for some or all of the suite's runs and then the meta-DB delete fails (e.g. the transaction rolls back)
+- **THEN** the suite and its runs SHALL remain, the operation SHALL be retryable by calling `DELETE /api/v1/test-suites/{id}` again, and the retry SHALL write no duplicate tombstones (the tombstone insert is idempotent) and SHALL complete the suite delete
+
+#### Scenario: Tombstone write failure partway through the run list is retryable
+- **WHEN** the tombstone write fails for one of the suite's runs after earlier runs' tombstones were written
+- **THEN** the suite row SHALL NOT be deleted, and calling `DELETE /api/v1/test-suites/{id}` again SHALL no-op the existing tombstones, write the missing ones, and complete the delete
+
+#### Scenario: Suite with no runs deletes without any tombstone write
+- **WHEN** a suite with zero test suite runs is deleted
+- **THEN** no analytics tombstone write SHALL be attempted
 
 ### Requirement: Suite delete response shape
 The suite delete endpoint SHALL respond with HTTP 200 (or 204 per project convention) and a body containing only the deleted suite's `id` (and `name`, `version`, timestamps if the project's delete-response convention so dictates). The body SHALL NOT include a `deletedTestCases` count.

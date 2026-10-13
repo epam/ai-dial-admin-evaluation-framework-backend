@@ -240,6 +240,18 @@ Status: **Implemented**
 - **WHEN** an eval summary row is created
 - **THEN** it SHALL contain a `test_case_run_result_id` referencing the original test case run result (soft FK, no DB constraint)
 
+### Requirement: Test case run result reads exclude deleted runs
+Reads of `test_case_run_results` — there is no Query DSL entity for this table, so this applies to its direct repository reads (`PostgresTestCaseRunResultRepository.findAll`/`findById`/`count`, including export and listing paths) — SHALL exclude rows belonging to a test suite run that has an analytics tombstone (see `run-analytics-deletion`). The exclusion SHALL be applied in the read query itself, as an anti-join against `run_deletions`.
+Status: **Implemented**
+
+#### Scenario: Result listing excludes a deleted run's rows
+- **WHEN** a repository read of `test_case_run_results` would otherwise match rows belonging to a deleted run
+- **THEN** no row belonging to that run SHALL appear in the result
+
+#### Scenario: An active run's result rows are unaffected
+- **WHEN** a repository read targets a run with no analytics tombstone
+- **THEN** all of that run's matching rows SHALL be returned exactly as before this change
+
 ## Implementation Notes
 - Controller: `AnalyticsResultController` -- `@LogExecution`, `@Validated`
 - Service: `AnalyticsResultService` -- reads run from meta for validation/timestamp, writes to analytics

@@ -172,6 +172,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .leftJoin(TEST_CASE_RUN_RESULTS)
                 .on(TEST_CASE_RUN_RESULTS.ID.eq(TEST_CASE_EVAL_SUMMARIES.TEST_CASE_RUN_RESULT_ID))
                 .where(TEST_CASE_EVAL_SUMMARIES.ID.eq(id.toString()))
+                .and(notDeleted())
                 .fetchOptional(recordMapper::mapExportWithBodies);
     }
 
@@ -190,6 +191,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         return dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
+                .and(notDeleted())
                 .orderBy(TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(), TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.asc())
                 .limit(1)
                 .fetchOptional(r -> UUID.fromString(r.getValue(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)));
@@ -208,6 +210,7 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         Table<Record1<String>> latestPerRun = DSL.lateral(dsl.select(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID)
                         .from(TEST_CASE_EVAL_SUMMARIES)
                         .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runIdField))
+                        .and(notDeleted())
                         .orderBy(
                                 TEST_CASE_EVAL_SUMMARIES.COMPUTED_AT_MS.desc(),
                                 TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.asc())
@@ -228,7 +231,8 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         return dsl.fetchExists(dsl.selectOne()
                 .from(TEST_CASE_EVAL_SUMMARIES)
                 .where(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID.eq(runId.toString()))
-                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString())));
+                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()))
+                .and(notDeleted()));
     }
 
     @Override
@@ -362,7 +366,8 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
                 .from(other)
                 .where(other.TEST_SUITE_RUN_ID
                         .eq(otherRunId.toString())
-                        .and(other.COMPUTATION_ID.eq(otherComputationId.toString())))
+                        .and(other.COMPUTATION_ID.eq(otherComputationId.toString()))
+                        .and(RunDeletionFilter.notDeleted(other.TEST_SUITE_RUN_ID)))
                 .asTable(PROBE_TABLE);
     }
 
@@ -391,7 +396,8 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
         return TEST_CASE_EVAL_SUMMARIES
                 .TEST_SUITE_RUN_ID
                 .eq(runId.toString())
-                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()));
+                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()))
+                .and(notDeleted());
     }
 
     private CursorPage<EvalSummary> findAllInternal(
@@ -524,11 +530,17 @@ public class PostgresEvalSummaryRepository implements EvalSummaryRepository {
     private Condition buildBaseCondition(List<FilterCondition> filters, UUID computationId, Long runCreatedAtMs) {
         Condition condition =
                 whereBuilder.build(filters != null ? filters : List.of(), FilterWhitelists.EVAL_SUMMARIES);
-        condition = condition.and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()));
+        condition = condition
+                .and(TEST_CASE_EVAL_SUMMARIES.COMPUTATION_ID.eq(computationId.toString()))
+                .and(notDeleted());
         if (runCreatedAtMs != null) {
             condition = condition.and(TEST_CASE_EVAL_SUMMARIES.CREATED_AT_MS.eq(runCreatedAtMs));
         }
         return condition;
+    }
+
+    private static Condition notDeleted() {
+        return RunDeletionFilter.notDeleted(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID);
     }
 
     @SuppressWarnings("unchecked")

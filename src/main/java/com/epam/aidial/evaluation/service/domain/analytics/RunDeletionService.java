@@ -1,0 +1,60 @@
+package com.epam.aidial.evaluation.service.domain.analytics;
+
+import com.epam.aidial.evaluation.data.db.analytics.repository.RunDeletionRepository;
+import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
+import java.time.Clock;
+import java.util.List;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Manages the soft-deletion of test suite run analytics data.
+ * When a run is deleted, a tombstone row is inserted into the analytics {@code run_deletions} table.
+ * All analytics read paths (Query DSL entities and repository methods) AND the
+ * {@code RunDeletionFilter.notDeleted} anti-join predicate onto their queries, so tombstoned runs are excluded.
+ *
+ * <p>The tombstone insert is idempotent (INSERT ... ON CONFLICT DO NOTHING), making the deletion
+ * operation safely retryable: if {@code markDeleted} is called twice for the same run, the second
+ * call succeeds silently with no error.
+ */
+@Slf4j
+@Service
+@LogExecution
+@RequiredArgsConstructor
+public class RunDeletionService {
+
+    private final RunDeletionRepository deletionRepository;
+    private final Clock clock;
+
+    /**
+     * Marks a test suite run as deleted by inserting a tombstone row.
+     * The insertion is idempotent and transactional within the analytics datasource.
+     *
+     * @param runId the UUID of the run to mark as deleted
+     */
+    @Transactional("analyticsTransactionManager")
+    public void markDeleted(UUID runId) {
+        long deletedAtMs = clock.millis();
+        deletionRepository.insert(runId, deletedAtMs);
+        log.debug("Marked run {} as deleted at {}", runId, deletedAtMs);
+    }
+
+    /**
+     * Marks several runs as deleted in one batch insert, all sharing the same deletion timestamp.
+     * Idempotent and transactional within the analytics datasource.
+     *
+     * @param runIds the UUIDs of the runs to mark as deleted
+     */
+    @Transactional("analyticsTransactionManager")
+    public void markDeleted(List<UUID> runIds) {
+        if (runIds.isEmpty()) {
+            return;
+        }
+        long deletedAtMs = clock.millis();
+        deletionRepository.insertAll(runIds, deletedAtMs);
+        log.debug("Marked {} runs as deleted at {}", runIds.size(), deletedAtMs);
+    }
+}

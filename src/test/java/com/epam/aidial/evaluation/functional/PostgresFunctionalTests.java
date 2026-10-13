@@ -89,6 +89,7 @@ import com.epam.aidial.evaluation.functional.tests.RevalidationTaskFunctionalTes
 import com.epam.aidial.evaluation.functional.tests.RocAucScoreFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunComparisonRepositoryFunctionalTests;
+import com.epam.aidial.evaluation.functional.tests.RunDeletionFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.RunMetricSnapshotFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.StructuredQueryExecuteFunctionalTests;
 import com.epam.aidial.evaluation.functional.tests.SuiteSnapshotFunctionalTests;
@@ -505,7 +506,7 @@ public class PostgresFunctionalTests extends FunctionalTests {
                 "providers.test.principalClaim=sub",
                 "config.rest.security.api-key.enabled=true",
                 "config.rest.security.api-key.core-url=http://localhost:1",
-                "config.rest.security.api-key.roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.key-roles-mapping={\"admin\":[\"admin\"]}",
                 "config.rest.security.api-key.startup-probe=false"
             })
     class ApiKeyAuthenticationTests extends ApiKeyAuthenticationFunctionalTests {}
@@ -577,7 +578,7 @@ public class PostgresFunctionalTests extends FunctionalTests {
                 "providers.test.principalClaim=sub",
                 "config.rest.security.api-key.enabled=true",
                 "config.rest.security.api-key.core-url=http://localhost:1",
-                "config.rest.security.api-key.roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.key-roles-mapping={\"admin\":[\"admin\"]}",
                 "config.rest.security.api-key.startup-probe=false"
             })
     @Import({StaticJwtTestConfiguration.class, CallerIdentityProbeTools.class})
@@ -601,7 +602,7 @@ public class PostgresFunctionalTests extends FunctionalTests {
                 "providers.test.principalClaim=sub",
                 "config.rest.security.api-key.enabled=true",
                 "config.rest.security.api-key.core-url=http://localhost:1",
-                "config.rest.security.api-key.roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.key-roles-mapping={\"admin\":[\"admin\"]}",
                 "config.rest.security.api-key.startup-probe=false"
             })
     @Import(StaticJwtTestConfiguration.class)
@@ -823,8 +824,11 @@ public class PostgresFunctionalTests extends FunctionalTests {
                 "dial-app-proxy.trigger-read-timeout-ms=43200000",
                 "config.rest.security.api-key.enabled=true",
                 "config.rest.security.api-key.core-url=http://localhost:1",
-                "config.rest.security.api-key.roles-mapping={\"admin\":[\"admin\"]}",
+                "config.rest.security.api-key.key-roles-mapping={\"admin\":[\"admin\"]}",
                 "config.rest.security.api-key.startup-probe=false"
             })
     class DialAppModeTests extends DialAppModeFunctionalTests {}
+
+    @Nested
+    class RunDeletionTests extends RunDeletionFunctionalTests {}
 }

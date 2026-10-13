@@ -142,11 +142,11 @@ Status: **Implemented**
 
 #### Scenario: Project-key roles mapped independently
 - **WHEN** an introspection result is a project-key shape with raw Core roles
-- **THEN** the service SHALL resolve authorities using `config.rest.security.api-key.roles-mapping` only
+- **THEN** the service SHALL resolve authorities using `config.rest.security.api-key.key-roles-mapping` only
 
 #### Scenario: JWT-rooted roles mapped independently
 - **WHEN** an introspection result is a JWT-rooted per-request-key shape with raw Core roles
-- **THEN** the service SHALL resolve authorities using `config.rest.security.api-key.default-roles-mapping` only
+- **THEN** the service SHALL resolve authorities using `config.rest.security.api-key.jwt-roles-mapping` only
 
 #### Scenario: Unmapped role name
 - **WHEN** a raw Core role name has no entry in the applicable mapping
@@ -167,7 +167,7 @@ Status: **Implemented**
 - **THEN** the service SHALL fail to start
 
 #### Scenario: Enabled with both role mappings empty
-- **WHEN** `config.rest.security.api-key.enabled=true` and both `config.rest.security.api-key.roles-mapping` and `config.rest.security.api-key.default-roles-mapping` parse to empty maps
+- **WHEN** `config.rest.security.api-key.enabled=true` and both `config.rest.security.api-key.key-roles-mapping` and `config.rest.security.api-key.jwt-roles-mapping` parse to empty maps
 - **THEN** the service SHALL fail to start, since every Api-Key caller would otherwise resolve to zero authorities
 
 #### Scenario: Enabled with invalid mapping JSON

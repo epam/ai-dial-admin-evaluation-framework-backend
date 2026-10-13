@@ -27,8 +27,8 @@ class ApiKeyPropertiesTest {
 
         properties.validate();
 
-        assertThat(properties.getParsedRolesMapping()).isEmpty();
-        assertThat(properties.getParsedDefaultRolesMapping()).isEmpty();
+        assertThat(properties.getParsedKeyRolesMapping()).isEmpty();
+        assertThat(properties.getParsedJwtRolesMapping()).isEmpty();
     }
 
     @Test
@@ -36,7 +36,7 @@ class ApiKeyPropertiesTest {
     void shouldRejectMissingCoreUrlWhenEnabled() {
         properties.setEnabled(true);
         properties.setCoreUrl("");
-        properties.setRolesMapping("{\"admin\":[\"admin\"]}");
+        properties.setKeyRolesMapping("{\"admin\":[\"admin\"]}");
 
         assertThatThrownBy(() -> properties.validate())
                 .isInstanceOf(IllegalStateException.class)
@@ -48,23 +48,23 @@ class ApiKeyPropertiesTest {
     void shouldRejectInvalidRolesMappingJson() {
         properties.setEnabled(true);
         properties.setCoreUrl("http://core");
-        properties.setRolesMapping("not-json");
+        properties.setKeyRolesMapping("not-json");
 
         assertThatThrownBy(() -> properties.validate())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("config.rest.security.api-key.roles-mapping");
+                .hasMessageContaining("config.rest.security.api-key.key-roles-mapping");
     }
 
     @Test
-    @DisplayName("shouldRejectInvalidDefaultRolesMappingJson")
-    void shouldRejectInvalidDefaultRolesMappingJson() {
+    @DisplayName("shouldRejectInvalidJwtRolesMappingJson")
+    void shouldRejectInvalidJwtRolesMappingJson() {
         properties.setEnabled(true);
         properties.setCoreUrl("http://core");
-        properties.setDefaultRolesMapping("not-json");
+        properties.setJwtRolesMapping("not-json");
 
         assertThatThrownBy(() -> properties.validate())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("config.rest.security.api-key.default-roles-mapping");
+                .hasMessageContaining("config.rest.security.api-key.jwt-roles-mapping");
     }
 
     @Test
@@ -83,8 +83,8 @@ class ApiKeyPropertiesTest {
     void shouldRejectWhenBothMappingsAreEmptyObjects() {
         properties.setEnabled(true);
         properties.setCoreUrl("http://core");
-        properties.setRolesMapping("{}");
-        properties.setDefaultRolesMapping("{}");
+        properties.setKeyRolesMapping("{}");
+        properties.setJwtRolesMapping("{}");
 
         assertThatThrownBy(() -> properties.validate())
                 .isInstanceOf(IllegalStateException.class)
@@ -96,12 +96,12 @@ class ApiKeyPropertiesTest {
     void shouldParseRolesMappingOnly() {
         properties.setEnabled(true);
         properties.setCoreUrl("http://core");
-        properties.setRolesMapping("{\"admin\":[\"admin\"]}");
+        properties.setKeyRolesMapping("{\"admin\":[\"admin\"]}");
 
         properties.validate();
 
-        assertThat(properties.getParsedRolesMapping()).containsExactly(Map.entry("admin", List.of("admin")));
-        assertThat(properties.getParsedDefaultRolesMapping()).isEmpty();
+        assertThat(properties.getParsedKeyRolesMapping()).containsExactly(Map.entry("admin", List.of("admin")));
+        assertThat(properties.getParsedJwtRolesMapping()).isEmpty();
     }
 
     @Test
@@ -109,13 +109,12 @@ class ApiKeyPropertiesTest {
     void shouldAcceptBlankRolesMappingWhenDefaultMappingIsSet() {
         properties.setEnabled(true);
         properties.setCoreUrl("http://core");
-        properties.setDefaultRolesMapping("{\"ConfigAdmin\":[\"admin\"]}");
+        properties.setJwtRolesMapping("{\"ConfigAdmin\":[\"admin\"]}");
 
         properties.validate();
 
-        assertThat(properties.getParsedRolesMapping()).isEmpty();
-        assertThat(properties.getParsedDefaultRolesMapping())
-                .containsExactly(Map.entry("ConfigAdmin", List.of("admin")));
+        assertThat(properties.getParsedKeyRolesMapping()).isEmpty();
+        assertThat(properties.getParsedJwtRolesMapping()).containsExactly(Map.entry("ConfigAdmin", List.of("admin")));
     }
 
     @Test
@@ -123,13 +122,12 @@ class ApiKeyPropertiesTest {
     void shouldParseBothMappingsWhenProvided() {
         properties.setEnabled(true);
         properties.setCoreUrl("http://core");
-        properties.setRolesMapping("{\"admin\":[\"admin\"]}");
-        properties.setDefaultRolesMapping("{\"ConfigAdmin\":[\"admin\"]}");
+        properties.setKeyRolesMapping("{\"admin\":[\"admin\"]}");
+        properties.setJwtRolesMapping("{\"ConfigAdmin\":[\"admin\"]}");
 
         properties.validate();
 
-        assertThat(properties.getParsedRolesMapping()).containsExactly(Map.entry("admin", List.of("admin")));
-        assertThat(properties.getParsedDefaultRolesMapping())
-                .containsExactly(Map.entry("ConfigAdmin", List.of("admin")));
+        assertThat(properties.getParsedKeyRolesMapping()).containsExactly(Map.entry("admin", List.of("admin")));
+        assertThat(properties.getParsedJwtRolesMapping()).containsExactly(Map.entry("ConfigAdmin", List.of("admin")));
     }
 }

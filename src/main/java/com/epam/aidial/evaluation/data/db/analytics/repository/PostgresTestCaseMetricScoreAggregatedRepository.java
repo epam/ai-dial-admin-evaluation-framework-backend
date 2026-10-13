@@ -63,6 +63,7 @@ public class PostgresTestCaseMetricScoreAggregatedRepository implements TestCase
         return dsl.selectFrom(TEST_CASE_METRIC_SCORES_AGGREGATED)
                 .where(TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID.eq(runId.toString()))
                 .and(TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTATION_ID.eq(computationId.toString()))
+                .and(RunDeletionFilter.notDeleted(TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID))
                 .fetch(recordMapper::map);
     }
 

@@ -77,6 +77,18 @@ Status: **Implemented**
 - **WHEN** a structured query selects `metric_scores::MetricA::avg` from `test_case_metric_scores`, filtered by `test_case_id`
 - **THEN** the query returns that test case's aggregated average for `MetricA`
 
+### Requirement: Aggregated metric score reads exclude deleted runs
+Reads of `test_case_metric_scores_aggregated` — through the `test_case_metric_scores` Query DSL entity and through direct repository reads (`PostgresTestCaseMetricScoreAggregatedRepository.findByRunIdAndComputationId`) alike — SHALL exclude rows belonging to a test suite run that has an analytics tombstone (see `run-analytics-deletion`). The exclusion SHALL be applied in the read query itself, as an anti-join against `run_deletions`.
+Status: **Implemented**
+
+#### Scenario: `test_case_metric_scores` Query DSL entity excludes a deleted run's rows
+- **WHEN** a structured query against the `test_case_metric_scores` entity would otherwise match rows belonging to a deleted run
+- **THEN** no row belonging to that run SHALL appear in the result
+
+#### Scenario: Direct repository read excludes a deleted run's rows
+- **WHEN** `findByRunIdAndComputationId` is called for a run that has an analytics tombstone
+- **THEN** no row SHALL be returned for that run, regardless of whether matching rows physically exist
+
 ## Implementation Notes
 - New table: `test_case_metric_scores_aggregated` (analytics DB), added by
   `V1.20__CreateTestCaseMetricScoresAggregatedTable.sql` — `id`, `test_suite_run_id`, `test_case_id`,

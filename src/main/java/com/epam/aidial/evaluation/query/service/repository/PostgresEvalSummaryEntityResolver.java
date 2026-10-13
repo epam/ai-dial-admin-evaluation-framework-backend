@@ -2,11 +2,14 @@ package com.epam.aidial.evaluation.query.service.repository;
 
 import static com.epam.aidial.evaluation.data.db.jooq.analytics.Tables.TEST_CASE_EVAL_SUMMARIES;
 
+import com.epam.aidial.evaluation.data.db.analytics.repository.RunDeletionFilter;
 import com.epam.aidial.evaluation.query.model.StructuredQuery;
 import com.epam.aidial.evaluation.query.service.JooqTableSchemaResolver;
 import com.epam.aidial.evaluation.query.service.QueryFieldBinding;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import java.util.Map;
+import java.util.Optional;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -50,6 +53,11 @@ public class PostgresEvalSummaryEntityResolver implements StructuredQueryEntityR
     @Override
     public Table<?> table() {
         return TEST_CASE_EVAL_SUMMARIES;
+    }
+
+    @Override
+    public Optional<Condition> baseCondition() {
+        return Optional.of(RunDeletionFilter.notDeleted(TEST_CASE_EVAL_SUMMARIES.TEST_SUITE_RUN_ID));
     }
 
     @Override

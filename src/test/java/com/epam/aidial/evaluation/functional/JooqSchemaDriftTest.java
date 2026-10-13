@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -143,5 +144,45 @@ class JooqSchemaDriftTest {
                 }
             }
         }
+    }
+
+    /**
+     * Run-scoped analytics tables whose every read path ANDs {@code RunDeletionFilter.notDeleted(...)} and
+     * is covered by {@code RunDeletionFunctionalTests}. The frozen analytics {@code run_metric_snapshots}
+     * is superseded by the meta-DB table and deliberately not filtered.
+     */
+    private static final Set<String> TOMBSTONE_FILTERED_TABLES = Set.of(
+            "test_case_run_results",
+            "test_case_eval_summaries",
+            "test_case_eval_scores",
+            "test_case_metric_scores_aggregated",
+            "metric_score_result");
+
+    private static final Set<String> FROZEN_TABLES = Set.of("run_metric_snapshots");
+
+    @Test
+    void everyAnalyticsTableWithRunIdIsTombstoneFiltered() throws SQLException {
+        Set<String> tablesWithRunId = new TreeSet<>();
+        try (Connection conn = analyticsDataSource.getConnection();
+                var stmt = conn.createStatement();
+                var resultSet = stmt.executeQuery("SELECT c.table_name FROM information_schema.columns c "
+                        + "JOIN information_schema.tables t ON t.table_schema = c.table_schema "
+                        + "AND t.table_name = c.table_name "
+                        + "WHERE c.table_schema = 'public' AND c.column_name = 'test_suite_run_id' "
+                        + "AND t.table_type = 'BASE TABLE' AND c.table_name <> 'run_deletions'")) {
+            while (resultSet.next()) {
+                tablesWithRunId.add(resultSet.getString("table_name"));
+            }
+        }
+
+        tablesWithRunId.removeAll(TOMBSTONE_FILTERED_TABLES);
+        tablesWithRunId.removeAll(FROZEN_TABLES);
+
+        assertThat(tablesWithRunId)
+                .as("Analytics tables with test_suite_run_id not registered as tombstone-filtered. For each: AND "
+                        + "RunDeletionFilter.notDeleted(...) into every read path (repository methods and the "
+                        + "entity resolver's baseCondition()), extend RunDeletionFunctionalTests, then add the table "
+                        + "to TOMBSTONE_FILTERED_TABLES")
+                .isEmpty();
     }
 }

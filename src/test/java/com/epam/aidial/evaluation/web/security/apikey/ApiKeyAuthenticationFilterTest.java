@@ -39,8 +39,8 @@ class ApiKeyAuthenticationFilterTest {
         properties.setCoreUrl("http://core");
         properties.setCacheTtlSeconds(60);
         properties.setCacheMaxSize(100);
-        properties.setRolesMapping("{\"admin\":[\"admin\"]}");
-        properties.setDefaultRolesMapping("{\"ConfigAdmin\":[\"admin\"]}");
+        properties.setKeyRolesMapping("{\"admin\":[\"admin\"]}");
+        properties.setJwtRolesMapping("{\"ConfigAdmin\":[\"admin\"]}");
         properties.validate();
 
         introspector = mock(CoreApiKeyIntrospector.class);

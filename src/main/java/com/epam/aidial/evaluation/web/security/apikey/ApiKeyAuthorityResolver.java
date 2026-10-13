@@ -27,7 +27,7 @@ public class ApiKeyAuthorityResolver {
 
     public Collection<? extends GrantedAuthority> resolve(List<String> rawRoles, boolean fromProjectKey) {
         Map<String, List<String>> mapping =
-                fromProjectKey ? properties.getParsedRolesMapping() : properties.getParsedDefaultRolesMapping();
+                fromProjectKey ? properties.getParsedKeyRolesMapping() : properties.getParsedJwtRolesMapping();
         return rawRoles.stream()
                 .flatMap(role -> mapping.getOrDefault(role, List.of()).stream())
                 .map(SimpleGrantedAuthority::new)

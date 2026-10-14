@@ -79,6 +79,7 @@ class TestSuiteRunsSchemaProviderTest {
                         new QuerySchemaFieldDto("deployment_ref::name", QueryFieldType.STRING, "suite_snapshot"),
                         new QuerySchemaFieldDto("deployment_ref::version", QueryFieldType.STRING, "suite_snapshot"),
                         new QuerySchemaFieldDto("deployment_ref::type", QueryFieldType.STRING, "suite_snapshot"),
+                        new QuerySchemaFieldDto("routes_ref::name", QueryFieldType.STRING, "suite_snapshot"),
                         new QuerySchemaFieldDto("mcp_deployment_ref::id", QueryFieldType.STRING, "suite_snapshot"),
                         new QuerySchemaFieldDto("mcp_deployment_ref::name", QueryFieldType.STRING, "suite_snapshot"),
                         new QuerySchemaFieldDto("mcp_deployment_ref::type", QueryFieldType.STRING, "suite_snapshot"),

@@ -51,6 +51,7 @@ public class TestSuiteRequestValidator {
             if (dto.getDeploymentRef() == null) {
                 throw new ValidationException("deploymentRef is required for DEPLOYMENT suites");
             }
+            rejectRoutesRef(dto, suiteType);
         } else if (suiteType == SuiteType.MCP_TOOL) {
             if (dto.getMcpDeploymentRef() == null) {
                 throw new ValidationException("mcpDeploymentRef is required for MCP_TOOL suites");
@@ -62,6 +63,37 @@ public class TestSuiteRequestValidator {
                     && !dto.getAdditionalRequests().isEmpty()) {
                 throw new ValidationException("additionalRequests must be empty for MCP_TOOL suites");
             }
+            rejectRoutesRef(dto, suiteType);
+        } else if (suiteType == SuiteType.ROUTE) {
+            validateRouteFields(dto);
+        }
+    }
+
+    private void validateRouteFields(TestSuiteRequestDto dto) {
+        if (dto.getRoutesRef() == null) {
+            throw new ValidationException("routesRef is required for ROUTE suites");
+        }
+        if (dto.getEndpointRef() == null) {
+            throw new ValidationException("endpointRef is required for ROUTE suites");
+        }
+        if (dto.getRequestTemplate() == null) {
+            throw new ValidationException("requestTemplate is required for ROUTE suites");
+        }
+        rejectRouteField(dto.getDeploymentRef(), "deploymentRef");
+        rejectRouteField(dto.getMcpDeploymentRef(), "mcpDeploymentRef");
+        rejectRouteField(dto.getToolRef(), "toolRef");
+        rejectRouteField(dto.getArgumentTemplate(), "argumentTemplate");
+    }
+
+    private void rejectRoutesRef(TestSuiteRequestDto dto, SuiteType suiteType) {
+        if (dto.getRoutesRef() != null) {
+            throw new ValidationException("routesRef must be empty for " + suiteType + " suites");
+        }
+    }
+
+    private void rejectRouteField(Object value, String fieldName) {
+        if (value != null) {
+            throw new ValidationException(fieldName + " must be empty for ROUTE suites");
         }
     }
 

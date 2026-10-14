@@ -197,6 +197,11 @@ public class TestSuites extends TableImpl<TestSuitesRecord> {
      */
     public final TableField<TestSuitesRecord, String> METRIC_SCORE_AGGREGATION = createField(DSL.name("metric_score_aggregation"), SQLDataType.VARCHAR(10).nullable(false).defaultValue(DSL.field(DSL.raw("'AVG'::character varying"), SQLDataType.VARCHAR)), this, "");
 
+    /**
+     * The column <code>meta.test_suites.routes_ref</code>.
+     */
+    public final TableField<TestSuitesRecord, JSONB> ROUTES_REF = createField(DSL.name("routes_ref"), SQLDataType.JSONB, this, "");
+
     private TestSuites(Name alias, Table<TestSuitesRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }

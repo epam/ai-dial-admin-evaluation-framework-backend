@@ -60,6 +60,7 @@ public class RunOrchestrationService {
      *                                data (unsupported combination, mirroring the EF backend's guard)
      */
     public File run(SuiteFetchBundle bundle, DeploymentReferenceDto targetDeploymentRef, String workDir) {
+        rejectRouteSuite(bundle.getSuite());
         suiteContractValidator.validate(bundle.getSuite());
         final DeploymentReferenceDto resolvedDeploymentRef =
                 resolveTargetDeploymentRef(bundle.getSuite(), targetDeploymentRef);
@@ -111,6 +112,12 @@ public class RunOrchestrationService {
 
         log.info("Run complete for suite {} — results at {}", bundle.getSourceSuiteId(), csvPath.toAbsolutePath());
         return csvPath.toFile();
+    }
+
+    private void rejectRouteSuite(TestSuiteResponseDto suite) {
+        if (suite.getSuiteType() == SuiteType.ROUTE) {
+            throw new IllegalStateException("ROUTE suite execution is not supported by eval-cli");
+        }
     }
 
     /**

@@ -10,6 +10,7 @@ import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
@@ -77,6 +78,14 @@ public class JsonbMapper {
 
     public String map(RequestTemplateDto value) {
         return write(value, "requestTemplate");
+    }
+
+    public String mapRouteRef(RouteReferenceDto value) {
+        return write(value, "routesRef");
+    }
+
+    public RouteReferenceDto mapRouteRef(String json) {
+        return read(json, RouteReferenceDto.class, "routesRef");
     }
 
     public String mapFieldDefinitions(List<FieldDefinitionDto> value) {

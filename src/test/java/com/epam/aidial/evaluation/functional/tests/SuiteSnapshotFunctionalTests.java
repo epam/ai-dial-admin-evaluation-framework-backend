@@ -2,6 +2,7 @@ package com.epam.aidial.evaluation.functional.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.epam.aidial.evaluation.data.db.model.Dataset;
@@ -17,15 +18,18 @@ import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvok
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.PageResponseDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RunConfigDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteRunResponseDto;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetResponseDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
@@ -38,6 +42,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
@@ -95,6 +100,24 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
         assertThat(terminal.getSuiteSnapshot()).isNotNull();
         assertThat(terminal.getSuiteSnapshot().getSnapshotVersion()).isEqualTo(SuiteSnapshotDto.CURRENT_VERSION);
         assertThat(terminal.getSuiteSnapshot().getSuiteType()).isEqualTo("DEPLOYMENT");
+    }
+
+    @Test
+    @DisplayName("ROUTE run snapshots routesRef and invokes the resolved root path")
+    void routeRunSnapshotsReferenceAndInvokesRootPath() {
+        TestSuiteResponseDto suite = createRouteTestSuiteWithTestCase();
+        mockDeploymentSuccess();
+
+        UUID runId = createRun(suite.getId());
+        TestSuiteRunResponseDto terminal = awaitRunTerminal(runId, 15);
+
+        assertThat(terminal.getStatus()).isEqualTo(RunStatus.COMPLETED.name());
+        assertThat(terminal.getSuiteSnapshot().getSuiteType()).isEqualTo("ROUTE");
+        assertThat(terminal.getSuiteSnapshot().getRoutesRef()).isEqualTo(suite.getRoutesRef());
+        assertThat(terminal.getSuiteSnapshot().getDeploymentRef()).isNull();
+        ArgumentCaptor<String> pathCaptor = ArgumentCaptor.forClass(String.class);
+        verify(deploymentInvoker).invokeWithStreaming(any(), pathCaptor.capture(), any(), any(), any());
+        assertThat(pathCaptor.getValue()).isEqualTo("/validate/items");
     }
 
     @Test
@@ -469,6 +492,48 @@ public abstract class SuiteSnapshotFunctionalTests extends BaseFunctionalTest {
     }
 
     // --- Helper Methods ---
+
+    private TestSuiteResponseDto createRouteTestSuiteWithTestCase() {
+        UUID datasetId = newDatasetWithSchema(List.of(FieldDefinitionDto.builder()
+                .name("routePath")
+                .type(SchemaFieldType.STRING)
+                .required(true)
+                .build()));
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Route Snapshot Suite")
+                .suiteType(SuiteType.ROUTE)
+                .routesRef(RouteReferenceDto.builder()
+                        .name("routes/platform/validate-route")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/validate/{path}")
+                        .build())
+                .datasetId(datasetId)
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/validate/${{path}}")
+                        .build())
+                .inputBindings(List.of(InputBindingDto.builder()
+                        .templateVariable("path")
+                        .dataField("routePath")
+                        .build()))
+                .build();
+        ResponseEntity<TestSuiteResponseDto> response =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto suite = response.getBody();
+        assertThat(suite).isNotNull();
+        assertThat(suite.isValid()).isTrue();
+
+        restTemplate.postForEntity(
+                apiUrl("/datasets/" + datasetId + "/test-cases"),
+                jsonEntity(TestCaseRequestDto.builder()
+                        .testCaseName("Route Test Case")
+                        .data(Map.of("routePath", "items"))
+                        .build()),
+                Object.class);
+        return suite;
+    }
 
     private TestSuiteResponseDto createTestSuiteWithTestCase(String name) {
         return createTestSuiteWithTestCase(name, null);

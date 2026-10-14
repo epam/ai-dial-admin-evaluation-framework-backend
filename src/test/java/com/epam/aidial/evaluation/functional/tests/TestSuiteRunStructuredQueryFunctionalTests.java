@@ -48,7 +48,7 @@ import tools.jackson.databind.ObjectMapper;
 @DisplayName("Structured Query → jOOQ translation (test_suite_runs) Tests")
 public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFunctionalTest {
 
-    /** Exactly the 21 fields of the {@code test_suite_runs} entity (spec's field table). */
+    /** Exactly the 22 fields of the {@code test_suite_runs} entity (spec's field table). */
     private static final Set<String> ALL_FIELDS = Set.of(
             "id",
             "test_suite_id",
@@ -66,6 +66,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
             "deployment_ref::name",
             "deployment_ref::version",
             "deployment_ref::type",
+            "routes_ref::name",
             "mcp_deployment_ref::id",
             "mcp_deployment_ref::name",
             "mcp_deployment_ref::type",
@@ -142,6 +143,12 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
         return snapshotJson("DEPLOYMENT", "deploymentRef", id, name, "version", version, "type", type);
     }
 
+    private static String routeSnapshotJson(String name) {
+        return """
+                {"snapshotVersion":"2","suiteType":"ROUTE","routesRef":{"name":"%s"}}
+                """.formatted(name);
+    }
+
     private static String mcpSnapshotJson(String id, String name, String type, String transport) {
         return snapshotJson("MCP", "mcpDeploymentRef", id, name, "type", type, "transport", transport);
     }
@@ -162,7 +169,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
     // ---- field set / snapshot refs (task 3.2) ----
 
     @Test
-    @DisplayName("empty select projects at least the 21 entity fields and none of the excluded columns")
+    @DisplayName("empty select projects at least the 22 entity fields and none of the excluded columns")
     void emptySelectProjectsExactlyTheEntityFields() {
         TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-fields-" + UUID.randomUUID());
         TestSuiteRun run = metaTestDataHelper.createTestSuiteRun(suite.getId());
@@ -195,6 +202,7 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
         assertThat(row.get("deployment_ref::name")).isNull();
         assertThat(row.get("deployment_ref::version")).isNull();
         assertThat(row.get("deployment_ref::type")).isNull();
+        assertThat(row.get("routes_ref::name")).isNull();
         assertThat(row.get("mcp_deployment_ref::id")).isNull();
         assertThat(row.get("mcp_deployment_ref::name")).isNull();
         assertThat(row.get("mcp_deployment_ref::type")).isNull();
@@ -244,6 +252,28 @@ public abstract class TestSuiteRunStructuredQueryFunctionalTests extends BaseFun
         assertThat(row.get("deployment_ref::name")).isNull();
         assertThat(row.get("deployment_ref::version")).isNull();
         assertThat(row.get("deployment_ref::type")).isNull();
+    }
+
+    @Test
+    @DisplayName("a ROUTE run exposes and filters by routes_ref::name from its own snapshot")
+    void routeRunExposesSnapshotReference() {
+        TestSuite suite = metaTestDataHelper.createTestSuite("sqrun-route-" + UUID.randomUUID());
+        TestSuiteRun target = metaTestDataHelper.createTestSuiteRun(suite.getId());
+        String routeName = "routes/platform/route-" + UUID.randomUUID();
+        metaTestDataHelper.setRunSuiteSnapshot(target.getId(), routeSnapshotJson(routeName));
+        TestSuiteRun other = metaTestDataHelper.createTestSuiteRun(suite.getId());
+        metaTestDataHelper.setRunSuiteSnapshot(
+                other.getId(), routeSnapshotJson("routes/platform/other-" + UUID.randomUUID()));
+
+        QueryResultPage page = queryRepository.execute(rowQuery(
+                eq("routes_ref::name", ValueType.STRING, routeName),
+                List.of(col("id"), col("suite_type"), col("routes_ref::name"))));
+
+        assertThat(page.rows()).singleElement().satisfies(row -> {
+            assertThat(row.get("id")).isEqualTo(target.getId().toString());
+            assertThat(row.get("suite_type")).isEqualTo("ROUTE");
+            assertThat(row.get("routes_ref::name")).isEqualTo(routeName);
+        });
     }
 
     @Test

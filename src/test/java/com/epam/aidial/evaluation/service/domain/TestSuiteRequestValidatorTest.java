@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.configuration.properties.validation.ValidationProperties;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialFileRefResolver;
 import com.epam.aidial.evaluation.runner.config.properties.JsonataProperties;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.JsonRequestBodyDto;
@@ -18,6 +19,7 @@ import com.epam.aidial.evaluation.runner.dto.RequestBodySchemaDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
@@ -304,6 +306,92 @@ class TestSuiteRequestValidatorTest {
         }
 
         @Test
+        @DisplayName("ROUTE suite accepts its route reference and HTTP request contract")
+        void shouldAcceptRouteSuiteContract() {
+            TestSuiteRequestDto dto = routeSuiteRequest();
+
+            assertThatCode(() -> validator.validateSuiteTypeFields(dto)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("ROUTE suite requires routesRef")
+        void shouldRequireRoutesRefForRouteSuite() {
+            TestSuiteRequestDto dto = routeSuiteRequest();
+            dto.setRoutesRef(null);
+
+            assertThatThrownBy(() -> validator.validateSuiteTypeFields(dto))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("routesRef is required for ROUTE suites");
+        }
+
+        @Test
+        @DisplayName("ROUTE suite requires endpointRef")
+        void shouldRequireEndpointRefForRouteSuite() {
+            TestSuiteRequestDto dto = routeSuiteRequest();
+            dto.setEndpointRef(null);
+
+            assertThatThrownBy(() -> validator.validateSuiteTypeFields(dto))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("endpointRef is required for ROUTE suites");
+        }
+
+        @Test
+        @DisplayName("ROUTE suite requires requestTemplate")
+        void shouldRequireRequestTemplateForRouteSuite() {
+            TestSuiteRequestDto dto = routeSuiteRequest();
+            dto.setRequestTemplate(null);
+
+            assertThatThrownBy(() -> validator.validateSuiteTypeFields(dto))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("requestTemplate is required for ROUTE suites");
+        }
+
+        @Test
+        @DisplayName("ROUTE suite rejects deployment reference")
+        void shouldRejectDeploymentRefForRouteSuite() {
+            TestSuiteRequestDto dto = routeSuiteRequest();
+            dto.setDeploymentRef(DeploymentReferenceDto.builder()
+                    .id("deployment")
+                    .name("Deployment")
+                    .build());
+
+            assertThatThrownBy(() -> validator.validateSuiteTypeFields(dto))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("deploymentRef must be empty for ROUTE suites");
+        }
+
+        @Test
+        @DisplayName("ROUTE suite rejects MCP-specific fields")
+        void shouldRejectMcpFieldsForRouteSuite() {
+            TestSuiteRequestDto dto = routeSuiteRequest();
+            dto.setToolRef(ToolReferenceDto.builder().name("tool").build());
+
+            assertThatThrownBy(() -> validator.validateSuiteTypeFields(dto))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("toolRef must be empty for ROUTE suites");
+        }
+
+        @Test
+        @DisplayName("Non-ROUTE suite rejects routesRef")
+        void shouldRejectRoutesRefForDeploymentSuite() {
+            TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
+                    .name("Deployment suite")
+                    .suiteType(SuiteType.DEPLOYMENT)
+                    .deploymentRef(DeploymentReferenceDto.builder()
+                            .id("deployment")
+                            .name("Deployment")
+                            .build())
+                    .routesRef(RouteReferenceDto.builder()
+                            .name("routes/platform/validate-route")
+                            .build())
+                    .build();
+
+            assertThatThrownBy(() -> validator.validateSuiteTypeFields(dto))
+                    .isInstanceOf(ValidationException.class)
+                    .hasMessage("routesRef must be empty for DEPLOYMENT suites");
+        }
+
+        @Test
         @DisplayName("Non-empty additionalRequests on an MCP_TOOL suite is rejected")
         void shouldRejectAdditionalRequestsOnMcpToolSuite() {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
@@ -513,6 +601,20 @@ class TestSuiteRequestValidatorTest {
                     new ObjectMapper(),
                     validationProperties,
                     new ResponseColumnUnionResolver(jsonbMapper));
+        }
+
+        private TestSuiteRequestDto routeSuiteRequest() {
+            return TestSuiteRequestDto.builder()
+                    .name("Route suite")
+                    .suiteType(SuiteType.ROUTE)
+                    .routesRef(RouteReferenceDto.builder()
+                            .name("routes/platform/validate-route")
+                            .build())
+                    .endpointRef(EndpointContractDto.builder().build())
+                    .requestTemplate(RequestTemplateDto.builder()
+                            .urlTemplate("/${{path}}")
+                            .build())
+                    .build();
         }
 
         private TestSuiteRequestDto chainRequestWithColumns(

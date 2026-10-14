@@ -44,10 +44,13 @@ public class SuiteSnapshotDto {
     @Schema(description = "Deployment reference (DEPLOYMENT suites)")
     private DeploymentReferenceDto deploymentRef;
 
-    @Schema(description = "Endpoint contract (DEPLOYMENT suites)")
+    @Schema(description = "Canonical global DIAL Core Route reference (ROUTE suites)")
+    private RouteReferenceDto routesRef;
+
+    @Schema(description = "Endpoint contract (DEPLOYMENT and ROUTE suites)")
     private EndpointContractDto endpointRef;
 
-    @Schema(description = "Request template (DEPLOYMENT suites)")
+    @Schema(description = "Request template (DEPLOYMENT and ROUTE suites)")
     private RequestTemplateDto requestTemplate;
 
     @Schema(description = "Input bindings")

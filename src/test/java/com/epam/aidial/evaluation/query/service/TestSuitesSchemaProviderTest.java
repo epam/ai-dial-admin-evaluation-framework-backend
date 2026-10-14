@@ -33,6 +33,7 @@ class TestSuitesSchemaProviderTest {
                         new QuerySchemaFieldDto("is_valid", QueryFieldType.BOOLEAN, "is_valid"),
                         new QuerySchemaFieldDto("created_at_ms", QueryFieldType.LONG, "created_at_ms"),
                         new QuerySchemaFieldDto("deployment_ref", QueryFieldType.OBJECT, "deployment_ref"),
+                        new QuerySchemaFieldDto("routes_ref", QueryFieldType.OBJECT, "routes_ref"),
                         new QuerySchemaFieldDto("mcp_deployment_ref", QueryFieldType.OBJECT, "mcp_deployment_ref"));
     }
 
@@ -45,6 +46,13 @@ class TestSuitesSchemaProviderTest {
                         new QuerySchemaFieldDto("deployment_ref::name", QueryFieldType.STRING, "deployment_ref"),
                         new QuerySchemaFieldDto("deployment_ref::version", QueryFieldType.STRING, "deployment_ref"),
                         new QuerySchemaFieldDto("deployment_ref::type", QueryFieldType.STRING, "deployment_ref"));
+    }
+
+    @Test
+    @DisplayName("exposes routes_ref::name as a STRING field sourced from routes_ref")
+    void shouldExposeRouteRefName() {
+        assertThat(provider.baseSchema())
+                .contains(new QuerySchemaFieldDto("routes_ref::name", QueryFieldType.STRING, "routes_ref"));
     }
 
     @Test

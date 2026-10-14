@@ -20,6 +20,7 @@ public class TestSuite {
     private SuiteType suiteType;
     private UUID datasetId;
     private String deploymentRef;
+    private String routesRef;
     private String endpointRef;
     private String responseColumns;
     private String requestTemplate;

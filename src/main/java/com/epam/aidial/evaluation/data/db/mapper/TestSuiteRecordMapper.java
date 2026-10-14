@@ -21,6 +21,7 @@ public class TestSuiteRecordMapper {
                 .suiteType(SuiteType.fromValue(r.getSuiteType()))
                 .datasetId(r.getDatasetId() != null ? UUID.fromString(r.getDatasetId()) : null)
                 .deploymentRef(toJsonString(r.getDeploymentRef()))
+                .routesRef(toJsonString(r.getRoutesRef()))
                 .endpointRef(toJsonString(r.getEndpointRef()))
                 .responseColumns(toJsonString(r.getResponseColumns()))
                 .requestTemplate(toJsonString(r.getRequestTemplate()))

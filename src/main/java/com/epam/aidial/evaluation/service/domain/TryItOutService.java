@@ -143,7 +143,9 @@ public class TryItOutService {
             return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
         }
 
-        final DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
+        final SuiteType suiteType = resolveSuiteType(suite);
+        final DeploymentReferenceDto deploymentRef =
+                suiteType == SuiteType.ROUTE ? null : jsonbMapper.map(suite.getDeploymentRef());
         final EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
         // Deserialized once here and handed to the planner, so a single try-out never parses the suite's
         // additionalRequests JSONB twice.
@@ -151,7 +153,13 @@ public class TryItOutService {
                 jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
         // Preconditions (incl. per-chain-element) run on the already-loaded suite BEFORE planning, so a
         // misconfigured suite combined with a nonexistent testCaseId still yields 400, not 404 (design D7).
-        validateChainPreconditions(deploymentRef, endpointRef, suite.getRequestTemplate(), additionalRequests);
+        validateChainPreconditions(
+                suiteType,
+                suite.getRoutesRef(),
+                deploymentRef,
+                endpointRef,
+                suite.getRequestTemplate(),
+                additionalRequests);
 
         final ResolvedRequestService.ChainPlan plan =
                 resolvedRequestService.planChain(testSuiteId, testCaseId, additionalRequests);
@@ -162,10 +170,10 @@ public class TryItOutService {
             final List<ResponseColumnDefinitionDto> responseColumns =
                     plan.requestPlans().getFirst().spec().responseColumns();
             return invokeAndBuildResponse(
-                    resolved, deploymentRef, endpointRef.getMethod(), testSuiteId, responseColumns);
+                    resolved, suiteType, deploymentRef, endpointRef.getMethod(), testSuiteId, responseColumns);
         }
 
-        return runChain(plan, deploymentRef, testSuiteId, null);
+        return runChain(plan, suiteType, deploymentRef, testSuiteId, null);
     }
 
     /**
@@ -184,6 +192,7 @@ public class TryItOutService {
      */
     private TryItOutResponseDto runChain(
             ResolvedRequestService.ChainPlan plan,
+            SuiteType suiteType,
             DeploymentReferenceDto deploymentRef,
             UUID testSuiteId,
             Map<Integer, List<InputBindingDto>> bindingsByRequest) {
@@ -212,7 +221,11 @@ public class TryItOutService {
                     resolved = requestResolver.resolveForRun(spec.requestTemplate(), bindings, turnData, frame);
                     validateResolutionResult(resolved);
                     current = invokeTurn(
-                            resolved, deploymentRef, spec.endpointRef().getMethod(), testSuiteId);
+                            resolved,
+                            suiteType,
+                            deploymentRef,
+                            spec.endpointRef().getMethod(),
+                            testSuiteId);
                     // Covers both the HTTP status and a streaming response whose SSE parse did not
                     // complete (TIMEOUT/ERROR): extracting from a partial document would poison every
                     // later request's frame.
@@ -411,11 +424,19 @@ public class TryItOutService {
             return invokeMcpAndBuildResponse(mcpRef, toolRef, resolutionResult.getArguments(), testSuiteId);
         }
 
-        DeploymentReferenceDto deploymentRef = jsonbMapper.map(suite.getDeploymentRef());
+        final SuiteType suiteType = resolveSuiteType(suite);
+        DeploymentReferenceDto deploymentRef =
+                suiteType == SuiteType.ROUTE ? null : jsonbMapper.map(suite.getDeploymentRef());
         EndpointContractDto endpointRef = jsonbMapper.mapEndpointContract(suite.getEndpointRef());
         List<RequestDefinitionDto> additionalRequests =
                 jsonbMapper.mapAdditionalRequests(suite.getAdditionalRequests());
-        validateChainPreconditions(deploymentRef, endpointRef, suite.getRequestTemplate(), additionalRequests);
+        validateChainPreconditions(
+                suiteType,
+                suite.getRoutesRef(),
+                deploymentRef,
+                endpointRef,
+                suite.getRequestTemplate(),
+                additionalRequests);
 
         final int requestCount = 1 + (additionalRequests != null ? additionalRequests.size() : 0);
         final Map<Integer, List<InputBindingDto>> bindingsByRequest =
@@ -429,6 +450,7 @@ public class TryItOutService {
             validateResolutionResult(resolved);
             return invokeAndBuildResponse(
                     resolved,
+                    suiteType,
                     deploymentRef,
                     endpointRef.getMethod(),
                     testSuiteId,
@@ -440,7 +462,7 @@ public class TryItOutService {
         // mapped above is reused, so the JSONB is deserialized once per try-out.
         final ResolvedRequestService.ChainPlan plan =
                 resolvedRequestService.planChainForVariables(testSuiteId, additionalRequests);
-        return runChain(plan, deploymentRef, testSuiteId, bindingsByRequest);
+        return runChain(plan, suiteType, deploymentRef, testSuiteId, bindingsByRequest);
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {
@@ -458,11 +480,13 @@ public class TryItOutService {
      * misconfigured element therefore returns 400 with zero HTTP calls issued.
      */
     private void validateChainPreconditions(
+            SuiteType suiteType,
+            String routesRefJson,
             DeploymentReferenceDto deploymentRef,
             EndpointContractDto endpointRef,
             String rawTemplateJson,
             List<RequestDefinitionDto> additionalRequests) {
-        validateSuitePreconditions(deploymentRef, endpointRef, rawTemplateJson);
+        validateSuitePreconditions(suiteType, routesRefJson, deploymentRef, endpointRef, rawTemplateJson);
         if (additionalRequests == null) {
             return;
         }
@@ -480,8 +504,16 @@ public class TryItOutService {
     }
 
     private void validateSuitePreconditions(
-            DeploymentReferenceDto deploymentRef, EndpointContractDto endpointRef, String requestTemplateJson) {
-        if (deploymentRef == null) {
+            SuiteType suiteType,
+            String routesRefJson,
+            DeploymentReferenceDto deploymentRef,
+            EndpointContractDto endpointRef,
+            String requestTemplateJson) {
+        if (suiteType == SuiteType.ROUTE) {
+            if (routesRefJson == null || routesRefJson.isBlank()) {
+                throw new ValidationException("Route reference is required for try-it-out");
+            }
+        } else if (deploymentRef == null) {
             throw new ValidationException("Deployment reference is required for try-it-out");
         }
         if (endpointRef == null || endpointRef.getMethod() == null) {
@@ -517,7 +549,11 @@ public class TryItOutService {
     }
 
     private boolean isMcpSuite(TestSuite suite) {
-        return suite.getSuiteType() == SuiteType.MCP_TOOL;
+        return resolveSuiteType(suite) == SuiteType.MCP_TOOL;
+    }
+
+    private SuiteType resolveSuiteType(TestSuite suite) {
+        return suite.getSuiteType() != null ? suite.getSuiteType() : SuiteType.DEPLOYMENT;
     }
 
     private void validateMcpResolutionResult(McpRequestResolver.ResolutionResult result) {
@@ -625,13 +661,14 @@ public class TryItOutService {
      */
     private TryItOutResponseDto invokeAndBuildResponse(
             ResolvedRequestDto resolved,
+            SuiteType suiteType,
             DeploymentReferenceDto deploymentRef,
             HttpMethod method,
             UUID testSuiteId,
             List<ResponseColumnDefinitionDto> responseColumns) {
         final TurnInvocationResult result;
         try {
-            result = invokeTurn(resolved, deploymentRef, method, testSuiteId);
+            result = invokeTurn(resolved, suiteType, deploymentRef, method, testSuiteId);
         } catch (RequestBodyValidationException e) {
             throw toTryItOutValidationException(e, resolved);
         }
@@ -651,13 +688,21 @@ public class TryItOutService {
     }
 
     private TurnInvocationResult invokeTurn(
-            ResolvedRequestDto resolved, DeploymentReferenceDto deploymentRef, HttpMethod method, UUID testSuiteId) {
+            ResolvedRequestDto resolved,
+            SuiteType suiteType,
+            DeploymentReferenceDto deploymentRef,
+            HttpMethod method,
+            UUID testSuiteId) {
         // Pre-invocation boundary for the fixed-path model-selecting APIs, deliberately here rather than
         // in validateResolutionResult: the chain path needs an in-band status-zero failure, while the
         // single-invocation callers convert the same exception into their HTTP 400 contract.
-        requestModelValidator.validateForExecution(resolved.getUrl(), resolved.getBody(), deploymentRef.getId());
+        if (suiteType == SuiteType.DEPLOYMENT) {
+            requestModelValidator.validateForExecution(resolved.getUrl(), resolved.getBody(), deploymentRef.getId());
+        }
 
-        String fullPath = urlBuilder.buildUrl(deploymentRef.getId(), resolved.getUrl());
+        String fullPath = suiteType == SuiteType.ROUTE
+                ? urlBuilder.buildUrl(SuiteType.ROUTE, null, resolved.getUrl())
+                : urlBuilder.buildUrl(deploymentRef.getId(), resolved.getUrl());
         HttpHeaders headers = toHttpHeaders(resolved.getHeaders());
         MultiValueMap<String, String> queryParams = toQueryParams(resolved.getQueryParams());
 

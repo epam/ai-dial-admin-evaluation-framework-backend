@@ -14,6 +14,7 @@ import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.SuiteSnapshotDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
@@ -341,6 +342,50 @@ class SuiteSnapshotBuilderTest {
 
             assertThat(snapshot.getOverallScoreThreshold()).isNull();
             assertThat(snapshot.getSnapshotVersion()).isEqualTo("2");
+        }
+    }
+
+    @Nested
+    @DisplayName("ROUTE suite")
+    class RouteSuite {
+
+        @Test
+        @DisplayName("builds an HTTP snapshot with routesRef and no deploymentRef")
+        void buildsRouteSnapshot() {
+            UUID datasetId = UUID.randomUUID();
+            TestSuite suite = TestSuite.builder()
+                    .suiteType(SuiteType.ROUTE)
+                    .datasetId(datasetId)
+                    .routesRef("{\"name\":\"routes/platform/validate-route\"}")
+                    .endpointRef("{}")
+                    .requestTemplate("{}")
+                    .inputBindings("[]")
+                    .responseColumns("[]")
+                    .build();
+            Dataset dataset = Dataset.builder()
+                    .id(datasetId)
+                    .name("Route Dataset")
+                    .version(1L)
+                    .testCaseSchema("[]")
+                    .build();
+            RouteReferenceDto routesRef = RouteReferenceDto.builder()
+                    .name("routes/platform/validate-route")
+                    .build();
+
+            when(jsonbMapper.mapRouteRef(suite.getRoutesRef())).thenReturn(routesRef);
+            when(jsonbMapper.mapEndpointContract(suite.getEndpointRef())).thenReturn(null);
+            when(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate())).thenReturn(null);
+            when(jsonbMapper.mapInputBindings(suite.getInputBindings())).thenReturn(List.of());
+            when(jsonbMapper.mapResponseColumns(suite.getResponseColumns())).thenReturn(List.of());
+            when(jsonbMapper.mapFieldDefinitions(dataset.getTestCaseSchema())).thenReturn(List.of());
+
+            SuiteSnapshotDto snapshot = builder.build(suite, dataset);
+
+            assertThat(snapshot.getSuiteType()).isEqualTo("ROUTE");
+            assertThat(snapshot.getRoutesRef()).isEqualTo(routesRef);
+            assertThat(snapshot.getDeploymentRef()).isNull();
+            assertThat(snapshot.getEndpointRef()).isNull();
+            assertThat(snapshot.getRequestTemplate()).isNull();
         }
     }
 

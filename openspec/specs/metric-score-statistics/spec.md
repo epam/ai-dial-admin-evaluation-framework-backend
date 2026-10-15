@@ -159,12 +159,16 @@ This prohibition governs **stored** results only. A REST endpoint MAY compute an
 
 A stored result value MAY additionally surface as an extension-derived key on another entity's result page, provided it is read server-side through this same `metric_score_results` entity — no bespoke SQL against the table, and no new REST read surface. The run-level `overall` value on a `test_suite_runs` row (`overall_score_value`) is such a case: it is a derived result key, not a queryable field, and does not make the underlying rows reachable by any other route.
 
-For a query that targets a single run (`test_suite_run_id eq X`), the sentinel `computation_id eq "latest"` (case-insensitive) SHALL be resolved to the run's most recent computation and the query scoped to it — the sentinel is rewritten to the resolved id before translation, so `"latest"` is never parsed as a UUID. Latest resolution is delegated to the shared `ComputationResolver` (the single authority for "latest"). An explicit `computation_id` with a real value (`eq <uuid>` or `in [...]`) SHALL be honored verbatim; **omitting** `computation_id` spans all of the run's computations (there is no implicit latest-defaulting on omission). Cross-computation reads (e.g. comparing the last N runs) SHALL be expressible by filtering `computation_id` with `in`.
+For a query that targets a single run (`test_suite_run_id eq X`), the sentinel `computation_id eq "latest"` (case-insensitive) SHALL be resolved to the run's most recent computation and the query scoped to it — the sentinel is rewritten to the resolved id before translation, so `"latest"` is never parsed as a UUID. Latest resolution is delegated to the shared `ComputationResolver` (the single authority for "latest"). For any other filter shape — several runs selected by a literal list or an `in` subquery, or no run predicate — the sentinel SHALL resolve **each run's own** latest computation, per `latest-computation-resolution`. An explicit `computation_id` with a real value (`eq <uuid>` or `in [...]`) SHALL be honored verbatim; **omitting** `computation_id` spans all of the run's computations (there is no implicit latest-defaulting on omission). Cross-computation reads (e.g. comparing the last N runs) SHALL be expressible by filtering `computation_id` with `in`.
 Status: **Implemented**
 
 #### Scenario: `computation_id eq "latest"` resolves to the run's latest computation
 - **WHEN** a structured query selects from `metric_score_results` filtered by `test_suite_run_id eq X and computation_id eq "latest"`
 - **THEN** only the rows of run X's most recent computation are returned
+
+#### Scenario: `computation_id eq "latest"` resolves per run for several runs
+- **WHEN** a structured query selects from `metric_score_results` filtered by `test_suite_run_id in [A, B] and computation_id eq "latest"`
+- **THEN** run A's rows come from A's latest computation and run B's rows from B's latest computation
 
 #### Scenario: Results queried for an explicit run and computation
 - **WHEN** a structured query selects from `metric_score_results` filtered by `test_suite_run_id eq X and computation_id eq Y`

@@ -274,6 +274,91 @@ public abstract class MetricScoreResultStructuredQueryFunctionalTests extends Ba
     }
 
     @Test
+    @DisplayName("a multi-run computation_id eq \"latest\" resolves each run's own latest computation")
+    void multiRunLatestResolvesEachRunsLatestComputation() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runA = UUID.randomUUID();
+        UUID runB = UUID.randomUUID();
+        UUID olderA = UUID.randomUUID();
+        UUID newerA = UUID.randomUUID();
+        UUID onlyB = UUID.randomUUID();
+        seedSummary(suiteId, runA, olderA, 1_000L);
+        seedSummary(suiteId, runA, newerA, 2_000L);
+        seedSummary(suiteId, runB, onlyB, 1_500L);
+        metricScoreService.saveAll(List.of(
+                result(runA, suiteId, olderA, "AVG", "Relevancy.score", 0.1, 1_000L),
+                result(runA, suiteId, newerA, "AVG", "Relevancy.score", 0.2, 2_000L),
+                result(runB, suiteId, onlyB, "AVG", "Relevancy.score", 0.3, 1_500L)));
+
+        FilterNode filter = new LogicalNode(
+                LogicalOp.AND,
+                List.of(
+                        new ComparisonNode(
+                                ComparisonOp.IN,
+                                List.of(
+                                        new FieldExpr("test_suite_run_id"),
+                                        new ArrayExpr(List.of(
+                                                new ValueExpr(ValueType.UUID, runA.toString()),
+                                                new ValueExpr(ValueType.UUID, runB.toString()))))),
+                        new ComparisonNode(
+                                ComparisonOp.EQ,
+                                List.of(new FieldExpr("computation_id"), new ValueExpr(ValueType.STRING, "latest")))));
+
+        QueryResultPage page = queryRepository.execute(
+                rowQuery(filter, List.of(col("test_suite_run_id"), col("computation_id"), col("value"))));
+
+        assertThat(page.rows())
+                .extracting(row -> row.get("test_suite_run_id") + ":" + row.get("computation_id"))
+                .containsExactlyInAnyOrder(runA + ":" + newerA, runB + ":" + onlyB);
+    }
+
+    @Test
+    @DisplayName("computation_id eq \"latest\" without a run predicate returns each run's latest computation")
+    void latestWithoutRunPredicateReturnsEachRunsLatest() {
+        UUID suiteId = UUID.randomUUID();
+        UUID runA = UUID.randomUUID();
+        UUID runB = UUID.randomUUID();
+        UUID olderA = UUID.randomUUID();
+        UUID newerA = UUID.randomUUID();
+        UUID onlyB = UUID.randomUUID();
+        seedSummary(suiteId, runA, olderA, 1_000L);
+        seedSummary(suiteId, runA, newerA, 2_000L);
+        seedSummary(suiteId, runB, onlyB, 1_500L);
+        metricScoreService.saveAll(List.of(
+                result(runA, suiteId, olderA, "AVG", "Relevancy.score", 0.1, 1_000L),
+                result(runA, suiteId, newerA, "AVG", "Relevancy.score", 0.2, 2_000L),
+                result(runB, suiteId, onlyB, "AVG", "Relevancy.score", 0.3, 1_500L)));
+
+        // Scoped to this suite (metric_score_result is shared across test methods), but no test_suite_run_id predicate.
+        FilterNode filter = new LogicalNode(
+                LogicalOp.AND,
+                List.of(
+                        eq("test_suite_id", suiteId.toString()),
+                        new ComparisonNode(
+                                ComparisonOp.EQ,
+                                List.of(new FieldExpr("computation_id"), new ValueExpr(ValueType.STRING, "latest")))));
+
+        QueryResultPage page =
+                queryRepository.execute(rowQuery(filter, List.of(col("test_suite_run_id"), col("computation_id"))));
+
+        assertThat(page.rows())
+                .extracting(row -> row.get("test_suite_run_id") + ":" + row.get("computation_id"))
+                .containsExactlyInAnyOrder(runA + ":" + newerA, runB + ":" + onlyB);
+    }
+
+    private void seedSummary(UUID suiteId, UUID runId, UUID computationId, long computedAtMs) {
+        analyticsTestDataHelper.createEvalSummary(EvalSummaryFixture.builder()
+                .suiteId(suiteId)
+                .runId(runId)
+                .computationId(computationId)
+                .testCaseName("case")
+                .execDurationMs(10L)
+                .createdAtMs(1_000L)
+                .computedAtMs(computedAtMs)
+                .build());
+    }
+
+    @Test
     @DisplayName("returns the latest N results for a suite ordered by computed_at_ms descending")
     void latestResultsForSuiteOrderedByComputedAt() {
         UUID suiteId = UUID.randomUUID();

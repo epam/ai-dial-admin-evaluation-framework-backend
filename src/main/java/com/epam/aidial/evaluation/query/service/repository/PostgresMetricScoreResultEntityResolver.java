@@ -21,7 +21,8 @@ import org.springframework.stereotype.Repository;
  * Resolves the {@code metric_score_results} entity to the generated {@code METRIC_SCORE_RESULT} table
  * on the analytics datasource ({@code analyticsDsl}). Field bindings are static per-table metadata,
  * computed once here. {@link #rewrite} resolves a {@code computation_id eq "latest"} sentinel to the
- * run's most recent computation before translation.
+ * run's most recent computation before translation: a single pinned run to its literal id, anything else
+ * through the internal {@code is_latest_computation} binding of {@link LatestComputationSupport}.
  */
 @Repository
 @LogExecution
@@ -31,14 +32,20 @@ public class PostgresMetricScoreResultEntityResolver implements StructuredQueryE
     private final DSLContext dsl;
     private final Map<String, QueryFieldBinding> bindings;
     private final MetricScoreLatestComputationDefaulter latestComputationDefaulter;
+    private final LatestComputationSupport latestComputationSupport;
 
     public PostgresMetricScoreResultEntityResolver(
             @Qualifier("analyticsDsl") DSLContext dsl,
             JooqTableSchemaResolver schemaResolver,
-            MetricScoreLatestComputationDefaulter latestComputationDefaulter) {
+            MetricScoreLatestComputationDefaulter latestComputationDefaulter,
+            LatestComputationSupport latestComputationSupport) {
         this.dsl = dsl;
-        this.bindings = schemaResolver.bindings(METRIC_SCORE_RESULT);
+        this.bindings = latestComputationSupport.withLatest(
+                schemaResolver.bindings(METRIC_SCORE_RESULT),
+                latestComputationSupport.latestBinding(
+                        METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID, METRIC_SCORE_RESULT.COMPUTATION_ID));
         this.latestComputationDefaulter = latestComputationDefaulter;
+        this.latestComputationSupport = latestComputationSupport;
     }
 
     @Override
@@ -68,6 +75,6 @@ public class PostgresMetricScoreResultEntityResolver implements StructuredQueryE
 
     @Override
     public StructuredQuery rewrite(StructuredQuery query) {
-        return latestComputationDefaulter.resolveLatestComputation(query);
+        return latestComputationSupport.rewriteLatest(latestComputationDefaulter.resolveLatestComputation(query));
     }
 }

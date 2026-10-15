@@ -118,12 +118,12 @@ Detailed pattern docs live in [docs/patterns/](docs/patterns/README.md). Substan
 | [MCP Tool Invocation](docs/patterns/mcp-tool-invocation.md) | Per-call `McpSyncClient` via DIAL Core MCP proxy |
 | [Slash-containing path values](docs/patterns/slash-path-values.md) | `/**` mapping + `WildcardPathResolver`; decode exactly once, never `URLDecoder` |
 | [Suite validity = config only](docs/patterns/suite-validity-and-run-guards.md) | `isValid` excludes test-case presence; the 5 ordered `createRun` guards |
-| [Computation Versioning (no `is_latest`)](docs/patterns/computation-versioning.md) | "Latest" resolved at query time from eval summaries, not snapshots |
+| [Computation Versioning (no `is_latest`)](docs/patterns/computation-versioning.md) | "Latest" resolved at query time from eval summaries, not snapshots; multi-run `"latest"` in SQL via the opt-in `LatestComputationSupport` |
 | [Eval summaries = single read surface](docs/patterns/eval-summaries-read-surface.md) | One summary per result row even at zero TSMDs; empty list ≠ "no metrics" |
 | [Query DSL `ParamExpr`](docs/patterns/query-dsl-parameters.md) | Single pre-pass resolver rewrites `StructuredQuery` params before translation |
 | [Query DSL function catalog](docs/patterns/query-dsl-function-catalog.md) | Registry-driven `QueryFunction` SPI; stored-function delegation; no `mean` fn |
 | [Typed `OverallScoreDefinition`](docs/patterns/overall-score-definition.md) | Sealed `Mean`/`WeightedMean`/`CustomFunction`; Phase 2 per-test-case `score`/`passed` computed once per test case (`test_case_eval_scores`) via `test_case_id IN (...)`/`GROUP BY test_case_id` graft over `test_case_metric_scores` (only `Mean`/`WeightedMean` for `testCaseOverallScore`, `CustomFunction` rejected at write time); CustomFunction stays on `eval_summaries` at Phase 3 |
-| [Query DSL entity resolution](docs/patterns/query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check |
+| [Query DSL entity resolution](docs/patterns/query-dsl-entity-resolution.md) | `StructuredQueryEntityResolver` SPI + registry as the single 400 check; entities opt into `LatestComputationSupport` for per-run `computation_id eq "latest"` |
 | [Query result page extension](docs/patterns/query-result-page-extension.md) | `QueryResultPageExtender` SPI + `@Primary` coordinator; open key set; per-extender failure isolation; an extender bounding an external lookup with a timed `Future.get` self-degrades (logs once, returns the received page) |
 | [Query DSL subqueries](docs/patterns/query-dsl-subqueries.md) | Subquery-valued `in` and scalar subqueries; the one lazy-bean cycle break |
 | [Query DSL null polarity](docs/patterns/query-dsl-null-polarity.md) | `nc`/`ne`/`not` are total (null satisfies); positive ops stay unwrapped/sargable |

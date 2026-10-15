@@ -72,9 +72,17 @@ Status: **Implemented**
 - **WHEN** the filter is `not(computation_id eq "latest")` for a run with several computations
 - **THEN** the run's non-latest computations are returned, following the Query DSL null-polarity rule for `not`
 
+#### Scenario: Negated sentinel returns a run without eval summaries in full
+- **WHEN** the filter is `not(computation_id eq "latest")` and a selected run has no rows in `test_case_eval_summaries`
+- **THEN** all of that run's rows are returned, because `not` is total and a NULL latest computation satisfies it (Query DSL null polarity)
+
 #### Scenario: Unsupported forms are still rejected
 - **WHEN** a query uses `computation_id in ["latest"]` or `computation_id ne "latest"`
 - **THEN** the sentinel is not resolved and the query is rejected as before
+
+#### Scenario: Sentinel inside a nested subquery's own filter
+- **WHEN** a `"latest"` sentinel appears in the filter of a subquery nested in the top-level query
+- **THEN** it is not rewritten (only the top-level query is rewritten) and is rejected as before
 
 #### Scenario: Explicit and omitted computation unchanged
 - **WHEN** a query filters `computation_id eq <uuid>`, or omits `computation_id`

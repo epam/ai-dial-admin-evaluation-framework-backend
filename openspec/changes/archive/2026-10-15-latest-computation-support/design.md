@@ -6,7 +6,7 @@ Two of them (`test_case_eval_scores`, `metric_score_results`) already call `Metr
 
 All four entities except `test_case_eval_scores` resolve to a bare generated jOOQ table; `test_case_eval_scores` resolves to the derived table `PostgresTestCaseEvalScoreEntityResolver.SCORES` (alias `test_case_eval_scores`). Bindings are built once from `JooqTableSchemaResolver.bindings(table)` (`Map<String, QueryFieldBinding>`, `QueryFieldBinding(name, Field<?>, QueryFieldType)`). A binding's field may be any jOOQ expression (`PostgresTestSuiteRunEntityResolver` already binds a correlated scalar subquery, `metric_names`). `eval_summaries` is the table "latest" is defined from (`idx_eval_summaries_run_computed_at` on `(test_suite_run_id, computed_at_ms DESC, computation_id)`).
 
-Constraints: JDBC/jOOQ typed DSL only; layering web → service → data (the query entities live in `query.service.repository`, which already imports the generated `data.db.jooq.analytics` tables); every Spring component carries `@LogExecution`; no `System.currentTimeMillis`; no migration for query-level behaviour. See the proposal for motivation and scope.
+Constraints: JDBC/jOOQ typed DSL only; layering web → service → data (the query entities live in `query.service.repository`, which already imports the generated `data.db.jooq.analytics` tables); every Spring component carries `@LogExecution`; no `System.currentTimeMillis`; no migration for query-level behaviour. See the proposal for motivation and scope. D1–D7 are the behavioural decisions; D8 (transactions, errors, security) records that nothing new is needed there.
 
 ## Goals / Non-Goals
 
@@ -46,7 +46,7 @@ The rewritten filter is the exact semantic equivalent of the sentinel at any pos
 New `@Component @LogExecution` in `query.service.repository`:
 - `QueryFieldBinding latestBinding(Field<String> runIdField, Field<String> computationIdField)` — builds the D1 expression with typed jOOQ against `TEST_CASE_EVAL_SUMMARIES.as("latest")`.
 - `Map<String, QueryFieldBinding> withLatest(Map<String, QueryFieldBinding> base, QueryFieldBinding latest)`.
-- `StructuredQuery rewriteLatest(StructuredQuery query)` — tree walk over `FilterNode` (`LogicalNode` / `ComparisonNode`), replacing every `computation_id eq "latest"` (case-insensitive) with `is_latest_computation eq {BOOLEAN,"true"}`; returns the same instance when nothing changed. It reuses `MetricScoreLatestComputationDefaulter.isLatestComputationEq` (made package-private static) rather than duplicating the match.
+- `StructuredQuery rewriteLatest(StructuredQuery query)` — tree walk over `FilterNode` (`LogicalNode` / `ComparisonNode`), replacing every `computation_id eq "latest"` (case-insensitive) with `is_latest_computation eq {BOOLEAN,"true"}`; returns the same instance when nothing changed. It reuses `MetricScoreLatestComputationDefaulter.isLatestComputationEq` and `withFilter` (both made package-private static) rather than duplicating the match and the query-copy.
 
 An entity passes its own `Field`s, so a bare table (`METRIC_SCORE_RESULT.TEST_SUITE_RUN_ID`, `.COMPUTATION_ID`) and the derived `SCORES` (`SCORES.field(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID)`) both work with no table conversion. Composition per entity:
 
@@ -100,7 +100,7 @@ No schema change, no data migration, no configuration. Deploy as a normal releas
 
 ## Open Questions
 
-- Is there an existing "published schema field set == binding keys" parity test for any of the three entities (it exists for `test_suite_runs`)? If so the internal binding must be excluded from it. To confirm during iteration 1.
-- Is the map returned by `JooqTableSchemaResolver.bindings` immutable? `withLatest` copies it either way, but the unit test should not assume mutability.
-- Opt-in of `eval_summaries`: decided after the `EXPLAIN` evidence from iteration 3.
+- ~~Is there an existing "published schema field set == binding keys" parity test for any of the three entities?~~ **Resolved (task 1.5):** checked during iteration 1; the internal binding is asserted absent from `table().fields()` and the published schema by the resolver unit tests.
+- ~~Is the map returned by `JooqTableSchemaResolver.bindings` immutable?~~ **Resolved:** `withLatest` always returns a new map and the unit test does not assume mutability of its input.
+- ~~Opt-in of `eval_summaries`.~~ **Resolved (task 4.3):** not opted in; see the decision and `EXPLAIN` evidence in `docs/patterns/computation-versioning.md`.
 - Should `ne` / `in` forms of the sentinel ever be supported? Not needed for the dashboard; revisit only on demand.

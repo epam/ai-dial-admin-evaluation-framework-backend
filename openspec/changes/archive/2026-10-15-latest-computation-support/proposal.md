@@ -28,7 +28,7 @@ A computation-versioned analytics entity can only be asked for a run's latest co
 ## Impact
 
 - **Code (new):** `LatestComputationSupport` (`@Component @LogExecution`, `query.service.repository`).
-- **Code (modified):** `PostgresTestCaseEvalScoreEntityResolver`, `PostgresMetricScoreResultEntityResolver`, `PostgresTestCaseMetricScoreAggregatedEntityResolver` (bindings + `rewrite`); `MetricScoreLatestComputationDefaulter` (one helper made package-private for reuse; behaviour unchanged).
+- **Code (modified):** `PostgresTestCaseEvalScoreEntityResolver`, `PostgresMetricScoreResultEntityResolver`, `PostgresTestCaseMetricScoreAggregatedEntityResolver` (bindings + `rewrite`); `MetricScoreLatestComputationDefaulter` (two helpers, `isLatestComputationEq` and `withFilter`, made package-private for reuse; behaviour unchanged).
 - **API:** `POST /api/v1/queries/execute` accepts a previously rejected filter shape; no request/response schema change; no OpenAPI example required unless the endpoint already ships operation examples. Default row projections and schema discovery are unchanged.
 - **Data:** no migration, no schema or jOOQ regeneration, no `docs/database-schema.md` change. Reads only.
 - **Security / config:** none; no new property, so no `docs/configuration.md` row. Deleted runs stay hidden by each entity's existing `baseCondition()`.

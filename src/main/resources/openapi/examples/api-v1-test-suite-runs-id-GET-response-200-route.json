@@ -1,0 +1,63 @@
+{
+  "id": "770e8400-e29b-41d4-a716-446655440010",
+  "testSuiteId": "550e8400-e29b-41d4-a716-446655440010",
+  "testRunName": "Global Route Eval Run",
+  "status": "COMPLETED",
+  "runConfig": {
+    "numberOfRuns": 1,
+    "testRunName": "Global Route Eval Run"
+  },
+  "numberOfTestCases": 20,
+  "suiteSnapshot": {
+    "snapshotVersion": "2",
+    "suiteType": "ROUTE",
+    "datasetRef": {
+      "id": "660e8400-e29b-41d4-a716-446655440000",
+      "version": 1,
+      "name": "Validation Dataset"
+    },
+    "deploymentRef": null,
+    "routesRef": {
+      "name": "routes/platform/validate-route"
+    },
+    "endpointRef": {
+      "method": "POST",
+      "relativeUrlPattern": "/validate/{kind}",
+      "operationId": "validateItem"
+    },
+    "requestTemplate": {
+      "urlTemplate": "/validate/${{kind}}"
+    },
+    "inputBindings": [
+      {
+        "templateVariable": "kind",
+        "constantValue": "items"
+      }
+    ],
+    "responseColumns": [
+      {
+        "name": "valid",
+        "displayName": "Valid",
+        "expression": "valid",
+        "type": "BOOLEAN"
+      }
+    ],
+    "additionalRequests": [],
+    "requestName": null,
+    "testCaseSchema": [
+      {
+        "name": "input",
+        "displayName": "Input",
+        "type": "STRING",
+        "required": true
+      }
+    ],
+    "metricScoreAggregation": "AVG"
+  },
+  "startedAt": 1739760010000,
+  "completedAt": 1739760200000,
+  "errorMessage": null,
+  "errorDetails": null,
+  "createdAt": 1739760000000,
+  "updatedAt": 1739760200000
+}

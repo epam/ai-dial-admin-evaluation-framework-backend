@@ -5,6 +5,8 @@ import static com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpoint
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,6 +26,7 @@ import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.service.DashjoinJsonataEvaluationService;
@@ -136,7 +139,7 @@ class TurnLoopExecutorTest {
     }
 
     private void stubCommonInfra() {
-        when(urlBuilder.buildUrl(any(), anyString())).thenReturn("/openai/deployments/gpt-4/chat/completions");
+        when(urlBuilder.buildUrl(any(), any(), anyString())).thenReturn("/openai/deployments/gpt-4/chat/completions");
         when(evaluationRunProperties.getExecution()).thenReturn(execution);
         when(execution.getHeaderBlacklist()).thenReturn(List.of());
         when(serializerRegistry.serialize(any())).thenAnswer(inv -> {
@@ -176,6 +179,7 @@ class TurnLoopExecutorTest {
                 .maxResponseSizeBytes(5_000_000L)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .createdAtMs(FIXED_CLOCK.millis())
+                .suiteType(SuiteType.DEPLOYMENT)
                 .snapshotDeploymentRef(DeploymentReferenceDto.builder()
                         .id("gpt-4")
                         .name("GPT-4")
@@ -206,6 +210,50 @@ class TurnLoopExecutorTest {
                 context.getSnapshotRequestTemplate(),
                 context.getSnapshotInputBindings(),
                 responseColumns);
+    }
+
+    @Test
+    @DisplayName("ROUTE invokes the resolved Core path without deployment model validation")
+    void routeInvokesResolvedCorePath() {
+        when(urlBuilder.buildUrl(eq(SuiteType.ROUTE), isNull(), eq(OPENAI_RESPONSES)))
+                .thenReturn(OPENAI_RESPONSES);
+        when(evaluationRunProperties.getExecution()).thenReturn(execution);
+        when(execution.getHeaderBlacklist()).thenReturn(List.of());
+        when(serializerRegistry.serialize(any())).thenReturn(new SerializedBody(MediaType.APPLICATION_JSON, Map.of()));
+        when(deploymentTurnInvoker.invoke(any(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new TurnOutcome(ExecutionStatus.SUCCESS, 200, "{\"id\":\"response-1\"}", 0, null));
+
+        EvaluationContext context = baseContextBuilder()
+                .suiteType(SuiteType.ROUTE)
+                .snapshotDeploymentRef(null)
+                .snapshotRequestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate(OPENAI_RESPONSES)
+                        .body(JsonRequestBodyDto.builder()
+                                .content(Map.of("model", "not-a-deployment"))
+                                .build())
+                        .build())
+                .snapshotInputBindings(List.of())
+                .snapshotTestCaseSchema(List.of())
+                .build();
+        TestCaseRunInput input =
+                baseInputBuilder().testCaseName("route-case").testCaseData("{}").build();
+
+        List<TestCaseRunResult> results = executor.execute(
+                        input,
+                        context,
+                        0,
+                        singleRequestSpec(context, List.of()),
+                        Map.of(),
+                        "trace-route",
+                        FIXED_CLOCK.millis())
+                .rows();
+
+        assertThat(results)
+                .singleElement()
+                .extracting(TestCaseRunResult::getExecutionStatus)
+                .isEqualTo(ExecutionStatus.SUCCESS);
+        verify(urlBuilder).buildUrl(SuiteType.ROUTE, null, OPENAI_RESPONSES);
+        verify(deploymentTurnInvoker).invoke(any(), any(), eq(OPENAI_RESPONSES), any(), any(), any());
     }
 
     @Test
@@ -403,7 +451,7 @@ class TurnLoopExecutorTest {
     @DisplayName(
             "Resolution failure outside body evaluation produces a REQUEST_RESOLUTION_ERROR envelope and stops the run")
     void resolutionFailure_producesResolutionErrorEnvelopeAndStopsRun() {
-        when(urlBuilder.buildUrl(any(), anyString())).thenReturn("/openai/deployments/gpt-4/chat/completions");
+        when(urlBuilder.buildUrl(any(), any(), anyString())).thenReturn("/openai/deployments/gpt-4/chat/completions");
         when(evaluationRunProperties.getExecution()).thenReturn(execution);
         when(execution.getHeaderBlacklist()).thenReturn(List.of());
         when(serializerRegistry.serialize(any()))

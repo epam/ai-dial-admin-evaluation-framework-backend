@@ -202,4 +202,25 @@ public abstract class TestSuiteStructuredQueryFunctionalTests extends BaseFuncti
                 .contains(target.getId().toString())
                 .doesNotContain(noRef.getId().toString());
     }
+
+    @Test
+    @DisplayName("filters test_suites by routes_ref::name using JSONB text extraction")
+    void filtersByRouteRefName() {
+        String prefix = "sq-routeref-" + UUID.randomUUID();
+        TestSuite target = metaTestDataHelper.createTestSuiteWithRoutesRef(
+                prefix + "-target", "{\"name\":\"routes/platform/validate-route\"}");
+        TestSuite noRef = metaTestDataHelper.createTestSuite(prefix + "-no-ref");
+
+        QueryResultPage page = queryRepository.execute(rowQuery(
+                eq("routes_ref::name", ValueType.STRING, "routes/platform/validate-route"),
+                List.of(col(new FieldExpr("id")), col(new FieldExpr("routes_ref::name")))));
+
+        assertThat(page.rows()).singleElement().satisfies(row -> {
+            assertThat(row.get("id")).isEqualTo(target.getId().toString());
+            assertThat(row.get("routes_ref::name")).isEqualTo("routes/platform/validate-route");
+        });
+        assertThat(page.rows())
+                .extracting(row -> row.get("id"))
+                .doesNotContain(noRef.getId().toString());
+    }
 }

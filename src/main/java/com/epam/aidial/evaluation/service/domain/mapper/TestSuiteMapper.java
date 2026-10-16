@@ -55,6 +55,7 @@ public class TestSuiteMapper {
                 .suiteType(suiteType)
                 .datasetId(entity.getDatasetId())
                 .deploymentRef(jsonbMapper.map(entity.getDeploymentRef()))
+                .routesRef(jsonbMapper.mapRouteRef(entity.getRoutesRef()))
                 .endpointRef(endpointRef)
                 .responseColumns(responseColumns)
                 .requestTemplate(requestTemplate)
@@ -89,6 +90,7 @@ public class TestSuiteMapper {
                 .suiteType(suiteType)
                 .datasetId(dto.getDatasetId())
                 .deploymentRef(jsonbMapper.map(dto.getDeploymentRef()))
+                .routesRef(jsonbMapper.mapRouteRef(dto.getRoutesRef()))
                 .endpointRef(jsonbMapper.map(dto.getEndpointRef()))
                 .responseColumns(jsonbMapper.mapResponseColumns(dto.getResponseColumns()))
                 .requestTemplate(jsonbMapper.map(dto.getRequestTemplate()))
@@ -117,6 +119,7 @@ public class TestSuiteMapper {
         entity.setDescription(dto.getDescription());
         entity.setDatasetId(dto.getDatasetId());
         entity.setDeploymentRef(jsonbMapper.map(dto.getDeploymentRef()));
+        entity.setRoutesRef(jsonbMapper.mapRouteRef(dto.getRoutesRef()));
         entity.setEndpointRef(jsonbMapper.map(dto.getEndpointRef()));
         entity.setResponseColumns(jsonbMapper.mapResponseColumns(dto.getResponseColumns()));
         entity.setRequestTemplate(jsonbMapper.map(dto.getRequestTemplate()));
@@ -203,6 +206,7 @@ public class TestSuiteMapper {
                 .suiteType(suiteType)
                 .datasetId(datasetId)
                 .deploymentRef(deploymentRef)
+                .routesRef(source.getRoutesRef())
                 .endpointRef(endpointRef)
                 .responseColumns(responseColumns)
                 .requestTemplate(requestTemplate)
@@ -237,6 +241,7 @@ public class TestSuiteMapper {
                 .suiteType(suiteType)
                 .datasetId(entity.getDatasetId())
                 .deploymentRef(jsonbMapper.map(entity.getDeploymentRef()))
+                .routesRef(jsonbMapper.mapRouteRef(entity.getRoutesRef()))
                 .endpointRef(jsonbMapper.mapEndpointContract(entity.getEndpointRef()))
                 .responseColumns(
                         entity.getResponseColumns() != null

@@ -51,10 +51,14 @@ public class SuiteSnapshotBuilder {
                     .argumentTemplate(jsonbMapper.mapArgumentTemplate(suite.getArgumentTemplate()))
                     .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
         } else {
-            builder.deploymentRef(jsonbMapper.map(suite.getDeploymentRef()))
-                    .endpointRef(jsonbMapper.mapEndpointContract(suite.getEndpointRef()))
+            builder.endpointRef(jsonbMapper.mapEndpointContract(suite.getEndpointRef()))
                     .requestTemplate(jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()))
                     .inputBindings(jsonbMapper.mapInputBindings(suite.getInputBindings()));
+            if (suite.getSuiteType() == SuiteType.ROUTE) {
+                builder.routesRef(jsonbMapper.mapRouteRef(suite.getRoutesRef()));
+            } else {
+                builder.deploymentRef(jsonbMapper.map(suite.getDeploymentRef()));
+            }
         }
 
         return builder.build();

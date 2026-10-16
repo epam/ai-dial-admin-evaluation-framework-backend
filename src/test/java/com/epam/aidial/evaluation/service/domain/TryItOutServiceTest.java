@@ -325,6 +325,27 @@ class TryItOutServiceTest {
         }
 
         @Test
+        @DisplayName("ROUTE invokes the resolved Core-root path without deployment model validation")
+        void shouldInvokeRouteAtCoreRoot() {
+            TestSuite suite = buildSuite(null, "{}", "{}");
+            suite.setSuiteType(SuiteType.ROUTE);
+            suite.setRoutesRef("{\"name\":\"routes/platform/validate-route\"}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            ResolvedRequestDto resolved = fixedPathResolvedRequest(OPENAI_RESPONSES, "not-a-deployment");
+            when(resolvedRequestService.resolveRequest(SUITE_ID, TEST_CASE_ID)).thenReturn(resolved);
+            when(urlBuilder.buildUrl(SuiteType.ROUTE, null, OPENAI_RESPONSES)).thenReturn(OPENAI_RESPONSES);
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithTestCase(SUITE_ID, TEST_CASE_ID);
+
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            verify(urlBuilder).buildUrl(SuiteType.ROUTE, null, OPENAI_RESPONSES);
+            verify(deploymentInvoker).invokeWithStreaming(any(), eq(OPENAI_RESPONSES), any(), any(), any());
+        }
+
+        @Test
         @DisplayName("should throw EntityNotFoundException for non-existent suite")
         void shouldThrowNotFoundForMissingSuite() {
             when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.empty());
@@ -1208,6 +1229,31 @@ class TryItOutServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
             assertThat(result.getResponse().getStreaming()).isNull();
+        }
+
+        @Test
+        @DisplayName("ROUTE variables mode invokes the resolved Core-root path")
+        void shouldInvokeRouteWithVariablesAtCoreRoot() {
+            TestSuite suite = buildSuite(null, "{}", "{}");
+            suite.setSuiteType(SuiteType.ROUTE);
+            suite.setRoutesRef("{\"name\":\"routes/platform/validate-route\"}");
+            when(testSuiteRepository.findById(SUITE_ID)).thenReturn(Optional.of(suite));
+            when(jsonbMapper.mapEndpointContract("{}")).thenReturn(buildEndpointRef());
+            when(jsonbMapper.mapRequestTemplate("{}"))
+                    .thenReturn(RequestTemplateDto.builder()
+                            .urlTemplate("/validate/${{path}}")
+                            .build());
+            when(requestResolver.resolve(any(), anyList(), anyMap()))
+                    .thenReturn(
+                            ResolvedRequestDto.builder().url("/validate/items").build());
+            when(urlBuilder.buildUrl(SuiteType.ROUTE, null, "/validate/items")).thenReturn("/validate/items");
+            when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                    .thenReturn(nonStreamingResult(200, Map.of("result", "ok")));
+
+            TryItOutResponseDto result = service.tryWithVariables(SUITE_ID, Map.of(0, Map.of("path", "items")));
+
+            assertThat(result.getResponse().getStatusCode()).isEqualTo(200);
+            verify(deploymentInvoker).invokeWithStreaming(any(), eq("/validate/items"), any(), any(), any());
         }
 
         @Test

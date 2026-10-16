@@ -70,6 +70,23 @@ class TestSuiteMapperCloneTest {
     }
 
     @Test
+    @DisplayName("ROUTE clone inherits routesRef and keeps it in the validation request")
+    void toCloneEntity_inheritsRouteRef() {
+        TestSuite source = sourceWithAllFields();
+        source.setSuiteType(SuiteType.ROUTE);
+        source.setDeploymentRef(null);
+        source.setRoutesRef("{\"name\":\"routes/platform/validate-route\"}");
+        TestSuiteCloneRequestDto dto =
+                TestSuiteCloneRequestDto.builder().name("Route Clone").build();
+
+        TestSuite cloned = mapper.toCloneEntity(source, dto, newId, createdBy);
+        TestSuiteRequestDto validationRequest = mapper.toRequestDto(cloned);
+
+        assertThat(cloned.getRoutesRef()).isEqualTo(source.getRoutesRef());
+        assertThat(validationRequest.getRoutesRef().getName()).isEqualTo("routes/platform/validate-route");
+    }
+
+    @Test
     @DisplayName("applies description override when DTO has description")
     void toCloneEntity_appliesDescriptionOverride_whenDtoHasDescription() {
         TestSuite source = sourceWithAllFields();

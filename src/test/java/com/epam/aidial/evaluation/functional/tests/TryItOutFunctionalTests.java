@@ -22,9 +22,11 @@ import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedJsonBodyDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.dto.RouteReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestCaseResponseDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
+import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.service.domain.dto.TestCaseRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.dto.TryItOutResponseDto;
@@ -78,6 +80,44 @@ public abstract class TryItOutFunctionalTests extends AbstractMultiTurnFunctiona
         assertThat(response.getBody().getResponse()).isNotNull();
         assertThat(response.getBody().getResponse().getStatusCode()).isEqualTo(200);
         assertThat(response.getBody().getDurationMs()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should try out a ROUTE suite against the DIAL Core root path")
+    void shouldTryOutRouteAtCoreRoot() {
+        TestSuiteRequestDto request = TestSuiteRequestDto.builder()
+                .name("Route Try Out " + UUID.randomUUID())
+                .suiteType(SuiteType.ROUTE)
+                .routesRef(RouteReferenceDto.builder()
+                        .name("routes/platform/validate-route")
+                        .build())
+                .endpointRef(EndpointContractDto.builder()
+                        .method(HttpMethod.POST)
+                        .relativeUrlPattern("/validate/items")
+                        .build())
+                .datasetId(newDatasetWithSchema(List.of()))
+                .requestTemplate(RequestTemplateDto.builder()
+                        .urlTemplate("/validate/items")
+                        .build())
+                .build();
+        ResponseEntity<TestSuiteResponseDto> created =
+                restTemplate.postForEntity(apiUrl("/test-suites"), jsonEntity(request), TestSuiteResponseDto.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        TestSuiteResponseDto suite = created.getBody();
+        assertThat(suite).isNotNull();
+        TestCaseResponseDto testCase = createTestCase(suite.getId(), "Route case", Map.of());
+        when(deploymentInvoker.invokeWithStreaming(any(), any(), any(), any(), any()))
+                .thenReturn(new DeploymentInvocationResult(200, false, Map.of("ok", true), null, new HttpHeaders()));
+
+        ResponseEntity<TryItOutResponseDto> response = restTemplate.postForEntity(
+                apiUrl("/test-suites/" + suite.getId() + "/test-cases/" + testCase.getId() + "/try-it-out"),
+                null,
+                TryItOutResponseDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        ArgumentCaptor<String> pathCaptor = ArgumentCaptor.forClass(String.class);
+        verify(deploymentInvoker).invokeWithStreaming(any(), pathCaptor.capture(), any(), any(), any());
+        assertThat(pathCaptor.getValue()).isEqualTo("/validate/items");
     }
 
     // --- try-it-out with a multi-turn test case: executes every turn, threading $history across turns ---

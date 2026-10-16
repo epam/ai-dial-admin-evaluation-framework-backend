@@ -7,7 +7,8 @@ import java.util.stream.Collectors;
 
 public enum SuiteType {
     DEPLOYMENT("DEPLOYMENT"),
-    MCP_TOOL("MCP_TOOL");
+    MCP_TOOL("MCP_TOOL"),
+    ROUTE("ROUTE");
 
     private final String value;
 

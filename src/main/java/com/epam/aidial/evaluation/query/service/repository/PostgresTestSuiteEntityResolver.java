@@ -51,6 +51,7 @@ public class PostgresTestSuiteEntityResolver implements StructuredQueryEntityRes
         addSubField(map, jsonPathAccessor, "deployment_ref::name", TEST_SUITES.DEPLOYMENT_REF, "name");
         addSubField(map, jsonPathAccessor, "deployment_ref::version", TEST_SUITES.DEPLOYMENT_REF, "version");
         addSubField(map, jsonPathAccessor, "deployment_ref::type", TEST_SUITES.DEPLOYMENT_REF, "type");
+        addSubField(map, jsonPathAccessor, "routes_ref::name", TEST_SUITES.ROUTES_REF, "name");
         addSubField(map, jsonPathAccessor, "mcp_deployment_ref::id", TEST_SUITES.MCP_DEPLOYMENT_REF, "id");
         addSubField(map, jsonPathAccessor, "mcp_deployment_ref::name", TEST_SUITES.MCP_DEPLOYMENT_REF, "name");
         addSubField(map, jsonPathAccessor, "mcp_deployment_ref::type", TEST_SUITES.MCP_DEPLOYMENT_REF, "type");

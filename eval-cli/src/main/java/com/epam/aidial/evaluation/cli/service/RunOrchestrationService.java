@@ -98,7 +98,7 @@ public class RunOrchestrationService {
                 CsvResultBatchWriter csvWriter = new CsvResultBatchWriter(writer)) {
 
             final TestCaseRunner runner =
-                    testCaseRunnerFactory.create(context, context.getSnapshotResponseColumns(), csvWriter);
+                    testCaseRunnerFactory.create(context, context.getSuite().responseColumns(), csvWriter);
             try {
                 final boolean accepted = runner.submit(inputs);
                 if (!accepted) {

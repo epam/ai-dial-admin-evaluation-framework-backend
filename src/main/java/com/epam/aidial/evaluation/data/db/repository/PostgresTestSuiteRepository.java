@@ -18,7 +18,6 @@ import com.epam.aidial.evaluation.data.db.repository.sql.WhereBuilder;
 import com.epam.aidial.evaluation.data.db.transaction.timestamp.TransactionTimestampContext;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
-import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -106,9 +105,7 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                 .set(TEST_SUITES.ID, testSuite.getId().toString())
                 .set(TEST_SUITES.NAME, testSuite.getName())
                 .set(TEST_SUITES.DESCRIPTION, testSuite.getDescription())
-                .set(
-                        TEST_SUITES.SUITE_TYPE,
-                        SuiteTargets.typeOrDefault(testSuite.getSuiteType()).getValue())
+                .set(TEST_SUITES.SUITE_TYPE, testSuite.getSuiteType().getValue())
                 .set(
                         TEST_SUITES.DATASET_ID,
                         testSuite.getDatasetId() != null
@@ -288,9 +285,7 @@ public class PostgresTestSuiteRepository implements TestSuiteRepository {
                 .set(TEST_SUITES.ID, testSuite.getId().toString())
                 .set(TEST_SUITES.NAME, testSuite.getName())
                 .set(TEST_SUITES.DESCRIPTION, testSuite.getDescription())
-                .set(
-                        TEST_SUITES.SUITE_TYPE,
-                        SuiteTargets.typeOrDefault(testSuite.getSuiteType()).getValue())
+                .set(TEST_SUITES.SUITE_TYPE, testSuite.getSuiteType().getValue())
                 .set(
                         TEST_SUITES.DATASET_ID,
                         testSuite.getDatasetId() != null

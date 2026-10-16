@@ -8,7 +8,6 @@ import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
-import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +23,7 @@ public class SuiteTargetResolver {
 
     /** Derives the target from the persisted entity, whose reference fields are JSONB strings. */
     public SuiteTarget fromEntity(TestSuite suite) {
-        return switch (SuiteTargets.typeOrDefault(suite.getSuiteType())) {
+        return switch (suite.getSuiteType()) {
             case DEPLOYMENT -> new DeploymentTarget(jsonbMapper.map(suite.getDeploymentRef()));
             case ROUTE -> new RouteTarget(jsonbMapper.mapRouteRef(suite.getRoutesRef()));
             case MCP_TOOL ->
@@ -41,7 +40,7 @@ public class SuiteTargetResolver {
      * ROUTE: routesRef, endpointRef and requestTemplate; the other targets' fields must be empty.
      */
     public SuiteTarget fromRequest(TestSuiteRequestDto dto) {
-        final SuiteType suiteType = SuiteTargets.typeOrDefault(dto.getSuiteType());
+        final SuiteType suiteType = dto.getSuiteType();
         return switch (suiteType) {
             case DEPLOYMENT -> {
                 if (dto.getDeploymentRef() == null) {

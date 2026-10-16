@@ -84,7 +84,7 @@ Status: **Implemented**
 - **THEN** the run SHALL continue computing per-row scores using `testCaseOverallScore` (or its `overallScore` fallback) as captured in its snapshot, not the suite's current value
 
 ### Requirement: Execution context carries the snapshotted chain
-The evaluation context passed to the execution engine SHALL carry the snapshot's `additionalRequests` and `requestName` alongside the existing single-request snapshot fields (`snapshotEndpointRef`, `snapshotRequestTemplate`, `snapshotInputBindings`, `snapshotResponseColumns`, `snapshotTestCaseSchema`). The existing singular fields SHALL be interpreted as request #0's definition; the chain executor SHALL assemble the ordered chain from them plus the additional requests. `testCaseSchema` SHALL remain suite-level (one dataset per suite), shared by every request when deciding per-request turn counts.
+The evaluation context passed to the execution engine SHALL carry the snapshot-derived `SuiteDefinition`. For HTTP suites its chain SHALL be request #0, taken from the singular snapshot fields (`endpointRef`, `requestTemplate`, `inputBindings`, `responseColumns`, `requestName`), followed by the snapshot's `additionalRequests`; the chain executor SHALL consume that chain and SHALL NOT re-read flat snapshot fields. `testCaseSchema` SHALL remain suite-level (one dataset per suite), carried on the context, and shared by every request when deciding per-request turn counts.
 Status: **Implemented**
 
 #### Scenario: Context exposes the chain to the executor

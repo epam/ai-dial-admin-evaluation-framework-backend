@@ -223,7 +223,7 @@ class TemplateVariableServiceTest {
                 datasetSchemaProvider,
                 extractor,
                 endpointSchemaExtractor,
-                jsonbMapper,
+                new SuiteDefinitionResolver(new SuiteTargetResolver(jsonbMapper), jsonbMapper),
                 resolver,
                 testCaseService);
 
@@ -344,7 +344,7 @@ class TemplateVariableServiceTest {
                 datasetSchemaProvider,
                 extractor,
                 endpointSchemaExtractor,
-                jsonbMapper,
+                new SuiteDefinitionResolver(new SuiteTargetResolver(jsonbMapper), jsonbMapper),
                 resolver,
                 testCaseService);
 
@@ -548,7 +548,7 @@ class TemplateVariableServiceTest {
                 datasetSchemaProvider,
                 extractor,
                 endpointSchemaExtractor,
-                jsonbMapper,
+                new SuiteDefinitionResolver(new SuiteTargetResolver(jsonbMapper), jsonbMapper),
                 resolver,
                 testCaseService);
 

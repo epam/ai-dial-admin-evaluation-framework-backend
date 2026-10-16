@@ -15,6 +15,9 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.Nulls;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
@@ -29,9 +32,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * Create/update request. The no-args constructor is pinned as the Jackson creator so that {@code @Builder.Default}
+ * values survive omitted or explicit-null JSON fields (otherwise Jackson 3 prefers the all-args constructor).
+ */
 @Data
 @Builder
-@NoArgsConstructor
+@NoArgsConstructor(onConstructor_ = @JsonCreator)
 @AllArgsConstructor
 public class TestSuiteRequestDto {
 
@@ -44,8 +51,13 @@ public class TestSuiteRequestDto {
     @Schema(example = "Suite for endpoint smoke tests")
     private String description;
 
-    @Schema(example = "DEPLOYMENT", description = "Suite type: DEPLOYMENT (default), MCP_TOOL, or ROUTE")
-    private SuiteType suiteType;
+    @Schema(
+            example = "DEPLOYMENT",
+            defaultValue = "DEPLOYMENT",
+            description = "Suite type: DEPLOYMENT (default), MCP_TOOL, or ROUTE")
+    @JsonSetter(nulls = Nulls.SKIP)
+    @Builder.Default
+    private SuiteType suiteType = SuiteType.DEPLOYMENT;
 
     @Schema(
             example = "550e8400-e29b-41d4-a716-446655440000",

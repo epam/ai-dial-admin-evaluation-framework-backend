@@ -15,9 +15,9 @@ import com.epam.aidial.evaluation.runner.exception.RequestBodyValidationExceptio
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
-import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
@@ -104,7 +104,7 @@ public class TurnLoopExecutor {
      * Runs this request's turn loop, returning one {@link TestCaseRunResult} per executed turn (fewer than
      * planned {@code N} on early abort; exactly one for the {@code N = 1} case), the accumulated frame this
      * request ended with, and whether this request aborted (Decision 8/9/11 of the {@code
-     * add-multi-request-suite} change's {@code design.md}). {@code spec} carries this request's own
+     * add-multi-request-suite} change's {@code design.md}). {@code target} is the suite's HTTP target; {@code spec} carries this request's own
      * template/bindings/columns/endpoint; {@code initialFrame} is the frame accumulated by earlier requests
      * in the chain (empty for request #0); {@code traceId} is the test-case-run span's id (shared by every
      * row of every request).
@@ -112,6 +112,7 @@ public class TurnLoopExecutor {
     public RequestExecutionResult execute(
             TestCaseRunInput input,
             EvaluationContext context,
+            HttpTarget target,
             int runIndex,
             RequestExecutionSpec spec,
             Map<String, Object> initialFrame,
@@ -176,7 +177,8 @@ public class TurnLoopExecutor {
                         accumulated,
                         input.getTestCaseId(),
                         turnIndex,
-                        context);
+                        context,
+                        target);
                 final long turnEnd = clock.millis();
 
                 if (step.control() == TurnControl.CONTINUE) {
@@ -311,14 +313,6 @@ public class TurnLoopExecutor {
         return new TurnOutcome(ExecutionStatus.ERROR, null, errorBody, 0, logDetails);
     }
 
-    private static HttpTarget requireHttpTarget(EvaluationContext context) {
-        final SuiteTarget target = context.getTarget();
-        if (target instanceof HttpTarget http) {
-            return http;
-        }
-        throw new IllegalStateException("TurnLoopExecutor requires an HTTP suite target but got: " + target);
-    }
-
     /**
      * Runs one turn without mutating shared state: evaluates the request body as JSONata against
      * {@code frameBindings}, sends it (streaming), and on success extracts response columns.
@@ -332,7 +326,8 @@ public class TurnLoopExecutor {
             Map<String, Object> frameBindings,
             UUID testCaseId,
             int turnIndex,
-            EvaluationContext context) {
+            EvaluationContext context,
+            HttpTarget target) {
 
         final ResolvedRequestDto resolved;
         try {
@@ -350,7 +345,6 @@ public class TurnLoopExecutor {
         final ResolvedBodyDto resolvedBody = resolved.getBody();
         final String requestBodyJson = serializeResolvedBodyForAnalytics(resolvedBody);
 
-        final HttpTarget target = requireHttpTarget(context);
         if (target instanceof DeploymentTarget d) {
             try {
                 requestModelValidator.validateForExecution(

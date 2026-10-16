@@ -11,14 +11,14 @@ import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResolvedRequestDto;
 import com.epam.aidial.evaluation.runner.job.PerTurnBindingDetector;
-import com.epam.aidial.evaluation.runner.job.RequestExecutionSpec;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.service.RequestResolver;
 import com.epam.aidial.evaluation.runner.util.TestCaseTurnsCsvSerializer;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.exception.EntityNotFoundException;
 import com.epam.aidial.evaluation.service.domain.exception.ValidationException;
 import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -106,30 +106,28 @@ public class ResolvedRequestService {
     }
 
     /**
-     * Plans the whole request chain for a test-case try-it-out, mirroring {@code RequestChainExecutor
-     * .buildSpecs} (spec construction) and {@code TurnLoopExecutor.buildTurnPlan} (per-request turn-count
-     * decision) so a preview never disagrees with what a real run would do for the same suite/test case.
-     * Spec 0 is built from the suite's own fields (labelled by the suite-level {@code requestName}); specs
-     * 1..N from {@code additionalRequests} in order. Turn count is decided <strong>per request</strong>
+     * Plans the whole request chain for a test-case try-it-out, mirroring {@code SuiteDefinitions.httpChain}
+     * (spec construction) and {@code TurnLoopExecutor.buildTurnPlan} (per-request turn-count decision) so a
+     * preview never disagrees with what a real run would do for the same suite/test case. The chain comes
+     * from an already-derived {@link HttpSuite} (the caller derived it once from the suite entity, so
+     * nothing is deserialized again); the suite entity is still loaded here for its {@code datasetId}.
+     * Spec 0 is the suite's own request (labelled by the suite-level {@code requestName}); specs 1..N are
+     * {@code additionalRequests} in order. Turn count is decided <strong>per request</strong>
      * from that request's own {@code inputBindings}: a single-turn case (no readable {@code multiTurnData}
      * turns) plans exactly one turn from shared {@code data} for every request; otherwise each request
      * either collapses to one shared-data turn (no effective binding on a {@code perTurn=true} schema
      * field) or plans one merged turn per {@code multiTurnData} entry. The dataset schema is loaded
-     * lazily, at most once for the whole chain — only when the case has readable turns.
-     *
-     * @param additionalRequests the suite's already-deserialized {@code additionalRequests} (nullable /
-     *     empty for a single-request suite). The caller maps them for its own precondition pass before the
-     *     test case is looked up (400-before-404, design D7) and passes them in here, so one try-out never
-     *     deserializes that JSONB column twice.
+     * lazily, at most once for the whole chain - only when the case has readable turns.
      */
     @Transactional(value = "metaTransactionManager", readOnly = true)
-    public ChainPlan planChain(UUID testSuiteId, UUID testCaseId, List<RequestDefinitionDto> additionalRequests) {
-        final TestSuite suite = loadSuite(testSuiteId);
+    public ChainPlan planChain(UUID testSuiteId, UUID testCaseId, HttpSuite httpSuite) {
+        return planChain(loadSuite(testSuiteId), testCaseId, httpSuite.chain());
+    }
+
+    private ChainPlan planChain(TestSuite suite, UUID testCaseId, List<RequestExecutionSpec> specs) {
         final TestCase tc = testCaseRepository
                 .findByIdAndDatasetId(testCaseId, suite.getDatasetId())
                 .orElseThrow(() -> new EntityNotFoundException("TestCase not found: " + testCaseId));
-
-        final List<RequestExecutionSpec> specs = buildSpecs(suite, additionalRequests);
 
         final Map<String, Object> sharedData = warningsSerializer.deserializeMap(tc.getData());
         final List<Map<String, Object>> turns = turnsSerializer.deserializeTurns(tc.getMultiTurnData());
@@ -154,14 +152,12 @@ public class ResolvedRequestService {
     }
 
     /**
-     * Plans the request chain for variables-mode try-it-out: suite fields + {@code additionalRequests}
-     * only — no test case is loaded (variables mode has none), so there is no turn planning and every
-     * request plans exactly one turn over an empty data map. {@code additionalRequests} is supplied
-     * already-deserialized by the caller for the same reason as in {@link #planChain}.
+     * Plans the request chain for variables-mode try-it-out from an already-derived {@link HttpSuite}: no
+     * test case is loaded (variables mode has none), so there is no turn planning and every request plans
+     * exactly one turn over an empty data map.
      */
-    @Transactional(value = "metaTransactionManager", readOnly = true)
-    public ChainPlan planChainForVariables(UUID testSuiteId, List<RequestDefinitionDto> additionalRequests) {
-        return singleTurnChainPlan(buildSpecs(loadSuite(testSuiteId), additionalRequests), Map.of());
+    public ChainPlan planChainForVariables(HttpSuite httpSuite) {
+        return singleTurnChainPlan(httpSuite.chain(), Map.of());
     }
 
     private TestSuite loadSuite(UUID testSuiteId) {
@@ -175,42 +171,6 @@ public class ResolvedRequestService {
         final List<Map<String, Object>> singleTurn = List.of(data);
         return new ChainPlan(
                 specs.stream().map(spec -> new RequestPlan(spec, singleTurn)).toList());
-    }
-
-    /**
-     * Builds the ordered chain of {@link RequestExecutionSpec}s from the suite entity, mirroring {@code
-     * RequestChainExecutor.buildSpecs}: spec 0 from the suite's own fields with the suite-level {@code
-     * requestName} threaded into the spec's {@code name} component, specs 1..N from the caller-supplied
-     * {@code additionalRequests} with null bindings/columns normalized to empty lists.
-     */
-    private List<RequestExecutionSpec> buildSpecs(TestSuite suite, List<RequestDefinitionDto> additionalRequests) {
-        final int additionalCount = additionalRequests != null ? additionalRequests.size() : 0;
-        final int totalRequests = 1 + additionalCount;
-
-        final List<RequestExecutionSpec> specs = new ArrayList<>(totalRequests);
-        specs.add(new RequestExecutionSpec(
-                0,
-                totalRequests,
-                suite.getRequestName(),
-                jsonbMapper.mapEndpointContract(suite.getEndpointRef()),
-                jsonbMapper.mapRequestTemplate(suite.getRequestTemplate()),
-                jsonbMapper.mapInputBindings(suite.getInputBindings()),
-                jsonbMapper.mapResponseColumns(suite.getResponseColumns())));
-
-        for (int i = 0; i < additionalCount; i++) {
-            // Invariant: additionalRequests never contains a null element here — TestSuiteRequestValidator
-            // rejects null chain elements with a hard 400 at write time, so persisted JSONB is clean.
-            final RequestDefinitionDto definition = additionalRequests.get(i);
-            specs.add(new RequestExecutionSpec(
-                    i + 1,
-                    totalRequests,
-                    definition.getName(),
-                    definition.getEndpointRef(),
-                    definition.getRequestTemplate(),
-                    definition.getInputBindings() != null ? definition.getInputBindings() : List.of(),
-                    definition.getResponseColumns() != null ? definition.getResponseColumns() : List.of()));
-        }
-        return specs;
     }
 
     /** Merges the case's shared data with one turn's own map; per-turn keys win on collision. */

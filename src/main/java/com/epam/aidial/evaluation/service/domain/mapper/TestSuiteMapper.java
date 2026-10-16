@@ -15,7 +15,6 @@ import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ValidationWarningDto;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
-import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.TestSuiteRequestDto;
 import java.util.List;
@@ -47,7 +46,7 @@ public class TestSuiteMapper {
         List<ValidationWarningDto> validationWarnings =
                 warningsSerializer.deserializeWarnings(entity.getValidationWarnings());
 
-        SuiteType suiteType = SuiteTargets.typeOrDefault(entity.getSuiteType());
+        SuiteType suiteType = entity.getSuiteType();
 
         return TestSuiteResponseDto.builder()
                 .id(entity.getId())
@@ -84,7 +83,7 @@ public class TestSuiteMapper {
         if (dto == null) {
             return null;
         }
-        SuiteType suiteType = SuiteTargets.typeOrDefault(dto.getSuiteType());
+        SuiteType suiteType = dto.getSuiteType();
         return TestSuite.builder()
                 .name(dto.getName())
                 .description(dto.getDescription())
@@ -235,7 +234,7 @@ public class TestSuiteMapper {
         if (entity == null) {
             return null;
         }
-        SuiteType suiteType = SuiteTargets.typeOrDefault(entity.getSuiteType());
+        SuiteType suiteType = entity.getSuiteType();
         return TestSuiteRequestDto.builder()
                 .name(entity.getName())
                 .description(entity.getDescription())

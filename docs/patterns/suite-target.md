@@ -2,7 +2,7 @@
 
 What a suite invokes is modelled internally as a sealed `SuiteTarget` (`com.epam.aidial.evaluation.runner.model.target`, `evaluation-runner-core`, shared with `eval-cli`), not as a flat `suiteType` plus four nullable ref fields.
 
-**Why.** The flat shape (`suiteType`, `deploymentRef`, `routesRef`, `mcpDeploymentRef`, `toolRef`) forced `if (suiteType == X)` branches and duplicated null-defaulting (legacy null type => DEPLOYMENT) in every consumer. Adding `ROUTE` multiplied both. A target now carries exactly the refs its kind needs, and the compiler enforces exhaustiveness.
+**Why.** The flat shape (`suiteType`, `deploymentRef`, `routesRef`, `mcpDeploymentRef`, `toolRef`) forced `if (suiteType == X)` branches (and, before the type became non-null in Java, null-defaulting in every consumer). Adding `ROUTE` multiplied both. A target now carries exactly the refs its kind needs, and the compiler enforces exhaustiveness.
 
 ## Two-level split
 
@@ -42,7 +42,7 @@ The target is derived **once per entry point** and then passed down:
 
 ## Legacy null type
 
-Suites created before `suiteType` existed have it null, which means DEPLOYMENT. Use `SuiteTargets.typeOrDefault(SuiteType)` (or the `from*` factories, which apply it) — never re-implement the default. `SuiteTargets.fromSnapshot` applies the same default itself because the snapshot's `suiteType` is a String.
+`test_suites.suite_type` is `NOT NULL DEFAULT 'DEPLOYMENT'` since migration V1.15, so a loaded `TestSuite` never has a null type. `TestSuiteRequestDto` and `TestSuite` default `suiteType` to DEPLOYMENT (`@Builder.Default`; the DTO also uses `@JsonSetter(nulls = SKIP)`, so omitted or explicit-null JSON yields DEPLOYMENT). The only tolerant seams are `SuiteTargets.fromSnapshot` (old snapshot JSON, String type) and `SuiteTargets.fromSuiteResponse` (response from an older remote server). `typeOrDefault` no longer exists: never re-add null-defaulting in consumers.
 
 ## Style rule
 
@@ -78,7 +78,7 @@ Use `SuiteTargetResolver` / `SuiteTargets` when only the target is needed (creat
 
 ### Boundary and soft fields
 
-Still flat on the wire, in DB JSONB and in the snapshot JSON; the definition is derived once per entry point and never serialized. Request #0 of a DEPLOYMENT suite may legitimately have null `endpointRef` / `requestTemplate`: these are soft warnings in `SuiteValidationService`, not hard-required (only ROUTE hard-requires them, via `SuiteTargetResolver.fromRequest`). `SuiteTargets.typeOrDefault` remains at persistence/mapper boundaries. The records do not null-check.
+Still flat on the wire, in DB JSONB and in the snapshot JSON; the definition is derived once per entry point and never serialized. Request #0 of a DEPLOYMENT suite may legitimately have null `endpointRef` / `requestTemplate`: these are soft warnings in `SuiteValidationService`, not hard-required (only ROUTE hard-requires them, via `SuiteTargetResolver.fromRequest`). The records do not null-check.
 
 ## Adding a fourth target kind
 
@@ -91,4 +91,4 @@ Still flat on the wire, in DB JSONB and in the snapshot JSON; the definition is 
 
 ## Not modelled
 
-Target-related data is mostly modelled; `SuiteTargets.typeOrDefault` still appears at the persistence/mapper boundary and in `TestSuiteService.validateSuiteTypeImmutability` (compares two `SuiteType`s, where a target object would add nothing). The one deliberate pass-through is `TestSuiteMapper.toCloneEntity`, which copies the source entity's raw `suiteType` (and flat ref columns) rather than going through a target or definition.
+Target-related data is mostly modelled; `TestSuiteService.validateSuiteTypeImmutability` reads the type directly (compares two `SuiteType`s, where a target object would add nothing). The one deliberate pass-through is `TestSuiteMapper.toCloneEntity`, which copies the source entity's raw `suiteType` (and flat ref columns) rather than going through a target or definition.

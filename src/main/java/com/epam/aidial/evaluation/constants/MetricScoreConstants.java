@@ -43,6 +43,9 @@ public final class MetricScoreConstants {
     public static final String FIELD_COMPUTATION_ID = "computation_id";
     public static final String FIELD_TEST_CASE_ID = "test_case_id";
 
+    /** Internal, binding-only BOOLEAN field: true when a row's computation is its run's latest. Never published. */
+    public static final String FIELD_IS_LATEST_COMPUTATION = "is_latest_computation";
+
     // Score-identifying field names (columns of the metric_score_results entity).
     public static final String FIELD_METRIC_SCORE_NAME = "metric_score_name";
     public static final String FIELD_METRIC_NAME = "metric_name";

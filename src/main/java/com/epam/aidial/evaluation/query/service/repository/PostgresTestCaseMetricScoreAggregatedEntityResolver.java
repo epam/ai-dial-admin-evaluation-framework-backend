@@ -19,8 +19,10 @@ import org.springframework.stereotype.Repository;
 /**
  * Resolves the {@code test_case_metric_scores} entity to the generated
  * {@code TEST_CASE_METRIC_SCORES_AGGREGATED} table on the analytics datasource ({@code analyticsDsl}).
- * Field bindings are static per-table metadata, computed once here — no join, no rewrite hook, mirroring
- * {@code PostgresMetricScoreResultEntityResolver}'s plain-table template. The {@code metric_scores} JSONB
+ * Field bindings are static per-table metadata, computed once here — no join, mirroring
+ * {@code PostgresMetricScoreResultEntityResolver}'s plain-table template. {@link #rewrite} resolves a
+ * {@code computation_id eq "latest"} sentinel the same way (single pinned run to its literal id, otherwise
+ * through {@link LatestComputationSupport}). The {@code metric_scores} JSONB
  * column is flattened into addressable fields (e.g. {@code metric_scores::Accuracy.score::avg}) by
  * {@code JsonbFieldResolver} at translation time, the same mechanism used for
  * {@code eval_summaries.metric_values}.
@@ -34,11 +36,22 @@ public class PostgresTestCaseMetricScoreAggregatedEntityResolver implements Stru
 
     private final DSLContext dsl;
     private final Map<String, QueryFieldBinding> bindings;
+    private final MetricScoreLatestComputationDefaulter latestComputationDefaulter;
+    private final LatestComputationSupport latestComputationSupport;
 
     public PostgresTestCaseMetricScoreAggregatedEntityResolver(
-            @Qualifier("analyticsDsl") DSLContext dsl, JooqTableSchemaResolver schemaResolver) {
+            @Qualifier("analyticsDsl") DSLContext dsl,
+            JooqTableSchemaResolver schemaResolver,
+            MetricScoreLatestComputationDefaulter latestComputationDefaulter,
+            LatestComputationSupport latestComputationSupport) {
         this.dsl = dsl;
-        this.bindings = schemaResolver.bindings(TEST_CASE_METRIC_SCORES_AGGREGATED);
+        this.bindings = latestComputationSupport.withLatest(
+                schemaResolver.bindings(TEST_CASE_METRIC_SCORES_AGGREGATED),
+                latestComputationSupport.latestBinding(
+                        TEST_CASE_METRIC_SCORES_AGGREGATED.TEST_SUITE_RUN_ID,
+                        TEST_CASE_METRIC_SCORES_AGGREGATED.COMPUTATION_ID));
+        this.latestComputationDefaulter = latestComputationDefaulter;
+        this.latestComputationSupport = latestComputationSupport;
     }
 
     @Override
@@ -64,5 +77,10 @@ public class PostgresTestCaseMetricScoreAggregatedEntityResolver implements Stru
     @Override
     public Map<String, QueryFieldBinding> bindings(StructuredQuery query) {
         return bindings;
+    }
+
+    @Override
+    public StructuredQuery rewrite(StructuredQuery query) {
+        return latestComputationSupport.rewriteLatest(latestComputationDefaulter.resolveLatestComputation(query));
     }
 }

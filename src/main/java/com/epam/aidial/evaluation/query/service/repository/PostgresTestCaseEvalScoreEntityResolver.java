@@ -45,14 +45,21 @@ public class PostgresTestCaseEvalScoreEntityResolver implements StructuredQueryE
     private final DSLContext dsl;
     private final Map<String, QueryFieldBinding> bindings;
     private final MetricScoreLatestComputationDefaulter latestComputationDefaulter;
+    private final LatestComputationSupport latestComputationSupport;
 
     public PostgresTestCaseEvalScoreEntityResolver(
             @Qualifier("analyticsDsl") DSLContext dsl,
             JooqTableSchemaResolver schemaResolver,
-            MetricScoreLatestComputationDefaulter latestComputationDefaulter) {
+            MetricScoreLatestComputationDefaulter latestComputationDefaulter,
+            LatestComputationSupport latestComputationSupport) {
         this.dsl = dsl;
-        this.bindings = schemaResolver.bindings(SCORES);
+        this.bindings = latestComputationSupport.withLatest(
+                schemaResolver.bindings(SCORES),
+                latestComputationSupport.latestBinding(
+                        SCORES.field(TEST_CASE_EVAL_SCORES.TEST_SUITE_RUN_ID),
+                        SCORES.field(TEST_CASE_EVAL_SCORES.COMPUTATION_ID)));
         this.latestComputationDefaulter = latestComputationDefaulter;
+        this.latestComputationSupport = latestComputationSupport;
     }
 
     @Override
@@ -82,6 +89,6 @@ public class PostgresTestCaseEvalScoreEntityResolver implements StructuredQueryE
 
     @Override
     public StructuredQuery rewrite(StructuredQuery query) {
-        return latestComputationDefaulter.resolveLatestComputation(query);
+        return latestComputationSupport.rewriteLatest(latestComputationDefaulter.resolveLatestComputation(query));
     }
 }

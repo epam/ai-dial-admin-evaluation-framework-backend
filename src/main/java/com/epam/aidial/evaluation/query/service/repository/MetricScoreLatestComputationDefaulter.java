@@ -36,7 +36,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class MetricScoreLatestComputationDefaulter {
 
-    private static final String LATEST = "latest";
+    static final String LATEST = "latest";
 
     private final ComputationResolver computationResolver;
 
@@ -59,7 +59,7 @@ public class MetricScoreLatestComputationDefaulter {
                 .orElse(query);
     }
 
-    private static StructuredQuery withFilter(StructuredQuery query, FilterNode filter) {
+    static StructuredQuery withFilter(StructuredQuery query, FilterNode filter) {
         return new StructuredQuery(
                 query.entity(),
                 filter,
@@ -91,7 +91,7 @@ public class MetricScoreLatestComputationDefaulter {
         };
     }
 
-    private static boolean isLatestComputationEq(ComparisonNode comparison) {
+    static boolean isLatestComputationEq(ComparisonNode comparison) {
         return comparison.op() == ComparisonOp.EQ
                 && comparison.args().size() == 2
                 && comparison.args().getFirst() instanceof FieldExpr field

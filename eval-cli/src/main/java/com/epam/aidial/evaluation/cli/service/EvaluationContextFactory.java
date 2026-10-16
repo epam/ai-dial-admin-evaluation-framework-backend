@@ -5,11 +5,14 @@ import com.epam.aidial.evaluation.cli.config.properties.TargetProperties;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
-import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.time.Clock;
 import java.util.List;
@@ -37,7 +40,7 @@ public class EvaluationContextFactory {
     /**
      * Creates a new {@link EvaluationContext} for the given suite and test-case count.
      *
-     * <p>The {@code snapshotDeploymentRef} in the returned context is the CLI-configured
+     * <p>For deployment suites the {@code target} in the returned context wraps the CLI-configured
      * <em>target</em> deployment reference, <strong>not</strong> the suite's source-side ref —
      * this is what routes execution to the target environment.
      *
@@ -86,13 +89,7 @@ public class EvaluationContextFactory {
                 // target DIAL Core with a static API key
                 .credential(CallerCredential.apiKey(targetProperties.getApiKey()))
                 .createdAtMs(clock.millis())
-                // Suite type from suite config
-                .suiteType(
-                        suite.getSuiteType() != null
-                                ? SuiteType.valueOf(suite.getSuiteType().name())
-                                : null)
-                // Target deployment ref override (replaces source-side ref)
-                .snapshotDeploymentRef(targetDeploymentRef)
+                .target(resolveTarget(suite, targetDeploymentRef))
                 .snapshotEndpointRef(suite.getEndpointRef())
                 .snapshotRequestTemplate(suite.getRequestTemplate())
                 .snapshotInputBindings(suite.getInputBindings() != null ? suite.getInputBindings() : List.of())
@@ -101,16 +98,17 @@ public class EvaluationContextFactory {
                         suite.getAdditionalRequests() != null ? suite.getAdditionalRequests() : List.of())
                 .snapshotRequestName(suite.getRequestName())
                 .snapshotTestCaseSchema(testCaseSchema)
-                // MCP fields (pass through from source suite if present)
-                .mcpDeploymentRefDto(suite.getMcpDeploymentRef() != null ? mapMcpDeploymentRef(suite) : null)
-                .toolRefDto(suite.getToolRef())
                 .argumentTemplateDto(suite.getArgumentTemplate())
                 .inputBindings(suite.getInputBindings() != null ? suite.getInputBindings() : List.of())
                 .build();
     }
 
-    private McpDeploymentReferenceDto mapMcpDeploymentRef(TestSuiteResponseDto suite) {
-        // The McpDeploymentReferenceDto is already the runner type (reused in our local DTO)
-        return suite.getMcpDeploymentRef();
+    private SuiteTarget resolveTarget(TestSuiteResponseDto suite, DeploymentReferenceDto targetDeploymentRef) {
+        return switch (SuiteTargets.fromSuiteResponse(suite)) {
+            // The CLI overrides the recorded deployment ref with the target environment's
+            case DeploymentTarget _ -> new DeploymentTarget(targetDeploymentRef);
+            case RouteTarget r -> r;
+            case McpToolTarget m -> m;
+        };
     }
 }

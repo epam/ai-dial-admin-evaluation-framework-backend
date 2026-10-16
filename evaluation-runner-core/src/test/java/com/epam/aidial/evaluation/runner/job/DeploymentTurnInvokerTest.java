@@ -10,7 +10,9 @@ import static org.mockito.Mockito.when;
 import com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult;
 import com.epam.aidial.evaluation.runner.client.dialcore.DialCoreDeploymentInvoker;
 import com.epam.aidial.evaluation.runner.config.properties.SseEventProcessingProperties;
+import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.util.QuietJsonService;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -248,6 +250,8 @@ class DeploymentTurnInvokerTest {
                 .maxRetryDelayMs(1_000L)
                 .maxResponseSizeBytes(5_242_880L)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
-                .createdAtMs(System.currentTimeMillis());
+                .createdAtMs(System.currentTimeMillis())
+                .target(new DeploymentTarget(
+                        DeploymentReferenceDto.builder().id("gpt-4").build()));
     }
 }

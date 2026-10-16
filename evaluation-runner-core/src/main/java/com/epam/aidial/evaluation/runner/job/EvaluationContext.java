@@ -1,16 +1,13 @@
 package com.epam.aidial.evaluation.runner.job;
 
 import com.epam.aidial.evaluation.runner.dto.ArgumentTemplateDto;
-import com.epam.aidial.evaluation.runner.dto.DeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.EndpointContractDto;
 import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
-import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
-import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.util.List;
 import java.util.UUID;
@@ -62,11 +59,10 @@ public class EvaluationContext {
     // Created-at timestamp for analytics results (from the run)
     private final long createdAtMs;
 
-    // Suite type (DEPLOYMENT or MCP_TOOL)
-    private final SuiteType suiteType;
+    /** Resolved suite target (deployment, route or MCP tool). */
+    private final SuiteTarget target;
 
     // Snapshot-level suite configuration (populated from suite_snapshot or synthesized from live suite)
-    private final DeploymentReferenceDto snapshotDeploymentRef;
     private final EndpointContractDto snapshotEndpointRef;
     private final RequestTemplateDto snapshotRequestTemplate;
     private final List<InputBindingDto> snapshotInputBindings;
@@ -94,8 +90,6 @@ public class EvaluationContext {
     private final List<FieldDefinitionDto> snapshotTestCaseSchema;
 
     // Pre-deserialized typed DTOs (deserialized once at run init, immutable for run duration)
-    private final McpDeploymentReferenceDto mcpDeploymentRefDto;
-    private final ToolReferenceDto toolRefDto;
     private final ArgumentTemplateDto argumentTemplateDto;
     private final List<InputBindingDto> inputBindings;
 }

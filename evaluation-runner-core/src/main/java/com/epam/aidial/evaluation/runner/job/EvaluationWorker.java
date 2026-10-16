@@ -10,9 +10,9 @@ import com.epam.aidial.evaluation.runner.dto.McpDeploymentReferenceDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.ToolReferenceDto;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.service.McpRequestResolver;
 import com.epam.aidial.evaluation.runner.service.McpResponseSerializer;
 import com.epam.aidial.evaluation.runner.service.ResponseColumnExtractor;
@@ -41,7 +41,7 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Dispatches a single test case to the right execution path: every DEPLOYMENT HTTP case (single-request or
+ * Dispatches a single test case to the right execution path: every HTTP case (DEPLOYMENT or ROUTE target) (single-request or
  * multi-request chain, single-turn or multi-turn alike) runs through {@link RequestChainExecutor}; an
  * MCP_TOOL case resolves arguments and calls the tool directly here, with its own retry loop and response
  * handling. {@code responseColumns} is used only by the MCP branch — a DEPLOYMENT chain derives every
@@ -87,9 +87,10 @@ public class EvaluationWorker {
                 context.getRunId(), context.getSuiteId(), input.getTestCaseId(), runIndex);
         Context traceContext = Context.current().with(span).with(baggage);
         try (Scope _ = traceContext.makeCurrent()) {
-            // Check suite type for MCP branching
-            if (context.getSuiteType() == SuiteType.MCP_TOOL) {
-                return List.of(executeMcp(input, context, runIndex, responseColumns, span, traceId, execStartedAtMs));
+            // MCP targets take the tool-invocation path; HTTP targets go through the request chain
+            if (context.getTarget() instanceof McpToolTarget mcpTarget) {
+                return List.of(executeMcp(
+                        input, context, mcpTarget, runIndex, responseColumns, span, traceId, execStartedAtMs));
             }
 
             List<TestCaseRunResult> results =
@@ -140,6 +141,7 @@ public class EvaluationWorker {
     private TestCaseRunResult executeMcp(
             TestCaseRunInput input,
             EvaluationContext context,
+            McpToolTarget mcpTarget,
             int runIndex,
             List<ResponseColumnDefinitionDto> responseColumns,
             Span span,
@@ -147,8 +149,8 @@ public class EvaluationWorker {
             long execStartedAtMs) {
         try {
             // Use pre-deserialized typed DTOs from context
-            McpDeploymentReferenceDto mcpRef = context.getMcpDeploymentRefDto();
-            ToolReferenceDto toolRef = context.getToolRefDto();
+            McpDeploymentReferenceDto mcpRef = mcpTarget.ref();
+            ToolReferenceDto toolRef = mcpTarget.tool();
             ArgumentTemplateDto argumentTemplate = context.getArgumentTemplateDto();
 
             // Resolve effective bindings: test case override takes priority over suite-level
@@ -428,7 +430,7 @@ public class EvaluationWorker {
      * Builds the persisted result row, extracting response columns with the {@code requestBodyJson}
      * already computed by the caller for {@code TestCaseRunResult.requestBody} fed uniformly into the
      * extractor's {@code $_request} frame binding (see {@link ResponseColumnExtractor}). Only used by the
-     * MCP execution path here — DEPLOYMENT HTTP cases are built by {@link TurnLoopExecutor}. For an MCP
+     * MCP execution path here — HTTP cases are built by {@link TurnLoopExecutor}. For an MCP
      * tool call, {@code requestBodyJson} is the serialized resolved tool arguments ({@link #serializeBody})
      * — a coherent "what was sent" value even though an MCP row has no HTTP request body in the
      * traditional sense.

@@ -13,9 +13,11 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationException;
 import com.epam.aidial.evaluation.runner.exception.RequestBodyValidationException;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
 import com.epam.aidial.evaluation.runner.service.DialCoreUrlBuilder;
 import com.epam.aidial.evaluation.runner.service.RequestBodySerializerRegistry;
 import com.epam.aidial.evaluation.runner.service.RequestModelValidator;
@@ -122,9 +124,6 @@ public class TurnLoopExecutor {
         final RequestTemplateDto template = input.getRequestTemplateOverride() != null
                 ? jsonbMapper.mapRequestTemplate(input.getRequestTemplateOverride())
                 : spec.requestTemplate();
-        final String deploymentId = context.getSnapshotDeploymentRef() != null
-                ? context.getSnapshotDeploymentRef().getId()
-                : null;
         final HttpMethod method =
                 spec.endpointRef() != null ? spec.endpointRef().getMethod() : null;
         final List<ResponseColumnDefinitionDto> responseColumns = spec.responseColumns();
@@ -172,7 +171,6 @@ public class TurnLoopExecutor {
                         template,
                         bindings,
                         turnData,
-                        deploymentId,
                         method,
                         responseColumns,
                         accumulated,
@@ -313,6 +311,14 @@ public class TurnLoopExecutor {
         return new TurnOutcome(ExecutionStatus.ERROR, null, errorBody, 0, logDetails);
     }
 
+    private static HttpTarget requireHttpTarget(EvaluationContext context) {
+        final SuiteTarget target = context.getTarget();
+        if (target instanceof HttpTarget http) {
+            return http;
+        }
+        throw new IllegalStateException("TurnLoopExecutor requires an HTTP suite target but got: " + target);
+    }
+
     /**
      * Runs one turn without mutating shared state: evaluates the request body as JSONata against
      * {@code frameBindings}, sends it (streaming), and on success extracts response columns.
@@ -321,7 +327,6 @@ public class TurnLoopExecutor {
             RequestTemplateDto template,
             List<InputBindingDto> bindings,
             Map<String, Object> turnData,
-            String deploymentId,
             HttpMethod method,
             List<ResponseColumnDefinitionDto> responseColumns,
             Map<String, Object> frameBindings,
@@ -345,10 +350,11 @@ public class TurnLoopExecutor {
         final ResolvedBodyDto resolvedBody = resolved.getBody();
         final String requestBodyJson = serializeResolvedBodyForAnalytics(resolvedBody);
 
-        final SuiteType suiteType = context.getSuiteType() != null ? context.getSuiteType() : SuiteType.DEPLOYMENT;
-        if (suiteType == SuiteType.DEPLOYMENT) {
+        final HttpTarget target = requireHttpTarget(context);
+        if (target instanceof DeploymentTarget d) {
             try {
-                requestModelValidator.validateForExecution(resolved.getUrl(), resolvedBody, deploymentId);
+                requestModelValidator.validateForExecution(
+                        resolved.getUrl(), resolvedBody, d.ref().getId());
             } catch (RequestBodyValidationException e) {
                 log.warn(
                         "Turn {} for test case {} failed resolved request-model validation: {}",
@@ -361,7 +367,7 @@ public class TurnLoopExecutor {
             }
         }
 
-        final String path = urlBuilder.buildUrl(suiteType, deploymentId, resolved.getUrl());
+        final String path = urlBuilder.buildUrl(target, resolved.getUrl());
         final HttpHeaders headers = buildHeaders(resolved.getHeaders());
         final MultiValueMap<String, String> queryParams =
                 DeploymentInvocationSupport.buildQueryParams(resolved.getQueryParams());

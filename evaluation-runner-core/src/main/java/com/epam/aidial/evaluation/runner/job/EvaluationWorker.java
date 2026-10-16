@@ -159,23 +159,23 @@ public class EvaluationWorker {
             long execStartedAtMs) {
         try {
             // Use pre-deserialized typed DTOs from context
-            McpDeploymentReferenceDto mcpRef = suite.target().ref();
-            ToolReferenceDto toolRef = suite.target().tool();
-            ArgumentTemplateDto argumentTemplate = suite.argumentTemplate();
+            final McpDeploymentReferenceDto mcpRef = suite.target().ref();
+            final ToolReferenceDto toolRef = suite.target().tool();
+            final ArgumentTemplateDto argumentTemplate = suite.argumentTemplate();
 
             // Resolve effective bindings: test case override takes priority over suite-level
-            List<InputBindingDto> effectiveBindings = input.getInputBindingsOverride() != null
+            final List<InputBindingDto> effectiveBindings = input.getInputBindingsOverride() != null
                     ? jsonbMapper.mapInputBindings(input.getInputBindingsOverride())
                     : suite.inputBindings();
 
             // Parse test case data
-            Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
+            final Map<String, Object> testCaseData = parseTestCaseData(input.getTestCaseData());
 
             // Resolve arguments
-            McpRequestResolver.ResolutionResult resolutionResult =
+            final McpRequestResolver.ResolutionResult resolutionResult =
                     mcpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData);
-            Map<String, Object> resolvedArgs = resolutionResult.getArguments();
-            String requestBodyJson = serializeBody(resolvedArgs);
+            final Map<String, Object> resolvedArgs = resolutionResult.getArguments();
+            final String requestBodyJson = serializeBody(resolvedArgs);
 
             // Invoke with retries
             return invokeMcpWithRetries(

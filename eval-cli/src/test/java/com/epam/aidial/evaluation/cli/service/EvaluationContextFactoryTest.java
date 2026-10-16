@@ -242,8 +242,8 @@ class EvaluationContextFactoryTest {
     }
 
     @Test
-    @DisplayName("defaults a null additionalRequests to an empty list")
-    void defaultsNullAdditionalRequestsToEmptyList() {
+    @DisplayName("a null additionalRequests yields a single-request chain")
+    void nullAdditionalRequestsYieldsSingleRequestChain() {
         final TestSuiteResponseDto suite = TestSuiteResponseDto.builder()
                 .id(UUID.randomUUID())
                 .datasetId(UUID.randomUUID())

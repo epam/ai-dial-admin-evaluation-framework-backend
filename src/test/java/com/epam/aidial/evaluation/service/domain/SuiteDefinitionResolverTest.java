@@ -123,7 +123,8 @@ class SuiteDefinitionResolverTest {
     }
 
     @Test
-    @DisplayName("fromRequest builds the chain from DTO fields as-is, additionalRequests included")
+    @DisplayName(
+            "fromRequest builds the chain from DTO fields (request #0 as-is, additional requests normalized) via httpChain")
     void requestHttpChain() {
         final TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                 .deploymentRef(DEPLOYMENT)
@@ -142,7 +143,13 @@ class SuiteDefinitionResolverTest {
                 .containsExactly(
                         new RequestExecutionSpec(0, 2, "first", endpoint0, template0, bindings0, columns0),
                         new RequestExecutionSpec(
-                                1, 2, "second", second.getEndpointRef(), second.getRequestTemplate(), null, null));
+                                1,
+                                2,
+                                "second",
+                                second.getEndpointRef(),
+                                second.getRequestTemplate(),
+                                List.of(),
+                                List.of()));
     }
 
     @Test

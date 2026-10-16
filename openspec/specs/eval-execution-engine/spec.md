@@ -80,10 +80,10 @@ Status: **Implemented**
 #### Scenario: Snapshot-based request resolution via RequestResolver
 - **WHEN** a test case is dispatched for execution
 - **THEN** the worker SHALL resolve the full request using `requestResolver.resolve(effectiveTemplate, effectiveBindings, testCaseData)` where:
-  - `effectiveTemplate` = `input.getRequestTemplateOverride()` if non-null, else `context.getSnapshotRequestTemplate()`
-  - `effectiveBindings` = `input.getInputBindingsOverride()` if non-null, else `context.getSnapshotInputBindings()`
+  - `effectiveTemplate` = `input.getRequestTemplateOverride()` if non-null, else the request's `RequestExecutionSpec.requestTemplate()` from the `HttpSuite` chain on `context.getSuite()`
+  - `effectiveBindings` = `input.getInputBindingsOverride()` if non-null, else the request's `RequestExecutionSpec.inputBindings()`
   - `testCaseData` = deserialized from `input.getTestCaseData()`
-  - `deploymentRef` and `endpointRef` are read from the `DeploymentTarget` ref in `context.getTarget()` and `context.getSnapshotEndpointRef()`
+  - `deploymentRef` and `endpointRef` are read from the `DeploymentTarget` ref in the `HttpTarget` of `context.getSuite()` and the request's `RequestExecutionSpec.endpointRef()`
   - The worker SHALL NOT call `resolveRequest(suiteId, tcId)` (no DB reads during execution) and SHALL NOT call `ResolvedRequestService.resolve(...)` — that method no longer exists; the equivalent logic lives on the injected `RequestResolver`
 
 #### Scenario: EvaluationWorker injects RequestResolver, not ResolvedRequestService
@@ -678,7 +678,7 @@ Status: **Implemented**
 
 #### Scenario: Full argument resolution with effective bindings
 - **WHEN** an MCP test case is dispatched for execution
-- **THEN** the worker SHALL determine effective bindings: test case `inputBindingsOverride` (if non-null) takes priority over suite-level `context.getInputBindings()` (same override semantics as HTTP suites)
+- **THEN** the worker SHALL determine effective bindings: test case `inputBindingsOverride` (if non-null) takes priority over suite-level `McpSuite.inputBindings()` of `context.getSuite()` (same override semantics as HTTP suites)
 - **AND** resolve tool arguments using `McpRequestResolver.resolve(argumentTemplate, effectiveBindings, testCaseData)` where `argumentTemplate` is pre-loaded from `EvaluationContext` and `testCaseData` is parsed from the current test case
 
 #### Scenario: Argument resolution failure
@@ -853,8 +853,7 @@ Status: **Implemented**
 - Deployment invoker result: `com.epam.aidial.evaluation.runner.client.dialcore.DeploymentInvocationResult` (moved to `evaluation-runner-core`)
 - Request resolution: `com.epam.aidial.evaluation.runner.service.RequestResolver` (`evaluation-runner-core`) — `TurnLoopExecutor` injects it directly; the EF backend's `com.epam.aidial.evaluation.service.domain.ResolvedRequestService` retains only the DB-backed Try-It-Out overload (`resolveRequest(UUID, UUID)`) and delegates to the injected `RequestResolver`
 - Modified: `EvaluationWorker` — add suite type branching at `execute()` entry point. MCP retry logic reuses the existing `invokeWithRetries()` method by extracting the inner execution logic into a strategy function. MCP transport propagation: reads `mcpDeploymentRef.transport`, defaults to `STREAMABLE_HTTP` when null, passes to `McpToolInvoker.callTool()`.
-- Modified: `EvaluationContext` — carries `suiteType` and deserialized MCP-specific references (`mcpDeploymentRef`, `toolRef`, `argumentTemplate`, `inputBindings`) loaded from the suite at run initialization time.
-- MCP field loading chain: `TestSuiteEvaluationJob` deserializes MCP fields from the suite's JSONB strings and passes them into `EvaluationContext.builder()` as typed objects (conditionally for `MCP_TOOL` suites only). `inputBindings` is loaded alongside other MCP fields.
-- MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `context.getInputBindings()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
+- Modified: `EvaluationContext` — carries one `SuiteDefinition`, built unconditionally by `SuiteDefinitions.fromSnapshot(snapshot)` in `TestSuiteEvaluationJob.buildContext`. For `MCP_TOOL` suites it is an `McpSuite` (target with `mcpDeploymentRef`/`toolRef`, plus `argumentTemplate`, `inputBindings`, `responseColumns`).
+- MCP effective bindings: `EvaluationWorker.invokeMcpSingle()` determines effective bindings per test case — `testCase.inputBindingsOverride` (if non-null) takes priority over `McpSuite.inputBindings()` of `context.getSuite()`. Effective bindings are passed to `McpRequestResolver.resolve()`.
 - DTOs: `ExecutionSettingsDto`, `RetryPolicyDto` (in `service.domain.dto`)
 - Resolved request-model validation: `TurnLoopExecutor.runOneTurn` calls `RequestModelValidator.validateForExecution(resolved.getUrl(), resolvedBody, deploymentId)` after `RequestResolver.resolveForRun` and before URL construction / header assembly / serialization, with `deploymentId` taken from the `DeploymentTarget` ref of `EvaluationContext.getTarget()` (derived from `EvaluationContext.suite`) (the frozen backend deployment or the CLI-selected target). A `RequestBodyValidationException` becomes `buildBodyValidationErrorOutcome` — an `ExecutionErrorCodes.REQUEST_BODY_VALIDATION_ERROR` envelope returned via `TurnStepResult.abortBeforeRequest` with the resolved body retained in `requestBody`, so the existing fail-fast path aborts the rest of the turn loop and the request chain.

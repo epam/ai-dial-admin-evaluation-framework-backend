@@ -115,11 +115,11 @@ public class SuiteValidationService {
 
             // Shared binding cross-validation. MCP_TOOL suites cannot carry additionalRequests
             // (rejected at write time), so the chain is always length 1 — prefix is always "".
-            List<InputBindingDto> bindings = suite.inputBindings();
+            final List<InputBindingDto> bindings = suite.inputBindings();
             warnings.addAll(bindingValidator.validate(variables, bindings, testCaseSchema, suiteId, ""));
 
             // Argument coverage against the selected tool's own JSON schema
-            ToolReferenceDto toolRef = suite.target().tool();
+            final ToolReferenceDto toolRef = suite.target().tool();
             warnings.addAll(mcpArgumentValidator.validate(
                     toolRef != null ? toolRef.getInputSchema() : null, argumentTemplate.getArguments(), bindings));
         }

@@ -60,7 +60,7 @@ SuiteDefinition (sealed)
 
 `SuiteDefinition` exposes `target()` and `responseColumns()`. `RequestExecutionSpec` (moved from `runner.job` to `runner.model.suite`) is one request of the HTTP chain.
 
-**Why pair them.** Illegal combinations (an MCP target with a request chain, an HTTP target with an `argumentTemplate`) are unrepresentable. `EvaluationContext` carries one value (`suite`) instead of nine nullable fields. Consumers use exhaustive `switch`es (`case HttpSuite h`, `case McpSuite m`, no `default`) in `EvaluationWorker`, `SuiteValidationService`, `TemplateVariableService`, `TryItOutService` and `InProcessEvaluationExecutor`, instead of branching on `SuiteType`. `TurnLoopExecutor` receives the `HttpTarget` directly.
+**Why pair them.** Illegal combinations (an MCP target with a request chain, an HTTP target with an `argumentTemplate`) are unrepresentable. `EvaluationContext` carries one value (`suite`) instead of nine nullable fields. Consumers use exhaustive `switch`es (`case HttpSuite h`, `case McpSuite m`, no `default`) in `EvaluationWorker`, `SuiteValidationService`, `TemplateVariableService`, `TryItOutService` and the CLI `EvaluationContextFactory.resolveSuite`, instead of branching on `SuiteType`. `TurnLoopExecutor` receives the `HttpTarget` directly.
 
 ### Derivation
 
@@ -91,4 +91,4 @@ Still flat on the wire, in DB JSONB and in the snapshot JSON; the definition is 
 
 ## Not modelled
 
-Nothing target-related remains flat internally. The one deliberate pass-through is `TestSuiteMapper.toCloneEntity`, which copies the source entity's raw `suiteType` (and flat ref columns) rather than going through a target or definition.
+Target-related data is mostly modelled; `SuiteTargets.typeOrDefault` still appears at the persistence/mapper boundary and in `TestSuiteService.validateSuiteTypeImmutability` (compares two `SuiteType`s, where a target object would add nothing). The one deliberate pass-through is `TestSuiteMapper.toCloneEntity`, which copies the source entity's raw `suiteType` (and flat ref columns) rather than going through a target or definition.

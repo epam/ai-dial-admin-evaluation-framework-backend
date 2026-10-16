@@ -441,7 +441,6 @@ class SuiteValidationServiceTest {
                     .name("MCP Suite")
                     .suiteType(SuiteType.MCP_TOOL)
                     .mcpDeploymentRef(McpDeploymentReferenceDto.builder().build())
-                    .toolRef(ToolReferenceDto.builder().build())
                     .toolRef(ToolReferenceDto.builder()
                             .name("github_search")
                             .inputSchema(Map.of(
@@ -769,7 +768,6 @@ class SuiteValidationServiceTest {
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
-                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .deploymentRef(DeploymentReferenceDto.builder()
                             .id("claude-3-5-sonnet-v2")
                             .build())
@@ -852,7 +850,6 @@ class SuiteValidationServiceTest {
             return TestSuiteRequestDto.builder()
                     .name("Suite")
                     .suiteType(SuiteType.DEPLOYMENT)
-                    .deploymentRef(DeploymentReferenceDto.builder().build())
                     .deploymentRef(
                             DeploymentReferenceDto.builder().id(deploymentRefId).build())
                     .endpointRef(EndpointContractDto.builder()

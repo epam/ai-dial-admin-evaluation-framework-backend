@@ -400,8 +400,8 @@ class TestSuiteEvaluationJobTest {
         }
 
         @Test
-        @DisplayName("buildContext yields an empty chain and null requestName for a legacy snapshot")
-        void buildContextEmptyChainForLegacySnapshot() {
+        @DisplayName("buildContext yields a single-request chain with null requestName for a legacy snapshot")
+        void buildContextSingleRequestChainForLegacySnapshot() {
             TestSuiteRun run = TestSuiteRun.builder()
                     .id(UUID.randomUUID())
                     .testSuiteId(UUID.randomUUID())

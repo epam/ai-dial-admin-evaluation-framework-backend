@@ -7,6 +7,7 @@ import com.epam.aidial.evaluation.runner.dto.InputBindingDto;
 import com.epam.aidial.evaluation.runner.dto.RequestDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.RequestTemplateDto;
 import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinition;
 import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
 import java.util.List;
@@ -59,10 +60,14 @@ public class EvaluationContext {
     // Created-at timestamp for analytics results (from the run)
     private final long createdAtMs;
 
-    /** Resolved suite target (deployment, route or MCP tool). */
+    /** What the suite calls and sends: target paired with its invocation shape (HTTP request chain or MCP tool call). */
+    private final SuiteDefinition suite;
+
+    /** Resolved suite target (deployment, route or MCP tool). Superseded by {@link #suite}; removed after migration. */
     private final SuiteTarget target;
 
-    // Snapshot-level suite configuration (populated from suite_snapshot or synthesized from live suite)
+    // Snapshot-level suite configuration (populated from suite_snapshot or synthesized from live suite).
+    // The invocation fields below are superseded by {@link #suite}; removed after migration.
     private final EndpointContractDto snapshotEndpointRef;
     private final RequestTemplateDto snapshotRequestTemplate;
     private final List<InputBindingDto> snapshotInputBindings;
@@ -70,7 +75,7 @@ public class EvaluationContext {
 
     /**
      * The suite's request chain beyond request #0 (index 1..N), in execution order — sourced from
-     * {@code SuiteSnapshotDto.additionalRequests}. The singular {@code snapshot*} fields above remain
+     * {@code SuiteSnapshotDto.additionalRequests}. Superseded by {@link #suite}; removed after migration. The singular {@code snapshot*} fields above remain
      * request #0's definition; the chain executor assembles the ordered chain from them plus this
      * list. Empty for a single-request suite.
      */
@@ -78,7 +83,7 @@ public class EvaluationContext {
 
     /**
      * User-facing label for request #0, sourced from {@code SuiteSnapshotDto.requestName}. Null when
-     * unlabelled.
+     * unlabelled. Superseded by {@link #suite}; removed after migration.
      */
     private final String snapshotRequestName;
 
@@ -90,6 +95,7 @@ public class EvaluationContext {
     private final List<FieldDefinitionDto> snapshotTestCaseSchema;
 
     // Pre-deserialized typed DTOs (deserialized once at run init, immutable for run duration)
+    // argumentTemplateDto and inputBindings are superseded by {@link #suite}; removed after migration.
     private final ArgumentTemplateDto argumentTemplateDto;
     private final List<InputBindingDto> inputBindings;
 }

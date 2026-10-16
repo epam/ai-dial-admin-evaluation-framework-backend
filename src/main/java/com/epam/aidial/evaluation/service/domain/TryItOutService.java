@@ -30,12 +30,12 @@ import com.epam.aidial.evaluation.runner.exception.RequestBodyEvaluationExceptio
 import com.epam.aidial.evaluation.runner.exception.RequestBodyValidationException;
 import com.epam.aidial.evaluation.runner.job.DeploymentInvocationSupport;
 import com.epam.aidial.evaluation.runner.job.ExecutionErrorCodes;
-import com.epam.aidial.evaluation.runner.job.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.job.SseEvent;
 import com.epam.aidial.evaluation.runner.job.SseEventParser;
 import com.epam.aidial.evaluation.runner.job.SseParseResult;
 import com.epam.aidial.evaluation.runner.job.StreamingResponseAccumulator;
 import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
+import com.epam.aidial.evaluation.runner.model.suite.RequestExecutionSpec;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
 import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;

@@ -25,6 +25,7 @@ import com.epam.aidial.evaluation.runner.dto.overallscore.OverallScoreDefinition
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.model.MetricScoreAggregation;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunInput;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.model.target.SuiteTarget;
 import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
@@ -484,6 +485,7 @@ public class TestSuiteEvaluationJob {
                 snapshot.getDatasetRef() != null ? snapshot.getDatasetRef().getId() : null;
 
         return EvaluationContext.builder()
+                .suite(SuiteDefinitions.fromSnapshot(snapshot))
                 .target(target)
                 .runId(run.getId())
                 .suiteId(run.getTestSuiteId())

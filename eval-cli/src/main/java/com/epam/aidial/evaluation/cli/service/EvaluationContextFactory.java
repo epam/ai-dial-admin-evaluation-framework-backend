@@ -8,6 +8,10 @@ import com.epam.aidial.evaluation.runner.dto.FieldDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.job.EvaluationContext;
 import com.epam.aidial.evaluation.runner.job.RunExecutorFactory;
+import com.epam.aidial.evaluation.runner.model.suite.HttpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.McpSuite;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinition;
+import com.epam.aidial.evaluation.runner.model.suite.SuiteDefinitions;
 import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
 import com.epam.aidial.evaluation.runner.model.target.McpToolTarget;
 import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
@@ -89,6 +93,7 @@ public class EvaluationContextFactory {
                 // target DIAL Core with a static API key
                 .credential(CallerCredential.apiKey(targetProperties.getApiKey()))
                 .createdAtMs(clock.millis())
+                .suite(resolveSuite(suite, targetDeploymentRef))
                 .target(resolveTarget(suite, targetDeploymentRef))
                 .snapshotEndpointRef(suite.getEndpointRef())
                 .snapshotRequestTemplate(suite.getRequestTemplate())
@@ -101,6 +106,16 @@ public class EvaluationContextFactory {
                 .argumentTemplateDto(suite.getArgumentTemplate())
                 .inputBindings(suite.getInputBindings() != null ? suite.getInputBindings() : List.of())
                 .build();
+    }
+
+    private SuiteDefinition resolveSuite(TestSuiteResponseDto suite, DeploymentReferenceDto targetDeploymentRef) {
+        return switch (SuiteDefinitions.fromSuiteResponse(suite)) {
+            // Same deployment override as resolveTarget
+            case HttpSuite h
+            when h.target() instanceof DeploymentTarget -> h.withTarget(new DeploymentTarget(targetDeploymentRef));
+            case HttpSuite h -> h;
+            case McpSuite m -> m;
+        };
     }
 
     private SuiteTarget resolveTarget(TestSuiteResponseDto suite, DeploymentReferenceDto targetDeploymentRef) {

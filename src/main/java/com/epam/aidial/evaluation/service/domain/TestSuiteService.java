@@ -20,6 +20,7 @@ import com.epam.aidial.evaluation.runner.dto.ResponseColumnDefinitionDto;
 import com.epam.aidial.evaluation.runner.dto.SchemaFieldType;
 import com.epam.aidial.evaluation.runner.dto.TestSuiteResponseDto;
 import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.target.SuiteTargets;
 import com.epam.aidial.evaluation.runner.util.ValidationWarningsSerializer;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDependentSuiteDto;
 import com.epam.aidial.evaluation.service.domain.dto.DatasetDetachRequestDto;
@@ -471,8 +472,8 @@ public class TestSuiteService {
      * Rejects update if suiteType is changed.
      */
     private void validateSuiteTypeImmutability(TestSuite existing, TestSuiteRequestDto dto) {
-        SuiteType existingType = existing.getSuiteType() != null ? existing.getSuiteType() : SuiteType.DEPLOYMENT;
-        SuiteType requestType = dto.getSuiteType() != null ? dto.getSuiteType() : SuiteType.DEPLOYMENT;
+        SuiteType existingType = SuiteTargets.typeOrDefault(existing.getSuiteType());
+        SuiteType requestType = SuiteTargets.typeOrDefault(dto.getSuiteType());
         if (existingType != requestType) {
             throw new ValidationException("Suite type cannot be changed. Current: " + existingType.getValue()
                     + ", requested: " + requestType.getValue());

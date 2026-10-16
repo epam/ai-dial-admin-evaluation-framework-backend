@@ -3,7 +3,9 @@ package com.epam.aidial.evaluation.runner.service;
 import com.epam.aidial.evaluation.runner.config.logging.LogExecution;
 import com.epam.aidial.evaluation.runner.constants.ModelSelectingEndpointPaths;
 import com.epam.aidial.evaluation.runner.exception.ValidationException;
-import com.epam.aidial.evaluation.runner.model.SuiteType;
+import com.epam.aidial.evaluation.runner.model.target.DeploymentTarget;
+import com.epam.aidial.evaluation.runner.model.target.HttpTarget;
+import com.epam.aidial.evaluation.runner.model.target.RouteTarget;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -24,22 +26,23 @@ public class DialCoreUrlBuilder {
     /**
      * Builds the full path for DIAL Core invocation.
      *
-     * @param deploymentId deployment identifier from deploymentRef
-     * @param resolvedUrl  resolved URL from template substitution
+     * @param target      resolved HTTP target (deployment or route)
+     * @param resolvedUrl resolved URL from template substitution
      * @return full path to append to base URL
      */
-    public String buildUrl(String deploymentId, String resolvedUrl) {
-        return buildUrl(SuiteType.DEPLOYMENT, deploymentId, resolvedUrl);
+    public String buildUrl(HttpTarget target, String resolvedUrl) {
+        return switch (target) {
+            case DeploymentTarget d -> buildDeploymentUrl(d.ref().getId(), resolvedUrl);
+            case RouteTarget r -> buildRouteUrl(resolvedUrl);
+        };
     }
 
-    public String buildUrl(SuiteType suiteType, String deploymentId, String resolvedUrl) {
-        if (suiteType == SuiteType.ROUTE) {
-            validateRoutePath(resolvedUrl);
-            return resolvedUrl;
-        }
-        if (suiteType != SuiteType.DEPLOYMENT) {
-            throw new ValidationException("Unsupported HTTP suite type: " + suiteType);
-        }
+    private String buildRouteUrl(String resolvedUrl) {
+        validateRoutePath(resolvedUrl);
+        return resolvedUrl;
+    }
+
+    private String buildDeploymentUrl(String deploymentId, String resolvedUrl) {
         if (OPENAI_STANDARD_PATHS.contains(resolvedUrl)) {
             return "/openai/deployments/" + deploymentId + resolvedUrl;
         }

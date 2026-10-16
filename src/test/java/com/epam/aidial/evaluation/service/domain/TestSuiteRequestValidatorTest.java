@@ -64,7 +64,8 @@ class TestSuiteRequestValidatorTest {
                 mock(SchemaValidationService.class),
                 new ObjectMapper(),
                 validationProperties,
-                new ResponseColumnUnionResolver(jsonbMapper));
+                new ResponseColumnUnionResolver(jsonbMapper),
+                new SuiteTargetResolver(jsonbMapper));
     }
 
     // --- requestTemplate.body.jsonataContent JSONata String validation ---
@@ -502,7 +503,8 @@ class TestSuiteRequestValidatorTest {
                     mock(SchemaValidationService.class),
                     new ObjectMapper(),
                     tinyLimits,
-                    new ResponseColumnUnionResolver(jsonbMapper));
+                    new ResponseColumnUnionResolver(jsonbMapper),
+                    new SuiteTargetResolver(jsonbMapper));
             // request #0 has no requestTemplate at all, so validateTemplateLimits skips its own size
             // check entirely — isolating the assertion to the additional request's oversized template.
             TestSuiteRequestDto dto = TestSuiteRequestDto.builder()
@@ -600,7 +602,8 @@ class TestSuiteRequestValidatorTest {
                     schemaValidationServiceMock,
                     new ObjectMapper(),
                     validationProperties,
-                    new ResponseColumnUnionResolver(jsonbMapper));
+                    new ResponseColumnUnionResolver(jsonbMapper),
+                    new SuiteTargetResolver(jsonbMapper));
         }
 
         private TestSuiteRequestDto routeSuiteRequest() {

@@ -31,6 +31,7 @@ import com.epam.aidial.evaluation.runner.model.ExecutionStatus;
 import com.epam.aidial.evaluation.runner.model.TestCaseRunResult;
 import com.epam.aidial.evaluation.runner.util.AuthorizationTokenHolder;
 import com.epam.aidial.evaluation.runner.util.CallerCredential;
+import com.epam.aidial.evaluation.runner.util.RunnerJsonbMapper;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsCsvParser;
 import com.epam.aidial.evaluation.service.domain.analytics.EvalResultsImportService;
 import com.epam.aidial.evaluation.service.domain.analytics.RunDeletionService;
@@ -41,6 +42,7 @@ import com.epam.aidial.evaluation.service.domain.filter.FilterParser;
 import com.epam.aidial.evaluation.service.domain.job.ActiveRunRegistry;
 import com.epam.aidial.evaluation.service.domain.job.ExecutionSettingsValidator;
 import com.epam.aidial.evaluation.service.domain.job.TestSuiteEvaluationJob;
+import com.epam.aidial.evaluation.service.domain.mapper.JsonbMapper;
 import com.epam.aidial.evaluation.service.domain.mapper.TestSuiteRunMapper;
 import com.epam.aidial.evaluation.service.domain.sort.SortParser;
 import io.opentelemetry.api.trace.Span;
@@ -142,6 +144,7 @@ class TestSuiteRunServiceTest {
                 testSuiteRunRepository,
                 testSuiteRepository,
                 testCaseService,
+                new SuiteTargetResolver(new JsonbMapper(new ObjectMapper(), new RunnerJsonbMapper(new ObjectMapper()))),
                 runnableTestCaseSelector,
                 properties,
                 evaluationJob,

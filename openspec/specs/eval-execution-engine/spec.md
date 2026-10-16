@@ -789,7 +789,7 @@ The `TestCaseRunResult` type produced by `EvaluationWorker.execute(...)` and con
 Status: **Implemented**
 
 #### Scenario: EvaluationWorker returns shared TestCaseRunResult
-- **WHEN** `EvaluationWorker.execute(input, context, runIndex, responseColumns, traceId, execStartedAtMs)` completes
+- **WHEN** `EvaluationWorker.execute(input, context, runIndex, responseColumns)` completes
 - **THEN** it SHALL return `List<com.epam.aidial.evaluation.runner.model.TestCaseRunResult>`
 
 #### Scenario: InProcessEvaluationExecutor consumes shared TestCaseRunResult
